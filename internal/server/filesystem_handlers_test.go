@@ -37,6 +37,11 @@ func TestFilesystemComplete(t *testing.T) {
 	decode := func(partial string) []string {
 		resp := httpDo(t, ts, http.MethodGet,
 			"/api/v1/filesystem/complete?path="+url.QueryEscape(partial), nil)
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
 		require.Equal(http.StatusOK, resp.StatusCode)
 		var body struct {
 			Completions []string `json:"completions"`
@@ -86,6 +91,11 @@ func TestFilesystemValidateRepo(t *testing.T) {
 	decode := func(path string) (bool, string, string) {
 		resp := httpDo(t, ts, http.MethodGet,
 			"/api/v1/filesystem/validate-repo?path="+url.QueryEscape(path), nil)
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
 		require.Equal(http.StatusOK, resp.StatusCode)
 		var body struct {
 			IsValid  bool   `json:"is_valid"`

@@ -79,7 +79,7 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 		t.Helper()
 		body, err := json.Marshal(payload)
 		require.NoError(err)
-		req := httptest.NewRequest(
+		req := httptest.NewRequestWithContext(t.Context(),
 			http.MethodPost, "/api/v1/agent-hooks/"+agent,
 			bytes.NewReader(body),
 		)

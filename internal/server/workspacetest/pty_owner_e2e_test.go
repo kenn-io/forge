@@ -414,7 +414,7 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 		case read := <-reads:
 			require.NoError(read.err)
 			if read.typ == websocket.MessageBinary {
-				got.WriteString(string(read.data))
+				got.Write(read.data)
 			}
 			if strings.Contains(got.String(), "live:paint") {
 				break
@@ -758,7 +758,7 @@ func TestWorkspacePtyOwnerTerminalFlushesFinalOutputOnExitE2E(t *testing.T) {
 			break
 		}
 		if typ == websocket.MessageBinary {
-			got.WriteString(string(data))
+			got.Write(data)
 		}
 		if strings.Contains(got.String(), "final-owner-output") {
 			return
@@ -1408,7 +1408,7 @@ func workspaceTerminalConnWriteRead(
 		if typ != websocket.MessageBinary {
 			continue
 		}
-		got.WriteString(string(data))
+		got.Write(data)
 		if strings.Contains(got.String(), needle) {
 			return
 		}

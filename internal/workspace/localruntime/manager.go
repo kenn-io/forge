@@ -685,7 +685,7 @@ func (m *Manager) restoreRuntimeSession(
 	if err != nil {
 		if tmuxSession != "" && isTmuxCommandUnavailable(err) {
 			return fmt.Errorf(
-				"%w: restored tmux attach unavailable for %q: %v",
+				"%w: restored tmux attach unavailable for %q: %w",
 				ErrSessionUnavailable, key, err,
 			)
 		}
@@ -1196,9 +1196,8 @@ func (m *Manager) tmuxSessionLaunchID(
 	if err != nil {
 		return "", false, err
 	}
-	args := append(
-		command[1:], "show-options", "-qv", "-t", session, "@forge_launch",
-	)
+	args := append([]string(nil), command[1:]...)
+	args = append(args, "show-options", "-qv", "-t", session, "@forge_launch")
 	cmd := procutil.CommandContext(ctx, command[0], args...)
 	cmd.Env = TmuxClientEnvironment(os.Environ(), m.currentStripEnvVars())
 	var stdout bytes.Buffer
@@ -1238,7 +1237,8 @@ func (m *Manager) killTmuxSession(
 	if err != nil {
 		return err
 	}
-	args := append(command[1:], "kill-session", "-t", session)
+	args := append([]string(nil), command[1:]...)
+	args = append(args, "kill-session", "-t", session)
 	cmd := procutil.CommandContext(ctx, command[0], args...)
 	cmd.Env = TmuxClientEnvironment(os.Environ(), m.currentStripEnvVars())
 	var stderr bytes.Buffer
@@ -1283,10 +1283,8 @@ func (m *Manager) refreshTmuxSessionClients(
 		return nil
 	}
 
-	listArgs := append(
-		command[1:],
-		"list-clients", "-t", session, "-F", "#{client_tty}",
-	)
+	listArgs := append([]string(nil), command[1:]...)
+	listArgs = append(listArgs, "list-clients", "-t", session, "-F", "#{client_tty}")
 	listCmd := procutil.CommandContext(ctx, command[0], listArgs...)
 	listCmd.Env = TmuxClientEnvironment(os.Environ(), m.currentStripEnvVars())
 	var stdout bytes.Buffer
@@ -1306,10 +1304,8 @@ func (m *Manager) refreshTmuxSessionClients(
 
 	var errs []error
 	for client := range strings.FieldsSeq(stdout.String()) {
-		refreshArgs := append(
-			command[1:],
-			"refresh-client", "-t", client,
-		)
+		refreshArgs := append([]string(nil), command[1:]...)
+		refreshArgs = append(refreshArgs, "refresh-client", "-t", client)
 		refreshCmd := procutil.CommandContext(
 			ctx, command[0], refreshArgs...,
 		)
@@ -1330,8 +1326,8 @@ func (m *Manager) refreshTmuxSessionClients(
 }
 
 func isTmuxSessionAbsent(stderr []byte, err error) bool {
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok || exitErr.ExitCode() != 1 {
 		return false
 	}
 	msg := string(stderr)
@@ -1683,8 +1679,9 @@ func (m *Manager) shellLaunchCommand(
 	if len(command) == 0 || command[0] == "" {
 		return launchCommand{}, errors.New("session command is empty")
 	}
-	tmux, err := m.target(string(LaunchTargetShell))
-	if err != nil || !tmux.Available {
+	tmux, tmuxErr := m.target(string(LaunchTargetShell))
+	useTmux := tmuxErr == nil && tmux.Available
+	if !useTmux {
 		return launchCommand{Command: command}, nil
 	}
 	tmuxCommand := slices.Clone(m.tmuxCommand)
@@ -1695,7 +1692,7 @@ func (m *Manager) shellLaunchCommand(
 		tmuxCommand = config.DefaultTmuxCommand()
 	}
 	configureServer := config.IsDefaultTmuxCommand(tmuxCommand)
-	tmuxCommand, err = resolveTmuxCommand(tmuxCommand)
+	tmuxCommand, err := resolveTmuxCommand(tmuxCommand)
 	if err != nil {
 		return launchCommand{}, err
 	}
@@ -1865,8 +1862,9 @@ func (m *Manager) launchCommand(
 		return launchCommand{Command: command}, nil
 	}
 
-	tmux, err := m.target(string(LaunchTargetShell))
-	if err != nil || !tmux.Available {
+	tmux, tmuxErr := m.target(string(LaunchTargetShell))
+	useTmux := tmuxErr == nil && tmux.Available
+	if !useTmux {
 		return launchCommand{Command: command}, nil
 	}
 	tmuxCommand := slices.Clone(m.tmuxCommand)
@@ -1877,7 +1875,7 @@ func (m *Manager) launchCommand(
 		tmuxCommand = config.DefaultTmuxCommand()
 	}
 	configureServer := config.IsDefaultTmuxCommand(tmuxCommand)
-	tmuxCommand, err = resolveTmuxCommand(tmuxCommand)
+	tmuxCommand, err := resolveTmuxCommand(tmuxCommand)
 	if err != nil {
 		return launchCommand{}, err
 	}

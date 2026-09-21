@@ -175,11 +175,11 @@ func (g *gitFingerprintHasher) tree(label, root string) {
 			return nil
 		}
 		info, infoErr := d.Info()
-		if infoErr != nil {
-			g.write(label+"/"+path, "error")
+		if infoErr == nil {
+			g.stamp(label+"/"+path, info)
 			return nil
 		}
-		g.stamp(label+"/"+path, info)
+		g.write(label+"/"+path, "error")
 		return nil
 	})
 	if err != nil {

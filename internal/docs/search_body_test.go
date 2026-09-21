@@ -19,17 +19,17 @@ func writeTempFile(t *testing.T, name, body string) string {
 
 func TestScanBodyFindsFirstMatchingLine(t *testing.T) {
 	assert := assert.New(t)
-	req := require.New(t)
+	require := require.New(t)
 	path := writeTempFile(t, "doc.md",
 		"intro line\nsecond mentions budget here\nthird mentions budget again\n")
 	hit, warn, err := scanBody(path, "budget")
-	req.NoError(err)
+	require.NoError(err)
 	assert.Empty(warn, "unexpected warning")
 	assert.Equal(2, hit.Line)
 	assert.Contains(hit.Snippet.Text, "budget")
 	// Two matching lines -> score 20 (capped at 100).
 	assert.Equal(20, hit.Score)
-	req.NotEmpty(hit.Snippet.Matches, "expected at least one match range")
+	require.NotEmpty(hit.Snippet.Matches, "expected at least one match range")
 	runes := []rune(hit.Snippet.Text)
 	got := string(runes[hit.Snippet.Matches[0].Start:hit.Snippet.Matches[0].End])
 	assert.True(strings.EqualFold(got, "budget"), "first match slice = %q, want case-insensitive 'budget'", got)
@@ -57,14 +57,14 @@ func TestScanBodySkipsTokenTooLong(t *testing.T) {
 }
 
 func TestScanBodyReturnsCodePointOffsets(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	// "café" is 4 runes, 5 bytes (é is 2 bytes in UTF-8). Make sure the
 	// match offsets are rune indices, not byte indices.
 	path := writeTempFile(t, "u.md", "warm café budget today\n")
 	hit, _, err := scanBody(path, "budget")
-	req.NoError(err)
-	req.Equal(1, hit.Line)
-	req.Len(hit.Snippet.Matches, 1)
+	require.NoError(err)
+	require.Equal(1, hit.Line)
+	require.Len(hit.Snippet.Matches, 1)
 	// "warm café " is 10 runes; "budget" starts at rune index 10.
 	assert := assert.New(t)
 	assert.Equal(10, hit.Snippet.Matches[0].Start)

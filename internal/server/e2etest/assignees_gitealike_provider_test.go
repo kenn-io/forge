@@ -41,6 +41,7 @@ func gitealikeUsersJSON(names []string) string {
 }
 
 func (f *fakeGitealikeUserAPI) handler(t *testing.T) http.Handler {
+	t.Helper()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		key := r.Method + " " + r.URL.Path

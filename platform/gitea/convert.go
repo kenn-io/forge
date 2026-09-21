@@ -1,7 +1,7 @@
 package gitea
 
 import (
-	"fmt"
+	"errors"
 	"net/url"
 	"time"
 
@@ -11,7 +11,7 @@ import (
 
 func convertRepository(repo *giteasdk.Repository) (gitealike.RepositoryDTO, error) {
 	if repo == nil {
-		return gitealike.RepositoryDTO{}, fmt.Errorf("gitea repository is nil")
+		return gitealike.RepositoryDTO{}, errors.New("gitea repository is nil")
 	}
 	var canPush, canAdmin *bool
 	if repo.Permissions != nil {

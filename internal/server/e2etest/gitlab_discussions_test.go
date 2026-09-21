@@ -67,7 +67,7 @@ func TestGetPRDetailIncludesThreadID(t *testing.T) {
 		Resolved:       false,
 	}}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls/gitlab/acme/widget/7", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls/gitlab/acme/widget/7", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -203,7 +203,7 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 
-	prReq := httptest.NewRequest(http.MethodGet, "/api/v1/pulls/gitlab/acme/widget/7", nil)
+	prReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls/gitlab/acme/widget/7", nil)
 	prRR := httptest.NewRecorder()
 	srv.ServeHTTP(prRR, prReq)
 
@@ -223,7 +223,7 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 	assert.True(prResult.Events[0].Resolvable)
 	assert.False(prResult.Events[0].Resolved)
 
-	issueReq := httptest.NewRequest(http.MethodGet, "/api/v1/issues/gitlab/acme/widget/11", nil)
+	issueReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/issues/gitlab/acme/widget/11", nil)
 	issueRR := httptest.NewRecorder()
 	srv.ServeHTTP(issueRR, issueReq)
 
@@ -456,7 +456,7 @@ func TestGitLabRepoCapabilitiesIncludeDiscussions(t *testing.T) {
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	syncer.RunOnce(ctx)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gitlab/acme/widget", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repo/gitlab/acme/widget", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -571,7 +571,7 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	// Valid 40-char hex thread ID
 	threadID := "abc123def456789012345678901234567890abcd"
 	body := `{"body":"This is my reply"}`
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+threadID+"/reply",
 		strings.NewReader(body),
@@ -631,7 +631,7 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	localThreadID := strconv.FormatInt(threads[0].ID, 10)
 
 	body = `{"body":"Local thread id reply"}`
-	req = httptest.NewRequest(
+	req = httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+localThreadID+"/reply",
 		strings.NewReader(body),
@@ -742,7 +742,7 @@ func TestReplyToDiscussionRejectsInvalidThreadID(t *testing.T) {
 
 	for _, invalidID := range invalidIDs {
 		body := `{"body":"test"}`
-		req := httptest.NewRequest(
+		req := httptest.NewRequestWithContext(t.Context(),
 			http.MethodPost,
 			"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+invalidID+"/reply",
 			strings.NewReader(body),
@@ -831,7 +831,7 @@ func TestResolveDiscussionE2E(t *testing.T) {
 	// Valid 40-char hex thread ID
 	threadID := "abc123def456789012345678901234567890abcd"
 	body := `{"resolved":true}`
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),
@@ -887,7 +887,7 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 
 	// The default GitHub fixture does not expose GitLab discussion endpoints.
 	body := `{"body":"test"}`
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/7/discussions/"+threadID+"/reply",
 		strings.NewReader(body),
@@ -900,7 +900,7 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 
 	// Resolve should also fail for GitHub
 	body = `{"resolved":true}`
-	req = httptest.NewRequest(
+	req = httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/7/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),
@@ -961,7 +961,7 @@ func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
 
 	// Reply should fail with 404 before calling provider
 	body := `{"body":"test reply"}`
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/999/discussions/"+threadID+"/reply",
 		strings.NewReader(body),
@@ -975,7 +975,7 @@ func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
 
 	// Resolve should also fail with 404 before calling provider
 	body = `{"resolved":true}`
-	req = httptest.NewRequest(
+	req = httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/999/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),
@@ -1118,7 +1118,7 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 
 	// Resolve the discussion
 	body := `{"resolved":true}`
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),
@@ -1142,7 +1142,7 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 
 	// Now unresolve it
 	body = `{"resolved":false}`
-	req = httptest.NewRequest(
+	req = httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/gitlab/acme/widget/7/discussions/"+threadID+"/resolve",
 		strings.NewReader(body),

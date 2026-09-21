@@ -224,9 +224,7 @@ func (l *daemonLifecycle) reconcileStartTarget(
 		return fmt.Errorf("daemon start: read runtime status: %w", err)
 	}
 	if status.Running {
-		return fmt.Errorf(
-			"daemon start: authoritative runtime lock is held, but daemon identity could not be authenticated; stale runtime record was preserved",
-		)
+		return errors.New("daemon start: authoritative runtime lock is held, but daemon identity could not be authenticated; stale runtime record was preserved")
 	}
 	return l.removeRuntimeRecord(
 		"daemon start", "unauthenticated", target.Record.SourcePath,

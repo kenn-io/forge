@@ -21,7 +21,7 @@ func startTrackedKataUnixServer(t *testing.T, handler http.Handler) *trackedKata
 	t.Helper()
 	t.Setenv("TMPDIR", "/tmp") // Keep Unix socket paths below macOS' length limit.
 	socketPath := filepath.Join(t.TempDir(), "kata.sock")
-	listener, err := net.Listen("unix", socketPath)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socketPath)
 	require.NoError(t, err)
 
 	tracked := &trackedKataUnixServer{target: "unix://" + socketPath}
@@ -39,6 +39,7 @@ func startTrackedKataUnixServer(t *testing.T, handler http.Handler) *trackedKata
 				}
 			case http.StateHijacked, http.StateClosed:
 				tracked.liveConnections.Add(-1)
+			case http.StateActive, http.StateIdle:
 			}
 		},
 	}

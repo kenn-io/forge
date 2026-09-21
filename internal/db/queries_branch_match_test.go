@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -13,7 +12,7 @@ import (
 
 func createLinkedProject(t *testing.T, d *DB, name string, repoID int64) *Project {
 	t.Helper()
-	p, err := d.CreateProject(context.Background(), CreateProjectInput{
+	p, err := d.CreateProject(t.Context(), CreateProjectInput{
 		DisplayName: name,
 		LocalPath:   filepath.Join(t.TempDir(), name),
 		RepoID:      sql.NullInt64{Int64: repoID, Valid: true},
@@ -31,7 +30,7 @@ func TestListWorktreesForBranchMatch_ReturnsRepoLinkedWorktrees(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "acme", "widget")
 
 	linked := createLinkedProject(t, d, "linked", repoID)
@@ -77,7 +76,7 @@ func TestListWorktreeLinkPRs_JoinsLinkedMergeRequestDisplayFields(t *testing.T) 
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "acme", "widget")
 	mr := testMR(repoID, 7, withMRTitle("Add feature"), withMRBranches("feature", "main"))
 	mr.IsDraft = true
@@ -122,7 +121,7 @@ func TestListWorktreeLinkPRs_JoinsLinkedMergeRequestDisplayFields(t *testing.T) 
 // returns no rows when no worktree links exist, so the enrichment is a no-op.
 func TestListWorktreeLinkPRs_EmptyWhenNoLinks(t *testing.T) {
 	d := openTestDB(t)
-	prs, err := d.ListWorktreeLinkPRs(context.Background())
+	prs, err := d.ListWorktreeLinkPRs(t.Context())
 	require.NoError(t, err)
 	assert.Empty(t, prs)
 }
@@ -166,7 +165,7 @@ func TestListWorktreesForBranchMatch_ExcludesStaleAndEmptyBranch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 	repoID := insertTestRepo(t, d, "acme", "widget")
 	project := createLinkedProject(t, d, "linked", repoID)

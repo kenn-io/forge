@@ -137,7 +137,7 @@ func TestWorkspaceDiffCacheHeadMismatchQueuesImmediateValidation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
-		root, cancel := context.WithCancel(context.Background())
+		root, cancel := context.WithCancel(t.Context())
 		now := time.Unix(100, 0)
 		resolved := workspaceDiffTestResolved()
 		key := workspaceDiffTestKey()
@@ -247,7 +247,7 @@ func TestWorkspaceDiffCacheReconnectRetainsActiveScopes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
-		root, cancel := context.WithCancel(context.Background())
+		root, cancel := context.WithCancel(t.Context())
 		now := time.Unix(100, 0)
 		var fingerprintCalls atomic.Int64
 		cache := newWorkspaceDiffCache(root, workspaceDiffCacheDeps{
@@ -706,7 +706,7 @@ func TestWorkspaceDiffCacheSelectedValidationMeetsMaxAge(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
-		root, cancel := context.WithCancel(context.Background())
+		root, cancel := context.WithCancel(t.Context())
 		now := time.Unix(100, 0)
 		key := workspaceDiffTestKey()
 		var fingerprint atomic.Value

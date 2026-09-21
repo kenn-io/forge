@@ -229,7 +229,7 @@ func doJSON(
 	if body != nil {
 		require.NoError(t, json.NewEncoder(&buf).Encode(body))
 	}
-	req := httptest.NewRequest(method, path, &buf)
+	req := httptest.NewRequestWithContext(t.Context(), method, path, &buf)
 	if method != http.MethodGet {
 		req.Header.Set("Content-Type", "application/json")
 	}

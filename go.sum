@@ -577,8 +577,8 @@ gitlab.com/gitlab-org/api/client-go/v2 v2.64.0 h1:PrLDC9rS6je6scB0VgXAh6gmoB7fk5
 gitlab.com/gitlab-org/api/client-go/v2 v2.64.0/go.mod h1:jLHVjfgFX/BsZnWXp6OsoXv1hKzBp2tSnNoxQTl3A08=
 go.kenn.io/kata v0.16.0 h1:ZmVUZgRZXb/cPu8Hy9XS4/llnMOlA7czzeE7G3iU20M=
 go.kenn.io/kata v0.16.0/go.mod h1:p2gLXbHuqjPfpKxTyfYU93wlaTLqb8BdpqGgtKCTe5k=
-go.kenn.io/kit v0.25.0 h1:V0dFQYkm3ttnu/QGPh9SiE79WgeONxW3KLEY7McxzMk=
-go.kenn.io/kit v0.25.0/go.mod h1:dO7SImegZe4P9PdnxuANdSQFbnrUvF3eE6/RDOfOMqo=
+go.kenn.io/kit v0.25.1-0.20260918202731-04a175847323 h1:MZX6PReFoO7BG5gVDlb6ectwm0IcNoeF3HFgpoDC/F8=
+go.kenn.io/kit v0.25.1-0.20260918202731-04a175847323/go.mod h1:JJN5uFf93goZI0+NV5UrGDd3N0+yJ04a1uzyPlx+R+g=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=
 go.opencensus.io v0.24.0/go.mod h1:vNK8G9p7aAivkbmorf4v+7Hgx+Zs0yY+0fOtgBfjQKo=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=

@@ -401,7 +401,7 @@ func validateCredential(nodeID, token string, scopes []Scope) ([]Scope, error) {
 
 func validateCredentialScopes(nodeID string, scopes []Scope) ([]Scope, error) {
 	if !validNodeID(nodeID) {
-		return nil, fmt.Errorf("federation credential node ID must be 32 lowercase hexadecimal characters")
+		return nil, errors.New("federation credential node ID must be 32 lowercase hexadecimal characters")
 	}
 	normalized, err := normalizeScopes(scopes)
 	if err != nil {

@@ -116,13 +116,13 @@ func TestReadAllWithContextStopsBetweenReads(t *testing.T) {
 
 func TestReadUntrackedFileContentRejectsIntermediateSymlink(t *testing.T) {
 	t.Parallel()
-	requirements := require.New(t)
+
 	worktree := t.TempDir()
 	outside := t.TempDir()
-	requirements.NoError(os.Mkdir(filepath.Join(worktree, "safe"), 0o700))
-	requirements.NoError(os.WriteFile(filepath.Join(worktree, "safe", "file.txt"), []byte("safe\n"), 0o600))
-	requirements.NoError(os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret\n"), 0o600))
-	requirements.NoError(os.Symlink(outside, filepath.Join(worktree, "linked")))
+	require.NoError(t, os.Mkdir(filepath.Join(worktree, "safe"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(worktree, "safe", "file.txt"), []byte("safe\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret\n"), 0o600))
+	require.NoError(t, os.Symlink(outside, filepath.Join(worktree, "linked")))
 
 	tests := []struct {
 		name     string

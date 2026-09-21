@@ -43,7 +43,7 @@ func Start(addr string) (*Server, error) {
 		return nil, err
 	}
 
-	ln, err := net.Listen("tcp", addr)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen on profiler address %s: %w", addr, err)
 	}
@@ -93,7 +93,7 @@ func allowBoundHostOnly(next http.Handler, addr net.Addr) http.Handler {
 		})
 	}
 	allowedIP := tcpAddr.IP
-	allowedPort := fmt.Sprint(tcpAddr.Port)
+	allowedPort := strconv.Itoa(tcpAddr.Port)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, port, err := net.SplitHostPort(r.Host)

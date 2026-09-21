@@ -92,6 +92,10 @@ jobs:
               - Makefile
               - mise.toml
               - mise.ci.toml
+              - .golangci.yml
+              - .golangci.overlay.yml
+              - .custom-gcl.yml
+              - prek.toml
 
   ensure_playwright_image:
     name: Ensure Playwright CI image
@@ -253,9 +257,13 @@ jobs:
         env:
           KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
-      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          version: v2.13.2
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      - name: Check Go formatters
+        run: make fmt-check
+
+      - name: Run Go linters
+        run: make lint-check
 
       - name: Install NilAway
         run: |

@@ -178,11 +178,11 @@ func commitParents(
 	if obj.Size() > maxCommitObjectSize {
 		return nil, false, nil
 	}
-	commit, err := object.DecodeCommit(objects, obj)
-	if err != nil {
-		return nil, false, nil
+	commit, decodeErr := object.DecodeCommit(objects, obj)
+	if decodeErr == nil {
+		return commit.ParentHashes, true, nil
 	}
-	return commit.ParentHashes, true, nil
+	return nil, false, nil
 }
 
 // commitHash parses a full lowercase hex SHA into an object hash. Only

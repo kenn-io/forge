@@ -18,7 +18,6 @@ import (
 )
 
 func TestKataLinkRoutesUseStableProviderSubjects(t *testing.T) {
-	requireRoot := require.New(t)
 	kataDaemon := newKataLinkTestDaemon(t)
 	configureKataLinkTestDaemon(t, kataDaemon.URL)
 	srv, database := setupTestServer(t)
@@ -31,7 +30,7 @@ func TestKataLinkRoutesUseStableProviderSubjects(t *testing.T) {
 	}
 	for providerIndex, provider := range providers {
 		defaultHost, ok := platform.DefaultHost(provider)
-		requireRoot.True(ok)
+		require.True(t, ok)
 		for _, explicitHost := range []bool{false, true} {
 			host := defaultHost
 			if explicitHost {
@@ -117,7 +116,7 @@ func TestKataLinkCreateKeepsResolvedSubjectAcrossRouteReuse(t *testing.T) {
 	)
 
 	body := bytes.NewBufferString(`{"daemon_id":"primary","project_uid":"project-a","issue_uid":"issue-a"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/issues/github/acme/widget/42/kata-links", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/issues/github/acme/widget/42/kata-links", body)
 	req.Header.Set("Content-Type", "application/json")
 	created := httptest.NewRecorder()
 	done := make(chan struct{})
@@ -320,6 +319,8 @@ func insertKataProviderSubject(
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	switch subjectKind {
+	case db.KataLinkSubjectWorkspace:
+		require.FailNow(t, "workspace Kata subjects are not provider-backed fixtures")
 	case db.KataLinkSubjectIssue:
 		_, err = database.UpsertIssue(t.Context(), &db.Issue{
 			RepoID: repoID, PlatformID: int64(number), PlatformExternalID: externalID,

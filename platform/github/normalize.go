@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -179,7 +180,7 @@ func NormalizeReviewCommentEvent(
 	event := platform.MergeRequestEvent{
 		Repo:               repo,
 		PlatformID:         c.GetID(),
-		PlatformExternalID: fmt.Sprintf("%d", c.GetID()),
+		PlatformExternalID: strconv.FormatInt(c.GetID(), 10),
 		MergeRequestNumber: mrNumber,
 		EventType:          "review_comment",
 		DedupeKey:          fmt.Sprintf("review_comment:%d", c.GetID()),
@@ -236,7 +237,7 @@ func NormalizeCommitEvent(
 		Repo:               repo,
 		MergeRequestNumber: mrNumber,
 		EventType:          "commit",
-		DedupeKey:          fmt.Sprintf("commit-%s", dedupeKey),
+		DedupeKey:          "commit-" + dedupeKey,
 		Author:             actor,
 		Summary:            sha,
 	}
@@ -723,10 +724,10 @@ func timelineDedupeKey(event PullRequestTimelineEvent) string {
 		event.SourceType,
 		event.SourceOwner,
 		event.SourceRepo,
-		fmt.Sprint(event.SourceNumber),
+		strconv.Itoa(event.SourceNumber),
 		event.SourceURL,
-		fmt.Sprint(event.IsCrossRepository),
-		fmt.Sprint(event.WillCloseTarget),
+		strconv.FormatBool(event.IsCrossRepository),
+		strconv.FormatBool(event.WillCloseTarget),
 	}, "\x00")
 	return "timeline-" + shortHash(raw)
 }

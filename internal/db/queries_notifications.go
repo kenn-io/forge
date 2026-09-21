@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -17,7 +18,7 @@ const (
 func canonicalizeRequiredNotificationPlatform(platform string) (string, error) {
 	platform = strings.ToLower(strings.TrimSpace(platform))
 	if platform == "" {
-		return "", fmt.Errorf("notification platform is required")
+		return "", errors.New("notification platform is required")
 	}
 	return platform, nil
 }
@@ -673,11 +674,7 @@ func (d *DB) NotificationSummary(ctx context.Context, opts ListNotificationsOpts
 		return NotificationSummary{}, err
 	}
 	summary := NotificationSummary{ByReason: map[string]int{}, ByRepo: map[string]int{}}
-	row := d.roQueryRowContext(ctx, fmt.Sprintf(`SELECT
-		COALESCE(SUM(CASE WHEN n.done_at IS NULL THEN 1 ELSE 0 END), 0),
-		COALESCE(SUM(CASE WHEN n.done_at IS NULL AND n.unread = 1 THEN 1 ELSE 0 END), 0),
-		COALESCE(SUM(CASE WHEN n.done_at IS NOT NULL THEN 1 ELSE 0 END), 0)
-		FROM forge_notification_items n WHERE %s`, where), args...)
+	row := d.roQueryRowContext(ctx, "SELECT\n\t\tCOALESCE(SUM(CASE WHEN n.done_at IS NULL THEN 1 ELSE 0 END), 0),\n\t\tCOALESCE(SUM(CASE WHEN n.done_at IS NULL AND n.unread = 1 THEN 1 ELSE 0 END), 0),\n\t\tCOALESCE(SUM(CASE WHEN n.done_at IS NOT NULL THEN 1 ELSE 0 END), 0)\n\t\tFROM forge_notification_items n WHERE "+where, args...)
 	if err := row.Scan(&summary.TotalActive, &summary.Unread, &summary.Done); err != nil {
 		return summary, fmt.Errorf("notification summary totals: %w", err)
 	}
@@ -714,10 +711,6 @@ func scanNotificationCounts(ctx context.Context, q queryer, query string, args [
 		out[key] = count
 	}
 	return rows.Err()
-}
-
-type queryer interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 func (d *DB) MarkNotificationsDone(ctx context.Context, ids []int64, doneAt time.Time, markRead bool) ([]int64, error) {
@@ -816,7 +809,7 @@ func canonicalizeNotificationRepo(owner, name string) (string, string, error) {
 	owner = strings.ToLower(strings.TrimSpace(owner))
 	name = strings.ToLower(strings.TrimSpace(name))
 	if owner == "" || name == "" {
-		return "", "", fmt.Errorf("notification sync watermark requires repository owner and name")
+		return "", "", errors.New("notification sync watermark requires repository owner and name")
 	}
 	return owner, name, nil
 }
@@ -860,7 +853,7 @@ func (d *DB) GetNotificationSyncWatermark(ctx context.Context, platform, host, o
 		}
 		return &state, nil
 	}
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return nil, fmt.Errorf("get notification sync watermark: %w", err)

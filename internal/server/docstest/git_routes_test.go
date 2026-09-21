@@ -148,7 +148,7 @@ func TestDocsGitReadEndpointsRejectNonLoopback(t *testing.T) {
 		"/api/v1/docs/folders/f/git",
 		"/api/v1/docs/folders/f/git/changes",
 	} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
 		req.Host = "127.0.0.1"
 		req.RemoteAddr = "203.0.113.7:54321"
 		rr := httptest.NewRecorder()
@@ -238,7 +238,7 @@ func TestDocsGitPublishEndpointRejectsNonLoopback(t *testing.T) {
 	srv := setupDocsGitRouteServer(t, repo.Dir)
 	body, err := json.Marshal(generated.PublishDocsGitBody{Message: new("docs: x")})
 	require.NoError(err)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders/f/git/publish", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/docs/folders/f/git/publish", bytes.NewReader(body))
 	req.Host = "127.0.0.1"
 	req.RemoteAddr = "203.0.113.7:54321"
 	req.Header.Set("Content-Type", "application/json")
@@ -257,7 +257,7 @@ func TestDocsGitPublishEndpointRejectsNonJSONContentType(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupDocsGitRouteServer(t, t.TempDir())
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders/f/git/publish", strings.NewReader("docs: x"))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/docs/folders/f/git/publish", strings.NewReader("docs: x"))
 	req.Host = "127.0.0.1"
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Content-Type", "text/plain")
@@ -387,6 +387,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 		{
 			name: "no markdown changes",
 			setup: func(t *testing.T) *server.Server {
+				t.Helper()
 				repo := gitfixture.NewRepository(t, true)
 				repo.Write(t, "code.go", "package x\n")
 				return setupDocsGitRouteServer(t, repo.Dir)
@@ -397,6 +398,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 		{
 			name: "not a git repo",
 			setup: func(t *testing.T) *server.Server {
+				t.Helper()
 				return setupDocsGitRouteServer(t, t.TempDir())
 			},
 			wantStatus: http.StatusBadRequest,
@@ -405,6 +407,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 		{
 			name: "index not clean",
 			setup: func(t *testing.T) *server.Server {
+				t.Helper()
 				repo := gitfixture.NewRepository(t, true)
 				repo.Write(t, "new.md", "# new\n")
 				repo.Write(t, "code.go", "package x\n")
@@ -417,6 +420,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 		{
 			name: "conflict",
 			setup: func(t *testing.T) *server.Server {
+				t.Helper()
 				repo := gitfixture.NewRepository(t, true)
 				gitfixture.Run(t, repo.Dir, "checkout", "-b", "side")
 				repo.Write(t, "seed.md", "side version\n")
@@ -436,6 +440,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 		{
 			name: "push target inside docs folder",
 			setup: func(t *testing.T) *server.Server {
+				t.Helper()
 				repo := gitfixture.NewRepository(t, true)
 				repo.Write(t, "new.md", "# new\n")
 				gitfixture.Run(t, repo.Dir, "init", "--bare", "evil.git")
@@ -448,6 +453,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 		{
 			name: "push failed after commit",
 			setup: func(t *testing.T) *server.Server {
+				t.Helper()
 				repo := gitfixture.NewRepository(t, true)
 				repo.Write(t, "new.md", "# new\n")
 				gitfixture.Run(t, repo.Dir, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing-origin"))
@@ -523,7 +529,7 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 		require.NoError(err)
 		done := make(chan *httptest.ResponseRecorder, 1)
 		go func() {
-			req := httptest.NewRequest(
+			req := httptest.NewRequestWithContext(t.Context(),
 				http.MethodPost,
 				"/api/v1/docs/folders/f/git/publish",
 				bytes.NewReader(body),

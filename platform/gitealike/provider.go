@@ -660,8 +660,8 @@ func (p *Provider) mergeRejectedForStaleHead(
 	if isHeadMismatchConflict(err) {
 		return true
 	}
-	var httpErr *HTTPError
-	if !errors.As(err, &httpErr) || httpErr == nil ||
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok || httpErr == nil ||
 		(httpErr.StatusCode != http.StatusConflict && httpErr.StatusCode != http.StatusMethodNotAllowed) {
 		return false
 	}
@@ -694,7 +694,7 @@ func (p *Provider) ApproveMergeRequest(
 	}
 	events := NormalizeMergeRequestEvents(p.kind, ref, number, nil, []ReviewDTO{review}, nil)
 	if len(events) == 0 {
-		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review event")
+		return platform.MergeRequestEvent{}, errors.New("provider returned no review event")
 	}
 	return events[0], nil
 }
@@ -945,8 +945,8 @@ var headMismatchPhrases = []string{
 // conflicts and out-of-date pushes, so the status alone is not enough:
 // only the head-mismatch messages classify as stale.
 func isHeadMismatchConflict(err error) bool {
-	var httpErr *HTTPError
-	if !errors.As(err, &httpErr) || httpErr == nil || httpErr.StatusCode != 409 {
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok || httpErr == nil || httpErr.StatusCode != http.StatusConflict {
 		return false
 	}
 	text := strings.ToLower(httpErr.Error())

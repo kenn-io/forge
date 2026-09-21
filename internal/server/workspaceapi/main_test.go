@@ -2,9 +2,10 @@ package workspaceapi
 
 import (
 	"fmt"
-	"go.kenn.io/forge/internal/testutil/testtmux"
 	"os"
 	"testing"
+
+	"go.kenn.io/forge/internal/testutil/testtmux"
 
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 )

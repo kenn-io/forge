@@ -1,7 +1,6 @@
 package generated_test
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,7 +23,7 @@ func TestMalformedAPIErrorDoesNotExposePartialProblem(t *testing.T) {
 
 	client, err := apiclient.NewWithHTTPClient(server.URL, server.Client())
 	require.NoError(err)
-	response, err := client.HTTP.StartArchivesWithResponse(context.Background(), &generated.StartArchivesRequestOptions{
+	response, err := client.HTTP.StartArchivesWithResponse(t.Context(), &generated.StartArchivesRequestOptions{
 		Body: new(generated.ArchiveMutationBody{All: true}),
 	})
 	require.ErrorContains(err, "decode API error response")

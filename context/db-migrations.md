@@ -19,6 +19,8 @@ schema migrations.
 - SQLite `CHECK` expressions accept a `NULL` result; when a nullable value is
   conditionally required, assert `IS NOT NULL` before validating its content
   (`internal/db/migrations/000048_kata_issue_links.up.sql:16`).
+  Kit `sqlcheck` is disabled because those constraints are intentional
+  (`.golangci.overlay.yml`).
 - A SQLite parent-table rebuild must drop and recreate dependent triggers, and
   foreign keys must be disabled before golang-migrate starts its transaction
   (`internal/db/migrations.go::runRepositoryCatalogMigration`).

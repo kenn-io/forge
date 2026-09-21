@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -587,6 +588,5 @@ func effectiveLinkByUID(t *testing.T, links []kataEffectiveLink, uid string) kat
 }
 
 func jsonNumber(value int64) string {
-	encoded, _ := json.Marshal(value)
-	return string(encoded)
+	return strconv.FormatInt(value, 10)
 }

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -638,12 +639,12 @@ func envOrDefault(key, fallback string) string {
 
 func freeLoopbackPort(t *testing.T) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 	addr, ok := listener.Addr().(*net.TCPAddr)
 	require.True(t, ok)
-	return fmt.Sprint(addr.Port)
+	return strconv.Itoa(addr.Port)
 }
 
 func repoRoot(t *testing.T) string {

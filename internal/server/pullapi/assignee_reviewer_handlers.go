@@ -9,8 +9,10 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 )
 
-type setAssigneesOutput = httpapi.BodyOutput[httpapi.ItemAssigneesResponse]
-type setReviewersOutput = httpapi.BodyOutput[itemReviewersResponse]
+type (
+	setAssigneesOutput = httpapi.BodyOutput[httpapi.ItemAssigneesResponse]
+	setReviewersOutput = httpapi.BodyOutput[itemReviewersResponse]
+)
 
 type setPullAssigneesInput struct {
 	Provider     string `path:"provider"`

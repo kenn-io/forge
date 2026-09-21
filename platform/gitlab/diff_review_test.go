@@ -1,7 +1,6 @@
 package gitlab
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,13 +9,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
 func TestGitLabPublishDiffReviewDraftCreatesDraftNotesAndApproves(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var createdDrafts int
 	var published bool
 	var summaryCreated bool
@@ -87,7 +86,7 @@ func TestGitLabPublishDiffReviewDraftCreatesDraftNotesAndApproves(t *testing.T) 
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionApprove,
@@ -117,7 +116,7 @@ func TestGitLabPublishDiffReviewDraftCreatesDraftNotesAndApproves(t *testing.T) 
 
 func TestGitLabPublishDiffReviewDraftReturnsPartialErrorWhenApproveFails(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var published bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -140,7 +139,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorWhenApproveFails(t *test
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	_, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	_, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionApprove,
@@ -165,7 +164,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorWhenApproveFails(t *test
 
 func TestGitLabPublishDiffReviewDraftReturnsPartialStaleErrorWhenApproveHeadMoves(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var published bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -196,7 +195,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialStaleErrorWhenApproveHeadMove
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionApprove,
@@ -227,7 +226,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialStaleErrorWhenApproveHeadMove
 
 func TestGitLabPublishDiffReviewDraftReportsSummaryPostedWhenApproveHeadMoves(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var summaryCreated bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -255,7 +254,7 @@ func TestGitLabPublishDiffReviewDraftReportsSummaryPostedWhenApproveHeadMoves(t 
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action:  platform.ReviewActionApprove,
@@ -276,7 +275,7 @@ func TestGitLabPublishDiffReviewDraftReportsSummaryPostedWhenApproveHeadMoves(t 
 
 func TestGitLabPublishDiffReviewDraftUsesHeadSHAForSummaryApproval(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var approved bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -303,7 +302,7 @@ func TestGitLabPublishDiffReviewDraftUsesHeadSHAForSummaryApproval(t *testing.T)
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action:  platform.ReviewActionApprove,
@@ -317,7 +316,7 @@ func TestGitLabPublishDiffReviewDraftUsesHeadSHAForSummaryApproval(t *testing.T)
 }
 
 func TestGitLabPublishDiffReviewDraftRejectsApprovalWithoutHeadSHA(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	var calledProvider bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calledProvider = true
@@ -326,7 +325,7 @@ func TestGitLabPublishDiffReviewDraftRejectsApprovalWithoutHeadSHA(t *testing.T)
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionApprove,
@@ -339,7 +338,7 @@ func TestGitLabPublishDiffReviewDraftRejectsApprovalWithoutHeadSHA(t *testing.T)
 
 func TestGitLabPublishDiffReviewDraftDoesNotApproveWhenPublishFails(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var approved bool
 	var deleted bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -367,7 +366,7 @@ func TestGitLabPublishDiffReviewDraftDoesNotApproveWhenPublishFails(t *testing.T
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionApprove,
@@ -390,7 +389,7 @@ func TestGitLabPublishDiffReviewDraftDoesNotApproveWhenPublishFails(t *testing.T
 
 func TestGitLabPublishDiffReviewDraftReturnsNormalErrorWhenFirstPublishCleanupFails(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
@@ -411,7 +410,7 @@ func TestGitLabPublishDiffReviewDraftReturnsNormalErrorWhenFirstPublishCleanupFa
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionComment,
@@ -435,7 +434,7 @@ func TestGitLabPublishDiffReviewDraftReturnsNormalErrorWhenFirstPublishCleanupFa
 
 func TestGitLabPublishDiffReviewDraftReturnsPartialErrorAfterSomeDraftsPublish(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var createdDrafts int
 	var approved bool
 	var deleted bool
@@ -467,7 +466,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorAfterSomeDraftsPublish(t
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionApprove,
@@ -504,7 +503,7 @@ func TestGitLabPublishDiffReviewDraftReturnsPartialErrorAfterSomeDraftsPublish(t
 
 func TestGitLabPublishDiffReviewDraftKeepsPartialErrorWhenRemainingCleanupFails(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var createdDrafts int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -530,7 +529,7 @@ func TestGitLabPublishDiffReviewDraftKeepsPartialErrorWhenRemainingCleanupFails(
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionComment,
@@ -565,7 +564,7 @@ func TestGitLabPublishDiffReviewDraftKeepsPartialErrorWhenRemainingCleanupFails(
 
 func TestGitLabPublishDiffReviewDraftDeletesCreatedDraftsWhenLaterCreateFails(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var createAttempts int
 	var deleted bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -590,7 +589,7 @@ func TestGitLabPublishDiffReviewDraftDeletesCreatedDraftsWhenLaterCreateFails(t 
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, platform.PublishDiffReviewDraftInput{
 		Action: platform.ReviewActionComment,
@@ -624,7 +623,7 @@ func TestGitLabPublishDiffReviewDraftDeletesCreatedDraftsWhenLaterCreateFails(t 
 
 func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	updated := created.Add(time.Minute)
 	// Path-only refs hydrate through the project lookup before the
@@ -667,7 +666,7 @@ func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
 	webURL = server.URL + "/group/project"
 
 	client := newTestClient(t, server.URL)
-	threads, err := client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 		WebURL:   server.URL + "/group/project",
 	}, 7)
@@ -694,7 +693,7 @@ func TestGitLabListMergeRequestReviewThreadsReadsDiscussions(t *testing.T) {
 
 func TestGitLabListMergeRequestReviewThreadsReadsContextLinePositions(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodGet, r.Method)
@@ -734,7 +733,7 @@ func TestGitLabListMergeRequestReviewThreadsReadsContextLinePositions(t *testing
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	threads, err := client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7)
 
@@ -752,7 +751,7 @@ func TestGitLabListMergeRequestReviewThreadsReadsContextLinePositions(t *testing
 
 func TestGitLabListMergeRequestReviewThreadsCollapsesDiscussionReplies(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodGet, r.Method)
@@ -811,7 +810,7 @@ func TestGitLabListMergeRequestReviewThreadsCollapsesDiscussionReplies(t *testin
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	threads, err := client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7)
 
@@ -826,7 +825,7 @@ func TestGitLabListMergeRequestReviewThreadsCollapsesDiscussionReplies(t *testin
 
 func TestGitLabResolveDiffReviewThreadUpdatesDiscussion(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	discussionID := "0123456789abcdef0123456789abcdef01234567"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -857,7 +856,7 @@ func TestGitLabResolveDiffReviewThreadUpdatesDiscussion(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	err := client.ResolveDiffReviewThread(context.Background(), platform.RepoRef{
+	err := client.ResolveDiffReviewThread(t.Context(), platform.RepoRef{
 		RepoPath: "group/project",
 	}, 7, discussionID)
 

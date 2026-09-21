@@ -18,7 +18,7 @@ const shutdownTimeout = 5 * time.Second
 
 // New constructs a server and registers graceful shutdown with t.
 func New(
-	t testing.TB,
+	tb testing.TB,
 	database *db.DB,
 	syncer *ghclient.Syncer,
 	frontend fs.FS,
@@ -26,15 +26,15 @@ func New(
 	cfg *config.Config,
 	opts server.ServerOptions,
 ) *server.Server {
-	t.Helper()
-	return registerCleanup(t, server.New(
+	tb.Helper()
+	return registerCleanup(tb, server.New(
 		database, syncer, frontend, basePath, cfg, opts,
 	))
 }
 
 // NewWithConfig constructs a configured server and registers graceful shutdown with t.
 func NewWithConfig(
-	t testing.TB,
+	tb testing.TB,
 	database *db.DB,
 	syncer *ghclient.Syncer,
 	clones *gitclone.Manager,
@@ -43,18 +43,18 @@ func NewWithConfig(
 	cfgPath string,
 	opts server.ServerOptions,
 ) *server.Server {
-	t.Helper()
-	return registerCleanup(t, server.NewWithConfig(
+	tb.Helper()
+	return registerCleanup(tb, server.NewWithConfig(
 		database, syncer, clones, frontend, cfg, cfgPath, opts,
 	))
 }
 
-func registerCleanup(t testing.TB, srv *server.Server) *server.Server {
-	t.Helper()
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+func registerCleanup(tb testing.TB, srv *server.Server) *server.Server {
+	tb.Helper()
+	tb.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(tb.Context()), shutdownTimeout)
 		defer cancel()
-		require.NoError(t, srv.Shutdown(ctx))
+		require.NoError(tb, srv.Shutdown(ctx))
 	})
 	return srv
 }

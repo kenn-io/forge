@@ -183,6 +183,7 @@ func (*archiveWorkerProvider) Capabilities() platform.Capabilities {
 		},
 	}
 }
+
 func (p *archiveWorkerProvider) archivedIssue() platform.Issue {
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 	return platform.Issue{
@@ -191,21 +192,26 @@ func (p *archiveWorkerProvider) archivedIssue() platform.Issue {
 		Author: "alice", State: "closed", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	}
 }
+
 func (p *archiveWorkerProvider) ListIssuesPage(_ context.Context, _ platform.RepoRef, query platform.ItemPageQuery) (platform.Page[platform.Issue], error) {
 	if query.UpdatedSince != nil {
 		return platform.Page[platform.Issue]{Exhausted: true}, nil
 	}
 	return platform.Page[platform.Issue]{Items: []platform.Issue{p.archivedIssue()}, Exhausted: true}, nil
 }
+
 func (*archiveWorkerProvider) ListMergeRequestsPage(context.Context, platform.RepoRef, platform.ItemPageQuery) (platform.Page[platform.MergeRequest], error) {
 	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
+
 func (*archiveWorkerProvider) ListOpenIssues(context.Context, platform.RepoRef) ([]platform.Issue, error) {
 	return nil, nil
 }
+
 func (p *archiveWorkerProvider) GetIssue(context.Context, platform.RepoRef, int) (platform.Issue, error) {
 	return p.archivedIssue(), nil
 }
+
 func (*archiveWorkerProvider) ListIssueEvents(
 	context.Context,
 	platform.RepoRef,
@@ -850,7 +856,7 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 			assert.Equal(1, itemCount)
 			return
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) //nolint:kennlint // waits for archive worker HTTP fixture to persist inventory
 	}
 	require.Fail("archive worker did not advance the real archive service")
 }

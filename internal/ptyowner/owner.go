@@ -119,7 +119,7 @@ func RunOwner(ctx context.Context, opts Options) error {
 		}
 	}
 	_ = os.Remove(paths.Socket)
-	listener, err := net.Listen("unix", paths.Socket)
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", paths.Socket)
 	if err != nil {
 		killOwnerProcess(cmd.Process)
 		_ = p.Close()

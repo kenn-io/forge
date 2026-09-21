@@ -18,10 +18,10 @@ func newTestRegistry(t *testing.T) (*Registry, string) {
 	t.Helper()
 	root := t.TempDir()
 	must := func(rel, body string) {
-		req := require.New(t)
+		require := require.New(t)
 		full := filepath.Join(root, rel)
-		req.NoError(os.MkdirAll(filepath.Dir(full), 0o755))
-		req.NoError(os.WriteFile(full, []byte(body), 0o644))
+		require.NoError(os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(os.WriteFile(full, []byte(body), 0o644))
 	}
 	must("index.md", "# Home")
 	must("notes/daily/2026-05-15.md", "# Today")
@@ -56,32 +56,32 @@ func TestTreeListsMarkdownAndSkipsHidden(t *testing.T) {
 }
 
 func TestTreeAndSearchSkipNonRegularMarkdownEntries(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
 	targetDir := filepath.Join(root, "notes", "target")
-	req.NoError(os.MkdirAll(targetDir, 0o755))
+	require.NoError(os.MkdirAll(targetDir, 0o755))
 	link := filepath.Join(root, "notes", "directory-link.md")
 	if err := os.Symlink(targetDir, link); err != nil {
 		t.Skipf("symlinks unsupported: %v", err)
 	}
 	targetFile := filepath.Join(root, "notes", "target-file.md")
-	req.NoError(os.WriteFile(targetFile, []byte("symlinked target\n"), 0o644))
+	require.NoError(os.WriteFile(targetFile, []byte("symlinked target\n"), 0o644))
 	fileLink := filepath.Join(root, "notes", "regular-link.md")
-	req.NoError(os.Symlink(targetFile, fileLink))
+	require.NoError(os.Symlink(targetFile, fileLink))
 
 	tree, err := r.Tree("notes")
-	req.NoError(err)
+	require.NoError(err)
 	assert := assert.New(t)
 	names := walkNames(tree)
 	assert.NotContains(names, "notes/directory-link.md")
 	assert.Contains(names, "notes/regular-link.md")
 
 	hits, err := r.Search("notes", "directory-link", 0)
-	req.NoError(err)
+	require.NoError(err)
 	assert.Empty(hits)
 	hits, err = r.Search("notes", "regular-link", 0)
-	req.NoError(err)
-	req.NotEmpty(hits)
+	require.NoError(err)
+	require.NotEmpty(hits)
 	assert.Equal("notes/regular-link.md", hits[0].RelPath)
 }
 
@@ -114,35 +114,35 @@ func TestReadFileRefusesTraversal(t *testing.T) {
 }
 
 func TestReadFileRefusesEscapingSymlink(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
 	outside := filepath.Join(t.TempDir(), "secret.md")
-	req.NoError(os.WriteFile(outside, []byte("hidden"), 0o600))
+	require.NoError(os.WriteFile(outside, []byte("hidden"), 0o600))
 	link := filepath.Join(root, "escape.md")
-	req.NoError(os.Symlink(outside, link))
+	require.NoError(os.Symlink(outside, link))
 	_, err := r.ReadFile("notes", "escape.md")
 	assert.ErrorIs(t, err, ErrOutsideFolder, "symlink escape should be refused")
 }
 
 func TestWriteFileAtomic(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
-	req.NoError(r.WriteFile("notes", "notes/ideas.md", []byte("new body")))
+	require.NoError(r.WriteFile("notes", "notes/ideas.md", []byte("new body")))
 	body, err := os.ReadFile(filepath.Join(root, "notes/ideas.md"))
-	req.NoError(err)
+	require.NoError(err)
 	assert.Equal(t, "new body", string(body))
 }
 
 func TestWriteFilePreservesMode(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
 	target := filepath.Join(root, "notes/ideas.md")
-	req.NoError(os.Chmod(target, 0o664))
+	require.NoError(os.Chmod(target, 0o664))
 
-	req.NoError(r.WriteFile("notes", "notes/ideas.md", []byte("new body")))
+	require.NoError(r.WriteFile("notes", "notes/ideas.md", []byte("new body")))
 
 	info, err := os.Stat(target)
-	req.NoError(err)
+	require.NoError(err)
 	assert.Equal(t, fs.FileMode(0o664), info.Mode().Perm())
 }
 
@@ -160,12 +160,12 @@ func TestWriteFileRefusesMissingParent(t *testing.T) {
 }
 
 func TestReadBlobServesImageWithMime(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
 	pngData := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00}
-	req.NoError(os.WriteFile(filepath.Join(root, "notes/avatar.png"), pngData, 0o644))
+	require.NoError(os.WriteFile(filepath.Join(root, "notes/avatar.png"), pngData, 0o644))
 	blob, err := r.ReadBlob("notes", "notes/avatar.png")
-	req.NoError(err)
+	require.NoError(err)
 	assert := assert.New(t)
 	assert.Equal("image/png", blob.ContentType)
 	assert.True(bytes.Equal(blob.Body, pngData), "body mismatch")
@@ -185,39 +185,39 @@ func TestReadBlobRefusesTraversal(t *testing.T) {
 }
 
 func TestReadBlobRefusesSVG(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
-	req.NoError(os.WriteFile(filepath.Join(root, "notes/icon.svg"), []byte("<svg/>"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(root, "notes/icon.svg"), []byte("<svg/>"), 0o644))
 	_, err := r.ReadBlob("notes", "notes/icon.svg")
-	req.Error(err)
+	require.Error(err)
 	assert.ErrorIs(t, err, ErrUnsupportedExtension)
 }
 
 func TestReadFileRefusesNonMarkdown(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
-	req.NoError(os.WriteFile(filepath.Join(root, "notes/secret.bin"), []byte("x"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(root, "notes/secret.bin"), []byte("x"), 0o644))
 	_, err := r.ReadFile("notes", "notes/secret.bin")
-	req.Error(err)
+	require.Error(err)
 	assert.Contains(t, err.Error(), "only .md")
 }
 
 func TestReadFileRefusesNonRegularMarkdownTarget(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
-	req.NoError(os.Mkdir(filepath.Join(root, "notes", "folder.md"), 0o755))
+	require.NoError(os.Mkdir(filepath.Join(root, "notes", "folder.md"), 0o755))
 
 	_, err := r.ReadFile("notes", "notes/folder.md")
-	req.ErrorIs(err, ErrInvalidFolder)
+	require.ErrorIs(err, ErrInvalidFolder)
 }
 
 func TestReadBlobRefusesNonRegularImageTarget(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
-	req.NoError(os.Mkdir(filepath.Join(root, "notes", "avatar-dir.png"), 0o755))
+	require.NoError(os.Mkdir(filepath.Join(root, "notes", "avatar-dir.png"), 0o755))
 
 	_, err := r.ReadBlob("notes", "notes/avatar-dir.png")
-	req.ErrorIs(err, ErrInvalidFolder)
+	require.ErrorIs(err, ErrInvalidFolder)
 }
 
 func TestReadFileRefusesIgnoredDir(t *testing.T) {
@@ -234,16 +234,16 @@ func TestCreateFileFailsOnExisting(t *testing.T) {
 }
 
 func TestCreateFileWritesNewFile(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
-	req.NoError(r.CreateFile("notes", "notes/new.md", []byte("# Fresh")))
+	require.NoError(r.CreateFile("notes", "notes/new.md", []byte("# Fresh")))
 	body, err := os.ReadFile(filepath.Join(root, "notes/new.md"))
-	req.NoError(err)
+	require.NoError(err)
 	assert.Equal(t, "# Fresh", string(body))
 }
 
 func TestFileMutationsRefuseExistingNonRegularTargets(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	r, root := newTestRegistry(t)
 
@@ -253,66 +253,66 @@ func TestFileMutationsRefuseExistingNonRegularTargets(t *testing.T) {
 	renameSource := filepath.Join(root, "notes", "rename-source.md")
 	renameDest := filepath.Join(root, "notes", "rename-dest.md")
 	for _, path := range []string{writeTarget, createTarget, deleteTarget, renameSource, renameDest} {
-		req.NoError(os.Mkdir(path, 0o755))
+		require.NoError(os.Mkdir(path, 0o755))
 	}
 
 	err := r.WriteFile("notes", "notes/write-dir.md", []byte("x"))
-	req.ErrorIs(err, ErrInvalidFolder)
+	require.ErrorIs(err, ErrInvalidFolder)
 	err = r.CreateFile("notes", "notes/create-dir.md", []byte("x"))
-	req.ErrorIs(err, ErrInvalidFolder)
+	require.ErrorIs(err, ErrInvalidFolder)
 	err = r.DeleteFile("notes", "notes/delete-dir.md")
-	req.ErrorIs(err, ErrInvalidFolder)
+	require.ErrorIs(err, ErrInvalidFolder)
 	err = r.RenameFile("notes", "notes/rename-source.md", "notes/new-name.md")
-	req.ErrorIs(err, ErrInvalidFolder)
+	require.ErrorIs(err, ErrInvalidFolder)
 	err = r.RenameFile("notes", "README.md", "notes/rename-dest.md")
-	req.ErrorIs(err, ErrInvalidFolder)
+	require.ErrorIs(err, ErrInvalidFolder)
 
 	for _, path := range []string{writeTarget, createTarget, deleteTarget, renameSource, renameDest} {
 		info, statErr := os.Stat(path)
-		req.NoError(statErr)
+		require.NoError(statErr)
 		assert.True(info.IsDir(), "%s should remain a directory", path)
 	}
 }
 
 func TestDeleteFileRemovesAndRefuses(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
-	req.NoError(r.DeleteFile("notes", "notes/ideas.md"))
+	require.NoError(r.DeleteFile("notes", "notes/ideas.md"))
 	if _, err := os.Stat(filepath.Join(root, "notes/ideas.md")); !errors.Is(err, os.ErrNotExist) {
-		req.ErrorIs(err, os.ErrNotExist, "file should be gone")
+		require.ErrorIs(err, os.ErrNotExist, "file should be gone")
 	}
 	// Refuses non-markdown.
-	req.NoError(os.WriteFile(filepath.Join(root, "notes/image.png"), []byte{0}, 0o644))
+	require.NoError(os.WriteFile(filepath.Join(root, "notes/image.png"), []byte{0}, 0o644))
 	if err := r.DeleteFile("notes", "notes/image.png"); err == nil || !strings.Contains(err.Error(), "only .md") {
-		req.Error(err)
+		require.Error(err)
 		assert.Contains(t, err.Error(), "only .md")
 	}
 }
 
 func TestDeleteFileRemovesSymlinkNotTarget(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
 	target := filepath.Join(root, "notes", "target.md")
 	link := filepath.Join(root, "notes", "linked.md")
-	req.NoError(os.WriteFile(target, []byte("target"), 0o644))
-	req.NoError(os.Symlink(target, link))
+	require.NoError(os.WriteFile(target, []byte("target"), 0o644))
+	require.NoError(os.Symlink(target, link))
 
-	req.NoError(r.DeleteFile("notes", "notes/linked.md"))
+	require.NoError(r.DeleteFile("notes", "notes/linked.md"))
 
 	if _, err := os.Lstat(link); !errors.Is(err, os.ErrNotExist) {
-		req.ErrorIs(err, os.ErrNotExist)
+		require.ErrorIs(err, os.ErrNotExist)
 	}
 	body, err := os.ReadFile(target)
-	req.NoError(err)
+	require.NoError(err)
 	assert.Equal(t, "target", string(body))
 }
 
 func TestRenameFileMovesAndRefusesCollision(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
-	req.NoError(r.RenameFile("notes", "notes/ideas.md", "notes/ideas-renamed.md"))
+	require.NoError(r.RenameFile("notes", "notes/ideas.md", "notes/ideas-renamed.md"))
 	if _, err := os.Stat(filepath.Join(root, "notes/ideas-renamed.md")); err != nil {
-		req.NoError(err, "dest missing")
+		require.NoError(err, "dest missing")
 	}
 	// Refuses to clobber an existing destination.
 	err := r.RenameFile("notes", "README.md", "notes/ideas-renamed.md")
@@ -320,57 +320,57 @@ func TestRenameFileMovesAndRefusesCollision(t *testing.T) {
 }
 
 func TestRenameFileMovesSymlinkNotTarget(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
 	target := filepath.Join(root, "notes", "target.md")
 	link := filepath.Join(root, "notes", "linked.md")
 	renamed := filepath.Join(root, "notes", "linked-renamed.md")
-	req.NoError(os.WriteFile(target, []byte("target"), 0o644))
-	req.NoError(os.Symlink(target, link))
+	require.NoError(os.WriteFile(target, []byte("target"), 0o644))
+	require.NoError(os.Symlink(target, link))
 
-	req.NoError(r.RenameFile("notes", "notes/linked.md", "notes/linked-renamed.md"))
+	require.NoError(r.RenameFile("notes", "notes/linked.md", "notes/linked-renamed.md"))
 
 	if _, err := os.Lstat(link); !errors.Is(err, os.ErrNotExist) {
-		req.ErrorIs(err, os.ErrNotExist)
+		require.ErrorIs(err, os.ErrNotExist)
 	}
 	info, err := os.Lstat(renamed)
-	req.NoError(err)
+	require.NoError(err)
 	assert.Equal(t, fs.ModeSymlink, info.Mode()&fs.ModeSymlink)
 	body, err := os.ReadFile(target)
-	req.NoError(err)
+	require.NoError(err)
 	assert.Equal(t, "target", string(body))
 }
 
 func TestWriteFileRefusesSymlinkParentEscape(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
 	outside := t.TempDir()
 	escape := filepath.Join(root, "escape-dir")
-	req.NoError(os.Symlink(outside, escape))
+	require.NoError(os.Symlink(outside, escape))
 	err := r.WriteFile("notes", "escape-dir/new.md", []byte("hello"))
-	req.ErrorIs(err, ErrOutsideFolder, "expected ErrOutsideFolder for symlinked parent")
+	require.ErrorIs(err, ErrOutsideFolder, "expected ErrOutsideFolder for symlinked parent")
 	if _, statErr := os.Stat(filepath.Join(outside, "new.md")); statErr == nil {
-		req.Error(statErr, "write should not have created file outside folder")
+		require.Error(statErr, "write should not have created file outside folder")
 	}
 }
 
 func TestWriteFileAllowsLeadingDotDotFilename(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := newTestRegistry(t)
 
-	req.NoError(r.WriteFile("notes", "..notes.md", []byte("ok")))
+	require.NoError(r.WriteFile("notes", "..notes.md", []byte("ok")))
 
 	got, err := os.ReadFile(filepath.Join(root, "..notes.md"))
-	req.NoError(err)
+	require.NoError(err)
 	assert.Equal(t, "ok", string(got))
 }
 
 func TestSearchScoresExactBeforeSubstring(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, _ := newTestRegistry(t)
 	hits, err := r.Search("notes", "ideas", 0)
-	req.NoError(err)
-	req.NotEmpty(hits, "expected hits for 'ideas'")
+	require.NoError(err)
+	require.NotEmpty(hits, "expected hits for 'ideas'")
 	assert.Equal(t, "ideas.md", hits[0].Name)
 }
 
@@ -400,13 +400,13 @@ func walkNames(n Node) []string {
 }
 
 func TestRegistryAdd(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	r := NewRegistry(nil)
 	dir := t.TempDir()
-	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: dir}))
+	require.NoError(r.Add(config.DocFolder{ID: "notes", Path: dir}))
 	v, err := r.Lookup("notes")
-	req.NoError(err)
+	require.NoError(err)
 	// EvalSymlinks resolves /var -> /private/var on macOS; compare against
 	// whatever the resolver produced rather than the literal temp dir.
 	want, _ := filepath.EvalSymlinks(dir)
@@ -416,21 +416,21 @@ func TestRegistryAdd(t *testing.T) {
 }
 
 func TestRegistryAddResolvesSymlinkRoot(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	parent := t.TempDir()
 	target := filepath.Join(parent, "target")
 	link := filepath.Join(parent, "link")
-	req.NoError(os.Mkdir(target, 0o755))
-	req.NoError(os.Symlink(target, link))
+	require.NoError(os.Mkdir(target, 0o755))
+	require.NoError(os.Symlink(target, link))
 	r := NewRegistry(nil)
 
-	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: link}))
+	require.NoError(r.Add(config.DocFolder{ID: "notes", Path: link}))
 
 	got, err := r.Lookup("notes")
-	req.NoError(err)
+	require.NoError(err)
 	want, err := filepath.EvalSymlinks(target)
-	req.NoError(err)
+	require.NoError(err)
 	assert.Equal(want, got.Path)
 }
 
@@ -449,13 +449,13 @@ func TestRegistryAddRejectsMissingPath(t *testing.T) {
 }
 
 func TestRegistryAddRejectsFilePath(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r := NewRegistry(nil)
 	dir := t.TempDir()
 	file := filepath.Join(dir, "not-a-dir.md")
-	req.NoError(os.WriteFile(file, []byte("hi"), 0o644))
+	require.NoError(os.WriteFile(file, []byte("hi"), 0o644))
 	err := r.Add(config.DocFolder{ID: "bad", Path: file})
-	req.Error(err)
+	require.Error(err)
 	assert.Contains(t, err.Error(), "not a directory")
 }
 
@@ -503,38 +503,38 @@ func TestRegistryAddDuplicateIDBeatsBadPath(t *testing.T) {
 }
 
 func TestRegistryAddExpandsTilde(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	sub := filepath.Join(home, "Notes")
-	req.NoError(os.MkdirAll(sub, 0o755))
+	require.NoError(os.MkdirAll(sub, 0o755))
 	r := NewRegistry(nil)
-	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: "~/Notes"}))
+	require.NoError(r.Add(config.DocFolder{ID: "notes", Path: "~/Notes"}))
 	got, err := r.Lookup("notes")
-	req.NoError(err)
+	require.NoError(err)
 	assert := assert.New(t)
 	assert.True(strings.HasSuffix(got.Path, "Notes"), "stored path = %q, want path ending in 'Notes'", got.Path)
 	assert.True(filepath.IsAbs(got.Path), "stored path = %q, want absolute", got.Path)
 }
 
 func TestRegistryAddResolvesRelative(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
-	req.NoError(os.Mkdir("Notes", 0o755))
+	require.NoError(os.Mkdir("Notes", 0o755))
 	r := NewRegistry(nil)
-	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: "Notes"}))
+	require.NoError(r.Add(config.DocFolder{ID: "notes", Path: "Notes"}))
 	got, err := r.Lookup("notes")
-	req.NoError(err)
+	require.NoError(err)
 	assert.True(t, filepath.IsAbs(got.Path), "stored path = %q, want absolute", got.Path)
 }
 
 func TestRegistryRemove(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r := NewRegistry(nil)
 	dir := t.TempDir()
-	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: dir}))
-	req.NoError(r.Remove("notes"))
+	require.NoError(r.Add(config.DocFolder{ID: "notes", Path: dir}))
+	require.NoError(r.Remove("notes"))
 	if _, err := r.Lookup("notes"); !errors.Is(err, ErrFolderNotFound) {
 		assert.ErrorIs(t, err, ErrFolderNotFound)
 	}
@@ -552,10 +552,10 @@ func TestRegistryRemovePreservesOthers(t *testing.T) {
 	r := NewRegistry(nil)
 	a := t.TempDir()
 	b := t.TempDir()
-	req := require.New(t)
-	req.NoError(r.Add(config.DocFolder{ID: "a", Path: a}))
-	req.NoError(r.Add(config.DocFolder{ID: "b", Path: b}))
-	req.NoError(r.Remove("a"))
+
+	require.NoError(t, r.Add(config.DocFolder{ID: "a", Path: a}))
+	require.NoError(t, r.Add(config.DocFolder{ID: "b", Path: b}))
+	require.NoError(t, r.Remove("a"))
 	got := r.Folders()
 	require.Len(t, got, 1)
 	assert.Equal(t, "b", got[0].ID)
@@ -564,9 +564,9 @@ func TestRegistryRemovePreservesOthers(t *testing.T) {
 func TestRegistryRename(t *testing.T) {
 	r := NewRegistry(nil)
 	dir := t.TempDir()
-	req := require.New(t)
-	req.NoError(r.Add(config.DocFolder{ID: "notes", Path: dir}))
-	req.NoError(r.Rename("notes", "My Notes"))
+	require := require.New(t)
+	require.NoError(r.Add(config.DocFolder{ID: "notes", Path: dir}))
+	require.NoError(r.Rename("notes", "My Notes"))
 	v, _ := r.Lookup("notes")
 	assert := assert.New(t)
 	assert.Equal("My Notes", v.Name)

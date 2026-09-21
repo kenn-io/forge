@@ -11,8 +11,10 @@ import (
 
 const RateReserveBuffer = ratelimit.RateReserveBuffer
 
-type Rate = platform.Rate
-type RateTracker = ratelimit.RateTracker
+type (
+	Rate        = platform.Rate
+	RateTracker = ratelimit.RateTracker
+)
 
 func NewRateTracker(
 	database *db.DB, platformHost, ratePrincipal, apiType string,

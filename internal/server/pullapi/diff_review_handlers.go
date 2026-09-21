@@ -659,8 +659,8 @@ func diffReviewPartialPublishProblem(
 	if err == nil || err.Err == nil {
 		return nil
 	}
-	var platformErr *platform.Error
-	if !errors.As(err.Err, &platformErr) {
+	platformErr, ok := errors.AsType[*platform.Error](err.Err)
+	if !ok {
 		return nil
 	}
 	if platformErr.Code != platform.ErrCodeStaleState {

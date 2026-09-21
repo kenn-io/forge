@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"path/filepath"
@@ -59,9 +58,9 @@ func TestOpenAppliesConnectionPragmasToEveryPooledConnection(t *testing.T) {
 	assert.Zero(d.ReadDB().Stats().MaxIdleClosed, "read pool must not close idle connections")
 }
 
-func seedStatementCacheRepos(t testing.TB, d *DB) RepoIdentity {
-	t.Helper()
-	ctx := context.Background()
+func seedStatementCacheRepos(tb testing.TB, d *DB) RepoIdentity {
+	tb.Helper()
+	ctx := tb.Context()
 	var first RepoIdentity
 	for i := range 25 {
 		identity := verifiedTestRepoIdentity("github", "github.com", "acme", fmt.Sprintf("widget-%02d", i))
@@ -69,7 +68,7 @@ func seedStatementCacheRepos(t testing.TB, d *DB) RepoIdentity {
 			first = identity
 		}
 		_, err := d.UpsertRepo(ctx, identity)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 	}
 	return first
 }
@@ -137,7 +136,7 @@ func TestStmtCacheClosesEvictedStatementOnlyAfterInFlightCalls(t *testing.T) {
 	cache := newStmtCache(d.ReadDB(), 1)
 	t.Cleanup(func() { require.NoError(t, cache.Close()) })
 
-	held, release, err := cache.acquire(ctx, "SELECT 1")
+	held, release, err := cache.acquire(ctx, "SELECT 1") //nolint:kennlint // statement cache retains the Stmt until eviction
 	require.NoError(t, err)
 
 	var value int64
@@ -199,7 +198,7 @@ func TestDBCloseFinalizesCachedStatements(t *testing.T) {
 	require.NoError(d.Close())
 	assert.Zero(d.roStmts.len())
 	assert.Zero(d.rwStmts.len())
-	_, _, err = d.roStmts.acquire(ctx, "SELECT 1")
+	_, _, err = d.roStmts.acquire(ctx, "SELECT 1") //nolint:kennlint // statement cache retains the Stmt until eviction
 	require.ErrorIs(err, errStmtCacheClosed)
 	require.NoError(d.Close(), "closing twice stays safe for test cleanup")
 }
@@ -219,7 +218,7 @@ func BenchmarkRepositoryCatalogLookup(b *testing.B) {
 			d, err := Open(filepath.Join(b.TempDir(), "bench.db"))
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, d.Close()) })
-			ctx := context.Background()
+			ctx := b.Context()
 			identity := seedStatementCacheRepos(b, d)
 			d.roStmts = newStmtCache(d.ReadDB(), variant.limit)
 

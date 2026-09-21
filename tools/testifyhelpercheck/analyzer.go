@@ -14,8 +14,10 @@ var Analyzer = &analysis.Analyzer{
 	Run:  run,
 }
 
-const assertDiagnosticMessage = "test has %d direct testify package calls; create a local assert helper with assert := assert.New(t) and use it for repeated checks"
-const requireDiagnosticMessage = "test has %d direct testify package calls; create a local require helper with require := require.New(t) and use it for repeated checks"
+const (
+	assertDiagnosticMessage  = "test has %d direct testify package calls; create a local assert helper with assert := assert.New(t) and use it for repeated checks"
+	requireDiagnosticMessage = "test has %d direct testify package calls; create a local require helper with require := require.New(t) and use it for repeated checks"
+)
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, file := range pass.Files {
@@ -209,7 +211,7 @@ func (s *helperState) add(obj types.Object) {
 	s.objs[obj] = struct{}{}
 }
 
-func (s helperState) has(obj types.Object) bool {
+func (s *helperState) has(obj types.Object) bool {
 	if obj == nil {
 		return false
 	}

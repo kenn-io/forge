@@ -24,10 +24,12 @@ var (
 	ErrLaunchSpecResolverMissing = errors.New("workspace launch specification resolver is not configured")
 )
 
-type WorkspaceLaunchRepository = db.WorkspaceLaunchRepository
-type WorkspaceLaunchPull = db.WorkspaceLaunchPull
-type WorkspaceLaunchSpec = db.WorkspaceLaunchSpec
-type UnpreparedWorkspace = db.UnpreparedWorkspace
+type (
+	WorkspaceLaunchRepository = db.WorkspaceLaunchRepository
+	WorkspaceLaunchPull       = db.WorkspaceLaunchPull
+	WorkspaceLaunchSpec       = db.WorkspaceLaunchSpec
+	UnpreparedWorkspace       = db.UnpreparedWorkspace
+)
 
 // LaunchSpecRefreshError reports an expired or missing provider-fact lease
 // whose hub refresh could not complete. It remains identifiable as
@@ -53,8 +55,8 @@ func (e *LaunchSpecRefreshError) Unwrap() []error {
 // LaunchSpecErrorRetryable reports whether retrying after hub
 // recovery can make the validation succeed.
 func LaunchSpecErrorRetryable(err error) bool {
-	var refresh *LaunchSpecRefreshError
-	return errors.As(err, &refresh)
+	_, ok := errors.AsType[*LaunchSpecRefreshError](err)
+	return ok
 }
 
 func (m *Manager) launchSpecNow() time.Time {

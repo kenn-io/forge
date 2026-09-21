@@ -76,9 +76,9 @@ type Candidate struct {
 func (c Candidate) SafeString() string {
 	switch c.Kind {
 	case SourceKindEnv:
-		return fmt.Sprintf("env:%s", c.EnvName)
+		return "env:" + c.EnvName
 	case SourceKindFile:
-		return fmt.Sprintf("file:%s", c.FilePath)
+		return "file:" + c.FilePath
 	case SourceKindGitHubCLI, SourceKindGitLabCLI, SourceKindForgejoCLI:
 		return fmt.Sprintf("%s:%s", c.Kind, c.Host)
 	case SourceKindGitHubApp:

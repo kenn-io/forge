@@ -73,7 +73,7 @@ func insertMonitorWorkspace(
 		TmuxSession:        "kenn-forge-ws-issue",
 		Status:             "ready",
 	}
-	require.NoError(t, d.InsertWorkspace(context.Background(), &ws))
+	require.NoError(t, d.InsertWorkspace(t.Context(), &ws))
 	return ws.ID
 }
 
@@ -83,7 +83,7 @@ func insertMonitorWorkspaceWithIdentity(
 	id, provider, host, owner, name, worktreePath string,
 ) string {
 	t.Helper()
-	require.NoError(t, d.InsertWorkspace(context.Background(), &db.Workspace{
+	require.NoError(t, d.InsertWorkspace(t.Context(), &db.Workspace{
 		ID:           id,
 		Platform:     provider,
 		PlatformHost: host,
@@ -105,7 +105,7 @@ func seedIssue(
 ) {
 	t.Helper()
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
-	_, err := d.UpsertIssue(context.Background(), &db.Issue{
+	_, err := d.UpsertIssue(t.Context(), &db.Issue{
 		RepoID:         repoID,
 		PlatformID:     repoID*10000 + int64(number),
 		Number:         number,
@@ -224,7 +224,7 @@ func TestPRMonitorRunOnceUsesUpstreamBranchMatch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -319,7 +319,7 @@ func TestPRMonitorRunOnceFallsBackToLocalBranchNameAndHeadSHA(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -363,7 +363,7 @@ func TestPRMonitorRefreshWorkspaceAssociationAssociatesKataTask(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	worktreePath := setupMonitorRepo(t)
@@ -408,7 +408,7 @@ func TestPRMonitorRunOnceFallsBackToLocalHeadSHAWhenUpstreamRepoMetadataMissing(
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:       "gitlab",
@@ -460,7 +460,7 @@ func TestPRMonitorRunOnceRejectsLocalBranchWithMismatchedHeadSHA(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -500,7 +500,7 @@ func TestPRMonitorRunOnceRejectsLocalBranchWithMismatchedUpstreamRemote(t *testi
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -559,7 +559,7 @@ func TestPRMonitorRunOnceSkipsSyntheticIssueBranch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -584,7 +584,7 @@ func TestPRMonitorRunOnceAssociatesPRFromManagedIssueBranch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -630,7 +630,7 @@ func TestPRMonitorRunOnceAssociatesPRWhenSlugWorkspaceCheckedOutToBareBranch(t *
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -693,7 +693,7 @@ func TestPRMonitorRunOnceUsesUpstreamRemoteIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -734,7 +734,7 @@ func TestPRMonitorRunOnceScopesCandidatesByWorkspaceProvider(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	githubRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:       "github",
@@ -786,7 +786,7 @@ func TestPRMonitorRefreshWorkspaceAssociationReturnsInspectionError(t *testing.T
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedIssue(t, d, repoID, 7, "Track workspace association")

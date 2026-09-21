@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -126,7 +127,7 @@ func (d *DB) DeleteKataIssueLink(
 		return false, fmt.Errorf("delete Kata issue link: %w", err)
 	}
 	if linkID <= 0 {
-		return false, fmt.Errorf("delete Kata issue link: invalid link id")
+		return false, errors.New("delete Kata issue link: invalid link id")
 	}
 
 	var result sql.Result
@@ -164,18 +165,14 @@ func (d *DB) DeleteKataIssueLink(
 	return deleted > 0, nil
 }
 
-type kataIssueLinkScanner interface {
-	Scan(...any) error
-}
-
-func scanKataIssueLink(scanner kataIssueLinkScanner) (KataIssueLink, error) {
+func scanKataIssueLink(row scanner) (KataIssueLink, error) {
 	var link KataIssueLink
 	var repoID sql.NullInt64
 	var providerItemExternalID sql.NullString
 	var workspaceID sql.NullString
 	var createdAt string
 	var updatedAt string
-	if err := scanner.Scan(
+	if err := row.Scan(
 		&link.ID, &link.Subject.Kind, &repoID, &providerItemExternalID, &workspaceID,
 		&link.DaemonID, &link.ProjectUID, &link.IssueUID, &createdAt, &updatedAt,
 	); err != nil {

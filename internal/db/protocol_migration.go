@@ -70,46 +70,45 @@ func (d *DB) MigrateFleetProtocol3To4(
 		return "", ErrSpokePreparationConflict
 	}
 	err = d.Tx(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `
+		updates, err := func() ([]SpokePreparationSealRequest, error) {
+			rows, err := tx.QueryContext(ctx, `
 			SELECT enrollment_id, node_id, hub_node_id, protocol_version,
 			       migration_version, receipts_digest, drained_ack_generation,
 			       preparation_digest
 			FROM forge_spoke_preparation_seals`)
-		if err != nil {
-			return err
-		}
-		var updates []SpokePreparationSealRequest
-		for rows.Next() {
-			var request SpokePreparationSealRequest
-			if err := rows.Scan(&request.EnrollmentID, &request.NodeID, &request.HubNodeID,
-				&request.ProtocolVersion, &request.MigrationVersion, &request.ReceiptsDigest,
-				&request.DrainedAckGeneration, &request.PreparationDigest); err != nil {
-				_ = rows.Close()
-				return err
+			if err != nil {
+				return nil, err
 			}
-			if request.ProtocolVersion != 3 && request.ProtocolVersion != 4 {
-				_ = rows.Close()
-				return fmt.Errorf("cannot migrate preparation protocol %d to 4", request.ProtocolVersion)
-			}
-			if err := validateMigratingSpokePreparationSeal(request); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			if request.ProtocolVersion == 3 {
-				request.ProtocolVersion = 4
-				request.PreparationDigest, err = SpokePreparationSealDigest(request)
-				if err != nil {
-					_ = rows.Close()
-					return err
+			defer rows.Close()
+			var updates []SpokePreparationSealRequest
+			for rows.Next() {
+				var request SpokePreparationSealRequest
+				if err := rows.Scan(&request.EnrollmentID, &request.NodeID, &request.HubNodeID,
+					&request.ProtocolVersion, &request.MigrationVersion, &request.ReceiptsDigest,
+					&request.DrainedAckGeneration, &request.PreparationDigest); err != nil {
+					return nil, err
 				}
-				updates = append(updates, request)
+				if request.ProtocolVersion != 3 && request.ProtocolVersion != 4 {
+					return nil, fmt.Errorf("cannot migrate preparation protocol %d to 4", request.ProtocolVersion)
+				}
+				if err := validateMigratingSpokePreparationSeal(request); err != nil {
+					return nil, err
+				}
+				if request.ProtocolVersion == 3 {
+					request.ProtocolVersion = 4
+					request.PreparationDigest, err = SpokePreparationSealDigest(request)
+					if err != nil {
+						return nil, err
+					}
+					updates = append(updates, request)
+				}
 			}
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		if err := rows.Close(); err != nil {
+			if err := rows.Err(); err != nil {
+				return nil, err
+			}
+			return updates, nil
+		}()
+		if err != nil {
 			return err
 		}
 		for _, request := range updates {

@@ -1,7 +1,6 @@
 package localruntime
 
 import (
-	"fmt"
 	"os/exec"
 	"slices"
 
@@ -76,9 +75,7 @@ func ResolveLaunchTargets(
 		target := cloneTarget(builtin)
 		if _, err := lookPath(target.Command[0]); err != nil {
 			target.Available = false
-			target.DisabledReason = fmt.Sprintf(
-				"%s not found on PATH", target.Command[0],
-			)
+			target.DisabledReason = target.Command[0] + " not found on PATH"
 		} else {
 			target.Available = true
 		}
@@ -114,9 +111,7 @@ func shellTarget(
 		return target
 	}
 	if _, err := lookPath(command[0]); err != nil {
-		target.DisabledReason = fmt.Sprintf(
-			"%s not found on PATH", command[0],
-		)
+		target.DisabledReason = command[0] + " not found on PATH"
 		return target
 	}
 	target.Available = true

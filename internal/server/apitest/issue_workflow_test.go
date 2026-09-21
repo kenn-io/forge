@@ -2,10 +2,11 @@ package apitest
 
 import (
 	"encoding/json"
-	"go.kenn.io/forge/internal/apiclient/generated"
 	"net/http"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"

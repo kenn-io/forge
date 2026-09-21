@@ -60,13 +60,17 @@ func TestAutomaticSingleParent(t *testing.T) {
 				assert.Empty(r.Landings)
 				assert.False(r.Coverage.Complete)
 				assert.Equal(f.base, r.Coverage.CertifiedHead)
-				assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: f.head, Reason: reason,
-					Span: landedwork.Span{Before: f.base, Through: f.head}}}, r.Coverage.Gaps)
+				assert.Equal([]landedwork.Gap{{
+					CandidateID: "7", ObjectID: f.head, Reason: reason,
+					Span: landedwork.Span{Before: f.base, Through: f.head},
+				}}, r.Coverage.Gaps)
 				return
 			}
 			require.Len(t, r.Landings, 1)
-			assert.Equal(landedwork.Landing{CandidateID: "7", Proofs: proofs, Before: f.base,
-				Terminal: f.head, Source: f.source, Spine: spine, Introduced: spine}, r.Landings[0])
+			assert.Equal(landedwork.Landing{
+				CandidateID: "7", Proofs: proofs, Before: f.base,
+				Terminal: f.head, Source: f.source, Spine: spine, Introduced: spine,
+			}, r.Landings[0])
 			assert.True(r.Coverage.Complete)
 			assert.Equal(f.head, r.Coverage.CertifiedHead)
 			assert.Empty(r.Coverage.Gaps)
@@ -119,7 +123,7 @@ func TestAutomaticEarlierHistory(t *testing.T) {
 				limits.Nodes = 6
 				reason, object = "input_budget_exhausted", terminal
 			case "shallow":
-				require.NoError(os.WriteFile(filepath.Join(f.repo.GitDir, "shallow"), []byte(earlier+"\n"), 0600))
+				require.NoError(os.WriteFile(filepath.Join(f.repo.GitDir, "shallow"), []byte(earlier+"\n"), 0o600))
 				reason = "shallow_boundary"
 			}
 			r, err := landedwork.Analyze(ctx, p, e, limits)

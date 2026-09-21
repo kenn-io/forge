@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"strconv"
 	"strings"
@@ -327,7 +326,7 @@ func TestClosedLinkedNotificationStatementsUseItemIndexes(t *testing.T) {
 
 func explainQueryPlan(t *testing.T, ro *sql.DB, query string, args ...any) []string {
 	t.Helper()
-	rows, err := ro.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+query, args...)
+	rows, err := ro.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+query, args...)
 	require.NoError(t, err)
 	defer rows.Close()
 	var details []string

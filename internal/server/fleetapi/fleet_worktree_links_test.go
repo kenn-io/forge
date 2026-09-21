@@ -230,7 +230,7 @@ func countLinkHints(hub *testEventHub) int {
 func TestRegisterWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
 	repoID := seedActiveLinkRepo(t, database)
@@ -270,7 +270,7 @@ func TestRegisterWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 func TestDeleteProjectWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
 	repoID := seedActiveLinkRepo(t, database)

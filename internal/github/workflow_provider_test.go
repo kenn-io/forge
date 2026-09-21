@@ -34,13 +34,16 @@ type workflowProviderFake struct {
 func (f *workflowProviderFake) GetRepository(context.Context, string, string) (*gh.Repository, error) {
 	return &gh.Repository{Name: new("widgets"), DefaultBranch: new("trunk")}, nil
 }
+
 func (f *workflowProviderFake) AuthenticatedViewerLogin(context.Context) (string, error) {
 	return f.actor, nil
 }
+
 func (f *workflowProviderFake) ListRepositoryWorkflows(context.Context, string, string) ([]*gh.Workflow, error) {
 	f.calls = append(f.calls, "workflows")
 	return f.workflows, nil
 }
+
 func (f *workflowProviderFake) GetWorkflowDefinition(_ context.Context, _, _, path, ref string) (string, string, error) {
 	f.calls = append(f.calls, "definition:"+path+"@"+ref)
 	f.definitionRefs = append(f.definitionRefs, ref)
@@ -53,14 +56,17 @@ func (f *workflowProviderFake) GetWorkflowDefinition(_ context.Context, _, _, pa
 	}
 	return content, "sha-" + path, nil
 }
+
 func (f *workflowProviderFake) ListRepositoryEnvironments(context.Context, string, string) ([]*gh.Environment, error) {
 	f.calls = append(f.calls, "environments")
 	return f.environments, nil
 }
+
 func (f *workflowProviderFake) ListManualWorkflowRuns(context.Context, string, string, int64, platform.WorkflowRunQuery) (platform.Page[*gh.WorkflowRun], error) {
 	f.calls = append(f.calls, "runs")
 	return f.runs, nil
 }
+
 func (f *workflowProviderFake) GetManualWorkflowRun(_ context.Context, _, _ string, runID int64) (*gh.WorkflowRun, error) {
 	f.calls = append(f.calls, "run")
 	for _, run := range f.runs.Items {
@@ -75,6 +81,7 @@ func (f *workflowProviderFake) ListManualWorkflowJobs(context.Context, string, s
 	f.calls = append(f.calls, "jobs")
 	return f.jobs, nil
 }
+
 func (f *workflowProviderFake) DispatchManualWorkflow(context.Context, string, string, int64, gh.CreateWorkflowDispatchEventRequest) (*gh.WorkflowDispatchRunDetails, error) {
 	f.calls = append(f.calls, "dispatch")
 	return f.dispatch, nil
@@ -85,9 +92,11 @@ type workflowCatalogOnlyFake struct{ Client }
 func (*workflowCatalogOnlyFake) ListRepositoryWorkflows(context.Context, string, string) ([]*gh.Workflow, error) {
 	return nil, nil
 }
+
 func (*workflowCatalogOnlyFake) GetWorkflowDefinition(context.Context, string, string, string, string) (string, string, error) {
 	return "", "", nil
 }
+
 func (*workflowCatalogOnlyFake) ListRepositoryEnvironments(context.Context, string, string) ([]*gh.Environment, error) {
 	return nil, nil
 }
@@ -97,9 +106,11 @@ type workflowRunOnlyFake struct{ Client }
 func (*workflowRunOnlyFake) ListManualWorkflowRuns(context.Context, string, string, int64, platform.WorkflowRunQuery) (platform.Page[*gh.WorkflowRun], error) {
 	return platform.Page[*gh.WorkflowRun]{}, nil
 }
+
 func (*workflowRunOnlyFake) GetManualWorkflowRun(context.Context, string, string, int64) (*gh.WorkflowRun, error) {
 	return nil, platform.ErrNotFound
 }
+
 func (*workflowRunOnlyFake) ListManualWorkflowJobs(context.Context, string, string, int64) ([]*gh.WorkflowJob, error) {
 	return nil, nil
 }
@@ -214,24 +225,26 @@ func TestGitHubWorkflowProviderAbortsCatalogOnFatalDefinitionErrors(t *testing.T
 		{name: "typed rate limit", err: &platform.Error{Code: platform.ErrCodeRateLimited}, wantIs: platform.ErrRateLimited},
 		{name: "GitHub rate limit", err: &gh.RateLimitError{Response: &http.Response{
 			StatusCode: http.StatusForbidden,
-			Request:    httptest.NewRequest(http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
+			Request:    httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
 		}}},
 		{name: "unauthorized", err: &gh.ErrorResponse{
 			Response: &http.Response{
 				StatusCode: http.StatusUnauthorized,
-				Request:    httptest.NewRequest(http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
+				Request:    httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
 			},
 			Message: "bad credentials",
 		}},
 		{name: "forbidden", err: &gh.ErrorResponse{
-			Response: &http.Response{StatusCode: http.StatusForbidden,
-				Request: httptest.NewRequest(http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil)},
+			Response: &http.Response{
+				StatusCode: http.StatusForbidden,
+				Request:    httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
+			},
 			Message: "Resource not accessible by integration",
 		}},
 		{name: "server failure", err: &gh.ErrorResponse{
 			Response: &http.Response{
 				StatusCode: http.StatusServiceUnavailable,
-				Request:    httptest.NewRequest(http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
+				Request:    httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widgets/contents/workflow.yml", nil),
 			},
 			Message: "service unavailable",
 		}},

@@ -485,8 +485,8 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		key := db.WorkspaceSubjectKey{RepoID: mr.RepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: mr.Number}
 		var workspaceRef *workspaceapi.WorkspaceRef
 		if activity, ok := snapshot.Subjects[key]; ok {
-			copy := activity.Workspace
-			workspaceRef = &copy
+			workspaceCopy := activity.Workspace
+			workspaceRef = &workspaceCopy
 		}
 		resp := MergeRequestResponse{
 			MergeRequest:  responseMR,
@@ -1656,15 +1656,19 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 	pr, err := mutator.MarkReadyForReview(ctx, platformRepoRefFromDB(*repo), input.Number)
 	if err != nil {
 		type readyForReviewFailure interface {
+			error
 			StatusCode() int
 			IsStaleState() bool
 		}
 
-		var readyErr readyForReviewFailure
-		var ghErr *gh.ErrorResponse
-		staleState := errors.As(err, &readyErr) && readyErr != nil && readyErr.IsStaleState()
+		staleState := false
+		if readyErr, ok := errors.AsType[readyForReviewFailure](err); ok && readyErr != nil && readyErr.IsStaleState() {
+			staleState = true
+		}
 		if !staleState {
-			staleState = errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound
+			if ghErr, ok := errors.AsType[*gh.ErrorResponse](err); ok && ghErr != nil && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
+				staleState = true
+			}
 		}
 		if staleState {
 			if syncErr := s.syncer.SyncMROnProvider(
@@ -2038,16 +2042,13 @@ func verifyClientReviewedHeadWithoutRefresh(clientSHA, boundSHA string) error {
 }
 
 func mergeHTTPErrorStatus(err error) (int, string, bool) {
-	var ghErr *gh.ErrorResponse
-	if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil {
+	if ghErr, ok := errors.AsType[*gh.ErrorResponse](err); ok && ghErr != nil && ghErr.Response != nil {
 		return ghErr.Response.StatusCode, githubErrorResponseMessage(err, ghErr), true
 	}
-	var httpErr *gitealike.HTTPError
-	if errors.As(err, &httpErr) && httpErr != nil && httpErr.StatusCode != 0 {
+	if httpErr, ok := errors.AsType[*gitealike.HTTPError](err); ok && httpErr != nil && httpErr.StatusCode != 0 {
 		return httpErr.StatusCode, httpErr.Error(), true
 	}
-	var gitlabErr *gitlabapi.ErrorResponse
-	if errors.As(err, &gitlabErr) && gitlabErr != nil && gitlabErr.Response != nil {
+	if gitlabErr, ok := errors.AsType[*gitlabapi.ErrorResponse](err); ok && gitlabErr != nil && gitlabErr.Response != nil {
 		return gitlabErr.Response.StatusCode, gitlabErr.Message, true
 	}
 	return 0, "", false
@@ -2173,8 +2174,7 @@ func (s *Handler) setPRGitHubState(
 		ctx, platformRepoRefFromDB(*repo), input.Number, input.Body.State,
 	)
 	if err != nil {
-		var ghErr *gh.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr != nil && ghErr.Response != nil &&
+		if ghErr, ok := errors.AsType[*gh.ErrorResponse](err); ok && ghErr != nil && ghErr.Response != nil &&
 			ghErr.Response.StatusCode == http.StatusUnprocessableEntity {
 			// Re-fetch to sync local state and determine the real cause.
 			repoID := repo.ID

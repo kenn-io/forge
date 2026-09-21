@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	appfiles "go.kenn.io/forge/internal/githubapp"
 	"strings"
 	"time"
+
+	appfiles "go.kenn.io/forge/internal/githubapp"
 
 	"go.kenn.io/forge/githubapp"
 	"go.kenn.io/forge/internal/config"
@@ -43,9 +44,7 @@ func selectApp(
 	cfg *config.Config, host, owner string, appID int64,
 ) (config.GitHubAppConfig, error) {
 	if cfg == nil || len(cfg.GitHubApps) == 0 {
-		return config.GitHubAppConfig{}, fmt.Errorf(
-			"no github apps configured; run \"kenn-forge-github-app create\" first",
-		)
+		return config.GitHubAppConfig{}, errors.New("no github apps configured; run \"kenn-forge-github-app create\" first")
 	}
 	normalizedHost := ""
 	if strings.TrimSpace(host) != "" {
@@ -91,9 +90,7 @@ func selectApp(
 		return config.GitHubAppConfig{}, fmt.Errorf("no github app configured for owner %q", owner)
 	}
 	if len(matches) > 1 {
-		return config.GitHubAppConfig{}, fmt.Errorf(
-			"multiple github apps match; pass --owner or --app-id to select one",
-		)
+		return config.GitHubAppConfig{}, errors.New("multiple github apps match; pass --owner or --app-id to select one")
 	}
 	return matches[0], nil
 }

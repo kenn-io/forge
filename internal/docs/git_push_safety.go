@@ -80,19 +80,18 @@ func (r *Registry) assertPushTargetSafe(ctx context.Context, root, remote string
 // target.
 func (r *Registry) remotePushURLs(ctx context.Context, root, remote string) ([]string, error) {
 	out, err := r.runGit(ctx, root, nil, "remote", "get-url", "--push", "--all", remote)
-	if err != nil {
-		return []string{remote}, nil
-	}
-	var urls []string
-	for line := range strings.SplitSeq(string(out), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			urls = append(urls, line)
+	if err == nil {
+		var urls []string
+		for line := range strings.SplitSeq(string(out), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				urls = append(urls, line)
+			}
+		}
+		if len(urls) > 0 {
+			return urls, nil
 		}
 	}
-	if len(urls) == 0 {
-		return []string{remote}, nil
-	}
-	return urls, nil
+	return []string{remote}, nil
 }
 
 func classifyPushURL(root, raw string) (pushTargetClass, error) {

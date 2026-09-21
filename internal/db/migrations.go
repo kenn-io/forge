@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"errors"
@@ -62,7 +63,7 @@ func runMigrations(rw *sql.DB) (int, error) {
 	}
 
 	if dirty {
-		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("database is in a dirty migration state"))
+		return migratedb.NilVersion, wrapMigrationError(errors.New("database is in a dirty migration state"))
 	}
 
 	if version == migratedb.NilVersion {
@@ -75,7 +76,7 @@ func runMigrations(rw *sql.DB) (int, error) {
 		case hasLegacyVersion:
 			if !hasMiddlemanTables(rw) {
 				return migratedb.NilVersion, wrapMigrationError(
-					fmt.Errorf("legacy database schema version metadata exists without kenn-forge tables"),
+					errors.New("legacy database schema version metadata exists without kenn-forge tables"),
 				)
 			}
 			if legacyVersion > latestLegacySchemaVersion {
@@ -97,7 +98,7 @@ func runMigrations(rw *sql.DB) (int, error) {
 
 		case hasMiddlemanTables(rw):
 			return migratedb.NilVersion, wrapMigrationError(
-				fmt.Errorf("legacy database is missing schema version metadata"),
+				errors.New("legacy database is missing schema version metadata"),
 			)
 		}
 	}
@@ -143,7 +144,7 @@ func runMigrations(rw *sql.DB) (int, error) {
 		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("read migration version after update: %w", err))
 	}
 	if dirty {
-		return migratedb.NilVersion, wrapMigrationError(fmt.Errorf("database is in a dirty migration state"))
+		return migratedb.NilVersion, wrapMigrationError(errors.New("database is in a dirty migration state"))
 	}
 	if version != latest {
 		return migratedb.NilVersion, wrapMigrationError(
@@ -168,14 +169,14 @@ func runRepositoryCatalogMigration(
 	rw *sql.DB,
 	m *migrate.Migrate,
 ) error {
-	if _, err := rw.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+	if _, err := rw.ExecContext(context.Background(), `PRAGMA foreign_keys = OFF`); err != nil {
 		return fmt.Errorf(
 			"disable foreign keys for repository catalog migration: %w",
 			err,
 		)
 	}
 	migrationErr := m.Migrate(repositoryCatalogMigrationVersion)
-	_, enableErr := rw.Exec(`PRAGMA foreign_keys = ON`)
+	_, enableErr := rw.ExecContext(context.Background(), `PRAGMA foreign_keys = ON`)
 	if migrationErr != nil && !errors.Is(migrationErr, migrate.ErrNoChange) {
 		return errors.Join(
 			fmt.Errorf("apply repository catalog migration: %w", migrationErr),
@@ -189,7 +190,7 @@ func runRepositoryCatalogMigration(
 		)
 	}
 	var violations int
-	if err := rw.QueryRow(
+	if err := rw.QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM pragma_foreign_key_check`,
 	).Scan(&violations); err != nil {
 		return fmt.Errorf("check repository catalog foreign keys: %w", err)
@@ -228,7 +229,7 @@ func latestMigrationVersion() (int, error) {
 	}
 
 	if latest == migratedb.NilVersion {
-		return 0, fmt.Errorf("no embedded migrations found")
+		return 0, errors.New("no embedded migrations found")
 	}
 
 	return latest, nil
@@ -236,7 +237,7 @@ func latestMigrationVersion() (int, error) {
 
 func hasMiddlemanTables(db *sql.DB) bool {
 	var count int
-	err := db.QueryRow(
+	err := db.QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM sqlite_master
 		 WHERE type = 'table'
 		   AND name GLOB 'middleman_*'`,
@@ -246,7 +247,7 @@ func hasMiddlemanTables(db *sql.DB) bool {
 
 func hasTable(db *sql.DB, name string) bool {
 	var count int
-	err := db.QueryRow(
+	err := db.QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
 		name,
 	).Scan(&count)
@@ -255,7 +256,7 @@ func hasTable(db *sql.DB, name string) bool {
 
 func hasIndex(db *sql.DB, name string) bool {
 	var count int
-	err := db.QueryRow(
+	err := db.QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`,
 		name,
 	).Scan(&count)
@@ -265,7 +266,7 @@ func hasIndex(db *sql.DB, name string) bool {
 func hasColumn(
 	db *sql.DB, tableName, columnName string,
 ) (bool, error) {
-	rows, err := db.Query(
+	rows, err := db.QueryContext(context.Background(),
 		fmt.Sprintf(`PRAGMA table_info(%s)`, tableName),
 	)
 	if err != nil {
@@ -308,7 +309,7 @@ func reconcileWorkspaceTerminalBackendColumn(rw *sql.DB) error {
 	if hasTerminalBackend {
 		return nil
 	}
-	_, err = rw.Exec(`
+	_, err = rw.ExecContext(context.Background(), `
 		ALTER TABLE forge_workspaces
 		    ADD COLUMN terminal_backend TEXT NOT NULL DEFAULT ''
 	`)
@@ -347,7 +348,7 @@ func reconcileFleetIntegrationSchema(rw *sql.DB) error {
 	if err := ensureColumn(rw, "forge_workspace_runtime_sessions", "display_region", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	if _, err := rw.Exec(`
+	if _, err := rw.ExecContext(context.Background(), `
 		UPDATE forge_workspace_runtime_sessions
 		SET display_region = CASE
 		    WHEN target_key = 'plain_shell' THEN 'terminal'
@@ -358,7 +359,7 @@ func reconcileFleetIntegrationSchema(rw *sql.DB) error {
 		return err
 	}
 
-	if _, err := rw.Exec(`
+	if _, err := rw.ExecContext(context.Background(), `
 		CREATE TABLE IF NOT EXISTS forge_project_worktree_runtime_sessions (
 		    worktree_id         TEXT NOT NULL REFERENCES forge_project_worktrees(id) ON DELETE CASCADE,
 		    session_key         TEXT NOT NULL,
@@ -374,13 +375,13 @@ func reconcileFleetIntegrationSchema(rw *sql.DB) error {
 	`); err != nil {
 		return err
 	}
-	if _, err := rw.Exec(`
+	if _, err := rw.ExecContext(context.Background(), `
 		CREATE INDEX IF NOT EXISTS forge_project_worktree_runtime_sessions_worktree_id_idx
 		    ON forge_project_worktree_runtime_sessions(worktree_id)
 	`); err != nil {
 		return err
 	}
-	if _, err := rw.Exec(`
+	if _, err := rw.ExecContext(context.Background(), `
 		CREATE TABLE IF NOT EXISTS forge_worktree_stats (
 		    path         TEXT PRIMARY KEY,
 		    diff_added   INTEGER NOT NULL DEFAULT 0,
@@ -392,7 +393,7 @@ func reconcileFleetIntegrationSchema(rw *sql.DB) error {
 	`); err != nil {
 		return err
 	}
-	if _, err := rw.Exec(`
+	if _, err := rw.ExecContext(context.Background(), `
 		CREATE TABLE IF NOT EXISTS forge_host_runtime_sessions (
 		    session_key         TEXT PRIMARY KEY,
 		    runtime_backend     TEXT NOT NULL,
@@ -417,7 +418,7 @@ func ensureColumn(rw *sql.DB, tableName, columnName, definition string) error {
 	if hasExistingColumn {
 		return nil
 	}
-	_, err = rw.Exec(fmt.Sprintf(
+	_, err = rw.ExecContext(context.Background(), fmt.Sprintf(
 		"ALTER TABLE %s ADD COLUMN %s %s",
 		tableName,
 		columnName,
@@ -462,7 +463,7 @@ func ensureWorkspaceSetupMigrationArtifacts(
 	hasEventsTable, hasEventsIndex, hasWorkspaceBranch bool,
 ) error {
 	if !hasEventsTable {
-		if _, err := rw.Exec(`
+		if _, err := rw.ExecContext(context.Background(), `
 			CREATE TABLE IF NOT EXISTS middleman_workspace_setup_events (
 			    id          INTEGER PRIMARY KEY AUTOINCREMENT,
 			    workspace_id TEXT NOT NULL REFERENCES middleman_workspaces(id) ON DELETE CASCADE,
@@ -477,7 +478,7 @@ func ensureWorkspaceSetupMigrationArtifacts(
 	}
 
 	if !hasEventsIndex {
-		if _, err := rw.Exec(`
+		if _, err := rw.ExecContext(context.Background(), `
 			CREATE INDEX IF NOT EXISTS middleman_workspace_setup_events_workspace_id_idx
 			    ON middleman_workspace_setup_events (workspace_id, id)
 		`); err != nil {
@@ -486,7 +487,7 @@ func ensureWorkspaceSetupMigrationArtifacts(
 	}
 
 	if !hasWorkspaceBranch {
-		if _, err := rw.Exec(`
+		if _, err := rw.ExecContext(context.Background(), `
 			ALTER TABLE middleman_workspaces
 			    ADD COLUMN workspace_branch TEXT NOT NULL DEFAULT '__middleman_unknown__'
 		`); err != nil {
@@ -498,7 +499,7 @@ func ensureWorkspaceSetupMigrationArtifacts(
 
 func readLegacySchemaVersion(db *sql.DB) (int, bool, error) {
 	var version int
-	err := db.QueryRow(
+	err := db.QueryRowContext(context.Background(),
 		`SELECT version FROM middleman_schema_version LIMIT 1`,
 	).Scan(&version)
 	if err == nil {

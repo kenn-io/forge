@@ -83,7 +83,7 @@ func TestStartWorkspaceRetryPreservesBranchUntilCleanupSucceeds(t *testing.T) {
 	require := require.New(t)
 
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	errMsg := "tmux new-session failed"
 	ws := &Workspace{
 		ID:              "ws-retry-preserve-branch",
@@ -3393,7 +3393,6 @@ func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	require.NoError(err)
 	require.Len(filtered, 1)
 	assert.Equal(issueID, filtered[0].ID)
-
 }
 
 func TestListIssuesFilterByHostedRepoPath(t *testing.T) {
@@ -5236,7 +5235,7 @@ func TestFreshWorkspaceRuntimeSessionSchemaIncludesTmuxSession(t *testing.T) {
 
 	d := openTestDB(t)
 	rows, err := d.ReadDB().QueryContext(
-		context.Background(),
+		t.Context(),
 		`PRAGMA table_info(forge_workspace_runtime_sessions)`,
 	)
 	require.NoError(err)
@@ -5879,7 +5878,7 @@ func TestSetWorkspaceAssociatedPRNumberIfNull(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := d.WriteDB().ExecContext(ctx, `
 		INSERT INTO forge_workspaces
@@ -5919,7 +5918,7 @@ func TestSetWorkspaceAssociatedPRNumberIfNull(t *testing.T) {
 }
 
 func TestUpdateMRTitleBody(t *testing.T) {
-	assert := require.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
@@ -5944,26 +5943,26 @@ func TestUpdateMRTitleBody(t *testing.T) {
 		LastActivityAt: base,
 	}
 	id, err := d.UpsertMergeRequest(ctx, mr)
-	assert.NoError(err)
+	require.NoError(err)
 
 	ghUpdatedAt := base.Add(10 * time.Minute)
-	assert.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", ghUpdatedAt))
+	require.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", ghUpdatedAt))
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-	assert.NoError(err)
-	assert.NotNil(got)
-	assert.Equal("new title", got.Title)
-	assert.Equal("new body", got.Body)
-	assert.True(got.UpdatedAt.Equal(ghUpdatedAt), "UpdatedAt should be ghUpdatedAt")
-	assert.True(got.LastActivityAt.Equal(ghUpdatedAt), "LastActivityAt should be ghUpdatedAt")
+	require.NoError(err)
+	require.NotNil(got)
+	require.Equal("new title", got.Title)
+	require.Equal("new body", got.Body)
+	require.True(got.UpdatedAt.Equal(ghUpdatedAt), "UpdatedAt should be ghUpdatedAt")
+	require.True(got.LastActivityAt.Equal(ghUpdatedAt), "LastActivityAt should be ghUpdatedAt")
 	// Derived fields must be preserved.
-	assert.Equal(5, got.CommentCount)
-	assert.Equal("success", got.CIStatus)
-	assert.Equal("APPROVED", got.ReviewDecision)
+	require.Equal(5, got.CommentCount)
+	require.Equal("success", got.CIStatus)
+	require.Equal("APPROVED", got.ReviewDecision)
 }
 
 func TestUpdateMRTitleBodyReplacesSyntheticActivityWithProviderTime(t *testing.T) {
-	assert := require.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
@@ -5985,24 +5984,24 @@ func TestUpdateMRTitleBodyReplacesSyntheticActivityWithProviderTime(t *testing.T
 		LastActivityAt: futureActivity,
 	}
 	id, err := d.UpsertMergeRequest(ctx, mr)
-	assert.NoError(err)
+	require.NoError(err)
 
 	// updatedAt is 30 min, newer than base so the update applies.
 	updatedAt := base.Add(30 * time.Minute)
-	assert.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", updatedAt))
+	require.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", updatedAt))
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 2)
-	assert.NoError(err)
-	assert.NotNil(got)
+	require.NoError(err)
+	require.NotNil(got)
 	// UpdatedAt gets the 30-min value.
-	assert.True(got.UpdatedAt.Equal(updatedAt), "UpdatedAt should be updatedAt")
+	require.True(got.UpdatedAt.Equal(updatedAt), "UpdatedAt should be updatedAt")
 	// The provider parent timestamp is authoritative even when an older local
 	// child-derived value had inflated activity beyond it.
-	assert.True(got.LastActivityAt.Equal(updatedAt), "LastActivityAt should use provider updatedAt")
+	require.True(got.LastActivityAt.Equal(updatedAt), "LastActivityAt should use provider updatedAt")
 }
 
 func TestUpdateMRTitleBodyIgnoresStaleUpdate(t *testing.T) {
-	assert := require.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
@@ -6025,22 +6024,22 @@ func TestUpdateMRTitleBodyIgnoresStaleUpdate(t *testing.T) {
 		LastActivityAt: newerUpdatedAt,
 	}
 	id, err := d.UpsertMergeRequest(ctx, mr)
-	assert.NoError(err)
+	require.NoError(err)
 
 	// Stale update: updatedAt is older than existing row.
 	staleAt := base.Add(30 * time.Minute)
-	assert.NoError(d.UpdateMRTitleBody(ctx, id, "stale title", "stale body", staleAt))
+	require.NoError(d.UpdateMRTitleBody(ctx, id, "stale title", "stale body", staleAt))
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 3)
-	assert.NoError(err)
-	assert.NotNil(got)
-	assert.Equal("current title", got.Title, "stale update should be ignored")
-	assert.Equal("current body", got.Body, "stale update should be ignored")
-	assert.True(got.UpdatedAt.Equal(newerUpdatedAt), "updated_at should not regress")
+	require.NoError(err)
+	require.NotNil(got)
+	require.Equal("current title", got.Title, "stale update should be ignored")
+	require.Equal("current body", got.Body, "stale update should be ignored")
+	require.True(got.UpdatedAt.Equal(newerUpdatedAt), "updated_at should not regress")
 }
 
 func TestHTTPEtagPersistence(t *testing.T) {
-	assert := require.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 
@@ -6048,10 +6047,10 @@ func TestHTTPEtagPersistence(t *testing.T) {
 		ctx, "github", "github.com", "OWNER", "Repo",
 		"pull_request", 7,
 	)
-	assert.NoError(err)
-	assert.Empty(etag)
+	require.NoError(err)
+	require.Empty(etag)
 
-	assert.NoError(d.UpsertHTTPEtag(
+	require.NoError(d.UpsertHTTPEtag(
 		ctx, "github", "github.com", "OWNER", "Repo",
 		"pull_request", 7, `"etag-v1"`,
 	))
@@ -6059,10 +6058,10 @@ func TestHTTPEtagPersistence(t *testing.T) {
 		ctx, "github", "github.com", "owner", "repo",
 		"pull_request", 7,
 	)
-	assert.NoError(err)
-	assert.Equal(`"etag-v1"`, etag)
+	require.NoError(err)
+	require.Equal(`"etag-v1"`, etag)
 
-	assert.NoError(d.UpsertHTTPEtag(
+	require.NoError(d.UpsertHTTPEtag(
 		ctx, "github", "github.com", "owner", "repo",
 		"pull_request", 7, `"etag-v2"`,
 	))
@@ -6070,8 +6069,8 @@ func TestHTTPEtagPersistence(t *testing.T) {
 		ctx, "github", "github.com", "OWNER", "Repo",
 		"pull_request", 7,
 	)
-	assert.NoError(err)
-	assert.Equal(`"etag-v2"`, etag)
+	require.NoError(err)
+	require.Equal(`"etag-v2"`, etag)
 }
 
 func TestUpsertHTTPEtagIfRouteFenceRejectsConcurrentPathReuse(t *testing.T) {

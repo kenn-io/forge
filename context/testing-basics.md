@@ -6,9 +6,14 @@ fixtures, or changing shell-script coverage.
 - Pass `-shuffle=on` when invoking `go test` directly; `make test` and
   `make test-short` already include it. Do not pass redundant `-count=1`; use
   `-count=N` only when `N > 1` for repeated runs.
-- Before pushing Go changes, run `make nilaway` as well as `make lint-check`;
-  passing golangci-lint alone does not cover CI's Go analysis checks
-  (`.github/workflows/ci.yml::lint`).
+- Before pushing Go changes, run `make nilaway`, `make fmt-check`, and
+  `make lint-check`. Lint uses kit's shared policy through `./custom-gcl`;
+  `golangci-lint run` does not apply v2 formatters, so formatter drift is a
+  separate gate (`.github/workflows/ci.yml::lint`, `Makefile::fmt-check`).
+- `t.Context()` is already canceled inside `t.Cleanup`; shutdown helpers use
+  `context.WithoutCancel(t.Context())` or `context.Background()`
+  (`internal/testutil/servertest/servertest.go::registerCleanup`).
+  Unix-socket fixtures keep a short `/tmp` root rather than `t.TempDir()`.
 - Routine local Go lanes and hooks bound package/processor concurrency and share
   Go caches; `GO_TEST_P=` intentionally restores native package concurrency.
   (`scripts/run-hook-go.sh`, `prek.toml`)

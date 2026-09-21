@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -143,7 +144,7 @@ func (s *Store) enforceCapLocked() error {
 		if order := a.modTime.Compare(b.modTime); order != 0 {
 			return order
 		}
-		return bytes.Compare([]byte(a.path), []byte(b.path))
+		return strings.Compare(a.path, b.path)
 	})
 	for _, entry := range entries {
 		if total <= s.maxBytes {

@@ -673,12 +673,12 @@ func (b mcpBackend) SubmitInitialMessage(
 		converted := mcpBackendError(err)
 		if result.State == "pending" || result.State == "uncertain" {
 			if backendErr, ok := errors.AsType[*mcpserver.Error](converted); ok {
-				copy := *backendErr
-				copy.Ambiguous = true
-				copy.Retryable = false
-				copy.Details = cloneMCPErrorDetails(backendErr.Details)
-				copy.Details["initial_message_state"] = result.State
-				converted = &copy
+				annotated := *backendErr
+				annotated.Ambiguous = true
+				annotated.Retryable = false
+				annotated.Details = cloneMCPErrorDetails(backendErr.Details)
+				annotated.Details["initial_message_state"] = result.State
+				converted = &annotated
 			}
 		}
 		return status, converted
@@ -899,8 +899,8 @@ func mcpBackendError(err error) error {
 	if existing, ok := errors.AsType[*mcpserver.Error](err); ok {
 		return existing
 	}
-	var problem *httpapi.ProblemError
-	if !errors.As(err, &problem) {
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	if !ok {
 		return &mcpserver.Error{Kind: "internal_error", Message: err.Error()}
 	}
 	kind := "internal_error"
@@ -935,15 +935,15 @@ func mcpBackendError(err error) error {
 
 func mcpBackendMutationError(err error) error {
 	converted := mcpBackendError(err)
-	var backendErr *mcpserver.Error
-	if !errors.As(converted, &backendErr) || backendErr.Kind != "internal_error" {
+	backendErr, ok := errors.AsType[*mcpserver.Error](converted)
+	if !ok || backendErr.Kind != "internal_error" {
 		return converted
 	}
-	copy := *backendErr
-	copy.Ambiguous = true
-	copy.Retryable = false
-	copy.Details = cloneMCPErrorDetails(backendErr.Details)
-	return &copy
+	annotated := *backendErr
+	annotated.Ambiguous = true
+	annotated.Retryable = false
+	annotated.Details = cloneMCPErrorDetails(backendErr.Details)
+	return &annotated
 }
 
 func normalizeMCPWorkflowStatus(status string) db.KanbanStatus {

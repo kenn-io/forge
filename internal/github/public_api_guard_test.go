@@ -18,10 +18,13 @@ func TestPublicGitHubAPIGuardTransportBlocksAPIGitHub(t *testing.T) {
 		baseCalls++
 		return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
 	})}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/rate_limit", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/rate_limit", nil)
 	require.NoError(t, err)
 
 	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 
 	require.ErrorIs(t, err, ErrPublicGitHubAPIBlocked)
 	assert.Nil(resp)
@@ -35,10 +38,13 @@ func TestPublicGitHubAPIGuardTransportAllowsOtherHosts(t *testing.T) {
 		baseCalls++
 		return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
 	})}
-	req, err := http.NewRequest(http.MethodGet, "https://github.example.com/api/v3/rate_limit", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://github.example.com/api/v3/rate_limit", nil)
 	require.NoError(t, err)
 
 	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 
 	require.NoError(t, err)
 	require.NotNil(t, resp)

@@ -1489,7 +1489,7 @@ func OpenFixtureTestDB(t *testing.T) (*db.DB, *SeedResult) {
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
-	result, err := SeedFixtures(context.Background(), d)
+	result, err := SeedFixtures(t.Context(), d)
 	require.NoError(t, err)
 	return d, result
 }

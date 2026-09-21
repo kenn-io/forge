@@ -58,7 +58,7 @@ func TestServeRejectsRebindingHost(t *testing.T) {
 	require := require.New(t)
 
 	srv := newTestServer(t)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 	errCh := make(chan error, 1)
 	go func() {
@@ -70,18 +70,20 @@ func TestServeRejectsRebindingHost(t *testing.T) {
 		require.ErrorIs(err, http.ErrServerClosed)
 	})
 
-	validResp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
+	validReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+ln.Addr().String()+"/healthz", nil)
+	require.NoError(err)
+	validResp, err := (&http.Client{Timeout: 5 * time.Second}).Do(validReq)
 	require.NoError(err)
 	_, err = io.Copy(io.Discard, validResp.Body)
 	require.NoError(err)
 	require.NoError(validResp.Body.Close())
 	assert.Equal(http.StatusOK, validResp.StatusCode)
 
-	req, err := http.NewRequest(http.MethodGet, "http://"+ln.Addr().String()+"/healthz", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+ln.Addr().String()+"/healthz", nil)
 	require.NoError(err)
 	req.Host = "evil.example:8091"
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	require.NoError(err)
 	defer resp.Body.Close()
 
@@ -99,7 +101,7 @@ func TestServeAllowsBoundLoopbackHost(t *testing.T) {
 	require := require.New(t)
 
 	srv := newTestServer(t)
-	ln, err := net.Listen("tcp", "127.0.0.2:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.2:0")
 	if err != nil {
 		t.Skipf("127.0.0.2 loopback alias unavailable: %v", err)
 	}
@@ -113,18 +115,20 @@ func TestServeAllowsBoundLoopbackHost(t *testing.T) {
 		require.ErrorIs(err, http.ErrServerClosed)
 	})
 
-	validResp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
+	validReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+ln.Addr().String()+"/healthz", nil)
+	require.NoError(err)
+	validResp, err := (&http.Client{Timeout: 5 * time.Second}).Do(validReq)
 	require.NoError(err)
 	_, err = io.Copy(io.Discard, validResp.Body)
 	require.NoError(err)
 	require.NoError(validResp.Body.Close())
 	assert.Equal(http.StatusOK, validResp.StatusCode)
 
-	req, err := http.NewRequest(http.MethodGet, "http://"+ln.Addr().String()+"/healthz", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+ln.Addr().String()+"/healthz", nil)
 	require.NoError(err)
 	req.Host = "evil.example:8091"
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	require.NoError(err)
 	assert.Equal(http.StatusForbidden, resp.StatusCode)
 	_, err = io.Copy(io.Discard, resp.Body)
@@ -185,7 +189,7 @@ func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 
-			req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
 			req.Host = tt.host
 			req.RemoteAddr = tt.remoteAddr
 			rec := httptest.NewRecorder()
@@ -231,7 +235,9 @@ func TestSSE_ReturnsEventStream(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/events")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
+	require.NoError(t, err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -301,7 +307,9 @@ func TestSSE_ReceivesBroadcastEvent(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/events")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
+	require.NoError(t, err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -328,7 +336,9 @@ func TestSSE_InitialSyncStatusFromCache(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/events")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
+	require.NoError(t, err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -351,7 +361,9 @@ func TestSSE_ExitsCleanlyOnHubClose(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/events")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
+	require.NoError(t, err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -376,8 +388,15 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/events")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
 	require.NoError(err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
+	require.NoError(err)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	defer resp.Body.Close()
 
 	// Single reader goroutine parses SSE frames and sends event types
@@ -432,7 +451,9 @@ func TestSSE_SlowConsumerDisconnect(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/events")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
+	require.NoError(t, err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -477,7 +498,7 @@ func TestSSE_TerminatesOnInitialDeadlineFailure(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	w := &deadlineControlWriter{ResponseWriter: rec, failAfter: 0}
-	r := httptest.NewRequest("GET", "/api/v1/events", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events", nil)
 
 	done := make(chan struct{})
 	go func() {
@@ -502,7 +523,7 @@ func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 	w := &deadlineControlWriter{ResponseWriter: rec, failAfter: 1}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	r := httptest.NewRequest("GET", "/api/v1/events", nil).WithContext(ctx)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
 
 	done := make(chan struct{})
 	go func() {
@@ -619,7 +640,9 @@ func TestSSE_FrameIncludesID(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/events")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
+	require.NoError(err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 
@@ -680,7 +703,9 @@ func TestSSE_SinceQueryReplaysMissedEvents(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/events?since=2")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events?since=2", nil)
+	require.NoError(err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 
@@ -906,7 +931,7 @@ func TestSSE_FutureCursorEmitsReconnectStaleThenLiveEvents(t *testing.T) {
 }
 
 func TestParseLastEventID_HeaderWins(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/events?since=42", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=42", nil)
 	r.Header.Set("Last-Event-ID", "99")
 	got, ok := parseLastEventID(r)
 	assert.True(t, ok)
@@ -914,20 +939,20 @@ func TestParseLastEventID_HeaderWins(t *testing.T) {
 }
 
 func TestParseLastEventID_FallsBackToQuery(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/events?since=42", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=42", nil)
 	got, ok := parseLastEventID(r)
 	assert.True(t, ok)
 	assert.Equal(t, uint64(42), got)
 }
 
 func TestParseLastEventID_AbsentMeansNoCursor(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events", nil)
 	_, ok := parseLastEventID(r)
 	assert.False(t, ok)
 }
 
 func TestParseLastEventID_InvalidHeaderFallsBackToQuery(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/events?since=7", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=7", nil)
 	r.Header.Set("Last-Event-ID", "garbage")
 	got, ok := parseLastEventID(r)
 	assert.True(t, ok)
@@ -935,7 +960,7 @@ func TestParseLastEventID_InvalidHeaderFallsBackToQuery(t *testing.T) {
 }
 
 func TestParseLastEventID_AllUnparsableMeansNoCursor(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/events?since=abc", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=abc", nil)
 	r.Header.Set("Last-Event-ID", "xyz")
 	_, ok := parseLastEventID(r)
 	assert.False(t, ok)

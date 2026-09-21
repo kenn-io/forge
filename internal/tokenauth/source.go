@@ -94,6 +94,7 @@ const (
 )
 
 type retryDeadlineError interface {
+	error
 	RetryDeadline(time.Time) time.Time
 }
 
@@ -101,8 +102,8 @@ func githubAppMintRetryDeadline(err, callerErr error, now time.Time) time.Time {
 	if err == nil || (callerErr != nil && errors.Is(err, callerErr)) {
 		return time.Time{}
 	}
-	var retryErr retryDeadlineError
-	if !errors.As(err, &retryErr) {
+	retryErr, ok := errors.AsType[retryDeadlineError](err)
+	if !ok {
 		return now.Add(githubAppMintRetryDefault)
 	}
 	retryAt := retryErr.RetryDeadline(now)
@@ -317,8 +318,10 @@ func (s *ManagedSource) tokenFromCandidate(
 // one-hour token lifetime.
 const githubAppTokenRefreshSkew = 5 * time.Minute
 
-type mutationAuthCtxKey struct{}
-type githubOwnerCtxKey struct{}
+type (
+	mutationAuthCtxKey struct{}
+	githubOwnerCtxKey  struct{}
+)
 
 // WithMutationAuth marks ctx so token resolution skips github_app
 // installation tokens and resolves the user's own credential chain

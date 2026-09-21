@@ -1,7 +1,6 @@
 package tokenauth
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -118,7 +117,7 @@ func TestManagedSourceRegistersOpaqueTokenForRedaction(t *testing.T) {
 		}},
 	}, Options{})
 
-	token, err := src.Token(context.Background())
+	token, err := src.Token(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "opaque-active-token-12345", token)
 

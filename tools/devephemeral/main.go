@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,6 +29,9 @@ import (
 )
 
 const defaultEphemeralWorkDir = "tmp/dev-ephemeral"
+
+// stackScriptDir, when set, is cmd.Dir for launched stack scripts.
+var stackScriptDir string
 
 const (
 	stopPollInterval   = 50 * time.Millisecond
@@ -377,11 +381,13 @@ func buildCommandSpecs(run ephemeralRun, syncEnabled bool, frontendArgs []string
 		backend: commandSpec{
 			name: "./scripts/dev-stack-backend.sh",
 			env:  backendEnv,
+			dir:  stackScriptDir,
 		},
 		frontend: commandSpec{
 			name: "./scripts/frontend-dev.sh",
 			args: args,
 			env:  frontendEnv,
+			dir:  stackScriptDir,
 		},
 	}
 }
@@ -574,7 +580,7 @@ func readRunningEphemeralStatus(statusPath string) (ephemeralStatus, bool, error
 		return ephemeralStatus{}, false, fmt.Errorf("decode status file: %w", err)
 	}
 	refs, identityErrs := verifiedProcessRefs(statusProcessRefs(staleStatus))
-	stopErrs := append(identityErrs, stopEphemeralProcesses(refs)...)
+	stopErrs := slices.Concat(identityErrs, stopEphemeralProcesses(refs))
 	if len(stopErrs) > 0 {
 		return ephemeralStatus{}, false, errors.Join(stopErrs...)
 	}
@@ -817,7 +823,7 @@ func prepareEphemeralDatabase(sourcePath, destPath string, copyDB bool) error {
 		return fmt.Errorf("open source database: %w", err)
 	}
 	defer source.Close()
-	if _, err := source.Exec("VACUUM INTO ?", destPath); err != nil {
+	if _, err := source.ExecContext(context.Background(), "VACUUM INTO ?", destPath); err != nil {
 		return fmt.Errorf("copy source database snapshot: %w", err)
 	}
 	return nil
@@ -904,7 +910,7 @@ func waitForCommands(ctx context.Context, backend, frontend *exec.Cmd) error {
 			if stopErr != nil {
 				firstErr = stopErr
 			} else if firstErr == nil || errors.Is(firstErr, context.Canceled) {
-				firstErr = fmt.Errorf("timed out waiting for child shutdown")
+				firstErr = errors.New("timed out waiting for child shutdown")
 			}
 		}
 	}
@@ -935,14 +941,14 @@ func stopStartedCommands(commands ...*exec.Cmd) []error {
 
 	stopErrs := stopForegroundProcesses(processes...)
 	waitErrs := make([]error, 0, waiting)
-	for i := 0; i < waiting; i++ {
+	for range waiting {
 		select {
 		case err := <-waitCh:
 			if err != nil {
 				waitErrs = append(waitErrs, err)
 			}
 		case <-time.After(stopWaitGrace):
-			waitErrs = append(waitErrs, fmt.Errorf("timed out waiting for child shutdown"))
+			waitErrs = append(waitErrs, errors.New("timed out waiting for child shutdown"))
 		}
 	}
 	return append(stopErrs, waitErrs...)
@@ -967,12 +973,13 @@ func commandWaitError(name string, err error) error {
 	if err == nil {
 		return nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ProcessState != nil && exitErr.Exited() {
-		return fmt.Errorf("%s exited: %w", name, err)
-	}
-	if errors.As(err, &exitErr) && exitErr.ProcessState != nil && processSignaledForShutdown(exitErr.ProcessState) {
-		return nil
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ProcessState != nil {
+		if exitErr.Exited() {
+			return fmt.Errorf("%s exited: %w", name, err)
+		}
+		if processSignaledForShutdown(exitErr.ProcessState) {
+			return nil
+		}
 	}
 	return err
 }
@@ -1001,7 +1008,7 @@ func resolvePort(port int) (int, error) {
 		}
 		return port, nil
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}

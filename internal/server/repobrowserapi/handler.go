@@ -672,8 +672,10 @@ func canonicalRepoBrowserRepoPath(owner, name, repoPath string) string {
 	return owner + "/" + name
 }
 
-var errRepoBrowserCloneUnavailable = errors.New("repo browser clone unavailable")
-var errRepoBrowserMutableAssetRef = errors.New("repo browser asset requires immutable commit ref")
+var (
+	errRepoBrowserCloneUnavailable = errors.New("repo browser clone unavailable")
+	errRepoBrowserMutableAssetRef  = errors.New("repo browser asset requires immutable commit ref")
+)
 
 func repoBrowserRef(refType, name, sha string) gitclone.RepoBrowserRef {
 	typ := gitclone.RepoBrowserRefType(strings.TrimSpace(refType))
@@ -731,8 +733,7 @@ func repoBrowserProblem(err error) error {
 	if errors.Is(err, gitclone.ErrNotFound) {
 		return httpapi.NotFound(httpapi.CodeNotFound, err.Error(), map[string]any{"reason": "not_found"})
 	}
-	if strings.Contains(err.Error(), "platform_host is required") ||
-		strings.Contains(err.Error(), "unsupported platform") {
+	if errors.Is(err, httpapi.ErrPlatformHostRequired) || errors.Is(err, httpapi.ErrUnsupportedPlatform) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	return httpapi.Internal(err.Error())

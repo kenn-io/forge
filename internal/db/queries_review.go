@@ -237,10 +237,6 @@ func (d *DB) getMRReviewDraftComment(ctx context.Context, draftID, commentID int
 	return &comment, nil
 }
 
-type scanner interface {
-	Scan(dest ...any) error
-}
-
 func scanReviewDraftComment(row scanner) (MRReviewDraftComment, error) {
 	var comment MRReviewDraftComment
 	var oldPath, startSide sql.NullString
@@ -290,7 +286,7 @@ func upsertMRReviewThreadsTx(
 			providerThreadID = thread.ProviderCommentID
 		}
 		if providerThreadID == "" {
-			return fmt.Errorf("upsert mr review thread: provider thread id is empty")
+			return errors.New("upsert mr review thread: provider thread id is empty")
 		}
 		resolvedAt := nullableReviewTime(thread.ResolvedAt)
 		if _, err := tx.ExecContext(ctx, `

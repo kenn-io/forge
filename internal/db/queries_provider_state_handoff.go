@@ -190,11 +190,11 @@ func (payload ProviderStateReviewDraftPayload) Record() (ProviderStateRecord, er
 	if err != nil {
 		return ProviderStateRecord{}, err
 	}
-	copy := payload
+	reviewDraft := payload
 	return ProviderStateRecord{
 		Kind:          ProviderStateReviewDraft,
 		SourceKey:     providerStateRepositoryKey(payload.Repository) + "\x00pr\x00" + strconv.Itoa(payload.PullNumber),
-		ContentDigest: digest, ReviewDraft: &copy,
+		ContentDigest: digest, ReviewDraft: &reviewDraft,
 	}, nil
 }
 
@@ -208,11 +208,11 @@ func (payload ProviderStateWorkflowPayload) Record() (ProviderStateRecord, error
 	if err != nil {
 		return ProviderStateRecord{}, err
 	}
-	copy := payload
+	workflowState := payload
 	return ProviderStateRecord{
 		Kind:          ProviderStateWorkflowState,
 		SourceKey:     providerStateRepositoryKey(payload.Repository) + "\x00" + payload.ItemType + "\x00" + strconv.Itoa(payload.ItemNumber),
-		ContentDigest: digest, WorkflowState: &copy,
+		ContentDigest: digest, WorkflowState: &workflowState,
 	}, nil
 }
 

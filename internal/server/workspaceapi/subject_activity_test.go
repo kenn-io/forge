@@ -1,7 +1,6 @@
 package workspaceapi
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -39,7 +38,7 @@ func TestWorkspaceSubjectSnapshotFencesRepositoryReconciliationAcrossReads(t *te
 	}
 	snapshotDone := make(chan error, 1)
 	go func() {
-		_, snapshotErr := h.WorkspaceSubjectSnapshot(context.Background())
+		_, snapshotErr := h.WorkspaceSubjectSnapshot(t.Context())
 		snapshotDone <- snapshotErr
 	}()
 	<-afterSummaries
@@ -53,7 +52,7 @@ func TestWorkspaceSubjectSnapshotFencesRepositoryReconciliationAcrossReads(t *te
 	go func() {
 		renamed := db.GitHubRepoIdentity("github.com", "acme", "gadget")
 		renamed.PlatformRepoID = identity.PlatformRepoID
-		_, _, renameErr := h.db.ReconcileRepositoryObservation(context.Background(), renamed, now.Add(time.Minute))
+		_, _, renameErr := h.db.ReconcileRepositoryObservation(t.Context(), renamed, now.Add(time.Minute))
 		renameDone <- renameErr
 	}()
 	<-writeAttempted

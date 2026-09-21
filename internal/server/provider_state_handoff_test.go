@@ -93,12 +93,22 @@ func TestProviderStateHandoffHTTPRequiresHandoffScopeAndReturnsStableReceipt(t *
 		t, ts, readToken,
 		"/api/v1/federation/provider-state/review-drafts/import", payload,
 	)
+	t.Cleanup(func() {
+		if denied != nil && denied.Body != nil {
+			_ = denied.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusForbidden, denied.StatusCode)
 
 	first := postProviderHandoff(
 		t, ts, handoffToken,
 		"/api/v1/federation/provider-state/review-drafts/import", payload,
 	)
+	t.Cleanup(func() {
+		if first != nil && first.Body != nil {
+			_ = first.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, first.StatusCode)
 	var firstResult db.ProviderStateImportResult
 	require.NoError(json.NewDecoder(first.Body).Decode(&firstResult))
@@ -109,6 +119,11 @@ func TestProviderStateHandoffHTTPRequiresHandoffScopeAndReturnsStableReceipt(t *
 		t, ts, handoffToken,
 		"/api/v1/federation/provider-state/review-drafts/import", payload,
 	)
+	t.Cleanup(func() {
+		if retry != nil && retry.Body != nil {
+			_ = retry.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, retry.StatusCode)
 	var retryResult db.ProviderStateImportResult
 	require.NoError(json.NewDecoder(retry.Body).Decode(&retryResult))

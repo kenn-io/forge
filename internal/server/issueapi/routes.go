@@ -95,8 +95,8 @@ func (s *Handler) listIssuesRouteCore(ctx context.Context, input *listIssuesInpu
 		key := db.WorkspaceSubjectKey{RepoID: issue.RepoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: issue.Number}
 		var workspaceRef *workspaceapi.WorkspaceRef
 		if ref, ok := snapshot.OwnReferences[key]; ok {
-			copy := ref
-			workspaceRef = &copy
+			refCopy := ref
+			workspaceRef = &refCopy
 		}
 		response := IssueResponse{
 			Issue: issueResponseModel(issue), Repo: s.resolver.Ref(repo),

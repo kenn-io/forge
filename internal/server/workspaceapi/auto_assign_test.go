@@ -43,37 +43,46 @@ func (p *autoAssignProvider) Capabilities() platform.Capabilities {
 		AssigneeMutation:      true,
 	}
 }
+
 func (p *autoAssignProvider) AuthenticatedUser(context.Context, platform.RepoRef) (string, error) {
 	return "maintainer", nil
 }
+
 func (p *autoAssignProvider) ListOpenMergeRequests(context.Context, platform.RepoRef) ([]platform.MergeRequest, error) {
 	p.listPullCalls++
 	return nil, nil
 }
+
 func (p *autoAssignProvider) GetMergeRequest(context.Context, platform.RepoRef, int) (platform.MergeRequest, error) {
 	p.getPullCalls++
 	return p.pull, nil
 }
+
 func (p *autoAssignProvider) ListMergeRequestEvents(context.Context, platform.RepoRef, int) ([]platform.MergeRequestEvent, error) {
 	return nil, nil
 }
+
 func (p *autoAssignProvider) ListOpenIssues(context.Context, platform.RepoRef) ([]platform.Issue, error) {
 	p.listIssueCalls++
 	return nil, nil
 }
+
 func (p *autoAssignProvider) GetIssue(context.Context, platform.RepoRef, int) (platform.Issue, error) {
 	p.getIssueCalls++
 	return p.issue, nil
 }
+
 func (p *autoAssignProvider) ListIssueEvents(context.Context, platform.RepoRef, int) ([]platform.IssueEvent, error) {
 	return nil, nil
 }
+
 func (p *autoAssignProvider) SetMergeRequestAssignees(
 	_ context.Context, _ platform.RepoRef, _ int, usernames []string,
 ) ([]string, error) {
 	p.pullAssigned = slices.Clone(usernames)
 	return slices.Clone(usernames), nil
 }
+
 func (p *autoAssignProvider) SetIssueAssignees(
 	_ context.Context, _ platform.RepoRef, _ int, usernames []string,
 ) ([]string, error) {

@@ -97,8 +97,7 @@ func writeMetadata(dataDir string, meta Metadata) error {
 func readMetadata(dataDir string) (Metadata, error) {
 	data, err := os.ReadFile(MetadataPath(dataDir))
 	if err != nil {
-		var pathErr *fs.PathError
-		if errors.As(err, &pathErr) && errors.Is(pathErr.Err, fs.ErrNotExist) {
+		if pathErr, ok := errors.AsType[*fs.PathError](err); ok && errors.Is(pathErr.Err, fs.ErrNotExist) {
 			return Metadata{}, errMetadataMissing
 		}
 		return Metadata{}, fmt.Errorf("read runtime metadata: %w", err)

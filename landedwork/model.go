@@ -35,11 +35,13 @@ type Limits struct{ Records, Nodes, InputBytes, OutputBytes int64 }
 
 // Span blocks first-parent commits after Before through Through, inclusively.
 // Empty Before is the boundary before history, only for FromRoot intervals.
-type Span struct{ Before, Through string }
-type Gap struct {
-	CandidateID, ObjectID, Reason string
-	Span                          Span
-}
+type (
+	Span struct{ Before, Through string }
+	Gap  struct {
+		CandidateID, ObjectID, Reason string
+		Span                          Span
+	}
+)
 
 // Query is the exact newly reachable set to collect, including side ancestry.
 type Query struct {

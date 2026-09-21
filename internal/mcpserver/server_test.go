@@ -210,11 +210,11 @@ func TestHTTPHandlerServesOnlyStatelessMCPPath(t *testing.T) {
 	handler := s.HTTPHandler()
 
 	missing := httptest.NewRecorder()
-	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodPost, "http://localhost/other", nil))
+	handler.ServeHTTP(missing, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://localhost/other", nil))
 	assert.Equal(t, http.StatusNotFound, missing.Code)
 
 	mcpResponse := httptest.NewRecorder()
-	handler.ServeHTTP(mcpResponse, httptest.NewRequest(http.MethodGet, "http://localhost/mcp", nil))
+	handler.ServeHTTP(mcpResponse, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://localhost/mcp", nil))
 	assert.NotEqual(t, http.StatusNotFound, mcpResponse.Code)
 }
 

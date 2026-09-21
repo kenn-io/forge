@@ -109,6 +109,11 @@ func streamConfigEvents(t *testing.T, srv *Server) *configEventStream {
 
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 
 	stream := &configEventStream{
 		resp:   resp,
@@ -662,7 +667,11 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	assert.Equal(wantRegistryRoot, gotRegistryFolders[0].Path)
 	httpServer := httptest.NewServer(srv)
 	t.Cleanup(httpServer.Close)
-	listResponse, err := httpServer.Client().Get(httpServer.URL + "/api/v1/docs/folders")
+	listResponseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, httpServer.URL+"/api/v1/docs/folders", nil)
+	require.NoError(err)
+	httpClient := httpServer.Client()
+	httpClient.Timeout = 5 * time.Second
+	listResponse, err := httpClient.Do(listResponseReq)
 	require.NoError(err)
 	t.Cleanup(func() { listResponse.Body.Close() })
 	require.Equal(http.StatusOK, listResponse.StatusCode)
@@ -673,7 +682,11 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	assert.Equal("handbook", listBody.Folders[0].ID)
 	assert.Equal("Handbook", listBody.Folders[0].Name)
 
-	updatedReadResponse, err := httpServer.Client().Get(httpServer.URL + "/api/v1/docs/folders/handbook/file?path=guide.md")
+	updatedReadResponseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, httpServer.URL+"/api/v1/docs/folders/handbook/file?path=guide.md", nil)
+	require.NoError(err)
+	httpClient = httpServer.Client()
+	httpClient.Timeout = 5 * time.Second
+	updatedReadResponse, err := httpClient.Do(updatedReadResponseReq)
 	require.NoError(err)
 	t.Cleanup(func() { updatedReadResponse.Body.Close() })
 	require.Equal(http.StatusOK, updatedReadResponse.StatusCode)
@@ -681,7 +694,11 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	require.NoError(json.NewDecoder(updatedReadResponse.Body).Decode(&readBody))
 	assert.Equal("# Guide\n", readBody.Content)
 
-	oldReadResponse, err := httpServer.Client().Get(httpServer.URL + "/api/v1/docs/folders/notes/file?path=old.md")
+	oldReadResponseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, httpServer.URL+"/api/v1/docs/folders/notes/file?path=old.md", nil)
+	require.NoError(err)
+	httpClient = httpServer.Client()
+	httpClient.Timeout = 5 * time.Second
+	oldReadResponse, err := httpClient.Do(oldReadResponseReq)
 	require.NoError(err)
 	t.Cleanup(func() { oldReadResponse.Body.Close() })
 	assert.Equal(http.StatusNotFound, oldReadResponse.StatusCode)
@@ -715,7 +732,7 @@ func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		<-start
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders", mutationBody)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/docs/folders", mutationBody)
 		setAcceptedHostForServerTest(req, srv)
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Content-Type", "application/json")
@@ -1857,7 +1874,7 @@ command = ["/bin/echo"]
 	// from future launches while the boot descriptor remains active.
 	assert.True(ev.RestartRequired)
 
-	_, err := srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	_, err := srv.runtime.Launch(t.Context(), "ws-1", t.TempDir(), "helper")
 	require.NoError(err)
 	assert.Contains(owner.startedStripEnvVars, "KENN_FORGE_REPO_OLD_TOKEN")
 	assert.Contains(owner.startedStripEnvVars, "KENN_FORGE_REPO_NEW_TOKEN")
@@ -2203,7 +2220,7 @@ func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {
 			content = validReloadConfigChangedActivity
 		}
 		writeConfigToml(t, cfgPath, content)
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 	}
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
@@ -2396,10 +2413,8 @@ base_url = "https://replacement-hub.example"
 	event := srv.applyConfigChange(t.Context())
 	require.True(event.Valid, event.Error)
 	require.True(event.RestartRequired)
-	require.Equal(
-		config.FleetRoleHub,
-		srv.activeFleetConfigSnapshotLocked().Fleet.RoleOrDefault(),
-	)
+	fleetCfg := srv.activeFleetConfigSnapshotLocked().Fleet
+	require.Equal(config.FleetRoleHub, fleetCfg.RoleOrDefault())
 
 	member := config.FleetMember{
 		NodeID:  "22222222222222222222222222222222",

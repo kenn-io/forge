@@ -347,8 +347,7 @@ func (s *Handler) setIssueGitHubState(ctx context.Context, input *githubStateInp
 		return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
 	}
 	if _, err := mutator.SetIssueState(ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.Body.State); err != nil {
-		var githubError *gh.ErrorResponse
-		if errors.As(err, &githubError) && githubError != nil && githubError.Response != nil &&
+		if githubError, ok := errors.AsType[*gh.ErrorResponse](err); ok && githubError != nil && githubError.Response != nil &&
 			githubError.Response.StatusCode == http.StatusUnprocessableEntity {
 			client, clientErr := s.syncer.ClientForHost(repo.PlatformHost)
 			if clientErr != nil {

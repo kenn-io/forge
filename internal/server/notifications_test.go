@@ -64,35 +64,40 @@ func TestNotificationsAPIListsAndQueuesReadWithoutDone(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/notifications?state=unread")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/notifications?state=unread", nil)
+	require.NoError(err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var listed notificationsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
 	require.Len(listed.Items, 1)
-	check := assert.New(t)
-	check.Equal("review_requested", listed.Items[0].Reason)
-	check.Equal("pr", listed.Items[0].ItemType)
-	check.Equal("github", listed.Items[0].Provider)
-	check.Equal("acme/widget", listed.Items[0].RepoPath)
+	assert := assert.New(t)
+	assert.Equal("review_requested", listed.Items[0].Reason)
+	assert.Equal("pr", listed.Items[0].ItemType)
+	assert.Equal("github", listed.Items[0].Provider)
+	assert.Equal("acme/widget", listed.Items[0].RepoPath)
 
 	body, err := json.Marshal(map[string]any{"ids": []int64{id}})
 	require.NoError(err)
-	markResp, err := http.Post(ts.URL+"/api/v1/notifications/read", "application/json", bytes.NewReader(body))
+	markRespReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/api/v1/notifications/read", bytes.NewReader(body))
+	require.NoError(err)
+	markRespReq.Header.Set("Content-Type", "application/json")
+	markResp, err := (&http.Client{Timeout: 5 * time.Second}).Do(markRespReq)
 	require.NoError(err)
 	defer markResp.Body.Close()
 	require.Equal(http.StatusOK, markResp.StatusCode)
 	var bulk notificationBulkResponse
 	require.NoError(json.NewDecoder(markResp.Body).Decode(&bulk))
-	check.Equal([]int64{id}, bulk.Succeeded)
-	check.Equal([]int64{id}, bulk.Queued)
+	assert.Equal([]int64{id}, bulk.Succeeded)
+	assert.Equal([]int64{id}, bulk.Queued)
 
 	readItems, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "read"})
 	require.NoError(err)
 	require.Len(readItems, 1)
-	check.Nil(readItems[0].DoneAt)
-	check.NotNil(readItems[0].SourceAckQueuedAt)
+	assert.Nil(readItems[0].DoneAt)
+	assert.NotNil(readItems[0].SourceAckQueuedAt)
 }
 
 func TestNotificationRepoFiltersRejectBlankProvider(t *testing.T) {
@@ -178,7 +183,9 @@ func TestNotificationsAPIMapsNeutralFieldsToExistingGitHubJSON(t *testing.T) {
 func getNotificationsForTest(t *testing.T, baseURL string, state string) notificationsResponse {
 	t.Helper()
 	require := require.New(t)
-	resp, err := http.Get(baseURL + "/api/v1/notifications?state=" + state)
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/api/v1/notifications?state="+state, nil)
+	require.NoError(err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -241,7 +248,7 @@ func TestNotificationsAPIShowsClosedLinkedItemsAsDone(t *testing.T) {
 
 func TestNotificationsAPIReclosesLinkedItemsAfterUndone(t *testing.T) {
 	require := require.New(t)
-	check := assert.New(t)
+	assert := assert.New(t)
 	database := openTestDB(t)
 	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
@@ -269,21 +276,24 @@ func TestNotificationsAPIReclosesLinkedItemsAfterUndone(t *testing.T) {
 
 	body, err := json.Marshal(map[string]any{"ids": []int64{id}})
 	require.NoError(err)
-	resp, err := http.Post(ts.URL+"/api/v1/notifications/undone", "application/json", bytes.NewReader(body))
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/api/v1/notifications/undone", bytes.NewReader(body))
+	require.NoError(err)
+	respReq.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
 
 	var bulk notificationBulkResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&bulk))
-	check.Equal([]int64{id}, bulk.Succeeded)
-	check.Empty(bulk.Failed)
-	check.Empty(getNotificationsForTest(t, ts.URL, "active").Items)
+	assert.Equal([]int64{id}, bulk.Succeeded)
+	assert.Empty(bulk.Failed)
+	assert.Empty(getNotificationsForTest(t, ts.URL, "active").Items)
 	done = getNotificationsForTest(t, ts.URL, "done")
 	require.Len(done.Items, 1)
-	check.Equal(id, done.Items[0].ID)
-	check.Equal("closed", done.Items[0].DoneReason)
-	check.NotEmpty(done.Items[0].DoneAt)
+	assert.Equal(id, done.Items[0].ID)
+	assert.Equal("closed", done.Items[0].DoneReason)
+	assert.NotEmpty(done.Items[0].DoneAt)
 }
 
 func newTestNotificationServer(t *testing.T, database *db.DB) *httptest.Server {
@@ -368,7 +378,9 @@ func TestNotificationsAPIAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T)
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/notifications?state=all&repo=github|ghe.example.com/acme/widget")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/notifications?state=all&repo=github|ghe.example.com/acme/widget", nil)
+	require.NoError(err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -398,13 +410,18 @@ func TestNotificationsAPIExposesBackgroundSyncStatus(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Post(ts.URL+"/api/v1/notifications/sync", "application/json", nil)
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/api/v1/notifications/sync", nil)
+	require.NoError(err)
+	respReq.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusAccepted, resp.StatusCode)
 
 	require.Eventually(func() bool {
-		resp, err := http.Get(ts.URL + "/api/v1/notifications?state=all")
+		respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/notifications?state=all", nil)
+		require.NoError(err)
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 		if err != nil {
 			return false
 		}
@@ -445,12 +462,17 @@ func TestGlobalSyncExposesNotificationSyncFailure(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Post(ts.URL+"/api/v1/sync", "application/json", nil)
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/api/v1/sync", nil)
+	require.NoError(err)
+	respReq.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusAccepted, resp.StatusCode)
 	require.Eventually(func() bool {
-		resp, err := http.Get(ts.URL + "/api/v1/notifications?state=all")
+		respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/notifications?state=all", nil)
+		require.NoError(err)
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 		if err != nil {
 			return false
 		}
@@ -485,7 +507,10 @@ func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {
 
 	body, err := json.Marshal(map[string]any{"ids": []int64{id}})
 	require.NoError(err)
-	markResp, err := http.Post(ts.URL+"/api/v1/notifications/read", "application/json", bytes.NewReader(body))
+	markRespReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/api/v1/notifications/read", bytes.NewReader(body))
+	require.NoError(err)
+	markRespReq.Header.Set("Content-Type", "application/json")
+	markResp, err := (&http.Client{Timeout: 5 * time.Second}).Do(markRespReq)
 	require.NoError(err)
 	defer markResp.Body.Close()
 	require.Equal(http.StatusOK, markResp.StatusCode)
@@ -528,7 +553,10 @@ func TestNotificationsAPIRejectsNilConfigAccess(t *testing.T) {
 
 	body, err := json.Marshal(map[string]any{"ids": []int64{id}})
 	require.NoError(err)
-	resp, err := http.Post(ts.URL+"/api/v1/notifications/read", "application/json", bytes.NewReader(body))
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/api/v1/notifications/read", bytes.NewReader(body))
+	require.NoError(err)
+	respReq.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusForbidden, resp.StatusCode)
@@ -580,21 +608,24 @@ func TestNotificationsAPIBulkMutationsScopeToTrackedRepos(t *testing.T) {
 
 	body, err := json.Marshal(map[string]any{"ids": []int64{trackedID, removedID}})
 	require.NoError(err)
-	resp, err := http.Post(ts.URL+"/api/v1/notifications/read", "application/json", bytes.NewReader(body))
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/api/v1/notifications/read", bytes.NewReader(body))
+	require.NoError(err)
+	respReq.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
 
 	var bulk notificationBulkResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&bulk))
-	check := assert.New(t)
-	check.Equal([]int64{trackedID}, bulk.Succeeded)
-	check.Equal([]int64{trackedID}, bulk.Queued)
-	check.Equal([]notificationBulkFailure{{ID: removedID, Error: "notification not found"}}, bulk.Failed)
+	assert := assert.New(t)
+	assert.Equal([]int64{trackedID}, bulk.Succeeded)
+	assert.Equal([]int64{trackedID}, bulk.Queued)
+	assert.Equal([]notificationBulkFailure{{ID: removedID, Error: "notification not found"}}, bulk.Failed)
 	removedItems, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "removed"})
 	require.NoError(err)
 	require.Len(removedItems, 1)
-	check.Nil(removedItems[0].SourceAckQueuedAt)
+	assert.Nil(removedItems[0].SourceAckQueuedAt)
 }
 
 func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
@@ -612,13 +643,13 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 			body: func(id int64, missingID int64) map[string]any {
 				return map[string]any{"ids": []int64{id, missingID}}
 			},
-			verify: func(ctx context.Context, check *assert.Assertions, database *db.DB, id int64) {
+			verify: func(ctx context.Context, assert *assert.Assertions, database *db.DB, id int64) {
 				items, err := database.ListNotifications(ctx, db.ListNotificationsOpts{State: "read"})
 				require.NoError(t, err)
 				require.Len(t, items, 1)
-				check.Equal(id, items[0].ID)
-				check.Nil(items[0].DoneAt)
-				check.NotNil(items[0].SourceAckQueuedAt)
+				assert.Equal(id, items[0].ID)
+				assert.Nil(items[0].DoneAt)
+				assert.NotNil(items[0].SourceAckQueuedAt)
 			},
 			wantQueued: true,
 		},
@@ -628,13 +659,13 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 			body: func(id int64, missingID int64) map[string]any {
 				return map[string]any{"ids": []int64{id, missingID}}
 			},
-			verify: func(ctx context.Context, check *assert.Assertions, database *db.DB, id int64) {
+			verify: func(ctx context.Context, assert *assert.Assertions, database *db.DB, id int64) {
 				items, err := database.ListNotifications(ctx, db.ListNotificationsOpts{State: "done"})
 				require.NoError(t, err)
 				require.Len(t, items, 1)
-				check.Equal(id, items[0].ID)
-				check.NotNil(items[0].DoneAt)
-				check.NotNil(items[0].SourceAckQueuedAt)
+				assert.Equal(id, items[0].ID)
+				assert.NotNil(items[0].DoneAt)
+				assert.NotNil(items[0].SourceAckQueuedAt)
 			},
 			wantQueued: true,
 		},
@@ -644,13 +675,13 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 			body: func(id int64, missingID int64) map[string]any {
 				return map[string]any{"ids": []int64{id, missingID}, "mark_read": false}
 			},
-			verify: func(ctx context.Context, check *assert.Assertions, database *db.DB, id int64) {
+			verify: func(ctx context.Context, assert *assert.Assertions, database *db.DB, id int64) {
 				items, err := database.ListNotifications(ctx, db.ListNotificationsOpts{State: "done"})
 				require.NoError(t, err)
 				require.Len(t, items, 1)
-				check.Equal(id, items[0].ID)
-				check.NotNil(items[0].DoneAt)
-				check.Nil(items[0].SourceAckQueuedAt)
+				assert.Equal(id, items[0].ID)
+				assert.NotNil(items[0].DoneAt)
+				assert.Nil(items[0].SourceAckQueuedAt)
 			},
 		},
 		{
@@ -663,13 +694,13 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 				_, err := database.MarkNotificationsDone(ctx, []int64{id}, now, false)
 				return err
 			},
-			verify: func(ctx context.Context, check *assert.Assertions, database *db.DB, id int64) {
+			verify: func(ctx context.Context, assert *assert.Assertions, database *db.DB, id int64) {
 				items, err := database.ListNotifications(ctx, db.ListNotificationsOpts{State: "unread"})
 				require.NoError(t, err)
 				require.Len(t, items, 1)
-				check.Equal(id, items[0].ID)
-				check.Nil(items[0].DoneAt)
-				check.Empty(items[0].DoneReason)
+				assert.Equal(id, items[0].ID)
+				assert.Nil(items[0].DoneAt)
+				assert.Empty(items[0].DoneReason)
 			},
 		},
 	}
@@ -689,22 +720,25 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 
 			body, err := json.Marshal(tt.body(id, missingID))
 			require.NoError(err)
-			resp, err := http.Post(ts.URL+tt.path, "application/json", bytes.NewReader(body))
+			respReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+tt.path, bytes.NewReader(body))
+			require.NoError(err)
+			respReq.Header.Set("Content-Type", "application/json")
+			resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 			require.NoError(err)
 			defer resp.Body.Close()
 			require.Equal(http.StatusOK, resp.StatusCode)
 
 			var bulk notificationBulkResponse
 			require.NoError(json.NewDecoder(resp.Body).Decode(&bulk))
-			check := assert.New(t)
-			check.Equal([]int64{id}, bulk.Succeeded)
+			assert := assert.New(t)
+			assert.Equal([]int64{id}, bulk.Succeeded)
 			if tt.wantQueued {
-				check.Equal([]int64{id}, bulk.Queued)
+				assert.Equal([]int64{id}, bulk.Queued)
 			} else {
-				check.Empty(bulk.Queued)
+				assert.Empty(bulk.Queued)
 			}
-			check.Equal([]notificationBulkFailure{{ID: missingID, Error: "notification not found"}}, bulk.Failed)
-			tt.verify(t.Context(), check, database, id)
+			assert.Equal([]notificationBulkFailure{{ID: missingID, Error: "notification not found"}}, bulk.Failed)
+			tt.verify(t.Context(), assert, database, id)
 		})
 	}
 }
@@ -748,7 +782,9 @@ func TestNotificationsAPIRouteFieldsFollowRepositoryRename(t *testing.T) {
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/notifications?state=unread")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/notifications?state=unread", nil)
+	require.NoError(err)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)

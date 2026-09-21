@@ -17,8 +17,10 @@ import (
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-var errFixtureReadOnly = errors.New("fixture client: mutation not supported")
-var errFixtureNotFound = errors.New("fixture client: not found")
+var (
+	errFixtureReadOnly = errors.New("fixture client: mutation not supported")
+	errFixtureNotFound = errors.New("fixture client: not found")
+)
 
 type fixtureReadyForReviewStaleStateError struct {
 	message string

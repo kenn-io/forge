@@ -30,6 +30,7 @@ func (p Progress) recordPage(records int, more bool) {
 		p.Page(records, more)
 	}
 }
+
 func (p Progress) done() {
 	if p.Done != nil {
 		p.Done()
@@ -63,8 +64,10 @@ func NewClient(config ClientConfig) (*Client, error) {
 		host = platform.DefaultGitHubHost
 	}
 	if config.Read == nil || config.Write == nil || config.Notifications == nil || config.Clock == nil {
-		return nil, &platform.Error{Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub,
-			PlatformHost: host, Err: errors.New("read, write and notification clients and a clock are required")}
+		return nil, &platform.Error{
+			Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub,
+			PlatformHost: host, Err: errors.New("read, write and notification clients and a clock are required"),
+		}
 	}
 	base, uploads, graphQL := config.APIBase, config.UploadBase, config.GraphQLEndpoint
 	if base == "" {
@@ -126,12 +129,14 @@ func (c *Client) authContext(ctx context.Context, owner string, mutation bool) c
 	}
 	return ctx
 }
+
 func (c *Client) progress(owner, repo, kind string) Progress {
 	if c.progressFactory != nil {
 		return c.progressFactory(owner, repo, kind)
 	}
 	return Progress{}
 }
+
 func (c *Client) warn(message string, args ...any) {
 	if c.warning != nil {
 		c.warning(message, args...)
@@ -145,6 +150,7 @@ type unconditionalReadKey struct{}
 func WithUnconditionalRead(ctx context.Context) context.Context {
 	return context.WithValue(ctx, unconditionalReadKey{}, true)
 }
+
 func UnconditionalRead(ctx context.Context) bool {
 	value, _ := ctx.Value(unconditionalReadKey{}).(bool)
 	return value

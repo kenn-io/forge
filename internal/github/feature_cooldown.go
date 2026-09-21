@@ -310,8 +310,8 @@ func (s *Syncer) recordRepositoryFeatureDisabledUntil(
 	feature string,
 	err error,
 ) (time.Time, bool) {
-	var platformErr *platform.Error
-	if !errors.As(err, &platformErr) ||
+	platformErr, ok := errors.AsType[*platform.Error](err)
+	if !ok ||
 		platformErr.Code != platform.ErrCodeRepositoryFeatureDisabled ||
 		platformErr.Capability != feature {
 		return time.Time{}, false

@@ -77,7 +77,7 @@ func TestReviewBackgroundSyncsRecheckRemovedUpstream(t *testing.T) {
 		},
 	})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})

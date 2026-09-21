@@ -66,8 +66,10 @@ func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T)
 			})
 			require.NoError(err)
 			mock := &conditionalIssueTrackingClient{notModified: true}
-			mock.comments = []*gh.IssueComment{{ID: new(int64(5)), Body: new("changed comment"),
-				CreatedAt: makeTimestamp(now.Add(-48 * time.Hour)), UpdatedAt: makeTimestamp(now)}}
+			mock.comments = []*gh.IssueComment{{
+				ID: new(int64(5)), Body: new("changed comment"),
+				CreatedAt: makeTimestamp(now.Add(-48 * time.Hour)), UpdatedAt: makeTimestamp(now),
+			}}
 			if fail {
 				mock.listIssueCommentsErr = errors.New("unavailable")
 			}
@@ -116,9 +118,11 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 					prClient := &conditionalPRTrackingClient{notModified: true}
 					mock = &prClient.mockClient
 					client = prClient
-					mock.openPRs = []*gh.PullRequest{{ID: new(int64(101)), Number: new(1),
+					mock.openPRs = []*gh.PullRequest{{
+						ID: new(int64(101)), Number: new(1),
 						Title: new("Active PR"), State: new("open"), CreatedAt: makeTimestamp(updated),
-						UpdatedAt: makeTimestamp(updated)}}
+						UpdatedAt: makeTimestamp(updated),
+					}}
 					if listUnchanged {
 						mock.listOpenPRsErr = notModifiedErr()
 					}
@@ -131,15 +135,19 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 					issueClient := &conditionalIssueTrackingClient{notModified: true}
 					mock = &issueClient.mockClient
 					client = issueClient
-					mock.openIssues = []*gh.Issue{{ID: new(int64(101)), Number: new(1),
+					mock.openIssues = []*gh.Issue{{
+						ID: new(int64(101)), Number: new(1),
 						Title: new("Active issue"), State: new("open"), CreatedAt: makeTimestamp(updated),
-						UpdatedAt: makeTimestamp(updated)}}
+						UpdatedAt: makeTimestamp(updated),
+					}}
 					if listUnchanged {
 						mock.listOpenIssuesErr = notModifiedErr()
 					}
 				}
-				mock.comments = []*gh.IssueComment{{ID: new(int64(5)), Body: new("edited comment"),
-					CreatedAt: makeTimestamp(updated), UpdatedAt: makeTimestamp(now)}}
+				mock.comments = []*gh.IssueComment{{
+					ID: new(int64(5)), Body: new("edited comment"),
+					CreatedAt: makeTimestamp(updated), UpdatedAt: makeTimestamp(now),
+				}}
 				syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
 					[]RepoRef{repo}, time.Minute, nil, testBudget(1000))
 

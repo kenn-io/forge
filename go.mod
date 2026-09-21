@@ -39,7 +39,7 @@ require (
 	github.com/yuin/goldmark/v2 v2.0.1
 	gitlab.com/gitlab-org/api/client-go/v2 v2.64.0
 	go.kenn.io/kata v0.16.0
-	go.kenn.io/kit v0.25.0
+	go.kenn.io/kit v0.25.1-0.20260918202731-04a175847323
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0

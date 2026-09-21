@@ -29,7 +29,7 @@ func TestGetWorkspaceFilesPropagatesCanceledRequest(t *testing.T) {
 
 	requestCtx, cancelRequest := context.WithCancel(t.Context())
 	releasePreparation := make(chan struct{})
-	cacheCtx, cancelCache := context.WithCancel(context.Background())
+	cacheCtx, cancelCache := context.WithCancel(t.Context())
 	cache := newWorkspaceDiffCache(cacheCtx, workspaceDiffCacheDeps{
 		resolve: func(context.Context, workspace.DiffSnapshotSpec) (workspace.ResolvedDiffSnapshotSpec, bool, error) {
 			return workspaceDiffTestResolved(), true, nil

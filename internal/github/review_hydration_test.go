@@ -3,7 +3,7 @@ package github
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -54,7 +54,7 @@ func newCompleteReviewSyncFixture(t *testing.T, reviewCount int) completeReviewS
 
 	threads := make([]platform.MergeRequestReviewThread, reviewCount)
 	for i := range reviewCount {
-		reviewID := fmt.Sprintf("%d", i+1)
+		reviewID := strconv.Itoa(i + 1)
 		threads[i] = platform.MergeRequestReviewThread{
 			ProviderThreadID:  "thread-" + reviewID,
 			ProviderReviewID:  reviewID,

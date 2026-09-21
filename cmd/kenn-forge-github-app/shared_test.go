@@ -21,7 +21,7 @@ func TestPollUntilDistinguishesDeadlineFromErrorAndCancel(t *testing.T) {
 
 	t.Run("deadline matches errPollDeadline with a clean message", func(t *testing.T) {
 		t.Parallel()
-		err := env.pollUntil(context.Background(), 20*time.Millisecond,
+		err := env.pollUntil(t.Context(), 20*time.Millisecond,
 			func(context.Context) (bool, error) { return false, nil })
 		require.ErrorIs(t, err, errPollDeadline)
 		assert.Contains(t, err.Error(), "timed out after")
@@ -31,7 +31,7 @@ func TestPollUntilDistinguishesDeadlineFromErrorAndCancel(t *testing.T) {
 	t.Run("probe error surfaces and is not a deadline", func(t *testing.T) {
 		t.Parallel()
 		boom := errors.New("probe boom")
-		err := env.pollUntil(context.Background(), time.Second,
+		err := env.pollUntil(t.Context(), time.Second,
 			func(context.Context) (bool, error) { return false, boom })
 		require.ErrorIs(t, err, boom)
 		assert.NotErrorIs(t, err, errPollDeadline)
@@ -39,7 +39,7 @@ func TestPollUntilDistinguishesDeadlineFromErrorAndCancel(t *testing.T) {
 
 	t.Run("cancellation surfaces and is not a deadline", func(t *testing.T) {
 		t.Parallel()
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		err := env.pollUntil(ctx, time.Second, func(context.Context) (bool, error) {
 			cancel()
 			return false, nil

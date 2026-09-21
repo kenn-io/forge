@@ -1,7 +1,6 @@
 package forgejo
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,7 +13,7 @@ import (
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
@@ -43,7 +42,7 @@ func TestForgejoReviewThreadPreservesContextCoordinates(t *testing.T) {
 
 func TestPublishDiffReviewDraftCreatesForgejoReview(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	submitted := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodPost, r.Method)
@@ -84,7 +83,7 @@ func TestPublishDiffReviewDraftCreatesForgejoReview(t *testing.T) {
 
 	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithTransport(http.DefaultTransport))
 	require.NoError(err)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		Owner: "acme",
 		Name:  "widgets",
 	}, 42, platform.PublishDiffReviewDraftInput{
@@ -109,7 +108,7 @@ func TestPublishDiffReviewDraftCreatesForgejoReview(t *testing.T) {
 
 func TestPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	submitted := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodPost, r.Method)
@@ -139,7 +138,7 @@ func TestPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) {
 
 	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithTransport(http.DefaultTransport))
 	require.NoError(err)
-	result, err := client.PublishDiffReviewDraft(context.Background(), platform.RepoRef{
+	result, err := client.PublishDiffReviewDraft(t.Context(), platform.RepoRef{
 		Owner: "acme",
 		Name:  "widgets",
 	}, 42, platform.PublishDiffReviewDraftInput{
@@ -155,7 +154,7 @@ func TestPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) {
 }
 
 func TestRequestChangesMapsNotFoundResponse(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
@@ -164,7 +163,7 @@ func TestRequestChangesMapsNotFoundResponse(t *testing.T) {
 	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithTransport(http.DefaultTransport))
 	require.NoError(err)
 	err = client.RequestChanges(
-		context.Background(), platform.RepoRef{Owner: "acme", Name: "widgets"},
+		t.Context(), platform.RepoRef{Owner: "acme", Name: "widgets"},
 		42, "needs work", "reviewed-head",
 	)
 
@@ -174,7 +173,7 @@ func TestRequestChangesMapsNotFoundResponse(t *testing.T) {
 
 func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	created := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -209,7 +208,7 @@ func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 
 	client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithTransport(http.DefaultTransport))
 	require.NoError(err)
-	threads, err := client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
+	threads, err := client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 		Owner: "acme",
 		Name:  "widgets",
 	}, 42)
@@ -228,7 +227,7 @@ func TestListMergeRequestReviewThreadsReadsForgejoReviewComments(t *testing.T) {
 
 func TestListMergeRequestReviewThreadsReadsBeyondTenthReviewPage(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var reviewRequests atomic.Int32
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -287,7 +286,7 @@ func TestListMergeRequestReviewThreadsClassifiesDisabledMergeRequests(t *testing
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
-			require := Require.New(t)
+			require := require.New(t)
 			metadataRequests := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -316,7 +315,7 @@ func TestListMergeRequestReviewThreadsClassifiesDisabledMergeRequests(t *testing
 
 			client, err := NewClient("codeberg.test", testTokenSource("token"), WithBaseURLForTesting(server.URL), WithTransport(http.DefaultTransport))
 			require.NoError(err)
-			_, err = client.ListMergeRequestReviewThreads(context.Background(), platform.RepoRef{
+			_, err = client.ListMergeRequestReviewThreads(t.Context(), platform.RepoRef{
 				Platform: platform.KindForgejo,
 				Host:     "codeberg.test",
 				Owner:    "acme",
@@ -335,7 +334,7 @@ func TestListMergeRequestReviewThreadsClassifiesDisabledMergeRequests(t *testing
 func TestListMergeRequestReviewThreadsMapsAuthenticationErrors(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
-			require := Require.New(t)
+			require := require.New(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				http.Error(w, http.StatusText(status), status)
 			}))
@@ -349,11 +348,7 @@ func TestListMergeRequestReviewThreadsMapsAuthenticationErrors(t *testing.T) {
 				Owner: "acme", Name: "widgets",
 			}, 42)
 
-			if status == http.StatusUnauthorized {
-				require.ErrorIs(err, platform.ErrPermissionDenied)
-			} else {
-				require.ErrorIs(err, platform.ErrPermissionDenied)
-			}
+			require.ErrorIs(err, platform.ErrPermissionDenied)
 			var platformErr *platform.Error
 			require.ErrorAs(err, &platformErr)
 			require.Equal(platform.KindForgejo, platformErr.Provider)
@@ -364,7 +359,7 @@ func TestListMergeRequestReviewThreadsMapsAuthenticationErrors(t *testing.T) {
 
 func TestListMergeRequestReviewThreadsReadsEveryLargeDatasetReview(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var commentRequests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -401,7 +396,7 @@ func TestListMergeRequestReviewThreadsReadsEveryLargeDatasetReview(t *testing.T)
 
 func TestListMergeRequestReviewThreadsReadsEveryLargeDatasetComment(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {

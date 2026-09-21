@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -147,6 +148,7 @@ func TestGitHubArchiveUpdatedIssuesUseInclusiveWatermarkAndStableContinuation(t 
 	assert.True(second.Exhausted)
 	assert.Equal(2, requests)
 }
+
 func TestGitHubArchiveRESTErrorsCarryProviderClassification(t *testing.T) {
 	t.Parallel()
 	resetAt := time.Date(2026, 7, 14, 18, 0, 0, 0, time.UTC)
@@ -161,7 +163,7 @@ func TestGitHubArchiveRESTErrorsCarryProviderClassification(t *testing.T) {
 		{name: "rate limit", status: http.StatusForbidden, headers: http.Header{
 			"X-Ratelimit-Remaining": []string{"0"},
 			"X-Ratelimit-Limit":     []string{"5000"},
-			"X-Ratelimit-Reset":     []string{fmt.Sprint(resetAt.Unix())},
+			"X-Ratelimit-Reset":     []string{strconv.FormatInt(resetAt.Unix(), 10)},
 		}, want: platform.ErrRateLimited, wantReset: &resetAt},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -207,7 +209,7 @@ func TestGitHubArchiveGraphQLErrorsCarryProviderClassification(t *testing.T) {
 		{name: "rate limit response", status: http.StatusOK, body: `{"errors":[{"type":"RATE_LIMITED","message":"API rate limit exceeded"}]}`, headers: http.Header{
 			"X-Ratelimit-Remaining": []string{"0"},
 			"X-Ratelimit-Limit":     []string{"5000"},
-			"X-Ratelimit-Reset":     []string{fmt.Sprint(resetAt.Unix())},
+			"X-Ratelimit-Reset":     []string{strconv.FormatInt(resetAt.Unix(), 10)},
 		}, want: platform.ErrRateLimited, wantReset: &resetAt},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -246,7 +248,7 @@ func TestGitHubArchiveCapabilitiesRequireBoundedClient(t *testing.T) {
 		HistoricalIssues: true, HistoricalMergeRequests: true,
 		OrdinaryComments: true, SubmittedReviews: true, InlineReviewComments: true,
 	}, live.Capabilities().Archive)
-	assert.Equal(platform.ArchiveCapabilities{}, (newTestGitHubProvider(t, "github.com", &mockClient{})).Capabilities().Archive)
+	assert.Equal(platform.ArchiveCapabilities{}, newTestGitHubProvider(t, "github.com", &mockClient{}).Capabilities().Archive)
 	registry, err := platform.NewRegistry(live)
 	require.NoError(err)
 	issueReader, err := registry.IssuePageReader(platform.KindGitHub, "github.com")

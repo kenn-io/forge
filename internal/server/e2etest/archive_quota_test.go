@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -66,8 +67,8 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 		remaining := upstreamRemaining.Add(-2)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-RateLimit-Limit", "5000")
-		w.Header().Set("X-RateLimit-Remaining", fmt.Sprint(remaining))
-		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(reset.Unix()))
+		w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(int(remaining)))
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
 		_, _ = fmt.Fprintf(w, `{
 			"id": %d,
 			"number": 1,

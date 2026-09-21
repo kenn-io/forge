@@ -151,7 +151,6 @@ func graphQLEndpointForHost(platformHost string) string {
 		return "https://api.github.com/graphql"
 	}
 	return "https://" + platformHost + "/api/graphql"
-
 }
 
 // ClientOption adjusts NewClient construction.

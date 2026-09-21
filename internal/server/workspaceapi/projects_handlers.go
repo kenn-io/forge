@@ -812,12 +812,11 @@ func (s *Handler) resolveMergeRequestWorktreeFacts(
 		return MergeRequestWorktreeFacts{}, httpapi.Internal("failed to query merge request")
 	}
 	if mr == nil && s.syncer != nil {
-		var diffErr *ghclient.DiffSyncError
 		syncErr := s.syncer.SyncMROnProvider(
 			ctx, repoProviderKind(repo), repoProviderHost(repo),
 			repo.Owner, repo.Name, number,
 		)
-		if syncErr == nil || errors.As(syncErr, &diffErr) {
+		if _, isDiffErr := errors.AsType[*ghclient.DiffSyncError](syncErr); syncErr == nil || isDiffErr {
 			mr, err = s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 			if err != nil {
 				return MergeRequestWorktreeFacts{}, httpapi.Internal("failed to query merge request")
@@ -968,10 +967,7 @@ func (s *Handler) removeProjectWorktree(
 // "body.teardown_script") so a confinement violation is reported against
 // the field the caller actually sent.
 func worktreeLifecycleProblem(err error, hookField string) error {
-	var hookErr *managedworktree.HookError
-	var changeRequestErr *managedworktree.ChangeRequestError
-	switch {
-	case errors.As(err, &hookErr):
+	if hookErr, ok := errors.AsType[*managedworktree.HookError](err); ok {
 		return httpapi.NewProblem(
 			http.StatusUnprocessableEntity, httpapi.CodeHookFailed,
 			hookErr.Error(), map[string]any{
@@ -980,6 +976,14 @@ func worktreeLifecycleProblem(err error, hookField string) error {
 				"stderr":     hookErr.Stderr,
 			},
 		)
+	}
+	if changeRequestErr, ok := errors.AsType[*managedworktree.ChangeRequestError](err); ok &&
+		changeRequestErr.Kind == managedworktree.ChangeRequestHeadChanged {
+		return httpapi.Conflict(httpapi.CodeConflict, changeRequestErr.Error(), map[string]any{
+			"reason": "stale_state",
+		})
+	}
+	switch {
 	case errors.Is(err, managedworktree.ErrWorktreeDestinationExists):
 		return httpapi.Conflict(httpapi.CodeDestinationExists, err.Error(), nil)
 	case errors.Is(err, managedworktree.ErrBranchAlreadyExists):
@@ -990,11 +994,6 @@ func worktreeLifecycleProblem(err error, hookField string) error {
 		return httpapi.Validation("body.branch", err.Error())
 	case errors.Is(err, managedworktree.ErrHookOutsideProject):
 		return httpapi.Validation(hookField, err.Error())
-	case errors.As(err, &changeRequestErr) &&
-		changeRequestErr.Kind == managedworktree.ChangeRequestHeadChanged:
-		return httpapi.Conflict(httpapi.CodeConflict, changeRequestErr.Error(), map[string]any{
-			"reason": "stale_state",
-		})
 	}
 	return httpapi.Internal("worktree lifecycle: " + err.Error())
 }
@@ -1712,8 +1711,8 @@ func KillRuntimeTmuxSession(
 }
 
 func projectRuntimeTmuxSessionAbsent(stderr []byte, err error) bool {
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok || exitErr.ExitCode() != 1 {
 		return false
 	}
 	msg := string(stderr)

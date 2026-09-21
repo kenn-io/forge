@@ -52,8 +52,7 @@ func (s *Server) getStackContext(
 
 	stack, err := s.backend.GetPullStack(ctx, itemIdentity(in.Item))
 	if err != nil {
-		var backendErr *Error
-		if errors.As(err, &backendErr) && isStackAbsentError(backendErr) {
+		if backendErr, ok := errors.AsType[*Error](err); ok && isStackAbsentError(backendErr) {
 			return getStackContextOutput{Present: false}, nil
 		}
 		return getStackContextOutput{}, err

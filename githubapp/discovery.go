@@ -2,6 +2,7 @@ package githubapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -47,7 +48,7 @@ func (c *Client) ListInstallationsPage(
 		return InstallationPage{}, fmt.Errorf("listing app installations: %w", err)
 	}
 	if items == nil || len(items) > perPage {
-		return InstallationPage{}, fmt.Errorf("missing or oversized installation page")
+		return InstallationPage{}, errors.New("missing or oversized installation page")
 	}
 	result := InstallationPage{Installations: items}
 	if len(items) == perPage {
@@ -72,7 +73,7 @@ func (c *Client) ListInstallationRepositoriesPage(
 		return RepositoryPage{}, fmt.Errorf("listing installation repositories: %w", err)
 	}
 	if out.Repositories == nil || len(out.Repositories) > perPage {
-		return RepositoryPage{}, fmt.Errorf("missing or oversized repository page")
+		return RepositoryPage{}, errors.New("missing or oversized repository page")
 	}
 	result := RepositoryPage{Repositories: out.Repositories}
 	if len(out.Repositories) == perPage {
@@ -83,7 +84,7 @@ func (c *Client) ListInstallationRepositoriesPage(
 
 func discoveryPath(path string, page, perPage int) (string, error) {
 	if page < 1 || page == math.MaxInt || perPage < 1 || perPage > 100 {
-		return "", fmt.Errorf("page must be positive and incrementable; perPage must be between 1 and 100")
+		return "", errors.New("page must be positive and incrementable; perPage must be between 1 and 100")
 	}
 	return fmt.Sprintf("%s?per_page=%d&page=%d", path, perPage, page), nil
 }

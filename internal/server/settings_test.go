@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go.kenn.io/forge/internal/apiclient/generated"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"go.kenn.io/forge/internal/platformdb"
 
@@ -46,6 +47,7 @@ import (
 func setupTestServerWithConfig(
 	t *testing.T,
 ) (*Server, *db.DB, string) {
+	t.Helper()
 	return setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -63,6 +65,7 @@ func setupTestServerWithConfigContent(
 	cfgContent string,
 	mock *mockGH,
 ) (*Server, *db.DB, string) {
+	t.Helper()
 	return setupTestServerWithConfigContentAndOptions(
 		t, cfgContent, mock, ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
@@ -796,7 +799,7 @@ func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {
 	started := make(chan struct{})
 	go func() {
 		close(started)
-		_, err := srv.updateSettings(context.Background(), &updateSettingsInput{
+		_, err := srv.updateSettings(t.Context(), &updateSettingsInput{
 			Body: updateSettingsRequest{
 				Activity: &config.Activity{TimeRange: "30d", ViewMode: "threaded"},
 			},
@@ -2788,7 +2791,7 @@ name = "*"
 	go func() {
 		// Inline the request (no testify helpers) so the
 		// linter does not flag assertions inside the goroutine.
-		req := httptest.NewRequest(
+		req := httptest.NewRequestWithContext(t.Context(),
 			http.MethodPost,
 			"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 		)
@@ -4042,7 +4045,7 @@ name = "widget"
 	done := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
 		// Inline request avoids testify assertions inside this goroutine.
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/repos/bulk", bytes.NewReader(bulkBody.Bytes()))
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/repos/bulk", bytes.NewReader(bulkBody.Bytes()))
 		req.Host = "127.0.0.1:8091"
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
@@ -4084,7 +4087,7 @@ func TestSetActiveWorktreeRoute(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	put := func(body string) *http.Response {
-		req, err := http.NewRequest(
+		req, err := http.NewRequestWithContext(t.Context(),
 			http.MethodPut,
 			ts.URL+"/api/v1/ui/active-worktree",
 			strings.NewReader(body),
@@ -4642,7 +4645,7 @@ prefer_github_native_stacks = true
 		PullRequests: &config.PullRequests{},
 	}))
 	reqCtx, cancel := context.WithCancel(ctx)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", &buf).WithContext(reqCtx)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/v1/settings", &buf).WithContext(reqCtx)
 	req.Host = "127.0.0.1:8091"
 	req.Header.Set("Content-Type", "application/json")
 	// The client disconnects while the request is being served.

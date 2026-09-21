@@ -69,71 +69,93 @@ func (m *mockClient) GetUser(context.Context, string) (*gh.User, error) { return
 func (m *mockClient) ListRepositoriesByOwner(context.Context, string) ([]*gh.Repository, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListReleases(context.Context, string, string, int) ([]*gh.RepositoryRelease, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListTags(context.Context, string, string, int) ([]*gh.RepositoryTag, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListOpenIssues(context.Context, string, string) ([]*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) GetIssue(context.Context, string, string, int) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) CreateIssue(context.Context, string, string, string, string) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListIssueComments(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListIssueCommentsIfChanged(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListReviews(context.Context, string, string, int) ([]*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListPullRequestReviewThreads(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListCommits(context.Context, string, string, int) ([]*gh.RepositoryCommit, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListPullRequestTimelineEvents(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListForcePushEvents(context.Context, string, string, int) ([]platformgithub.ForcePushEvent, error) {
 	return nil, nil
 }
+
 func (m *mockClient) GetCombinedStatus(context.Context, string, string, string) (*gh.CombinedStatus, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListCheckRunsForRef(context.Context, string, string, string) ([]*gh.CheckRun, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListWorkflowRunsForHeadSHA(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ApproveWorkflowRun(context.Context, string, string, int64) error {
 	return nil
 }
+
 func (m *mockClient) CreateIssueComment(context.Context, string, string, int, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) EditIssueComment(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) DeleteIssueComment(context.Context, string, string, int64) error {
 	return nil
 }
+
 func (m *mockClient) CreatePullRequestReviewCommentReply(
 	context.Context, string, string, int, string, int64,
 ) (*gh.PullRequestComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) CreateReview(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockClient) CreateReviewWithComments(
 	context.Context,
 	string,
@@ -146,6 +168,7 @@ func (m *mockClient) CreateReviewWithComments(
 ) (*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ApplyReviewSuggestions(
 	_ context.Context,
 	_ string,
@@ -155,33 +178,43 @@ func (m *mockClient) ApplyReviewSuggestions(
 ) (*platform.AppliedReviewSuggestions, error) {
 	return nil, nil
 }
+
 func (m *mockClient) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ConvertPullRequestToDraft(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }
+
 func (m *mockClient) DismissReview(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockClient) MergePullRequest(context.Context, string, string, int, string, string, string, string) (*gh.PullRequestMergeResult, error) {
 	return nil, nil
 }
+
 func (m *mockClient) EditPullRequest(context.Context, string, string, int, platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
 	return nil, nil
 }
+
 func (m *mockClient) EditIssue(context.Context, string, string, int, string) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) EditIssueContent(context.Context, string, string, int, *string, *string) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListPullRequestsPage(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
 	return nil, false, nil
 }
+
 func (m *mockClient) ListIssuesPage(context.Context, string, string, string, int) ([]*gh.Issue, bool, error) {
 	return nil, false, nil
 }
+
 func (m *mockClient) ListNotifications(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
 	return nil, false, nil
 }

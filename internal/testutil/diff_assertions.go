@@ -9,16 +9,16 @@ import (
 
 // RequireWorkspaceDiffFile returns the response file with path or fails the test.
 func RequireWorkspaceDiffFile(
-	t testing.TB,
+	tb testing.TB,
 	files []generated.DiffFile,
 	path string,
 ) generated.DiffFile {
-	t.Helper()
+	tb.Helper()
 	for _, file := range files {
 		if file.Path == path {
 			return file
 		}
 	}
-	require.Failf(t, "workspace diff file not found", "path %q", path)
+	require.Failf(tb, "workspace diff file not found", "path %q", path)
 	return generated.DiffFile{}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"strings"
@@ -51,7 +52,10 @@ func worktreeTrackedDiffTotals(
 		return 0, 0, false, errors.New("empty worktree dir")
 	}
 	if _, statErr := os.Stat(dir); statErr != nil {
-		return 0, 0, false, nil
+		if errors.Is(statErr, fs.ErrNotExist) {
+			return 0, 0, false, nil
+		}
+		return 0, 0, false, statErr
 	}
 
 	sawNoMergeBase := false

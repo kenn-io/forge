@@ -110,6 +110,7 @@ func (s *script) GetRepository(_ context.Context, r platform.RepoRef) (platform.
 	}
 	return v.(platform.Repository), nil
 }
+
 func (s *script) ListLandingAssociations(_ context.Context, r platform.RepoRef, sha, cursor string) (platform.Page[platform.LandingChangeRef], error) {
 	require.Equal(s.t, route, r)
 	v, err := s.next("association/" + sha + "/" + cursor)
@@ -118,6 +119,7 @@ func (s *script) ListLandingAssociations(_ context.Context, r platform.RepoRef, 
 	}
 	return v.(platform.Page[platform.LandingChangeRef]), nil
 }
+
 func (s *script) GetLandingChange(_ context.Context, _ platform.RepoRef, ref platform.LandingChangeRef) (platform.LandingChange, error) {
 	require.Equal(s.t, platform.LandingChangeRef{ID: 7, Number: 3, TargetID: 12}, ref)
 	v, err := s.next("detail")
@@ -126,6 +128,7 @@ func (s *script) GetLandingChange(_ context.Context, _ platform.RepoRef, ref pla
 	}
 	return v.(platform.LandingChange), nil
 }
+
 func (s *script) ListLandingSource(_ context.Context, _ platform.RepoRef, ref platform.LandingChangeRef, cursor string) (platform.Page[string], error) {
 	require.Equal(s.t, platform.LandingChangeRef{ID: 7, Number: 3, TargetID: 12}, ref)
 	v, err := s.next("source/" + cursor)

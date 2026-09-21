@@ -28,14 +28,14 @@ func TestArchiveIssueInventoryWalksOldestPagesAndExcludesPullRequests(t *testing
 	provider := NewProvider(platform.KindForgejo, "forge.example", transport)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "forge.example", Owner: "owner", Name: "repo"}
 
-	discovery, err := provider.ListIssuesPage(context.Background(), ref, platform.ItemPageQuery{
+	discovery, err := provider.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
 		Order: platform.ItemOrderCreated,
 	})
 	require.NoError(err)
 	assert.True(discovery.ProgressOnly)
 	assert.NotEmpty(discovery.NextCursor)
 
-	oldest, err := provider.ListIssuesPage(context.Background(), ref, platform.ItemPageQuery{
+	oldest, err := provider.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
 		Order: platform.ItemOrderCreated, Cursor: discovery.NextCursor,
 	})
 	require.NoError(err)
@@ -43,7 +43,7 @@ func TestArchiveIssueInventoryWalksOldestPagesAndExcludesPullRequests(t *testing
 	assert.Equal([]int{1, 3}, transport.issueRequests)
 	assert.NotEmpty(oldest.NextCursor)
 
-	_, err = provider.ListIssuesPage(context.Background(), platform.RepoRef{
+	_, err = provider.ListIssuesPage(t.Context(), platform.RepoRef{
 		Platform: platform.KindForgejo, Host: "other.example", Owner: "owner", Name: "repo",
 	}, platform.ItemPageQuery{
 		Order: platform.ItemOrderCreated, Cursor: oldest.NextCursor,
@@ -66,11 +66,11 @@ func TestArchiveUpdatedInventoryUsesInclusiveWatermarkAndProviderSort(t *testing
 	provider := NewProvider(platform.KindGitea, "git.example", transport)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "git.example", Owner: "owner", Name: "repo"}
 
-	issues, err := provider.ListIssuesPage(context.Background(), ref, platform.ItemPageQuery{
+	issues, err := provider.ListIssuesPage(t.Context(), ref, platform.ItemPageQuery{
 		Order: platform.ItemOrderUpdated, UpdatedSince: &since,
 	})
 	require.NoError(err)
-	pulls, err := provider.ListMergeRequestsPage(context.Background(), ref, platform.ItemPageQuery{
+	pulls, err := provider.ListMergeRequestsPage(t.Context(), ref, platform.ItemPageQuery{
 		Order: platform.ItemOrderUpdated, UpdatedSince: &since,
 	})
 	require.NoError(err)

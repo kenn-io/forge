@@ -280,7 +280,7 @@ func newDeferredMergeHTTPFixture(
 	httpServer := httptest.NewServer(mux)
 	t.Cleanup(httpServer.Close)
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(t, handler.Shutdown(shutdownCtx))
 	})

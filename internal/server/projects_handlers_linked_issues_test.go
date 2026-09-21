@@ -38,6 +38,11 @@ func TestSetWorktreeLinkedIssuesRoute(t *testing.T) {
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/linked-issues",
 		body,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var updated struct {
 		LinkedIssueNumbers []int `json:"linked_issue_numbers"`
@@ -49,6 +54,11 @@ func TestSetWorktreeLinkedIssuesRoute(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var wtList struct {
 		Worktrees []struct {

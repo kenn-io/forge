@@ -58,7 +58,7 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 		EnrichmentDisabled: true,
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})
@@ -132,7 +132,7 @@ func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
 		LaunchSpecResolver: resolver, EnrichmentDisabled: true,
 	})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})
@@ -204,7 +204,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 		DB: database, Workspaces: manager,
 		LaunchSpecResolver: resolver, EnrichmentDisabled: true,
 	})
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 	require.NoError(handler.Shutdown(shutdownCtx))
 	cancel()
 
@@ -270,7 +270,7 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 		EnrichmentDisabled: true,
 	})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})
@@ -339,7 +339,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 				EnrichmentDisabled:          true,
 			})
 			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 				defer cancel()
 				require.NoError(handler.Shutdown(ctx))
 			})

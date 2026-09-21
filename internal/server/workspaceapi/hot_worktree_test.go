@@ -106,7 +106,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			handler.Start(parent, false)
 			t.Cleanup(func() {
 				cancelParent()
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 				defer cancel()
 				require.NoError(handler.Shutdown(shutdownCtx))
 			})
@@ -156,7 +156,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			require.NoError(manager.WarmWorktrees(t.Context()))
 
 			cancelParent()
-			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+			shutdownCtx, cancelShutdown := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 			defer cancelShutdown()
 			require.NoError(handler.Shutdown(shutdownCtx))
 		})

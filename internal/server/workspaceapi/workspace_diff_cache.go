@@ -30,8 +30,10 @@ const (
 	workspaceDiffCachePairRetention = time.Minute
 )
 
-var errWorkspaceDiffMovedDuringPreparation = errors.New("workspace diff moved during preparation")
-var errWorkspaceDiffBaseUnavailable = errors.New("workspace diff base is unavailable")
+var (
+	errWorkspaceDiffMovedDuringPreparation = errors.New("workspace diff moved during preparation")
+	errWorkspaceDiffBaseUnavailable        = errors.New("workspace diff base is unavailable")
+)
 
 var workspaceDiffCacheTracer = otel.Tracer("go.kenn.io/forge/internal/server/workspace-diff-cache")
 

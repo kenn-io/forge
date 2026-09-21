@@ -249,7 +249,7 @@ func (s *Handler) fetchHubAggregate(
 	}
 	target, ok := s.resolveEnrolledMember(member)
 	if !ok {
-		return fleet.NeutralSnapshot{}, fmt.Errorf("federation credential unavailable")
+		return fleet.NeutralSnapshot{}, errors.New("federation credential unavailable")
 	}
 	var aggregate fleet.NeutralSnapshot
 	request, err := generated.NewGetSnapshotAggregateRequest(ctx, target.member.BaseURL+"/api/v1", &generated.GetSnapshotAggregateRequestOptions{Query: &generated.GetSnapshotAggregateQuery{MemberTimeout: new(memberTimeout.String())}})
@@ -268,9 +268,7 @@ func (s *Handler) fetchHubAggregate(
 		)
 	}
 	if !neutralSnapshotContainsNode(aggregate, fleet.NodeID(hub.NodeID)) {
-		return fleet.NeutralSnapshot{}, fmt.Errorf(
-			"hub aggregate does not contain its enrolled node ID",
-		)
+		return fleet.NeutralSnapshot{}, errors.New("hub aggregate does not contain its enrolled node ID")
 	}
 	return aggregate, nil
 }
@@ -302,7 +300,7 @@ func (s *Handler) fetchFederationJSON(
 		return fmt.Errorf("read federation snapshot: %w", err)
 	}
 	if len(body) > maxFederationSnapshotBytes {
-		return fmt.Errorf("federation snapshot exceeds response limit")
+		return errors.New("federation snapshot exceeds response limit")
 	}
 	if err := json.Unmarshal(body, destination); err != nil {
 		return fmt.Errorf("decode federation snapshot: %w", err)

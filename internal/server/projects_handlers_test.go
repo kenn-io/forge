@@ -45,6 +45,11 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 	resp := httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var runtimeBody struct {
 		LaunchTargets []map[string]any `json:"launch_targets"`
@@ -60,6 +65,11 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/shell", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var shell map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&shell))
@@ -85,6 +95,11 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 			"/runtime/sessions/"+shellKey+"/attach-spec",
 		nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusBadRequest, resp.StatusCode)
 	payload, err := io.ReadAll(resp.Body)
 	require.NoError(err)
@@ -112,6 +127,11 @@ func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/sessions", body,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var session map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&session))
@@ -129,6 +149,11 @@ func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/sessions", body,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var second map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&second))
@@ -140,6 +165,11 @@ func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var runtimeBody struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -214,7 +244,7 @@ func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 	)
 	sessionKey := worktreeID + "_helper"
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
-		context.Background(),
+		t.Context(),
 		&db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  sessionKey,
@@ -262,7 +292,7 @@ func TestProjectWorktreeRuntimeAttachSpecRejectsMissingTmuxSession(t *testing.T)
 	)
 	sessionKey := worktreeID + "_helper"
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
-		context.Background(),
+		t.Context(),
 		&db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  sessionKey,
@@ -320,7 +350,7 @@ func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
 	sessionName := "project-runtime-stored"
 	sessionKey := worktreeID + "_helper"
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
-		context.Background(),
+		t.Context(),
 		&db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  sessionKey,
@@ -336,6 +366,11 @@ func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
 	resp := httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var runtimeBody struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -355,7 +390,7 @@ func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
 	resp.Body.Close()
 
 	stored, err := srv.db.ListProjectWorktreeTmuxSessions(
-		context.Background(), worktreeID,
+		t.Context(), worktreeID,
 	)
 	require.NoError(err)
 	assert.Empty(stored)
@@ -374,7 +409,7 @@ func TestProjectWorktreeRuntimeExitForgetsStoredTmuxSession(t *testing.T) {
 	sessionKey := worktreeID + "_helper"
 	createdAt := time.Now().UTC()
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
-		context.Background(),
+		t.Context(),
 		&db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  sessionKey,
@@ -394,7 +429,7 @@ func TestProjectWorktreeRuntimeExitForgetsStoredTmuxSession(t *testing.T) {
 
 	require.Eventually(func() bool {
 		stored, err := srv.db.ListProjectWorktreeTmuxSessions(
-			context.Background(), worktreeID,
+			t.Context(), worktreeID,
 		)
 		return err == nil && len(stored) == 0
 	}, time.Second, 10*time.Millisecond)
@@ -410,6 +445,7 @@ func TestProjectWorktreeRuntimeExitForgetsStoredTmuxSession(t *testing.T) {
 //     facing failure mode for "I sent the field but the value is junk".
 
 func setupProjectWorktreeRuntimeTest(t *testing.T) (*Server, string, string) {
+	t.Helper()
 	return setupProjectWorktreeRuntimeTestWithTmux(t, nil)
 }
 
@@ -466,7 +502,7 @@ command = ["/bin/sh", "-c", "sleep 60"]
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	project := createRuntimeTestProject(t, database, t.TempDir())
 	worktreePath := t.TempDir()
-	worktree, err := database.CreateProjectWorktree(context.Background(), db.CreateProjectWorktreeInput{
+	worktree, err := database.CreateProjectWorktree(t.Context(), db.CreateProjectWorktreeInput{
 		ProjectID: project.ID,
 		Branch:    "runtime",
 		Path:      worktreePath,
@@ -477,7 +513,7 @@ command = ["/bin/sh", "-c", "sleep 60"]
 
 func createRuntimeTestProject(t *testing.T, database *db.DB, localPath string) *db.Project {
 	t.Helper()
-	project, err := database.CreateProject(context.Background(), db.CreateProjectInput{
+	project, err := database.CreateProject(t.Context(), db.CreateProjectInput{
 		DisplayName: "runtime-project",
 		LocalPath:   localPath,
 	})
@@ -577,7 +613,7 @@ func httpDo(t *testing.T, ts *httptest.Server, method, path string, body []byte)
 	if body != nil {
 		bodyReader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), method, ts.URL+path, bodyReader)
+	req, err := http.NewRequestWithContext(t.Context(), method, ts.URL+path, bodyReader)
 	require.NoError(t, err)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

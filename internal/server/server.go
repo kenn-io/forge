@@ -69,8 +69,10 @@ type BuildInfo struct {
 	BuildDate string `json:"buildDate"`
 }
 
-type versionOutputBody BuildInfo
-type versionOutput = httpapi.BodyOutput[versionOutputBody]
+type (
+	versionOutputBody BuildInfo
+	versionOutput     = httpapi.BodyOutput[versionOutputBody]
+)
 
 type ServerOptions struct {
 	Devboxes                           *devbox.Connections
@@ -325,6 +327,7 @@ func (s *Server) trackHTTPConn(_ net.Conn, state http.ConnState) {
 		s.connWG.Add(1)
 	case http.StateHijacked, http.StateClosed:
 		s.connWG.Done()
+	case http.StateActive, http.StateIdle:
 	}
 }
 
@@ -639,7 +642,7 @@ func deriveHostCheckOptionsFromConfig(cfg *config.Config) (HostCheckOptions, err
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return HostCheckOptions{}, fmt.Errorf("port %d is outside 1-65535", cfg.Port)
 	}
-	bind, err := config.ParseHostKey(net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port)))
+	bind, err := config.ParseHostKey(net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
 	if err != nil {
 		return HostCheckOptions{}, fmt.Errorf("bind host %q: %w", cfg.ListenAddr(), err)
 	}
@@ -1892,7 +1895,7 @@ func checkCrossOrigin(w http.ResponseWriter, r *http.Request, trustReverseProxy 
 // ListenAndServe starts the HTTP server on addr. Returns
 // http.ErrServerClosed when stopped by Shutdown (matches net/http).
 func (s *Server) ListenAndServe(addr string) error {
-	ln, err := net.Listen("tcp", addr)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}
@@ -2128,7 +2131,6 @@ func serveSSESubscribedFromHubTransformed(
 	afterReplay func(io.Writer, sseController) bool,
 	preparedReplay *sseReplaySnapshot,
 ) {
-
 	if err := rc.Flush(); err != nil {
 		return
 	}
@@ -2138,7 +2140,9 @@ func serveSSESubscribedFromHubTransformed(
 	// live broadcasts and never out of order with them.
 	deliveredThrough := cursor
 	if hasCursor {
-		replay, synID, stale := []RecordedEvent(nil), uint64(0), false
+		var replay []RecordedEvent
+		var synID uint64
+		var stale bool
 		if preparedReplay == nil {
 			replay, synID, stale = hub.ReplaySnapshotSince(cursor)
 		} else {

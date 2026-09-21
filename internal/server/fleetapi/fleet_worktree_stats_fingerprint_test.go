@@ -1,7 +1,6 @@
 package fleetapi
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,7 +20,7 @@ func TestFleetWorktreeStatsSamplerSkipsUnchangedWorktrees(t *testing.T) {
 	repoDir, featDir := seedFingerprintRepo(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.NoError(os.WriteFile(
 		filepath.Join(featDir, "feature.txt"), []byte("x\ny\n"), 0o644,

@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.kenn.io/forge/platform"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"go.kenn.io/forge/platform"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,19 +47,19 @@ func TestGitHubAppTokenMintAndCache(t *testing.T) {
 		},
 	})
 
-	token, err := src.Token(context.Background())
+	token, err := src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("ghs_minted", token)
 
 	// A second resolve inside the expiry window reuses the cache.
-	token, err = src.Token(context.Background())
+	token, err = src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("ghs_minted", token)
 	assert.Equal(int64(1), mints.Load())
 
 	// Invalidate (e.g. a 401 retry in platform.AuthTransport) forces a re-mint.
 	src.Invalidate("ghs_minted")
-	_, err = src.Token(context.Background())
+	_, err = src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal(int64(2), mints.Load())
 }
@@ -78,7 +79,7 @@ func TestGitHubAppTokenCacheIsSharedAcrossExactRoutes(t *testing.T) {
 	second.Key.Scope = "repo:kenn-io/two"
 	second.Candidates[0].InstallationAccount = "kenn-io"
 
-	ctx := WithGitHubOwner(context.Background(), "kenn-io")
+	ctx := WithGitHubOwner(t.Context(), "kenn-io")
 	_, err := set.Upsert(first).Token(ctx)
 	require.NoError(t, err)
 	_, err = set.Upsert(second).Token(ctx)
@@ -97,7 +98,7 @@ func TestGitHubAppTokenRemintsNearExpiry(t *testing.T) {
 		},
 	})
 	for range 2 {
-		_, err := src.Token(context.Background())
+		_, err := src.Token(t.Context())
 		require.NoError(t, err)
 	}
 	assert.Equal(t, int64(2), mints.Load())
@@ -110,7 +111,7 @@ func TestGitHubAppNotInstalledFallsThrough(t *testing.T) {
 			return "", time.Time{}, errors.New("must not be called for installation 0")
 		},
 	})
-	token, err := src.Token(context.Background())
+	token, err := src.Token(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "pat-token", token)
 }
@@ -118,7 +119,7 @@ func TestGitHubAppNotInstalledFallsThrough(t *testing.T) {
 func TestGitHubAppNilMinterFallsThrough(t *testing.T) {
 	t.Setenv("TEST_GITHUB_APP_FALLBACK", "pat-token")
 	src := NewManagedSource(githubAppDescriptor(42), Options{})
-	token, err := src.Token(context.Background())
+	token, err := src.Token(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "pat-token", token)
 }
@@ -137,15 +138,15 @@ func TestGitHubAppRequiresMatchingOwnerScope(t *testing.T) {
 		},
 	})
 
-	token, err := src.Token(context.Background())
+	token, err := src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("pat-token", token)
 
-	token, err = src.Token(WithGitHubOwner(context.Background(), "mariusvniekerk"))
+	token, err = src.Token(WithGitHubOwner(t.Context(), "mariusvniekerk"))
 	require.NoError(err)
 	assert.Equal("pat-token", token)
 
-	token, err = src.Token(WithGitHubOwner(context.Background(), "Kenn-IO"))
+	token, err = src.Token(WithGitHubOwner(t.Context(), "Kenn-IO"))
 	require.NoError(err)
 	assert.Equal("ghs_minted", token)
 	assert.Equal(int64(1), mints.Load())
@@ -181,15 +182,15 @@ func TestGitHubAppCacheIsScopedToInstallationAccount(t *testing.T) {
 		},
 	})
 
-	token, err := src.Token(WithGitHubOwner(context.Background(), "kenn-io"))
+	token, err := src.Token(WithGitHubOwner(t.Context(), "kenn-io"))
 	require.NoError(err)
 	assert.Equal("ghs_42", token)
 
-	token, err = src.Token(WithGitHubOwner(context.Background(), "other-org"))
+	token, err = src.Token(WithGitHubOwner(t.Context(), "other-org"))
 	require.NoError(err)
 	assert.Equal("ghs_43", token)
 
-	token, err = src.Token(WithGitHubOwner(context.Background(), "kenn-io"))
+	token, err = src.Token(WithGitHubOwner(t.Context(), "kenn-io"))
 	require.NoError(err)
 	assert.Equal("ghs_42", token)
 	assert.Equal(map[int64]int{42: 1, 43: 1}, minted)
@@ -204,7 +205,7 @@ func TestGitHubAppMintFailureSurfacesError(t *testing.T) {
 	})
 	// Mint failures must not silently degrade to the PAT chain: the
 	// app exists because the PAT budget is exhausted.
-	_, err := src.Token(context.Background())
+	_, err := src.Token(t.Context())
 	require.Error(t, err)
 	require.ErrorContains(t, err, "key rejected")
 	require.ErrorContains(t, err, "github_app:77@github.com")
@@ -232,7 +233,7 @@ func TestGitHubAppFailedMintIsSingleFlight(t *testing.T) {
 		results := make(chan error, 2)
 		for range 2 {
 			go func() {
-				_, err := src.Token(context.Background())
+				_, err := src.Token(t.Context())
 				results <- err
 			}()
 		}
@@ -274,7 +275,7 @@ func TestGitHubAppInvalidateDoesNotEvictInFlightMint(t *testing.T) {
 		}
 		winner := make(chan result, 1)
 		go func() {
-			token, err := src.Token(context.Background())
+			token, err := src.Token(t.Context())
 			winner <- result{token: token, err: err}
 		}()
 		<-entered
@@ -284,7 +285,7 @@ func TestGitHubAppInvalidateDoesNotEvictInFlightMint(t *testing.T) {
 
 		joiner := make(chan result, 1)
 		go func() {
-			token, err := src.Token(context.Background())
+			token, err := src.Token(t.Context())
 			joiner <- result{token: token, err: err}
 		}()
 		synctest.Wait()
@@ -349,7 +350,10 @@ func TestGitHubAppStaleUnauthorizedDoesNotEvictReplacementToken(t *testing.T) {
 	require.NoError(err)
 	firstResult := make(chan error, 1)
 	go func() {
-		_, err := transport.RoundTrip(firstReq)
+		resp, err := transport.RoundTrip(firstReq)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
 		firstResult <- err
 	}()
 	<-firstEntered
@@ -358,7 +362,10 @@ func TestGitHubAppStaleUnauthorizedDoesNotEvictReplacementToken(t *testing.T) {
 		t.Context(), http.MethodGet, "https://api.example.test/second", nil,
 	)
 	require.NoError(err)
-	_, secondErr := transport.RoundTrip(secondReq)
+	secondResp, secondErr := transport.RoundTrip(secondReq)
+	if secondResp != nil {
+		_ = secondResp.Body.Close()
+	}
 	close(releaseFirst)
 	firstErr := <-firstResult
 	require.NoError(secondErr)
@@ -387,7 +394,7 @@ func TestGitHubAppMintCancellationIsNotPublishedToWaiters(t *testing.T) {
 			},
 		})
 
-		winnerCtx, cancel := context.WithCancel(context.Background())
+		winnerCtx, cancel := context.WithCancel(t.Context())
 		winnerErr := make(chan error, 1)
 		go func() {
 			_, err := src.Token(winnerCtx)
@@ -400,7 +407,7 @@ func TestGitHubAppMintCancellationIsNotPublishedToWaiters(t *testing.T) {
 		}
 		waiterResult := make(chan result, 1)
 		go func() {
-			token, err := src.Token(context.Background())
+			token, err := src.Token(t.Context())
 			waiterResult <- result{token: token, err: err}
 		}()
 		synctest.Wait()
@@ -429,12 +436,12 @@ func TestGitHubAppMintCallerDeadlineFailureIsNotCached(t *testing.T) {
 		},
 	})
 
-	deadlineCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	deadlineCtx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
 	defer cancel()
 	_, err := src.Token(deadlineCtx)
 	require.ErrorIs(err, context.DeadlineExceeded)
 
-	token, err := src.Token(context.Background())
+	token, err := src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("ghs_recovered", token)
 	assert.Equal(int64(2), mints.Load(),
@@ -453,7 +460,7 @@ func TestGitHubAppMintInternalDeadlineFailureIsCached(t *testing.T) {
 	})
 
 	for range 2 {
-		_, err := src.Token(context.Background())
+		_, err := src.Token(t.Context())
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 	}
 	assert.Equal(t, int64(1), mints.Load(),
@@ -491,14 +498,14 @@ func TestGitHubAppFailedMintCachesBoundedRetryDeadline(t *testing.T) {
 		},
 	}, store)
 
-	_, err := src.Token(context.Background())
+	_, err := src.Token(t.Context())
 	require.ErrorContains(err, "rate limited")
-	_, err = src.Token(context.Background())
+	_, err = src.Token(t.Context())
 	require.ErrorContains(err, "rate limited")
 	assert.Equal(int64(1), mints.Load(), "retry window must suppress another mint")
 
 	now = now.Add(time.Minute)
-	token, err := src.Token(context.Background())
+	token, err := src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("ghs_recovered", token)
 	assert.Equal(int64(2), mints.Load())
@@ -523,14 +530,14 @@ func TestGitHubAppHeaderlessMintFailureCooldownIsSharedAcrossRoutes(t *testing.T
 	second := githubAppDescriptor(42)
 	second.Key.Scope = "repo:kenn-io/two"
 
-	_, err := set.Upsert(first).Token(context.Background())
+	_, err := set.Upsert(first).Token(t.Context())
 	require.ErrorContains(err, "upstream unavailable")
-	_, err = set.Upsert(second).Token(context.Background())
+	_, err = set.Upsert(second).Token(t.Context())
 	require.ErrorContains(err, "upstream unavailable")
 	assert.Equal(int64(1), mints.Load(), "shared routes must retain the failure cooldown")
 
 	now = now.Add(githubAppMintRetryDefault)
-	token, err := set.Upsert(second).Token(context.Background())
+	token, err := set.Upsert(second).Token(t.Context())
 	require.NoError(err)
 	assert.Equal("ghs_recovered", token)
 	assert.Equal(int64(2), mints.Load())
@@ -545,10 +552,10 @@ func TestGitHubAppInvalidatePreservesFailedMintCooldown(t *testing.T) {
 		},
 	})
 
-	_, err := src.Token(context.Background())
+	_, err := src.Token(t.Context())
 	require.ErrorContains(t, err, "upstream unavailable")
 	src.Invalidate("ghs_stale")
-	_, err = src.Token(context.Background())
+	_, err = src.Token(t.Context())
 	require.ErrorContains(t, err, "upstream unavailable")
 	assert.Equal(t, int64(1), mints.Load(),
 		"stale invalidation must preserve an active failure cooldown")
@@ -568,13 +575,13 @@ func TestMutationAuthSkipsGitHubAppCandidate(t *testing.T) {
 
 	// Mutation-marked resolution must bypass the app and land on the
 	// user's PAT so writes are attributed to the user.
-	token, err := src.Token(WithMutationAuth(context.Background()))
+	token, err := src.Token(WithMutationAuth(t.Context()))
 	require.NoError(err)
 	assert.Equal("user-pat", token)
 	assert.Zero(mints.Load())
 
 	// Unmarked resolution still mints the app token.
-	token, err = src.Token(context.Background())
+	token, err = src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("ghs_minted", token)
 	assert.Equal(int64(1), mints.Load())
@@ -588,13 +595,13 @@ func TestGitHubAppDescriptorUpdateClearsCache(t *testing.T) {
 			return "ghs_minted", time.Now().Add(time.Hour), nil
 		},
 	})
-	_, err := src.Token(context.Background())
+	_, err := src.Token(t.Context())
 	require.NoError(t, err)
 
 	// Pointing the source at a different installation must drop the
 	// cached token: it was scoped to the old installation's repos.
 	src.Update(githubAppDescriptor(43))
-	_, err = src.Token(context.Background())
+	_, err = src.Token(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), mints.Load())
 }

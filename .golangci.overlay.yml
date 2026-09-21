@@ -1,0 +1,101 @@
+# Repository additions merged into the canonical kit config by `kennlint config`.
+run:
+  go: "1.27"
+linters:
+  settings:
+    govet:
+      disable:
+        - shadow
+        - fieldalignment
+    nolintlint:
+      # Disabled analyzers still have historical //nolint markers.
+      allow-unused: true
+    usetesting:
+      # t.Context() is already canceled inside t.Cleanup, so shutdown
+      # helpers keep context.Background() or WithoutCancel(t.Context()).
+      context-background: false
+      # Unix-socket fixtures need a short /tmp root; t.TempDir() is too long.
+      os-temp-dir: false
+      os-mkdir-temp: false
+    importas:
+      alias:
+        - pkg: github.com/google/go-github/v91/github
+          alias: gh
+    forbidigo:
+      forbid:
+        - pattern: '^time\.LoadLocation$'
+          msg: Do not add backend timezone loading for storage or API paths. Local timezone conversion belongs in the Svelte UI.
+        - pattern: '^time\.FixedZone$'
+          msg: Do not create backend timezone conversions outside tests.
+        - pattern: '^db\.Open$'
+          msg: Use internal/testutil/dbtest fixtures in tests instead of db.Open.
+        - pattern: '^exec\.Command$'
+          msg: Use internal/procutil.Command so Windows subprocesses do not flash console windows.
+        - pattern: '^exec\.CommandContext$'
+          msg: Use internal/procutil.CommandContext so Windows subprocesses do not flash console windows.
+        - pattern: '^gh\.NewClient$'
+          msg: Direct go-github client construction belongs in internal/github or provider startup; use provider capabilities instead.
+        - pattern: '^githubv4\.New(Client|EnterpriseClient)$'
+          msg: Direct GitHub GraphQL client construction belongs in internal/github or provider startup; use provider capabilities instead.
+    custom:
+      kennlint:
+        settings:
+          # Schema CHECK constraints are an intentional SQLite invariant
+          # (context/db-migrations.md). Historical migrations are immutable.
+          disable: [sqlcheck, sleeptest, testifyhelper]
+  disable:
+    # Many tests share package-level DB templates, httptest servers, and
+    # daemon fixtures; forcing t.Parallel() races those setups.
+    - tparallel
+    # Nested int64(int64(x)) casts in generated-client test call sites are a
+    # tracked cleanup, not a rollout blocker.
+    - unconvert
+    - thelper
+    - bodyclose
+    - usestdlibvars
+    - perfsprint
+    - mirror
+    - gocritic
+  exclusions:
+    rules:
+      - linters:
+          - forbidigo
+        path-except: _test\.go
+        text: Use internal/testutil/dbtest fixtures in tests instead of db.Open.
+      - linters:
+          - forbidigo
+        path: internal/db/.*_test\.go
+        text: Use internal/testutil/dbtest fixtures in tests instead of db.Open.
+      - linters:
+          - forbidigo
+        path: internal/github/.*\.go
+        text: Direct .* client construction belongs in internal/github or provider startup.
+      - linters:
+          - forbidigo
+        path: cmd/kenn-forge/provider_startup\.go
+        text: Direct go-github client construction belongs in internal/github or provider startup.
+      - linters:
+          - forbidigo
+        path: kenn-forge\.go
+        text: Direct go-github client construction belongs in internal/github or provider startup.
+      - linters:
+          - forbidigo
+        path: internal/server/api_test\.go
+        text: Direct GitHub GraphQL client construction belongs in internal/github or provider startup.
+      # Path dispatchers and non-API muxes that tools/nohttpmux already
+      # exempts: GitHub App manifest loopback, its test fake, pprof, and
+      # the SPA/health outer mux (tools/nohttpmux/main.go::allowedRegistration).
+      - linters:
+          - kennlint
+        path: ^(cmd/kenn-forge-github-app/|internal/githubapp/githubapptest/|internal/profiler/profiler\.go$|internal/server/server\.go$)
+        text: nohttpmux
+      - linters:
+          - noctx
+        path: _test\.go
+        text: net/http.Get must not be called|net.Dial must not be called|\(\*net/http.Client\)\.(Get|Post) must not be called
+    paths:
+      - frontend/node_modules
+formatters:
+  exclusions:
+    paths:
+      - frontend/node_modules

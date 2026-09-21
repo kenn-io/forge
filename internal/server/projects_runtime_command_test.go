@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -128,7 +127,7 @@ agent_sessions = false
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	project := createRuntimeTestProject(t, database, t.TempDir())
 	worktree, err := database.CreateProjectWorktree(
-		context.Background(), db.CreateProjectWorktreeInput{
+		t.Context(), db.CreateProjectWorktreeInput{
 			ProjectID: project.ID,
 			Branch:    "runtime",
 			Path:      t.TempDir(),
@@ -156,6 +155,11 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 		"label":       "My Shell",
 	})
 	resp := httpDo(t, ts, http.MethodPost, sessionsPath, body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var session map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&session))
@@ -169,6 +173,11 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 	// Re-ensure with the same session key returns the live session
 	// instead of launching a duplicate.
 	resp = httpDo(t, ts, http.MethodPost, sessionsPath, body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var second map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&second))
@@ -179,6 +188,11 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var runtimeBody struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -191,6 +205,11 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodGet,
 		sessionsPath+"/surface:host:wt:shell:leaf/attach-spec", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var spec map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&spec))
@@ -256,7 +275,7 @@ func TestProjectWorktreeRuntimeListsStoredCommandSessionLabel(t *testing.T) {
 	// A stored row without a live runtime session models a command session
 	// surviving from before a kenn-forge restart.
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
-		context.Background(), &db.ProjectWorktreeTmuxSession{
+		t.Context(), &db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  "surface:host:wt:shell:leaf",
 			SessionName: "kenn-forge-stored-command",
@@ -267,6 +286,11 @@ func TestProjectWorktreeRuntimeListsStoredCommandSessionLabel(t *testing.T) {
 	resp := httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var runtimeBody struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -289,8 +313,7 @@ func TestProjectWorktreeCommandSessionExpandsHomeCWD(t *testing.T) {
 	home, err := os.UserHomeDir()
 	require.NoError(err)
 
-	srv, projectID, worktreeID, recordPath :=
-		setupProjectWorktreeCommandSessionTestWithRecord(t)
+	srv, projectID, worktreeID, recordPath := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

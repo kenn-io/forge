@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -63,7 +62,7 @@ func seedHotReadDatabase(b *testing.B, repos, mrsPerRepo, eventsPerMR int) strin
 	path := filepath.Join(b.TempDir(), "hot-reads.db")
 	d, err := Open(path)
 	require.NoError(b, err)
-	ctx := context.Background()
+	ctx := b.Context()
 	body := make([]byte, 600)
 	for i := range body {
 		body[i] = 'a' + byte(i%26)
@@ -132,7 +131,7 @@ func BenchmarkHotReads(b *testing.B) {
 	path := hotReadDatabase(b)
 	info, err := os.Stat(path)
 	require.NoError(b, err)
-	ctx := context.Background()
+	ctx := b.Context()
 
 	probe, err := Open(path)
 	require.NoError(b, err)

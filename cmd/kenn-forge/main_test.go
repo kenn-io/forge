@@ -260,7 +260,7 @@ func TestRunBoundedShutdownHonorsDeadline(t *testing.T) {
 
 func TestMCPStartupHandlerStaysUnavailableUntilFullServerSwap(t *testing.T) {
 	switcher := server.NewSwitchHandler(newMCPStartupHandler())
-	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8092/mcp", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://127.0.0.1:8092/mcp", nil)
 	startup := httptest.NewRecorder()
 
 	switcher.ServeHTTP(startup, request)
@@ -310,7 +310,7 @@ func TestBindDaemonListenersOwnsOptionalMCPPortAndClosesPrimaryOnFailure(t *test
 			var occupied net.Listener
 			if tt.occupiedMCP {
 				var err error
-				occupied, err = net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(explicitMCPPort)))
+				occupied, err = (&net.ListenConfig{}).Listen(t.Context(), "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(explicitMCPPort)))
 				require.NoError(err)
 				defer occupied.Close()
 			}
@@ -319,7 +319,7 @@ func TestBindDaemonListenersOwnsOptionalMCPPortAndClosesPrimaryOnFailure(t *test
 			primary, mcpListener, err := bindDaemonListeners(cfg)
 			if tt.wantErr != "" {
 				require.ErrorContains(err, tt.wantErr)
-				probe, listenErr := net.Listen("tcp", cfg.ListenAddr())
+				probe, listenErr := (&net.ListenConfig{}).Listen(t.Context(), "tcp", cfg.ListenAddr())
 				require.NoError(listenErr, "primary listener must close after MCP bind failure")
 				require.NoError(probe.Close())
 				return
@@ -350,7 +350,7 @@ func reserveAdjacentPorts(t *testing.T) (int, int) {
 		if primary >= 65535 {
 			continue
 		}
-		next, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(primary+1)))
+		next, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(primary+1)))
 		if err != nil {
 			continue
 		}
@@ -382,7 +382,7 @@ func TestRunClosesPrimaryListenerWhenProfilerStartFails(t *testing.T) {
 
 	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(appPort))
 	assert.Eventually(func() bool {
-		ln, listenErr := net.Listen("tcp", addr)
+		ln, listenErr := (&net.ListenConfig{}).Listen(t.Context(), "tcp", addr)
 		if listenErr != nil {
 			return false
 		}
@@ -1154,7 +1154,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 		server.ServerOptions{},
 	)
 
-	reposReq := httptest.NewRequest(http.MethodGet, "/api/v1/repos", nil)
+	reposReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repos", nil)
 	reposReq.Host = "127.0.0.1:8091"
 	reposRR := httptest.NewRecorder()
 	srv.ServeHTTP(reposRR, reposReq)
@@ -1171,7 +1171,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 		listed[1].Name,
 	})
 
-	settingsReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+	settingsReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/settings", nil)
 	settingsReq.Host = "127.0.0.1:8091"
 	settingsRR := httptest.NewRecorder()
 	srv.ServeHTTP(settingsRR, settingsReq)

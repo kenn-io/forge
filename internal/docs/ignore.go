@@ -96,10 +96,9 @@ func loadFolderIgnore(root string) (*folderIgnore, error) {
 			dir = ""
 		}
 		ig, compileErr := gitignore.CompileIgnoreFile(path)
-		if compileErr != nil {
-			return nil
+		if compileErr == nil {
+			fi.layers = append(fi.layers, ignoreLayer{dir: dir, ig: ig})
 		}
-		fi.layers = append(fi.layers, ignoreLayer{dir: dir, ig: ig})
 		return nil
 	})
 	if err != nil {

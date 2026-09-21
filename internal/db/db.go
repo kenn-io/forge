@@ -43,6 +43,25 @@ type mergeRequestSnapshotLock struct {
 
 var ErrRepositoryRouteFenceChanged = errors.New("repository route fence changed")
 
+// Shared SQL adapter surfaces so helpers can run against *sql.DB, *sql.Tx, or
+// the statement cache without duplicating identical interface declarations.
+type execer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+type queryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+type rowQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+type scanner interface {
+	Scan(...any) error
+}
+
 type repositoryRouteGuardContextKey struct{}
 
 type repositoryRouteLeaseContextKey struct{}
@@ -151,7 +170,7 @@ func openPool(path string, size int) (*sql.DB, error) {
 }
 
 func (d *DB) init() error {
-	if _, err := d.rw.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	if _, err := d.rw.ExecContext(context.Background(), "PRAGMA journal_mode=WAL"); err != nil {
 		return fmt.Errorf("enable WAL: %w", err)
 	}
 

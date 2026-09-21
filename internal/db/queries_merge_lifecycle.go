@@ -54,7 +54,8 @@ func (d *DB) FillMissingMergedMRMetrics(
 	if len(setClauses) == 0 {
 		return false, nil
 	}
-	args := append(setArgs, metrics.RepoID, metrics.Number, metrics.HeadSHA)
+	args := append([]any(nil), setArgs...)
+	args = append(args, metrics.RepoID, metrics.Number, metrics.HeadSHA)
 	args = append(args, repairArgs...)
 	result, err := d.execContext(ctx, fmt.Sprintf(`
 		UPDATE forge_merge_requests

@@ -61,7 +61,7 @@ func TestFleetContainerReadE2E(t *testing.T) {
 	require := require.New(t)
 	var snap fleet.Snapshot
 	require.Eventually(func() bool {
-		req, requestErr := http.NewRequest(
+		req, requestErr := http.NewRequestWithContext(t.Context(),
 			http.MethodGet, fixture.HubURL+"/api/v1/snapshot?include_peers=true", http.NoBody,
 		)
 		if requestErr != nil {
@@ -755,7 +755,7 @@ func getFleetContainerJSON(
 	out any,
 ) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, targetURL, http.NoBody)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, targetURL, http.NoBody)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp := doFleetContainerHTTPRequest(t, req, nil)
@@ -885,7 +885,7 @@ func postFleetContainerJSON(
 	t.Helper()
 	payload, err := json.Marshal(body)
 	require.NoError(t, err)
-	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, targetURL, bytes.NewReader(payload))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -905,7 +905,7 @@ func deleteFleetContainer(
 	token string,
 ) (int, []byte) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodDelete, targetURL, http.NoBody)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, targetURL, http.NoBody)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -1006,7 +1006,7 @@ func fleetContainerReadWebSocketUntil(
 		if typ != websocket.MessageBinary {
 			continue
 		}
-		got.WriteString(string(data))
+		got.Write(data)
 		if strings.Contains(got.String(), needle) {
 			return
 		}

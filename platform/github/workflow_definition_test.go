@@ -222,11 +222,11 @@ on:
 		},
 		{
 			name:    "misspelled required field",
-			content: withJobs("on:\n  workflow_dispatch:\n    inputs:\n      target:\n        requred: true\n"),
+			content: withJobs("on:\n  workflow_dispatch:\n    inputs:\n      target:\n        requred: true\n"), //nolint:misspell // intentional typo fixture
 		},
 		{
 			name:    "misspelled default field",
-			content: withJobs("on:\n  workflow_dispatch:\n    inputs:\n      target:\n        defualt: main\n"),
+			content: withJobs("on:\n  workflow_dispatch:\n    inputs:\n      target:\n        defualt: main\n"), //nolint:misspell // intentional typo fixture
 		},
 		{
 			name:    "malformed YAML",

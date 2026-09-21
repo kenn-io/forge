@@ -131,15 +131,14 @@ func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) 
 		release, err := database.LockRepositoryReconciliationRead(ctx)
 		require.NoError(t, err)
 		defer release()
-		_, _, accepted, err :=
-			database.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
-				ctx, &MergeRequest{
-					RepoID: repoID, PlatformID: 1, Number: 1, Title: title,
-					State: state, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
-					CreatedAt: now.Add(-time.Hour), UpdatedAt: updatedAt,
-					LastActivityAt: updatedAt,
-				}, computer,
-			)
+		_, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
+			ctx, &MergeRequest{
+				RepoID: repoID, PlatformID: 1, Number: 1, Title: title,
+				State: state, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
+				CreatedAt: now.Add(-time.Hour), UpdatedAt: updatedAt,
+				LastActivityAt: updatedAt,
+			}, computer,
+		)
 		require.NoError(t, err)
 		return accepted
 	}

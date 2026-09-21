@@ -53,7 +53,7 @@ type roborevStatusOutput = httpapi.BodyOutput[roborevStatusResponse]
 // getRoborevStatus probes the roborev daemon and reports whether
 // it is reachable and what version it advertises.
 func (s *Server) getRoborevStatus(
-	_ context.Context, _ *struct{},
+	ctx context.Context, _ *struct{},
 ) (*roborevStatusOutput, error) {
 	cfg := s.cfg
 	if cfg == nil {
@@ -75,16 +75,20 @@ func (s *Server) getRoborevStatus(
 	client := &http.Client{Timeout: 2 * time.Second}
 	statusURL := strings.TrimRight(endpoint, "/") + "/api/status"
 
-	r, err := client.Get(statusURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
 	if err != nil {
 		return &roborevStatusOutput{Body: resp}, nil
 	}
-	defer r.Body.Close()
+	statusResp, err := client.Do(req)
+	if err != nil {
+		return &roborevStatusOutput{Body: resp}, nil
+	}
+	defer statusResp.Body.Close()
 
 	var body struct {
 		Version string `json:"version"`
 	}
-	if err := json.UnmarshalRead(r.Body, &body); err != nil {
+	if err := json.UnmarshalRead(statusResp.Body, &body); err != nil {
 		return &roborevStatusOutput{Body: resp}, nil
 	}
 	resp.Available = true

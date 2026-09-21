@@ -2,7 +2,6 @@ package tokenauth
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"log/slog"
 	"testing"
@@ -50,7 +49,7 @@ func TestRedactingHandlerScrubsRegisteredOpaqueTokens(t *testing.T) {
 			EnvName: "OPAQUE_LOG_TOKEN",
 		}},
 	}, Options{})
-	_, err := src.Token(context.Background())
+	_, err := src.Token(t.Context())
 	require.NoError(t, err)
 
 	var buf bytes.Buffer

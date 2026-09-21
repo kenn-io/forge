@@ -99,7 +99,7 @@ func scanBody(absPath, lowerQuery string) (BodyHit, string, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		if errors.Is(err, bufio.ErrTooLong) {
-			return BodyHit{}, fmt.Sprintf("%s: line too long, body scan skipped", absPath), nil
+			return BodyHit{}, absPath + ": line too long, body scan skipped", nil
 		}
 		return BodyHit{}, "", err
 	}

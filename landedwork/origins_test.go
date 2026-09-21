@@ -98,8 +98,10 @@ func TestDirectPushes(t *testing.T) {
 			assert.Equal(f.head, r.DirectPushes[0].Terminal)
 			assert.ElementsMatch(append(slices.Clone(f.source), f.head), r.DirectPushes[0].Introduced)
 		} else {
-			assert.Equal([]landedwork.DirectPush{{Before: f.base, Terminal: f.source[0], Introduced: f.source[:1]},
-				{Before: f.source[0], Terminal: f.head, Introduced: f.source[1:]}}, r.DirectPushes)
+			assert.Equal([]landedwork.DirectPush{
+				{Before: f.base, Terminal: f.source[0], Introduced: f.source[:1]},
+				{Before: f.source[0], Terminal: f.head, Introduced: f.source[1:]},
+			}, r.DirectPushes)
 		}
 		assert.Empty(r.Landings)
 		assert.Empty(r.Unattributed)
@@ -234,7 +236,6 @@ func TestOriginOverlaps(t *testing.T) {
 			assert.Equal([]landedwork.DirectPush{{Before: f.base, Terminal: direct, Introduced: []string{direct}}}, r.DirectPushes)
 		}
 	}
-
 }
 
 func TestBlockedSpan(t *testing.T) {

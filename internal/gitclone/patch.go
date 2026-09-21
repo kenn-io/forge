@@ -72,7 +72,7 @@ func patchPath(path string) string {
 }
 
 func needsPatchPathQuote(path string) bool {
-	for i := 0; i < len(path); i++ {
+	for i := range len(path) {
 		switch b := path[i]; b {
 		case '"', '\\':
 			return true

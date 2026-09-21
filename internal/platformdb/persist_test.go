@@ -1,9 +1,10 @@
 package platformdb
 
 import (
-	"go.kenn.io/forge/platform"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/platform"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

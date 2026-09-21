@@ -966,6 +966,7 @@ func splitTestDescriptor(writeCandidate tokenauth.Candidate) tokenauth.Descripto
 func newSplitTestServer(
 	t *testing.T, writeCandidate tokenauth.Candidate,
 ) (*Server, *tokenauth.SourceSet) {
+	t.Helper()
 	return newSplitTestServerWithMock(t, writeCandidate, &mockGH{})
 }
 

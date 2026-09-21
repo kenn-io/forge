@@ -20,14 +20,14 @@ func TestLimiterWaitsForReleaseWhenAtCapacity(t *testing.T) {
 
 	synctest.Test(t, func(t *testing.T) {
 		limiter := NewLimiter(1)
-		firstRelease, err := limiter.TryAcquire(context.Background(), "first subprocess")
+		firstRelease, err := limiter.TryAcquire(t.Context(), "first subprocess")
 		require.NoError(err)
 		defer firstRelease()
 
 		acquired := make(chan acquireResult, 1)
 		go func() {
 			release, acquireErr := limiter.TryAcquire(
-				context.Background(), "second subprocess",
+				t.Context(), "second subprocess",
 			)
 			acquired <- acquireResult{release: release, err: acquireErr}
 		}()
@@ -66,14 +66,14 @@ func TestLimiterAcquireTimeoutIsResourceExhausted(t *testing.T) {
 	var got acquireResult
 	synctest.Test(t, func(t *testing.T) {
 		limiter := NewLimiterWithAcquireTimeout(1, 10*time.Second)
-		firstRelease, err := limiter.TryAcquire(context.Background(), "first subprocess")
+		firstRelease, err := limiter.TryAcquire(t.Context(), "first subprocess")
 		require.NoError(err)
 		defer firstRelease()
 
 		acquired := make(chan acquireResult, 1)
 		go func() {
 			release, acquireErr := limiter.TryAcquire(
-				context.Background(), "second subprocess",
+				t.Context(), "second subprocess",
 			)
 			acquired <- acquireResult{release: release, err: acquireErr}
 		}()
@@ -100,7 +100,7 @@ func TestLimiterAcquirePreservesCallerCancellation(t *testing.T) {
 	require := require.New(t)
 
 	limiter := NewLimiterWithAcquireTimeout(1, time.Second)
-	firstRelease, err := limiter.TryAcquire(context.Background(), "first subprocess")
+	firstRelease, err := limiter.TryAcquire(t.Context(), "first subprocess")
 	require.NoError(err)
 	defer firstRelease()
 
@@ -130,7 +130,7 @@ func TestLimiterAcquireCanceledContextWithCapacityIsNotResourceExhausted(t *test
 	require.NotErrorIs(err, ErrProcessLimitReached)
 	assert.False(IsResourceExhausted(err))
 
-	release, err = limiter.TryAcquire(context.Background(), "subsequent subprocess")
+	release, err = limiter.TryAcquire(t.Context(), "subsequent subprocess")
 	require.NoError(err)
 	require.NotNil(release)
 	release()

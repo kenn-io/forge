@@ -1,7 +1,6 @@
 package workspacetest
 
 import (
-	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -126,7 +125,7 @@ exit 0
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	client := fixture.client
 	database := fixture.database
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -194,7 +193,7 @@ exit 0
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	client := fixture.client
 	database := fixture.database
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 	require.NotEmpty(ws.TmuxSession)
 	require.NoError(os.WriteFile(liveSessionsFile, []byte(strings.Join([]string{
@@ -254,12 +253,12 @@ func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) {
 	t.Cleanup(restoreLimiter)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ws := createReadyWorkspace(t, context.Background(), fixture.client)
+	ws := createReadyWorkspace(t, t.Context(), fixture.client)
 	initial := requestWorkspaceDiff(t, fixture.server, ws.ID, "head")
 	assert.False(initial.Stale)
 
 	releaseHeld, err := procutil.TryAcquire(
-		context.Background(), "test-held workspace diff capacity",
+		t.Context(), "test-held workspace diff capacity",
 	)
 	require.NoError(err)
 	defer releaseHeld()

@@ -1,6 +1,7 @@
 package githubapp
 
 import (
+	"errors"
 	"fmt"
 
 	"go.kenn.io/forge/githubapp"
@@ -10,7 +11,7 @@ const maxAppNameLength = 34
 
 func NewManifest(name, homepageURL, redirectURL string) (githubapp.Manifest, error) {
 	if name == "" {
-		return githubapp.Manifest{}, fmt.Errorf("app name is required")
+		return githubapp.Manifest{}, errors.New("app name is required")
 	}
 	if len(name) > maxAppNameLength {
 		return githubapp.Manifest{}, fmt.Errorf(

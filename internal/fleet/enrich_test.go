@@ -1,7 +1,6 @@
 package fleet
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -267,7 +266,7 @@ func TestHubEnrichesWorkspaceByStableProviderIdentity(t *testing.T) {
 		}},
 	}
 
-	enriched, err := EnrichProviderState(context.Background(), database, aggregate)
+	enriched, err := EnrichProviderState(t.Context(), database, aggregate)
 	require.NoError(err)
 	require.Len(enriched.Workspaces, 1)
 	require.NotNil(enriched.Workspaces[0].MRTitle)
@@ -602,10 +601,12 @@ func TestBuildEnrichedSessionRuntimeKindAndFields(t *testing.T) {
 
 func TestBuildEnrichedCarriesHostFields(t *testing.T) {
 	raw := legacyRawSnapshot{
-		Host: RawHost{Hostname: "studio", Platform: "linux", LastSeenAt: "2026-05-30T10:00:00Z",
+		Host: RawHost{
+			Hostname: "studio", Platform: "linux", LastSeenAt: "2026-05-30T10:00:00Z",
 			TmuxSessions: []TmuxSessionInfo{
 				{Name: "w-abc", Managed: true, WorktreeKey: "worktree:/a", Windows: []TmuxWindowInfo{{ID: "@1", Index: 0, Name: "edit"}}},
-			}},
+			},
+		},
 		RemoteHosts: []RawRemoteHost{
 			{HostKey: "mbp", Name: "mbp", Reachable: true, PreferredTransport: "http"},
 			{HostKey: "void", Name: "void", Reachable: true}, // no transport -> default http
@@ -667,21 +668,21 @@ func TestBuildEnrichedCarriesTmuxFreshnessFields(t *testing.T) {
 	got := projectLegacyFixture(raw, "studio", nil, RealCapabilityPolicy{}, DefaultIdentity())
 	require.Len(got.Hosts, 2)
 
-	asrt := assert.New(t)
+	assert := assert.New(t)
 	local := got.Hosts[0]
 	require.NotNil(local.TmuxLastPolledAt)
-	asrt.Equal("2026-05-31T10:00:00.000Z", *local.TmuxLastPolledAt)
-	asrt.Equal("inventory failed", local.TmuxProbeError)
-	asrt.Equal("ps failed", local.TmuxMetricsError)
+	assert.Equal("2026-05-31T10:00:00.000Z", *local.TmuxLastPolledAt)
+	assert.Equal("inventory failed", local.TmuxProbeError)
+	assert.Equal("ps failed", local.TmuxMetricsError)
 	require.Len(local.TmuxSessions, 1)
-	asrt.Equal("session:ws-1:main", local.TmuxSessions[0].SessionScopedKey)
-	asrt.Equal(1, local.TmuxSessions[0].WindowCount)
+	assert.Equal("session:ws-1:main", local.TmuxSessions[0].SessionScopedKey)
+	assert.Equal(1, local.TmuxSessions[0].WindowCount)
 
 	remote := got.Hosts[1]
 	require.NotNil(remote.TmuxLastPolledAt)
-	asrt.Equal("2026-05-31T10:01:00.000Z", *remote.TmuxLastPolledAt)
-	asrt.Equal("peer inventory failed", remote.TmuxProbeError)
-	asrt.Equal("peer ps failed", remote.TmuxMetricsError)
+	assert.Equal("2026-05-31T10:01:00.000Z", *remote.TmuxLastPolledAt)
+	assert.Equal("peer inventory failed", remote.TmuxProbeError)
+	assert.Equal("peer ps failed", remote.TmuxMetricsError)
 }
 
 func TestBuildEnrichedReportsTmuxProbeDiagnosticsWithoutBlocks(t *testing.T) {
@@ -699,11 +700,11 @@ func TestBuildEnrichedReportsTmuxProbeDiagnosticsWithoutBlocks(t *testing.T) {
 	require.Len(t, got.Hosts, 2)
 	remote := got.Hosts[1]
 	require.Len(t, remote.Diagnostics, 2)
-	asrt := assert.New(t)
-	asrt.Equal("tmuxProbeFailed", remote.Diagnostics[0].Code)
-	asrt.Empty(remote.Diagnostics[0].BlocksOperations)
-	asrt.Equal("tmuxMetricsUnavailable", remote.Diagnostics[1].Code)
-	asrt.Empty(remote.Diagnostics[1].BlocksOperations)
+	assert := assert.New(t)
+	assert.Equal("tmuxProbeFailed", remote.Diagnostics[0].Code)
+	assert.Empty(remote.Diagnostics[0].BlocksOperations)
+	assert.Equal("tmuxMetricsUnavailable", remote.Diagnostics[1].Code)
+	assert.Empty(remote.Diagnostics[1].BlocksOperations)
 }
 
 func TestRemoteHostVersionSurfaced(t *testing.T) {

@@ -233,14 +233,20 @@ func TestQuotaTransportAttributesEachChainToItsBoundIdentity(t *testing.T) {
 		t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widget", nil,
 	)
 	require.NoError(err)
-	_, err = readChain.RoundTrip(readReq)
+	resp, err := readChain.RoundTrip(readReq)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	writeReq, err := http.NewRequestWithContext(
 		t.Context(), http.MethodGet, "https://api.github.com/notifications", nil,
 	)
 	require.NoError(err)
-	_, err = writeChain.RoundTrip(writeReq)
+	resp, err = writeChain.RoundTrip(writeReq)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	app, ok := registry.Get(quotaTestApp, QuotaResourceREST)

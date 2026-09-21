@@ -13,6 +13,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -70,7 +71,7 @@ func defaultEnv(stdout io.Writer) *appEnv {
 func runCLI(args []string, env *appEnv) error {
 	if len(args) == 0 {
 		fmt.Fprint(env.stdout, usage)
-		return fmt.Errorf("a command is required")
+		return errors.New("a command is required")
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {

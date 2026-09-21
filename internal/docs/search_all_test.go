@@ -17,10 +17,10 @@ func newCrossFolderRegistry(t *testing.T) *Registry {
 	rootA := t.TempDir()
 	rootB := t.TempDir()
 	must := func(root, rel, body string) {
-		req := require.New(t)
+		require := require.New(t)
 		full := filepath.Join(root, rel)
-		req.NoError(os.MkdirAll(filepath.Dir(full), 0o755))
-		req.NoError(os.WriteFile(full, []byte(body), 0o644))
+		require.NoError(os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(os.WriteFile(full, []byte(body), 0o644))
 	}
 	must(rootA, "README.md", "# Notes\n\nWelcome to budget planning.\n")
 	must(rootA, "Daily/2026-05-15.md", "# 2026-05-15\n\nmet with team about the budget\n")
@@ -35,11 +35,11 @@ func newCrossFolderRegistry(t *testing.T) *Registry {
 
 func TestSearchAllReturnsHitsAcrossFolders(t *testing.T) {
 	assert := assert.New(t)
-	req := require.New(t)
+	require := require.New(t)
 	r := newCrossFolderRegistry(t)
-	res, err := r.SearchAll(context.Background(), "budget", 50)
-	req.NoError(err)
-	req.NotEmpty(res.Hits, "expected at least one hit")
+	res, err := r.SearchAll(t.Context(), "budget", 50)
+	require.NoError(err)
+	require.NotEmpty(res.Hits, "expected at least one hit")
 
 	byPath := map[string]CrossFolderHit{}
 	for _, h := range res.Hits {
@@ -49,7 +49,7 @@ func TestSearchAllReturnsHitsAcrossFolders(t *testing.T) {
 	// Filename hit on Engineering/decisions/budget.md - should be hit_type
 	// "filename" (and may also carry the body snippet attached).
 	bk, ok := byPath["eng/decisions/budget.md"]
-	req.True(ok, "missing eng/decisions/budget.md hit")
+	require.True(ok, "missing eng/decisions/budget.md hit")
 	assert.Equal("filename", bk.HitType)
 
 	// Body-only hits - README and the matching daily file in Notes.
@@ -71,10 +71,10 @@ func TestSearchAllReturnsHitsAcrossFolders(t *testing.T) {
 func TestSearchAllRankingBuckets(t *testing.T) {
 	root := t.TempDir()
 	must := func(rel, body string) {
-		req := require.New(t)
+		require := require.New(t)
 		full := filepath.Join(root, rel)
-		req.NoError(os.MkdirAll(filepath.Dir(full), 0o755))
-		req.NoError(os.WriteFile(full, []byte(body), 0o644))
+		require.NoError(os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(os.WriteFile(full, []byte(body), 0o644))
 	}
 	// filename hit (exact stem == "budget")
 	must("budget.md", "unrelated body\n")
@@ -82,10 +82,10 @@ func TestSearchAllRankingBuckets(t *testing.T) {
 	must("notes.md", "we mentioned budget here\n")
 	r := NewRegistry([]config.DocFolder{{ID: "f", Name: "F", Path: root}})
 
-	res, err := r.SearchAll(context.Background(), "budget", 50)
-	req := require.New(t)
-	req.NoError(err)
-	req.Len(res.Hits, 2)
+	res, err := r.SearchAll(t.Context(), "budget", 50)
+
+	require.NoError(t, err)
+	require.Len(t, res.Hits, 2)
 	assert := assert.New(t)
 	assert.Equal("filename", res.Hits[0].HitType, "bucket should beat score")
 	assert.Equal("body", res.Hits[1].HitType)
@@ -96,49 +96,49 @@ func TestSearchAllOneRowPerFile(t *testing.T) {
 	// Same file matches both name (substring) AND body - must produce
 	// exactly one hit with HitType=filename and a snippet attached.
 	full := filepath.Join(root, "budget-notes.md")
-	req := require.New(t)
-	req.NoError(os.WriteFile(full, []byte("budget budget budget\n"), 0o644))
+	require := require.New(t)
+	require.NoError(os.WriteFile(full, []byte("budget budget budget\n"), 0o644))
 	r := NewRegistry([]config.DocFolder{{ID: "f", Name: "F", Path: root}})
-	res, err := r.SearchAll(context.Background(), "budget", 50)
-	req.NoError(err)
-	req.Len(res.Hits, 1)
+	res, err := r.SearchAll(t.Context(), "budget", 50)
+	require.NoError(err)
+	require.Len(res.Hits, 1)
 	h := res.Hits[0]
 	assert.Equal(t, "filename", h.HitType)
 	assert.NotNil(t, h.Snippet, "snippet should be attached to the filename hit")
 }
 
 func TestSearchAllTruncationProbe(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	root := t.TempDir()
 	for i := range 5 {
 		full := filepath.Join(root, fmt.Sprintf("note-%d.md", i))
-		req.NoError(os.WriteFile(full, []byte("budget"), 0o644))
+		require.NoError(os.WriteFile(full, []byte("budget"), 0o644))
 	}
 	r := NewRegistry([]config.DocFolder{{ID: "f", Name: "F", Path: root}})
 
 	// limit=3 -> 3 hits returned + Truncated=true.
-	res, err := r.SearchAll(context.Background(), "budget", 3)
-	req.NoError(err)
+	res, err := r.SearchAll(t.Context(), "budget", 3)
+	require.NoError(err)
 	assert := assert.New(t)
 	assert.Len(res.Hits, 3)
 	assert.True(res.Truncated, "Truncated should be true when more hits existed than limit")
 
 	// limit=10 -> all 5 returned + Truncated=false.
-	res2, _ := r.SearchAll(context.Background(), "budget", 10)
+	res2, _ := r.SearchAll(t.Context(), "budget", 10)
 	assert.Len(res2.Hits, 5)
 	assert.False(res2.Truncated)
 }
 
 func TestSearchAllPerFolderWarning(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	rootGood := t.TempDir()
-	req.NoError(os.WriteFile(filepath.Join(rootGood, "ok.md"), []byte("budget"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(rootGood, "ok.md"), []byte("budget"), 0o644))
 	r := NewRegistry([]config.DocFolder{
 		{ID: "good", Name: "Good", Path: rootGood},
 		{ID: "gone", Name: "Gone", Path: filepath.Join(t.TempDir(), "does-not-exist")},
 	})
-	res, err := r.SearchAll(context.Background(), "budget", 50)
-	req.NoError(err, "partial failure shouldn't be a hard error")
+	res, err := r.SearchAll(t.Context(), "budget", 50)
+	require.NoError(err, "partial failure shouldn't be a hard error")
 	assert := assert.New(t)
 	assert.Len(res.Hits, 1, "good folder still scans")
 	if assert.NotEmpty(res.Warnings) {
@@ -151,13 +151,13 @@ func TestSearchAllAllFoldersFailedReturnsError(t *testing.T) {
 		{ID: "a", Name: "A", Path: filepath.Join(t.TempDir(), "missing-a")},
 		{ID: "b", Name: "B", Path: filepath.Join(t.TempDir(), "missing-b")},
 	})
-	_, err := r.SearchAll(context.Background(), "budget", 50)
+	_, err := r.SearchAll(t.Context(), "budget", 50)
 	require.Error(t, err, "expected error when every folder fails")
 }
 
 func TestSearchAllContextCancellation(t *testing.T) {
 	r := newCrossFolderRegistry(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel before calling
 	res, err := r.SearchAll(ctx, "budget", 50)
 	assert.NoError(t, err, "cancelled SearchAll should return cleanly")
@@ -168,7 +168,7 @@ func TestSearchAllContextCancellation(t *testing.T) {
 
 func TestSearchAllEmptyQueryReturnsEmpty(t *testing.T) {
 	r := newCrossFolderRegistry(t)
-	res, err := r.SearchAll(context.Background(), "  ", 50)
+	res, err := r.SearchAll(t.Context(), "  ", 50)
 	require.NoError(t, err)
 	assert.Empty(t, res.Hits, "whitespace-only query")
 }
@@ -178,12 +178,12 @@ func TestSearchAllEmptyQueryReturnsEmpty(t *testing.T) {
 // ReadFile enforces. Without the resolve() check the scanner could
 // leak text from anywhere the daemon process can read.
 func TestSearchAllSymlinkEscapeIsContained(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	folderRoot := t.TempDir()
 	outsideRoot := t.TempDir()
 	// External file the symlink will point at.
 	outsidePath := filepath.Join(outsideRoot, "secret.md")
-	req.NoError(os.WriteFile(outsidePath, []byte("# secret\n\nhighly classified budget data\n"), 0o644))
+	require.NoError(os.WriteFile(outsidePath, []byte("# secret\n\nhighly classified budget data\n"), 0o644))
 	// Symlink inside the folder root pointing to the external file.
 	linkPath := filepath.Join(folderRoot, "looks-inside.md")
 	if err := os.Symlink(outsidePath, linkPath); err != nil {
@@ -191,11 +191,11 @@ func TestSearchAllSymlinkEscapeIsContained(t *testing.T) {
 	}
 	// Plus one legitimate in-folder file so the test exercises a real hit
 	// existing alongside the rejected symlink.
-	req.NoError(os.WriteFile(filepath.Join(folderRoot, "ok.md"), []byte("# ok\n\nbudget item\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(folderRoot, "ok.md"), []byte("# ok\n\nbudget item\n"), 0o644))
 	r := NewRegistry([]config.DocFolder{{ID: "notes", Name: "Notes", Path: folderRoot}})
 
-	res, err := r.SearchAll(context.Background(), "budget", 50)
-	req.NoError(err)
+	res, err := r.SearchAll(t.Context(), "budget", 50)
+	require.NoError(err)
 	for _, h := range res.Hits {
 		assert.NotEqual(t, "looks-inside.md", h.RelPath, "symlink escape was not contained: %+v", h)
 	}

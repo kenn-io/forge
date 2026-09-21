@@ -231,7 +231,7 @@ func (o *PushedHeadObserver) resolveWorkspacePR(
 		return nil, nil, nil, false, nil
 	}
 
-	prNumber := 0
+	var prNumber int
 	var assoc *WorkspacePRAssociation
 	switch ws.ItemType {
 	case db.WorkspaceItemTypePullRequest:

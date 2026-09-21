@@ -163,7 +163,7 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 			"target_key": targetKey, "message": message,
 		})
 		require.NoError(marshalErr)
-		request := httptest.NewRequest(http.MethodPost, target, bytes.NewReader(body)).WithContext(requestContext)
+		request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, target, bytes.NewReader(body)).WithContext(requestContext)
 		request.Header.Set("Content-Type", "application/json")
 		recorder := httptest.NewRecorder()
 		mux.ServeHTTP(recorder, request)
@@ -294,7 +294,7 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 	require.Equal(http.StatusConflict, response.Code, response.Body.String())
 
 	getRecorder := httptest.NewRecorder()
-	mux.ServeHTTP(getRecorder, httptest.NewRequest(http.MethodGet, endpoint, nil))
+	mux.ServeHTTP(getRecorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, endpoint, nil))
 	require.Equal(http.StatusOK, getRecorder.Code, getRecorder.Body.String())
 	messageStatus = struct {
 		TargetKey    string     `json:"target_key"`

@@ -30,7 +30,7 @@ func TestHumaCollectionsUseNonNullJSONArrays(t *testing.T) {
 	})
 
 	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/collections", nil))
+	mux.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/collections", nil))
 
 	assert.Equal(http.StatusOK, response.Code)
 	assert.Contains(response.Body.String(), `"items":[]`)

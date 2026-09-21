@@ -96,11 +96,11 @@ type CreateProjectInput struct {
 func (d *DB) CreateProject(ctx context.Context, in CreateProjectInput) (*Project, error) {
 	displayName := strings.TrimSpace(in.DisplayName)
 	if displayName == "" {
-		return nil, fmt.Errorf("display_name is required")
+		return nil, errors.New("display_name is required")
 	}
 	localPath := strings.TrimSpace(in.LocalPath)
 	if localPath == "" {
-		return nil, fmt.Errorf("local_path is required")
+		return nil, errors.New("local_path is required")
 	}
 
 	id, err := newProjectID()
@@ -239,15 +239,15 @@ type CreateProjectWorktreeInput struct {
 func (d *DB) CreateProjectWorktree(ctx context.Context, in CreateProjectWorktreeInput) (*ProjectWorktree, error) {
 	projectID := strings.TrimSpace(in.ProjectID)
 	if projectID == "" {
-		return nil, fmt.Errorf("project_id is required")
+		return nil, errors.New("project_id is required")
 	}
 	branch := strings.TrimSpace(in.Branch)
 	if branch == "" {
-		return nil, fmt.Errorf("branch is required")
+		return nil, errors.New("branch is required")
 	}
 	path := strings.TrimSpace(in.Path)
 	if path == "" {
-		return nil, fmt.Errorf("path is required")
+		return nil, errors.New("path is required")
 	}
 
 	if _, err := d.GetProjectByID(ctx, projectID); err != nil {

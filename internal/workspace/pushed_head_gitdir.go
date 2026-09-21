@@ -206,7 +206,7 @@ func newWorktreeGitHandle(dir string) (*worktreeGitHandle, error) {
 	if err != nil {
 		return nil, err
 	}
-	var repoFS = osfs.New(gitDir)
+	repoFS := osfs.New(gitDir)
 	if commonDir != gitDir {
 		repoFS = dotgit.NewRepositoryFilesystem(repoFS, osfs.New(commonDir))
 	}

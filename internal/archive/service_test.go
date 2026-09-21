@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"go.kenn.io/forge/internal/platformdb"
 	"sync"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/internal/platformdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1082,6 +1083,7 @@ func (p *archiveServiceProvider) ListIssuesPage(ctx context.Context, ref platfor
 	}
 	return platform.Page[platform.Issue]{Items: []platform.Issue{archiveTestIssue(ref)}, Exhausted: true}, nil
 }
+
 func (p *archiveServiceProvider) ListMergeRequestsPage(_ context.Context, ref platform.RepoRef, query platform.ItemPageQuery) (platform.Page[platform.MergeRequest], error) {
 	if query.UpdatedSince != nil {
 		p.record("updated_mrs:" + query.Cursor)
@@ -1097,6 +1099,7 @@ func (p *archiveServiceProvider) ListMergeRequestsPage(_ context.Context, ref pl
 	p.record("merge_requests")
 	return platform.Page[platform.MergeRequest]{Items: []platform.MergeRequest{archiveTestMergeRequest(ref)}, Exhausted: true}, nil
 }
+
 func newArchiveTestService(t *testing.T, database *db.DB, registry *platform.Registry, refs []platform.RepoRef, admission Admission, now time.Time) *Service {
 	t.Helper()
 	service, err := NewService(database, registry, admission, archiveTestSource{refs: refs}, nil, fixedClock{value: now})
@@ -1122,6 +1125,7 @@ func archiveTestTime() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time
 func archiveTestIssue(ref platform.RepoRef) platform.Issue {
 	return platform.Issue{Repo: ref, PlatformID: 1, PlatformExternalID: "issue-1", Number: 1, State: "closed", CreatedAt: archiveTestTime(), UpdatedAt: archiveTestTime(), LastActivityAt: archiveTestTime()}
 }
+
 func archiveTestMergeRequest(ref platform.RepoRef) platform.MergeRequest {
 	created := archiveTestTime().Add(time.Minute)
 	return platform.MergeRequest{Repo: ref, PlatformID: 2, PlatformExternalID: "mr-2", Number: 2, State: "closed", CreatedAt: created, UpdatedAt: created, LastActivityAt: created}

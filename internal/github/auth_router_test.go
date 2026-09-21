@@ -1139,7 +1139,7 @@ func TestSyncerRateSnapshotTriesHealthyRouteForSharedIdentity(t *testing.T) {
 	database := openTestDB(t)
 	identity := IdentityKey{Host: "github.com", Principal: "user:123"}
 	rest := NewRateTracker(database, "github.com", "user:123", "rest")
-	failed := &routeRecordingClient{snapshotErr: fmt.Errorf("expired token")}
+	failed := &routeRecordingClient{snapshotErr: errors.New("expired token")}
 	healthy := &routeRecordingClient{snapshot: &platformgithub.RateLimitSnapshot{
 		Core: &Rate{Limit: 5000, Remaining: 4200},
 	}}

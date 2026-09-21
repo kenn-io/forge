@@ -58,7 +58,7 @@ func repoBrowserRequest(
 	method, target string,
 ) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, target, nil)
+	req := httptest.NewRequestWithContext(t.Context(), method, target, nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	return rr

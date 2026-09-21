@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -127,7 +126,7 @@ func TestWorkspaceRuntimeLaunchWritesAgentContextE2E(t *testing.T) {
 		Tmux:   config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
@@ -174,7 +173,7 @@ func TestWorkspaceRuntimeLaunchRejectsUnsafeRepositoryAgentInstructionsE2E(t *te
 				Tmux:   config.Tmux{Command: []string{tmuxPath}},
 			}
 			client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-			ctx := context.Background()
+			ctx := t.Context()
 			ws := createReadyWorkspace(t, ctx, client)
 			agentsPath := filepath.Join(ws.WorktreePath, "AGENTS.md")
 			switch tt.entry {
@@ -261,7 +260,7 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 
 	launch := func(workspaceID string) {
 		t.Helper()
-		req := httptest.NewRequest(
+		req := httptest.NewRequestWithContext(t.Context(),
 			http.MethodPost,
 			"/api/v1/workspaces/"+workspaceID+"/runtime/sessions",
 			bytes.NewBufferString(`{"target_key":"codex"}`),

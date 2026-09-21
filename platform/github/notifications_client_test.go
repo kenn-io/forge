@@ -15,12 +15,12 @@ func TestNotificationItemNormalizesPullRequestURL(t *testing.T) {
 		"widget",
 	)
 
-	check := assert.New(t)
-	check.Equal("pr", itemType)
-	if check.NotNil(number) {
-		check.Equal(42, *number)
+	assert := assert.New(t)
+	assert.Equal("pr", itemType)
+	if assert.NotNil(number) {
+		assert.Equal(42, *number)
 	}
-	check.Equal("https://github.example.com/acme/widget/pull/42", webURL)
+	assert.Equal("https://github.example.com/acme/widget/pull/42", webURL)
 }
 
 func TestNotificationItemNormalizesPullRequestIssueURL(t *testing.T) {
@@ -32,12 +32,12 @@ func TestNotificationItemNormalizesPullRequestIssueURL(t *testing.T) {
 		"widget",
 	)
 
-	check := assert.New(t)
-	check.Equal("pr", itemType)
-	if check.NotNil(number) {
-		check.Equal(42, *number)
+	assert := assert.New(t)
+	assert.Equal("pr", itemType)
+	if assert.NotNil(number) {
+		assert.Equal(42, *number)
 	}
-	check.Equal("https://github.example.com/acme/widget/pull/42", webURL)
+	assert.Equal("https://github.example.com/acme/widget/pull/42", webURL)
 }
 
 func TestNotificationItemKeepsExternalOnlySubjectsVisible(t *testing.T) {
@@ -49,10 +49,10 @@ func TestNotificationItemKeepsExternalOnlySubjectsVisible(t *testing.T) {
 		"widget",
 	)
 
-	check := assert.New(t)
-	check.Equal("other", itemType)
-	check.Nil(number)
-	check.Empty(webURL)
+	assert := assert.New(t)
+	assert.Equal("other", itemType)
+	assert.Nil(number)
+	assert.Empty(webURL)
 }
 
 func TestNotificationItemDoesNotSynthesizeReleaseURLFromAPIID(t *testing.T) {
@@ -64,8 +64,8 @@ func TestNotificationItemDoesNotSynthesizeReleaseURLFromAPIID(t *testing.T) {
 		"widget",
 	)
 
-	check := assert.New(t)
-	check.Equal("release", itemType)
-	check.Nil(number)
-	check.Empty(webURL)
+	assert := assert.New(t)
+	assert.Equal("release", itemType)
+	assert.Nil(number)
+	assert.Empty(webURL)
 }

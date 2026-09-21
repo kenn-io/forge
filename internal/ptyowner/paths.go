@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -87,7 +88,7 @@ func sessionSocketHash(session string) string {
 
 func validateSessionName(session string) error {
 	if session == "" {
-		return fmt.Errorf("pty owner session name is empty")
+		return errors.New("pty owner session name is empty")
 	}
 	if strings.Contains(session, "..") ||
 		strings.ContainsAny(session, `/\`) ||
@@ -107,7 +108,7 @@ func readState(paths SessionPaths) (ownerState, error) {
 		return ownerState{}, err
 	}
 	if state.Addr == "" || state.Token == "" {
-		return ownerState{}, fmt.Errorf("pty owner state is incomplete")
+		return ownerState{}, errors.New("pty owner state is incomplete")
 	}
 	return state, nil
 }

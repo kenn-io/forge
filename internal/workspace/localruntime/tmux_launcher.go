@@ -207,7 +207,7 @@ type tmuxLaunchResult struct {
 
 func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 	if l.Session == "" {
-		return tmuxLaunchResult{}, fmt.Errorf("tmux session is empty")
+		return tmuxLaunchResult{}, errors.New("tmux session is empty")
 	}
 	exists, err := l.sessionExists(ctx)
 	if err != nil {
@@ -317,7 +317,7 @@ func (l tmuxLauncher) cleanupNewSessionAfterError(
 	defer cancel()
 	if err := l.run(cleanupCtx, l.killSessionCommand()); err != nil {
 		return fmt.Errorf(
-			"%s: %w; cleanup new tmux session: %v",
+			"%s: %w; cleanup new tmux session: %w",
 			operation, cause, err,
 		)
 	}
@@ -361,8 +361,7 @@ func (l tmuxLauncher) sessionExists(ctx context.Context) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	var tmuxErr tmuxCommandError
-	if errors.As(err, &tmuxErr) && isTmuxSessionAbsent(tmuxErr.stderr, tmuxErr.err) {
+	if tmuxErr, ok := errors.AsType[tmuxCommandError](err); ok && isTmuxSessionAbsent(tmuxErr.stderr, tmuxErr.err) {
 		return false, nil
 	}
 	return false, fmt.Errorf("tmux has-session: %w", err)
@@ -392,7 +391,7 @@ func (l tmuxLauncher) output(
 	command []string,
 ) ([]byte, error) {
 	if len(command) == 0 || command[0] == "" {
-		return nil, fmt.Errorf("tmux command is empty")
+		return nil, errors.New("tmux command is empty")
 	}
 	cmd := procutil.CommandContext(ctx, command[0], command[1:]...)
 	// The pane command receives its environment through the env-file

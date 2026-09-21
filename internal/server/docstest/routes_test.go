@@ -152,7 +152,7 @@ func TestDocsFolderAddRejectsNonLoopback(t *testing.T) {
 
 	body, err := json.Marshal(generated.CreateDocsFolderBody{Path: new("/tmp/whatever")})
 	require.NoError(err)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/docs/folders", bytes.NewReader(body))
 	req.Host = "127.0.0.1"
 	req.RemoteAddr = "203.0.113.7:54321"
 	req.Header.Set("Content-Type", "application/json")
@@ -357,7 +357,7 @@ func TestDocsBrowseEndpointRejectsNonLoopback(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/docs/browse?path="+t.TempDir(), nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/docs/browse?path="+t.TempDir(), nil)
 	req.Host = "127.0.0.1"
 	req.RemoteAddr = "203.0.113.7:54321"
 	rr := httptest.NewRecorder()
@@ -701,7 +701,7 @@ func TestDocsFileMutationsRejectNonLoopback(t *testing.T) {
 			if tc.body != nil {
 				require.NoError(json.NewEncoder(&buf).Encode(tc.body))
 			}
-			req := httptest.NewRequest(tc.method, tc.path, &buf)
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, &buf)
 			req.Host = "127.0.0.1"
 			req.RemoteAddr = "203.0.113.7:54321"
 			req.Header.Set("Content-Type", "application/json")
@@ -773,7 +773,7 @@ func TestDocsMutationsRejectBodyTooLarge(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var body bytes.Buffer
 			require.NoError(json.NewEncoder(&body).Encode(tc.body))
-			req := httptest.NewRequest(tc.method, tc.path, &body)
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, &body)
 			req.Host = "127.0.0.1"
 			req.RemoteAddr = "127.0.0.1:12345"
 			req.Header.Set("Content-Type", "application/json")
@@ -796,7 +796,7 @@ func TestDocsFileWriteAllowsBodyBelowEditorLimit(t *testing.T) {
 	body, err := json.Marshal(generated.WriteDocsFileBody{Content: new(content)})
 	require.NoError(err)
 
-	req := httptest.NewRequest(http.MethodPut,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut,
 		"/api/v1/docs/folders/notes/file?path=notes/ideas.md",
 		bytes.NewReader(body))
 	req.Host = "127.0.0.1"
@@ -830,7 +830,7 @@ func TestDocsReadEndpointsRejectNonLoopback(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tc.path, nil)
 			req.Host = "127.0.0.1"
 			req.RemoteAddr = "203.0.113.7:54321"
 			rr := httptest.NewRecorder()

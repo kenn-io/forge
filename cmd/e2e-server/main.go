@@ -105,7 +105,6 @@ func main() {
 		syscall.SIGINT,
 		syscall.SIGTERM,
 	)
-	defer stop()
 
 	var err error
 	if *federatedForges {
@@ -121,6 +120,7 @@ func main() {
 			*providerCollision,
 		)
 	}
+	stop()
 	if err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -662,7 +662,7 @@ type globRefreshContextKey struct{}
 
 func e2eGit(ctx context.Context, dir string, args ...string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("git: no args")
+		return errors.New("git: no args")
 	}
 	cmd := gitcmd.New().Command(ctx, dir, args...)
 	cmd.Env = append(cmd.Env,
@@ -871,14 +871,14 @@ func seedReviewSuggestionFixture(
 		return fmt.Errorf("get review suggestion repo: %w", err)
 	}
 	if repo == nil {
-		return fmt.Errorf("get review suggestion repo: not found")
+		return errors.New("get review suggestion repo: not found")
 	}
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, number)
 	if err != nil {
 		return fmt.Errorf("get review suggestion pull request: %w", err)
 	}
 	if mr == nil {
-		return fmt.Errorf("get review suggestion pull request: not found")
+		return errors.New("get review suggestion pull request: not found")
 	}
 
 	const providerThreadID = "e2e-review-suggestion-1"
@@ -1325,9 +1325,9 @@ func (r *appStateRegistry) Swap(next *appState) *appState {
 	return r.current.Swap(next)
 }
 
-func (r *appStateRegistry) closeAsync(close func()) {
+func (r *appStateRegistry) closeAsync(fn func()) {
 	r.closers.Go(func() {
-		close()
+		fn()
 	})
 }
 
@@ -2349,7 +2349,6 @@ func buildAppState(
 			number := 1
 			body := "Pull request detail activity older than the feed cursor"
 			commitSuffix := "1"
-			parentID := int64(0)
 			mr, err := database.GetMergeRequest(
 				r.Context(), "github", "github.com", "acme", "widgets", number,
 			)
@@ -2357,7 +2356,7 @@ func buildAppState(
 				http.Error(w, "pull request not found", http.StatusNotFound)
 				return
 			}
-			parentID = mr.ID
+			parentID := mr.ID
 			if itemType == "issue" {
 				number = 10
 				body = "Issue detail activity older than the feed cursor"
@@ -3756,7 +3755,7 @@ func run(
 		states.waitForClosers()
 	}()
 
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
@@ -3821,7 +3820,7 @@ func run(
 	}
 	defer cleanupServerInfoFile(serverInfoFile)
 
-	slog.Info(fmt.Sprintf("starting e2e server at %s", info.BaseURL))
+	slog.Info("starting e2e server at " + info.BaseURL)
 
 	// /__e2e/reset rebuilds the full fixture state in-process and
 	// swaps it in, so Playwright can reuse one server process (and

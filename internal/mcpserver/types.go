@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -28,10 +29,10 @@ func (r repoFilterInput) repositoryIdentity() (RepositoryIdentity, error) {
 		return RepositoryIdentity{}, nil
 	}
 	if provider == "" {
-		return RepositoryIdentity{}, fmt.Errorf("repo provider is required")
+		return RepositoryIdentity{}, errors.New("repo provider is required")
 	}
 	if platformRepoID == "" {
-		return RepositoryIdentity{}, fmt.Errorf("repo platform_repo_id is required")
+		return RepositoryIdentity{}, errors.New("repo platform_repo_id is required")
 	}
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
@@ -47,16 +48,16 @@ func (r repoFilterInput) repositoryIdentity() (RepositoryIdentity, error) {
 	if repoPath != "" {
 		parts := strings.Split(repoPath, "/")
 		if len(parts) < 2 {
-			return RepositoryIdentity{}, fmt.Errorf("repo_path must contain an owner and repository name")
+			return RepositoryIdentity{}, errors.New("repo_path must contain an owner and repository name")
 		}
 		owner = strings.Join(parts[:len(parts)-1], "/")
 		name = parts[len(parts)-1]
 	} else {
 		if owner == "" {
-			return RepositoryIdentity{}, fmt.Errorf("repo owner is required")
+			return RepositoryIdentity{}, errors.New("repo owner is required")
 		}
 		if name == "" {
-			return RepositoryIdentity{}, fmt.Errorf("repo name is required")
+			return RepositoryIdentity{}, errors.New("repo name is required")
 		}
 		repoPath = owner + "/" + name
 	}

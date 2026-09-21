@@ -1,8 +1,8 @@
 package workflowapi
 
 import (
-	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/platform"
 )
 
 type repositoryInput struct {
@@ -173,7 +173,9 @@ type WorkflowDispatchResponse struct {
 	Run        *WorkflowRunResponse `json:"run,omitempty"`
 }
 
-type catalogOutput = httpapi.BodyOutput[WorkflowCatalogResponse]
-type runsOutput = httpapi.BodyOutput[WorkflowRunsResponse]
-type jobsOutput = httpapi.BodyOutput[WorkflowJobsResponse]
-type dispatchOutput = httpapi.AcceptedBodyOutput[WorkflowDispatchResponse]
+type (
+	catalogOutput  = httpapi.BodyOutput[WorkflowCatalogResponse]
+	runsOutput     = httpapi.BodyOutput[WorkflowRunsResponse]
+	jobsOutput     = httpapi.BodyOutput[WorkflowJobsResponse]
+	dispatchOutput = httpapi.AcceptedBodyOutput[WorkflowDispatchResponse]
+)

@@ -9,9 +9,11 @@ import (
 	"time"
 )
 
-const nextEvenScanGenerationSQL = "scan_generation + 2 - (scan_generation % 2)"
-const archiveLifecycleDetailsGeneration int64 = 1 << 34
-const maxScanPages = 10_000
+const (
+	nextEvenScanGenerationSQL               = "scan_generation + 2 - (scan_generation % 2)"
+	archiveLifecycleDetailsGeneration int64 = 1 << 34
+	maxScanPages                            = 10_000
+)
 
 const (
 	datasetErrorCodePageBound     = "page_bound"

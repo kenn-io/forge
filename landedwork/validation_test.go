@@ -1,7 +1,6 @@
 package landedwork_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,7 +48,7 @@ func TestInvalidInputsAndOutputLimits(t *testing.T) {
 			callCtx, path, bounds, limits := ctx, f.repo.Root, f.bounds(), fixtureLimits()
 			switch name {
 			case "deadline":
-				callCtx = context.Background()
+				callCtx = t.Context()
 			case "zero limit":
 				limits.Records = 0
 			case "short SHA":

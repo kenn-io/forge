@@ -2,7 +2,7 @@ package github
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 	"time"
 
@@ -76,7 +76,7 @@ func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) {
 		err  error
 		want string
 	}{
-		{name: "lookup error", err: fmt.Errorf("status 401"), want: "status 401"},
+		{name: "lookup error", err: errors.New("status 401"), want: "status 401"},
 		{name: "missing id", user: &gh.User{Login: new("nobody")}, want: "positive numeric user id"},
 	}
 	for _, tc := range tests {

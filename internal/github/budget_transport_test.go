@@ -27,9 +27,12 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 
 	ctx := WithSyncBudget(t.Context())
 	req, _ := http.NewRequestWithContext(
-		ctx, "GET", "https://api.github.com/repos/o/n/pulls", nil,
+		ctx, http.MethodGet, "https://api.github.com/repos/o/n/pulls", nil,
 	)
-	_, err := bt.RoundTrip(req)
+	resp, err := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(t, err)
 
 	assert.Equal(1, budget.Spent())
@@ -66,7 +69,10 @@ func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
 				errors <- err
 				return
 			}
-			_, err = transport.RoundTrip(req)
+			resp, err := transport.RoundTrip(req)
+			if resp != nil {
+				defer resp.Body.Close()
+			}
 			errors <- err
 		})
 	}
@@ -104,7 +110,10 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 		"https://api.github.com/repos/acme/widget/issues/1", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	assert.Equal(1, budget.Spent())
@@ -129,7 +138,10 @@ func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-	_, err = bt.RoundTrip(req)
+	resp, err := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(t, err)
 
 	assert.Equal(1, budget.Spent())
@@ -157,7 +169,10 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 			"https://api.github.com/repos/acme/widget/pulls", nil,
 		)
 		require.NoError(err)
-		_, err = bt.RoundTrip(req)
+		resp, err := bt.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -191,9 +206,12 @@ func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
 
 	ctx := WithSyncBudget(t.Context())
 	req, _ := http.NewRequestWithContext(
-		ctx, "GET", "https://api.github.com/repos/o/n/pulls", nil,
+		ctx, http.MethodGet, "https://api.github.com/repos/o/n/pulls", nil,
 	)
-	_, err := bt.RoundTrip(req)
+	resp, err := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(t, err)
 
 	assert.Equal(0, budget.Spent(),
@@ -212,10 +230,13 @@ func TestBudgetTransport_SkipsNonSyncContext(t *testing.T) {
 	}
 
 	req, _ := http.NewRequestWithContext(
-		t.Context(), "GET",
+		t.Context(), http.MethodGet,
 		"https://api.github.com/repos/o/n/pulls", nil,
 	)
-	_, err := bt.RoundTrip(req)
+	resp, err := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(t, err)
 
 	assert.Equal(0, budget.Spent(),
@@ -236,10 +257,13 @@ func TestBudgetTransport_CountsMultipleRequests(t *testing.T) {
 	ctx := WithSyncBudget(t.Context())
 	for range 5 {
 		req, _ := http.NewRequestWithContext(
-			ctx, "GET",
+			ctx, http.MethodGet,
 			"https://api.github.com/repos/o/n/pulls", nil,
 		)
-		_, err := bt.RoundTrip(req)
+		resp, err := bt.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		require.NoError(t, err)
 	}
 
@@ -259,10 +283,13 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 
 	ctx := WithSyncBudget(t.Context())
 	req, _ := http.NewRequestWithContext(
-		ctx, "GET",
+		ctx, http.MethodGet,
 		"https://api.github.com/repos/o/n/pulls", nil,
 	)
-	_, _ = bt.RoundTrip(req)
+	resp, _ := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 
 	assert.Equal(1, budget.Spent(),
 		"budget should count even when base transport errors")
@@ -308,7 +335,10 @@ func TestBudgetTransportRecoversAfterWindowWithoutProviderResponse(t *testing.T)
 			"https://api.github.com/repos/acme/widget", nil,
 		)
 		require.NoError(err)
-		_, err = transport.RoundTrip(req)
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -351,7 +381,10 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 		"https://api.github.com/repos/acme/widget/issues/1", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 	assert.Zero(budget.Spent())
 	assert.Zero(budget.ArchiveSpent())
@@ -363,7 +396,10 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 		"https://api.github.com/repos/acme/widget/issues/2", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(unreserved)
+	resp, err = transport.RoundTrip(unreserved)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 	assert.Equal(1, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())

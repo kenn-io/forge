@@ -16,7 +16,7 @@ func TestMutationGuardRejectsCrossOriginRequestWithJSONError(t *testing.T) {
 
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/sync",
 		nil,

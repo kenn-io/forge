@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -14,7 +13,7 @@ import (
 func TestDeleteProjectCascadesWorktrees(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: proj.ID, Branch: "feat", Path: filepath.Join(t.TempDir(), "wt"),
@@ -35,7 +34,7 @@ func TestDeleteProjectCascadesWorktrees(t *testing.T) {
 func TestDeleteProjectNotFound(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	require.ErrorIs(d.DeleteProject(context.Background(), "prj_missing"), ErrProjectNotFound,
+	require.ErrorIs(d.DeleteProject(t.Context(), "prj_missing"), ErrProjectNotFound,
 		"deleting an unknown project reports not found")
 }
 
@@ -45,7 +44,7 @@ func TestDeleteProjectNotFound(t *testing.T) {
 func TestDeleteProjectWorktreeRemovesRow(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: proj.ID, Branch: "feat", Path: filepath.Join(t.TempDir(), "wt"),
@@ -67,7 +66,7 @@ func TestDeleteProjectWorktreeNotFound(t *testing.T) {
 	d := openTestDB(t)
 	proj := createDiscoveryTestProject(t, d, "app")
 	require.ErrorIs(
-		d.DeleteProjectWorktree(context.Background(), proj.ID, "wtr_missing"),
+		d.DeleteProjectWorktree(t.Context(), proj.ID, "wtr_missing"),
 		ErrProjectNotFound,
 		"deleting an unknown worktree reports not found",
 	)
@@ -79,7 +78,7 @@ func TestDeleteProjectWorktreeNotFound(t *testing.T) {
 func TestDeleteProjectWorktreeScopedToProject(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	projA := createDiscoveryTestProject(t, d, "a")
 	projB := createDiscoveryTestProject(t, d, "b")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{

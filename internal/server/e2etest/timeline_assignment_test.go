@@ -206,7 +206,11 @@ func getTimelineDetail(
 	path string,
 ) timelineDetailResponse {
 	t.Helper()
-	resp, err := ts.Client().Get(ts.URL + path)
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+path, nil)
+	require.NoError(t, err)
+	httpClient := ts.Client()
+	httpClient.Timeout = 5 * time.Second
+	resp, err := httpClient.Do(respReq)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)

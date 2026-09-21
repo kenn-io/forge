@@ -4,6 +4,7 @@ func repositoryBytes(r Repository) int64 { return int64(len(r.Provider) + len(r.
 func gapBytes(g Gap) int64 {
 	return int64(len(g.CandidateID) + len(g.ObjectID) + len(g.Reason) + len(g.Span.Before) + len(g.Span.Through))
 }
+
 func stringBytes(ids []string) int64 {
 	var n int64
 	for _, id := range ids {
@@ -11,12 +12,15 @@ func stringBytes(ids []string) int64 {
 	}
 	return n
 }
+
 func inventoryBytes(i Inventory) int64 {
 	return int64(len(i.Reason) + len(i.NextCommit) + len(i.NextPage))
 }
+
 func candidateBytes(c Candidate) int64 {
 	return repositoryBytes(c.Repository) + int64(len(c.ID)+len(c.Terminal)+len(c.SourceHead)+len(c.Method)+len(c.MethodEvidence)+len(c.TerminalEvidence)) + stringBytes(c.Source)
 }
+
 func queryBytes(q Query) int64 {
 	n := repositoryBytes(q.Bounds.Repository) + int64(len(q.Bounds.Base)+len(q.Bounds.Head)) + stringBytes(q.Commits)
 	for _, gap := range q.Gaps {

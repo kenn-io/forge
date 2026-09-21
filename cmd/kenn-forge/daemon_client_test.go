@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,11 +30,16 @@ func TestDaemonOriginTransportScopesHeadersToDaemonOrigin(t *testing.T) {
 	}))
 	t.Cleanup(origin.Close)
 
-	client := &http.Client{Transport: daemonOriginTransport{
-		token: "daemon-secret", origin: origin.URL,
-		base: http.DefaultTransport,
-	}}
-	resp, err := client.Get(origin.URL)
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: daemonOriginTransport{
+			token: "daemon-secret", origin: origin.URL,
+			base: http.DefaultTransport,
+		},
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL, nil)
+	require.NoError(err)
+	resp, err := client.Do(req)
 	require.NoError(err)
 	require.NoError(resp.Body.Close())
 	assert.Equal("Bearer daemon-secret", originAuthorization)

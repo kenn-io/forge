@@ -384,8 +384,7 @@ func (h *Handler) workspaceInheritedKataSubjects(
 			workspace.RepoOwner, workspace.RepoName, request.number,
 		)
 		if err != nil {
-			var problem *httpapi.ProblemError
-			if errors.As(err, &problem) && kataInheritanceCanSkipProblem(problem.Code) {
+			if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok && kataInheritanceCanSkipProblem(problem.Code) {
 				continue
 			}
 			return nil, err

@@ -183,8 +183,10 @@ const (
 	tmuxCaptureScrollbackLines         = 160
 )
 
-var workspacePersistTimeout = 5 * time.Second
-var workspaceCleanupTimeout = 5 * time.Second
+var (
+	workspacePersistTimeout = 5 * time.Second
+	workspaceCleanupTimeout = 5 * time.Second
+)
 
 var (
 	ErrWorkspaceNotFound             = errors.New("workspace not found")
@@ -529,7 +531,7 @@ func (m *Manager) CreateFromLaunchSpec(
 
 	if err := m.db.CreateWorkspaceWithLaunchSpec(ctx, ws, spec); err != nil {
 		if isUniqueConstraintError(err) {
-			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
+			return nil, fmt.Errorf("%w: %w", ErrWorkspaceDuplicate, err)
 		}
 		return nil, fmt.Errorf("insert workspace and launch specification: %w", err)
 	}
@@ -690,7 +692,7 @@ func (m *Manager) CreateIssueFromLaunchSpec(
 
 	if err := m.db.CreateWorkspaceWithLaunchSpec(ctx, ws, spec); err != nil {
 		if isUniqueConstraintError(err) {
-			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
+			return nil, fmt.Errorf("%w: %w", ErrWorkspaceDuplicate, err)
 		}
 		return nil, fmt.Errorf("insert workspace and launch specification: %w", err)
 	}
@@ -828,7 +830,7 @@ func (m *Manager) CreateKataTask(
 		return nil, fmt.Errorf("look up repo: %w", err)
 	}
 	if repo == nil {
-		return nil, fmt.Errorf("repository not tracked")
+		return nil, errors.New("repository not tracked")
 	}
 
 	branchID := kataTaskBranchID(metadata)
@@ -873,7 +875,7 @@ func (m *Manager) CreateKataTask(
 
 	if err := m.db.InsertWorkspace(ctx, ws); err != nil {
 		if isUniqueConstraintError(err) {
-			return nil, fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
+			return nil, fmt.Errorf("%w: %w", ErrWorkspaceDuplicate, err)
 		}
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
@@ -989,7 +991,7 @@ func (m *Manager) persistAdHocWorkspace(
 			return err
 		}
 		if nextHashAttempt == 0 {
-			return fmt.Errorf("%w: %v", ErrWorkspaceDuplicate, err)
+			return fmt.Errorf("%w: %w", ErrWorkspaceDuplicate, err)
 		}
 
 		branch, nextAttempt, nameErr := nextAvailableAdHocBranchName(
@@ -1618,9 +1620,9 @@ func (m *Manager) SetupWithOptions(
 	nextStage(workspaceSetupStageTmuxSession)
 	terminalWorkspace := ws
 	if recoveryPending {
-		copy := *ws
-		copy.WorkspaceBranch = persistedBranch
-		terminalWorkspace = &copy
+		recovered := *ws
+		recovered.WorkspaceBranch = persistedBranch
+		terminalWorkspace = &recovered
 	}
 	if preserveWorktree {
 		err = m.EnsureTerminal(ctx, terminalWorkspace)
@@ -1703,8 +1705,7 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 	if ws == nil {
 		return nil, ErrWorkspaceNotFound
 	}
-	releaseReconciliation, err :=
-		m.db.LockRepositoryReconciliationRead(ctx)
+	releaseReconciliation, err := m.db.LockRepositoryReconciliationRead(ctx)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"lock repository reconciliation for head classification: %w",
@@ -2107,32 +2108,30 @@ func (m *Manager) existingWorktreeUsesManagedClone(
 	if err != nil {
 		return false, err
 	}
-	actualDir, err := canonicalFilesystemPath(commonDir)
-	if err != nil {
-		return false, nil
-	}
-	pathMatches := false
-	for _, candidate := range candidates {
-		ready, err := gitCloneDirReady(candidate.path)
-		if err != nil || !ready {
-			continue
+	actualDir, pathErr := canonicalFilesystemPath(commonDir)
+	if pathErr == nil {
+		pathMatches := false
+		for _, candidate := range candidates {
+			ready, readyErr := gitCloneDirReady(candidate.path)
+			if readyErr != nil || !ready {
+				continue
+			}
+			expectedDir, expectedErr := canonicalFilesystemPath(candidate.path)
+			if expectedErr == nil && actualDir == expectedDir {
+				pathMatches = true
+				break
+			}
 		}
-		expectedDir, err := canonicalFilesystemPath(candidate.path)
-		if err == nil && actualDir == expectedDir {
-			pathMatches = true
-			break
-		}
-	}
-	if !pathMatches {
-		return false, nil
-	}
-	for _, candidate := range candidates {
-		if validateBaseRemoteURLs(
-			ctx, commonDir, originRemoteName, candidate.platformHost,
-			candidate.owner, candidate.name,
-			m.allowsInsecureHTTP(candidate.platform, candidate.platformHost),
-		) == nil {
-			return true, nil
+		if pathMatches {
+			for _, candidate := range candidates {
+				if validateBaseRemoteURLs(
+					ctx, commonDir, originRemoteName, candidate.platformHost,
+					candidate.owner, candidate.name,
+					m.allowsInsecureHTTP(candidate.platform, candidate.platformHost),
+				) == nil {
+					return true, nil
+				}
+			}
 		}
 	}
 	return false, nil
@@ -2255,7 +2254,7 @@ func (m *Manager) retargetManagedCloneOrigin(
 			return err
 		}
 	}
-	remoteURL := ""
+	var remoteURL string
 	if launchSpec != nil {
 		remoteURL = launchSpec.Repository.CloneURL
 	} else {
@@ -2473,10 +2472,10 @@ func (m *Manager) workspaceSetupGitDir(
 	}
 
 	if m.clones == nil {
-		return workspaceGitDir{}, fmt.Errorf("clone manager not set")
+		return workspaceGitDir{}, errors.New("clone manager not set")
 	}
 
-	remoteURL := ""
+	var remoteURL string
 	if launchSpec != nil {
 		remoteURL = launchSpec.Repository.CloneURL
 	} else {
@@ -2701,7 +2700,7 @@ func workspaceRepoIdentity(
 ) (db.RepoIdentity, error) {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
-		return db.RepoIdentity{}, fmt.Errorf("provider is required")
+		return db.RepoIdentity{}, errors.New("provider is required")
 	}
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
@@ -3048,8 +3047,7 @@ func gitRemoteNames(ctx context.Context, dir string) ([]string, error) {
 func gitConfigValues(ctx context.Context, dir, key string) ([]string, error) {
 	out, err := gitCombinedOutput(ctx, dir, "config", "--get-all", key)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 			return nil, nil
 		}
 		return nil, err
@@ -3104,8 +3102,7 @@ func localGitConfigKeysForScope(
 		ctx, dir, "config", scope, "--name-only", "--list",
 	)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 			return nil, nil
 		}
 		if scope == "--worktree" &&
@@ -3997,6 +3994,7 @@ func (m *Manager) cleanupWorkspaceArtifactsForDeleteLocked(
 		); err != nil {
 			return err
 		}
+	case workspaceCleanupNone:
 	}
 	m.deleteWorkspaceBranches(ctx, gitDir, ws, ws.WorkspaceBranch)
 	_ = runGitWithoutHooks(ctx, gitDir, "worktree", "prune")
@@ -4571,7 +4569,7 @@ func (m *Manager) cleanupTmuxSession(
 	usesPtyOwner := m.UsesPtyOwnerForWorkspace(ws)
 	if usesPtyOwner {
 		if m.ptyOwner == nil {
-			return fmt.Errorf("pty owner backend unavailable")
+			return errors.New("pty owner backend unavailable")
 		}
 		if err := m.ptyOwner.Stop(ctx, ws.TmuxSession); err != nil {
 			return fmt.Errorf(
@@ -4942,10 +4940,7 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context, pendingRecovery 
 		if m.usesPtyOwnerForWorkspace(&ws) {
 			continue
 		}
-		msg := fmt.Sprintf(
-			"tmux session is no longer running: %s",
-			ws.TmuxSession,
-		)
+		msg := "tmux session is no longer running: " + ws.TmuxSession
 		slog.Debug(
 			"mark workspace missing tmux session",
 			"workspace_id", ws.ID,
@@ -5343,7 +5338,7 @@ func (m *Manager) TerminalPaneSnapshot(
 ) (TerminalPaneSnapshot, error) {
 	if ws != nil && session == ws.TmuxSession && m.UsesPtyOwnerForWorkspace(ws) {
 		if m.ptyOwner == nil {
-			return TerminalPaneSnapshot{}, fmt.Errorf("pty owner backend unavailable")
+			return TerminalPaneSnapshot{}, errors.New("pty owner backend unavailable")
 		}
 		status, err := m.ptyOwner.Snapshot(ctx, session)
 		if err != nil {
@@ -5453,7 +5448,7 @@ func (m *Manager) newTmuxSession(
 		if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
 			!isTmuxKillSessionGone(killErr) {
 			return fmt.Errorf(
-				"set tmux owner marker: %w; cleanup new tmux session: %v",
+				"set tmux owner marker: %w; cleanup new tmux session: %w",
 				err, killErr,
 			)
 		}
@@ -5463,7 +5458,7 @@ func (m *Manager) newTmuxSession(
 		if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
 			!isTmuxKillSessionGone(killErr) {
 			return fmt.Errorf(
-				"configure tmux session: %w; cleanup new tmux session: %v",
+				"configure tmux session: %w; cleanup new tmux session: %w",
 				err, killErr,
 			)
 		}
@@ -5474,7 +5469,7 @@ func (m *Manager) newTmuxSession(
 			if killErr := m.killTmuxSession(ctx, session); killErr != nil &&
 				!isTmuxKillSessionGone(killErr) {
 				return fmt.Errorf(
-					"hide tmux status: %w; cleanup new tmux session: %v",
+					"hide tmux status: %w; cleanup new tmux session: %w",
 					err, killErr,
 				)
 			}
@@ -5781,8 +5776,8 @@ func (m *Manager) tmuxSessionExists(
 // stdout content is not load-bearing — a wrapper could emit
 // anything there for unrelated reasons.
 func isTmuxSessionAbsent(stderr []byte, err error) bool {
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok || exitErr.ExitCode() != 1 {
 		return false
 	}
 	msg := string(stderr)
@@ -6279,8 +6274,7 @@ func gitCommitIsAncestor(
 	if err == nil {
 		return true, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 		return false, nil
 	}
 	return false, err
@@ -6363,8 +6357,7 @@ func configureBareLinkedWorktree(
 ) error {
 	bare, err := gitOutput(ctx, commonDir, "config", "--bool", "core.bare")
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 			return nil
 		}
 		return fmt.Errorf("inspect shared core.bare: %w", err)
@@ -6376,8 +6369,7 @@ func configureBareLinkedWorktree(
 		ctx, commonDir, "config", "--bool", "extensions.worktreeConfig",
 	)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 			return nil
 		}
 		return fmt.Errorf("inspect shared worktree config: %w", err)
@@ -6760,10 +6752,11 @@ func gitCloneDirReady(cloneDir string) (bool, error) {
 
 func isUniqueConstraintError(err error) bool {
 	type sqliteCoder interface {
+		error
 		Code() int
 	}
-	var coder sqliteCoder
-	if !errors.As(err, &coder) {
+	coder, ok := errors.AsType[sqliteCoder](err)
+	if !ok {
 		return false
 	}
 	const sqliteConstraintUnique = 2067
@@ -6865,8 +6858,7 @@ func gitRefSHA(
 	if err == nil {
 		return strings.TrimSpace(out), true, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 		return "", false, nil
 	}
 	return "", false, err
@@ -6992,8 +6984,7 @@ func localBranchExists(
 	if err == nil {
 		return true, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 		return false, nil
 	}
 	return false, err

@@ -1,7 +1,6 @@
 package fleet
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -52,7 +51,7 @@ func TestCommandsForDeps(t *testing.T) {
 // derives its command set from its own detected dependencies via the same
 // pure rules, so the invariant holds regardless of what is installed here.
 func TestProbeDerivesCommandsFromDeps(t *testing.T) {
-	caps := Probe(context.Background(), nil)
+	caps := Probe(t.Context(), nil)
 	assert.Equal(t, commandsForDeps(caps.Dependencies), caps.Commands,
 		"Probe() commands must equal the pure derivation of its detected deps")
 	// tmux version is only set when tmux is present.
@@ -87,7 +86,7 @@ func TestProbeHonorsConfiguredTmuxCommand(t *testing.T) {
 		0o755,
 	))
 
-	caps := Probe(context.Background(), []string{"/bin/sh", script})
+	caps := Probe(t.Context(), []string{"/bin/sh", script})
 	assert.True(caps.Dependencies.Tmux, "configured tmux command must drive availability")
 	assert.Equal("9.9", caps.Features.TmuxVersion, "version must come from the configured command")
 	assert.True(caps.Commands.SessionEnsure, "tmux-gated commands follow the configured command")

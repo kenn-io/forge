@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -162,7 +163,7 @@ base_url = "https://hub.example"
 		FederationHTTPClient: &http.Client{Transport: roundTripFunc(func(
 			*http.Request,
 		) (*http.Response, error) {
-			return nil, fmt.Errorf("hub offline")
+			return nil, errors.New("hub offline")
 		})},
 		HostCheckAllowLoopbackAnyPort: true,
 	})

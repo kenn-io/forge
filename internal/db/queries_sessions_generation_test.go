@@ -20,7 +20,7 @@ func TestDeleteProjectWorktreeTmuxSessionCreatedAtPreservesNewerGeneration(
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	project := createDiscoveryTestProject(t, d, "gen")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: project.ID, Branch: "feature",
@@ -65,7 +65,7 @@ func TestDeleteHostRuntimeTmuxSessionCreatedAtPreservesNewerGeneration(
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	oldGen := time.Date(2026, 6, 10, 10, 0, 0, 0, time.UTC)
 	newGen := oldGen.Add(time.Minute)
@@ -93,7 +93,7 @@ func TestDeleteProjectWorktreeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	project := createDiscoveryTestProject(t, d, "non-tmux-project")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: project.ID, Branch: "feature",
@@ -120,7 +120,7 @@ func TestDeleteHostRuntimeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	createdAt := time.Date(2026, 6, 10, 10, 0, 0, 0, time.UTC)
 	require.NoError(execHostRuntimeSession(ctx, d, "host-pty-1", createdAt))
 
@@ -142,7 +142,7 @@ func TestReconcileProjectInventoryDoesNotStealForeignWorktree(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
 
 	owner := createDiscoveryTestProject(t, d, "owner")

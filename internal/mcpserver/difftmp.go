@@ -28,7 +28,7 @@ type diffFileEntry struct {
 
 func newDiffFileStore(maxBytes int64) (*diffFileStore, error) {
 	if maxBytes <= 0 {
-		return nil, fmt.Errorf("MCP diff cache size must be positive")
+		return nil, errors.New("MCP diff cache size must be positive")
 	}
 	dir, err := os.MkdirTemp("", "kenn-forge-mcp-")
 	if err != nil {

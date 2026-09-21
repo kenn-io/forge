@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -448,7 +449,7 @@ func (h *Handler) claimTerminalSlot(
 		h.active = make(map[string]int)
 	}
 	if h.active[id] > 0 {
-		return nil, fmt.Errorf("workspace terminal already active")
+		return nil, errors.New("workspace terminal already active")
 	}
 	h.active[id]++
 	active := h.active[id]

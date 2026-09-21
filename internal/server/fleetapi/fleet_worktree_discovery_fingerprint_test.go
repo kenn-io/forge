@@ -1,7 +1,6 @@
 package fleetapi
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,7 +19,7 @@ func TestFleetWorktreeDiscovererSkipsUnchangedProjects(t *testing.T) {
 	repoDir, _ := seedFingerprintRepo(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	project, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "app", LocalPath: repoDir,

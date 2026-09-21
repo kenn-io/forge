@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,12 +53,26 @@ func TestAuthTransportReadsTokenEachRequest(t *testing.T) {
 	}
 
 	req, err := http.NewRequestWithContext(
-		context.Background(), http.MethodGet, "https://api.example.test", nil,
+		t.Context(), http.MethodGet, "https://api.example.test", nil,
 	)
 	require.NoError(err)
-	_, err = rt.RoundTrip(req)
+	resp, err := rt.RoundTrip(req)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
-	_, err = rt.RoundTrip(req)
+	resp, err = rt.RoundTrip(req)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 
 	assert.Equal([]string{"Bearer first", "Bearer second"}, auth)
@@ -90,10 +105,17 @@ func TestRetryOnUnauthorizedInvalidatesAndRetriesOnce(t *testing.T) {
 	}
 
 	req, err := http.NewRequestWithContext(
-		context.Background(), http.MethodGet, "https://api.example.test", nil,
+		t.Context(), http.MethodGet, "https://api.example.test", nil,
 	)
 	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 
 	assert.Equal(http.StatusOK, resp.StatusCode)
@@ -123,10 +145,17 @@ func TestRetryOnUnauthorizedDoesNotRetryForbidden(t *testing.T) {
 	}
 
 	req, err := http.NewRequestWithContext(
-		context.Background(), http.MethodGet, "https://api.example.test", nil,
+		t.Context(), http.MethodGet, "https://api.example.test", nil,
 	)
 	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 
 	assert.Equal(http.StatusForbidden, resp.StatusCode)
@@ -163,11 +192,18 @@ func TestRetryOnUnauthorizedReplaysGetBody(t *testing.T) {
 	}
 
 	req, err := http.NewRequestWithContext(
-		context.Background(), http.MethodPost, "https://api.example.test",
+		t.Context(), http.MethodPost, "https://api.example.test",
 		strings.NewReader("payload"),
 	)
 	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 
 	assert.Equal(http.StatusOK, resp.StatusCode)
@@ -196,11 +232,18 @@ func TestRetryOnUnauthorizedDoesNotRetryUnrewindableBody(t *testing.T) {
 	}
 
 	req, err := http.NewRequestWithContext(
-		context.Background(), http.MethodPost, "https://api.example.test",
+		t.Context(), http.MethodPost, "https://api.example.test",
 		io.NopCloser(strings.NewReader("payload")),
 	)
 	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 
 	assert.Equal(http.StatusUnauthorized, resp.StatusCode)
@@ -229,10 +272,17 @@ func TestAuthTransportRejectsRequestOutsideAllowedOrigin(t *testing.T) {
 	}
 
 	req, err := http.NewRequestWithContext(
-		context.Background(), http.MethodGet, "https://evil.example.test", nil,
+		t.Context(), http.MethodGet, "https://evil.example.test", nil,
 	)
 	require.NoError(err)
 	resp, err := rt.RoundTrip(req)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 
 	require.Error(err)
 	assert.Nil(resp)
@@ -255,14 +305,19 @@ func TestAuthTransportRejectsCrossOriginRedirectBeforeAuth(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	client := &http.Client{Transport: platform.AuthTransport{
-		Source:        src,
-		AllowedOrigin: origin.URL,
-		Base:          http.DefaultTransport,
-		SetHeader:     platform.BearerAuthHeader,
-	}}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: platform.AuthTransport{
+			Source:        src,
+			AllowedOrigin: origin.URL,
+			Base:          http.DefaultTransport,
+			SetHeader:     platform.BearerAuthHeader,
+		},
+	}
 
-	resp, err := client.Get(origin.URL + "/start")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL+"/start", nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
 
 	require.Error(t, err)
 	if resp != nil {

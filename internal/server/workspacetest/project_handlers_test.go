@@ -40,6 +40,11 @@ func TestW1SliceAGate(t *testing.T) {
 		"display_name": "no-remote-repo",
 	})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", registerBody)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var registered map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&registered))
@@ -55,6 +60,11 @@ func TestW1SliceAGate(t *testing.T) {
 
 	// 2) GET /projects must list the registered project.
 	resp = httpDo(t, ts, http.MethodGet, "/api/v1/projects", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var listed struct {
 		Projects []map[string]any `json:"projects"`
@@ -68,6 +78,11 @@ func TestW1SliceAGate(t *testing.T) {
 	// 3) GET /projects/{project_id} must round-trip the record with
 	//    platform_identity still absent.
 	resp = httpDo(t, ts, http.MethodGet, "/api/v1/projects/"+projectID, nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var fetched map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&fetched))
@@ -86,6 +101,11 @@ func TestW1SliceAGate(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees", wtBody,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var worktree map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&worktree))
@@ -101,6 +121,11 @@ func TestW1SliceAGate(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var wtList struct {
 		Worktrees []map[string]any `json:"worktrees"`
@@ -122,6 +147,11 @@ func TestW1SliceAGate(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/launch-targets", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var ltList struct {
 		LaunchTargets []map[string]any `json:"launch_targets"`
@@ -145,6 +175,11 @@ func TestW1SliceAGate(t *testing.T) {
 	//    IDs and must not bake PR/MR/issue terms into them - the
 	//    generic registry must be a generic registry.
 	resp = httpDo(t, ts, http.MethodGet, "/api/v1/openapi.json", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var doc struct {
 		Paths map[string]map[string]struct {
@@ -408,6 +443,11 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 		},
 	})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var got map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&got))
@@ -426,6 +466,11 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 	projectID, _ := got["id"].(string)
 	require.NotEmpty(projectID)
 	resp = httpDo(t, ts, http.MethodGet, "/api/v1/projects/"+projectID, nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var fetched map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&fetched))
@@ -492,6 +537,11 @@ func TestRegisterWorktree_SamePathSameProjectConverges(t *testing.T) {
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees", adopted,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var second map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&second))
@@ -527,6 +577,11 @@ func TestSetWorktreeSessionBackendRoute(t *testing.T) {
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/session-backend",
 		body,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var updated map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&updated))
@@ -536,6 +591,11 @@ func TestSetWorktreeSessionBackendRoute(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var wtList struct {
 		Worktrees []map[string]any `json:"worktrees"`
@@ -616,6 +676,11 @@ func TestDeleteWorktreeRoute(t *testing.T) {
 	resp = httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees", nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var wtList struct {
 		Worktrees []map[string]any `json:"worktrees"`
@@ -678,6 +743,11 @@ func registerProjectForTest(t *testing.T, ts *httptest.Server, localPath string)
 	t.Helper()
 	body := mustMarshal(t, map[string]any{"local_path": localPath})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	var registered map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&registered))
@@ -722,6 +792,7 @@ func TestListLaunchTargets_NotFoundReturns404(t *testing.T) {
 	require.Equal(http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
 }
+
 func TestDeleteProjectRouteRemovesProject(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
 	if _, err := exec.LookPath("git"); err != nil {
@@ -741,6 +812,11 @@ func TestDeleteProjectRouteRemovesProject(t *testing.T) {
 		"display_name": "doomed",
 	})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", registerBody)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var registered struct {
 		ID string `json:"id"`

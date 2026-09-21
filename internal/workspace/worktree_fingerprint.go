@@ -3,6 +3,7 @@ package workspace
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -17,7 +18,7 @@ import (
 // index are invisible to it by design.
 func WorktreeGitFingerprint(worktree string) (string, error) {
 	if worktree == "" {
-		return "", fmt.Errorf("fingerprint worktree: empty path")
+		return "", errors.New("fingerprint worktree: empty path")
 	}
 	gitDir, commonDir, err := resolveWorktreeGitDirs(worktree)
 	if err != nil {
@@ -30,22 +31,19 @@ func WorktreeGitFingerprint(worktree string) (string, error) {
 	}
 	stat := func(dir, name string) {
 		path := filepath.Join(dir, name)
-		stamp, err := stampFile(path)
-		if err != nil {
+		stamp, stampErr := stampFile(path)
+		if stampErr != nil {
 			stamp = fileStamp{}
 		}
 		record(path, stamp)
 	}
 	walkRefs := func(dir string) {
 		_ = filepath.WalkDir(filepath.Join(dir, "refs"), func(path string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil || entry.IsDir() {
-				return nil
+			if entry != nil && !entry.IsDir() && walkErr == nil {
+				if info, infoErr := entry.Info(); infoErr == nil {
+					record(path, fileStamp{modTime: info.ModTime(), size: info.Size(), exists: true})
+				}
 			}
-			info, err := entry.Info()
-			if err != nil {
-				return nil
-			}
-			record(path, fileStamp{modTime: info.ModTime(), size: info.Size(), exists: true})
 			return nil
 		})
 	}

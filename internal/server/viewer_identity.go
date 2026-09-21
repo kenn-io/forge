@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -185,14 +186,13 @@ func (s *Server) resolveAuthenticatedViewerLogin(
 	resolver platform.AuthenticatedUserResolver,
 	call *viewerLoginCall,
 ) {
-
 	kind := httpapi.ProviderKind(repo)
 	host := httpapi.ProviderHost(repo)
 	var err error
 	call.login, err = resolver.AuthenticatedUser(ctx, httpapi.PlatformRepoRef(repo))
 	call.login = strings.TrimSpace(call.login)
 	if err == nil && call.login == "" {
-		err = fmt.Errorf("provider returned an empty authenticated login")
+		err = errors.New("provider returned an empty authenticated login")
 	}
 	if err != nil {
 		call.err = httpapi.ProviderCallProblem(err, string(kind), host)

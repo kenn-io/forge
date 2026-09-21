@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,7 +11,7 @@ import (
 func TestSetProjectWorktreeHiddenRoundTrip(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: proj.ID, Branch: "feat", Path: filepath.Join(t.TempDir(), "wt"),
@@ -36,7 +35,7 @@ func TestSetProjectWorktreeHiddenRoundTrip(t *testing.T) {
 func TestSetProjectWorktreeHiddenWrongProjectIsNotFound(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: proj.ID, Branch: "feat", Path: filepath.Join(t.TempDir(), "wt"),
@@ -54,7 +53,7 @@ func TestSetProjectWorktreeHiddenWrongProjectIsNotFound(t *testing.T) {
 func TestReconcileProjectInventoryPreservesHiddenFlag(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wtPath := filepath.Join(t.TempDir(), "feature")
 

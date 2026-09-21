@@ -30,12 +30,14 @@ import (
 func setupGitHubHeadPinServer(
 	t *testing.T, mock *mockGH,
 ) (*server.Server, *db.DB, int64) {
+	t.Helper()
 	return setupGitHubHeadPinServerWithDiff(t, mock, true)
 }
 
 func setupGitHubHeadPinServerWithoutReviewedDiff(
 	t *testing.T, mock *mockGH,
 ) (*server.Server, *db.DB, int64) {
+	t.Helper()
 	return setupGitHubHeadPinServerWithDiff(t, mock, false)
 }
 

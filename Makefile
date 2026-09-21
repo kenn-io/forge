@@ -19,6 +19,16 @@ GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/'
 ROBOREV_SRC ?= $(HOME)/code/roborev
 ROBOREV_REF ?= main
 HUMA_CHECK_VERSION := 3e1f59e9011e878ec595aa04aebc8a77c5292c4d
+# golangci-lint is pinned in mise.toml and used to build ./custom-gcl with
+# the kit analyzers. check-mise fails with an install hint when mise is absent.
+GOLANGCI := mise exec -- golangci-lint
+GOLANGCI_LINT_VERSION ?= v2.13.2
+GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-cache
+export GOLANGCI_LINT_CACHE
+CUSTOM_GCL := ./custom-gcl
+KIT_MODULE := go.kenn.io/kit
+KIT_VERSION := $(shell go list -m -f '{{.Version}}' $(KIT_MODULE))
+KENNLINT := go run $(KIT_MODULE)/cmd/kennlint@$(KIT_VERSION)
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
@@ -41,7 +51,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps frontend-check-core-no-deps frontend-effect-diagnostics api-generate roborev-api-generate \
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
-        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check nilaway testify-helper-check \
+        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway testify-helper-check \
         profile-workspace-switch otel-lgtm \
         frontend-api-client-check font-size-token-check huma-route-check migration-history-check timing-budget-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
@@ -389,13 +399,45 @@ check-mise:
 		exit 1; \
 	fi
 
-# Lint Go code and auto-fix where possible.
-lint: ensure-embed-dir check-mise
-	mise exec -- golangci-lint run --fix
+# Render .golangci.yml from kit's canonical config plus the overlay.
+lint-config:
+	$(KENNLINT) config
+
+lint-config-check:
+	$(KENNLINT) config -check
+
+# Build golangci-lint with the plugins in .custom-gcl.yml. Strip repo-local
+# Git env vars so a hook-spawned build does not inherit GIT_DIR.
+custom-gcl: check-mise
+	@unset_args=$$(git rev-parse --local-env-vars 2>/dev/null | sed 's/^/-u /' | tr '\n' ' '); \
+	env $$unset_args GOFLAGS=-buildvcs=false \
+	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
+
+# Lint Go code and auto-fix where possible. Runs kit's shared policy through
+# custom-gcl (canonical golangci-lint plus kennlint analyzers).
+lint: ensure-embed-dir lint-config-check custom-gcl
+	$(CUSTOM_GCL) run --fix ./...
 
 # Check Go lint without mutating files; used by CI and pre-push.
-lint-check: ensure-embed-dir check-mise
-	mise exec -- golangci-lint run
+lint-check: ensure-embed-dir lint-config-check custom-gcl
+	$(CUSTOM_GCL) run ./...
+
+# Apply the v2 formatters (gofmt, goimports, gofumpt) to every file in place.
+fmt: custom-gcl
+	$(CUSTOM_GCL) fmt ./...
+
+# Check formatters without touching files. In golangci-lint v2 formatters are
+# not invoked by `golangci-lint run`, so a rename that breaks import ordering
+# would otherwise slip through the lint gate.
+fmt-check: custom-gcl
+	@diff=$$($(CUSTOM_GCL) fmt --diff ./...); \
+	if [ -n "$$diff" ]; then \
+		echo "$$diff"; \
+		echo ""; \
+		echo "Formatter would rewrite files listed above."; \
+		echo "Run 'make fmt' to apply."; \
+		exit 1; \
+	fi
 
 # Run NilAway against first-party Go packages
 nilaway: ensure-embed-dir
@@ -474,8 +516,11 @@ help:
 	@echo "  test-gitlab-container - Run opt-in GitLab CE container e2e tests"
 	@echo "  gitlab-fixture-bake - Build a reusable GitLab fixture image"
 	@echo "  vet            - Run go vet"
-	@echo "  lint           - Run mise-managed golangci-lint (auto-fix)"
-	@echo "  lint-check     - Run mise-managed golangci-lint without modifying files"
+	@echo "  lint           - Run kit shared Go lint policy (auto-fix)"
+	@echo "  lint-check     - Run kit shared Go lint policy without modifying files"
+	@echo "  lint-config    - Render .golangci.yml from kit plus the overlay"
+	@echo "  fmt            - Apply gofmt, goimports, and gofumpt"
+	@echo "  fmt-check      - Check Go formatters without modifying files"
 	@echo "  timing-budget-check - Reject unreviewed sub-second test polling budgets"
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"

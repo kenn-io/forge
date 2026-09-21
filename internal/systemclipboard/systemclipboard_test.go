@@ -112,7 +112,7 @@ func TestNativeWriterSelectsPlatformClipboardCommand(t *testing.T) {
 				wantInput = text
 			}
 			err := writer.WriteText(
-				context.Background(),
+				t.Context(),
 				text,
 			)
 
@@ -190,7 +190,7 @@ func TestNativeWriterReportsUnavailableClipboard(t *testing.T) {
 		},
 	}
 
-	err := writer.WriteText(context.Background(), "copy me")
+	err := writer.WriteText(t.Context(), "copy me")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrUnavailable)

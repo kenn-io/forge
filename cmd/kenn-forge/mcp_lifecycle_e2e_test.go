@@ -111,7 +111,7 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	for _, port := range []int{appPort, mcpPort} {
 		addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 		assert.Eventually(func() bool {
-			ln, listenErr := net.Listen("tcp", addr)
+			ln, listenErr := (&net.ListenConfig{}).Listen(t.Context(), "tcp", addr)
 			if listenErr != nil {
 				return false
 			}

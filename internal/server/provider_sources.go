@@ -291,7 +291,7 @@ func (s *hubProviderSource) GetDiffDescriptor(
 	}
 	if descriptor.PullNumber != item.Number {
 		return providerplane.DiffDescriptor{}, invalidHubDescriptor(
-			fmt.Errorf("diff descriptor does not match requested pull number"),
+			errors.New("diff descriptor does not match requested pull number"),
 		)
 	}
 	if err := s.observeRepositoryDescriptor(ctx, descriptor.Repository); err != nil {
@@ -712,8 +712,7 @@ func (s *hubProviderSource) exchangeWithProblem(ctx context.Context, scope feder
 }
 
 func hubProviderMutationProblem(err error) error {
-	var responseErr *providerplane.ResponseError
-	if errors.As(err, &responseErr) ||
+	if _, ok := errors.AsType[*providerplane.ResponseError](err); ok ||
 		errors.Is(err, providerplane.ErrCredentialUnavailable) ||
 		errors.Is(err, providerplane.ErrRequestBodyTooLarge) ||
 		errors.Is(err, providerplane.ErrInvalidScope) {

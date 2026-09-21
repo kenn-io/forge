@@ -17,7 +17,7 @@ func TestLiveGitHubRateLimitSnapshotUsesGoGitHub(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 
 	client, err := gh.NewClient()

@@ -1,7 +1,6 @@
 package projecttest
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -22,7 +21,7 @@ func TestCreateProjectWithoutPlatformIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo",
@@ -48,7 +47,7 @@ func TestCreateProjectLinkedToRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
 	require.NoError(err)
@@ -78,7 +77,7 @@ func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
 	require.NoError(err)
@@ -111,7 +110,7 @@ func TestCreateProjectRejectsBlankRequiredFields(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "",
@@ -132,7 +131,7 @@ func TestCreateProjectDuplicateLocalPath(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "first",
@@ -152,7 +151,7 @@ func TestGetProjectByIDNotFound(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := d.GetProjectByID(ctx, "prj_doesnotexist")
 	require.Error(err)
@@ -163,7 +162,7 @@ func TestGetProjectByLocalPath(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	created, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo",
@@ -183,7 +182,7 @@ func TestListProjectsOrdersByDisplayName(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, p := range []db.CreateProjectInput{
 		{DisplayName: "Zeta", LocalPath: "/tmp/zeta"},
@@ -206,7 +205,7 @@ func TestCreateProjectWorktreeRoundTrip(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo",
@@ -233,7 +232,7 @@ func TestCreateProjectWorktreeRejectsUnknownProject(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := d.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
 		ProjectID: "prj_doesnotexist",
@@ -252,7 +251,7 @@ func TestCreateProjectWorktreeConvergesByPath(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo",
@@ -294,7 +293,7 @@ func TestListProjectWorktreesScopedToProject(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	a, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "a", LocalPath: "/tmp/a",
@@ -330,7 +329,7 @@ func TestProjectWorktreeCascadesOnProjectDelete(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "myrepo", LocalPath: "/tmp/myrepo",
@@ -359,7 +358,7 @@ func TestProjectWorktreeTmuxSessionRoundTrip(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	worktree := createProjectWorktreeForTmuxTest(t, d, "/tmp/runtime-repo", "/tmp/runtime-wt")
 	createdAt := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -386,7 +385,7 @@ func TestProjectWorktreeTmuxSessionKeyedBySessionKey(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	worktree := createProjectWorktreeForTmuxTest(t, d, "/tmp/runtime-repo-unique", "/tmp/runtime-wt-unique")
 	first := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -431,7 +430,7 @@ func TestProjectWorktreeTmuxSessionForgetAndCascade(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "runtime-repo-cascade",
@@ -486,7 +485,7 @@ func createProjectWorktreeForTmuxTest(
 	worktreePath string,
 ) *db.ProjectWorktree {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	project, err := d.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "runtime-repo",
 		LocalPath:   projectPath,

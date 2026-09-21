@@ -186,7 +186,7 @@ func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{Clones: clones})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
@@ -831,12 +831,12 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 
 func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T) {
 	acquireRepoBrowserTestSlot(t)
-	req := require.New(t)
+
 	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
 	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
-	req.NoError(err)
-	req.NoError(database.UpdateRepoProviderMetadata(
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateRepoProviderMetadata(
 		t.Context(),
 		repoID,
 		db.RepoProviderMetadata{
@@ -856,10 +856,10 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 	initialRefs := repoBrowserRequest(t, initialServer, http.MethodGet,
 		"/api/v1/repo/github/acme/widgets/browser/refs",
 	)
-	req.Equal(http.StatusOK, initialRefs.Code)
+	require.Equal(t, http.StatusOK, initialRefs.Code)
 	gracefulShutdown(t, initialServer)
 
-	req.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
 	serverRepoBrowserGit(t, work, "add", ".")
 	serverRepoBrowserGit(t, work, "commit", "-m", "update readme")
 	updatedSHA := testGitSHA(t, work, "main")
@@ -1012,7 +1012,7 @@ func setupRepoBrowserServerWithClones(
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{Clones: clones})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -1060,7 +1060,7 @@ func testGitSHA(t *testing.T, dir, ref string) string {
 
 func repoBrowserRequest(t *testing.T, srv *server.Server, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, nil)
+	req := httptest.NewRequestWithContext(t.Context(), method, path, nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	return rr
@@ -1068,7 +1068,7 @@ func repoBrowserRequest(t *testing.T, srv *server.Server, method, path string) *
 
 func gracefulShutdown(t *testing.T, srv *server.Server) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 	defer cancel()
 	require.NoError(t, srv.Shutdown(ctx))
 }

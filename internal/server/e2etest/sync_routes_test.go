@@ -3,9 +3,9 @@ package e2etest
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -574,7 +574,11 @@ func TestSyncItemBudgetExhaustionIdentifiesLocalCeilingE2E(t *testing.T) {
 		return !syncer.Status().Running && !syncer.Status().LastRunAt.IsZero()
 	}, 5*time.Second, 10*time.Millisecond)
 
-	statusResponse, err := forge.Client().Get(forge.URL + "/api/v1/sync/status")
+	statusResponseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, forge.URL+"/api/v1/sync/status", nil)
+	require.NoError(err)
+	httpClient := forge.Client()
+	httpClient.Timeout = 5 * time.Second
+	statusResponse, err := httpClient.Do(statusResponseReq)
 	require.NoError(err)
 	defer statusResponse.Body.Close()
 	require.Equal(http.StatusOK, statusResponse.StatusCode)
@@ -768,7 +772,7 @@ func writeGitHubListResponse(
 ) {
 	w.Header().Set("X-RateLimit-Limit", "5000")
 	w.Header().Set("X-RateLimit-Remaining", "4990")
-	w.Header().Set("X-RateLimit-Reset", fmt.Sprint(time.Now().Add(time.Hour).Unix()))
+	w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10))
 	if r.Header.Get("If-None-Match") == etag {
 		notModified.Add(1)
 		w.WriteHeader(http.StatusNotModified)

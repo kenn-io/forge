@@ -116,7 +116,14 @@ exec "$@"
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + launch.JSON200.Key +
 		"/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL, nil)
+	if wsHTTPResp != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 	workspaceTerminalConnWriteRead(
@@ -261,7 +268,7 @@ func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 		},
 	))
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/api/v1/workspaces/"+ws.ID+"/runtime/sessions/"+
 			sessionKey+"/attach-spec",

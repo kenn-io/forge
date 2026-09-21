@@ -435,8 +435,8 @@ func loadExistingConfig(path string, stat func(string) (os.FileInfo, error)) (*c
 func validateCandidate(plan Plan, existing *config.Config) error {
 	candidate := &config.Config{DataDir: plan.DataDir}
 	if existing != nil {
-		copy := *existing
-		candidate = &copy
+		cloned := *existing
+		candidate = &cloned
 	}
 	if err := configureCandidate(candidate, plan); err != nil {
 		return err
@@ -520,7 +520,7 @@ func checkLocalPortOwner(
 	dataDir string,
 	store daemon.RuntimeStore,
 ) error {
-	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err == nil {
 		return listener.Close()
 	}

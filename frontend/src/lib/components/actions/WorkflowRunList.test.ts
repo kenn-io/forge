@@ -40,16 +40,24 @@ const jobs: Record<string, readonly Job[]> = {
   ],
 };
 
-it("exposes compact textual run data, local time, and secure provider links", () => {
+it("lays runs out as a table row per run with local time and secure provider links", () => {
   render(WorkflowRunList, { runs, jobs: {}, jobErrors: {}, loadingJobs: [], onexpand: vi.fn() });
-  const row = screen.getByRole("button", { name: /Run 42 Deploy/ });
-  expect(row.textContent).toContain("#42");
-  expect(row.textContent).toContain("Deploy");
-  expect(row.textContent).toContain("main");
-  expect(row.textContent).toContain("octocat");
-  expect(row.textContent).toContain("completed · success");
+  const table = screen.getByRole("table", { name: "Workflow runs" });
+  expect(
+    within(table)
+      .getAllByRole("columnheader")
+      .map((header) => header.textContent?.trim()),
+  ).toEqual(["Run", "Branch", "Actor", "Status", "Started", "Commit", "Provider link"]);
+  const row = screen.getByRole("button", { name: /Run 42 Deploy/ }).closest("tr")!;
+  expect(
+    within(row)
+      .getAllByRole("cell")
+      .map((cell) => cell.textContent?.trim())
+      .slice(0, 4),
+  ).toEqual(["#42 Deploy", "main", "octocat", "success"]);
   expect(row.textContent).toContain("0123456");
-  expect(row.textContent).toContain(new Date("2026-08-27T12:30:00Z").toLocaleString());
+  expect(within(row).getByText("success").closest("[title]")?.getAttribute("title")).toBe("completed · success");
+  expect(row.querySelector("time")?.getAttribute("title")).toBe(new Date("2026-08-27T12:30:00Z").toLocaleString());
   expect(screen.getByRole("link", { name: "Open on GitHub" }).getAttribute("rel")).toBe("noopener");
   expect(screen.getByRole("link", { name: "Open on GitHub" }).getAttribute("target")).toBe("_blank");
 });
@@ -94,7 +102,7 @@ it("requests jobs only when a run expands and preserves provider order", async (
     expect.stringContaining("Publish"),
   ]);
   const job = screen.getByRole("button", { name: /Publish/ });
-  expect(job.textContent).toContain("completed · success");
+  expect(job.textContent).toContain("success");
   await fireEvent.click(job);
   const steps = screen.getByRole("list", { name: "Publish steps" });
   expect(
@@ -111,4 +119,22 @@ it("requests jobs only when a run expands and preserves provider order", async (
 
   await view.rerender({ runs, jobs, jobErrors: {}, loadingJobs: ["run-2"], onexpand });
   expect(screen.getByText("Loading jobs…").getAttribute("role")).toBe("status");
+});
+
+it("sorts runs from the column headers and returns to provider order", async () => {
+  const older: Run = { ...runs[0]!, id: "run-1", run_number: 41, name: "Build", actor: "zed", conclusion: "failure" };
+  render(WorkflowRunList, { runs: [runs[0]!, older], jobs: {}, jobErrors: {}, loadingJobs: [], onexpand: vi.fn() });
+  const order = () =>
+    screen.getAllByRole("button", { name: /^Run \d+/ }).map((button) => button.getAttribute("aria-label"));
+  expect(order()).toEqual(["Run 42 Deploy", "Run 41 Build"]);
+
+  const status = screen.getByRole("button", { name: "Status" });
+  await fireEvent.click(status);
+  expect(order()).toEqual(["Run 41 Build", "Run 42 Deploy"]);
+  expect(status.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+
+  await fireEvent.click(status);
+  await fireEvent.click(status);
+  expect(order()).toEqual(["Run 42 Deploy", "Run 41 Build"]);
+  expect(status.closest("th")?.hasAttribute("aria-sort")).toBe(false);
 });

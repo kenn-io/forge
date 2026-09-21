@@ -186,7 +186,7 @@
         Workflow definition changed. Reload workflows before running it.
         {#if presentation.reloadError} {presentation.reloadError}{/if}
       </p>
-      {#if onreload}<Button type="button" tone="workflow" surface="solid" disabled={reloading} onclick={onreload}>{reloading ? "Reloading workflows…" : "Reload workflows"}</Button>{/if}
+      {#if onreload}<Button type="button" size="sm" tone="workflow" surface="soft" disabled={reloading} onclick={onreload}>{reloading ? "Reloading workflows…" : "Reload workflows"}</Button>{/if}
     </div>
   {:else if presentation.kind === "locating"}
     <div class="dispatch-outcome">
@@ -211,19 +211,19 @@
           </a>
         {/if}
       {/if}
-      {#if onnewcycle}<Button type="button" tone="workflow" surface="solid" onclick={onnewcycle}>Run again</Button>{/if}
+      {#if onnewcycle}<Button type="button" size="sm" tone="workflow" surface="soft" onclick={onnewcycle}>Run again</Button>{/if}
     </div>
   {:else if presentation.kind === "failed"}
     <div class="dispatch-outcome">
       <h2>{workflow.name}</h2>
       <p class="notice notice--error" role="alert">{presentation.message}</p>
-      {#if onnewcycle}<Button type="button" tone="workflow" surface="solid" onclick={onnewcycle}>Run again</Button>{/if}
+      {#if onnewcycle}<Button type="button" size="sm" tone="workflow" surface="soft" onclick={onnewcycle}>Run again</Button>{/if}
     </div>
   {:else if presentation.kind === "uncertain"}
     <div class="dispatch-outcome">
       <h2>{workflow.name}</h2>
       <p class="notice notice--error" role="alert">{presentation.message}</p>
-      {#if onnewcycle}<Button type="button" tone="workflow" surface="solid" onclick={onnewcycle}>Dispatch again</Button>{/if}
+      {#if onnewcycle}<Button type="button" size="sm" tone="workflow" surface="soft" onclick={onnewcycle}>Dispatch again</Button>{/if}
     </div>
   {:else}
     <form class="dispatch-form" novalidate onsubmit={(event) => { event.preventDefault(); submit(); }}>
@@ -304,8 +304,8 @@
         </div>
       {/each}
 
-      {#if unavailableReason}<p class="notice notice--error" role="alert">{unavailableReason}</p>{/if}
-      <Button type="submit" tone="workflow" surface="solid" disabled={controlsDisabled || explicitlyUnavailable || presentation.kind !== "idle"}>{pending || admitted ? "Running workflow…" : "Run workflow"}</Button>
+      {#if unavailableReason}<p class="notice notice--error notice--boxed" role="alert">{unavailableReason}</p>{/if}
+      <Button type="submit" size="sm" tone="workflow" surface="solid" disabled={controlsDisabled || explicitlyUnavailable || presentation.kind !== "idle"}>{pending || admitted ? "Running workflow…" : "Run workflow"}</Button>
     </form>
   {/if}
 </div>
@@ -313,20 +313,38 @@
 <style>
   .dispatch-root { display: contents; }
   .dispatch-form, .field, .dispatch-outcome { display: grid; gap: var(--space-2); }
-  .dispatch-form, .dispatch-outcome { gap: var(--space-4); }
+  .dispatch-form, .dispatch-outcome { gap: var(--space-5); justify-items: start; }
+  .dispatch-form > :global(*), .dispatch-outcome > :global(*) { max-width: 100%; }
+  .field, .notice, .run-details { justify-self: stretch; min-width: 0; }
   h2, .notice, .run-details { margin: 0; }
-  h2 { font-size: var(--font-size-md); color: var(--text-primary); }
-  label, small, dt { font-size: var(--font-size-sm); color: var(--text-secondary); }
-  input { box-sizing: border-box; width: 100%; min-height: 32px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--text-primary); padding: 0 var(--space-3); font: inherit; }
-  input:focus { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  h2 { font-size: var(--font-size-md); font-weight: 650; color: var(--text-primary); overflow-wrap: anywhere; }
+  label, small, dt { font-size: var(--font-size-xs); color: var(--text-secondary); }
+  label { font-weight: 550; }
+  input { box-sizing: border-box; width: 100%; min-height: 28px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--text-primary); padding: 0 var(--space-3); font: inherit; font-size: var(--font-size-sm); font-weight: 400; }
+  input:focus { outline: 0; border-color: var(--accent-blue); }
+  input[aria-invalid="true"] { border-color: var(--accent-red); }
   .workflow-input-dropdown { min-width: 0; }
   .workflow-input-dropdown :global(.kit-select-dropdown),
   .workflow-input-dropdown :global(.kit-select-dropdown__trigger) { width: 100%; min-width: 0; }
   .field-error, .notice, .run-details { font-size: var(--font-size-sm); }
+  .field-error { margin: 0; }
   .field-error, .notice--error { color: var(--status-danger-text, var(--text-danger)); }
   .notice--success { color: var(--status-success-text, var(--text-success)); }
+  /* Provider failure text is long and unbroken; box it so it reads as one
+   * message instead of spilling across the pane. */
+  .notice--boxed {
+    box-sizing: border-box;
+    max-height: 9em;
+    overflow: auto;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid color-mix(in srgb, var(--accent-red) 40%, var(--border-default));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent-red) 7%, var(--bg-surface));
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
   .run-details { display: grid; gap: var(--space-2); }
   .run-details > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); }
   .run-details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  a { color: var(--accent-blue); }
+  a { color: var(--accent-blue); font-size: var(--font-size-sm); }
 </style>

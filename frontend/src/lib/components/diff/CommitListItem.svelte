@@ -36,6 +36,7 @@
   type="button"
   class="commit-item"
   class:commit-item--active={active}
+  class:commit-item--stats={showStats}
   onclick={handleClick}
   title={commit.message}
 >
@@ -47,9 +48,11 @@
   />
   <span class="commit-item__sha">{commit.sha.slice(0, 7)}</span>
   <span class="commit-item__msg">{commit.message}</span>
-  {#if showStats && commit.stats}
+  {#if showStats}
     <span class="commit-item__stats">
-      <DiffStats additions={commit.stats.additions} deletions={commit.stats.deletions} dimZeros />
+      {#if commit.stats}
+        <DiffStats additions={commit.stats.additions} deletions={commit.stats.deletions} dimZeros />
+      {/if}
     </span>
   {/if}
   <span class="commit-item__date">{relativeDate(commit.authored_at)}</span>
@@ -100,11 +103,31 @@
     min-width: 0;
   }
 
+  .commit-item--stats {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+
   .commit-item__stats {
-    flex-shrink: 0;
-    min-width: 80px;
+    display: grid;
+    grid-column: span 2;
+    grid-template-columns: subgrid;
     text-align: right;
     font-size: var(--font-size-2xs);
+  }
+
+  .commit-item__stats :global(.kit-diff-stats) {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+
+  .commit-item--stats .commit-item__date {
+    grid-column: -2 / -1;
+    margin-left: 0;
+    text-align: right;
+    white-space: nowrap;
   }
 
   @media (max-width: 760px) {

@@ -10,14 +10,25 @@ const commits = [
   {
     sha: "a71d5f0abcdef0123456789",
     message: "refactor(search): share query terms across filters and result views",
-    authored_at: new Date().toISOString(),
+    authored_at: new Date(Date.now() - 6 * 60_000).toISOString(),
     stats: { additions: 12345, deletions: 42 },
   },
   {
     sha: "c902f6cabcdef0123456789",
     message: "feat(api): add bounded search results",
-    authored_at: new Date().toISOString(),
+    authored_at: new Date(Date.now() - 11 * 3_600_000).toISOString(),
     stats: { additions: 0, deletions: 0 },
+  },
+  {
+    sha: "b13e902abcdef0123456789",
+    message: "chore: remove unused helpers",
+    authored_at: "2025-01-12T00:00:00Z",
+    stats: { additions: 1, deletions: 12345 },
+  },
+  {
+    sha: "e73a201abcdef0123456789",
+    message: "docs: update examples",
+    authored_at: new Date().toISOString(),
   },
 ] as const;
 
@@ -74,6 +85,27 @@ describe("Commit range line counts", () => {
     expect(message.getBoundingClientRect().right).toBeLessThan(stats.getBoundingClientRect().left);
     expect(stats.getBoundingClientRect().right).toBeLessThan(date.getBoundingClientRect().left);
     expect(row.scrollWidth).toBe(row.clientWidth);
+    const dates = Array.from(wrapper.querySelectorAll<HTMLElement>(".commit-item__date"));
+    const dateBounds = dates.map((element) => element.getBoundingClientRect());
+    expect(new Set(dateBounds.map((bounds) => bounds.left)).size).toBe(1);
+    expect(new Set(dateBounds.map((bounds) => bounds.right)).size).toBe(1);
+    const widestDateText = Math.max(
+      ...dates.map((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getBoundingClientRect().width;
+      }),
+    );
+    expect(dateBounds[0]!.width).toBeCloseTo(widestDateText, 0);
+    for (const selector of [".kit-diff-stats__add", ".kit-diff-stats__del"]) {
+      const values = Array.from(wrapper.querySelectorAll<HTMLElement>(selector));
+      const rightEdges = values.map((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getBoundingClientRect().right;
+      });
+      expect(Math.max(...rightEdges) - Math.min(...rightEdges)).toBeLessThan(0.1);
+    }
     await page.getByRole("button", { name: /refactor\(search\)/ }).click();
     expect(selectCommit).toHaveBeenCalledWith(commits[0].sha);
     await page.getByRole("button", { name: /feat\(api\)/ }).click({ modifiers: ["Shift"] });

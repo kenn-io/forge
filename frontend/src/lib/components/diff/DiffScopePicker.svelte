@@ -205,6 +205,9 @@
   }
 
   .diff-scope-picker__list {
+    display: grid;
+    grid-template-columns: max-content max-content minmax(0, 1fr) max-content max-content max-content;
+    column-gap: var(--space-3);
     max-height: 390px;
     overflow-y: auto;
     padding: 3px 0;
@@ -221,6 +224,10 @@
   }
 
   @media (max-width: 760px) {
+    .diff-scope-picker__list {
+      grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+    }
+
     .diff-scope-picker__menu {
       left: 0;
       right: auto;

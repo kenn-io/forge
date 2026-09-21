@@ -123,7 +123,7 @@ invariants that warrant a guard:
   (`docs/adr/0001-utc-datetime-policy.md`); local conversion only in the Svelte layer.
 - Error envelopes branch on stable codes/details, not prose (`context/error-handling.md`).
 - No `net/http` mux usage where the repo forbids it (`tools/nohttpmux`).
-- Tests use testify assertions, not `t.Fatal`/`t.Error` (`tools/testifyhelpercheck`).
+- Tests use testify assertions, not `t.Fatal`/`t.Error` (forbidigo and kit `testifyhelper`).
 
 **When a guard fails, three deliberate choices:**
 

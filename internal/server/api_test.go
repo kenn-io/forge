@@ -23328,7 +23328,7 @@ func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *te
 
 func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t *testing.T) {
 	runParallelServerTest(t)
-	req := require.New(t)
+
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
@@ -23344,7 +23344,7 @@ func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t
 		withSeedPRTitle("Another unrelated parent"),
 		withSeedPRTimes(activityAt, activityAt, activityAt),
 	)
-	req.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+	require.NoError(t, database.UpsertMREvents(ctx, []db.MREvent{
 		{
 			MergeRequestID: bodyMatchID,
 			EventType:      "issue_comment",

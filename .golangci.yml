@@ -134,7 +134,7 @@ linters:
             include-tests: false
           # Schema CHECK constraints are an intentional SQLite invariant
           # (context/db-migrations.md). Historical migrations are immutable.
-          disable: [sqlcheck, sleeptest, testifyhelper]
+          disable: [sqlcheck, sleeptest]
     govet:
       disable:
         - shadow

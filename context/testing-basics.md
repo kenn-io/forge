@@ -49,8 +49,7 @@ fixtures, or changing shell-script coverage.
   `t.Errorf`, `t.Fail`, or `t.FailNow`.
 - Import `github.com/stretchr/testify/assert` without an alias. When a test has
   more than three assertions, create `assert := assert.New(t)` and use the
-  helper methods thereafter. CI enforces this through `guardrail-check`
-  (`Makefile::guardrail-check`).
+  helper methods thereafter. Kit `testifyhelper` enforces this.
 - Prefer the generated Go API client for integration-style API tests.
 - Verify generated-client migrations without `-short`; shared workspace fixtures skip
   error-path coverage in short mode (`internal/server/workspacetest/fixtures_test.go::setupWorkspaceServerFixtureWithTmuxInjection`).

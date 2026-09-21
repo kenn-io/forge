@@ -83,7 +83,7 @@ For changes to the workflow or this skill, run:
 
 ```sh
 go test ./tools/devephemeral -shuffle=on
-go run ./cmd/testify-helper-check ./tools/devephemeral
+make lint-check
 make help
 ```
 

@@ -51,7 +51,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps frontend-check-core-no-deps frontend-effect-diagnostics api-generate roborev-api-generate \
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
-        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway testify-helper-check \
+        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway \
         profile-workspace-switch otel-lgtm \
         frontend-api-client-check font-size-token-check huma-route-check migration-history-check timing-budget-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
@@ -255,7 +255,7 @@ timing-budget-check:
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/timingbudgetcheck .
 
 guardrail-check: check-vite-plus-bin
-	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests testify-helper-check docs-branding-check timing-budget-check
+	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests docs-branding-check timing-budget-check
 
 
 # Regenerate the checked-in OpenAPI document and generated clients
@@ -388,10 +388,6 @@ gitlab-fixture-bake:
 vet: ensure-embed-dir
 	go vet ./...
 
-# Enforce testify helper usage for assertion-heavy tests
-testify-helper-check: ensure-embed-dir
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./cmd/testify-helper-check ./...
-
 # Verify mise is available for pinned repository tools.
 check-mise:
 	@if ! command -v mise >/dev/null 2>&1; then \
@@ -523,7 +519,6 @@ help:
 	@echo "  fmt-check      - Check Go formatters without modifying files"
 	@echo "  timing-budget-check - Reject unreviewed sub-second test polling budgets"
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
-	@echo "  testify-helper-check - Enforce Assert.New(t) in assertion-heavy Go tests"
 	@echo "  huma-route-check - Prevent non-Huma Go route registrations"
 	@echo "  guardrail-check - Run generated-client, font-size token, and Huma route guardrails"
 	@echo "  tidy           - Tidy go.mod"

@@ -42,7 +42,7 @@ linters:
         settings:
           # Schema CHECK constraints are an intentional SQLite invariant
           # (context/db-migrations.md). Historical migrations are immutable.
-          disable: [sqlcheck, sleeptest, testifyhelper]
+          disable: [sqlcheck, sleeptest]
   disable:
     # Many tests share package-level DB templates, httptest servers, and
     # daemon fixtures; forcing t.Parallel() races those setups.

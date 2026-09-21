@@ -8680,6 +8680,9 @@ components:
           type: string
         current_repo:
           type: string
+        detail_refresh_overdue:
+          format: int64
+          type: integer
         last_error:
           type: string
         last_error_ceiling_key:

@@ -8,6 +8,7 @@ export interface SyncStatus {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   current_repo?: string;
+  detail_refresh_overdue?: number;
   last_error?: string;
   last_error_ceiling_key?: string;
   last_error_ceiling_reset_at?: string;

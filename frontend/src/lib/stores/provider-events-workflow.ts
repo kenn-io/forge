@@ -141,6 +141,7 @@ export class SyncStatusEvent extends Schema.Class<SyncStatusEvent>("SyncStatusEv
   last_error: Schema.optionalKey(Schema.String),
   last_run_at: Schema.optionalKey(Schema.String),
   progress: Schema.optionalKey(Schema.String),
+  detail_refresh_overdue: Schema.optionalKey(Schema.Number),
   relay: Schema.optionalKey(
     Schema.Struct({
       connected: Schema.Boolean,

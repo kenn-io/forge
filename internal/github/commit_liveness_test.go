@@ -881,6 +881,9 @@ func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
 	require := require.New(t)
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
+	fixture.syncer = NewSyncer(map[string]Client{"github.com": &mockClient{}},
+		fixture.database, h.manager, []RepoRef{fixture.repo}, time.Minute, nil, testBudget(500))
+	t.Cleanup(fixture.syncer.Stop)
 	seedLivenessCommitEvents(t, fixture, h.a1)
 
 	livenessTestGit(t, h.sourceDir, "checkout", "-b", "repair-head", "feature-b")

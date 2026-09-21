@@ -901,7 +901,7 @@ func (c *Client) trackNotificationRate(resp *gh.Response) {
 }
 
 func (c *Client) GetRateLimitSnapshot(ctx context.Context) (*RateLimitSnapshot, error) {
-	limits, _, err := c.gh.RateLimit.Get(ctx)
+	limits, resp, err := c.gh.RateLimit.Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get GitHub rate limit snapshot: %w", err)
 	}
@@ -911,6 +911,13 @@ func (c *Client) GetRateLimitSnapshot(ctx context.Context) (*RateLimitSnapshot, 
 	snapshot := &RateLimitSnapshot{}
 	if limits.Core != nil {
 		rate := RateFromGitHub(*limits.Core)
+		snapshot.Core = &rate
+	}
+	// GitHub can return an optimistic core body while the same response's
+	// headers report exhausted quota. Preserve the enforced window.
+	if resp != nil && resp.Header.Get("X-RateLimit-Resource") == "core" &&
+		resp.Rate.Limit > 0 && !resp.Rate.Reset.IsZero() {
+		rate := RateFromGitHub(resp.Rate)
 		snapshot.Core = &rate
 	}
 	if limits.GraphQL != nil {

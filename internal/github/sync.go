@@ -436,6 +436,9 @@ type SyncStatus struct {
 	// produced LastError. Clients must match it against the live ceiling row
 	// before displaying counters or reset details from that row.
 	LastErrorCeilingResetAt string `json:"last_error_ceiling_reset_at,omitempty" format:"date-time"`
+	// DetailRefreshOverdue counts open items whose last successful detail
+	// check is at least a day old (including items never checked).
+	DetailRefreshOverdue int `json:"detail_refresh_overdue,omitempty"`
 }
 
 func formatRateLimitWait(wait time.Duration) string {
@@ -965,15 +968,17 @@ type archiveRepositoryLifecycle interface {
 }
 
 type queuedPRCommentSync struct {
-	repo   RepoRef
-	repoID int64
-	number int
+	repo            RepoRef
+	repoID          int64
+	number          int
+	detailFetchedAt *time.Time
 }
 
 type queuedIssueCommentSync struct {
-	repo   RepoRef
-	repoID int64
-	number int
+	repo            RepoRef
+	repoID          int64
+	number          int
+	detailFetchedAt *time.Time
 }
 
 // ensureRunCtx lazily initializes runCtx/runCancel. Safe to call
@@ -1140,6 +1145,9 @@ func (s *Syncer) publishStatus(status *SyncStatus) {
 }
 
 func (s *Syncer) publishStatusLocked(status *SyncStatus) {
+	if status.Running {
+		status.DetailRefreshOverdue = s.Status().DetailRefreshOverdue
+	}
 	if status.Relay == nil {
 		status.Relay = s.Status().Relay
 	}
@@ -4623,6 +4631,10 @@ func (s *Syncer) runOnceWithSlot(
 		// claim runMu as soon as running becomes false, but its Running:true
 		// publication must follow this pass's terminal status.
 		s.statusMu.Lock()
+		if terminalStatus != nil && ctx.Err() != nil {
+			// Cancellation cannot establish a fresh backlog count.
+			terminalStatus.DetailRefreshOverdue = s.Status().DetailRefreshOverdue
+		}
 		s.runMu.Lock()
 		pending := s.pendingRun
 		s.pendingRun = nil
@@ -4903,6 +4915,7 @@ dispatch:
 		LastErrorCode:           lastErrorCode,
 		LastErrorCeilingKey:     lastErrorCeilingKey,
 		LastErrorCeilingResetAt: lastErrorCeilingResetAt,
+		DetailRefreshOverdue:    s.countOverdueDetails(ctx),
 	}
 }
 
@@ -6878,11 +6891,11 @@ func (s *Syncer) indexSyncRepo(
 
 	if caps.ReadMergeRequests && prListUnchanged &&
 		failedScope&failMR == 0 && disabledScope&failMR == 0 {
-		s.refreshRepoPRComments(ctx, repo)
+		s.queueRepoPRComments(ctx, repo)
 	}
 	if caps.ReadIssues && issueListUnchanged &&
 		failedScope&failIssues == 0 && disabledScope&failIssues == 0 {
-		s.refreshRepoIssueComments(ctx, repo)
+		s.queueRepoIssueComments(ctx, repo)
 	}
 
 	if failedScope != 0 {
@@ -7429,7 +7442,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 	if existing != nil &&
 		existing.DetailFetchedAt != nil &&
 		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
-		s.queuePRCommentSync(repo, existing.RepoID, existing.Number)
+		s.queuePRCommentSync(repo, existing.RepoID, existing.Number, existing.DetailFetchedAt)
 	}
 
 	return nil
@@ -7636,7 +7649,7 @@ func (s *Syncer) indexUpsertMR(
 	if existing != nil &&
 		existing.DetailFetchedAt != nil &&
 		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
-		s.queuePRCommentSync(repo, existing.RepoID, existing.Number)
+		s.queuePRCommentSync(repo, existing.RepoID, existing.Number, existing.DetailFetchedAt)
 	}
 
 	return nil
@@ -7668,6 +7681,9 @@ func (s *Syncer) refreshPRCommentsForItem(
 	pr *db.MergeRequest,
 ) (bool, bool) {
 	if pr == nil || pr.DetailFetchedAt == nil {
+		return false, false
+	}
+	if !commentRefreshDue(string(pr.State), pr.UpdatedAt, *pr.DetailFetchedAt, pr.Starred, time.Now()) {
 		return false, false
 	}
 	if !s.canSpendCommentRefresh(repo) {
@@ -7712,6 +7728,9 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	if issue == nil || issue.DetailFetchedAt == nil {
 		return false, false
 	}
+	if !commentRefreshDue(issue.State, issue.UpdatedAt, *issue.DetailFetchedAt, issue.Starred, time.Now()) {
+		return false, false
+	}
 	if !s.canSpendCommentRefresh(repo) {
 		return false, false
 	}
@@ -7752,21 +7771,21 @@ func (s *Syncer) resetPendingCommentSyncs() {
 	s.pendingIssueCommentSyncs = nil
 }
 
-func (s *Syncer) queuePRCommentSync(repo RepoRef, repoID int64, number int) {
+func (s *Syncer) queuePRCommentSync(repo RepoRef, repoID int64, number int, detailFetchedAt *time.Time) {
 	s.commentRefreshMu.Lock()
 	defer s.commentRefreshMu.Unlock()
 	s.pendingPRCommentSyncs = append(s.pendingPRCommentSyncs, queuedPRCommentSync{
 		repo: repo, repoID: repoID,
-		number: number,
+		number: number, detailFetchedAt: detailFetchedAt,
 	})
 }
 
-func (s *Syncer) queueIssueCommentSync(repo RepoRef, repoID int64, number int) {
+func (s *Syncer) queueIssueCommentSync(repo RepoRef, repoID int64, number int, detailFetchedAt *time.Time) {
 	s.commentRefreshMu.Lock()
 	defer s.commentRefreshMu.Unlock()
 	s.pendingIssueCommentSyncs = append(s.pendingIssueCommentSyncs, queuedIssueCommentSync{
 		repo: repo, repoID: repoID,
-		number: number,
+		number: number, detailFetchedAt: detailFetchedAt,
 	})
 }
 
@@ -7846,6 +7865,12 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if pr == nil {
 			continue
 		}
+		// Detail refreshes include comments. Do not repeat that work when
+		// the detail pass completed after this comment check was queued.
+		if pr.DetailFetchedAt != nil &&
+			(item.detailFetchedAt == nil || pr.DetailFetchedAt.After(*item.detailFetchedAt)) {
+			continue
+		}
 		probe, due := s.beginRepositoryFeatureProbe(
 			refreshCtx, item.repo, platform.RepositoryFeatureMergeRequests,
 		)
@@ -7912,6 +7937,10 @@ func (s *Syncer) drainPendingCommentSyncs(
 			continue
 		}
 		if issue == nil {
+			continue
+		}
+		if issue.DetailFetchedAt != nil &&
+			(item.detailFetchedAt == nil || issue.DetailFetchedAt.After(*item.detailFetchedAt)) {
 			continue
 		}
 		probe, due := s.beginRepositoryFeatureProbe(
@@ -8862,6 +8891,25 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	ctx = s.db.WithRepositoryRouteFence(
 		ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 	)
+	// A parent 304 does not cover edited/deleted comments. Once a detail
+	// check is admitted, check comments too before advancing freshness.
+	if existing.State == "open" {
+		client, err := s.clientFor(repo)
+		if err != nil {
+			return calls, err
+		}
+		comments, err := s.listCommentsForRefresh(ctx, client, repo, number, existing.CommentCount)
+		calls++
+		if err != nil && !platformgithub.IsNotModified(err) {
+			return calls, err
+		}
+		if err == nil {
+			if err := s.persistPRComments(ctx, repo, existing, comments); err != nil {
+				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+				return calls, err
+			}
+		}
+	}
 	if err := s.refreshStoredPRCommentVisibility(
 		ctx, repo, existing.ID, existing.SnapshotRevision, number,
 	); err != nil {
@@ -9342,6 +9390,23 @@ func (s *Syncer) markUnchangedIssueDetailFetched(
 	ctx = s.db.WithRepositoryRouteFence(
 		ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 	)
+	if existing.State == "open" {
+		client, err := s.clientFor(repo)
+		if err != nil {
+			return calls, err
+		}
+		comments, err := s.listCommentsForRefresh(ctx, client, repo, number, existing.CommentCount)
+		calls++
+		if err != nil && !platformgithub.IsNotModified(err) {
+			return calls, err
+		}
+		if err == nil {
+			if err := s.persistIssueComments(ctx, repo, existing, comments); err != nil {
+				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+				return calls, err
+			}
+		}
+	}
 	if err := s.refreshStoredIssueCommentVisibility(
 		ctx, repo, existing.ID, existing.SnapshotRevision, number,
 	); err != nil {
@@ -10418,7 +10483,7 @@ func (s *Syncer) syncOpenPlatformIssue(
 
 	if !needsTimeline {
 		if existing != nil && existing.DetailFetchedAt != nil {
-			s.queueIssueCommentSync(repo, existing.RepoID, existing.Number)
+			s.queueIssueCommentSync(repo, existing.RepoID, existing.Number, existing.DetailFetchedAt)
 		}
 		return nil
 	}
@@ -10487,7 +10552,7 @@ func (s *Syncer) syncOpenIssue(
 
 	if !needsTimeline {
 		if existing != nil && existing.DetailFetchedAt != nil {
-			s.queueIssueCommentSync(repo, existing.RepoID, existing.Number)
+			s.queueIssueCommentSync(repo, existing.RepoID, existing.Number, existing.DetailFetchedAt)
 		}
 		return nil
 	}
@@ -10606,25 +10671,10 @@ func normalizeIssueTimelineEvents(
 	return events
 }
 
-func (s *Syncer) refreshRepoPRComments(
+func (s *Syncer) queueRepoPRComments(
 	ctx context.Context,
 	repo RepoRef,
 ) {
-	probe, due := s.beginRepositoryFeatureProbe(
-		ctx, repo, platform.RepositoryFeatureMergeRequests,
-	)
-	if !due {
-		return
-	}
-	providerAttempted := false
-	defer func() {
-		if providerAttempted {
-			probe.release()
-		} else {
-			probe.abandon()
-		}
-	}()
-
 	prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
 		PlatformHost: repoHost(repo),
 		RepoOwner:    repo.Owner,
@@ -10639,46 +10689,18 @@ func (s *Syncer) refreshRepoPRComments(
 		return
 	}
 
-	client, err := s.clientFor(repo)
-	if err != nil {
-		slog.Warn("comment refresh: resolve client failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"err", err,
-		)
-		return
-	}
-
 	for i := range prs {
 		if ctx.Err() != nil {
 			return
 		}
-		attempted, disabled := s.refreshPRCommentsForItem(ctx, client, repo, &prs[i])
-		providerAttempted = providerAttempted || attempted
-		if disabled {
-			return
-		}
+		s.queuePRCommentSync(repo, prs[i].RepoID, prs[i].Number, prs[i].DetailFetchedAt)
 	}
 }
 
-func (s *Syncer) refreshRepoIssueComments(
+func (s *Syncer) queueRepoIssueComments(
 	ctx context.Context,
 	repo RepoRef,
 ) {
-	probe, due := s.beginRepositoryFeatureProbe(
-		ctx, repo, platform.RepositoryFeatureIssues,
-	)
-	if !due {
-		return
-	}
-	providerAttempted := false
-	defer func() {
-		if providerAttempted {
-			probe.release()
-		} else {
-			probe.abandon()
-		}
-	}()
-
 	issues, err := s.db.ListIssues(ctx, db.ListIssuesOpts{
 		PlatformHost: repoHost(repo),
 		RepoOwner:    repo.Owner,
@@ -10693,24 +10715,11 @@ func (s *Syncer) refreshRepoIssueComments(
 		return
 	}
 
-	client, err := s.clientFor(repo)
-	if err != nil {
-		slog.Warn("comment refresh: resolve client failed",
-			"repo", repo.Owner+"/"+repo.Name,
-			"err", err,
-		)
-		return
-	}
-
 	for i := range issues {
 		if ctx.Err() != nil {
 			return
 		}
-		attempted, disabled := s.refreshIssueCommentsForItem(ctx, client, repo, &issues[i])
-		providerAttempted = providerAttempted || attempted
-		if disabled {
-			return
-		}
+		s.queueIssueCommentSync(repo, issues[i].RepoID, issues[i].Number, issues[i].DetailFetchedAt)
 	}
 }
 
@@ -10911,6 +10920,19 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 
 // --- Detail Drain ---
 
+// countOverdueDetails reports remaining daily work even when a credential's
+// budget or provider throttle kept its repository out of this pass.
+func (s *Syncer) countOverdueDetails(ctx context.Context) int {
+	now := time.Now()
+	overdue := 0
+	for _, item := range s.buildDetailQueueItems(ctx, s.TrackedRepos()) {
+		if item.DetailFetchedAt == nil || now.Sub(*item.DetailFetchedAt) >= dailyRefetchInterval {
+			overdue++
+		}
+	}
+	return overdue
+}
+
 // drainDetailQueue builds a priority queue of items needing detail
 // fetches and processes them within the per-provider/host budget.
 func (s *Syncer) drainDetailQueue(
@@ -10931,6 +10953,25 @@ func (s *Syncer) drainDetailQueue(
 	if len(queue) == 0 {
 		return
 	}
+
+	// A failed detail attempt stays overdue, but must not spend more budget
+	// retrying through the comment-only pass in this same cycle.
+	type detailAttempt struct {
+		repoID int64
+		number int
+		kind   QueueItemType
+	}
+	attempted := make(map[detailAttempt]bool)
+	defer func() {
+		s.commentRefreshMu.Lock()
+		defer s.commentRefreshMu.Unlock()
+		s.pendingPRCommentSyncs = slices.DeleteFunc(s.pendingPRCommentSyncs, func(item queuedPRCommentSync) bool {
+			return attempted[detailAttempt{item.repoID, item.number, QueueItemPR}]
+		})
+		s.pendingIssueCommentSyncs = slices.DeleteFunc(s.pendingIssueCommentSyncs, func(item queuedIssueCommentSync) bool {
+			return attempted[detailAttempt{item.repoID, item.number, QueueItemIssue}]
+		})
+	}()
 
 	// Track which hosts are exhausted so we skip quickly.
 	exhausted := make(map[string]bool)
@@ -11077,6 +11118,9 @@ func (s *Syncer) drainDetailQueue(
 				itemCtx, repo, repoID, qi.Number,
 			)
 		}
+		if providerCalls > 0 {
+			attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
+		}
 
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(repo, feature, err)
@@ -11118,7 +11162,22 @@ func (s *Syncer) buildDetailQueueItems(
 	// spending their detail budget on unrelated repositories on the same host.
 	trackedRepos := make(map[string]bool, len(repos))
 	for _, r := range repos {
+		if r.Archived {
+			continue
+		}
 		trackedRepos[detailRepoKey(repoPlatform(r), repoHost(r), r.Owner, r.Name)] = true
+	}
+	if len(trackedRepos) == 0 {
+		return nil
+	}
+	storedRepos, err := s.db.ListRepos(ctx)
+	if err != nil {
+		slog.Warn("detail drain: list repositories failed", "err", err)
+		return nil
+	}
+	reposByID := make(map[int64]db.Repo, len(storedRepos))
+	for _, repo := range storedRepos {
+		reposByID[repo.ID] = repo
 	}
 
 	// Gather watched MR numbers for matching.
@@ -11146,8 +11205,8 @@ func (s *Syncer) buildDetailQueueItems(
 		prCountsByRepoID[pr.RepoID]++
 	}
 	for _, pr := range prs {
-		repo, rErr := s.db.GetRepoByID(ctx, pr.RepoID)
-		if rErr != nil || repo == nil {
+		repo, found := reposByID[pr.RepoID]
+		if !found {
 			continue
 		}
 		repoKey := detailRepoKey(platform.Kind(repo.Platform), repo.PlatformHost, repo.Owner, repo.Name)
@@ -11191,8 +11250,8 @@ func (s *Syncer) buildDetailQueueItems(
 		issueCountsByRepoID[issue.RepoID]++
 	}
 	for _, issue := range issues {
-		repo, rErr := s.db.GetRepoByID(ctx, issue.RepoID)
-		if rErr != nil || repo == nil {
+		repo, found := reposByID[issue.RepoID]
+		if !found {
 			continue
 		}
 		repoKey := detailRepoKey(platform.Kind(repo.Platform), repo.PlatformHost, repo.Owner, repo.Name)

@@ -76,6 +76,18 @@ what "current" means.
 - Budgeted detail drain treats each queue item's worst-case cost as soft admission;
   provider pagination and child hydration may exceed it because the transport counts
   actual wire attempts (`internal/github/sync.go::drainDetailQueue`).
+- Dormant open items use a daily check, not hourly full hydration; overdue checks go
+  oldest-first within existing budgets. Closed history stays outside routine polling
+  (`internal/github/queue.go::BuildQueue`).
+- Daily coverage is a target, not permission to exceed quota. Show remaining overdue
+  open items, including never-fetched items, rather than implying complete freshness
+  (`internal/github/sync.go::countOverdueDetails`).
+- Comment-only polling must respect dormant-item cadence. Admitted open-item detail
+  checks still check comments on parent 304s before advancing freshness; edits and
+  deletions may leave the parent unchanged (`internal/github/sync.go::markUnchangedIssueDetailFetched`).
+- Defer comment-only work until after details and skip items attempted by that pass,
+  even on failure. Failed details stay overdue for a later cycle
+  (`internal/github/sync.go::drainDetailQueue`).
 
 For pull requests, that means:
 
@@ -643,6 +655,10 @@ move to a different identity while retaining the old trackers and budget.
 Provider quota is keyed by `IdentityKey` and REST/GraphQL resource, so a user
 response never overwrites an App installation pool
 (`internal/github/quota.go::QuotaRegistry`).
+
+- Prefer valid core response headers over the `/rate_limit` core body: the body
+  can report full capacity while the same response reports exhaustion. GraphQL
+  remains a separate pool (`platform/github/client.go::Client.GetRateLimitSnapshot`).
 
 - Each client transport chain carries a fixed identity: reads spend the route's
   read identity, mutations and notifications its write identity

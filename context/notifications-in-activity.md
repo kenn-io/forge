@@ -18,7 +18,7 @@ Notifications are a built-in capability with no enable/disable setting. There is
 
 ```toml
 [notifications]
-sync_interval = "2m"
+sync_interval = "1h"
 propagation_interval = "1m"
 batch_size = 25
 ```
@@ -28,6 +28,9 @@ Rules:
 - `Config.NotificationsEnabled()` reports `c != nil`; the only "off" state is the absence of a loaded config, which callers use purely for nil-safety. There is no user-facing toggle.
 - A legacy config that still carries `[notifications] enabled = false` loads without error — the key is ignored (it is not a deprecated-key error) and notifications stay on.
 - The `[notifications]` section only tunes sync/propagation cadence and batch size.
+- Discovery defaults to hourly because notifications spend the user's quota even
+  with App-backed repo reads; explicit intervals remain unchanged. Read acknowledgements
+  stay prompt (`internal/config/config.go::defaultNotificationSyncInterval`).
 - The Settings API reports `notifications.enabled = true` as a read-only status, not a configurable knob.
 
 ## Repository Scope And Identity

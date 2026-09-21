@@ -12705,6 +12705,7 @@ func TestRunOnceLatchesCancelWhenSyncRepoIgnoresCtx(t *testing.T) {
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
 		time.Minute, nil, nil,
 	)
+	syncer.publishStatus(&SyncStatus{DetailRefreshOverdue: 3})
 
 	var syncCompletedCalls atomic.Int32
 	syncer.SetOnSyncCompleted(func(_ []RepoSyncResult) {
@@ -12720,6 +12721,8 @@ func TestRunOnceLatchesCancelWhenSyncRepoIgnoresCtx(t *testing.T) {
 	assert.False(status.Running, "sync must stop")
 	assert.NotEmpty(status.LastError,
 		"status must record the cancel as an error")
+	assert.Equal(3, status.DetailRefreshOverdue,
+		"canceling the run must preserve the last measured backlog")
 }
 
 // --- Index/Detail Split Tests ---
@@ -12933,7 +12936,7 @@ func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	detailFetchedAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
+	detailFetchedAt := time.Now().UTC().Add(-time.Hour)
 	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
 		PlatformID:      1000,
@@ -12966,7 +12969,6 @@ func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	))
 
 	mc := &conditionalPRTrackingClient{notModified: true}
-	mc.comments = []*gh.IssueComment{{ID: new(int64)}}
 	mc.reviews = []*gh.PullRequestReview{{ID: new(int64)}}
 	mc.commits = []*gh.RepositoryCommit{{SHA: new(string)}}
 	inlineCommentID := int64(10402)
@@ -13043,8 +13045,8 @@ func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	assert.Equal(`"etag-v1"`, mc.receivedETag)
 	assert.Zero(int(mc.getPRCalls.Load()),
 		"304 should skip the unconditional PR detail fetch")
-	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
-		"304 should skip timeline/comment refresh")
+	assert.Equal(int32(2), mc.listIssueCommentsIfChangedCalls.Load(),
+		"parent 304s still check comments conditionally")
 }
 
 func TestFetchMRDetailDoesNotBackfillMergedActorOn304(t *testing.T) {
@@ -13123,8 +13125,8 @@ func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
 	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	detailFetchedAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
-	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+	detailFetchedAt := time.Now().UTC().Add(-time.Hour)
+	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
 		PlatformID:      1000,
 		Number:          1,
@@ -13148,7 +13150,8 @@ func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
 
 	mc := &conditionalPRTrackingClient{notModified: true}
 	mc.singlePR = buildOpenPR(1, updatedAt)
-	mc.comments = []*gh.IssueComment{{ID: new(int64)}}
+	mc.comments = []*gh.IssueComment{{ID: new(int64(5)), Body: new("edited comment"),
+		CreatedAt: makeTimestamp(updatedAt), UpdatedAt: makeTimestamp(time.Now().UTC())}}
 	mc.reviews = []*gh.PullRequestReview{{ID: new(int64)}}
 	mc.commits = []*gh.RepositoryCommit{{SHA: new(string)}}
 	syncer := NewSyncer(
@@ -13165,8 +13168,18 @@ func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
 	assert.Equal(`"etag-v1"`, mc.receivedETag)
 	assert.Zero(int(mc.getPRCalls.Load()),
 		"304 should skip the unconditional PR detail fetch")
-	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
-		"304 should skip timeline/comment refresh")
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	require.Len(events, 1)
+	assert.Equal("edited comment", events[0].Body,
+		"a watched dormant PR must still refresh comments when its parent is unchanged")
+	mc.comments = []*gh.IssueComment{}
+	require.NoError(syncer.syncMRWithWatchedRef(ctx, WatchedMR{
+		Owner: "owner", Name: "repo", Number: 1, PlatformHost: "github.com",
+	}))
+	events, err = d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	assert.Empty(events, "the next watched check must reconcile deleted comments too")
 }
 
 func TestWatchedSyncMRDoesNotBackfillMergedActorOn304(t *testing.T) {
@@ -13366,7 +13379,7 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	updatedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	detailFetchedAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
+	detailFetchedAt := time.Now().UTC().Add(-time.Hour)
 	issueID, err := d.UpsertIssue(ctx, &db.Issue{
 		RepoID:          repoID,
 		PlatformID:      1000,
@@ -13396,7 +13409,6 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	))
 
 	mc := &conditionalIssueTrackingClient{notModified: true}
-	mc.comments = []*gh.IssueComment{{ID: new(int64)}}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": mc}, d, nil,
 		[]RepoRef{repo},
@@ -13429,8 +13441,8 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 
 	assert.Equal(int32(2), mc.conditionalCalls.Load())
 	assert.Equal(`"issue-etag-v1"`, mc.receivedETag)
-	assert.Zero(int(mc.listIssueCommentsCalled.Load()),
-		"304 should skip issue comment refresh")
+	assert.Equal(int32(2), mc.listIssueCommentsIfChangedCalls.Load(),
+		"parent 304s still check comments conditionally")
 }
 
 func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {
@@ -14409,9 +14421,9 @@ func TestRunOnceLargeExistingRepoSkipsBulkGraphQLAndFetchesChangedPRDetail(t *te
 	})
 	require.NoError(err)
 
-	unchangedAt := time.Date(2024, 6, 1, 10, 0, 0, 0, time.UTC)
-	changedAt := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
-	detailFetchedAt := time.Date(2024, 6, 1, 11, 0, 0, 0, time.UTC)
+	changedAt := time.Now().UTC()
+	unchangedAt := changedAt.Add(-2 * time.Hour)
+	detailFetchedAt := changedAt.Add(-time.Hour)
 	openPRs := make([]*gh.PullRequest, 0, syncProgressLogInterval+1)
 	for number := 1; number <= syncProgressLogInterval+1; number++ {
 		updatedAt := unchangedAt
@@ -17581,7 +17593,7 @@ func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
 
 	commentID := int64(7001)
@@ -17658,7 +17670,7 @@ func TestSyncerRemovesDeletedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
 
 	commentID := int64(7002)
@@ -17728,7 +17740,7 @@ func TestSyncerRemovesDeletedIssueCommentWhenIssueListIsUnchanged(t *testing.T) 
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
 
 	issueID := int64(801)
@@ -18254,7 +18266,7 @@ func TestDeferredCommentRefreshRejectsABARoutePayload(t *testing.T) {
 			map[string]Client{"github.com": client}, database, nil,
 			[]RepoRef{repo}, time.Minute, nil, nil,
 		)
-		syncer.queuePRCommentSync(repo, original.Repository.ID, 7)
+		syncer.queuePRCommentSync(repo, original.Repository.ID, 7, &detailFetchedAt)
 		done := make(chan struct{})
 		go func() {
 			syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
@@ -18317,7 +18329,7 @@ func TestDeferredCommentRefreshRejectsABARoutePayload(t *testing.T) {
 			map[string]Client{"github.com": client}, database, nil,
 			[]RepoRef{repo}, time.Minute, nil, nil,
 		)
-		syncer.queueIssueCommentSync(repo, original.Repository.ID, 7)
+		syncer.queueIssueCommentSync(repo, original.Repository.ID, 7, &detailFetchedAt)
 		done := make(chan struct{})
 		go func() {
 			syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
@@ -18394,9 +18406,9 @@ func TestDeferredCommentRefreshSkipsRemovedUpstreamItems(t *testing.T) {
 				[]RepoRef{repo}, time.Minute, nil, nil,
 			)
 			if itemType == db.ArchiveItemTypeMergeRequest {
-				syncer.queuePRCommentSync(repo, repoID, 7)
+				syncer.queuePRCommentSync(repo, repoID, 7, &detailFetchedAt)
 			} else {
-				syncer.queueIssueCommentSync(repo, repoID, 7)
+				syncer.queueIssueCommentSync(repo, repoID, 7, &detailFetchedAt)
 			}
 			_, err = database.WriteDB().ExecContext(ctx, `
 				INSERT INTO forge_archive_items (
@@ -20697,7 +20709,7 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 	})
 }
 
-func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+func TestQueuedRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20742,13 +20754,14 @@ func TestRefreshRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 
-	syncer.refreshRepoPRComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+	syncer.queueRepoPRComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 
 	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
 	assert.Equal(int32(0), mock.listIssueCommentsIfChangedCalls.Load())
 }
 
-func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+func TestQueuedRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20793,7 +20806,8 @@ func TestRefreshRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 
-	syncer.refreshRepoIssueComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+	syncer.queueRepoIssueComments(ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"})
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
 
 	assert.Equal(int32(1), mock.listIssueCommentsCalled.Load())
 	assert.Equal(int32(0), mock.listIssueCommentsIfChangedCalls.Load())
@@ -20907,8 +20921,8 @@ func TestDrainPendingCommentSyncsReadsQueuedItemsByProviderIdentity(t *testing.T
 		[]RepoRef{codeRepo, githubRepo},
 		time.Minute, nil, nil,
 	)
-	syncer.queuePRCommentSync(codeRepo, codeRepoID, 7)
-	syncer.queueIssueCommentSync(codeRepo, codeRepoID, 8)
+	syncer.queuePRCommentSync(codeRepo, codeRepoID, 7, &detailFetchedAt)
+	syncer.queueIssueCommentSync(codeRepo, codeRepoID, 8, &detailFetchedAt)
 
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"code.example.com": true})
 
@@ -20932,7 +20946,7 @@ func TestDrainPendingCommentSyncsReadsQueuedItemsByProviderIdentity(t *testing.T
 	assert.Empty(githubIssueEvents)
 }
 
-func TestRefreshRepoCommentsFiltersByHost(t *testing.T) {
+func TestQueuedRepoCommentsFiltersByHost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -21039,8 +21053,9 @@ func TestRefreshRepoCommentsFiltersByHost(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 
-	syncer.refreshRepoPRComments(ctx, codeRepo)
-	syncer.refreshRepoIssueComments(ctx, codeRepo)
+	syncer.queueRepoPRComments(ctx, codeRepo)
+	syncer.queueRepoIssueComments(ctx, codeRepo)
+	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"code.example.com": true})
 
 	codeMREvents, err := d.ListMREvents(ctx, codeMRID)
 	require.NoError(err)
@@ -21065,7 +21080,7 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 	budget := testBudget(23)
 	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
@@ -21152,7 +21167,7 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 		time.Minute, nil, budget,
 	)
 
-	syncer.queuePRCommentSync(repo, repoID, 1)
+	syncer.queuePRCommentSync(repo, repoID, 1, &detailFetchedAt)
 	budget["github.com"].Spend(3)
 	syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
 	syncer.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
@@ -22726,7 +22741,7 @@ func TestCommentDrainStopsIssueRefreshesAtTheReserve(t *testing.T) {
 	require.NoError(err)
 	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
 	syncer.SetQuotaRegistry(registry)
-	syncer.queueIssueCommentSync(repo, repoID, 11)
+	syncer.queueIssueCommentSync(repo, repoID, 11, nil)
 
 	bucket := RateBucketKey("github", "github.com", "user:7")
 	eligible := map[string]bool{bucket: true}

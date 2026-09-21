@@ -609,7 +609,7 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 		api.OpenAPI().AddOperation(op)
 		api.Adapter().Handle(op, func(ctx huma.Context) {
 			r, w := humago.Unwrap(ctx)
-			if !bufferFleetProxyRequestBody(w, r, maxBodyBytes) {
+			if !BufferProxyRequestBody(w, r, maxBodyBytes) {
 				return
 			}
 			s.serveFleetRESTProxy(w, r, route.targetPath(r))
@@ -743,10 +743,10 @@ func fleetProxyRequestBody() *huma.RequestBody {
 	}
 }
 
-// bufferFleetProxyRequestBody bounds and consumes any browser request body
+// BufferProxyRequestBody bounds and consumes any browser request body
 // before the hub resolves or dials a fleet member. The fleet adapter handles
 // raw requests, so Huma's MaxBodyBytes metadata is not enforced automatically.
-func bufferFleetProxyRequestBody(w http.ResponseWriter, r *http.Request, maxBodyBytes int64) bool {
+func BufferProxyRequestBody(w http.ResponseWriter, r *http.Request, maxBodyBytes int64) bool {
 	if r.ContentLength > maxBodyBytes {
 		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusRequestEntityTooLarge,
@@ -887,7 +887,7 @@ func (s *Handler) serveRemoteFleetRESTProxy(
 	}
 	defer resp.Body.Close()
 
-	copyProxyResponseHeaders(w.Header(), resp.Header)
+	CopyProxyResponseHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		slog.Debug(
@@ -959,7 +959,7 @@ func (s *Handler) serveFleetWebSocketProxy(
 	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
 
 	endAttachSpan()
-	bridgeWebSocketProxy(r.Context(), clientConn, peerConn)
+	BridgeWebSocketProxy(r.Context(), clientConn, peerConn)
 }
 
 func startFleetAttachSpan(r *http.Request) (*http.Request, trace.Span, func()) {
@@ -968,7 +968,7 @@ func startFleetAttachSpan(r *http.Request) (*http.Request, trace.Span, func()) {
 	return r.WithContext(ctx), attachSpan, endAttachSpan
 }
 
-func bridgeWebSocketProxy(ctx context.Context, client, peer *websocket.Conn) {
+func BridgeWebSocketProxy(ctx context.Context, client, peer *websocket.Conn) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -1192,7 +1192,7 @@ func isPeerProxyClientHeader(key string) bool {
 		strings.HasPrefix(lower, "x-forwarded-")
 }
 
-func copyProxyResponseHeaders(dst, src http.Header) {
+func CopyProxyResponseHeaders(dst, src http.Header) {
 	connectionHeaders := proxyConnectionTokens(src)
 	for key, values := range src {
 		lower := strings.ToLower(key)

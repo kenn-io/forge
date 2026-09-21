@@ -353,6 +353,836 @@ func (o *ListArchiveStatusRequestOptions) GetHeader() (map[string]string, error)
 	return nil, nil
 }
 
+// ConnectDevboxRequestOptions is the options needed to make a request to ConnectDevbox.
+type ConnectDevboxRequestOptions struct {
+	Body *ConnectDevboxBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ConnectDevboxRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ConnectDevboxRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ConnectDevboxRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ConnectDevboxRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// DiscoverDevboxesRequestOptions is the options needed to make a request to DiscoverDevboxes.
+type DiscoverDevboxesRequestOptions struct {
+	Query *DiscoverDevboxesQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *DiscoverDevboxesRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *DiscoverDevboxesRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *DiscoverDevboxesRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *DiscoverDevboxesRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// DisconnectDevboxRequestOptions is the options needed to make a request to DisconnectDevbox.
+type DisconnectDevboxRequestOptions struct {
+	PathParams *DisconnectDevboxPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *DisconnectDevboxRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *DisconnectDevboxRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *DisconnectDevboxRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *DisconnectDevboxRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// ReconnectDevboxRequestOptions is the options needed to make a request to ReconnectDevbox.
+type ReconnectDevboxRequestOptions struct {
+	PathParams *ReconnectDevboxPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ReconnectDevboxRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ReconnectDevboxRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ReconnectDevboxRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ReconnectDevboxRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// StoreDevboxPasteImageRequestOptions is the options needed to make a request to StoreDevboxPasteImage.
+type StoreDevboxPasteImageRequestOptions struct {
+	PathParams *StoreDevboxPasteImagePath
+	Body       *StoreDevboxPasteImageBody
+	Header     *StoreDevboxPasteImageHeaders
+}
+
+// GetPathParams returns the path params as a map.
+func (o *StoreDevboxPasteImageRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *StoreDevboxPasteImageRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *StoreDevboxPasteImageRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *StoreDevboxPasteImageRequestOptions) GetHeader() (map[string]string, error) {
+	return runtime.AsMap[string](o.Header)
+}
+
+// ListDevboxWorkspacesRequestOptions is the options needed to make a request to ListDevboxWorkspaces.
+type ListDevboxWorkspacesRequestOptions struct {
+	PathParams *ListDevboxWorkspacesPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListDevboxWorkspacesRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListDevboxWorkspacesRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListDevboxWorkspacesRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListDevboxWorkspacesRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// CreateDevboxWorkspaceRequestOptions is the options needed to make a request to CreateDevboxWorkspace.
+type CreateDevboxWorkspaceRequestOptions struct {
+	PathParams *CreateDevboxWorkspacePath
+	Body       *CreateDevboxWorkspaceBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *CreateDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *CreateDevboxWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *CreateDevboxWorkspaceRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *CreateDevboxWorkspaceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// DeleteDevboxWorkspaceRequestOptions is the options needed to make a request to DeleteDevboxWorkspace.
+type DeleteDevboxWorkspaceRequestOptions struct {
+	PathParams *DeleteDevboxWorkspacePath
+	Query      *DeleteDevboxWorkspaceQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *DeleteDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *DeleteDevboxWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *DeleteDevboxWorkspaceRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *DeleteDevboxWorkspaceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetDevboxWorkspaceRequestOptions is the options needed to make a request to GetDevboxWorkspace.
+type GetDevboxWorkspaceRequestOptions struct {
+	PathParams *GetDevboxWorkspacePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetDevboxWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetDevboxWorkspaceRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetDevboxWorkspaceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// ListDevboxAgentSessionsRequestOptions is the options needed to make a request to ListDevboxAgentSessions.
+type ListDevboxAgentSessionsRequestOptions struct {
+	PathParams *ListDevboxAgentSessionsPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListDevboxAgentSessionsRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListDevboxAgentSessionsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListDevboxAgentSessionsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListDevboxAgentSessionsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetDevboxCommitsRequestOptions is the options needed to make a request to GetDevboxCommits.
+type GetDevboxCommitsRequestOptions struct {
+	PathParams *GetDevboxCommitsPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetDevboxCommitsRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetDevboxCommitsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetDevboxCommitsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetDevboxCommitsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetDevboxDiffRequestOptions is the options needed to make a request to GetDevboxDiff.
+type GetDevboxDiffRequestOptions struct {
+	PathParams *GetDevboxDiffPath
+	Query      *GetDevboxDiffQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetDevboxDiffRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetDevboxDiffRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetDevboxDiffRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetDevboxDiffRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// WatchDevboxDiffRequestOptions is the options needed to make a request to WatchDevboxDiff.
+type WatchDevboxDiffRequestOptions struct {
+	PathParams *WatchDevboxDiffPath
+	Query      *WatchDevboxDiffQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *WatchDevboxDiffRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *WatchDevboxDiffRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *WatchDevboxDiffRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *WatchDevboxDiffRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetDevboxFilePreviewRequestOptions is the options needed to make a request to GetDevboxFilePreview.
+type GetDevboxFilePreviewRequestOptions struct {
+	PathParams *GetDevboxFilePreviewPath
+	Query      *GetDevboxFilePreviewQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetDevboxFilePreviewRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetDevboxFilePreviewRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetDevboxFilePreviewRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetDevboxFilePreviewRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetDevboxFilesRequestOptions is the options needed to make a request to GetDevboxFiles.
+type GetDevboxFilesRequestOptions struct {
+	PathParams *GetDevboxFilesPath
+	Query      *GetDevboxFilesQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetDevboxFilesRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetDevboxFilesRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetDevboxFilesRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetDevboxFilesRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// PullDevboxWorkspaceRequestOptions is the options needed to make a request to PullDevboxWorkspace.
+type PullDevboxWorkspaceRequestOptions struct {
+	PathParams *PullDevboxWorkspacePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *PullDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *PullDevboxWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *PullDevboxWorkspaceRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *PullDevboxWorkspaceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// PushDevboxWorkspaceRequestOptions is the options needed to make a request to PushDevboxWorkspace.
+type PushDevboxWorkspaceRequestOptions struct {
+	PathParams *PushDevboxWorkspacePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *PushDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *PushDevboxWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *PushDevboxWorkspaceRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *PushDevboxWorkspaceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// RefreshDevboxWorkspaceRequestOptions is the options needed to make a request to RefreshDevboxWorkspace.
+type RefreshDevboxWorkspaceRequestOptions struct {
+	PathParams *RefreshDevboxWorkspacePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RefreshDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RefreshDevboxWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RefreshDevboxWorkspaceRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *RefreshDevboxWorkspaceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// RetryDevboxWorkspaceRequestOptions is the options needed to make a request to RetryDevboxWorkspace.
+type RetryDevboxWorkspaceRequestOptions struct {
+	PathParams *RetryDevboxWorkspacePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RetryDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RetryDevboxWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RetryDevboxWorkspaceRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *RetryDevboxWorkspaceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetDevboxRuntimeRequestOptions is the options needed to make a request to GetDevboxRuntime.
+type GetDevboxRuntimeRequestOptions struct {
+	PathParams *GetDevboxRuntimePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetDevboxRuntimeRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetDevboxRuntimeRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetDevboxRuntimeRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetDevboxRuntimeRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// LaunchDevboxHandoffRequestOptions is the options needed to make a request to LaunchDevboxHandoff.
+type LaunchDevboxHandoffRequestOptions struct {
+	PathParams *LaunchDevboxHandoffPath
+	Body       *LaunchDevboxHandoffBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *LaunchDevboxHandoffRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *LaunchDevboxHandoffRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *LaunchDevboxHandoffRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *LaunchDevboxHandoffRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// LaunchDevboxSessionRequestOptions is the options needed to make a request to LaunchDevboxSession.
+type LaunchDevboxSessionRequestOptions struct {
+	PathParams *LaunchDevboxSessionPath
+	Body       *LaunchDevboxSessionBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *LaunchDevboxSessionRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *LaunchDevboxSessionRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *LaunchDevboxSessionRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *LaunchDevboxSessionRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// StopDevboxSessionRequestOptions is the options needed to make a request to StopDevboxSession.
+type StopDevboxSessionRequestOptions struct {
+	PathParams *StopDevboxSessionPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *StopDevboxSessionRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *StopDevboxSessionRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *StopDevboxSessionRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *StopDevboxSessionRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// RenameDevboxSessionRequestOptions is the options needed to make a request to RenameDevboxSession.
+type RenameDevboxSessionRequestOptions struct {
+	PathParams *RenameDevboxSessionPath
+	Body       *RenameDevboxSessionBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RenameDevboxSessionRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RenameDevboxSessionRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RenameDevboxSessionRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *RenameDevboxSessionRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetDevboxAttachSpecRequestOptions is the options needed to make a request to GetDevboxAttachSpec.
+type GetDevboxAttachSpecRequestOptions struct {
+	PathParams *GetDevboxAttachSpecPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetDevboxAttachSpecRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetDevboxAttachSpecRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetDevboxAttachSpecRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetDevboxAttachSpecRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// SendDevboxInitialMessageRequestOptions is the options needed to make a request to SendDevboxInitialMessage.
+type SendDevboxInitialMessageRequestOptions struct {
+	PathParams *SendDevboxInitialMessagePath
+	Body       *SendDevboxInitialMessageBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *SendDevboxInitialMessageRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *SendDevboxInitialMessageRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *SendDevboxInitialMessageRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *SendDevboxInitialMessageRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // BrowseDocsFoldersRequestOptions is the options needed to make a request to BrowseDocsFolders.
 type BrowseDocsFoldersRequestOptions struct {
 	Query *BrowseDocsFoldersQuery
@@ -9487,6 +10317,64 @@ func (o *SetActiveWorktreeRequestOptions) GetHeader() (map[string]string, error)
 	return nil, nil
 }
 
+// CreateWorkerWorkspaceRequestOptions is the options needed to make a request to CreateWorkerWorkspace.
+type CreateWorkerWorkspaceRequestOptions struct {
+	Body *CreateWorkerWorkspaceBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *CreateWorkerWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *CreateWorkerWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *CreateWorkerWorkspaceRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *CreateWorkerWorkspaceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// RefreshWorkerContextRequestOptions is the options needed to make a request to RefreshWorkerContext.
+type RefreshWorkerContextRequestOptions struct {
+	PathParams *RefreshWorkerContextPath
+	Body       *RefreshWorkerContextBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RefreshWorkerContextRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RefreshWorkerContextRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RefreshWorkerContextRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *RefreshWorkerContextRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // CreateWorkspaceRequestOptions is the options needed to make a request to CreateWorkspace.
 type CreateWorkspaceRequestOptions struct {
 	Body *CreateWorkspaceBody
@@ -10454,6 +11342,33 @@ type ClientInterface interface {
 	GetArchiveReportWithResponse(ctx context.Context, options *GetArchiveReportRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetArchiveReportResp, error)
 	StartArchivesWithResponse(ctx context.Context, options *StartArchivesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StartArchivesResp, error)
 	ListArchiveStatusWithResponse(ctx context.Context, options *ListArchiveStatusRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListArchiveStatusResp, error)
+	ListDevboxConnectionsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListDevboxConnectionsResp, error)
+	ConnectDevboxWithResponse(ctx context.Context, options *ConnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ConnectDevboxResp, error)
+	DiscoverDevboxesWithResponse(ctx context.Context, options *DiscoverDevboxesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DiscoverDevboxesResp, error)
+	DisconnectDevboxWithResponse(ctx context.Context, options *DisconnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DisconnectDevboxResp, error)
+	ReconnectDevboxWithResponse(ctx context.Context, options *ReconnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReconnectDevboxResp, error)
+	StoreDevboxPasteImageWithResponse(ctx context.Context, options *StoreDevboxPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StoreDevboxPasteImageResp, error)
+	ListDevboxWorkspacesWithResponse(ctx context.Context, options *ListDevboxWorkspacesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListDevboxWorkspacesResp, error)
+	CreateDevboxWorkspaceWithResponse(ctx context.Context, options *CreateDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateDevboxWorkspaceResp, error)
+	DeleteDevboxWorkspaceWithResponse(ctx context.Context, options *DeleteDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteDevboxWorkspaceResp, error)
+	GetDevboxWorkspaceWithResponse(ctx context.Context, options *GetDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxWorkspaceResp, error)
+	ListDevboxAgentSessionsWithResponse(ctx context.Context, options *ListDevboxAgentSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListDevboxAgentSessionsResp, error)
+	GetDevboxCommitsWithResponse(ctx context.Context, options *GetDevboxCommitsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxCommitsResp, error)
+	GetDevboxDiffWithResponse(ctx context.Context, options *GetDevboxDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxDiffResp, error)
+	WatchDevboxDiffWithResponse(ctx context.Context, options *WatchDevboxDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WatchDevboxDiffResp, error)
+	GetDevboxFilePreviewWithResponse(ctx context.Context, options *GetDevboxFilePreviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxFilePreviewResp, error)
+	GetDevboxFilesWithResponse(ctx context.Context, options *GetDevboxFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxFilesResp, error)
+	PullDevboxWorkspaceWithResponse(ctx context.Context, options *PullDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PullDevboxWorkspaceResp, error)
+	PushDevboxWorkspaceWithResponse(ctx context.Context, options *PushDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PushDevboxWorkspaceResp, error)
+	RefreshDevboxWorkspaceWithResponse(ctx context.Context, options *RefreshDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshDevboxWorkspaceResp, error)
+	RetryDevboxWorkspaceWithResponse(ctx context.Context, options *RetryDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RetryDevboxWorkspaceResp, error)
+	GetDevboxRuntimeWithResponse(ctx context.Context, options *GetDevboxRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxRuntimeResp, error)
+	LaunchDevboxHandoffWithResponse(ctx context.Context, options *LaunchDevboxHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchDevboxHandoffResp, error)
+	LaunchDevboxSessionWithResponse(ctx context.Context, options *LaunchDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchDevboxSessionResp, error)
+	StopDevboxSessionWithResponse(ctx context.Context, options *StopDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopDevboxSessionResp, error)
+	RenameDevboxSessionWithResponse(ctx context.Context, options *RenameDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameDevboxSessionResp, error)
+	GetDevboxAttachSpecWithResponse(ctx context.Context, options *GetDevboxAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxAttachSpecResp, error)
+	SendDevboxInitialMessageWithResponse(ctx context.Context, options *SendDevboxInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SendDevboxInitialMessageResp, error)
 	BrowseDocsFoldersWithResponse(ctx context.Context, options *BrowseDocsFoldersRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BrowseDocsFoldersResp, error)
 	ListDocsFoldersWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListDocsFoldersResp, error)
 	CreateDocsFolderWithResponse(ctx context.Context, options *CreateDocsFolderRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateDocsFolderResp, error)
@@ -10768,6 +11683,10 @@ type ClientInterface interface {
 	GetToolingStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetToolingStatusResp, error)
 	SetActiveWorktreeWithResponse(ctx context.Context, options *SetActiveWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetActiveWorktreeResp, error)
 	GetVersionWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetVersionResp, error)
+	GetExecutionWorkerWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetExecutionWorkerResp, error)
+	GetWorkerSnapshotWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetWorkerSnapshotResp, error)
+	CreateWorkerWorkspaceWithResponse(ctx context.Context, options *CreateWorkerWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkerWorkspaceResp, error)
+	RefreshWorkerContextWithResponse(ctx context.Context, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorkerContextResp, error)
 	ListWorkspacesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListWorkspacesResp, error)
 	CreateWorkspaceWithResponse(ctx context.Context, options *CreateWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkspaceResp, error)
 	DeleteWorkspaceWithResponse(ctx context.Context, options *DeleteWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteWorkspaceResp, error)
@@ -11571,6 +12490,1509 @@ func (c *Client) ListArchiveStatusWithResponse(ctx context.Context, options *Lis
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "ListArchiveStatusResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ListDevboxConnections List connected devboxes
+func (c *Client) ListDevboxConnectionsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListDevboxConnectionsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes",
+		Method:     "GET",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListDevboxConnectionsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListDevboxConnectionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListDevboxConnectionsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDevboxConnectionsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ConnectDevbox Connect your assigned devbox account
+func (c *Client) ConnectDevboxWithResponse(ctx context.Context, options *ConnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ConnectDevboxResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ConnectDevboxResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ConnectDevboxErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ConnectDevboxResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ConnectDevboxResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// DiscoverDevboxes Discover your assigned devboxes
+func (c *Client) DiscoverDevboxesWithResponse(ctx context.Context, options *DiscoverDevboxesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DiscoverDevboxesResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"registry": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/discovery",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/discovery")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &DiscoverDevboxesResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(DiscoverDevboxesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(DiscoverDevboxesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DiscoverDevboxesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// DisconnectDevbox Remove a connection without deleting remote work
+func (c *Client) DisconnectDevboxWithResponse(ctx context.Context, options *DisconnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DisconnectDevboxResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}",
+		Method:     "DELETE",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &DisconnectDevboxResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(DisconnectDevboxErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ReconnectDevbox Refresh an assigned worker credential and verify identity
+func (c *Client) ReconnectDevboxWithResponse(ctx context.Context, options *ReconnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReconnectDevboxResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/reconnect",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/reconnect")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ReconnectDevboxResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ReconnectDevboxErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// StoreDevboxPasteImage Forward an execution operation to its owning devbox
+func (c *Client) StoreDevboxPasteImageWithResponse(ctx context.Context, options *StoreDevboxPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StoreDevboxPasteImageResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/terminal/paste-image",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/octet-stream",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/terminal/paste-image")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &StoreDevboxPasteImageResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(StoreDevboxPasteImageErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 201:
+		out.JSON201 = new(StoreDevboxPasteImageResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON201); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StoreDevboxPasteImageResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ListDevboxWorkspaces Forward an execution operation to its owning devbox
+func (c *Client) ListDevboxWorkspacesWithResponse(ctx context.Context, options *ListDevboxWorkspacesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListDevboxWorkspacesResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListDevboxWorkspacesResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListDevboxWorkspacesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListDevboxWorkspacesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDevboxWorkspacesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// CreateDevboxWorkspace Create a workspace on a connected devbox
+func (c *Client) CreateDevboxWorkspaceWithResponse(ctx context.Context, options *CreateDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateDevboxWorkspaceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &CreateDevboxWorkspaceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(CreateDevboxWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(CreateDevboxWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateDevboxWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// DeleteDevboxWorkspace Forward an execution operation to its owning devbox
+func (c *Client) DeleteDevboxWorkspaceWithResponse(ctx context.Context, options *DeleteDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteDevboxWorkspaceResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"force": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}",
+		Method:        "DELETE",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &DeleteDevboxWorkspaceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(DeleteDevboxWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetDevboxWorkspace Forward an execution operation to its owning devbox
+func (c *Client) GetDevboxWorkspaceWithResponse(ctx context.Context, options *GetDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxWorkspaceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetDevboxWorkspaceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetDevboxWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetDevboxWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ListDevboxAgentSessions Forward an execution operation to its owning devbox
+func (c *Client) ListDevboxAgentSessionsWithResponse(ctx context.Context, options *ListDevboxAgentSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListDevboxAgentSessionsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/agent-sessions",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/agent-sessions")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListDevboxAgentSessionsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListDevboxAgentSessionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListDevboxAgentSessionsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDevboxAgentSessionsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetDevboxCommits Forward an execution operation to its owning devbox
+func (c *Client) GetDevboxCommitsWithResponse(ctx context.Context, options *GetDevboxCommitsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxCommitsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/commits",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/commits")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetDevboxCommitsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetDevboxCommitsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetDevboxCommitsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxCommitsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetDevboxDiff Forward an execution operation to its owning devbox
+func (c *Client) GetDevboxDiffWithResponse(ctx context.Context, options *GetDevboxDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxDiffResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"path":       {Style: "form", Explode: &[]bool{false}[0]},
+		"revision":   {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/diff",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/diff")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetDevboxDiffResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetDevboxDiffErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetDevboxDiffResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxDiffResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// WatchDevboxDiff Forward an execution operation to its owning devbox
+func (c *Client) WatchDevboxDiffWithResponse(ctx context.Context, options *WatchDevboxDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WatchDevboxDiffResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"version": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/diff/watch",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/diff/watch")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &WatchDevboxDiffResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(WatchDevboxDiffErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(WatchDevboxDiffResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "WatchDevboxDiffResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetDevboxFilePreview Forward an execution operation to its owning devbox
+func (c *Client) GetDevboxFilePreviewWithResponse(ctx context.Context, options *GetDevboxFilePreviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxFilePreviewResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"path":       {Style: "form", Explode: &[]bool{false}[0]},
+		"revision":   {Style: "form", Explode: &[]bool{false}[0]},
+		"side":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/file-preview",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/file-preview")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetDevboxFilePreviewResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetDevboxFilePreviewErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetDevboxFilePreviewResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxFilePreviewResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetDevboxFiles Forward an execution operation to its owning devbox
+func (c *Client) GetDevboxFilesWithResponse(ctx context.Context, options *GetDevboxFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxFilesResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/files",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/files")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetDevboxFilesResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetDevboxFilesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetDevboxFilesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxFilesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// PullDevboxWorkspace Forward an execution operation to its owning devbox
+func (c *Client) PullDevboxWorkspaceWithResponse(ctx context.Context, options *PullDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PullDevboxWorkspaceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/pull",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/pull")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &PullDevboxWorkspaceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(PullDevboxWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(PullDevboxWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PullDevboxWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// PushDevboxWorkspace Forward an execution operation to its owning devbox
+func (c *Client) PushDevboxWorkspaceWithResponse(ctx context.Context, options *PushDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PushDevboxWorkspaceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/push",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/push")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &PushDevboxWorkspaceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(PushDevboxWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(PushDevboxWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PushDevboxWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// RefreshDevboxWorkspace Forward an execution operation to its owning devbox
+func (c *Client) RefreshDevboxWorkspaceWithResponse(ctx context.Context, options *RefreshDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshDevboxWorkspaceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/refresh",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/refresh")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RefreshDevboxWorkspaceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RefreshDevboxWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(RefreshDevboxWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshDevboxWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// RetryDevboxWorkspace Forward an execution operation to its owning devbox
+func (c *Client) RetryDevboxWorkspaceWithResponse(ctx context.Context, options *RetryDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RetryDevboxWorkspaceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/retry",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/retry")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RetryDevboxWorkspaceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RetryDevboxWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 202:
+		out.JSON202 = new(RetryDevboxWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON202); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RetryDevboxWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetDevboxRuntime Forward an execution operation to its owning devbox
+func (c *Client) GetDevboxRuntimeWithResponse(ctx context.Context, options *GetDevboxRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxRuntimeResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/runtime")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetDevboxRuntimeResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetDevboxRuntimeErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetDevboxRuntimeResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxRuntimeResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// LaunchDevboxHandoff Forward an execution operation to its owning devbox
+func (c *Client) LaunchDevboxHandoffWithResponse(ctx context.Context, options *LaunchDevboxHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchDevboxHandoffResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &LaunchDevboxHandoffResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(LaunchDevboxHandoffErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(LaunchDevboxHandoffResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchDevboxHandoffResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// LaunchDevboxSession Forward an execution operation to its owning devbox
+func (c *Client) LaunchDevboxSessionWithResponse(ctx context.Context, options *LaunchDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchDevboxSessionResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &LaunchDevboxSessionResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(LaunchDevboxSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(LaunchDevboxSessionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchDevboxSessionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// StopDevboxSession Forward an execution operation to its owning devbox
+func (c *Client) StopDevboxSessionWithResponse(ctx context.Context, options *StopDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopDevboxSessionResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}",
+		Method:     "DELETE",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &StopDevboxSessionResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(StopDevboxSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// RenameDevboxSession Forward an execution operation to its owning devbox
+func (c *Client) RenameDevboxSessionWithResponse(ctx context.Context, options *RenameDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameDevboxSessionResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RenameDevboxSessionResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RenameDevboxSessionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(RenameDevboxSessionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RenameDevboxSessionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetDevboxAttachSpec Forward an execution operation to its owning devbox
+func (c *Client) GetDevboxAttachSpecWithResponse(ctx context.Context, options *GetDevboxAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxAttachSpecResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetDevboxAttachSpecResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetDevboxAttachSpecErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetDevboxAttachSpecResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxAttachSpecResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// SendDevboxInitialMessage Forward an execution operation to its owning devbox
+func (c *Client) SendDevboxInitialMessageWithResponse(ctx context.Context, options *SendDevboxInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SendDevboxInitialMessageResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/initial-message")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &SendDevboxInitialMessageResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(SendDevboxInitialMessageErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(SendDevboxInitialMessageResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SendDevboxInitialMessageResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -27724,6 +30146,216 @@ func (c *Client) GetVersionWithResponse(ctx context.Context, reqEditors ...runti
 	}
 }
 
+// GetExecutionWorker Get authenticated execution worker identity
+func (c *Client) GetExecutionWorkerWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetExecutionWorkerResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker",
+		Method:     "GET",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worker")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetExecutionWorkerResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetExecutionWorkerErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetExecutionWorkerResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetExecutionWorkerResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetWorkerSnapshot Read this account's execution inventory
+func (c *Client) GetWorkerSnapshotWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetWorkerSnapshotResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker/snapshot",
+		Method:     "GET",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worker/snapshot")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetWorkerSnapshotResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetWorkerSnapshotErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetWorkerSnapshotResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkerSnapshotResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// CreateWorkerWorkspace Create a worker workspace from controller context
+func (c *Client) CreateWorkerWorkspaceWithResponse(ctx context.Context, options *CreateWorkerWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkerWorkspaceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worker/workspaces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worker/workspaces")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &CreateWorkerWorkspaceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(CreateWorkerWorkspaceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 202:
+		out.JSON202 = new(CreateWorkerWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON202); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateWorkerWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// RefreshWorkerContext Refresh controller-supplied workspace context
+func (c *Client) RefreshWorkerContextWithResponse(ctx context.Context, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorkerContextResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/context",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worker/workspaces/{id}/context")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RefreshWorkerContextResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RefreshWorkerContextErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // ListWorkspaces List workspaces
 func (c *Client) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListWorkspacesResp, error) {
 	var err error
@@ -29471,6 +32103,458 @@ func (c *Client) ListArchiveStatusRaw(ctx context.Context, httpClient *http.Clie
 		RequestURL: c.apiClient.GetBaseURL() + "/archive/status",
 		Method:     "GET",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ListDevboxConnectionsRaw returns an unread response. The caller must close its body.
+func (c *Client) ListDevboxConnectionsRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes",
+		Method:     "GET",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ConnectDevboxRaw returns an unread response. The caller must close its body.
+func (c *Client) ConnectDevboxRaw(ctx context.Context, httpClient *http.Client, options *ConnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// DiscoverDevboxesRaw returns an unread response. The caller must close its body.
+func (c *Client) DiscoverDevboxesRaw(ctx context.Context, httpClient *http.Client, options *DiscoverDevboxesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"registry": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/discovery",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// DisconnectDevboxRaw returns an unread response. The caller must close its body.
+func (c *Client) DisconnectDevboxRaw(ctx context.Context, httpClient *http.Client, options *DisconnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}",
+		Method:     "DELETE",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ReconnectDevboxRaw returns an unread response. The caller must close its body.
+func (c *Client) ReconnectDevboxRaw(ctx context.Context, httpClient *http.Client, options *ReconnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/reconnect",
+		Method:     "POST",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// StoreDevboxPasteImageRaw returns an unread response. The caller must close its body.
+func (c *Client) StoreDevboxPasteImageRaw(ctx context.Context, httpClient *http.Client, options *StoreDevboxPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/terminal/paste-image",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/octet-stream",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ListDevboxWorkspacesRaw returns an unread response. The caller must close its body.
+func (c *Client) ListDevboxWorkspacesRaw(ctx context.Context, httpClient *http.Client, options *ListDevboxWorkspacesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// CreateDevboxWorkspaceRaw returns an unread response. The caller must close its body.
+func (c *Client) CreateDevboxWorkspaceRaw(ctx context.Context, httpClient *http.Client, options *CreateDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// DeleteDevboxWorkspaceRaw returns an unread response. The caller must close its body.
+func (c *Client) DeleteDevboxWorkspaceRaw(ctx context.Context, httpClient *http.Client, options *DeleteDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"force": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}",
+		Method:        "DELETE",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetDevboxWorkspaceRaw returns an unread response. The caller must close its body.
+func (c *Client) GetDevboxWorkspaceRaw(ctx context.Context, httpClient *http.Client, options *GetDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ListDevboxAgentSessionsRaw returns an unread response. The caller must close its body.
+func (c *Client) ListDevboxAgentSessionsRaw(ctx context.Context, httpClient *http.Client, options *ListDevboxAgentSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/agent-sessions",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetDevboxCommitsRaw returns an unread response. The caller must close its body.
+func (c *Client) GetDevboxCommitsRaw(ctx context.Context, httpClient *http.Client, options *GetDevboxCommitsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/commits",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetDevboxDiffRaw returns an unread response. The caller must close its body.
+func (c *Client) GetDevboxDiffRaw(ctx context.Context, httpClient *http.Client, options *GetDevboxDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"path":       {Style: "form", Explode: &[]bool{false}[0]},
+		"revision":   {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/diff",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// WatchDevboxDiffRaw returns an unread response. The caller must close its body.
+func (c *Client) WatchDevboxDiffRaw(ctx context.Context, httpClient *http.Client, options *WatchDevboxDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"version": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/diff/watch",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetDevboxFilePreviewRaw returns an unread response. The caller must close its body.
+func (c *Client) GetDevboxFilePreviewRaw(ctx context.Context, httpClient *http.Client, options *GetDevboxFilePreviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"path":       {Style: "form", Explode: &[]bool{false}[0]},
+		"revision":   {Style: "form", Explode: &[]bool{false}[0]},
+		"side":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/file-preview",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetDevboxFilesRaw returns an unread response. The caller must close its body.
+func (c *Client) GetDevboxFilesRaw(ctx context.Context, httpClient *http.Client, options *GetDevboxFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/files",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// PullDevboxWorkspaceRaw returns an unread response. The caller must close its body.
+func (c *Client) PullDevboxWorkspaceRaw(ctx context.Context, httpClient *http.Client, options *PullDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/pull",
+		Method:     "POST",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// PushDevboxWorkspaceRaw returns an unread response. The caller must close its body.
+func (c *Client) PushDevboxWorkspaceRaw(ctx context.Context, httpClient *http.Client, options *PushDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/push",
+		Method:     "POST",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// RefreshDevboxWorkspaceRaw returns an unread response. The caller must close its body.
+func (c *Client) RefreshDevboxWorkspaceRaw(ctx context.Context, httpClient *http.Client, options *RefreshDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/refresh",
+		Method:     "POST",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// RetryDevboxWorkspaceRaw returns an unread response. The caller must close its body.
+func (c *Client) RetryDevboxWorkspaceRaw(ctx context.Context, httpClient *http.Client, options *RetryDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/retry",
+		Method:     "POST",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetDevboxRuntimeRaw returns an unread response. The caller must close its body.
+func (c *Client) GetDevboxRuntimeRaw(ctx context.Context, httpClient *http.Client, options *GetDevboxRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// LaunchDevboxHandoffRaw returns an unread response. The caller must close its body.
+func (c *Client) LaunchDevboxHandoffRaw(ctx context.Context, httpClient *http.Client, options *LaunchDevboxHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// LaunchDevboxSessionRaw returns an unread response. The caller must close its body.
+func (c *Client) LaunchDevboxSessionRaw(ctx context.Context, httpClient *http.Client, options *LaunchDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// StopDevboxSessionRaw returns an unread response. The caller must close its body.
+func (c *Client) StopDevboxSessionRaw(ctx context.Context, httpClient *http.Client, options *StopDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}",
+		Method:     "DELETE",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// RenameDevboxSessionRaw returns an unread response. The caller must close its body.
+func (c *Client) RenameDevboxSessionRaw(ctx context.Context, httpClient *http.Client, options *RenameDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetDevboxAttachSpecRaw returns an unread response. The caller must close its body.
+func (c *Client) GetDevboxAttachSpecRaw(ctx context.Context, httpClient *http.Client, options *GetDevboxAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// SendDevboxInitialMessageRaw returns an unread response. The caller must close its body.
+func (c *Client) SendDevboxInitialMessageRaw(ctx context.Context, httpClient *http.Client, options *SendDevboxInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -34576,6 +37660,66 @@ func (c *Client) GetVersionRaw(ctx context.Context, httpClient *http.Client, req
 	return httpClient.Do(req)
 }
 
+// GetExecutionWorkerRaw returns an unread response. The caller must close its body.
+func (c *Client) GetExecutionWorkerRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker",
+		Method:     "GET",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetWorkerSnapshotRaw returns an unread response. The caller must close its body.
+func (c *Client) GetWorkerSnapshotRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker/snapshot",
+		Method:     "GET",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// CreateWorkerWorkspaceRaw returns an unread response. The caller must close its body.
+func (c *Client) CreateWorkerWorkspaceRaw(ctx context.Context, httpClient *http.Client, options *CreateWorkerWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worker/workspaces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// RefreshWorkerContextRaw returns an unread response. The caller must close its body.
+func (c *Client) RefreshWorkerContextRaw(ctx context.Context, httpClient *http.Client, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/context",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // ListWorkspacesRaw returns an unread response. The caller must close its body.
 func (c *Client) ListWorkspacesRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -35287,6 +38431,485 @@ func NewListArchiveStatusRequest(ctx context.Context, baseURL string, options *L
 		RequestURL: c.apiClient.GetBaseURL() + "/archive/status",
 		Method:     "GET",
 		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewListDevboxConnectionsRequest constructs a typed request for a caller-owned transport.
+func NewListDevboxConnectionsRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes",
+		Method:     "GET",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewConnectDevboxRequest constructs a typed request for a caller-owned transport.
+func NewConnectDevboxRequest(ctx context.Context, baseURL string, options *ConnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewDiscoverDevboxesRequest constructs a typed request for a caller-owned transport.
+func NewDiscoverDevboxesRequest(ctx context.Context, baseURL string, options *DiscoverDevboxesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"registry": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/discovery",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewDisconnectDevboxRequest constructs a typed request for a caller-owned transport.
+func NewDisconnectDevboxRequest(ctx context.Context, baseURL string, options *DisconnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}",
+		Method:     "DELETE",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewReconnectDevboxRequest constructs a typed request for a caller-owned transport.
+func NewReconnectDevboxRequest(ctx context.Context, baseURL string, options *ReconnectDevboxRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/reconnect",
+		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewStoreDevboxPasteImageRequest constructs a typed request for a caller-owned transport.
+func NewStoreDevboxPasteImageRequest(ctx context.Context, baseURL string, options *StoreDevboxPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/terminal/paste-image",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/octet-stream",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewListDevboxWorkspacesRequest constructs a typed request for a caller-owned transport.
+func NewListDevboxWorkspacesRequest(ctx context.Context, baseURL string, options *ListDevboxWorkspacesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewCreateDevboxWorkspaceRequest constructs a typed request for a caller-owned transport.
+func NewCreateDevboxWorkspaceRequest(ctx context.Context, baseURL string, options *CreateDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewDeleteDevboxWorkspaceRequest constructs a typed request for a caller-owned transport.
+func NewDeleteDevboxWorkspaceRequest(ctx context.Context, baseURL string, options *DeleteDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"force": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}",
+		Method:        "DELETE",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetDevboxWorkspaceRequest constructs a typed request for a caller-owned transport.
+func NewGetDevboxWorkspaceRequest(ctx context.Context, baseURL string, options *GetDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewListDevboxAgentSessionsRequest constructs a typed request for a caller-owned transport.
+func NewListDevboxAgentSessionsRequest(ctx context.Context, baseURL string, options *ListDevboxAgentSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/agent-sessions",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetDevboxCommitsRequest constructs a typed request for a caller-owned transport.
+func NewGetDevboxCommitsRequest(ctx context.Context, baseURL string, options *GetDevboxCommitsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/commits",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetDevboxDiffRequest constructs a typed request for a caller-owned transport.
+func NewGetDevboxDiffRequest(ctx context.Context, baseURL string, options *GetDevboxDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"path":       {Style: "form", Explode: &[]bool{false}[0]},
+		"revision":   {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/diff",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewWatchDevboxDiffRequest constructs a typed request for a caller-owned transport.
+func NewWatchDevboxDiffRequest(ctx context.Context, baseURL string, options *WatchDevboxDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"version": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/diff/watch",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetDevboxFilePreviewRequest constructs a typed request for a caller-owned transport.
+func NewGetDevboxFilePreviewRequest(ctx context.Context, baseURL string, options *GetDevboxFilePreviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"path":       {Style: "form", Explode: &[]bool{false}[0]},
+		"revision":   {Style: "form", Explode: &[]bool{false}[0]},
+		"side":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/file-preview",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetDevboxFilesRequest constructs a typed request for a caller-owned transport.
+func NewGetDevboxFilesRequest(ctx context.Context, baseURL string, options *GetDevboxFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"base":       {Style: "form", Explode: &[]bool{false}[0]},
+		"commit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"from":       {Style: "form", Explode: &[]bool{false}[0]},
+		"to":         {Style: "form", Explode: &[]bool{false}[0]},
+		"whitespace": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/files",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewPullDevboxWorkspaceRequest constructs a typed request for a caller-owned transport.
+func NewPullDevboxWorkspaceRequest(ctx context.Context, baseURL string, options *PullDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/pull",
+		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewPushDevboxWorkspaceRequest constructs a typed request for a caller-owned transport.
+func NewPushDevboxWorkspaceRequest(ctx context.Context, baseURL string, options *PushDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/push",
+		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewRefreshDevboxWorkspaceRequest constructs a typed request for a caller-owned transport.
+func NewRefreshDevboxWorkspaceRequest(ctx context.Context, baseURL string, options *RefreshDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/refresh",
+		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewRetryDevboxWorkspaceRequest constructs a typed request for a caller-owned transport.
+func NewRetryDevboxWorkspaceRequest(ctx context.Context, baseURL string, options *RetryDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/retry",
+		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetDevboxRuntimeRequest constructs a typed request for a caller-owned transport.
+func NewGetDevboxRuntimeRequest(ctx context.Context, baseURL string, options *GetDevboxRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewLaunchDevboxHandoffRequest constructs a typed request for a caller-owned transport.
+func NewLaunchDevboxHandoffRequest(ctx context.Context, baseURL string, options *LaunchDevboxHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewLaunchDevboxSessionRequest constructs a typed request for a caller-owned transport.
+func NewLaunchDevboxSessionRequest(ctx context.Context, baseURL string, options *LaunchDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewStopDevboxSessionRequest constructs a typed request for a caller-owned transport.
+func NewStopDevboxSessionRequest(ctx context.Context, baseURL string, options *StopDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}",
+		Method:     "DELETE",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewRenameDevboxSessionRequest constructs a typed request for a caller-owned transport.
+func NewRenameDevboxSessionRequest(ctx context.Context, baseURL string, options *RenameDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetDevboxAttachSpecRequest constructs a typed request for a caller-owned transport.
+func NewGetDevboxAttachSpecRequest(ctx context.Context, baseURL string, options *GetDevboxAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewSendDevboxInitialMessageRequest constructs a typed request for a caller-owned transport.
+func NewSendDevboxInitialMessageRequest(ctx context.Context, baseURL string, options *SendDevboxInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -40700,6 +44323,70 @@ func NewGetVersionRequest(ctx context.Context, baseURL string, reqEditors ...run
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetExecutionWorkerRequest constructs a typed request for a caller-owned transport.
+func NewGetExecutionWorkerRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker",
+		Method:     "GET",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetWorkerSnapshotRequest constructs a typed request for a caller-owned transport.
+func NewGetWorkerSnapshotRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker/snapshot",
+		Method:     "GET",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewCreateWorkerWorkspaceRequest constructs a typed request for a caller-owned transport.
+func NewCreateWorkerWorkspaceRequest(ctx context.Context, baseURL string, options *CreateWorkerWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worker/workspaces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewRefreshWorkerContextRequest constructs a typed request for a caller-owned transport.
+func NewRefreshWorkerContextRequest(ctx context.Context, baseURL string, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/context",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewListWorkspacesRequest constructs a typed request for a caller-owned transport.
 func NewListWorkspacesRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -41348,11 +45035,21 @@ const (
 	ArchiveStatusResponseActivePhasesPromptMaintenance     ArchiveStatusResponseActivePhases = "prompt_maintenance"
 )
 
+type AttributionStatus string
+
+const (
+	AttributionStatusMatched         AttributionStatus = "matched"
+	AttributionStatusMismatch        AttributionStatus = "mismatch"
+	AttributionStatusPreservedAuthor AttributionStatus = "preserved_author"
+	AttributionStatusUnverified      AttributionStatus = "unverified"
+)
+
 type HostSummaryFederationRole string
 
 const (
-	HostSummaryFederationRoleHub   HostSummaryFederationRole = "hub"
-	HostSummaryFederationRoleSpoke HostSummaryFederationRole = "spoke"
+	HostSummaryFederationRoleDevbox HostSummaryFederationRole = "devbox"
+	HostSummaryFederationRoleHub    HostSummaryFederationRole = "hub"
+	HostSummaryFederationRoleSpoke  HostSummaryFederationRole = "spoke"
 )
 
 type IssueWorkflowStatus string
@@ -41604,6 +45301,30 @@ const (
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
 )
 
+// GetDevboxFilePreviewQueryBase Diff base: head, pushed, or merge-target
+type GetDevboxFilePreviewQueryBase string
+
+const (
+	GetDevboxFilePreviewQueryBaseHead        GetDevboxFilePreviewQueryBase = "head"
+	GetDevboxFilePreviewQueryBaseMergeTarget GetDevboxFilePreviewQueryBase = "merge-target"
+	GetDevboxFilePreviewQueryBasePushed      GetDevboxFilePreviewQueryBase = "pushed"
+)
+
+// GetDevboxFilePreviewQueryWhitespace Set to hide to ignore whitespace-only changes
+type GetDevboxFilePreviewQueryWhitespace string
+
+const (
+	GetDevboxFilePreviewQueryWhitespaceHide GetDevboxFilePreviewQueryWhitespace = "hide"
+)
+
+// GetDevboxFilePreviewQuerySide Optional diff side to read for context expansion
+type GetDevboxFilePreviewQuerySide string
+
+const (
+	GetDevboxFilePreviewQuerySideNew GetDevboxFilePreviewQuerySide = "new"
+	GetDevboxFilePreviewQuerySideOld GetDevboxFilePreviewQuerySide = "old"
+)
+
 // GetPullFilePreviewOnHostQuerySide Optional diff side to read for context expansion
 type GetPullFilePreviewOnHostQuerySide string
 
@@ -41679,6 +45400,10 @@ type ReceiveAgentHookHeaders struct {
 	XKennForgeRuntimeSessionKey *string `json:"X-Kenn-Forge-Runtime-Session-Key,omitempty"`
 }
 
+type StoreDevboxPasteImageHeaders struct {
+	ContentType *string `json:"Content-Type,omitempty"`
+}
+
 type BeginFederationEnrollmentHeaders struct {
 	Authorization *string `json:"Authorization,omitempty"`
 }
@@ -41726,6 +45451,125 @@ type DispatchWorkflowPath struct {
 
 type ReceiveAgentHookPath struct {
 	Agent string `json:"agent"`
+}
+
+type DisconnectDevboxPath struct {
+	ConnectionID string `json:"connection_id"`
+}
+
+type ReconnectDevboxPath struct {
+	ConnectionID string `json:"connection_id"`
+}
+
+type StoreDevboxPasteImagePath struct {
+	ConnectionID string `json:"connection_id"`
+}
+
+type ListDevboxWorkspacesPath struct {
+	ConnectionID string `json:"connection_id"`
+}
+
+type CreateDevboxWorkspacePath struct {
+	ConnectionID string `json:"connection_id"`
+}
+
+type DeleteDevboxWorkspacePath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type GetDevboxWorkspacePath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type ListDevboxAgentSessionsPath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type GetDevboxCommitsPath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type GetDevboxDiffPath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type WatchDevboxDiffPath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type GetDevboxFilePreviewPath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type GetDevboxFilesPath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type PullDevboxWorkspacePath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type PushDevboxWorkspacePath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type RefreshDevboxWorkspacePath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type RetryDevboxWorkspacePath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type GetDevboxRuntimePath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type LaunchDevboxHandoffPath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type LaunchDevboxSessionPath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type StopDevboxSessionPath struct {
+	ID           string `json:"id"`
+	SessionKey   string `json:"session_key"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type RenameDevboxSessionPath struct {
+	ID           string `json:"id"`
+	SessionKey   string `json:"session_key"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type GetDevboxAttachSpecPath struct {
+	ID           string `json:"id"`
+	SessionKey   string `json:"session_key"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type SendDevboxInitialMessagePath struct {
+	ID           string `json:"id"`
+	SessionKey   string `json:"session_key"`
+	ConnectionID string `json:"connection_id"`
 }
 
 type DeleteDocsFolderPath struct {
@@ -43286,6 +47130,10 @@ type UpdateRepoPresetPath struct {
 	Name string `json:"name"`
 }
 
+type RefreshWorkerContextPath struct {
+	ID string `json:"id"`
+}
+
 type DeleteWorkspacePath struct {
 	ID string `json:"id"`
 }
@@ -43395,6 +47243,20 @@ type ReceiveAgentHookBody = HookEvent
 type PauseArchivesBody = ArchiveMutationBody
 
 type StartArchivesBody = ArchiveMutationBody
+
+type ConnectDevboxBody = ConnectDevboxRequest
+
+type StoreDevboxPasteImageBody = runtime.File
+
+type CreateDevboxWorkspaceBody = CreateDevboxWorkspaceInputBody
+
+type LaunchDevboxHandoffBody = LaunchWorkspaceAgentHandoffInputBody
+
+type LaunchDevboxSessionBody = LaunchWorkspaceRuntimeSessionInputBody
+
+type RenameDevboxSessionBody = RenameWorkspaceRuntimeSessionInputBody
+
+type SendDevboxInitialMessageBody = SubmitInitialMessageInputBody
 
 type CreateDocsFolderBody = CreateDocsFolderInputBody
 
@@ -43654,6 +47516,10 @@ type StoreTerminalPasteImageBody = runtime.File
 
 type SetActiveWorktreeBody = SetActiveWorktreeInputBody
 
+type CreateWorkerWorkspaceBody = WorkerCreateRequest
+
+type RefreshWorkerContextBody = WorkspaceLaunchSpec
+
 type CreateWorkspaceBody = CreateWorkspaceInputBody
 
 type CreateWorkspaceKataLinkBody = KataCreateLinkRequest
@@ -43745,6 +47611,85 @@ type GetArchiveReportQuery struct {
 type ListArchiveStatusQuery struct {
 	// Repo Repeated provider|platform_host/repo_path filters.
 	Repo []string `json:"repo,omitempty"`
+}
+
+type DiscoverDevboxesQuery struct {
+	Registry *string `json:"registry,omitempty"`
+}
+
+type DeleteDevboxWorkspaceQuery struct {
+	Force *bool `json:"force,omitempty"`
+}
+
+type GetDevboxDiffQuery struct {
+	// Base Diff base: head, pushed, or merge-target
+	Base *string `json:"base,omitempty"`
+
+	// Whitespace Set to hide to ignore whitespace-only changes
+	Whitespace *string `json:"whitespace,omitempty"`
+
+	// Path Optional file path to limit the returned patch
+	Path *string `json:"path,omitempty"`
+
+	// Commit Scope to a single commit SHA
+	Commit *string `json:"commit,omitempty"`
+
+	// From Start SHA for range diff (inclusive)
+	From *string `json:"from,omitempty"`
+
+	// To End SHA for range diff (inclusive)
+	To *string `json:"to,omitempty"`
+
+	// Revision Optional snapshot_version returned by the workspace files endpoint
+	Revision *string `json:"revision,omitempty"`
+}
+
+type WatchDevboxDiffQuery struct {
+	// Version Last observed opaque workspace diff snapshot version
+	Version *string `json:"version,omitempty"`
+}
+
+type GetDevboxFilePreviewQuery struct {
+	// Base Diff base: head, pushed, or merge-target
+	Base *GetDevboxFilePreviewQueryBase `json:"base,omitempty"`
+
+	// Whitespace Set to hide to ignore whitespace-only changes
+	Whitespace *GetDevboxFilePreviewQueryWhitespace `json:"whitespace,omitempty"`
+
+	// Path Changed file path to preview
+	Path *string `json:"path,omitempty"`
+
+	// Side Optional diff side to read for context expansion
+	Side *GetDevboxFilePreviewQuerySide `json:"side,omitempty"`
+
+	// Commit Scope to a single commit SHA
+	Commit *string `json:"commit,omitempty"`
+
+	// From Start SHA for range diff (inclusive)
+	From *string `json:"from,omitempty"`
+
+	// To End SHA for range diff (inclusive)
+	To *string `json:"to,omitempty"`
+
+	// Revision Optional snapshot_version returned by the workspace files endpoint
+	Revision *string `json:"revision,omitempty"`
+}
+
+type GetDevboxFilesQuery struct {
+	// Base Diff base: head, pushed, or merge-target
+	Base *string `json:"base,omitempty"`
+
+	// Whitespace Set to hide to ignore whitespace-only changes
+	Whitespace *string `json:"whitespace,omitempty"`
+
+	// Commit Scope to a single commit SHA
+	Commit *string `json:"commit,omitempty"`
+
+	// From Start SHA for range diff (inclusive)
+	From *string `json:"from,omitempty"`
+
+	// To End SHA for range diff (inclusive)
+	To *string `json:"to,omitempty"`
 }
 
 type BrowseDocsFoldersQuery struct {
@@ -44323,6 +48268,106 @@ type StartArchivesErrorResponse = ProblemError
 type ListArchiveStatusResponse []ArchiveStatusResponse
 
 type ListArchiveStatusErrorResponse = ProblemError
+
+type ListDevboxConnectionsResponse []Connection
+
+type ListDevboxConnectionsErrorResponse = ProblemError
+
+type ConnectDevboxResponse = Connection
+
+type ConnectDevboxErrorResponse = ProblemError
+
+type DiscoverDevboxesResponse = Discovery
+
+type DiscoverDevboxesErrorResponse = ProblemError
+
+type DisconnectDevboxErrorResponse = ProblemError
+
+type ReconnectDevboxErrorResponse = ProblemError
+
+type StoreDevboxPasteImageResponse = TerminalPasteImageOutputBody
+
+type StoreDevboxPasteImageErrorResponse = ProblemError
+
+type ListDevboxWorkspacesResponse = ListWorkspacesOutputBody
+
+type ListDevboxWorkspacesErrorResponse = ProblemError
+
+type CreateDevboxWorkspaceResponse = WorkspaceResponse
+
+type CreateDevboxWorkspaceErrorResponse = ProblemError
+
+type DeleteDevboxWorkspaceErrorResponse = ProblemError
+
+type GetDevboxWorkspaceResponse = WorkspaceResponse
+
+type GetDevboxWorkspaceErrorResponse = ProblemError
+
+type ListDevboxAgentSessionsResponse = ListWorkspaceAgentSessionsOutputBody
+
+type ListDevboxAgentSessionsErrorResponse = ProblemError
+
+type GetDevboxCommitsResponse = CommitsResponse
+
+type GetDevboxCommitsErrorResponse = ProblemError
+
+type GetDevboxDiffResponse = DiffResponse
+
+type GetDevboxDiffErrorResponse = ProblemError
+
+type WatchDevboxDiffResponse = WorkspaceDiffWatchResponse
+
+type WatchDevboxDiffErrorResponse = ProblemError
+
+type GetDevboxFilePreviewResponse = FilePreviewResponse
+
+type GetDevboxFilePreviewErrorResponse = ProblemError
+
+type GetDevboxFilesResponse = FilesResponse
+
+type GetDevboxFilesErrorResponse = ProblemError
+
+type PullDevboxWorkspaceResponse = WorkspaceResponse
+
+type PullDevboxWorkspaceErrorResponse = ProblemError
+
+type PushDevboxWorkspaceResponse = WorkspaceResponse
+
+type PushDevboxWorkspaceErrorResponse = ProblemError
+
+type RefreshDevboxWorkspaceResponse = WorkspaceResponse
+
+type RefreshDevboxWorkspaceErrorResponse = ProblemError
+
+type RetryDevboxWorkspaceResponse = WorkspaceResponse
+
+type RetryDevboxWorkspaceErrorResponse = ProblemError
+
+type GetDevboxRuntimeResponse = WorkspaceRuntimeResponse
+
+type GetDevboxRuntimeErrorResponse = ProblemError
+
+type LaunchDevboxHandoffResponse = WorkspaceAgentHandoffResponse
+
+type LaunchDevboxHandoffErrorResponse = ProblemError
+
+type LaunchDevboxSessionResponse = SessionInfo
+
+type LaunchDevboxSessionErrorResponse = ProblemError
+
+type StopDevboxSessionErrorResponse = ProblemError
+
+type RenameDevboxSessionResponse = SessionInfo
+
+type RenameDevboxSessionErrorResponse = ProblemError
+
+type GetDevboxAttachSpecResponse = RuntimeAttachSpecResponse
+
+type GetDevboxAttachSpecErrorResponse = ProblemError
+
+type SendDevboxInitialMessageResponse = AgentInitialMessageStatusResponse
+
+type SendDevboxInitialMessageErrorResponse = ProblemError
 
 type BrowseDocsFoldersResponse = DocsBrowseOutputBody
 
@@ -45388,6 +49433,20 @@ type GetVersionResponse = VersionOutputBody
 
 type GetVersionErrorResponse = ProblemError
 
+type GetExecutionWorkerResponse = WorkerIdentity
+
+type GetExecutionWorkerErrorResponse = ProblemError
+
+type GetWorkerSnapshotResponse = RawSnapshot
+
+type GetWorkerSnapshotErrorResponse = ProblemError
+
+type CreateWorkerWorkspaceResponse = WorkspaceResponse
+
+type CreateWorkerWorkspaceErrorResponse = ProblemError
+
+type RefreshWorkerContextErrorResponse = ProblemError
+
 type ListWorkspacesResponse = ListWorkspacesOutputBody
 
 type ListWorkspacesErrorResponse = ProblemError
@@ -45590,6 +49649,218 @@ type ListArchiveStatusResp struct {
 	StatusCode   int
 	Error        *ListArchiveStatusErrorResponse
 	JSON200      *ListArchiveStatusResponse
+}
+
+type ListDevboxConnectionsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *ListDevboxConnectionsErrorResponse
+	JSON200      *ListDevboxConnectionsResponse
+}
+
+type ConnectDevboxResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *ConnectDevboxErrorResponse
+	JSON200      *ConnectDevboxResponse
+}
+
+type DiscoverDevboxesResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *DiscoverDevboxesErrorResponse
+	JSON200      *DiscoverDevboxesResponse
+}
+
+type DisconnectDevboxResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *DisconnectDevboxErrorResponse
+}
+
+type ReconnectDevboxResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *ReconnectDevboxErrorResponse
+}
+
+type StoreDevboxPasteImageResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *StoreDevboxPasteImageErrorResponse
+	JSON201      *StoreDevboxPasteImageResponse
+}
+
+type ListDevboxWorkspacesResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *ListDevboxWorkspacesErrorResponse
+	JSON200      *ListDevboxWorkspacesResponse
+}
+
+type CreateDevboxWorkspaceResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *CreateDevboxWorkspaceErrorResponse
+	JSON200      *CreateDevboxWorkspaceResponse
+}
+
+type DeleteDevboxWorkspaceResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *DeleteDevboxWorkspaceErrorResponse
+}
+
+type GetDevboxWorkspaceResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetDevboxWorkspaceErrorResponse
+	JSON200      *GetDevboxWorkspaceResponse
+}
+
+type ListDevboxAgentSessionsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *ListDevboxAgentSessionsErrorResponse
+	JSON200      *ListDevboxAgentSessionsResponse
+}
+
+type GetDevboxCommitsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetDevboxCommitsErrorResponse
+	JSON200      *GetDevboxCommitsResponse
+}
+
+type GetDevboxDiffResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetDevboxDiffErrorResponse
+	JSON200      *GetDevboxDiffResponse
+}
+
+type WatchDevboxDiffResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *WatchDevboxDiffErrorResponse
+	JSON200      *WatchDevboxDiffResponse
+}
+
+type GetDevboxFilePreviewResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetDevboxFilePreviewErrorResponse
+	JSON200      *GetDevboxFilePreviewResponse
+}
+
+type GetDevboxFilesResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetDevboxFilesErrorResponse
+	JSON200      *GetDevboxFilesResponse
+}
+
+type PullDevboxWorkspaceResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *PullDevboxWorkspaceErrorResponse
+	JSON200      *PullDevboxWorkspaceResponse
+}
+
+type PushDevboxWorkspaceResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *PushDevboxWorkspaceErrorResponse
+	JSON200      *PushDevboxWorkspaceResponse
+}
+
+type RefreshDevboxWorkspaceResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *RefreshDevboxWorkspaceErrorResponse
+	JSON200      *RefreshDevboxWorkspaceResponse
+}
+
+type RetryDevboxWorkspaceResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *RetryDevboxWorkspaceErrorResponse
+	JSON202      *RetryDevboxWorkspaceResponse
+}
+
+type GetDevboxRuntimeResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetDevboxRuntimeErrorResponse
+	JSON200      *GetDevboxRuntimeResponse
+}
+
+type LaunchDevboxHandoffResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *LaunchDevboxHandoffErrorResponse
+	JSON200      *LaunchDevboxHandoffResponse
+}
+
+type LaunchDevboxSessionResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *LaunchDevboxSessionErrorResponse
+	JSON200      *LaunchDevboxSessionResponse
+}
+
+type StopDevboxSessionResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *StopDevboxSessionErrorResponse
+}
+
+type RenameDevboxSessionResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *RenameDevboxSessionErrorResponse
+	JSON200      *RenameDevboxSessionResponse
+}
+
+type GetDevboxAttachSpecResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetDevboxAttachSpecErrorResponse
+	JSON200      *GetDevboxAttachSpecResponse
+}
+
+type SendDevboxInitialMessageResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *SendDevboxInitialMessageErrorResponse
+	JSON200      *SendDevboxInitialMessageResponse
 }
 
 type BrowseDocsFoldersResp struct {
@@ -47992,6 +52263,37 @@ type GetVersionResp struct {
 	JSON200      *GetVersionResponse
 }
 
+type GetExecutionWorkerResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetExecutionWorkerErrorResponse
+	JSON200      *GetExecutionWorkerResponse
+}
+
+type GetWorkerSnapshotResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetWorkerSnapshotErrorResponse
+	JSON200      *GetWorkerSnapshotResponse
+}
+
+type CreateWorkerWorkspaceResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *CreateWorkerWorkspaceErrorResponse
+	JSON202      *CreateWorkerWorkspaceResponse
+}
+
+type RefreshWorkerContextResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *RefreshWorkerContextErrorResponse
+}
+
 type ListWorkspacesResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -48536,6 +52838,37 @@ type ArchiveStatusResponse struct {
 	Status                 ArchiveStatusResponseStatus         `json:"status"`
 }
 
+type Assignment struct {
+	Account            string `json:"account"`
+	GithubUserID       int64  `json:"github_user_id"`
+	HostID             string `json:"host_id"`
+	Maintenance        bool   `json:"maintenance"`
+	Name               string `json:"name"`
+	NodeID             string `json:"node_id"`
+	Protocol           int64  `json:"protocol"`
+	Role               string `json:"role"`
+	SSHAddress         string `json:"ssh_address"`
+	SSHHostFingerprint string `json:"ssh_host_fingerprint"`
+	UID                int32  `json:"uid"`
+	URL                string `json:"url"`
+}
+
+type Attribution struct {
+	AuthorEmail          string            `json:"author_email"`
+	AuthorID             int64             `json:"author_id"`
+	AuthorName           string            `json:"author_name"`
+	Branch               string            `json:"branch"`
+	CommitterEmail       string            `json:"committer_email"`
+	CommitterID          int64             `json:"committer_id"`
+	CommitterName        string            `json:"committer_name"`
+	ExpectedGithubUserID int64             `json:"expected_github_user_id"`
+	Message              string            `json:"message"`
+	Oid                  string            `json:"oid"`
+	Pushed               bool              `json:"pushed"`
+	Repository           string            `json:"repository"`
+	Status               AttributionStatus `json:"status"`
+}
+
 type BodySnippet struct {
 	Matches []SnippetRange `json:"matches"`
 	Text    string         `json:"text"`
@@ -48613,11 +52946,15 @@ type CommentAutocompleteResponse struct {
 }
 
 type CommitResponse struct {
+	AuthorEmail *string `json:"author_email,omitempty"`
+
 	// AuthorName Commit author display name
 	AuthorName string `json:"author_name"`
 
 	// AuthoredAt Commit author date (RFC3339)
-	AuthoredAt time.Time `json:"authored_at"`
+	AuthoredAt     time.Time `json:"authored_at"`
+	CommitterEmail *string   `json:"committer_email,omitempty"`
+	CommitterName  *string   `json:"committer_name,omitempty"`
 
 	// Message First line of commit message
 	Message string `json:"message"`
@@ -48661,6 +52998,33 @@ type ConfiguredRepoStatus struct {
 	WorktreeBasePath  *string `json:"worktree_base_path,omitempty"`
 }
 
+type ConnectDevboxRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	HostID   string  `json:"host_id"`
+	Registry string  `json:"registry"`
+}
+
+type Connection struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema             *string `json:"$schema,omitempty"`
+	Account            string  `json:"account"`
+	GithubUserID       int64   `json:"github_user_id"`
+	HostID             string  `json:"host_id"`
+	ID                 string  `json:"id"`
+	Maintenance        bool    `json:"maintenance"`
+	Name               string  `json:"name"`
+	NodeID             string  `json:"node_id"`
+	Protocol           int64   `json:"protocol"`
+	RegistryID         string  `json:"registry_id"`
+	Revision           string  `json:"revision"`
+	Role               string  `json:"role"`
+	SSHAddress         string  `json:"ssh_address"`
+	SSHHostFingerprint string  `json:"ssh_host_fingerprint"`
+	UID                int32   `json:"uid"`
+	URL                string  `json:"url"`
+}
+
 type CreateAdHocWorkspaceHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
@@ -48676,6 +53040,19 @@ type CreateAdHocWorkspaceInputBody struct {
 
 	// Branch Branch for the new worktree; generated when empty
 	Branch              *string `json:"branch,omitempty"`
+	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
+}
+
+type CreateDevboxWorkspaceInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string `json:"$schema,omitempty"`
+	Branch              *string `json:"branch,omitempty"`
+	IssueNumber         *int64  `json:"issue_number,omitempty"`
+	MrNumber            *int64  `json:"mr_number,omitempty"`
+	Name                string  `json:"name"`
+	Owner               string  `json:"owner"`
+	PlatformHost        string  `json:"platform_host"`
+	Provider            string  `json:"provider"`
 	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }
 
@@ -48906,6 +53283,17 @@ type DiffReviewThreadResponse struct {
 	StartLine         *int64  `json:"start_line,omitempty"`
 	StartSide         *string `json:"start_side,omitempty"`
 	UpdatedAt         string  `json:"updated_at"`
+}
+
+type Discovery struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string      `json:"$schema,omitempty"`
+	Devboxes     []Assignment `json:"devboxes"`
+	GithubUserID int64        `json:"github_user_id"`
+	Protocol     int64        `json:"protocol"`
+	RegistryID   string       `json:"registry_id"`
+	RegistryURL  *string      `json:"registry_url,omitempty"`
+	Revision     string       `json:"revision"`
 }
 
 type DocsBrowseEntry struct {
@@ -50641,6 +55029,13 @@ type PullResponse struct {
 	Upstream    string  `json:"upstream"`
 }
 
+type PushState struct {
+	Branch     string `json:"branch"`
+	Oid        string `json:"oid"`
+	Pushed     bool   `json:"pushed"`
+	Repository string `json:"repository"`
+}
+
 type QuickAction struct {
 	Agent  string `json:"agent"`
 	Label  string `json:"label"`
@@ -51694,6 +56089,25 @@ type VersionOutputBody struct {
 	Version   string  `json:"version"`
 }
 
+type WorkerCreateRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string                   `json:"$schema,omitempty"`
+	Branch              string                    `json:"branch"`
+	LaunchSpec          *WorkspaceLaunchSpec      `json:"launch_spec,omitempty"`
+	Repository          WorkspaceLaunchRepository `json:"repository"`
+	ReuseExistingBranch bool                      `json:"reuse_existing_branch"`
+}
+
+type WorkerIdentity struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string `json:"$schema,omitempty"`
+	GithubUserID int64   `json:"github_user_id"`
+	NodeID       string  `json:"node_id"`
+	Protocol     int64   `json:"protocol"`
+	Role         string  `json:"role"`
+	UID          int32   `json:"uid"`
+}
+
 type WorkflowApprovalResponse struct {
 	Checked  bool  `json:"checked"`
 	Count    int64 `json:"count"`
@@ -51898,7 +56312,11 @@ type WorkspaceKataSummary struct {
 }
 
 type WorkspaceLaunchPull struct {
+	BaseBranch       *string                         `json:"base_branch,omitempty"`
+	BaseOid          *string                         `json:"base_oid,omitempty"`
+	BaseRepoID       *string                         `json:"base_repo_id,omitempty"`
 	HeadBranch       string                          `json:"head_branch"`
+	HeadOid          *string                         `json:"head_oid,omitempty"`
 	HeadRepoCloneURL string                          `json:"head_repo_clone_url"`
 	HeadRepoKind     WorkspaceLaunchPullHeadRepoKind `json:"head_repo_kind"`
 	SnapshotRevision int64                           `json:"snapshot_revision"`
@@ -51971,9 +56389,10 @@ type WorkspaceResponse struct {
 	AssociatedPrNumber  *int64     `json:"associated_pr_number,omitempty"`
 
 	// BranchUpstreamMissing True when the current branch has an origin upstream configured but its local remote-tracking ref is absent; clients may offer Push so branch sync can verify or create the remote branch.
-	BranchUpstreamMissing *bool  `json:"branch_upstream_missing,omitempty"`
-	CommitsAhead          *int64 `json:"commits_ahead,omitempty"`
-	CommitsBehind         *int64 `json:"commits_behind,omitempty"`
+	BranchUpstreamMissing *bool        `json:"branch_upstream_missing,omitempty"`
+	CommitAttribution     *Attribution `json:"commit_attribution,omitempty"`
+	CommitsAhead          *int64       `json:"commits_ahead,omitempty"`
+	CommitsBehind         *int64       `json:"commits_behind,omitempty"`
 
 	// CommitsVsPrHead True when the current branch has no upstream and commits_ahead/commits_behind instead compare against the provider's locally fetched pull-request head ref, as for fork pull requests. The counts name no push or pull target, so clients must not offer branch sync for them.
 	CommitsVsPrHead *bool `json:"commits_vs_pr_head,omitempty"`
@@ -52009,6 +56428,7 @@ type WorkspaceResponse struct {
 	MrState            *string                          `json:"mr_state,omitempty"`
 	MrTitle            *string                          `json:"mr_title,omitempty"`
 	PlatformHost       string                           `json:"platform_host"`
+	PushState          *PushState                       `json:"push_state,omitempty"`
 	Repo               RepoRefResponse                  `json:"repo"`
 	RepoName           string                           `json:"repo_name"`
 	RepoOwner          string                           `json:"repo_owner"`
@@ -52033,6 +56453,7 @@ type WorkspaceRuntimeResponse struct {
 
 type WorkspaceSettingsUpdate struct {
 	AutoAssignOnCreate     *bool                                      `json:"auto_assign_on_create,omitempty"`
+	DefaultExecutionTarget *string                                    `json:"default_execution_target,omitempty"`
 	DefaultSidebarView     *WorkspaceSettingsUpdateDefaultSidebarView `json:"default_sidebar_view,omitempty"`
 	ShowAgentStatusInLists *bool                                      `json:"show_agent_status_in_lists,omitempty"`
 }
@@ -52084,6 +56505,7 @@ type WorkspaceSummary struct {
 
 type Workspaces struct {
 	AutoAssignOnCreate     bool                         `json:"auto_assign_on_create"`
+	DefaultExecutionTarget *string                      `json:"default_execution_target,omitempty"`
 	DefaultSidebarView     WorkspacesDefaultSidebarView `json:"default_sidebar_view"`
 	ShowAgentStatusInLists bool                         `json:"show_agent_status_in_lists"`
 }

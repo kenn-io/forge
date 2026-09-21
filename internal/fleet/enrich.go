@@ -221,6 +221,9 @@ func buildHost(host NeutralHost, observer Observer, identity Identity) HostSumma
 	kind := "remote"
 	transport := "http"
 	policy := AvailabilityPolicy(RealCapabilityPolicy{})
+	if host.FederationRole == RoleDevbox {
+		kind = "devbox"
+	}
 	if isSelf {
 		kind = "self"
 		transport = "local"

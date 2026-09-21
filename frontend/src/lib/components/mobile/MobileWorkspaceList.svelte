@@ -259,9 +259,9 @@
       ? executeOpaqueGeneratedApiRequest<unknown>(`${action} mobile Fleet workspace`, (client, signal) => {
           const params = { hostKey, id: workspace.id };
           switch (action) {
-            case "push": return client.FleetService.pushFleetWorkspaceBranch(params, { signal });
-            case "pull": return client.FleetService.pullFleetWorkspaceBranch(params, { signal });
-            case "refresh": return client.FleetService.refreshFleetWorkspace(params, { signal });
+            case "push": return (hostKey.startsWith("devbox:") ? client.DevboxesService.pushDevboxWorkspace({ connectionId: hostKey.slice(7), id: workspace.id }, { signal }) : client.FleetService.pushFleetWorkspaceBranch(params, { signal }));
+            case "pull": return (hostKey.startsWith("devbox:") ? client.DevboxesService.pullDevboxWorkspace({ connectionId: hostKey.slice(7), id: workspace.id }, { signal }) : client.FleetService.pullFleetWorkspaceBranch(params, { signal }));
+            case "refresh": return (hostKey.startsWith("devbox:") ? client.DevboxesService.refreshDevboxWorkspace({ connectionId: hostKey.slice(7), id: workspace.id }, { signal }) : client.FleetService.refreshFleetWorkspace(params, { signal }));
             case "reveal": return client.FleetService.revealFleetWorkspace(params, { signal });
           }
         }).pipe(Effect.asVoid)
@@ -299,12 +299,15 @@
     actionBusy = `${workspace.fleet_host_key ?? "local"}:${workspace.id}:delete`;
     const hostKey = workspace.fleet_host_key;
     const command = hostKey
-      ? executeOpaqueGeneratedApiRequest("delete mobile Fleet workspace", (client, signal) =>
-          client.FleetService.deleteFleetWorkspace(
+      ? executeOpaqueGeneratedApiRequest<unknown>("delete mobile Fleet workspace", (client, signal) =>
+          (hostKey.startsWith("devbox:") ? client.DevboxesService.deleteDevboxWorkspace({ connectionId: hostKey.slice(7),  id: workspace.id },
+            force ? { force: true } : undefined,
+            { signal },
+          ) : client.FleetService.deleteFleetWorkspace(
             { hostKey, id: workspace.id },
             force ? { force: true } : undefined,
             { signal },
-          ),
+          )),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("delete mobile workspace", (client, signal) =>
           client.WorkspacesService.deleteWorkspace(
@@ -622,7 +625,9 @@
         {#if canPush(actionsWorkspace)}<button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("push")}>Push branch</button>{/if}
         {#if canPull(actionsWorkspace)}<button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("pull")}>Pull remote changes</button>{/if}
         <button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("refresh")}>Refresh workspace</button>
-        <button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("reveal")}>Reveal worktree</button>
+        {#if !actionsWorkspace.fleet_host_key?.startsWith("devbox:")}
+          <button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("reveal")}>Reveal worktree</button>
+        {/if}
         <button type="button" onclick={() => copySheetValue("branch")}>Copy branch name</button>
         <button type="button" onclick={() => copySheetValue("path")}>Copy worktree path</button>
         {#if itemURL}

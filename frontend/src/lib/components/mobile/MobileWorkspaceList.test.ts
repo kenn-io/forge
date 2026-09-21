@@ -98,6 +98,20 @@ describe("MobileWorkspaceList", () => {
     expect(onOpen).toHaveBeenCalledWith("ws-1", undefined);
   });
 
+  it.each([undefined, "peer-a", "devbox:compute-a"])("offers Reveal only for supported hosts (%s)", async (hostKey) => {
+    mockGet.mockImplementation((path: string) =>
+      Promise.resolve({
+        data: path === "/snapshot" ? { hosts: [], workspaces: [{ ...fixture, fleet_host_key: hostKey }] } : {},
+      }),
+    );
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Build mobile workspaces" }));
+    const actions = within(await screen.findByRole("dialog", { name: "Workspace actions" }));
+    expect(Boolean(actions.queryByRole("button", { name: "Reveal worktree" }))).toBe(!hostKey?.startsWith("devbox:"));
+    expect(actions.getByRole("button", { name: "Copy worktree path" })).toBeTruthy();
+  });
+
   it("offers the first push when the configured upstream branch is missing", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {

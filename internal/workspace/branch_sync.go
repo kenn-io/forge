@@ -149,6 +149,11 @@ func (m *Manager) validateBranchSyncLaunchSpec(
 	if workspace == nil {
 		return nil, false, ErrWorkspaceNotFound
 	}
+	if m.executionWorker.Enabled {
+		// The broker rechecks repository access for every network operation.
+		// A source-context lease is needed for setup, not an existing checkout.
+		return workspace, true, m.verifyWorkspaceRepository(ctx, workspace)
+	}
 	spec, err := m.RequireWorkspaceLaunchSpec(ctx, workspace)
 	return workspace, spec != nil && m.requireProviderCredential, err
 }

@@ -7,8 +7,9 @@ type NodeID string
 type Role string
 
 const (
-	RoleHub   Role = "hub"
-	RoleSpoke Role = "spoke"
+	RoleHub    Role = "hub"
+	RoleSpoke  Role = "spoke"
+	RoleDevbox Role = "devbox"
 )
 
 // RepositoryIdentity is the provider-verified cross-spoke repository key.
@@ -333,7 +334,7 @@ type HostSummary struct {
 	NodeID                string                               `json:"nodeID"`
 	Name                  string                               `json:"name"`
 	Kind                  string                               `json:"kind"`
-	FederationRole        Role                                 `json:"federationRole" enum:"hub,spoke"`
+	FederationRole        Role                                 `json:"federationRole" enum:"hub,spoke,devbox"`
 	BaseURL               string                               `json:"baseURL,omitempty" format:"uri"`
 	Platform              string                               `json:"platform"`
 	PreferredTransport    string                               `json:"preferredTransport"`

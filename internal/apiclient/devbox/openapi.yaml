@@ -1,0 +1,423 @@
+components:
+  schemas:
+    Assignment:
+      additionalProperties: false
+      properties:
+        account:
+          type: string
+        github_user_id:
+          format: int64
+          type: integer
+        host_id:
+          type: string
+        maintenance:
+          type: boolean
+        name:
+          type: string
+        node_id:
+          type: string
+        protocol:
+          format: int64
+          type: integer
+        role:
+          type: string
+        ssh_address:
+          type: string
+        ssh_host_fingerprint:
+          type: string
+        uid:
+          format: int32
+          minimum: 0
+          type: integer
+        url:
+          type: string
+      required:
+        - host_id
+        - name
+        - url
+        - account
+        - ssh_address
+        - ssh_host_fingerprint
+        - maintenance
+        - node_id
+        - uid
+        - github_user_id
+        - role
+        - protocol
+      type: object
+    Credential:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/Credential.json
+          format: uri
+          readOnly: true
+          type: string
+        default_branch:
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        github_user_id:
+          format: int64
+          type: integer
+        repository_id:
+          format: int64
+          type: integer
+        repository_node_id:
+          type: string
+        token:
+          type: string
+        writable:
+          type: boolean
+      required:
+        - token
+        - expires_at
+        - writable
+        - github_user_id
+        - repository_id
+        - repository_node_id
+        - default_branch
+      type: object
+    CredentialRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/CredentialRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        profile:
+          enum:
+            - git
+            - push
+            - pr
+          type: string
+        repository:
+          description: GitHub owner/name
+          minLength: 3
+          type: string
+      required:
+        - repository
+        - profile
+      type: object
+    Discovery:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/Discovery.json
+          format: uri
+          readOnly: true
+          type: string
+        devboxes:
+          items:
+            $ref: "#/components/schemas/Assignment"
+          type: array
+        github_user_id:
+          format: int64
+          type: integer
+        protocol:
+          format: int64
+          type: integer
+        registry_id:
+          type: string
+        registry_url:
+          type: string
+        revision:
+          type: string
+      required:
+        - registry_id
+        - revision
+        - protocol
+        - github_user_id
+        - devboxes
+      type: object
+    ErrorDetail:
+      additionalProperties: false
+      properties:
+        location:
+          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+          type: string
+        message:
+          description: Error message text
+          type: string
+        value:
+          description: The value at the given location
+      type: object
+    Get-healthzResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/Get-healthzResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    ProblemError:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/ProblemError.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          description: Machine-readable error code. Stable across occurrences.
+          enum:
+            - badRequest
+            - branchConflict
+            - branchInUse
+            - branchProtected
+            - commentNotFound
+            - conflict
+            - destinationExists
+            - forbidden
+            - gitCredentialUnavailable
+            - hookFailed
+            - hubUnavailable
+            - internalError
+            - issueNotFound
+            - mutationOutcomeUnknown
+            - notFound
+            - payloadTooLarge
+            - projectNotFound
+            - pullNotFound
+            - rateLimited
+            - repoNotFound
+            - resyncRequired
+            - serviceUnavailable
+            - settingsUnavailable
+            - spokePreparationInProgress
+            - toolMissing
+            - toolUnauthenticated
+            - unauthorized
+            - unsupportedCapability
+            - upstreamError
+            - validationError
+            - workspaceAlreadyExists
+            - workspaceDeletionInProgress
+            - workspaceDirectoryNotReusable
+            - workspaceNotFound
+            - workspaceSetupInProgress
+            - worktreeDirty
+          examples:
+            - badRequest
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          examples:
+            - Property foo is required but is missing.
+          type: string
+        details:
+          additionalProperties: {}
+          description: Machine-readable error context, keyed by code-specific conventions.
+          type: object
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          type: array
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          examples:
+            - https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          examples:
+            - 400
+          format: int64
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          examples:
+            - Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          examples:
+            - https://example.com/errors/example
+          format: uri
+          type: string
+      required:
+        - code
+      type: object
+    Profile:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/Profile.json
+          format: uri
+          readOnly: true
+          type: string
+        account:
+          type: string
+        github_user_id:
+          format: int64
+          type: integer
+        host_id:
+          type: string
+        maintenance:
+          type: boolean
+        name:
+          type: string
+        node_id:
+          type: string
+        protocol:
+          format: int64
+          type: integer
+        registry_id:
+          type: string
+        revision:
+          type: string
+        role:
+          type: string
+        ssh_address:
+          type: string
+        ssh_host_fingerprint:
+          type: string
+        token:
+          type: string
+        uid:
+          format: int32
+          minimum: 0
+          type: integer
+        url:
+          type: string
+      required:
+        - registry_id
+        - revision
+        - token
+        - host_id
+        - name
+        - url
+        - account
+        - ssh_address
+        - ssh_host_fingerprint
+        - maintenance
+        - node_id
+        - uid
+        - github_user_id
+        - role
+        - protocol
+      type: object
+info:
+  title: Devbox native services
+  version: "1"
+openapi: 3.1.0
+paths:
+  /api/v1/devboxes:
+    get:
+      operationId: get-api-v1-devboxes
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Discovery"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get API v1 devboxes
+  /api/v1/devboxes/{host_id}/connect:
+    post:
+      operationId: post-api-v1-devboxes-by-host-id-connect
+      parameters:
+        - in: path
+          name: host_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Post API v1 devboxes by host ID connect
+  /healthz:
+    get:
+      operationId: get-healthz
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Get-healthzResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get healthz
+  /v1/credentials:
+    delete:
+      operationId: erase-devbox-credential
+      parameters:
+        - explode: false
+          in: query
+          name: repository
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+    post:
+      operationId: devbox-credential
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error

@@ -1162,6 +1162,7 @@ describe("PullDetail activity refresh", () => {
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
             settings: {
+              getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getLaunchTargets: () => launchTargets,
               getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
               isModeVisible: () => false,
@@ -2012,6 +2013,7 @@ describe("PullDetail approvals", () => {
             },
             detailActivityView: createDetailActivityViewStore(),
             settings: {
+              getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getLaunchTargets: () => [],
               getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
               isModeVisible: () => false,

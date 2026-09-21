@@ -259,6 +259,7 @@ function renderIssueDetail(
           activity: { loadActivity: vi.fn() },
           detailActivityView: createDetailActivityViewStore(),
           settings: {
+            getWorkspaceSettings: () => ({ default_execution_target: "" }),
             getLaunchTargets: () => launchTargets,
             getQuickActions: () => options.quickActions ?? [],
             getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
@@ -447,6 +448,7 @@ describe("IssueDetail activity view", () => {
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
             settings: {
+              getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getLaunchTargets: () => launchTargets,
               getQuickActions: () => [],
               getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),

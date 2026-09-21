@@ -82,7 +82,10 @@ describe("workspace create split button in the New workspace dialog", () => {
         [
           STORES_KEY,
           {
-            settings: { getLaunchTargets: () => launchTargets },
+            settings: {
+              getLaunchTargets: () => launchTargets,
+              getWorkspaceSettings: () => ({ default_execution_target: "" }),
+            },
           },
         ],
       ]),
@@ -123,7 +126,10 @@ describe("workspace create split button in the New workspace dialog", () => {
         [
           STORES_KEY,
           {
-            settings: { getLaunchTargets: () => launchTargets },
+            settings: {
+              getLaunchTargets: () => launchTargets,
+              getWorkspaceSettings: () => ({ default_execution_target: "" }),
+            },
           },
         ],
       ]),
@@ -199,7 +205,10 @@ describe("workspace create split button in the New workspace dialog", () => {
         [
           STORES_KEY,
           {
-            settings: { getLaunchTargets: () => launchTargets },
+            settings: {
+              getLaunchTargets: () => launchTargets,
+              getWorkspaceSettings: () => ({ default_execution_target: "" }),
+            },
           },
         ],
       ]),

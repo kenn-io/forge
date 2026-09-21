@@ -1354,8 +1354,10 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
   const read = Effect.fn("WorkspaceRuntimePort.read")(function* (target: WorkspaceRuntimeTarget) {
     const { workspaceId, hostKey } = target;
     if (hostKey !== undefined) {
-      const data = yield* api.execute("load fleet workspace runtime", (signal) =>
-        api.client.FleetService.getFleetWorkspaceRuntime({ hostKey, id: workspaceId }, { signal }),
+      const data = yield* api.execute<unknown>("load fleet workspace runtime", (signal) =>
+        hostKey.startsWith("devbox:")
+          ? api.client.DevboxesService.getDevboxRuntime({ connectionId: hostKey.slice(7), id: workspaceId }, { signal })
+          : api.client.FleetService.getFleetWorkspaceRuntime({ hostKey, id: workspaceId }, { signal }),
       );
       return normalizeWorkspaceRuntime(yield* decodeFleetWorkspaceRuntime(data));
     }
@@ -1373,8 +1375,12 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
     const { workspaceId, hostKey } = target;
     const body = { target_key: targetKey, display_region: region };
     if (hostKey !== undefined) {
-      const data = yield* api.execute("launch fleet workspace session", (signal) =>
-        api.client.FleetService.launchFleetWorkspaceRuntimeSession({ hostKey, id: workspaceId }, body, { signal }),
+      const data = yield* api.execute<unknown>("launch fleet workspace session", (signal) =>
+        hostKey.startsWith("devbox:")
+          ? api.client.DevboxesService.launchDevboxSession({ connectionId: hostKey.slice(7), id: workspaceId }, body, {
+              signal,
+            })
+          : api.client.FleetService.launchFleetWorkspaceRuntimeSession({ hostKey, id: workspaceId }, body, { signal }),
       );
       return yield* decodeFleetRuntimeSession(data);
     }
@@ -1390,12 +1396,18 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
   ) {
     const { workspaceId, hostKey } = target;
     if (hostKey !== undefined) {
-      const data = yield* api.execute("rename fleet workspace session", (signal) =>
-        api.client.FleetService.renameFleetWorkspaceRuntimeSession(
-          { hostKey, id: workspaceId, sessionKey },
-          { label },
-          { signal },
-        ),
+      const data = yield* api.execute<unknown>("rename fleet workspace session", (signal) =>
+        hostKey.startsWith("devbox:")
+          ? api.client.DevboxesService.renameDevboxSession(
+              { connectionId: hostKey.slice(7), id: workspaceId, sessionKey },
+              { label },
+              { signal },
+            )
+          : api.client.FleetService.renameFleetWorkspaceRuntimeSession(
+              { hostKey, id: workspaceId, sessionKey },
+              { label },
+              { signal },
+            ),
       );
       return yield* decodeFleetRuntimeSession(data);
     }
@@ -1412,8 +1424,16 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
     const { workspaceId, hostKey } = target;
     const operation = hostKey === undefined ? "stop workspace session" : "stop fleet workspace session";
     if (hostKey !== undefined) {
-      yield* api.execute(operation, (signal) =>
-        api.client.FleetService.stopFleetWorkspaceRuntimeSession({ hostKey, id: workspaceId, sessionKey }, { signal }),
+      yield* api.execute<unknown>(operation, (signal) =>
+        hostKey.startsWith("devbox:")
+          ? api.client.DevboxesService.stopDevboxSession(
+              { connectionId: hostKey.slice(7), id: workspaceId, sessionKey },
+              { signal },
+            )
+          : api.client.FleetService.stopFleetWorkspaceRuntimeSession(
+              { hostKey, id: workspaceId, sessionKey },
+              { signal },
+            ),
       );
       return;
     }
@@ -1425,8 +1445,13 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
   const refresh = Effect.fn("WorkspaceRuntimePort.refresh")(function* (target: WorkspaceRuntimeTarget) {
     const { workspaceId, hostKey } = target;
     if (hostKey !== undefined) {
-      const workspace = yield* api.execute("refresh fleet workspace", (signal) =>
-        api.client.FleetService.refreshFleetWorkspace({ hostKey, id: workspaceId }, { signal }),
+      const workspace = yield* api.execute<unknown>("refresh fleet workspace", (signal) =>
+        hostKey.startsWith("devbox:")
+          ? api.client.DevboxesService.refreshDevboxWorkspace(
+              { connectionId: hostKey.slice(7), id: workspaceId },
+              { signal },
+            )
+          : api.client.FleetService.refreshFleetWorkspace({ hostKey, id: workspaceId }, { signal }),
       );
       return yield* decodeWorkspaceDetail(workspace, hostKey);
     }
@@ -1439,8 +1464,13 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
   const retry = Effect.fn("WorkspaceRuntimePort.retrySetup")(function* (target: WorkspaceRuntimeTarget) {
     const { workspaceId, hostKey } = target;
     if (hostKey !== undefined) {
-      const workspace = yield* api.execute("retry fleet workspace setup", (signal) =>
-        api.client.FleetService.retryFleetWorkspace({ hostKey, id: workspaceId }, { signal }),
+      const workspace = yield* api.execute<unknown>("retry fleet workspace setup", (signal) =>
+        hostKey.startsWith("devbox:")
+          ? api.client.DevboxesService.retryDevboxWorkspace(
+              { connectionId: hostKey.slice(7), id: workspaceId },
+              { signal },
+            )
+          : api.client.FleetService.retryFleetWorkspace({ hostKey, id: workspaceId }, { signal }),
       );
       return yield* decodeWorkspaceDetail(workspace, hostKey);
     }
@@ -1459,10 +1489,15 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
       const response = yield* Effect.tryPromise({
         try: (signal) =>
           orvalRequest(
-            api.client.FleetService.getDeleteFleetWorkspaceUrl(
-              { hostKey, id: workspaceId },
-              force ? { force: true } : undefined,
-            ),
+            hostKey.startsWith("devbox:")
+              ? api.client.DevboxesService.getDeleteDevboxWorkspaceUrl(
+                  { connectionId: hostKey.slice(7), id: workspaceId },
+                  force ? { force: true } : undefined,
+                )
+              : api.client.FleetService.getDeleteFleetWorkspaceUrl(
+                  { hostKey, id: workspaceId },
+                  force ? { force: true } : undefined,
+                ),
             {
               method: "DELETE",
               signal,
@@ -1506,7 +1541,12 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
     if (hostKey !== undefined) {
       const response = yield* Effect.tryPromise({
         try: (signal) =>
-          orvalRequest(api.client.FleetService.getGetFleetWorkspaceUrl({ hostKey, id: workspaceId }), { signal }),
+          orvalRequest(
+            hostKey.startsWith("devbox:")
+              ? api.client.DevboxesService.getGetDevboxWorkspaceUrl({ connectionId: hostKey.slice(7), id: workspaceId })
+              : api.client.FleetService.getGetFleetWorkspaceUrl({ hostKey, id: workspaceId }),
+            { signal },
+          ),
         catch: (cause) => TransientTransportError.make({ operation: "confirm fleet workspace deletion", cause }),
       });
       if (response.status === 404) return true;

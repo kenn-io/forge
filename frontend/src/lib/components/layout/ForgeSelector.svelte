@@ -22,19 +22,17 @@
   let selectorEl = $state<HTMLDetailsElement>();
   let selectorOpen = $state(false);
 
-  const navigableHosts = $derived(hosts.filter((host) => Boolean(host.baseURL)));
+  const directoryHosts = $derived(hosts.filter((host) => host.kind === "self" || host.kind === "devbox" || Boolean(host.baseURL)));
   const orderedHosts = $derived.by(() =>
-    [...navigableHosts].sort((left, right) => {
-      if (left.federationRole !== right.federationRole) {
-        return left.federationRole === "hub" ? -1 : 1;
-      }
-      return hostName(left).localeCompare(hostName(right));
-    }),
+    [...directoryHosts].sort((left, right) =>
+      Number(right.federationRole === "hub") - Number(left.federationRole === "hub") ||
+      hostName(left).localeCompare(hostName(right)),
+    ),
   );
   const currentHost = $derived(
-    navigableHosts.find((host) => host.kind === "self") ?? navigableHosts[0],
+    directoryHosts.find((host) => host.kind === "self"),
   );
-  const showSelector = $derived(navigableHosts.length > 1 && currentHost !== undefined);
+  const showSelector = $derived(directoryHosts.length > 1 && currentHost !== undefined);
 
   function hostName(host: HostSummary): string {
     return host.name.trim() || host.nodeID;
@@ -130,11 +128,14 @@
       {#each orderedHosts as host (host.nodeID)}
         {@const status = hostStatus(host)}
         {@const diagnostic = hostDiagnostic(host)}
+        {@const navigable = host.kind !== "devbox" && Boolean(host.baseURL)}
         <li>
-          <a
-            href={host.baseURL}
+          <svelte:element
+            this={navigable ? "a" : "div"}
+            class="host-row"
+            href={navigable ? host.baseURL : undefined}
             aria-current={host.kind === "self" ? "page" : undefined}
-            title={diagnostic || `Open ${hostName(host)}`}
+            title={diagnostic || (navigable ? `Open ${hostName(host)}` : undefined)}
           >
             <StatusDot status={statusDot(status)} label={`${hostName(host)} is ${status}`} size={9} animated />
             <span class="host-copy">
@@ -142,13 +143,13 @@
                 <strong>{hostName(host)}</strong>
                 {#if host.kind === "self"}<span class="host-label">Current</span>{/if}
                 <span class="host-label">
-                  {host.federationRole === "hub" ? "Hub" : "Spoke"}
+                  {host.kind === "devbox" ? "Devbox" : host.federationRole === "hub" ? "Hub" : "Spoke"}
                 </span>
               </span>
               <span class="host-status">{status}</span>
               {#if diagnostic}<span class="host-diagnostic">{diagnostic}</span>{/if}
             </span>
-          </a>
+          </svelte:element>
         </li>
       {/each}
     </ul>
@@ -217,7 +218,7 @@
     list-style: none;
   }
 
-  li a {
+  .host-row {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     gap: var(--space-3);

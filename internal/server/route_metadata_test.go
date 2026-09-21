@@ -18,6 +18,7 @@ var allowedAPITags = map[string]struct{}{
 	"Activity":      {},
 	"Archive":       {},
 	"Docs":          {},
+	"Devboxes":      {},
 	"Fleet":         {},
 	"Issues":        {},
 	"Kata":          {},

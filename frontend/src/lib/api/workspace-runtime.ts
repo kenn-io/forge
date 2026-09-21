@@ -14,18 +14,19 @@ function wsBaseUrl(): string {
   return `${basePath()}/ws/v1`;
 }
 
-function hostPrefix(hostKey?: string): string {
+export function executionHostPrefix(hostKey?: string): string {
+  if (hostKey?.startsWith("devbox:")) return `/devboxes/${encodeURIComponent(hostKey.slice(7))}`;
   return hostKey ? `/fleet/hosts/${encodeURIComponent(hostKey)}` : "";
 }
 
 export function workspaceSessionWebSocketPath(workspaceId: string, sessionKey: string, hostKey?: string): string {
   return (
-    `${wsBaseUrl()}${hostPrefix(hostKey)}/workspaces/${encodeURIComponent(workspaceId)}` +
+    `${wsBaseUrl()}${executionHostPrefix(hostKey)}/workspaces/${encodeURIComponent(workspaceId)}` +
     `/runtime/sessions/${encodeURIComponent(sessionKey)}` +
     "/terminal"
   );
 }
 
 export function workspaceTmuxWebSocketPath(workspaceId: string, hostKey?: string): string {
-  return `${wsBaseUrl()}${hostPrefix(hostKey)}/workspaces/${encodeURIComponent(workspaceId)}` + "/terminal";
+  return `${wsBaseUrl()}${executionHostPrefix(hostKey)}/workspaces/${encodeURIComponent(workspaceId)}` + "/terminal";
 }

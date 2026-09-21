@@ -1770,12 +1770,20 @@
 
     wsCreating = true;
     beginWorkspaceCreate(requestIdentity, launchTargetKey);
-    const program = executeGeneratedApiRequest("POST pull request workspace", (client, signal) =>
-      client.WorkspacesService.createWorkspace(requestBody, { signal }),
+    const preferredTarget = settings.getWorkspaceSettings().default_execution_target ?? "";
+ const devboxTarget = preferredTarget.startsWith("devbox:") ? preferredTarget : undefined;
+ const program = executeGeneratedApiRequest("POST pull request workspace", (client, signal) =>
+ devboxTarget ? client.DevboxesService.createDevboxWorkspace({ connectionId: devboxTarget.slice(7) }, requestBody, { signal }) : client.WorkspacesService.createWorkspace(requestBody, { signal }),
     ).pipe(
       Effect.flatMap((data) =>
         Effect.sync(() => {
-          if (data?.id) {
+          if (data?.id && devboxTarget) {
+ promoteWorkspaceCreateLaunch(requestIdentity, data.id, devboxTarget);
+ if (quickAction) runWorkspaceQuickAction(runtime, data.id, quickAction, devboxTarget);
+ if (!responseIsStale()) navigate(`/terminal/fleet/${encodeURIComponent(devboxTarget)}/${encodeURIComponent(data.id)}`);
+ return;
+ }
+ if (data?.id) {
             // Publish the confirmed creation to identity-scoped shared state
             // BEFORE any liveness guard: the workspace exists server-side
             // even when the selection moved on or this component unmounted.

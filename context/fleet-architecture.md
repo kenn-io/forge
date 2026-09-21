@@ -3,6 +3,23 @@
 Use this document for federation settings, snapshot aggregation, spoke routing,
 or remote workspace and session operations.
 
+## Devbox targets
+
+- Hubs and standalone controllers own devbox connections and route directly to workers; spokes
+  remain local-only. Use `devbox:<connection-id>` keys, separate from fleet node keys, and never
+  project worker bearer tokens into browser data. (`internal/server/devboxes.go`)
+- Devboxes are execution targets, not enrolled fleet peers. Roster, accounts, tools and deployment
+  belong to an operator's private provisioning repository; public Forge owns the generic runtime
+  and connection contract. (`docs/devboxes.md`)
+- Machine lists, workspace selectors, and execution badges identify devboxes explicitly;
+  they have no browser UI to navigate to and must not appear as fleet spokes.
+  (`frontend/src/lib/components/layout/ForgeSelector.svelte`)
+- Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
+  belong only on the direct tailnet connection. (`internal/server/devboxes.go::registerDevboxTerminalAPI`)
+- Devbox repository admission and launch context use GitHub node IDs, matching the controller's
+  catalog; numeric REST IDs scope App installation tokens, not workspace identity.
+  (`internal/server/workspaceapi/execution_worker.go::Handler.admitWorkerRepository`)
+
 ## Ownership And Topology
 
 - Every data directory has one random 128-bit lowercase-hex node ID; hostnames,

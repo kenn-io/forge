@@ -10,7 +10,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/devbox"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -76,6 +78,7 @@ type workspaceDiffEventData struct {
 // the root server package while preserving the shared shutdown and event
 // ordering owned by the composition root.
 type Deps struct {
+	ExecutionWorker     config.ExecutionWorker
 	DB                  *db.DB
 	Resolver            *httpapi.RepositoryResolver
 	Syncer              *ghclient.Syncer
@@ -112,21 +115,23 @@ type Deps struct {
 // Handler implements both the workspace and local-project services so their
 // Git-heavy tests and process limits remain in one package and test binary.
 type Handler struct {
-	db            *db.DB
-	resolver      *httpapi.RepositoryResolver
-	syncer        *ghclient.Syncer
-	configMu      sync.RWMutex
-	config        ConfigSnapshot
-	workspaces    *workspace.Manager
-	runtime       *localruntime.Manager
-	clipboard     systemclipboard.Writer
-	pasteImages   *terminalpaste.Store
-	agentActivity *agentactivity.Store
-	tmuxCmd       []string
-	now           func() time.Time
-	broadcast     func(Event) uint64
-	subscribe     func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
-	generation    func() uint64
+	executionWorker config.ExecutionWorker
+	workerBroker    *devbox.BrokerClient
+	db              *db.DB
+	resolver        *httpapi.RepositoryResolver
+	syncer          *ghclient.Syncer
+	configMu        sync.RWMutex
+	config          ConfigSnapshot
+	workspaces      *workspace.Manager
+	runtime         *localruntime.Manager
+	clipboard       systemclipboard.Writer
+	pasteImages     *terminalpaste.Store
+	agentActivity   *agentactivity.Store
+	tmuxCmd         []string
+	now             func() time.Time
+	broadcast       func(Event) uint64
+	subscribe       func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
+	generation      func() uint64
 
 	recomputeWorktreeLinks         func(context.Context)
 	refreshWorktreeStats           func(context.Context, string, string) error
@@ -200,6 +205,7 @@ func New(deps Deps) *Handler {
 	}
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	h := &Handler{
+		executionWorker:                deps.ExecutionWorker,
 		db:                             deps.DB,
 		resolver:                       deps.Resolver,
 		syncer:                         deps.Syncer,
@@ -243,7 +249,10 @@ func New(deps Deps) *Handler {
 		lifecycleCancel:                lifecycleCancel,
 		lifecycleDone:                  make(chan struct{}),
 	}
-	if deps.DB != nil && deps.Workspaces != nil {
+	if deps.ExecutionWorker.Enabled {
+		h.workerBroker = devbox.NewBrokerClient(deps.ExecutionWorker.BrokerSocket)
+	}
+	if deps.DB != nil && deps.Workspaces != nil && !deps.ExecutionWorker.Enabled {
 		monitorOptions := workspace.PRMonitorOptions{
 			LaunchSpecs: deps.Workspaces, PullCandidates: deps.PullCandidates,
 			RetireUnresolvedWorkspace: func(_ context.Context, workspaceID string) error {
@@ -294,6 +303,12 @@ func (h *Handler) enqueueDetailSyncWithCompletion(
 
 // Register registers workspace and local-project REST operations.
 func (s *Handler) Register(api huma.API) {
+	s.RegisterExecution(api)
+	s.registerProjects(api)
+}
+
+// RegisterExecution registers only workspace, agent, and terminal operations.
+func (s *Handler) RegisterExecution(api huma.API) {
 	s.RegisterTerminalClipboard(api, true)
 	s.registerTerminalPasteImage(api)
 	huma.Register(api, huma.Operation{
@@ -303,14 +318,16 @@ func (s *Handler) Register(api huma.API) {
 		Summary:     "Receive agent lifecycle hook",
 		Tags:        []string{"Activity"},
 	}, s.receiveAgentHook)
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-workspace",
-		Method:        http.MethodPost,
-		Path:          "/workspaces",
-		DefaultStatus: http.StatusAccepted,
-		Summary:       "Create workspace",
-		Tags:          []string{"Workspaces"},
-	}, s.createWorkspace)
+	if s == nil || !s.executionWorker.Enabled {
+		huma.Register(api, huma.Operation{
+			OperationID:   "create-workspace",
+			Method:        http.MethodPost,
+			Path:          "/workspaces",
+			DefaultStatus: http.StatusAccepted,
+			Summary:       "Create workspace",
+			Tags:          []string{"Workspaces"},
+		}, s.createWorkspace)
+	}
 	huma.Get(api, "/workspaces", s.listWorkspaces,
 		httpapi.DocumentOperation("list-workspaces", "List workspaces", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace,
@@ -427,7 +444,9 @@ func (s *Handler) Register(api huma.API) {
 		Summary:       "Delete workspace",
 		Tags:          []string{"Workspaces"},
 	}, s.DeleteWorkspace)
+}
 
+func (s *Handler) registerProjects(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "register-project",
 		Method:        http.MethodPost,

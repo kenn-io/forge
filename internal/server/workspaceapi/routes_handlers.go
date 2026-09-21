@@ -1064,7 +1064,9 @@ func (s *Handler) GetWorkspaceService(ctx context.Context, id string) (Workspace
 			httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 		)
 	}
-	return WorkspaceResult{Workspace: s.toCachedWorkspaceResponse(summary)}, nil
+	response := s.toCachedWorkspaceResponse(summary)
+	response.PushState = s.workspaces.ExecutionPushState(ctx, summary)
+	return WorkspaceResult{Workspace: response}, nil
 }
 
 func (s *Handler) refreshWorkspace(
@@ -1085,6 +1087,9 @@ func (s *Handler) refreshWorkspace(
 	}
 	if s.workspaceDiffCache != nil {
 		s.workspaceDiffCache.RevalidateWorkspace(input.ID)
+	}
+	if s.executionWorker.Enabled {
+		return &refreshWorkspaceOutput{Body: s.refreshWorkspaceResponse(ctx, summary)}, nil
 	}
 	if s.syncer == nil {
 		workspace := summary.Workspace
@@ -1344,10 +1349,11 @@ func (s *Handler) getWorkspaceCommits(
 	resp := commitsResponse{Commits: make([]commitResponse, len(commits))}
 	for i, c := range commits {
 		cr := commitResponse{
-			SHA:        c.SHA,
-			Stats:      stats[c.SHA],
-			Message:    c.Message,
-			AuthorName: c.AuthorName,
+			SHA:         c.SHA,
+			Stats:       stats[c.SHA],
+			Message:     c.Message,
+			AuthorName:  c.AuthorName,
+			AuthorEmail: c.AuthorEmail, CommitterName: c.CommitterName, CommitterEmail: c.CommitterEmail,
 			AuthoredAt: c.AuthoredAt.UTC(),
 		}
 		if pushErr == nil && hasUpstream {
@@ -1824,6 +1830,16 @@ func (s *Handler) workspaceMergeTargetBranch(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) (string, bool, error) {
+	if s.executionWorker.Enabled && summary.ItemType == db.WorkspaceItemTypePullRequest {
+		spec, err := s.db.GetWorkspaceLaunchSpec(ctx, summary.ID)
+		if err != nil {
+			return "", false, err
+		}
+		if spec == nil || spec.Pull == nil || spec.Pull.BaseBranch == "" || spec.RequireVisible(s.now().UTC()) != nil {
+			return "", false, workspace.ErrLaunchSpecRefreshRequired
+		}
+		return spec.Pull.BaseBranch, true, nil
+	}
 	prNumber := summary.ItemNumber
 	if summary.ItemType != db.WorkspaceItemTypePullRequest {
 		if summary.AssociatedPRNumber == nil {
@@ -2615,6 +2631,9 @@ func (s *Handler) launchWorkspaceRuntimeService(
 		return localruntime.SessionInfo{}, httpapi.Validation("body.target_key", "target_key is required")
 	}
 	if workspaceRuntimeTargetIsAgent(s.runtime, targetKey) {
+		if err := s.workspaces.ValidateExecutionIdentity(ctx, summary.WorktreePath); err != nil {
+			return localruntime.SessionInfo{}, httpapi.Validation("identity", err.Error())
+		}
 		if err := s.workspaces.PrepareAgentLaunchContext(
 			ctx,
 			workspace.PrepareAgentLaunchContextOptions{

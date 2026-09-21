@@ -1,4 +1,5 @@
 <script lang="ts">
+import DevboxSettings from "./DevboxSettings.svelte";
   import { SelectDropdown, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import type { Settings } from "../../api/types.js";
@@ -164,6 +165,7 @@
   }
 </script>
 
+<DevboxSettings />
 <div class="settings-list">
   <div class="setting-row">
     <div class="setting-copy">

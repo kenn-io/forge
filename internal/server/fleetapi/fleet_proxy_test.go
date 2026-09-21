@@ -408,7 +408,7 @@ func TestFleetProxyStripsPeerAuthorityResponseHeaders(t *testing.T) {
 		"Www-Authenticate": []string{`Bearer realm="spoke"`},
 	}
 
-	copyProxyResponseHeaders(destination, source)
+	CopyProxyResponseHeaders(destination, source)
 
 	assert.Equal(t, "application/json", destination.Get("Content-Type"))
 	for _, key := range []string{

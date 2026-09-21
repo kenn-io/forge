@@ -1317,6 +1317,10 @@ type WorkspaceLaunchRepository struct {
 }
 
 type WorkspaceLaunchPull struct {
+	BaseRepoID       string `json:"base_repo_id,omitempty"`
+	BaseBranch       string `json:"base_branch,omitempty"`
+	BaseOID          string `json:"base_oid,omitempty"`
+	HeadOID          string `json:"head_oid,omitempty"`
 	HeadBranch       string `json:"head_branch"`
 	HeadRepoKind     string `json:"head_repo_kind" enum:"same_repo,fork,unknown"`
 	HeadRepoCloneURL string `json:"head_repo_clone_url"`

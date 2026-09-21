@@ -257,7 +257,8 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByText("Workspaces")).toBeTruthy();
   });
 
-  it("labels workspace rows with their execution machine on the hub", async () => {
+  it.each(["remote", "devbox"])("labels %s workspace rows with their execution machine on the hub", async (kind) => {
+    const hostKey = kind === "devbox" ? "devbox:compute-a" : "peer-a";
     mockGet.mockImplementation((path: string) => {
       if (path === "/snapshot") {
         return Promise.resolve({
@@ -277,12 +278,12 @@ describe("WorkspaceListSidebar", () => {
                 tmuxSessions: [],
               },
               {
-                configKey: "79e90262-7426-4dd5-9ef1-0d511af84e12",
+                configKey: hostKey,
                 diagnostics: [],
-                id: "79e90262-7426-4dd5-9ef1-0d511af84e12",
-                kind: "remote",
-                name: "Build spoke",
-                federationRole: "spoke",
+                id: hostKey,
+                kind,
+                name: "Build machine",
+                federationRole: kind === "devbox" ? "devbox" : "spoke",
                 operationAvailability: {},
                 platform: "linux",
                 preferredTransport: "http",
@@ -310,7 +311,7 @@ describe("WorkspaceListSidebar", () => {
                   number: 12,
                   title: "Remote workspace",
                 }),
-                fleet_host_key: "79e90262-7426-4dd5-9ef1-0d511af84e12",
+                fleet_host_key: hostKey,
               },
             ],
           },
@@ -325,10 +326,10 @@ describe("WorkspaceListSidebar", () => {
 
     await screen.findByText("Remote workspace");
     expect(screen.getByTitle("Runs on Studio hub")).toBeTruthy();
-    expect(screen.getByText("Build spoke")).toBeTruthy();
-    expect(screen.getByTitle("Runs on Build spoke")).toBeTruthy();
+    expect(screen.getByText(kind === "devbox" ? "Build machine · Devbox" : "Build machine")).toBeTruthy();
+    expect(screen.getByTitle("Runs on Build machine")).toBeTruthy();
     expect(screen.queryByLabelText("Fleet hosts")).toBeNull();
-    expect(screen.queryByText("79e90262-7426-4dd5-9ef1-0d511af84e12")).toBeNull();
+    expect(screen.queryByText(hostKey)).toBeNull();
   });
 
   it("coalesces workspace completion bursts into one list refresh", async () => {

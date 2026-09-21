@@ -245,6 +245,7 @@ api-generate: frontend-deps
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
 	cd frontend && $(VITE_PLUS_FRONTEND_BIN) build --logLevel warn
 	go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
+	go run ./cmd/kenn-forge-openapi -api devbox -out internal/apiclient/devbox/openapi.yaml
 	go generate ./internal/apiclient/...
 
 # Regenerate the roborev TypeScript client from the checked-in OpenAPI spec

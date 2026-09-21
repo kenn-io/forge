@@ -109,6 +109,9 @@ func (s *Handler) buildHubAggregate(
 	if includeMembers && fleetConfig.Enabled && len(fleetConfig.Members) > 0 {
 		results = s.fetchMemberResults(ctx, fleetConfig, memberTimeout)
 	}
+	if includeMembers && s.executionTargets != nil {
+		results = append(results, s.executionTargets(ctx, memberTimeout)...)
+	}
 	aggregate := fleet.BuildNeutralAggregate(local, results)
 	return fleet.EnrichProviderState(ctx, s.db, aggregate)
 }

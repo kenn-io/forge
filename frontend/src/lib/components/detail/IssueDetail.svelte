@@ -845,12 +845,20 @@
     if (branchConflict) {
       branchConflict.error = null;
     }
-    const program = executeGeneratedApiRequest("POST issue workspace", (client, signal) =>
-      providerUsesHostRoute(selectedRef) ? client.IssuesService.createIssueWorkspaceOnHost({ ...providerHostRouteParams(selectedRef), number: requestIdentity.number }, requestBody, { signal }) : client.IssuesService.createIssueWorkspace({ ...providerRouteParams(selectedRef), number: requestIdentity.number }, requestBody, { signal }),
+    const preferredTarget = settings.getWorkspaceSettings().default_execution_target ?? "";
+ const devboxTarget = preferredTarget.startsWith("devbox:") ? preferredTarget : undefined;
+ const program = executeGeneratedApiRequest("POST issue workspace", (client, signal) =>
+ devboxTarget ? client.DevboxesService.createDevboxWorkspace({ connectionId: devboxTarget.slice(7) }, { provider: requestIdentity.provider, platform_host: requestIdentity.platformHost ?? "github.com", owner: requestIdentity.owner, name: requestIdentity.name, issue_number: requestIdentity.number, branch: options.gitHeadRef ?? "", reuse_existing_branch: options.reuseExistingBranch ?? false }, { signal }) : providerUsesHostRoute(selectedRef) ? client.IssuesService.createIssueWorkspaceOnHost({ ...providerHostRouteParams(selectedRef), number: requestIdentity.number }, requestBody, { signal }) : client.IssuesService.createIssueWorkspace({ ...providerRouteParams(selectedRef), number: requestIdentity.number }, requestBody, { signal }),
     ).pipe(
       Effect.flatMap((data) =>
         Effect.sync(() => {
-          if (data?.id) {
+          if (data?.id && devboxTarget) {
+ promoteWorkspaceCreateLaunch(requestIdentity, data.id, devboxTarget);
+ if (quickAction) runWorkspaceQuickAction(runtime, data.id, quickAction, devboxTarget);
+ if (!responseIsStale()) navigate(`/terminal/fleet/${encodeURIComponent(devboxTarget)}/${encodeURIComponent(data.id)}`);
+ return;
+ }
+ if (data?.id) {
             // Publish the confirmed creation before any liveness guard: the
             // workspace exists server-side even after navigation or unmount.
             const createdRef = {

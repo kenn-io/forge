@@ -136,9 +136,9 @@
                 ? [self]
                 : hosts.filter((host) => host.operationAvailability.workspaceWrite?.available === true);
             selectedWorkspaceHostKey =
-              workspaceHosts.find((host) => host.kind === "self")?.configKey ??
+              settings.getWorkspaceSettings().default_execution_target || (workspaceHosts.find((host) => host.kind === "self")?.configKey ??
               workspaceHosts[0]?.configKey ??
-              "";
+              "");
           }),
         ),
         Effect.asVoid,
@@ -363,18 +363,22 @@
       : selectedWorkspaceHost?.configKey,
   );
   const workspaceHostOptions = $derived<SelectDropdownOption[]>(
-    workspaceHosts.map((host) => {
+    [
+    ...(selectedWorkspaceHostKey && !selectedWorkspaceHost
+      ? [{ value: selectedWorkspaceHostKey, label: "Unavailable machine — choose another", disabled: true }]
+      : []),
+    ...workspaceHosts.map((host) => {
       const writeAvailability = host.operationAvailability.workspaceWrite;
       const unavailableReason = writeAvailability?.unavailableReason || "Workspace creation is unavailable.";
       return {
         value: host.configKey,
-        label: `${host.name.trim() || host.hostname?.trim() || host.configKey}${host.kind === "self" ? " (this machine)" : ""}`,
+        label: `${host.name.trim() || host.hostname?.trim() || host.configKey}${host.kind === "self" ? " (this machine)" : host.kind === "devbox" ? " (devbox)" : ""}`,
         disabled: writeAvailability?.available !== true,
         ...(writeAvailability?.available === true
           ? {}
           : { indicator: { tone: "danger" as const, title: unavailableReason } }),
       };
-    }),
+    })],
   );
 
   const selectedDaemon = $derived(
@@ -416,7 +420,7 @@
 
   const canSubmit = $derived(
     source === "repository"
-      ? selected !== null
+      ? selected !== null && (!settings.getWorkspaceSettings().default_execution_target || selectedWorkspaceHost !== null)
       : selectedKataReference !== null && selectedDaemonUsable,
   );
 
@@ -524,7 +528,13 @@
           };
           const routeParams = providerRouteParams(ref);
           const body = requested ? { branch: requested } : {};
-          if (remoteWorkspaceHostKey) {
+          if (remoteWorkspaceHostKey?.startsWith("devbox:")) {
+ return executeGeneratedApiRequest("create devbox workspace", (client, signal) => client.DevboxesService.createDevboxWorkspace(
+ { connectionId: remoteWorkspaceHostKey.slice(7) },
+ { provider: repo.provider, platform_host: repo.platformHost, owner: repo.owner, name: repo.name, ...body }, { signal },
+ )).pipe(Effect.map(normalizeCreatedWorkspace));
+ }
+ if (remoteWorkspaceHostKey) {
             return executeOpaqueGeneratedApiRequest("create fleet workspace", (client, signal) =>
               providerUsesHostRoute(ref)
                 ? client.FleetService.createFleetRepoWorkspaceOnPlatformHost(
@@ -709,7 +719,7 @@
         </small>
       </label>
 
-      {#if workspaceHostOptions.length > 1}
+      {#if workspaceHostOptions.length > 1 || settings.getWorkspaceSettings().default_execution_target}
         <label class="field">
           <span class="field-label">Run on</span>
           <SelectDropdown
@@ -722,7 +732,10 @@
             title="Workspace machine"
             disabled={submitting}
           />
-          <small class="field-hint">The selected Forge owns the worktree and runtime sessions.</small>
+          <small class="field-hint">Files, agents and tests run on the selected machine. Change the default in Settings → Workspaces.</small>
+          {#if settings.getWorkspaceSettings().default_execution_target && !selectedWorkspaceHost}
+            <p class="form-error" role="alert">Your preferred machine is unavailable. Choose another machine or reconnect it in Settings → Workspaces.</p>
+          {/if}
         </label>
       {/if}
     {:else}

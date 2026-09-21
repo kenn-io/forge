@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -27,6 +28,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/configwatch"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/docs"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
@@ -69,6 +71,8 @@ type versionOutputBody BuildInfo
 type versionOutput = httpapi.BodyOutput[versionOutputBody]
 
 type ServerOptions struct {
+	Devboxes                           *devbox.Connections
+	ExecutionWorker                    bool
 	DaemonAccess                       DaemonAccessOptions
 	FederationCredentials              *federationauth.Store
 	FederationEnrollments              *federation.Store
@@ -740,7 +744,7 @@ func fleetConfigSnapshot(cfg *config.Config, tmuxCommand []string) fleetapi.Conf
 	return fleetapi.ConfigSnapshot{
 		Fleet:               cfg.Fleet,
 		PlatformAuthConfig:  platformAuth,
-		PlatformAuthEnabled: true,
+		PlatformAuthEnabled: !cfg.ExecutionWorker.Enabled,
 		TmuxCommand:         slices.Clone(tmuxCommand),
 	}
 }
@@ -972,49 +976,55 @@ func newServer(
 	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)
 	s.workspaceLifecycleCtx, s.workspaceLifecycleCancel = context.WithCancel(context.Background())
 	workspaceNow := s.now
+	var executionWorker config.ExecutionWorker
+	if options.ExecutionWorker && cfg != nil {
+		executionWorker = cfg.ExecutionWorker
+	}
 	if options.WorkspaceNow != nil {
 		workspaceNow = options.WorkspaceNow
 	}
-	s.docsAPI = docsapi.New(docsapi.Deps{
-		Config:   cfg,
-		Registry: options.DocsRegistry,
-		BeginConfigMutation: func() func() {
-			s.configReloadMu.Lock()
-			return s.configReloadMu.Unlock
-		},
-		SaveFolders: func(folders []config.DocFolder) error {
-			if s.cfgPath == "" || s.cfg == nil {
-				return docsapi.ErrSettingsUnavailable
-			}
-			s.cfgMu.Lock()
-			defer s.cfgMu.Unlock()
-			previous := slices.Clone(s.cfg.DocFolders)
-			s.cfg.DocFolders = slices.Clone(folders)
-			if err := s.cfg.Save(s.cfgPath); err != nil {
-				s.cfg.DocFolders = previous
-				return err
-			}
-			return nil
-		},
-	})
-	if cfg != nil {
-		docsapi.WarnDaemonBindings(cfg.DocFolders)
+	if !options.ExecutionWorker {
+		s.docsAPI = docsapi.New(docsapi.Deps{
+			Config:   cfg,
+			Registry: options.DocsRegistry,
+			BeginConfigMutation: func() func() {
+				s.configReloadMu.Lock()
+				return s.configReloadMu.Unlock
+			},
+			SaveFolders: func(folders []config.DocFolder) error {
+				if s.cfgPath == "" || s.cfg == nil {
+					return docsapi.ErrSettingsUnavailable
+				}
+				s.cfgMu.Lock()
+				defer s.cfgMu.Unlock()
+				previous := slices.Clone(s.cfg.DocFolders)
+				s.cfg.DocFolders = slices.Clone(folders)
+				if err := s.cfg.Save(s.cfgPath); err != nil {
+					s.cfg.DocFolders = previous
+					return err
+				}
+				return nil
+			},
+		})
+		if cfg != nil {
+			docsapi.WarnDaemonBindings(cfg.DocFolders)
+		}
+		var repositoryDescriptorSource repobrowserapi.RepositoryDescriptorSource
+		if s.providerSource != nil {
+			repositoryDescriptorSource = s.providerSource
+		}
+		s.repoBrowserAPI = repobrowserapi.New(repobrowserapi.Deps{
+			Resolver:         repoResolver,
+			Clones:           clones,
+			Config:           cfg,
+			DescriptorSource: repositoryDescriptorSource,
+			AutomaticRefreshEnabled: func() bool {
+				s.cfgMu.Lock()
+				defer s.cfgMu.Unlock()
+				return s.cfg == nil || !s.cfg.AirplaneMode
+			},
+		})
 	}
-	var repositoryDescriptorSource repobrowserapi.RepositoryDescriptorSource
-	if s.providerSource != nil {
-		repositoryDescriptorSource = s.providerSource
-	}
-	s.repoBrowserAPI = repobrowserapi.New(repobrowserapi.Deps{
-		Resolver:         repoResolver,
-		Clones:           clones,
-		Config:           cfg,
-		DescriptorSource: repositoryDescriptorSource,
-		AutomaticRefreshEnabled: func() bool {
-			s.cfgMu.Lock()
-			defer s.cfgMu.Unlock()
-			return s.cfg == nil || !s.cfg.AirplaneMode
-		},
-	})
 	s.hostOpts.Store(&hostOpts)
 	if hostOpts.TrustReverseProxy && len(hostOpts.Allowed) == 0 {
 		slog.Warn(
@@ -1081,6 +1091,7 @@ func newServer(
 				s.workspaceAPI.RevalidateSelectedDiffs()
 			}
 		},
+		ExecutionTargets:            s.devboxSnapshots,
 		NodeID:                      options.FederationSpokeID,
 		FederationActive:            options.FederationSpokeActive,
 		FederationUnavailableReason: options.FederationSpokeUnavailableReason,
@@ -1092,7 +1103,10 @@ func newServer(
 		RemoveMember:                s.removeFleetMember,
 		CancelEventStreams:          s.cancelFederationEventStreams,
 	})
-	var launchSpecResolver providerplane.WorkspaceLaunchSpecResolver = s
+	var launchSpecResolver providerplane.WorkspaceLaunchSpecResolver
+	if !options.ExecutionWorker {
+		launchSpecResolver = s
+	}
 	var workspacePullCandidates workspace.PullCandidateSource
 	if s.providerSource != nil {
 		launchSpecResolver = s.providerSource
@@ -1100,9 +1114,16 @@ func newServer(
 	}
 	if options.WorktreeDir != "" {
 		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
+		if options.ExecutionWorker {
+			executable, err := os.Executable()
+			if err != nil {
+				panic(fmt.Errorf("resolve worker executable: %w", err))
+			}
+			s.workspaces.SetExecutionWorker(cfg.ExecutionWorker, executable)
+		}
 		s.workspaces.SetNow(workspaceNow)
 		s.workspaces.SetLaunchSpecResolver(launchSpecResolver)
-		s.workspaces.SetRequireProviderCredential(s.providerRouteSpoke)
+		s.workspaces.SetRequireProviderCredential(s.providerRouteSpoke || options.ExecutionWorker)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		s.workspaces.UpdateTmuxStripEnvVars(s.runtimeStripEnvVars)
 		s.workspaces.SetHideTmuxStatus(hideTmuxStatus)
@@ -1189,6 +1210,7 @@ func newServer(
 		}
 	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
+		ExecutionWorker:     executionWorker,
 		DB:                  database,
 		Resolver:            repoResolver,
 		Syncer:              syncer,
@@ -1220,94 +1242,96 @@ func newServer(
 		ProviderWorkspaceAutomation: providerWorkspaceAutomation,
 		MergeRequestWorktreeSource:  mergeRequestWorktreeSource,
 	})
-	s.kataAPI = kata.New(kata.Deps{
-		DB:                     database,
-		Resolver:               repoResolver,
-		Config:                 kataConfigSnapshot(cfg),
-		Workspaces:             s.workspaces,
-		WorkspaceAPI:           s.workspaceAPI.Workspaces(),
-		SamePlatformHost:       samePlatformHost,
-		ConfigRepoPath:         configRepoPath,
-		OnCatalogTokenEnvNames: s.updateCatalogStripEnvVars,
-	})
-	// Kata catalogs load lazily per request; feed their token env names
-	// into stripping at boot too so terminals created before the first
-	// Kata route never see cataloged credentials. Decoded-but-invalid
-	// catalogs still carry their declared names, so apply them
-	// regardless of the load error.
-	bootCatalog, err := katacatalog.LoadCatalog()
-	if err != nil {
-		slog.Debug(
-			"kata catalog boot load for credential stripping", "err", err,
-		)
+	if !options.ExecutionWorker {
+		s.kataAPI = kata.New(kata.Deps{
+			DB:                     database,
+			Resolver:               repoResolver,
+			Config:                 kataConfigSnapshot(cfg),
+			Workspaces:             s.workspaces,
+			WorkspaceAPI:           s.workspaceAPI.Workspaces(),
+			SamePlatformHost:       samePlatformHost,
+			ConfigRepoPath:         configRepoPath,
+			OnCatalogTokenEnvNames: s.updateCatalogStripEnvVars,
+		})
+		// Kata catalogs load lazily per request; feed their token env names
+		// into stripping at boot too so terminals created before the first
+		// Kata route never see cataloged credentials. Decoded-but-invalid
+		// catalogs still carry their declared names, so apply them
+		// regardless of the load error.
+		bootCatalog, err := katacatalog.LoadCatalog()
+		if err != nil {
+			slog.Debug(
+				"kata catalog boot load for credential stripping", "err", err,
+			)
+		}
+		s.updateCatalogStripEnvVars(bootCatalog.TokenEnvNames())
+		s.workflowAPI = workflowapi.New(workflowapi.Deps{
+			Resolver:       repoResolver,
+			Syncer:         syncer,
+			RepoOperations: s.repoOperations,
+			Runtime:        workflowRuntime{server: s},
+		})
+		var pullProviderSource pullapi.ProviderSource
+		var issueProviderSource issueapi.ProviderSource
+		if s.providerSource != nil {
+			pullProviderSource = s.providerSource
+			issueProviderSource = s.providerSource
+		}
+		s.pullAPI = pullapi.New(pullapi.Deps{
+			DB:                   database,
+			Resolver:             repoResolver,
+			Syncer:               syncer,
+			Clones:               clones,
+			Config:               pullConfigSnapshot(cfg),
+			Now:                  func() time.Time { return s.now() },
+			DeferredMergeMaxWait: deferredMergeMaxWait,
+			QueueWorkspaceDeletion: func(
+				ctx context.Context, hostKey, workspaceID string,
+			) error {
+				if hostKey == "" || hostKey == s.fleetAPI.SelfKey("") {
+					return s.workspaceAPI.QueueWorkspaceDeletion(workspaceID)
+				}
+				return s.fleetAPI.RequestWorkspaceCleanup(ctx, hostKey, workspaceID)
+			},
+			WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
+			ViewerLogins:      s.resolveAuthenticatedViewerLogins,
+			ProviderSource:    pullProviderSource,
+			ProviderWriteGate: s.providerWriteGate,
+			FleetSelfKey:      s.fleetAPI.SelfKey,
+			FilterRepos: func(repos []db.Repo) []db.Repo {
+				if s.cfg == nil {
+					return repos
+				}
+				return s.filterConfiguredRepos(repos)
+			},
+			RepoOperations:                s.repoOperations,
+			RepoOperationsForMergeRequest: s.repoOperationsForMergeRequest,
+			EnqueueDetailSyncOrRerun:      s.enqueueDetailSyncOrRerun,
+			Broadcast: func(event pullapi.Event) uint64 {
+				return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
+			},
+			MarkClosedLinkedNotificationsDone: s.markClosedLinkedNotificationsDone,
+		})
+		s.issueAPI = issueapi.New(issueapi.Deps{
+			DB:                database,
+			Resolver:          repoResolver,
+			Syncer:            syncer,
+			Now:               func() time.Time { return s.now() },
+			Config:            issueConfigSnapshot(cfg),
+			WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
+			ViewerLogins:      s.resolveAuthenticatedViewerLogins,
+			ProviderSource:    issueProviderSource,
+			FilterRepos: func(repos []db.Repo) []db.Repo {
+				if s.cfg == nil {
+					return repos
+				}
+				return s.filterConfiguredRepos(repos)
+			},
+			RepoOperations:                    s.repoOperations,
+			MarkClosedLinkedNotificationsDone: s.markClosedLinkedNotificationsDone,
+		})
+		s.pullLifecycle = s.pullAPI
 	}
-	s.updateCatalogStripEnvVars(bootCatalog.TokenEnvNames())
-	s.workflowAPI = workflowapi.New(workflowapi.Deps{
-		Resolver:       repoResolver,
-		Syncer:         syncer,
-		RepoOperations: s.repoOperations,
-		Runtime:        workflowRuntime{server: s},
-	})
-	var pullProviderSource pullapi.ProviderSource
-	var issueProviderSource issueapi.ProviderSource
-	if s.providerSource != nil {
-		pullProviderSource = s.providerSource
-		issueProviderSource = s.providerSource
-	}
-	s.pullAPI = pullapi.New(pullapi.Deps{
-		DB:                   database,
-		Resolver:             repoResolver,
-		Syncer:               syncer,
-		Clones:               clones,
-		Config:               pullConfigSnapshot(cfg),
-		Now:                  func() time.Time { return s.now() },
-		DeferredMergeMaxWait: deferredMergeMaxWait,
-		QueueWorkspaceDeletion: func(
-			ctx context.Context, hostKey, workspaceID string,
-		) error {
-			if hostKey == "" || hostKey == s.fleetAPI.SelfKey("") {
-				return s.workspaceAPI.QueueWorkspaceDeletion(workspaceID)
-			}
-			return s.fleetAPI.RequestWorkspaceCleanup(ctx, hostKey, workspaceID)
-		},
-		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
-		ViewerLogins:      s.resolveAuthenticatedViewerLogins,
-		ProviderSource:    pullProviderSource,
-		ProviderWriteGate: s.providerWriteGate,
-		FleetSelfKey:      s.fleetAPI.SelfKey,
-		FilterRepos: func(repos []db.Repo) []db.Repo {
-			if s.cfg == nil {
-				return repos
-			}
-			return s.filterConfiguredRepos(repos)
-		},
-		RepoOperations:                s.repoOperations,
-		RepoOperationsForMergeRequest: s.repoOperationsForMergeRequest,
-		EnqueueDetailSyncOrRerun:      s.enqueueDetailSyncOrRerun,
-		Broadcast: func(event pullapi.Event) uint64 {
-			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
-		},
-		MarkClosedLinkedNotificationsDone: s.markClosedLinkedNotificationsDone,
-	})
-	s.issueAPI = issueapi.New(issueapi.Deps{
-		DB:                database,
-		Resolver:          repoResolver,
-		Syncer:            syncer,
-		Now:               func() time.Time { return s.now() },
-		Config:            issueConfigSnapshot(cfg),
-		WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
-		ViewerLogins:      s.resolveAuthenticatedViewerLogins,
-		ProviderSource:    issueProviderSource,
-		FilterRepos: func(repos []db.Repo) []db.Repo {
-			if s.cfg == nil {
-				return repos
-			}
-			return s.filterConfiguredRepos(repos)
-		},
-		RepoOperations:                    s.repoOperations,
-		MarkClosedLinkedNotificationsDone: s.markClosedLinkedNotificationsDone,
-	})
-	s.pullLifecycle = s.pullAPI
 	s.workspaceDependencyStop = newWorkspaceDependencyShutdown(
 		func(ctx context.Context) error {
 			for _, done := range []<-chan struct{}{
@@ -1323,8 +1347,10 @@ func newServer(
 			return nil
 		},
 		func(ctx context.Context) error {
-			if err := s.pullLifecycle.Shutdown(ctx); err != nil {
-				return err
+			if s.pullLifecycle != nil {
+				if err := s.pullLifecycle.Shutdown(ctx); err != nil {
+					return err
+				}
 			}
 			if err := s.fleetAPI.Shutdown(ctx); err != nil {
 				return err
@@ -1366,7 +1392,7 @@ func newServer(
 	if s.spokeActivationLease != nil {
 		s.runWorkspaceDependent(s.spokeActivationLease.Run)
 	}
-	if clones != nil {
+	if clones != nil && !options.ExecutionWorker {
 		// Seed even when background refresh is disabled: startup also adopts
 		// safe pre-stable-ID clone paths so cached reads survive an upgrade.
 		s.repoBrowserAPI.SeedRefreshRepos(context.Background())
@@ -1396,7 +1422,9 @@ func newServer(
 	// Watch the config file so an external edit (vim, dotfiles deploy,
 	// sd -i, etc.) is picked up without a restart. Watcher init failures
 	// are logged inside startConfigWatcher; the server still serves.
-	s.startConfigWatcher()
+	if !options.ExecutionWorker {
+		s.startConfigWatcher()
+	}
 
 	healthAPI := humago.New(mux, healthAPIConfig())
 	healthAPI.UseMiddleware(otelSpanMiddleware)
@@ -1406,7 +1434,7 @@ func newServer(
 	api.UseMiddleware(newResponseCompressionMiddleware(responseCompressionMinSize))
 	api.UseMiddleware(otelSpanMiddleware)
 	s.registerAPI(api)
-	if s.workspaces != nil {
+	if s.workspaces != nil || options.Devboxes != nil {
 		s.registerTerminalAPI(api, tmuxCmd)
 		wsAPI := humago.NewWithPrefix(mux, "/ws/v1", terminalAPIConfig())
 		wsAPI.UseMiddleware(otelSpanMiddleware)
@@ -1414,14 +1442,14 @@ func newServer(
 	}
 
 	// Roborev proxy
-	if cfg != nil {
+	if cfg != nil && !options.ExecutionWorker {
 		roborevAPI := humago.NewWithPrefix(
 			mux, "/api", roborevProxyAPIConfig(),
 		)
 		s.registerRoborevProxyAPI(roborevAPI)
 	}
 
-	if frontend != nil {
+	if frontend != nil && !options.ExecutionWorker {
 		mux.Handle("/", newSPAAssetHandler(frontend, basePath, s.bootstrapScript))
 	}
 
@@ -1609,7 +1637,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.daemonRequests.requireAPIAuth {
-		if s.handleAuthBootstrap(w, r) {
+		if !s.options.ExecutionWorker && s.handleAuthBootstrap(w, r) {
 			return
 		}
 		if s.isGatedAPIRequest(r) && !s.authorizeAPIRequest(w, r) {

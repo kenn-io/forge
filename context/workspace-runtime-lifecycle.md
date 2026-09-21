@@ -3,6 +3,12 @@
 Use this document for changes in workspace delete flows, runtime session
 management, tmux persistence, and workspace terminal UI behavior.
 
+## Remote execution context
+
+- A controller supplies leased PR/issue launch context to a devbox; remote-only creation is
+  repository plus branch. Expired context gates source-dependent launches, not existing terminals
+  or Git operations. (`internal/server/workspaceapi/execution_worker.go`)
+
 ## Purpose
 
 - Keep the lifecycle of kenn-forge-managed runtime state explicit.

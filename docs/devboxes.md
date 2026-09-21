@@ -53,6 +53,80 @@ Preview-port discovery and forwarding are not included. For a browser preview,
 read the port from agent output and use your terminal client's explicit port
 forwarding. Do not expose application listeners publicly to obtain a preview.
 
+## Repository access and commit identity
+
+Each developer uses a separate Linux account on the devbox. The operator links
+that account's numeric Linux user ID to the developer's GitHub user ID and
+configures their commit name and email. Forge uses that link to check repository
+access; Git uses the name and email to identify new commits.
+
+### How the credential broker works
+
+The credential broker is a small service on each devbox that supplies temporary
+GitHub credentials to Git. It runs under its own service account, which holds
+the GitHub App's private key. Development accounts receive short-lived tokens;
+the deployment keeps the App key readable only by the broker service account.
+Your personal GitHub credentials stay on the controller.
+
+Repository access follows these steps:
+
+1. **The operator enables the repository.** They install the organization's
+   GitHub App on selected repositories and add the allowed repositories and
+   developer accounts to the broker configuration. Connecting a devbox in Forge
+   does not itself grant GitHub access.
+2. **Git asks for a credential.** When Forge clones a repository, or Git needs
+   to fetch or push from a managed worktree, it asks the broker for access to
+   that specific repository. An agent or SSH shell uses the same Git helper.
+3. **The broker identifies the caller and checks access.** The request travels
+   over a local Unix socket. Linux supplies the caller's user ID, which the
+   broker looks up in its configured account list. The broker checks the linked
+   GitHub user's current organization membership and repository permissions,
+   as well as the configured App installation and repository identity.
+4. **Git receives a temporary token.** The broker requests a GitHub App
+   installation token restricted to that one repository. A developer with read
+   access can clone and fetch; write access also permits pushes, subject to
+   GitHub's branch rules. The helper passes the token to Git without saving it
+   as a stored credential.
+5. **Later requests repeat the access checks.** The broker can reuse a token
+   cached in memory, but still checks the caller's access before returning it.
+   It replaces tokens near expiry. Already issued tokens remain usable until
+   they expire or are revoked.
+
+This initial devbox integration supports repositories on `github.com`. It does
+not require a personal access token or `gh auth login` in the developer's
+devbox account. See [GitHub App and branch rules](#github-app-and-branch-rules)
+for the operator setup.
+
+### How commits are linked to you
+
+Forge sets `user.name` and `user.email` in each managed worktree from your
+configured developer identity. Use the GitHub-provided noreply address shown
+in your GitHub email settings. GitHub uses the email in a commit to
+[associate it with your account](https://docs.github.com/en/account-and-profile/how-tos/email-preferences/setting-your-commit-email-address).
+New commits made by an agent in your account therefore use your configured
+identity, just as commits made from your SSH shell do.
+
+The identities have different jobs:
+
+| Identity | What it means |
+| --- | --- |
+| GitHub App | Authenticates the push and any pull request actions made through the devbox wrapper. |
+| Commit author | The person credited with the original change, recorded in the commit. |
+| Committer | The person who created this version of the commit, also recorded in the commit. |
+
+For a new commit, author and committer normally both identify you. A cherry-pick
+or rebase can preserve someone else's author identity while recording you as
+the committer. The App can push either kind of commit without becoming its
+author.
+
+Forge validates the worktree's configured identity before starting an agent or
+pushing through Forge. After a push, the controller asks GitHub which accounts
+it resolved for the branch's latest commit and compares their numeric user IDs
+with your enrolled GitHub ID. Forge reports a match, a preserved original
+author, a mismatch, or an unverified result. If the email is wrong or GitHub
+cannot be reached, a successful push is not repeated. Commit attribution does
+not provide a cryptographic signature or prove who typed the change.
+
 ## Using an SSH terminal client
 
 An SSH terminal client connects to the same Unix account with the

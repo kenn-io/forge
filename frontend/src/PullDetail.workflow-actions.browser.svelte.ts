@@ -376,6 +376,28 @@ describe("PullDetail provider workflow actions", () => {
     }, WAIT);
   });
 
+  it("compacts workflow dispatch with the measured action rows before anything collapses", async () => {
+    const { wrapper } = await renderWorkflowDetail();
+
+    await vi.waitFor(() => expect(visibleButton("Run workflow")).not.toBeNull(), WAIT);
+    const host = document.querySelector<HTMLElement>(".primary-actions-fit")!;
+    const [full, compact] = Array.from(
+      host.querySelectorAll<HTMLElement>(".kit-fit-stages__probe"),
+      (probe) => probe.getBoundingClientRect().width,
+    );
+    expect(compact).toBeLessThan(full!);
+    const chrome = wrapper.getBoundingClientRect().width - host.getBoundingClientRect().width;
+    wrapper.style.width = `${Math.ceil(compact!) + chrome + 1}px`;
+
+    await vi.waitFor(() => {
+      const workflowTrigger = document.querySelector<HTMLButtonElement>(".workflow-actions-control > button");
+      expect(workflowTrigger?.textContent?.trim()).toBe("Workflow");
+      expect(workflowTrigger!.getAttribute("aria-label")).toBe("Run workflow");
+      expect(visibleButton("Actions")).toBeNull();
+      expect(document.querySelector(".pull-detail-content--actions-menu")).toBeNull();
+    }, WAIT);
+  });
+
   it("places workflow dispatch beside workspace tools while primary actions collapse only under pressure", async () => {
     const { wrapper } = await renderWorkflowDetail();
 
@@ -390,6 +412,7 @@ describe("PullDetail provider workflow actions", () => {
       expect(workflowTrigger!.closest(".actions-row--utility")).toBe(
         workspaceTrigger!.closest(".actions-row--utility"),
       );
+      expect(workflowTrigger!.getBoundingClientRect().height).toBe(workspaceTrigger!.getBoundingClientRect().height);
       expect(visibleButton("Actions")).toBeNull();
       expect(visibleButton("Approve")).not.toBeNull();
       expect(visibleButton("Squash and merge")).not.toBeNull();

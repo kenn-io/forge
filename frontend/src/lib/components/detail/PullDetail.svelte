@@ -64,6 +64,7 @@
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
+  import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import SendHorizontalIcon from "@lucide/svelte/icons/send-horizontal";
   import TagsIcon from "@lucide/svelte/icons/tags";
@@ -1340,7 +1341,10 @@
 
   let workflowDialogWorkflowId = $state<string | null>(null);
   let actionMenuTriggerEl = $state<HTMLButtonElement>();
-  const captureActionMenuTrigger: Attachment<HTMLButtonElement> = (button) => {
+  // Kit Button owns its element, so the host wrapper captures the trigger.
+  const captureActionMenuTrigger: Attachment<HTMLElement> = (host) => {
+    const button = host.querySelector<HTMLButtonElement>(":scope > .actions-menu-trigger");
+    if (!button) return;
     actionMenuTriggerEl = button;
     return () => {
       if (actionMenuTriggerEl === button) actionMenuTriggerEl = undefined;
@@ -2835,19 +2839,26 @@
         </section>
       {/snippet}
       {#snippet workflowDispatchAction(compactLabels = false)}
-        <div class="workflow-actions-control" bind:this={workflowActionControlEl}>
-          <button
-            {@attach captureActionMenuTrigger}
-            type="button"
+        <div
+          class="workflow-actions-control"
+          bind:this={workflowActionControlEl}
+          {@attach captureActionMenuTrigger}
+        >
+          <Button
             class="actions-menu-trigger"
-            aria-haspopup="true"
-            aria-expanded={actionMenuOpen}
             onclick={() => { actionMenuOpen = !actionMenuOpen; }}
+            tone="neutral"
+            surface="soft"
+            size="sm"
+            ariaExpanded={actionMenuOpen}
+            ariaLabel={compactLabels ? "Run workflow" : undefined}
+            label={compactLabels ? "Workflow" : "Run workflow"}
           >
             <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            <span>{compactLabels ? "Workflow" : "Run workflow"}</span>
-            <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </button>
+            {#snippet trailing()}
+              <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            {/snippet}
+          </Button>
           {#if actionMenuOpen}
             {@render workflowActionsMenu(true)}
           {/if}
@@ -2938,12 +2949,71 @@
         </div>
       {/snippet}
 
+      {#snippet measuredUtilityActions(compactLabels = false)}
+        <div
+          class="actions-row actions-row--utility actions-row--measure"
+          aria-hidden="true"
+          inert
+        >
+          {#if !hideWorkspaceAction}
+            {#if workspace}
+              {#if inlineWorkspace}
+                <Button size="sm" label={compactLabels ? "Terminal" : "Focus Terminal"}>
+                  <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                </Button>
+                <Button
+                  size="sm"
+                  label={compactLabels
+                    ? "Workspaces"
+                    : workspaceDeletionLifecycle ? "View in Workspaces" : "Open in Workspaces"}
+                >
+                  <ExternalLinkIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                </Button>
+              {:else}
+                <Button
+                  size="sm"
+                  label={workspaceDeletionLifecycle
+                    ? compactLabels ? "Workspaces" : "View in Workspaces"
+                    : compactLabels ? "Workspace" : "Open Workspace"}
+                >
+                  <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                </Button>
+              {/if}
+            {:else}
+              <div class="workspace-create-measure">
+                <Button
+                  class="workspace-create-measure__primary"
+                  size="sm"
+                  label={wsCreateBlocked ? "Creating..." : "Create Workspace"}
+                >
+                  <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                </Button>
+                {#if settings.getQuickActions().length > 0}
+                  <span class="workspace-create-measure__options"></span>
+                {/if}
+                <span class="workspace-create-measure__options"></span>
+              </div>
+            {/if}
+          {/if}
+          {#if hasWorkflowActions}
+            <Button size="sm" label={compactLabels ? "Workflow" : "Run workflow"}>
+              <WorkflowIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              {#snippet trailing()}
+                <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              {/snippet}
+            </Button>
+          {/if}
+        </div>
+      {/snippet}
+
       {#snippet fullPrimaryActionMeasure()}
-        {@render measuredPrimaryActions(false)}
+        {#if hasPrimaryPRActions}{@render measuredPrimaryActions(false)}{/if}
+        {@render measuredUtilityActions(false)}
       {/snippet}
 
       {#snippet compactPrimaryActionMeasure()}
-        {@render measuredPrimaryActions(true)}
+        {#if hasPrimaryPRActions}{@render measuredPrimaryActions(true)}{/if}
+        {@render measuredUtilityActions(true)}
       {/snippet}
 
       {#snippet menuPrimaryActionMeasure()}
@@ -2952,10 +3022,11 @@
           aria-hidden="true"
           inert
         >
-          <button type="button" class="actions-menu-trigger">
-            <span>Actions</span>
-            <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-          </button>
+          <Button class="actions-menu-trigger" tone="neutral" surface="soft" size="sm" label="Actions">
+            {#snippet trailing()}
+              <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            {/snippet}
+          </Button>
         </div>
       {/snippet}
 
@@ -2990,20 +3061,16 @@
               collapseBelow={0}
             />
           {:else}
-            {#if hasPrimaryPRActions}
             <FitStages
               class="primary-actions-fit"
               bind:stage={primaryActionStage}
               onstagechange={(stage) => {
                 if (stage !== 2) closeActionMenu();
               }}
-              stages={[
-                fullPrimaryActionMeasure,
-                compactPrimaryActionMeasure,
-                menuPrimaryActionMeasure,
-              ]}
+              stages={hasPrimaryPRActions
+                ? [fullPrimaryActionMeasure, compactPrimaryActionMeasure, menuPrimaryActionMeasure]
+                : [fullPrimaryActionMeasure, compactPrimaryActionMeasure]}
             />
-          {/if}
           <div
             class={[
               "actions-menu-wrap",
@@ -3045,7 +3112,7 @@
                     {@render workspaceActionButton(primaryActionStage === 1)}
                   {/if}
                   {#if hasWorkflowActions && (!hasPrimaryPRActions || primaryActionStage !== 2)}
-                    {@render workflowDispatchAction()}
+                    {@render workflowDispatchAction(primaryActionStage === 1)}
                   {/if}
                 </div>
               {/if}
@@ -3055,17 +3122,21 @@
               {/if}
             </div>
             {#if hasPrimaryPRActions && primaryActionStage === 2}
-              <button
-                {@attach captureActionMenuTrigger}
-                type="button"
-                class="actions-menu-trigger"
-                aria-haspopup="true"
-                aria-expanded={actionMenuOpen}
-                onclick={() => { actionMenuOpen = !actionMenuOpen; }}
-              >
-                <span>Actions</span>
-                <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-              </button>
+              <div class="actions-menu-trigger-host" {@attach captureActionMenuTrigger}>
+                <Button
+                  class="actions-menu-trigger"
+                  onclick={() => { actionMenuOpen = !actionMenuOpen; }}
+                  tone="neutral"
+                  surface="soft"
+                  size="sm"
+                  ariaExpanded={actionMenuOpen}
+                  label="Actions"
+                >
+                  {#snippet trailing()}
+                    <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                  {/snippet}
+                </Button>
+              </div>
             {/if}
           </div>
           {/if}
@@ -3851,10 +3922,6 @@
     flex-wrap: nowrap;
   }
 
-  .primary-actions-wrap :global(.actions-row--measure > .actions-menu-trigger) {
-    display: inline-flex;
-  }
-
   .actions-row {
     display: flex;
     align-items: flex-start;
@@ -3869,6 +3936,19 @@
   }
 
   .approve-action-measure__options {
+    width: 24px;
+    flex: 0 0 24px;
+  }
+
+  .workspace-create-measure {
+    display: inline-flex;
+  }
+
+  .workspace-create-measure :global(.workspace-create-measure__primary) {
+    padding-inline: var(--space-4);
+  }
+
+  .workspace-create-measure__options {
     width: 24px;
     flex: 0 0 24px;
   }
@@ -3889,7 +3969,8 @@
   .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .approve-section),
   .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .ready-section),
   .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .workflow-approval-section),
-  .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .workspace-create-split) {
+  .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .workspace-create-split),
+  .primary-actions-wrap :global(.phone-actions-grid .kit-adaptive-action-grid__item > .workflow-actions-control) {
     width: 100%;
     min-width: 0;
   }
@@ -3897,7 +3978,8 @@
   .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .approve-section > .kit-button),
   .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .ready-section > .kit-button),
   .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .workflow-approval-section > .kit-button),
-  .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .workspace-create-split > .create-primary) {
+  .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .workspace-create-split > .create-primary),
+  .primary-actions-wrap :global(.phone-actions-grid.kit-adaptive-action-grid--grid .workflow-actions-control > .kit-button) {
     width: 100%;
   }
 
@@ -3928,26 +4010,7 @@
     z-index: 65;
   }
 
-  .actions-menu-trigger {
-    display: none;
-    align-items: center;
-    gap: 6px;
-    min-height: 28px;
-    padding: 5px 11px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .workflow-actions-control > .actions-menu-trigger {
-    display: inline-flex;
-  }
-
-  .actions-menu-wrap--menu > .actions-menu-trigger {
+  .actions-menu-trigger-host {
     display: inline-flex;
   }
 
@@ -3965,11 +4028,6 @@
 
   .actions-menu-wrap--menu .primary-actions-live > .actions-menu-popover__item {
     display: block;
-  }
-
-  .actions-menu-trigger:hover {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
   }
 
   .actions-menu-popover {
@@ -4388,7 +4446,7 @@
     }
 
     .actions-row :global(.kit-button),
-    .actions-menu-trigger,
+    .actions-menu-trigger-host :global(.kit-button),
     .detail-tab,
     .title-edit-save,
     .title-edit-cancel,

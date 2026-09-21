@@ -161,7 +161,8 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   disclosure. It reuses the same per-action snippets the desktop `FitStages`
   row composes, so each stateful control still renders exactly once. Kit
   fills only its own direct controls; compound wrappers (`approve-section`,
-  `ready-section`, `workflow-approval-section`, `workspace-create-split`)
+  `ready-section`, `workflow-approval-section`, `workspace-create-split`,
+  `workflow-actions-control`)
   are custom items and `PullDetail` fills their primary button itself. A
   wrapper around a kit control must not hardcode a width smaller than the
   phone hit target (`--focus-detail-hit-target`), or the control overflows
@@ -185,6 +186,10 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 - Pull-request lifecycle decisions stay in the primary action row; workspace
   creation and workflow dispatch form a utility row, joining the measured
   `Actions` overflow only under pressure (`frontend/src/lib/components/detail/PullDetail.svelte::workflowActionsMenu`).
+  Both rows are measured by the same `FitStages` probes, so utility controls
+  compact with the primary row, and every control in either row, menu triggers
+  included, is a kit `Button` at the row's `size`, never a hand-styled
+  `<button>` (`frontend/src/lib/components/detail/PullDetail.svelte::measuredUtilityActions`).
 - Flash: one shared store (`frontend/src/lib/stores/flash.svelte.ts`); kit `FlashBanner`
   mounts once per shell in a page-level fixed layer below measured shell chrome
   and above modal backdrops, never inside feature containers; headerless shells

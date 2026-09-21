@@ -357,14 +357,16 @@ func TestSSE_InitialSyncStatusFromCache(t *testing.T) {
 }
 
 func TestSSE_ExitsCleanlyOnHubClose(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	s := newTestServer(t)
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 
 	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
-	require.NoError(t, err)
+	require.NoError(err)
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
-	require.NoError(t, err)
+	require.NoError(err)
 	defer resp.Body.Close()
 
 	// Close the hub — handler should exit
@@ -372,8 +374,8 @@ func TestSSE_ExitsCleanlyOnHubClose(t *testing.T) {
 
 	// Read until EOF — should not see zero-value frames
 	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	assert.NotContains(t, string(body), "event: \ndata:")
+	require.NoError(err)
+	assert.NotContains(string(body), "event: \ndata:")
 }
 
 func TestSSE_MarshalFailureContinuesServing(t *testing.T) {

@@ -549,16 +549,18 @@ func TestRegistryRemoveUnknown(t *testing.T) {
 }
 
 func TestRegistryRemovePreservesOthers(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	r := NewRegistry(nil)
 	a := t.TempDir()
 	b := t.TempDir()
 
-	require.NoError(t, r.Add(config.DocFolder{ID: "a", Path: a}))
-	require.NoError(t, r.Add(config.DocFolder{ID: "b", Path: b}))
-	require.NoError(t, r.Remove("a"))
+	require.NoError(r.Add(config.DocFolder{ID: "a", Path: a}))
+	require.NoError(r.Add(config.DocFolder{ID: "b", Path: b}))
+	require.NoError(r.Remove("a"))
 	got := r.Folders()
-	require.Len(t, got, 1)
-	assert.Equal(t, "b", got[0].ID)
+	require.Len(got, 1)
+	assert.Equal("b", got[0].ID)
 }
 
 func TestRegistryRename(t *testing.T) {

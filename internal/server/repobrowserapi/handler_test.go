@@ -830,13 +830,14 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 }
 
 func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T) {
+	require := require.New(t)
 	acquireRepoBrowserTestSlot(t)
 
 	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
 	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
-	require.NoError(t, err)
-	require.NoError(t, database.UpdateRepoProviderMetadata(
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(
 		t.Context(),
 		repoID,
 		db.RepoProviderMetadata{
@@ -856,10 +857,10 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 	initialRefs := repoBrowserRequest(t, initialServer, http.MethodGet,
 		"/api/v1/repo/github/acme/widgets/browser/refs",
 	)
-	require.Equal(t, http.StatusOK, initialRefs.Code)
+	require.Equal(http.StatusOK, initialRefs.Code)
 	gracefulShutdown(t, initialServer)
 
-	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
+	require.NoError(os.WriteFile(filepath.Join(work, "README.md"), []byte("# Updated\n"), 0o644))
 	serverRepoBrowserGit(t, work, "add", ".")
 	serverRepoBrowserGit(t, work, "commit", "-m", "update readme")
 	updatedSHA := testGitSHA(t, work, "main")
@@ -867,7 +868,7 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 
 	for _, airplaneMode := range []bool{false, true} {
 		t.Run(fmt.Sprintf("airplane_mode=%t", airplaneMode), func(t *testing.T) {
-			require := require.New(t)
+			assert := assert.New(t)
 			disabledClones := gitclone.New(cloneBase, nil)
 			disabledSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 			t.Cleanup(disabledSyncer.Stop)
@@ -877,7 +878,7 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 				})
 			t.Cleanup(func() { gracefulShutdown(t, disabledServer) })
 
-			require.Never(func() bool {
+			assert.Never(func() bool {
 				resolved, err := disabledClones.ResolveRepoBrowserRef(t.Context(), gitclone.RepoBrowserRepoRef{
 					Provider: "github", Host: "github.com", Owner: "acme", Name: "widgets",
 					RepoPath: "acme/widgets", RemoteURL: remote,

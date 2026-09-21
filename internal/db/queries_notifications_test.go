@@ -269,6 +269,7 @@ func TestNotificationSummaryIgnoresListState(t *testing.T) {
 
 func TestNotificationsReadQueuesWithoutDone(t *testing.T) {
 	require := require.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -280,21 +281,21 @@ func TestNotificationsReadQueuesWithoutDone(t *testing.T) {
 	readAt := now.Add(time.Minute)
 	queued, err := d.QueueNotificationIDsRead(t.Context(), []int64{items[0].ID}, readAt)
 	require.NoError(err)
-	assert.Equal(t, []int64{items[0].ID}, queued)
+	assert.Equal([]int64{items[0].ID}, queued)
 
 	readItems, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "read"})
 	require.NoError(err)
 	require.Len(readItems, 1)
 
-	assert.Nil(t, readItems[0].DoneAt)
-	assert.Nil(t, readItems[0].SourceLastAcknowledgedAt)
-	if assert.NotNil(t, readItems[0].SourceAckQueuedAt) {
-		assert.True(t, readAt.Equal(*readItems[0].SourceAckQueuedAt))
+	assert.Nil(readItems[0].DoneAt)
+	assert.Nil(readItems[0].SourceLastAcknowledgedAt)
+	if assert.NotNil(readItems[0].SourceAckQueuedAt) {
+		assert.True(readAt.Equal(*readItems[0].SourceAckQueuedAt))
 	}
 
 	doneItems, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "done"})
 	require.NoError(err)
-	assert.Empty(t, doneItems)
+	assert.Empty(doneItems)
 }
 
 func TestMarkNotificationsAcknowledgedScopesThreadIDsToPlatformHost(t *testing.T) {

@@ -291,16 +291,18 @@ func TestAuthTransportRejectsRequestOutsideAllowedOrigin(t *testing.T) {
 }
 
 func TestAuthTransportRejectsCrossOriginRedirectBeforeAuth(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	src := &sequenceSource{tokens: []string{"first", "second"}}
 	redirected := false
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		redirected = true
-		assert.Empty(t, r.Header.Get("Authorization"))
+		assert.Empty(r.Header.Get("Authorization"))
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer target.Close()
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "Bearer first", r.Header.Get("Authorization"))
+		assert.Equal("Bearer first", r.Header.Get("Authorization"))
 		http.Redirect(w, r, target.URL+"/redirected", http.StatusFound)
 	}))
 	defer origin.Close()
@@ -316,13 +318,13 @@ func TestAuthTransportRejectsCrossOriginRedirectBeforeAuth(t *testing.T) {
 	}
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL+"/start", nil)
-	require.NoError(t, err)
+	require.NoError(err)
 	resp, err := client.Do(req)
 
-	require.Error(t, err)
+	require.Error(err)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
-	assert.False(t, redirected)
-	assert.Equal(t, []string{"second"}, src.tokens)
+	assert.False(redirected)
+	assert.Equal([]string{"second"}, src.tokens)
 }

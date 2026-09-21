@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { StatusDot } from "@kenn-io/kit-ui";
+  import { DiffStats, StatusDot } from "@kenn-io/kit-ui";
   import type { CommitInfo } from "../../api/types.js";
   import {
     localDateLabel,
@@ -9,10 +9,11 @@
   interface Props {
     commit: CommitInfo;
     active: boolean;
+    showStats?: boolean;
     onclick: (sha: string, shiftKey: boolean) => void;
   }
 
-  const { commit, active, onclick }: Props = $props();
+  const { commit, active, showStats = false, onclick }: Props = $props();
 
   function relativeDate(iso: string): string {
     const diff = Date.now() - parseAPITimestamp(iso).getTime();
@@ -46,6 +47,11 @@
   />
   <span class="commit-item__sha">{commit.sha.slice(0, 7)}</span>
   <span class="commit-item__msg">{commit.message}</span>
+  {#if showStats && commit.stats}
+    <span class="commit-item__stats">
+      <DiffStats additions={commit.stats.additions} deletions={commit.stats.deletions} dimZeros />
+    </span>
+  {/if}
   <span class="commit-item__date">{relativeDate(commit.authored_at)}</span>
 </button>
 
@@ -53,7 +59,7 @@
   .commit-item {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
     width: 100%;
     padding: 3px 10px 3px 12px;
     color: var(--text-secondary);
@@ -92,6 +98,19 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+  }
+
+  .commit-item__stats {
+    flex-shrink: 0;
+    min-width: 80px;
+    text-align: right;
+    font-size: var(--font-size-2xs);
+  }
+
+  @media (max-width: 760px) {
+    .commit-item__stats {
+      display: none;
+    }
   }
 
   .commit-item__date {

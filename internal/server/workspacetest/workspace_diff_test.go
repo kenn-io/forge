@@ -285,6 +285,11 @@ func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 	assert.Equal("local two", commits.Commits[0].Message)
 	assert.Equal("local one", commits.Commits[1].Message)
 	assert.Equal("feature commit", commits.Commits[2].Message)
+	for _, commit := range commits.Commits[:2] {
+		require.NotNil(commit.Stats)
+		assert.Equal(int64(1), commit.Stats.Additions)
+		assert.Zero(commit.Stats.Deletions)
+	}
 }
 
 func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {

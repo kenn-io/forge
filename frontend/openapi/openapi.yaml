@@ -1192,11 +1192,29 @@ components:
         sha:
           description: Full commit SHA
           type: string
+        stats:
+          $ref: "#/components/schemas/CommitStats"
+          description: Line counts against the first parent; omitted when unavailable. Binary files contribute no lines.
       required:
         - sha
         - message
         - author_name
         - authored_at
+      type: object
+    CommitStats:
+      additionalProperties: false
+      properties:
+        additions:
+          description: Text lines added by this commit
+          format: int64
+          type: integer
+        deletions:
+          description: Text lines removed by this commit
+          format: int64
+          type: integer
+      required:
+        - additions
+        - deletions
       type: object
     CommitsResponse:
       additionalProperties: false

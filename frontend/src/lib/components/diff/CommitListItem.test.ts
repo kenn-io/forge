@@ -14,15 +14,35 @@ function makeCommit(overrides: Partial<CommitInfo> = {}): CommitInfo {
   };
 }
 
-function renderItem(commit: CommitInfo): void {
+function renderItem(commit: CommitInfo, showStats = false): void {
   render(CommitListItem, {
-    props: { commit, active: false, onclick: () => {} },
+    props: { commit, showStats, active: false, onclick: () => {} },
   });
 }
 
 describe("CommitListItem", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("shows shared line counts, including compact large values and exact accessible totals", () => {
+    renderItem(makeCommit({ stats: { additions: 12345, deletions: 42 } }), true);
+    expect(screen.getByLabelText("12345 additions, 42 deletions")).toBeTruthy();
+    expect(screen.getByText("+12.3k")).toBeTruthy();
+    expect(screen.getByText("−42")).toBeTruthy();
+  });
+
+  it("distinguishes an empty diff from unavailable counts", () => {
+    renderItem(makeCommit({ stats: { additions: 0, deletions: 0 } }), true);
+    expect(screen.getByLabelText("0 additions, 0 deletions")).toBeTruthy();
+    cleanup();
+    renderItem(makeCommit(), true);
+    expect(document.querySelector(".kit-diff-stats")).toBeNull();
+  });
+
+  it("keeps counts out of other commit lists unless requested", () => {
+    renderItem(makeCommit({ stats: { additions: 12, deletions: 3 } }));
+    expect(document.querySelector(".kit-diff-stats")).toBeNull();
   });
 
   it("flags commits that have not been pushed", () => {

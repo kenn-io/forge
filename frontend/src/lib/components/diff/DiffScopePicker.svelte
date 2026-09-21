@@ -123,6 +123,7 @@
           {#each commits as commit (commit.sha)}
             <CommitListItem
               {commit}
+              showStats
               active={isActive(commit.sha)}
               onclick={handleCommitClick}
             />
@@ -172,7 +173,7 @@
     z-index: var(--z-popover);
     top: calc(100% + 4px);
     right: 0;
-    width: min(420px, calc(100cqw - 20px));
+    width: min(520px, calc(100cqw - 20px));
     max-height: min(460px, 70vh);
     overflow: hidden;
     border: 1px solid var(--border-default);

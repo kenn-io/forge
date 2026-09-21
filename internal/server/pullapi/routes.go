@@ -2443,10 +2443,16 @@ func (s *Handler) getCommits(ctx context.Context, input *repoNumberInput) (*getC
 		)
 	}
 
+	stats, statsErr := s.clones.CommitStats(resolved.ctx, string(repoProviderKind(*repo)), host, repo.Owner, repo.Name, commits)
+	if statsErr != nil {
+		slog.Warn("failed to read pull request commit stats", "err", statsErr)
+	}
+
 	resp := commitsResponse{Commits: make([]commitResponse, len(commits))}
 	for i, c := range commits {
 		resp.Commits[i] = commitResponse{
 			SHA:        c.SHA,
+			Stats:      stats[c.SHA],
 			Message:    c.Message,
 			AuthorName: c.AuthorName,
 			AuthoredAt: c.AuthoredAt.UTC(),

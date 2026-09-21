@@ -83,6 +83,7 @@ export * from "./commentAutocompleteReference.ts";
 export * from "./commentAutocompleteResponse.ts";
 export * from "./commitResponse.ts";
 export * from "./commitsResponse.ts";
+export * from "./commitStats.ts";
 export * from "./completeFilesystemPathParams.ts";
 export * from "./completeFleetFilesystemPathDefaultOne.ts";
 export * from "./completeFleetFilesystemPathParams.ts";

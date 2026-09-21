@@ -223,6 +223,7 @@ export type FilesResult = Omit<FilesResponseWire, "files"> & {
 };
 
 export interface CommitInfo {
+  stats?: { additions: number; deletions: number };
   sha: string;
   message: string;
   author_name: string;

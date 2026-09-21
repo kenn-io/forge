@@ -22620,6 +22620,9 @@ func TestAPIGetCommits(t *testing.T) {
 	assert.Len(resp.JSON200.Commits, 5)
 	assert.Equal(commitSHAs[0], resp.JSON200.Commits[0].Sha)
 	assert.Equal("commit 5", resp.JSON200.Commits[0].Message)
+	require.NotNil(resp.JSON200.Commits[0].Stats)
+	assert.Equal(int64(1), resp.JSON200.Commits[0].Stats.Additions)
+	assert.Zero(resp.JSON200.Commits[0].Stats.Deletions)
 	assert.Equal(time.UTC, resp.JSON200.Commits[0].AuthoredAt.Location())
 }
 

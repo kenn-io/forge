@@ -48626,7 +48626,16 @@ type CommitResponse struct {
 	Pushed *bool `json:"pushed,omitempty"`
 
 	// Sha Full commit SHA
-	Sha string `json:"sha"`
+	Sha   string       `json:"sha"`
+	Stats *CommitStats `json:"stats,omitempty"`
+}
+
+type CommitStats struct {
+	// Additions Text lines added by this commit
+	Additions int64 `json:"additions"`
+
+	// Deletions Text lines removed by this commit
+	Deletions int64 `json:"deletions"`
 }
 
 type CommitsResponse struct {

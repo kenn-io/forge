@@ -1336,10 +1336,16 @@ func (s *Handler) getWorkspaceCommits(
 		)
 	}
 
+	stats, statsErr := gitclone.ReadCommitStats(ctx, req.Summary.WorktreePath, commits)
+	if statsErr != nil {
+		slog.Warn("failed to read workspace commit stats", "workspace_id", input.ID, "err", statsErr)
+	}
+
 	resp := commitsResponse{Commits: make([]commitResponse, len(commits))}
 	for i, c := range commits {
 		cr := commitResponse{
 			SHA:        c.SHA,
+			Stats:      stats[c.SHA],
 			Message:    c.Message,
 			AuthorName: c.AuthorName,
 			AuthoredAt: c.AuthoredAt.UTC(),

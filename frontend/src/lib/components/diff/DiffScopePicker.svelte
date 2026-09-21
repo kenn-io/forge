@@ -123,6 +123,7 @@
           {#each commits as commit (commit.sha)}
             <CommitListItem
               {commit}
+              showStats
               active={isActive(commit.sha)}
               onclick={handleCommitClick}
             />
@@ -172,7 +173,7 @@
     z-index: var(--z-popover);
     top: calc(100% + 4px);
     right: 0;
-    width: min(420px, calc(100cqw - 20px));
+    width: min(520px, calc(100cqw - 20px));
     max-height: min(460px, 70vh);
     overflow: hidden;
     border: 1px solid var(--border-default);
@@ -204,6 +205,9 @@
   }
 
   .diff-scope-picker__list {
+    display: grid;
+    grid-template-columns: max-content max-content minmax(0, 1fr) max-content max-content max-content;
+    column-gap: var(--space-3);
     max-height: 390px;
     overflow-y: auto;
     padding: 3px 0;
@@ -220,6 +224,10 @@
   }
 
   @media (max-width: 760px) {
+    .diff-scope-picker__list {
+      grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+    }
+
     .diff-scope-picker__menu {
       left: 0;
       right: auto;

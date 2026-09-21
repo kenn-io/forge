@@ -85,6 +85,12 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 - kit BEM classes are the sanctioned surface for parent `:global` styles
   and test selectors; a SHA bump that renames a class updates selectors in
   the same change.
+- Line-change counts reuse kit `DiffStats`, including compact formatting and exact
+  accessible totals; commit-range menus hide these secondary counts on mobile
+  (`frontend/src/lib/components/diff/CommitListItem.svelte`).
+- Commit-range additions, removals, and times share right-aligned columns; the
+  widest timestamp sets the time column width across the entire menu
+  (`frontend/src/lib/components/diff/DiffScopePicker.svelte::.diff-scope-picker__list`).
 - Chip: icons go in `children` (kit centers them), dropdown chevrons in
   `trailing`; no downstream `.kit-chip__label` overrides — repo chips
   depend on its ellipsis.

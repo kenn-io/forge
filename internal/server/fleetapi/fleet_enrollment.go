@@ -653,6 +653,11 @@ func (h *Handler) revokeLocalEnrollment(
 func (h *Handler) requestSpokeEnrollmentRevocation(
 	ctx context.Context, enrollment federation.Enrollment,
 ) error {
+	for _, member := range h.configSnapshot().Fleet.Members {
+		if member.NodeID == enrollment.NodeID && member.OutboundDisabled {
+			return nil
+		}
+	}
 	credential, ok := h.credentials.Outbound(enrollment.NodeID)
 	if !ok {
 		return httpapi.Internal("outbound spoke credential is unavailable")

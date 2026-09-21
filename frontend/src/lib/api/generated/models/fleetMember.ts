@@ -6,5 +6,6 @@ export interface FleetMember {
   base_url: string;
   name?: string;
   node_id: string;
+  outbound_disabled?: boolean;
   state: string;
 }

@@ -4737,3 +4737,26 @@ func TestLoadQuickActionsAppliesInitialMessageContract(t *testing.T) {
 	}}}
 	require.ErrorContains(oversized.validateQuickActions(), "prompt must not exceed 64 KiB")
 }
+
+func TestFleetMemberOutboundDisabledSurvivesSave(t *testing.T) {
+	require := require.New(t)
+	path := writeConfig(t, `
+[api]
+require_auth = true
+[fleet]
+enabled = true
+base_url = "https://hub.example"
+[[fleet.members]]
+node_id = "fedcba9876543210fedcba9876543210"
+base_url = "https://spoke.example"
+state = "active"
+outbound_disabled = true
+`)
+	cfg, err := Load(path)
+	require.NoError(err)
+	require.NoError(cfg.Save(path))
+	loaded, err := Load(path)
+	require.NoError(err)
+	require.Len(loaded.Fleet.Members, 1)
+	assert.True(t, loaded.Fleet.Members[0].OutboundDisabled)
+}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -401,4 +402,55 @@ func TestInactiveSpokeSnapshotMarksAggregateIncomplete(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.True(t, snapshot.AggregateIncomplete)
+}
+
+func TestOutboundDisabledSpokeIsNotContactedOrReportedOffline(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var calls atomic.Int32
+	peer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"protocolVersion":` + strconv.Itoa(federation.ProtocolVersion) + `,"nodeID":"` + testMemberNodeID + `","host":{"hostname":"spoke"}}`))
+	}))
+	t.Cleanup(peer.Close)
+	srv := New(Deps{DB: dbtest.Open(t)})
+	configureTestMembers(t, srv, testTLSClient(t, peer), config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: peer.URL, OutboundDisabled: true,
+	})
+
+	snapshot, err := srv.buildFleetSnapshot(t.Context(), true)
+	require.NoError(err)
+	require.Len(snapshot.Hosts, 1)
+	assert.Equal(testHubNodeID, snapshot.Hosts[0].NodeID)
+	_, reachable := srv.resolveFleetHostTarget(testMemberNodeID)
+	assert.False(reachable)
+
+	// The spoke's own view still adds its local authority to the hub directory.
+	local := fleet.RawSnapshot{NodeID: fleet.NodeID(testMemberNodeID)}
+	hub, err := srv.buildLocalRaw(t.Context())
+	require.NoError(err)
+	aggregate, err := srv.buildHubAggregate(t.Context(), hub, true, time.Second)
+	require.NoError(err)
+	view := fleet.ProjectForObserver(aggregate, local, fleet.Observer{NodeID: local.NodeID, Role: fleet.RoleSpoke})
+	require.Len(view.Hosts, 2)
+	assert.True(view.Hosts[1].Reachable)
+	assert.Equal(testMemberNodeID, view.Hosts[1].NodeID)
+
+	// Re-enabling access takes effect without enrollment or a restart.
+	cfg := srv.configSnapshot()
+	cfg.Fleet.Members[0].OutboundDisabled = false
+	srv.ApplyConfig(cfg)
+	snapshot, err = srv.buildFleetSnapshot(t.Context(), true)
+	require.NoError(err)
+	assert.Len(snapshot.Hosts, 2)
+	assert.Equal(int32(1), calls.Load())
+
+	cfg.Fleet.Members[0].OutboundDisabled = true
+	srv.ApplyConfig(cfg)
+	enrollment, ok := srv.enrollments.EnrollmentForSpoke(testMemberNodeID)
+	require.True(ok)
+	_, err = srv.revokeEnrollment(t.Context(), &revokeEnrollmentInput{EnrollmentID: enrollment.ID})
+	require.NoError(err)
+	assert.Equal(int32(1), calls.Load(), "revocation must not contact an outbound-disabled spoke")
 }

@@ -881,10 +881,11 @@ type FleetHub struct {
 }
 
 type FleetMember struct {
-	NodeID  string                     `toml:"node_id" json:"node_id"`
-	Name    string                     `toml:"name,omitempty" json:"name,omitempty"`
-	BaseURL string                     `toml:"base_url" json:"base_url"`
-	State   federation.EnrollmentState `toml:"state" json:"state"`
+	NodeID           string                     `toml:"node_id" json:"node_id"`
+	Name             string                     `toml:"name,omitempty" json:"name,omitempty"`
+	BaseURL          string                     `toml:"base_url" json:"base_url"`
+	State            federation.EnrollmentState `toml:"state" json:"state"`
+	OutboundDisabled bool                       `toml:"outbound_disabled,omitempty" json:"outbound_disabled,omitempty"`
 }
 
 // Fleet configures this daemon's role and enrolled HTTP membership.

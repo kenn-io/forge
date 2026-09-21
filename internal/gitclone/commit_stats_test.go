@@ -7,11 +7,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 func TestReadCommitStats(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := isolatedCommitFixtureDir(t)
 	commitTestRun(t, dir, "git", "init", "--initial-branch=main")
 	commitTestRun(t, dir, "git", "config", "user.name", "Alice")
 	commitTestRun(t, dir, "git", "config", "user.email", "alice@example.test")
@@ -59,4 +60,20 @@ func TestReadCommitStatsNoCommits(t *testing.T) {
 	stats, err := ReadCommitStats(t.Context(), t.TempDir(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, stats)
+}
+
+// Refuse to initialize fixtures under an enclosing repository, including when
+// TMPDIR points into a checkout or linked worktree.
+func isolatedCommitFixtureDir(t *testing.T) string {
+	t.Helper()
+	require := require.New(t)
+	require.Empty(os.Getenv("GIT_DIR"), "package TestMain must remove inherited repository bindings")
+	require.Equal("1", os.Getenv("GIT_CONFIG_NOSYSTEM"))
+	config, err := os.ReadFile(os.Getenv("GIT_CONFIG_GLOBAL"))
+	require.NoError(err, "package TestMain must install a scratch global config")
+	require.Empty(config, "shared global config must stay empty")
+	dir := t.TempDir()
+	_, err = gitsafe.Runner().Output(t.Context(), dir, "rev-parse", "--absolute-git-dir")
+	require.Error(err, "commit fixture must be outside all repositories and worktrees")
+	return dir
 }

@@ -443,6 +443,9 @@ Disable Git auto-GC and auto-maintenance in synthetic repositories under
 Real-Git test packages use `gitsafe.RunIsolatedMain` in `TestMain`: one empty config per binary.
 Use `Runner` where code strips Git variables, and `MutableRunner` only for global config
 mutations (`internal/testutil/gitsafe/gitsafe.go::RunIsolatedMain`).
+`gitcmd.New()` is not a substitute: it probes user `safe.directory` settings.
+Commit fixtures must also reject temp directories inside existing repositories
+(`internal/gitclone/commit_stats_test.go::isolatedCommitFixtureDir`).
 Script tests that launch Git from repository hooks must strip Git's repository-local
 environment first; a nested `git init` can otherwise rewrite shared worktree config
 (`scripts/context-sync.test.mjs::isolatedGitEnv`).

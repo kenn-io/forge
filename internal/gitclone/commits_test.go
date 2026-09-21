@@ -8,14 +8,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 func commitTestRun(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 	require.Equal(t, "git", name)
 	args = append([]string{"-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "command %s %v failed: %s%s", name, args, out, stderr)
 }
 
@@ -55,7 +55,7 @@ func setupCommitTestRepo(t *testing.T) (string, string, string) {
 
 func gitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
+	out, err := gitsafe.Runner().Output(t.Context(), dir, "rev-parse", ref)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

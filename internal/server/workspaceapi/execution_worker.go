@@ -13,6 +13,9 @@ import (
 	"go.kenn.io/forge/internal/workspace"
 )
 
+// WorkspaceContextExpiredReason identifies reads the controller can renew and retry.
+const WorkspaceContextExpiredReason = "workspace_context_expired"
+
 type WorkerCreateRequest struct {
 	Repository          db.WorkspaceLaunchRepository `json:"repository"`
 	Branch              string                       `json:"branch"`

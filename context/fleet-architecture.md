@@ -5,6 +5,9 @@ or remote workspace and session operations.
 
 ## Devbox targets
 
+- Treat devboxes as first-class execution targets: measure interaction latency and GitHub calls
+  against local workflows, and remove repeated work without caching membership or permission
+  decisions. (`internal/devbox/broker.go::Broker.Credential`)
 - Hubs and standalone controllers own devbox connections and route directly to workers; spokes
   remain local-only. Use `devbox:<connection-id>` keys, separate from fleet node keys, and never
   project worker bearer tokens into browser data. (`internal/server/devboxes.go`)

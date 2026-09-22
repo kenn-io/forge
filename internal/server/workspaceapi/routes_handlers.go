@@ -1089,7 +1089,9 @@ func (s *Handler) refreshWorkspace(
 		s.workspaceDiffCache.RevalidateWorkspace(input.ID)
 	}
 	if s.executionWorker.Enabled {
-		return &refreshWorkspaceOutput{Body: s.refreshWorkspaceResponse(ctx, summary)}, nil
+		response := s.refreshWorkspaceResponse(ctx, summary)
+		response.PushState = s.workspaces.ExecutionPushState(ctx, summary)
+		return &refreshWorkspaceOutput{Body: response}, nil
 	}
 	if s.syncer == nil {
 		workspace := summary.Workspace
@@ -1312,6 +1314,9 @@ func (s *Handler) getWorkspaceCommits(
 
 	commits, ok, err := s.workspaceCommits(ctx, req)
 	if err != nil {
+		if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok {
+			return nil, problem
+		}
 		slog.Error(
 			"failed to list workspace commits",
 			"workspace_id", input.ID,
@@ -1804,6 +1809,9 @@ func (s *Handler) validateWorkspaceSHAs(
 ) (map[string]int, error) {
 	commits, ok, err := s.workspaceCommits(ctx, req)
 	if err != nil {
+		if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok {
+			return nil, problem
+		}
 		return nil, httpapi.Upstream(
 			"failed to list workspace commits: "+err.Error(), "", "",
 		)
@@ -1835,10 +1843,16 @@ func (s *Handler) workspaceMergeTargetBranch(
 		if err != nil {
 			return "", false, err
 		}
-		if spec == nil || spec.Pull == nil || spec.Pull.BaseBranch == "" || spec.RequireVisible(s.now().UTC()) != nil {
-			return "", false, workspace.ErrLaunchSpecRefreshRequired
+		if spec != nil && spec.Pull != nil && spec.Pull.BaseBranch != "" {
+			if err := spec.RequireVisible(s.now().UTC()); err == nil {
+				return spec.Pull.BaseBranch, true, nil
+			} else if errors.Is(err, workspace.ErrLaunchSpecRefreshRequired) {
+				return "", false, httpapi.Conflict(httpapi.CodeConflict, "workspace source context has expired", map[string]any{
+					"reason": WorkspaceContextExpiredReason,
+				})
+			}
 		}
-		return spec.Pull.BaseBranch, true, nil
+		return "", false, workspace.ErrLaunchSpecRefreshRequired
 	}
 	prNumber := summary.ItemNumber
 	if summary.ItemType != db.WorkspaceItemTypePullRequest {

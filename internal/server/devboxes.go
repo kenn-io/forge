@@ -297,6 +297,26 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
 			}
 		}
 		response, err := connections.Do(r.Context(), r.PathValue("connection_id"), r.Method, "/api/v1"+path, r.Body, r.Header)
+		if err == nil && r.Method == http.MethodGet && response.StatusCode == http.StatusConflict {
+			var captured bytes.Buffer
+			var problem httpapi.ProblemError
+			decodeErr := json.UnmarshalRead(io.TeeReader(io.LimitReader(response.Body, 64<<10), &captured), &problem)
+			if decodeErr == nil && problem.Code == httpapi.CodeConflict && problem.Details["reason"] == workspaceapi.WorkspaceContextExpiredReason {
+				_ = response.Body.Close()
+				if err := s.refreshDevboxContext(r.Context(), connections, r.PathValue("connection_id"), r.PathValue("id")); err != nil {
+					writeProblemResponse(w, httpapi.NewProblem(http.StatusConflict, httpapi.CodeConflict, "Workspace context needs refresh: "+err.Error(), nil))
+					return
+				}
+				// Retry only this read, once. Ordinary reads do not renew context.
+				response, err = connections.Do(r.Context(), r.PathValue("connection_id"), r.Method, "/api/v1"+path, nil, r.Header)
+			} else {
+				// Forward unrelated conflicts unchanged, including bodies beyond the probe limit.
+				response.Body = struct {
+					io.Reader
+					io.Closer
+				}{io.MultiReader(&captured, response.Body), response.Body}
+			}
+		}
 		if err != nil {
 			writeProblemResponse(w, httpapi.NewProblem(502, httpapi.CodeUpstreamError, "devbox request failed; reconnect and check operation status: "+err.Error(), nil))
 			return

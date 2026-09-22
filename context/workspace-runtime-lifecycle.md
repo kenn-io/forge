@@ -8,6 +8,10 @@ management, tmux persistence, and workspace terminal UI behavior.
 - A controller supplies leased PR/issue launch context to a devbox; remote-only creation is
   repository plus branch. Expired context gates source-dependent launches, not shell launches,
   existing terminals or Git operations. (`internal/server/devboxes.go::registerDevboxProxy`)
+- Source-dependent devbox reads renew context only on an explicit expiry response and retry once;
+  fresh reads must not add broker calls. (`internal/server/devboxes.go::registerDevboxProxy`)
+- Worker refresh responses must retain push state so replacing the displayed workspace does not
+  erase controller-verified commit attribution. (`internal/server/workspaceapi/routes_handlers.go::Handler.refreshWorkspace`)
 
 ## Purpose
 

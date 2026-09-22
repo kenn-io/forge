@@ -21,6 +21,9 @@ const (
 	ScopeProviderHandoff    Scope = "provider.handoff"
 	ScopeEventsRead         Scope = "events.read"
 	ScopeEnrollmentActivate Scope = "enrollment.activate"
+	// ScopeBrowserLogin lets an active peer request a one-time browser login
+	// ticket so its user can open this daemon's UI without another sign-in.
+	ScopeBrowserLogin Scope = "browser.login"
 )
 
 var scopesInCanonicalOrder = []Scope{
@@ -33,6 +36,7 @@ var scopesInCanonicalOrder = []Scope{
 	ScopeProviderHandoff,
 	ScopeEventsRead,
 	ScopeEnrollmentActivate,
+	ScopeBrowserLogin,
 }
 
 var knownScopes = func() map[Scope]int {
@@ -52,6 +56,7 @@ func HubToSpokeScopes() []Scope {
 		ScopeWorkspaceWrite,
 		ScopeTerminalAttach,
 		ScopeEnrollmentActivate,
+		ScopeBrowserLogin,
 	}
 }
 
@@ -71,6 +76,7 @@ func SpokeToHubScopes() []Scope {
 		ScopeProviderWrite,
 		ScopeEventsRead,
 		ScopeEnrollmentActivate,
+		ScopeBrowserLogin,
 	}
 }
 

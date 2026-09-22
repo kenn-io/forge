@@ -8,6 +8,9 @@ import type {
   ActivateFederationEnrollmentPathParameters,
   BeginFederationEnrollmentHeaders,
   BeginFederationSpokePreparationPathParameters,
+  BrowserLoginOutputBody,
+  BrowserLoginRequestBody,
+  BrowserLoginTicketBody,
   CloneFleetProjectBody,
   CloneFleetProjectDefaultOne,
   CloneFleetProjectPathParameters,
@@ -15,6 +18,7 @@ import type {
   CompleteFleetFilesystemPathParams,
   CompleteFleetFilesystemPathPathParameters,
   CreateEnrollmentTokenInputBody,
+  CreateFleetBrowserLoginPathParameters,
   CreateFleetIssueWorkspaceBody,
   CreateFleetIssueWorkspaceDefaultOne,
   CreateFleetIssueWorkspaceOnPlatformHostBody,
@@ -186,6 +190,22 @@ type NonReadonly<T> = [T] extends [UnionToIntersection<T>]
       [P in keyof Writable<T>]: T[P] extends object ? NonReadonly<NonNullable<T[P]>> : T[P];
     }
   : DistributeReadOnlyOverUnions<T>;
+
+export const getIssueFederationBrowserLoginTicketUrl = () => {
+  return `/federation/browser-login-tickets`;
+};
+
+/**
+ * @summary Issue a one-time browser login ticket for a fleet peer
+ */
+export const issueFederationBrowserLoginTicket = async (
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<BrowserLoginTicketBody> => {
+  return orvalFetch<BrowserLoginTicketBody>(getIssueFederationBrowserLoginTicketUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
 
 export const getBeginFederationEnrollmentUrl = () => {
   return `/federation/enrollments`;
@@ -1902,6 +1922,32 @@ export const getFleetWorkspaceRuntimeSessionAttachSpec = async (
       method: "GET",
     },
   );
+};
+
+export const getCreateFleetBrowserLoginUrl = ({ nodeId }: CreateFleetBrowserLoginPathParameters) => {
+  return `/fleet/hosts/${encodeURIComponent(String(nodeId))}/browser-login`;
+};
+
+/**
+ * @summary Create a one-time link that signs this browser into another Forge
+ */
+export const createFleetBrowserLogin = async (
+  { nodeId }: CreateFleetBrowserLoginPathParameters,
+  browserLoginRequestBody?: NonReadonly<BrowserLoginRequestBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<BrowserLoginOutputBody> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<BrowserLoginOutputBody>(getCreateFleetBrowserLoginUrl({ nodeId }), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(browserLoginRequestBody),
+  });
 };
 
 export const getJoinFederationUrl = () => {

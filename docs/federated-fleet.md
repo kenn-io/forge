@@ -548,8 +548,11 @@ the hub for the fleet-wide workspace view and remote mutations.
 
 ## Use the fleet
 
-Use the Forge selector in the top bar to open any fleet member directly. It is
-an ordinary link, so browser modifiers open another tab or window. Each origin
+Use the Forge selector in the top bar to open any fleet member directly.
+Choosing the hub from a spoke, or a spoke from the hub, signs you in to that
+Forge automatically and opens the same page there. From a spoke, other spokes
+open as ordinary links and use their own sign-in, such as Tailscale Serve.
+Browser modifiers open the plain link in another tab or window. Each origin
 keeps its own browser state, filters, searches, terminal connections, and event
 cursors; changing one Forge tab does not retarget another.
 

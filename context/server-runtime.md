@@ -2,6 +2,9 @@
 
 ## Frontend assets
 
+- Vite routes live at root even when the backend has a base path; login redirects
+  must translate back to that namespace. The static dev-auth proxy check requires
+  the tested helper (`frontend/src/lib/dev/authBootstrapProxy.ts::authBootstrapProxy`).
 - Precompress final emitted assets after Vite rewrites preload URLs; encoded
   responses must decode to the exact bytes served for the same asset identity
   (`frontend/vite.config.ts::precompressAssets`).

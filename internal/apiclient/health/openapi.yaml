@@ -22,10 +22,19 @@ components:
           format: uri
           readOnly: true
           type: string
+        modified:
+          type: boolean
+        revision:
+          type: string
         status:
+          type: string
+        version:
           type: string
       required:
         - status
+        - version
+        - revision
+        - modified
       type: object
     ProblemError:
       additionalProperties: false

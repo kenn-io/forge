@@ -1,5 +1,9 @@
 # Server Runtime
 
+- Health probes stay anonymous so monitoring needs no workspace bearer. Build
+  identity comes from the running executable; builds without VCS metadata must
+  stamp the full commit (`internal/server/health_routes.go::healthyResponse`).
+
 ## Frontend assets
 
 - Vite routes live at root even when the backend has a base path; login redirects

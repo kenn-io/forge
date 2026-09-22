@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"runtime/debug"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -10,7 +11,25 @@ import (
 type healthOutput = httpapi.BodyOutput[healthResponse]
 
 type healthResponse struct {
-	Status string `json:"status"`
+	Status   string `json:"status"`
+	Version  string `json:"version"`
+	Revision string `json:"revision"`
+	Modified bool   `json:"modified"`
+}
+
+func (s *Server) healthyResponse() healthResponse {
+	response := healthResponse{Status: "ok", Version: s.buildInfo.Version, Revision: s.buildInfo.Commit}
+	if build, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range build.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				response.Revision = setting.Value
+			case "vcs.modified":
+				response.Modified = setting.Value == "true"
+			}
+		}
+	}
+	return response
 }
 
 func healthAPIConfig() huma.Config {
@@ -29,7 +48,7 @@ func (s *Server) registerHealthAPI(api huma.API) {
 
 func (s *Server) livez(_ context.Context, _ *struct{}) (*healthOutput, error) {
 	return &healthOutput{
-		Body: healthResponse{Status: "ok"},
+		Body: s.healthyResponse(),
 	}, nil
 }
 
@@ -44,6 +63,6 @@ func (s *Server) healthz(ctx context.Context, _ *struct{}) (*healthOutput, error
 	}
 
 	return &healthOutput{
-		Body: healthResponse{Status: "ok"},
+		Body: s.healthyResponse(),
 	}, nil
 }

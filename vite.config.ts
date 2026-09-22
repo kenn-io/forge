@@ -28,7 +28,10 @@ export default defineConfig({
         cache: false,
       },
       "frontend-lint": {
-        command: `${rootVP} lint frontend packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!frontend/src/lib/api/generated/**' '!frontend/src/lib/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
+        command: [
+          "node scripts/check-dev-auth-proxy.mjs",
+          `${rootVP} lint frontend packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!frontend/src/lib/api/generated/**' '!frontend/src/lib/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1`,
+        ],
         cache: false,
       },
       "frontend-package-check": {

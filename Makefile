@@ -172,6 +172,7 @@ frontend-check-no-deps: frontend-check-core-no-deps
 # installed dependencies and full-project Effect diagnostics are retained in
 # CI instead of blocking every local commit.
 frontend-check-core-no-deps: check-vite-plus-bin
+	node scripts/check-dev-auth-proxy.mjs
 	$(VITE_PLUS_BIN) fmt --check frontend packages/github-app-ui --no-error-on-unmatched-pattern --threads=1
 	$(VITE_PLUS_BIN) lint frontend packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!frontend/src/lib/api/generated/**' '!frontend/src/lib/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
 	cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src

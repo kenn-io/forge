@@ -9,6 +9,7 @@ import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/te
 import type { InlineConfig } from "vite-plus/test/node";
 import { resolveDevApiUrl } from "./src/lib/dev/apiProxyTarget.ts";
 import { apiFailureLogging } from "./src/lib/dev/apiFailureLogging.ts";
+import { authBootstrapProxy } from "./src/lib/dev/authBootstrapProxy.ts";
 import { healthcheckPlugin } from "./src/lib/dev/healthcheckPlugin.ts";
 import { frontendApiClient } from "./scripts/generate-api-client.mjs";
 import { nodeUnitTestFiles } from "./vitest.node-files.ts";
@@ -493,10 +494,7 @@ const config = {
     proxy: {
       // Let Forge establish its browser cookie and strip the token, then serve
       // the redirected page through Vite so live reload stays available.
-      "^/.*[?&]auth_token=": {
-        target: apiUrl,
-        changeOrigin: true,
-      },
+      "^/.*[?&]auth_token=": authBootstrapProxy(apiUrl),
       "/api": {
         configure: apiFailureLogging(),
         target: apiUrl,

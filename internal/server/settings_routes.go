@@ -19,6 +19,7 @@ func (s *Server) persistFleetMember(
 	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
 		for index := range fleet.Members {
 			if fleet.Members[index].NodeID == member.NodeID {
+				member.OutboundDisabled = fleet.Members[index].OutboundDisabled
 				fleet.Members[index] = member
 				return
 			}

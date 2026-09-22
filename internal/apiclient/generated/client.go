@@ -49275,10 +49275,11 @@ type FleetHub struct {
 }
 
 type FleetMember struct {
-	BaseURL string  `json:"base_url"`
-	Name    *string `json:"name,omitempty"`
-	NodeID  string  `json:"node_id"`
-	State   string  `json:"state"`
+	BaseURL          string  `json:"base_url"`
+	Name             *string `json:"name,omitempty"`
+	NodeID           string  `json:"node_id"`
+	OutboundDisabled *bool   `json:"outbound_disabled,omitempty"`
+	State            string  `json:"state"`
 }
 
 type FleetSessions struct {

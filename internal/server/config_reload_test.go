@@ -2414,6 +2414,16 @@ base_url = "https://replacement-hub.example"
 	require.Equal("https://hub.example", persisted.Fleet.BaseURL)
 	require.Nil(persisted.Fleet.Hub)
 	require.Equal([]config.FleetMember{member}, persisted.Fleet.Members)
+
+	persisted.Fleet.Members[0].OutboundDisabled = true
+	require.NoError(persisted.Save(cfgPath))
+	require.True(srv.applyConfigChange(t.Context()).Valid)
+	member.Name = "Renamed spoke"
+	require.NoError(srv.persistFleetMember(t.Context(), member))
+	persisted, err = config.Load(cfgPath)
+	require.NoError(err)
+	require.True(persisted.Fleet.Members[0].OutboundDisabled)
+	require.Equal(member.Name, persisted.Fleet.Members[0].Name)
 }
 
 func TestRestartRequiredForFleetRoleAndHubBinding(t *testing.T) {

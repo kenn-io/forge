@@ -1037,6 +1037,9 @@ func (s *Handler) fleetSelfKey(localHostname string) string {
 func (s *Handler) resolveEnrolledSpoke(
 	member config.FleetMember,
 ) (fleetHostTarget, bool) {
+	if member.OutboundDisabled {
+		return fleetHostTarget{}, false
+	}
 	enrollment, ok := s.enrollments.EnrollmentForSpoke(member.NodeID)
 	if !ok || enrollment.State != federation.EnrollmentActive ||
 		enrollment.ActivationLeaseVersion != federation.ActivationLeaseVersion ||

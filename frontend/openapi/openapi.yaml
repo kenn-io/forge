@@ -2835,6 +2835,8 @@ components:
           type: string
         node_id:
           type: string
+        outbound_disabled:
+          type: boolean
         state:
           type: string
       required:

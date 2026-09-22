@@ -119,9 +119,15 @@ func (s *Handler) fetchMemberResults(
 	fleetConfig config.Fleet,
 	timeout time.Duration,
 ) []fleet.PeerResult {
-	results := make([]fleet.PeerResult, len(fleetConfig.Members))
+	members := make([]config.FleetMember, 0, len(fleetConfig.Members))
+	for _, member := range fleetConfig.Members {
+		if !member.OutboundDisabled {
+			members = append(members, member)
+		}
+	}
+	results := make([]fleet.PeerResult, len(members))
 	var wait sync.WaitGroup
-	for index, member := range fleetConfig.Members {
+	for index, member := range members {
 		wait.Add(1)
 		go func(index int, member config.FleetMember) {
 			defer wait.Done()

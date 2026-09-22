@@ -17,10 +17,10 @@ or remote workspace and session operations.
 - A fleet is a one-hop execution view over independent kenn-forge daemons, not
   a replicated database. Each host remains authoritative for its local
   repositories, workspaces, runtimes, and execution mutations.
-- Federation requires mutually reachable canonical HTTPS origins, not a
-  private-network product; Tailscale Serve and operator-managed private ingress
-  use the same protocol and peer credentials
-  (`internal/fleetsetup/setup.go::Runner.Plan`).
+- A spoke always needs hub access. Hub-to-spoke access is optional when the hub's
+  member entry sets `outbound_disabled`; omit that member from workspace snapshots
+  and reject remote execution without treating it as an outage
+  (`internal/server/fleetapi/fleet_hub.go::Handler.fetchMemberResults`).
 - Provider repository settings come from the hub, but each spoke owns
   and persists its stable-identity `worktree_base_path`; mutable or reused routes
   cannot move the override to another repository (`internal/config/config.go::Repo`,

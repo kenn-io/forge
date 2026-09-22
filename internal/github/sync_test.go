@@ -10127,7 +10127,7 @@ func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 	}, time.Minute, nil, nil)
 
 	_, err := syncer.SyncItemByNumber(t.Context(), "other", "repo", 1)
-	require.Error(err)
+	require.ErrorIs(err, ErrRepoNotTracked)
 	assert.Contains(err.Error(), "not tracked")
 }
 

@@ -830,7 +830,7 @@ func (m *Manager) CreateKataTask(
 		return nil, fmt.Errorf("look up repo: %w", err)
 	}
 	if repo == nil {
-		return nil, errors.New("repository not tracked")
+		return nil, fmt.Errorf("%w: repository not tracked", ErrWorkspaceNotFound)
 	}
 
 	branchID := kataTaskBranchID(metadata)

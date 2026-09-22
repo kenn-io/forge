@@ -1872,6 +1872,19 @@ func TestCreateRepoNotTracked(t *testing.T) {
 	require.ErrorIs(t, err, ErrWorkspaceNotFound)
 }
 
+func TestCreateKataTaskRepoNotTracked(t *testing.T) {
+	d := openTestDB(t)
+	mgr := newTestManager(t, d, t.TempDir())
+
+	_, err := mgr.CreateKataTask(
+		t.Context(), "github", "github.com", "unknown", "repo",
+		db.WorkspaceKataMetadata{
+			DaemonID: "desktop", ProjectUID: "project-kata", IssueUID: "issue-kata-1",
+		},
+	)
+	require.ErrorIs(t, err, ErrWorkspaceNotFound)
+}
+
 func TestCreateDuplicate(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

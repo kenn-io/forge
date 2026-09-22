@@ -1246,7 +1246,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	)
 	diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](syncErr)
 	if syncErr != nil && !isDiffErr {
-		if s.syncer != nil && !s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, httpapi.ProviderHost(*repo)) {
+		if errors.Is(syncErr, ghclient.ErrRepoNotTracked) {
 			return nil, httpapi.Forbidden(syncErr.Error(), nil)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
@@ -1359,7 +1359,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		repo.Owner, repo.Name, input.Number,
 	)
 	if err != nil {
-		if s.syncer != nil && !s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, httpapi.ProviderHost(*repo)) {
+		if errors.Is(err, ghclient.ErrRepoNotTracked) {
 			return nil, httpapi.Forbidden(err.Error(), nil)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
@@ -2567,7 +2567,7 @@ func (s *Server) resolveItem(
 		}
 		diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](syncErr)
 		if syncErr != nil && !isDiffErr {
-			if s.syncer != nil && !s.syncer.IsTrackedRepoOnHost(repo.Owner, repo.Name, providerHost) {
+			if errors.Is(syncErr, ghclient.ErrRepoNotTracked) {
 				return nil, httpapi.Forbidden(syncErr.Error(), nil)
 			}
 			return nil, httpapi.ProviderCallProblemWithDetail(

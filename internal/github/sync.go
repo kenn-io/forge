@@ -1966,6 +1966,10 @@ func livenessHeadForRound(normalized, existing *db.MergeRequest) string {
 
 var errParentSnapshotAdvanced = errors.New("provider parent snapshot advanced during child refresh")
 
+// ErrRepoNotTracked marks sync requests for repositories outside the
+// configured tracked set so handlers can map them to 403 without matching text.
+var ErrRepoNotTracked = errors.New("not tracked")
+
 const authenticatedViewerLoginTTL = time.Hour
 
 func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
@@ -2779,7 +2783,7 @@ func (s *Syncer) ClientForRepo(
 		}
 	}
 	return nil, fmt.Errorf(
-		"repo %s/%s is not tracked", owner, name,
+		"repo %s/%s is %w", owner, name, ErrRepoNotTracked,
 	)
 }
 
@@ -7134,8 +7138,9 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 		)
 		if !routeOK {
 			return false, fmt.Errorf(
-				"repo %s/%s on %s/%s with provider ID %q is not tracked",
+				"repo %s/%s on %s/%s with provider ID %q is %w",
 				stored.Owner, stored.Name, stored.Platform, stored.PlatformHost, providerID,
+				ErrRepoNotTracked,
 			)
 		}
 		if routedID := strings.TrimSpace(routed.PlatformExternalID); routedID != "" {
@@ -11314,8 +11319,8 @@ func (s *Syncer) SyncRepoOnProvider(
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
 		return fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			owner, name, kind, host,
+			"repo %s/%s on %s/%s is %w",
+			owner, name, kind, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -11368,8 +11373,8 @@ func (s *Syncer) SyncClosedMROnProvider(
 		)
 		if !routeOK {
 			return fmt.Errorf(
-				"repo %s/%s on %s/%s is not tracked",
-				stored.Owner, stored.Name, stored.Platform, stored.PlatformHost,
+				"repo %s/%s on %s/%s is %w",
+				stored.Owner, stored.Name, stored.Platform, stored.PlatformHost, ErrRepoNotTracked,
 			)
 		}
 		if routedID := strings.TrimSpace(routed.PlatformExternalID); routedID != "" &&
@@ -11417,8 +11422,8 @@ func (s *Syncer) SyncMROnProvider(
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
 		return fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			owner, name, kind, host,
+			"repo %s/%s on %s/%s is %w",
+			owner, name, kind, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -11470,7 +11475,7 @@ func (s *Syncer) syncMRWithHost(
 			host = s.hostFor(owner, name)
 		}
 		return fmt.Errorf(
-			"repo %s/%s on %s is not tracked", owner, name, host,
+			"repo %s/%s on %s is %w", owner, name, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -11498,8 +11503,8 @@ func (s *Syncer) syncMRWithWatchedRefTracking(
 	if !ok {
 		host := repoHost(RepoRef{Platform: kind, PlatformHost: mr.PlatformHost})
 		return fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			mr.Owner, mr.Name, kind, host,
+			"repo %s/%s on %s/%s is %w",
+			mr.Owner, mr.Name, kind, host, ErrRepoNotTracked,
 		)
 	}
 	return s.syncMRForRepo(ctx, repo, mr.Number, true, providerAttempted)
@@ -12221,8 +12226,8 @@ func (s *Syncer) SyncIssueOnProvider(
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
 		return fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			owner, name, kind, host,
+			"repo %s/%s on %s/%s is %w",
+			owner, name, kind, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -12256,7 +12261,7 @@ func (s *Syncer) syncIssueWithHost(
 			host = s.hostFor(owner, name)
 		}
 		return fmt.Errorf(
-			"repo %s/%s on %s is not tracked", owner, name, host,
+			"repo %s/%s on %s is %w", owner, name, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -12334,8 +12339,8 @@ func (s *Syncer) SyncArchiveItem(
 	repo, ok := s.trackedRepoByIdentity(ref.Platform, ref.Owner, ref.Name, ref.Host)
 	if !ok {
 		return result, fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			ref.Owner, ref.Name, ref.Platform, ref.Host,
+			"repo %s/%s on %s/%s is %w",
+			ref.Owner, ref.Name, ref.Platform, ref.Host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = ref.Owner
@@ -12497,7 +12502,7 @@ func (s *Syncer) SyncItemByNumber(
 		return "", err
 	}
 	if !ok {
-		return "", fmt.Errorf("repo %s/%s is not tracked", owner, name)
+		return "", fmt.Errorf("repo %s/%s is %w", owner, name, ErrRepoNotTracked)
 	}
 	repo.Owner = owner
 	repo.Name = name

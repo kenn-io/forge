@@ -30596,3 +30596,19 @@ func TestAPIHeadRepoKindClassifiesSameRepoForkAndUnknown(t *testing.T) {
 		assert.Equal(t, test.want, string(detail.HeadRepoKind))
 	}
 }
+
+func TestSyncIssueUntrackedRepoReturnsForbidden(t *testing.T) {
+	require := require.New(t)
+
+	srv, database := setupTestServerWithMock(t, &mockGH{})
+	seedIssue(t, database, "acme", "retired", 3, "open")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SyncIssueWithResponse(t.Context(), &generated.SyncIssueRequestOptions{
+		PathParams: &generated.SyncIssuePath{Provider: "gh", Owner: "acme", Name: "retired", Number: int64(3)},
+	})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusForbidden, resp.StatusCode, string(resp.Body))
+	require.Contains(string(resp.Body), "not tracked")
+}

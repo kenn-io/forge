@@ -1232,7 +1232,7 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 			"owner", owner, "name", name, "err", err)
 		return nil
 	}
-	if s.syncer != nil && !s.syncer.IsTrackedRepoOnHost(owner, name, host) {
+	if errors.Is(err, ghclient.ErrRepoNotTracked) {
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1260,7 +1260,7 @@ func (s *Handler) refreshWorkspaceIssue(
 	if err == nil {
 		return nil
 	}
-	if s.syncer != nil && !s.syncer.IsTrackedRepoOnHost(owner, name, host) {
+	if errors.Is(err, ghclient.ErrRepoNotTracked) {
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1287,7 +1287,7 @@ func (s *Handler) refreshWorkspacePullRequest(
 	err = s.syncer.SyncMROnProvider(ctx, kind, host, owner, name, number)
 	diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
 	if err != nil && !isDiffErr {
-		if s.syncer != nil && !s.syncer.IsTrackedRepoOnHost(owner, name, host) {
+		if errors.Is(err, ghclient.ErrRepoNotTracked) {
 			return httpapi.Forbidden(err.Error(), nil)
 		}
 		return httpapi.ProviderCallProblemWithDetail(

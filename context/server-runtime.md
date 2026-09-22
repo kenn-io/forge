@@ -2,6 +2,9 @@
 
 ## Frontend assets
 
+- Dev login must establish Forge's browser cookie through the Vite origin;
+  passing bearer-authenticated API probes alone does not authenticate the page
+  (`frontend/vite.config.ts:496`).
 - Precompress final emitted assets after Vite rewrites preload URLs; encoded
   responses must decode to the exact bytes served for the same asset identity
   (`frontend/vite.config.ts::precompressAssets`).

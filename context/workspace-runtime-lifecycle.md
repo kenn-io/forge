@@ -324,9 +324,9 @@ create a local process, PTY, or durable transport session
   to completion even when the caller's deadline expires first. Do not gate
   Enter on terminal echo: Claude renders pasted input only after the Enter
   event (`internal/workspace/localruntime/manager.go::session.submitInitialMessage`).
-- Tmux advertises bracketed paste before its agent reads input; the settle
-  delay must also allow startup, or the queued paste and Enter can be consumed
-  together (`internal/workspace/localruntime/manager.go::initialMessageEnterDelay`).
+- Tmux advertises bracketed paste before its agent starts; require the pane's
+  terminal to disable canonical input and echo before sending a prompt, or startup can discard it
+  (`internal/workspace/localruntime/tmux_runtime.go::Manager.tmuxAgentInputReady`).
 - Mode transitions precede one session-wide UTF-8-aware VT tail even in the
   alternate screen; retain split-rune introducers and decoded C1 controls/ST
   (`internal/workspace/localruntime/terminal_sequence_tail.go::trailingIncompleteTerminalDataLen`).

@@ -42,8 +42,8 @@ const initialMessageWriteTimeout = 30 * time.Second
 // keystroke that submits it. Terminal UIs that collapse a multi-line paste
 // treat bytes arriving in the same chunk as the paste-end marker as part of
 // the paste, so a carriage return in that chunk never submits the prompt.
-// Allow startup to settle too: tmux enables paste mode before the agent is
-// reading input, so a 150 ms gap can still leave both writes queued together.
+// Keep a settle gap after the agent enters raw mode: its input loop may
+// still be starting, leaving both writes queued together with a shorter gap.
 const initialMessageEnterDelay = time.Second
 
 var (
@@ -1490,8 +1490,18 @@ func (m *Manager) SubmitAgentMessage(
 		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
 	}
 	defer attachment.Close()
-	if attachment.Info().Kind != LaunchTargetAgent {
+	info := attachment.Info()
+	if info.Kind != LaunchTargetAgent {
 		return fmt.Errorf("%w: runtime session is not an agent", ErrInitialMessageNotWritten)
+	}
+	if info.TmuxSession != "" {
+		ready, err := m.tmuxAgentInputReady(ctx, info.TmuxSession)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
+		}
+		if !ready {
+			return ErrBracketedPasteInactive
+		}
 	}
 	return attachment.submitInitialMessage(ctx, message)
 }

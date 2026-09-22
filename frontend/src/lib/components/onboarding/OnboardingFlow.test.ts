@@ -13,7 +13,6 @@ import type { StoreInstances } from "../../types.js";
 
 const mocks = vi.hoisted(() => ({
   listUserRepositories: vi.fn(),
-  createPullRequestWorkspace: vi.fn(),
   navigate: vi.fn(),
   tooling: {
     value: {
@@ -25,13 +24,13 @@ const mocks = vi.hoisted(() => ({
 }));
 const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
 let observedBulkAddBodies: unknown[] = [];
+let observedWorkspaceRequests: { path: string; body: unknown }[] = [];
+let workspaceResponse: () => Promise<Response>;
+let snapshotHosts: unknown[] = [];
 
 vi.mock("../../api/project-intake.ts", () => ({
   listUserRepositories: mocks.listUserRepositories,
   projectIntakeFailureMessage: (failure: Error) => failure.message,
-}));
-vi.mock("../../api/onboarding.ts", () => ({
-  createPullRequestWorkspace: mocks.createPullRequestWorkspace,
 }));
 vi.mock("../../stores/router.svelte.ts", () => ({
   navigate: mocks.navigate,
@@ -141,8 +140,25 @@ describe("OnboardingFlow", () => {
   beforeEach(() => {
     runtimeCapture.current = makeAppRuntime();
     observedBulkAddBodies = [];
+    observedWorkspaceRequests = [];
+    workspaceResponse = async () => Response.json({ id: "ws-42", status: "provisioning" });
+    snapshotHosts = [
+      {
+        configKey: "devbox:compute-a",
+        kind: "devbox",
+        operationAvailability: { workspaceWrite: { available: true } },
+      },
+    ];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (request.method === "GET" && path === "/api/v1/snapshot") {
+        return Response.json({ hosts: snapshotHosts });
+      }
+      if (request.method === "POST" && path.endsWith("/workspaces")) {
+        observedWorkspaceRequests.push({ path, body: await request.json() });
+        return workspaceResponse();
+      }
       if (request.method === "POST" && new URL(request.url).pathname.endsWith("/repos/bulk")) {
         observedBulkAddBodies.push(await request.json());
         return Response.json({ repos: [{ repo_path: "acme/forge" }] });
@@ -174,12 +190,6 @@ describe("OnboardingFlow", () => {
           },
         ]),
       ),
-    );
-    mocks.createPullRequestWorkspace.mockReturnValue(
-      Effect.succeed({
-        id: "ws-42",
-        status: "provisioning",
-      }),
     );
   });
 
@@ -229,8 +239,102 @@ describe("OnboardingFlow", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => expect(callbacks.onComplete).toHaveBeenCalledOnce());
-    expect(mocks.createPullRequestWorkspace).toHaveBeenCalledWith(pullRequest());
+    expect(observedWorkspaceRequests).toEqual([
+      {
+        path: "/api/v1/workspaces",
+        body: { provider: "github", platform_host: "github.com", owner: "acme", name: "forge", mr_number: 42 },
+      },
+    ]);
     expect(mocks.navigate).toHaveBeenCalledWith("/terminal/ws-42");
+  });
+
+  it("creates on the saved devbox and opens its remote terminal without recording a local workspace", async () => {
+    const { stores } = storeFixture({ configured: true });
+    stores.settings.setWorkspaceSettings({
+      ...stores.settings.getWorkspaceSettings(),
+      default_execution_target: "devbox:compute-a",
+    });
+    const callbacks = renderFlow(stores);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with PR #42" }));
+    const create = screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+
+    await waitFor(() => expect(callbacks.onComplete).toHaveBeenCalledOnce());
+    expect(observedWorkspaceRequests).toEqual([
+      {
+        path: "/api/v1/devboxes/compute-a/workspaces",
+        body: { provider: "github", platform_host: "github.com", owner: "acme", name: "forge", mr_number: 42 },
+      },
+    ]);
+    expect(mocks.navigate).toHaveBeenCalledWith("/terminal/fleet/devbox%3Acompute-a/ws-42");
+    expect(
+      createdWorkspaceRef({
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "forge",
+        repoPath: "acme/forge",
+        number: 42,
+        itemType: "pull",
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["github.com", false, "Devbox is in maintenance"],
+    ["ghe.example.com", true, "Devboxes currently support only github.com repositories."],
+  ])(
+    "blocks devbox creation for %s (available=%s) without falling back locally",
+    async (platformHost, available, reason) => {
+      const pull = pullRequest();
+      pull.repo.platform_host = platformHost;
+      const { stores } = storeFixture({ configured: true, pulls: [pull] });
+      stores.settings.setWorkspaceSettings({
+        ...stores.settings.getWorkspaceSettings(),
+        default_execution_target: "devbox:compute-a",
+      });
+      snapshotHosts = [
+        {
+          configKey: "devbox:compute-a",
+          kind: "devbox",
+          operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
+        },
+      ];
+      const callbacks = renderFlow(stores);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+      await fireEvent.click(screen.getByRole("button", { name: "Continue with PR #42" }));
+
+      await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(reason));
+      const create = screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement;
+      expect(create.disabled).toBe(true);
+      await fireEvent.click(create);
+      expect(observedWorkspaceRequests).toEqual([]);
+      expect(callbacks.onComplete).not.toHaveBeenCalled();
+      expect(mocks.navigate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("opens an existing local workspace even when the default devbox is unavailable", async () => {
+    const pull = pullRequest();
+    pull.workspace = { id: "local-42", status: "ready" };
+    const { stores } = storeFixture({ configured: true, pulls: [pull] });
+    stores.settings.setWorkspaceSettings({
+      ...stores.settings.getWorkspaceSettings(),
+      default_execution_target: "devbox:compute-a",
+    });
+    snapshotHosts = [];
+    const callbacks = renderFlow(stores);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with PR #42" }));
+    const open = screen.getByRole("button", { name: "Open workspace" }) as HTMLButtonElement;
+    expect(open.disabled).toBe(false);
+    await fireEvent.click(open);
+
+    await waitFor(() => expect(callbacks.onComplete).toHaveBeenCalledOnce());
+    expect(mocks.navigate).toHaveBeenCalledWith("/terminal/local-42");
+    expect(observedWorkspaceRequests).toEqual([]);
   });
 
   it("verifies a newly authenticated gh session through repository discovery", async () => {
@@ -439,11 +543,12 @@ describe("OnboardingFlow", () => {
     const workspaceRequest = new Promise<{ id: string; status: string }>((resolve) => {
       resolveWorkspace = resolve;
     });
-    mocks.createPullRequestWorkspace.mockReturnValue(Effect.promise(() => workspaceRequest));
+    workspaceResponse = async () => Response.json(await workspaceRequest);
     const callbacks = renderFlow(storeFixture({ configured: true }).stores);
     await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
     await fireEvent.click(screen.getByRole("button", { name: "Continue with PR #42" }));
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(observedWorkspaceRequests).toHaveLength(1));
 
     callbacks.unmount();
     resolveWorkspace?.({ id: "ws-42", status: "provisioning" });
@@ -452,16 +557,18 @@ describe("OnboardingFlow", () => {
 
     expect(callbacks.onComplete).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalledWith("/terminal/ws-42");
-    expect(
-      createdWorkspaceRef({
-        provider: "github",
-        platformHost: "github.com",
-        owner: "acme",
-        name: "forge",
-        repoPath: "acme/forge",
-        number: 42,
-        itemType: "pull",
-      }),
-    ).toEqual({ id: "ws-42", status: "provisioning" });
+    await waitFor(() =>
+      expect(
+        createdWorkspaceRef({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "forge",
+          repoPath: "acme/forge",
+          number: 42,
+          itemType: "pull",
+        }),
+      ).toEqual({ id: "ws-42", status: "provisioning" }),
+    );
   });
 });

@@ -30,6 +30,7 @@
   import { navigate } from "../../stores/router.svelte.ts";
   import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
   import { recordWorkspaceCreated } from "../../stores/workspace-create-pending.svelte.js";
+  import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import type { StoreInstances } from "../../types.js";
   import ProviderReadinessStep from "./ProviderReadinessStep.svelte";
@@ -91,6 +92,13 @@
   let pullsError = $state<string | null>(null);
   let workspaceBusy = $state(false);
   let workspaceError = $state<string | null>(null);
+  const workspaceTarget = createDefaultWorkspaceTarget(
+    runtime,
+    () => selectedPull && !selectedPull.workspace?.id
+      ? stores.settings.getWorkspaceSettings().default_execution_target ?? ""
+      : "",
+    () => ({ provider: selectedPull?.repo.provider ?? "", platformHost: selectedPull?.repo.platform_host }),
+  );
 
   const tooling = $derived(resolveToolingStatus(runtime));
   const gh = $derived(tooling?.gh);
@@ -455,7 +463,8 @@
 
   function startWorkspace(): void {
     const pull = selectedPull;
-    if (!pull || workspaceBusy) return;
+    if (!pull || workspaceBusy || workspaceTarget.reason) return;
+    const hostKey = workspaceTarget.hostKey;
     workspaceBusy = true;
     workspaceError = null;
     const identity = {
@@ -471,14 +480,16 @@
     workspaceExecution = runtime.runCommand(
       (pull.workspace?.id
         ? Effect.succeed({ id: pull.workspace.id, status: pull.workspace.status })
-        : createPullRequestWorkspace(pull)
+        : createPullRequestWorkspace(pull, hostKey)
       ).pipe(
         Effect.tap((workspace) =>
           Effect.sync(() => {
-            recordWorkspaceCreated(identity, workspace);
+            if (!hostKey) recordWorkspaceCreated(identity, workspace);
             if (componentDestroyed) return;
             onComplete();
-            navigate(`/terminal/${encodeURIComponent(workspace.id)}`);
+            navigate(hostKey
+              ? `/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(workspace.id)}`
+              : `/terminal/${encodeURIComponent(workspace.id)}`);
           }),
         ),
         Effect.catch((failure) =>
@@ -825,12 +836,14 @@
             </div>
             {#if workspaceError}
               <p class="inline-error workspace-error" role="alert">{workspaceError}</p>
+            {:else if workspaceTarget.reason}
+              <p class="inline-error workspace-error" role="alert">{workspaceTarget.reason}</p>
             {/if}
             <div class="launch-actions">
               <Button
                 tone="info"
                 surface="solid"
-                disabled={workspaceBusy}
+                disabled={workspaceBusy || !!workspaceTarget.reason}
                 onclick={() => void startWorkspace()}
               >
                 {#if workspaceBusy}<Spinner size={13} />{:else}<TerminalIcon size={14} aria-hidden="true" />{/if}

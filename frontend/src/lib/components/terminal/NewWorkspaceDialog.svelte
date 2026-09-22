@@ -22,6 +22,7 @@
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { executeOpaqueGeneratedApiRequest } from "../../api/generated-api.js";
   import { loadFleetSnapshot, type HostSummary } from "../../api/fleet-snapshot.js";
+  import { workspaceTargetUnavailableReason } from "../../stores/workspace-target.svelte.js";
   import type { ProblemBody } from "../../api/problems.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -362,19 +363,27 @@
       ? undefined
       : selectedWorkspaceHost?.configKey,
   );
+  const workspaceTargetReason = $derived(
+    selected && selectedWorkspaceHost
+      ? workspaceTargetUnavailableReason(selectedWorkspaceHost, selected)
+      : settings.getWorkspaceSettings().default_execution_target && !selectedWorkspaceHost
+        ? "Your preferred machine is unavailable. Choose another machine or reconnect it in Settings → Workspaces."
+        : "",
+  );
   const workspaceHostOptions = $derived<SelectDropdownOption[]>(
     [
     ...(selectedWorkspaceHostKey && !selectedWorkspaceHost
       ? [{ value: selectedWorkspaceHostKey, label: "Unavailable machine — choose another", disabled: true }]
       : []),
     ...workspaceHosts.map((host) => {
-      const writeAvailability = host.operationAvailability.workspaceWrite;
-      const unavailableReason = writeAvailability?.unavailableReason || "Workspace creation is unavailable.";
+      const unavailableReason = selected
+        ? workspaceTargetUnavailableReason(host, selected)
+        : "Pick a repository first.";
       return {
         value: host.configKey,
         label: `${host.name.trim() || host.hostname?.trim() || host.configKey}${host.kind === "self" ? " (this machine)" : host.kind === "devbox" ? " (devbox)" : ""}`,
-        disabled: writeAvailability?.available !== true,
-        ...(writeAvailability?.available === true
+        disabled: unavailableReason !== "",
+        ...(unavailableReason === ""
           ? {}
           : { indicator: { tone: "danger" as const, title: unavailableReason } }),
       };
@@ -420,7 +429,7 @@
 
   const canSubmit = $derived(
     source === "repository"
-      ? selected !== null && (!settings.getWorkspaceSettings().default_execution_target || selectedWorkspaceHost !== null)
+      ? selected !== null && workspaceTargetReason === ""
       : selectedKataReference !== null && selectedDaemonUsable,
   );
 
@@ -485,6 +494,10 @@
     const kataReference = selectedKataReference;
     const requestedSource = source;
     const daemonID = selectedDaemonID;
+    if (requestedSource === "repository" && workspaceTargetReason) {
+      error = workspaceTargetReason;
+      return;
+    }
     if (requestedSource === "repository" && !repo) {
       error = "Pick a repository.";
       return;
@@ -733,8 +746,8 @@
             disabled={submitting}
           />
           <small class="field-hint">Files, agents and tests run on the selected machine. Change the default in Settings → Workspaces.</small>
-          {#if settings.getWorkspaceSettings().default_execution_target && !selectedWorkspaceHost}
-            <p class="form-error" role="alert">Your preferred machine is unavailable. Choose another machine or reconnect it in Settings → Workspaces.</p>
+          {#if workspaceTargetReason}
+            <p class="form-error" role="alert">{workspaceTargetReason}</p>
           {/if}
         </label>
       {/if}

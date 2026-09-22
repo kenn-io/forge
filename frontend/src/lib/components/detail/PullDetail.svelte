@@ -76,6 +76,7 @@
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
+  import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
   import UserListEditor from "./UserListEditor.svelte";
@@ -1311,6 +1312,10 @@
   });
 
   let wsCreating = $state(false);
+  const workspaceTarget = createDefaultWorkspaceTarget(runtime,
+    () => settings.getWorkspaceSettings().default_execution_target ?? "",
+    () => itemIdentity,
+  );
   // The shared pending store outlives this component and its local flag:
   // route resets and remounts clear wsCreating while the POST is still in
   // flight, and a round-trip back to this PR must keep the button disabled
@@ -1745,7 +1750,7 @@
   // A quick action never queues a frontend launch: the server launches the
   // agent and delivers the prompt once the workspace is ready.
   function createWorkspace(launchTargetKey?: string, quickAction?: QuickAction): void {
-    if (stalePR) return;
+    if (stalePR || workspaceTarget.reason) return;
     const detail = detailStore.getDetail();
     if (!detail) return;
     const requestIdentity = $state.snapshot(itemIdentity);
@@ -1770,8 +1775,7 @@
 
     wsCreating = true;
     beginWorkspaceCreate(requestIdentity, launchTargetKey);
-    const preferredTarget = settings.getWorkspaceSettings().default_execution_target ?? "";
- const devboxTarget = preferredTarget.startsWith("devbox:") ? preferredTarget : undefined;
+    const devboxTarget = workspaceTarget.hostKey;
  const program = executeGeneratedApiRequest("POST pull request workspace", (client, signal) =>
  devboxTarget ? client.DevboxesService.createDevboxWorkspace({ connectionId: devboxTarget.slice(7) }, requestBody, { signal }) : client.WorkspacesService.createWorkspace(requestBody, { signal }),
     ).pipe(
@@ -2802,10 +2806,10 @@
             size="sm"
             launchTargets={settings.getLaunchTargets()}
             busy={wsCreateBlocked}
-            disabled={stalePR}
+            disabled={stalePR || workspaceTarget.reason !== ""}
             disabledReason={stalePR
               ? "Refresh details before creating a workspace."
-              : createWorkspaceTitle}
+              : workspaceTarget.reason || createWorkspaceTitle}
             descriptionId={createWorkspaceDescriptionId}
             onCreate={(targetKey) => createWorkspace(targetKey)}
             quickActions={settings.getQuickActions()}
@@ -3041,7 +3045,7 @@
       <!-- Approve / Merge / Close / Reopen actions -->
       {#if !workspace}
         <span id={createWorkspaceDescriptionId} class="kit-sr-only">
-          {stalePR ? "Refresh details before creating a workspace." : createWorkspaceTitle}
+          {stalePR ? "Refresh details before creating a workspace." : workspaceTarget.reason || createWorkspaceTitle}
         </span>
       {/if}
       {#if showActionSurface}

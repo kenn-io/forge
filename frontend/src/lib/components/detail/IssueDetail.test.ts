@@ -180,6 +180,7 @@ function renderIssueDetail(
   ),
   options: {
     staleRefreshing?: boolean;
+    defaultExecutionTarget?: string;
     detailLoading?: boolean;
     detailSyncing?: boolean;
     deferRefresh?: boolean;
@@ -188,6 +189,7 @@ function renderIssueDetail(
     onOpenWorkspace?: (workspaceId: string) => void;
     runtimeClient?: GeneratedClient;
     quickActions?: QuickAction[];
+    detailProps?: Partial<ComponentProps<typeof IssueDetailComponent>>;
   } = {},
   apiClient: { GET: ReturnType<typeof vi.fn>; POST: ReturnType<typeof vi.fn> } = {
     GET: vi.fn(),
@@ -245,6 +247,7 @@ function renderIssueDetail(
     repoPath: "acme/widget",
     inlineWorkspace: options.inlineWorkspace ?? null,
     onOpenWorkspace: options.onOpenWorkspace,
+    ...options.detailProps,
   };
   const result = render(IssueDetailTestHarness, {
     props: {
@@ -259,7 +262,7 @@ function renderIssueDetail(
           activity: { loadActivity: vi.fn() },
           detailActivityView: createDetailActivityViewStore(),
           settings: {
-            getWorkspaceSettings: () => ({ default_execution_target: "" }),
+            getWorkspaceSettings: () => ({ default_execution_target: options.defaultExecutionTarget ?? "" }),
             getLaunchTargets: () => launchTargets,
             getQuickActions: () => options.quickActions ?? [],
             getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
@@ -587,6 +590,55 @@ describe("IssueDetail inline workspace handoff", () => {
     number: 7,
     itemType: "issue",
   };
+
+  it.each([
+    ["github.com", true, ""],
+    ["github.com", false, "Devbox is in maintenance"],
+    ["github.example.com", true, "Devboxes currently support only github.com"],
+  ])("checks the saved devbox before creating from %s (workspaceWrite=%s)", async (platformHost, available, reason) => {
+    const detail = issueDetail();
+    detail.platform_host = platformHost;
+    Object.assign(detail.repo, { Host: platformHost, PlatformHost: platformHost, platform_host: platformHost });
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: {
+          hosts: [
+            {
+              configKey: "devbox:compute-a",
+              kind: "devbox",
+              operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
+            },
+          ],
+        },
+      }),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
+    };
+    renderIssueDetail(
+      detail,
+      undefined,
+      {
+        defaultExecutionTarget: "devbox:compute-a",
+        detailProps: { platformHost },
+      },
+      apiClient,
+    );
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0]!;
+    if (reason) {
+      await waitFor(() => expect(create.getAttribute("title")).toContain(reason));
+      expect((create as HTMLButtonElement).disabled).toBe(true);
+      await fireEvent.click(create);
+      expect(apiClient.POST).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+      await fireEvent.click(create);
+      await waitFor(() =>
+        expect(apiClient.POST).toHaveBeenCalledWith(
+          "/devboxes/{connection_id}/workspaces",
+          expect.objectContaining({ params: { path: { connection_id: "compute-a" } } }),
+        ),
+      );
+    }
+  });
 
   function deferredWorkspaceApiClient() {
     let resolvePost!: (value: { data?: { id: string; status: string; created?: boolean } }) => void;

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json/v2"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/danielgtaylor/huma/v2"
@@ -17,8 +19,47 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/devbox"
+	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 )
+
+func TestDevboxSnapshotMaintenanceBlocksCreation(t *testing.T) {
+	for _, maintenance := range []bool{false, true} {
+		t.Run(fmt.Sprint(maintenance), func(t *testing.T) {
+			assert, require := assert.New(t), require.New(t)
+			worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal("Bearer worker-test-token", r.Header.Get("Authorization"))
+				assert.NoError(json.MarshalWrite(w, fleet.RawSnapshot{NodeID: "worker-a"}))
+			}))
+			t.Cleanup(worker.Close)
+			directory := t.TempDir()
+			raw, err := json.Marshal([]any{map[string]any{
+				"id": "compute-a", "profile": devbox.Profile{
+					Assignment: devbox.Assignment{URL: worker.URL, Maintenance: maintenance, WorkerIdentity: devbox.WorkerIdentity{NodeID: "worker-a"}},
+					Token:      "worker-test-token",
+				},
+			}})
+			require.NoError(err)
+			require.NoError(os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
+			connections, err := devbox.OpenConnections(directory)
+			require.NoError(err)
+			t.Cleanup(connections.Close)
+			controller := &Server{options: ServerOptions{Devboxes: connections}}
+			local := fleet.RawSnapshot{NodeID: "controller"}
+			aggregate := fleet.BuildNeutralAggregate(local, controller.devboxSnapshots(t.Context(), time.Second))
+			snapshot := fleet.ProjectForObserver(aggregate, local, fleet.Observer{NodeID: local.NodeID, Role: fleet.RoleHub})
+			require.Len(snapshot.Hosts, 2)
+			host := snapshot.Hosts[1]
+			assert.True(host.Reachable)
+			assert.Equal(!maintenance, host.OperationAvailability[fleet.OpWorkspaceWrite].Available)
+			assert.True(host.OperationAvailability[fleet.OpWorkspaceRead].Available)
+			if maintenance {
+				require.NotNil(host.OperationAvailability[fleet.OpWorkspaceWrite].UnavailableReason)
+				assert.Contains(*host.OperationAvailability[fleet.OpWorkspaceWrite].UnavailableReason, "maintenance")
+			}
+		})
+	}
+}
 
 func TestDevboxTerminalsBypassDefaultHTTPProxy(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)

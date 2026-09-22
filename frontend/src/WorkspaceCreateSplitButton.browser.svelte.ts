@@ -116,6 +116,78 @@ describe("workspace create split button in the New workspace dialog", () => {
     await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new", undefined));
   });
 
+  it.each([
+    ["github.com", false, "Devbox is in maintenance"],
+    ["github.example.com", true, "Devboxes currently support only github.com"],
+  ])(
+    "explains an unavailable devbox and allows choosing this machine (%s)",
+    async (platformHost, available, reason) => {
+      const api = createMockApiFetch([
+        ({ method, url }) => {
+          if (method === "POST" && url.pathname.endsWith("/workspaces")) return jsonResponse({ id: "ws-local" }, 202);
+          if (method !== "GET") return undefined;
+          if (url.pathname === "/api/v1/repos")
+            return jsonResponse([
+              {
+                ID: 1,
+                Owner: "acme",
+                Name: "widget",
+                Platform: "github",
+                PlatformHost: platformHost,
+                Host: platformHost,
+                DefaultBranch: "main",
+                IsArchived: false,
+              },
+            ]);
+          if (url.pathname === "/api/v1/snapshot")
+            return jsonResponse({
+              hosts: [
+                {
+                  configKey: "local",
+                  kind: "self",
+                  name: "Laptop",
+                  federationRole: "hub",
+                  operationAvailability: { workspaceWrite: { available: true } },
+                },
+                {
+                  configKey: "devbox:compute-a",
+                  kind: "devbox",
+                  name: "Compute A",
+                  federationRole: "devbox",
+                  operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
+                },
+              ],
+            });
+          return undefined;
+        },
+      ]);
+      globalThis.fetch = api.fetch;
+      const onCreated = vi.fn();
+      await render(NewWorkspaceDialogRuntimeHarness, {
+        props: { open: true, onClose: vi.fn(), onCreated },
+        context: new Map([
+          [
+            STORES_KEY,
+            {
+              settings: {
+                getLaunchTargets: () => launchTargets,
+                getWorkspaceSettings: () => ({ default_execution_target: "devbox:compute-a" }),
+              },
+            },
+          ],
+        ]),
+      });
+      const dialog = page.getByRole("dialog", { name: "New workspace" });
+      await expect.element(dialog.getByText(reason, { exact: false })).toBeVisible();
+      await expect.element(dialog.getByRole("button", { name: "Create workspace", exact: true })).toBeDisabled();
+      await dialog.getByRole("combobox", { name: "Workspace machine: Compute A (devbox)" }).click();
+      await expect.element(page.getByRole("option", { name: "Compute A (devbox)", exact: false })).toBeDisabled();
+      await page.getByRole("option", { name: "Laptop (this machine)" }).click();
+      await dialog.getByRole("button", { name: "Create workspace", exact: true }).click();
+      await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-local", undefined));
+    },
+  );
+
   it("uses kit-ui primary colors for both solid segments", async () => {
     globalThis.fetch = createMockApiFetch().fetch;
     setThemeMode("dark");

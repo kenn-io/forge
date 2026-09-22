@@ -176,6 +176,7 @@ function renderWithRealPullDetail(
             detailActivityView: createDetailActivityViewStore(),
             settings: {
               getLaunchTargets: () => [],
+              getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
               isModeVisible: () => false,
             },

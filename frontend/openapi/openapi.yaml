@@ -5389,6 +5389,8 @@ components:
           type: string
         lastSeenAt:
           type: string
+        maintenance:
+          type: boolean
         name:
           type: string
         nodeID:

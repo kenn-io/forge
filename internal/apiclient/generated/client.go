@@ -54610,6 +54610,7 @@ type NeutralHost struct {
 	Generation            *int64            `json:"generation,omitempty"`
 	Hostname              *string           `json:"hostname,omitempty"`
 	LastSeenAt            *string           `json:"lastSeenAt,omitempty"`
+	Maintenance           *bool             `json:"maintenance,omitempty"`
 	Name                  string            `json:"name"`
 	NodeID                string            `json:"nodeID"`
 	Platform              *string           `json:"platform,omitempty"`

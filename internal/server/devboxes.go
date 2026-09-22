@@ -447,6 +447,7 @@ func (s *Server) devboxSnapshots(ctx context.Context, timeout time.Duration) []f
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			result := fleet.PeerResult{NodeID: fleet.NodeID("devbox:" + connection.ID), Name: connection.Name, Role: fleet.RoleDevbox, ObservedAt: time.Now().UTC().Format(time.RFC3339)}
+			result.Maintenance = connection.Maintenance
 			defer func() { results[i] = result }()
 			client, err := connections.WorkerClient(connection.ID)
 			if err != nil {

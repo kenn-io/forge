@@ -14,6 +14,11 @@ or remote workspace and session operations.
 - Machine lists, workspace selectors, and execution badges identify devboxes explicitly;
   they have no browser UI to navigate to and must not appear as fleet spokes.
   (`frontend/src/lib/components/layout/ForgeSelector.svelte`)
+- Maintenance blocks workspace creation without hiding existing workspaces or marking the worker
+  unreachable. (`internal/fleet/enrich.go::buildHost`)
+- Every creation entry point must check the chosen devbox's workspace availability and github.com
+  repository support; an unavailable default must never silently create locally.
+  (`frontend/src/lib/stores/workspace-target.svelte.ts`)
 - Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
   belong only on the direct tailnet connection. (`internal/server/devboxes.go::registerDevboxTerminalAPI`)
 - Devbox repository admission and launch context use GitHub node IDs, matching the controller's

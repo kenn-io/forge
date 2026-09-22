@@ -225,6 +225,7 @@ type RawWorkspaceKata struct {
 // NeutralHost is one host record in the hub's observer-independent
 // aggregate. It carries source facts, never projected kind or permissions.
 type NeutralHost struct {
+	Maintenance           bool              `json:"maintenance,omitempty"`
 	NodeID                NodeID            `json:"nodeID"`
 	FederationRole        Role              `json:"federationRole"`
 	Name                  string            `json:"name"`

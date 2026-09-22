@@ -32,6 +32,7 @@ import (
 	"go.kenn.io/forge/internal/docs"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	katacatalog "go.kenn.io/forge/internal/kata"
@@ -1045,11 +1046,16 @@ func newServer(
 		hideTmuxStatus = cfg.Terminal.HideTmuxStatus
 	}
 	tmuxAvailable := tmuxCommandAvailable(tmuxCmd)
+	var workspaceProviderState func(context.Context, []fleet.RawWorkspace) ([]fleet.RawWorkspace, error)
+	if s.providerSource != nil {
+		workspaceProviderState = s.providerSource.WorkspaceProviderState
+	}
 	s.fleetAPI = fleetapi.New(fleetapi.Deps{
-		DB:       database,
-		Syncer:   syncer,
-		Config:   fleetConfigSnapshot(cfg, tmuxCmd),
-		BasePath: basePath,
+		WorkspaceProviderState: workspaceProviderState,
+		DB:                     database,
+		Syncer:                 syncer,
+		Config:                 fleetConfigSnapshot(cfg, tmuxCmd),
+		BasePath:               basePath,
 		BuildVersion: func() string {
 			return s.buildInfo.Version
 		},

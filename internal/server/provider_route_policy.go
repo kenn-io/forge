@@ -160,6 +160,7 @@ var providerRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "federation-import-review-draft", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderHandoff},
 	{OperationID: "federation-import-workflow-state", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderHandoff},
 	{OperationID: "federation-list-workflow-states", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "federation-query-workspace-provider-state", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-refresh-workspace-launch-spec", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "federation-resolve-workspace-launch-spec", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-set-workflow-state", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},

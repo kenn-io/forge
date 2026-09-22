@@ -54,6 +54,8 @@ import type {
   FederationWorkflowMutation,
   FederationWorkflowPage,
   FederationWorkflowQuery,
+  FederationWorkspaceProviderStateRequest,
+  FederationWorkspaceProviderStateResponse,
   GetFleetHostRuntimeSessionAttachSpecDefaultOne,
   GetFleetHostRuntimeSessionAttachSpecPathParameters,
   GetFleetProjectDefaultOne,
@@ -642,6 +644,31 @@ export const federationRefreshWorkspaceLaunchSpec = async (
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(workspaceLaunchRequest),
+  });
+};
+
+export const getFederationQueryWorkspaceProviderStateUrl = () => {
+  return `/federation/provider/workspace-state/query`;
+};
+
+/**
+ * @summary Read hub provider state for a spoke's workspaces
+ */
+export const federationQueryWorkspaceProviderState = async (
+  federationWorkspaceProviderStateRequest: NonReadonly<FederationWorkspaceProviderStateRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<FederationWorkspaceProviderStateResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<FederationWorkspaceProviderStateResponse>(getFederationQueryWorkspaceProviderStateUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(federationWorkspaceProviderStateRequest),
   });
 };
 

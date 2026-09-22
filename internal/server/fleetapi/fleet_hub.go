@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -69,7 +70,9 @@ func (s *Handler) buildFleetSnapshot(
 					ctx, *fleetConfig.Hub,
 					hubAggregateTimeout(memberTimeout), memberTimeout,
 				)
-				if err != nil {
+				if err == nil {
+					local.Workspaces = s.withHubProviderState(ctx, local.Workspaces)
+				} else {
 					aggregateIncomplete = true
 					message := "hub aggregate unavailable: " + err.Error()
 					aggregate = fleet.BuildNeutralAggregate(local, []fleet.PeerResult{{
@@ -92,6 +95,23 @@ func (s *Handler) buildFleetSnapshot(
 	)
 	snapshot.AggregateIncomplete = aggregateIncomplete
 	return snapshot, nil
+}
+
+// withHubProviderState pulls the hub's provider state for this spoke's own
+// workspaces. The hub may be unable to reach the spoke, so the spoke cannot
+// rely on the hub's aggregate to carry that state for it.
+func (s *Handler) withHubProviderState(
+	ctx context.Context, workspaces []fleet.RawWorkspace,
+) []fleet.RawWorkspace {
+	if s.workspaceProviderState == nil || len(workspaces) == 0 {
+		return workspaces
+	}
+	enriched, err := s.workspaceProviderState(ctx, workspaces)
+	if err != nil {
+		slog.Warn("load hub provider state for local workspaces", "err", err)
+		return workspaces
+	}
+	return enriched
 }
 
 func hubAggregateTimeout(memberTimeout time.Duration) time.Duration {

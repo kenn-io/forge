@@ -372,7 +372,9 @@ base_url = %q
 	require.Equal(http.StatusOK, status)
 	assert.True(retry.ReadyToActivate)
 	assert.Equal(first.PreparationSeal, retry.PreparationSeal)
+	spoke.cfgMu.Lock()
 	assert.Equal(config.FleetRoleSpoke, spokeConfig.Fleet.Role)
+	spoke.cfgMu.Unlock()
 }
 
 func TestPersistPreparedSpokeRoleKeepsSealAndMembershipGuards(t *testing.T) {

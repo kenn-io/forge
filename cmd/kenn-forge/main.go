@@ -463,7 +463,10 @@ func run(opts serve.Options) error {
 	if cfg.ExecutionWorker.Enabled {
 		assets = nil
 	}
-	startupHandler := server.NewStartupHandler(assets, cfg, startupOptions, ln)
+	buildInfo := server.BuildInfo{
+		Name: "kenn-forge", Version: version, Commit: commit, BuildDate: buildDate,
+	}
+	startupHandler := server.NewStartupHandler(assets, cfg, startupOptions, ln, buildInfo)
 	switcher := server.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{
 		Handler:     switcher,
@@ -844,12 +847,7 @@ func run(opts serve.Options) error {
 		}
 	}()
 
-	srv.SetBuildInfo(server.BuildInfo{
-		Name:      "kenn-forge",
-		Version:   version,
-		Commit:    commit,
-		BuildDate: buildDate,
-	})
+	srv.SetBuildInfo(buildInfo)
 	if mcpSwitcher != nil {
 		mcpSrv, err = mcpserver.New(mcpserver.Options{
 			Backend: srv.MCPBackend(), Version: version,

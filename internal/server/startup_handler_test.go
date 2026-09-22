@@ -60,6 +60,7 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 		cfg,
 		ServerOptions{},
 		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
+		BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
 	rootReq := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -73,6 +74,17 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 	assert.Contains(rootRR.Body.String(), `<body>app</body>`)
 	assert.Contains(rootRR.Body.String(), `window.__BASE_PATH__="/"`)
 	assert.NotContains(rootRR.Body.String(), "kenn-forge is starting")
+
+	liveReq := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	liveReq.Host = "127.0.0.1:8091"
+	liveReq.RemoteAddr = "127.0.0.1:1234"
+	liveRR := httptest.NewRecorder()
+	handler.ServeHTTP(liveRR, liveReq)
+	var live healthResponse
+	require.NoError(t, json.Unmarshal(liveRR.Body.Bytes(), &live))
+	assert.Equal(http.StatusOK, liveRR.Code)
+	assert.Equal("v1.2.3", live.Version)
+	assert.Len(live.Revision, 40)
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
 	apiReq.Host = "127.0.0.1:8091"
@@ -112,6 +124,7 @@ func TestStartupHandlerUsesHostValidation(t *testing.T) {
 		cfg,
 		ServerOptions{},
 		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
+		BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -138,6 +151,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 		cfg,
 		ServerOptions{},
 		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
+		BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/kenn-forge/", nil)
@@ -205,6 +219,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 		cfg,
 		ServerOptions{},
 		ln,
+		BuildInfo{},
 	))
 	httpSrv := &http.Server{Handler: switcher}
 	errCh := make(chan error, 1)

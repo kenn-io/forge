@@ -17,9 +17,14 @@ type healthResponse struct {
 	Modified bool   `json:"modified"`
 }
 
-func (s *Server) healthyResponse() healthResponse {
-	response := healthResponse{Status: "ok", Version: s.buildInfo.Version, Revision: s.buildInfo.Commit}
-	if build, ok := debug.ReadBuildInfo(); ok {
+func healthyResponse(info BuildInfo) healthResponse {
+	build, _ := debug.ReadBuildInfo()
+	return healthResponseForBuild(info, build)
+}
+
+func healthResponseForBuild(info BuildInfo, build *debug.BuildInfo) healthResponse {
+	response := healthResponse{Status: "ok", Version: info.Version, Revision: info.Commit}
+	if build != nil {
 		for _, setting := range build.Settings {
 			switch setting.Key {
 			case "vcs.revision":
@@ -48,7 +53,7 @@ func (s *Server) registerHealthAPI(api huma.API) {
 
 func (s *Server) livez(_ context.Context, _ *struct{}) (*healthOutput, error) {
 	return &healthOutput{
-		Body: s.healthyResponse(),
+		Body: healthyResponse(s.buildInfo),
 	}, nil
 }
 
@@ -63,6 +68,6 @@ func (s *Server) healthz(ctx context.Context, _ *struct{}) (*healthOutput, error
 	}
 
 	return &healthOutput{
-		Body: s.healthyResponse(),
+		Body: healthyResponse(s.buildInfo),
 	}, nil
 }

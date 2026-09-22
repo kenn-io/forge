@@ -19,6 +19,8 @@ or remote workspace and session operations.
 - Every creation entry point must check the chosen devbox's workspace availability and github.com
   repository support; an unavailable default must never silently create locally.
   (`frontend/src/lib/stores/workspace-target.svelte.ts`)
+- Validate saved default destinations on config load and settings writes, but preserve valid
+  devbox selections while disconnected. (`internal/config/devbox.go::ValidateDefaultExecutionTarget`)
 - Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
   belong only on the direct tailnet connection. (`internal/server/devboxes.go::registerDevboxTerminalAPI`)
 - Devbox repository admission and launch context use GitHub node IDs, matching the controller's

@@ -1068,6 +1068,11 @@ func (s *Server) updateLocalSettings(
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
+	if workspaces := input.Body.Workspaces; workspaces != nil && workspaces.DefaultExecutionTarget != nil {
+		if err := config.ValidateDefaultExecutionTarget(*workspaces.DefaultExecutionTarget); err != nil {
+			return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+		}
+	}
 	provider, err := s.fetchProviderSettings(ctx)
 	if err != nil {
 		return nil, err

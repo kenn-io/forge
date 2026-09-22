@@ -24,7 +24,22 @@ type Devboxes struct {
 	RegistryURL string `toml:"registry_url,omitempty"`
 }
 
+// ValidateDefaultExecutionTarget checks target syntax without requiring a live connection.
+func ValidateDefaultExecutionTarget(target string) error {
+	if target == "" {
+		return nil
+	}
+	id, ok := strings.CutPrefix(target, "devbox:")
+	if !ok || id == "" || strings.Trim(id, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != "" {
+		return errors.New("config: workspaces.default_execution_target must be empty or devbox:<connection-id>, using only letters, digits, hyphens, or underscores")
+	}
+	return nil
+}
+
 func (c *Config) validateDevboxes() error {
+	if err := ValidateDefaultExecutionTarget(c.Workspaces.DefaultExecutionTarget); err != nil {
+		return err
+	}
 	if raw := c.Devboxes.RegistryURL; raw != "" {
 		u, err := url.Parse(raw)
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {

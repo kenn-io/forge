@@ -21,6 +21,9 @@ func (h *Handler) resumeWorkspaceAgent(ctx context.Context, stored db.WorkspaceR
 		return fmt.Errorf("no saved agent conversation")
 	}
 	report := reports[0]
+	if err := h.workspaces.ValidateExecutionIdentity(ctx, restored.CWD); err != nil {
+		return fmt.Errorf("validate resumed agent identity: %w", err)
+	}
 	if err := h.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchContextOptions{
 		WorkspaceID: restored.WorkspaceID, TargetKey: restored.TargetKey,
 	}); err != nil {

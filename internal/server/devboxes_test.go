@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json/v2"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,6 +23,65 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 )
+
+func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {
+	for _, target := range []string{"plain_shell", "shell", "codex"} {
+		t.Run(target, func(t *testing.T) {
+			assert, require := assert.New(t), require.New(t)
+			body := fmt.Sprintf(`{"target_key":%q,"display_region":"workflow"}`, target)
+			var launches, contextReads atomic.Int32
+			worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal("Bearer worker-test-token", r.Header.Get("Authorization"))
+				switch r.Method + " " + r.URL.Path {
+				case "GET /api/v1/workspaces/work-a":
+					contextReads.Add(1)
+					http.Error(w, "source context unavailable", http.StatusServiceUnavailable)
+				case "POST /api/v1/workspaces/work-a/runtime/sessions":
+					launches.Add(1)
+					raw, err := io.ReadAll(r.Body)
+					if !assert.NoError(err) {
+						return
+					}
+					assert.Equal(body, string(raw), "forward the complete original launch request")
+					w.WriteHeader(http.StatusCreated)
+					_, _ = w.Write([]byte(`{"key":"shell-session"}`))
+				default:
+					assert.Fail("unexpected worker request", "%s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(worker.Close)
+			directory := t.TempDir()
+			raw, err := json.Marshal([]any{map[string]any{
+				"id": "compute-a", "profile": devbox.Profile{
+					Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token",
+				},
+			}})
+			require.NoError(err)
+			require.NoError(os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
+			connections, err := devbox.OpenConnections(directory)
+			require.NoError(err)
+			t.Cleanup(connections.Close)
+			controller := &Server{options: ServerOptions{Devboxes: connections}}
+			mux := http.NewServeMux()
+			controller.registerDevboxAPI(humago.New(mux, huma.DefaultConfig("test", "1")))
+			request := httptest.NewRequest(http.MethodPost, "/devboxes/compute-a/workspaces/work-a/runtime/sessions", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, request)
+			if target == "codex" {
+				assert.Equal(http.StatusConflict, response.Code, response.Body.String())
+				assert.Zero(launches.Load())
+				assert.Equal(int32(1), contextReads.Load())
+			} else {
+				assert.Equal(http.StatusCreated, response.Code, response.Body.String())
+				assert.JSONEq(`{"key":"shell-session"}`, response.Body.String())
+				assert.Equal(int32(1), launches.Load())
+				assert.Zero(contextReads.Load())
+			}
+		})
+	}
+}
 
 func TestDevboxSnapshotMaintenanceBlocksCreation(t *testing.T) {
 	for _, maintenance := range []bool{false, true} {

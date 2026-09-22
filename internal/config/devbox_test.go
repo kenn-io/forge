@@ -75,3 +75,32 @@ registry_url = "https://boxes.example.org"
 `)
 	assert.Equal(t, before.Devboxes, after.Devboxes)
 }
+
+func TestDefaultExecutionTargetConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name, target string
+		valid        bool
+	}{
+		{"local", "", true},
+		{"unavailable devbox", "devbox:connection-a", true},
+		{"route-safe identifier", "devbox:Compute_1-A", true},
+		{"unknown kind", "fleet:connection-a", false},
+		{"unprefixed host", "connection-a", false},
+		{"empty identifier", "devbox:", false},
+		{"whitespace", "devbox:connection a", false},
+		{"path", "devbox:connection/a", false},
+		{"query", "devbox:connection?a", false},
+		{"fragment", "devbox:connection#a", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := fmt.Sprintf("[workspaces]\ndefault_execution_target = %q\n", tc.target)
+			if tc.valid {
+				_, saved := roundTripConfigString(t, content)
+				assert.Equal(t, tc.target, saved.Workspaces.DefaultExecutionTarget)
+				return
+			}
+			_, err := Load(writeConfig(t, content))
+			assert.ErrorContains(t, err, "workspaces.default_execution_target")
+		})
+	}
+}

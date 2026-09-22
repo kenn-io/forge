@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -27,6 +28,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 func (s *Server) devboxController() (*devbox.Connections, error) {
@@ -272,7 +274,23 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
 		if r.URL.RawQuery != "" {
 			path += "?" + r.URL.RawQuery
 		}
-		if r.Method == "POST" && (strings.HasSuffix(route.path, "/retry") || strings.HasSuffix(route.path, "/refresh") || strings.HasSuffix(route.path, "/runtime/sessions") || strings.HasSuffix(route.path, "/runtime/agent-handoffs")) {
+		refreshContext := r.Method == "POST" && (strings.HasSuffix(route.path, "/retry") || strings.HasSuffix(route.path, "/refresh") || strings.HasSuffix(route.path, "/runtime/agent-handoffs"))
+		if r.Method == "POST" && strings.HasSuffix(route.path, "/runtime/sessions") {
+			var input workspaceapi.LaunchWorkspaceRuntimeSessionInput
+			body, err := io.ReadAll(r.Body)
+			if err == nil {
+				err = json.Unmarshal(body, &input.Body)
+			}
+			if err != nil {
+				writeProblemResponse(w, httpapi.NewProblem(http.StatusBadRequest, httpapi.CodeBadRequest, "invalid session launch request", nil))
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			target := strings.TrimSpace(input.Body.TargetKey)
+			// These reserved system targets launch shells; configured targets are agents.
+			refreshContext = target != string(localruntime.LaunchTargetShell) && target != string(localruntime.LaunchTargetPlainShell)
+		}
+		if refreshContext {
 			if err := s.refreshDevboxContext(r.Context(), connections, r.PathValue("connection_id"), r.PathValue("id")); err != nil {
 				writeProblemResponse(w, httpapi.NewProblem(409, httpapi.CodeConflict, "Workspace context needs refresh: "+err.Error(), nil))
 				return

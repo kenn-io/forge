@@ -542,12 +542,15 @@
           const routeParams = providerRouteParams(ref);
           const body = requested ? { branch: requested } : {};
           if (remoteWorkspaceHostKey?.startsWith("devbox:")) {
- return executeGeneratedApiRequest("create devbox workspace", (client, signal) => client.DevboxesService.createDevboxWorkspace(
- { connectionId: remoteWorkspaceHostKey.slice(7) },
- { provider: repo.provider, platform_host: repo.platformHost, owner: repo.owner, name: repo.name, ...body }, { signal },
- )).pipe(Effect.map(normalizeCreatedWorkspace));
- }
- if (remoteWorkspaceHostKey) {
+            return executeGeneratedApiRequest("create devbox workspace", (client, signal) =>
+              client.DevboxesService.createDevboxWorkspace(
+                { connectionId: remoteWorkspaceHostKey.slice(7) },
+                { provider: repo.provider, platform_host: repo.platformHost, owner: repo.owner, name: repo.name, ...body },
+                { signal },
+              ),
+            ).pipe(Effect.map(normalizeCreatedWorkspace));
+          }
+          if (remoteWorkspaceHostKey) {
             return executeOpaqueGeneratedApiRequest("create fleet workspace", (client, signal) =>
               providerUsesHostRoute(ref)
                 ? client.FleetService.createFleetRepoWorkspaceOnPlatformHost(

@@ -6,8 +6,8 @@ management, tmux persistence, and workspace terminal UI behavior.
 ## Remote execution context
 
 - A controller supplies leased PR/issue launch context to a devbox; remote-only creation is
-  repository plus branch. Expired context gates source-dependent launches, not existing terminals
-  or Git operations. (`internal/server/workspaceapi/execution_worker.go`)
+  repository plus branch. Expired context gates source-dependent launches, not shell launches,
+  existing terminals or Git operations. (`internal/server/devboxes.go::registerDevboxProxy`)
 
 ## Purpose
 
@@ -208,6 +208,9 @@ create a local process, PTY, or durable transport session
 - Missing tmux agents resume the newest matching Codex, Claude, or Pi hook session
   by exact ID, preserving configured flags and runtime identity without replaying
   the initial prompt (`internal/server/workspaceapi/agent_resume.go::Handler.resumeWorkspaceAgent`).
+- Agent recovery must enforce the same Git identity and credential-helper checks as a fresh
+  launch; retain the conversation when validation fails so repair allows a later retry.
+  (`internal/server/workspaceapi/agent_resume.go::Handler.resumeWorkspaceAgent`)
 - Kit owns generated resume arguments; configured arguments pass through
   unchanged, with their meaning and validity owned by the caller
   (`internal/workspace/localruntime/agent_resume.go::agentResumeCommand`).

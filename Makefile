@@ -427,8 +427,13 @@ fmt: custom-gcl
 # would otherwise slip through the lint gate.
 fmt-check: custom-gcl
 	@diff=$$($(CUSTOM_GCL) fmt --diff ./...); \
+	status=$$?; \
+	if [ "$$status" -ne 0 ]; then \
+		if [ -n "$$diff" ]; then printf '%s\n' "$$diff" >&2; fi; \
+		exit "$$status"; \
+	fi; \
 	if [ -n "$$diff" ]; then \
-		echo "$$diff"; \
+		printf '%s\n' "$$diff"; \
 		echo ""; \
 		echo "Formatter would rewrite files listed above."; \
 		echo "Run 'make fmt' to apply."; \

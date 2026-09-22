@@ -175,13 +175,7 @@ func pushWorktreeBranch(
 		return err
 	}
 	if !upstreamExists {
-		if err := pushBranch(ctx, run, dir, upstream); err != nil {
-			return err
-		}
-		if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
-			return fmt.Errorf("refresh after push: %w", err)
-		}
-		return nil
+		return pushBranch(ctx, run, dir, upstream)
 	}
 	if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
 		return err
@@ -196,13 +190,7 @@ func pushWorktreeBranch(
 	if div.Ahead == 0 {
 		return ErrWorktreeInSync
 	}
-	if err := pushBranch(ctx, run, dir, upstream); err != nil {
-		return err
-	}
-	if err := refreshBranchUpstream(ctx, run, dir, upstream); err != nil {
-		return fmt.Errorf("refresh after push: %w", err)
-	}
-	return nil
+	return pushBranch(ctx, run, dir, upstream)
 }
 
 func remoteBranchExists(
@@ -250,11 +238,13 @@ func WorktreeBranchUpstreamMissing(ctx context.Context, dir string) (bool, error
 }
 
 func pushBranch(ctx context.Context, run networkedBranchGit, dir string, upstream branchUpstream) error {
-	// Writes stay on the user's own credential chain so the pushed commits
-	// are attributed to the user instead of a GitHub App bot.
+	// User-triggered pushes retain mutation authentication.
+	// This command-scoped mapping lets Git update the tracking ref from the
+	// acknowledged push, even for main-only fetch configurations. No extra fetch.
+	fetchMapping := "remote." + upstream.remote + ".fetch=+refs/heads/" + upstream.branch + ":refs/remotes/" + upstream.remote + "/" + upstream.branch
 	if _, err := run(
 		tokenauth.WithMutationAuth(ctx), dir, upstream.remote,
-		"push", upstream.remote, "HEAD:"+upstream.branch,
+		"-c", fetchMapping, "push", upstream.remote, "HEAD:"+upstream.branch,
 	); err != nil {
 		return fmt.Errorf("git push: %w", err)
 	}

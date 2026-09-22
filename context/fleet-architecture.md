@@ -8,6 +8,9 @@ or remote workspace and session operations.
 - Treat devboxes as first-class execution targets: measure interaction latency and GitHub calls
   against local workflows, and remove repeated work without caching membership or permission
   decisions. (`internal/devbox/broker.go::Broker.Credential`)
+- A successful push records the acknowledged commit in its tracking ref, including main-only
+  fetch configurations; do not refetch just to update that ref and repeat broker authorization.
+  (`internal/workspace/branch_sync.go::pushBranch`)
 - Hubs and standalone controllers own devbox connections and route directly to workers; spokes
   remain local-only. Use `devbox:<connection-id>` keys, separate from fleet node keys, and never
   project worker bearer tokens into browser data. (`internal/server/devboxes.go`)

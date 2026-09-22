@@ -373,9 +373,11 @@ base_url = %q
 	require.Equal(http.StatusOK, status)
 	assert.True(retry.ReadyToActivate)
 	assert.Equal(first.PreparationSeal, retry.PreparationSeal)
+	// spokeConfig is the same pointer the config watcher rewrites.
 	spoke.cfgMu.Lock()
-	assert.Equal(config.FleetRoleSpoke, spokeConfig.Fleet.Role)
+	role := spoke.cfg.Fleet.Role
 	spoke.cfgMu.Unlock()
+	assert.Equal(config.FleetRoleSpoke, role)
 }
 
 func TestPersistPreparedSpokeRoleKeepsSealAndMembershipGuards(t *testing.T) {

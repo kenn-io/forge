@@ -2388,6 +2388,58 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 	}, pty.resizes())
 }
 
+func TestManagerSubmitInitialMessageWaitsForTmuxAgentInput(t *testing.T) {
+	if !testtmux.Supported() {
+		t.Skip("requires private tmux")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux unavailable")
+	}
+	require := require.New(t)
+	dir := t.TempDir()
+	gate := filepath.Join(dir, "ready")
+	received := filepath.Join(dir, "received")
+	// Keep the pane in cooked mode until the agent starts reading. Tmux
+	// already advertises bracketed paste to its attached client at this point.
+	script := "while [ ! -f " + shellquote.Join(gate) + " ]; do sleep 0.02; done; " +
+		"stty raw -echo; printf '\033[?2004h'; " +
+		"dd bs=1 count=24 of=" + shellquote.Join(received) + " 2>/dev/null; sleep 10"
+	mgr := NewManager(Options{
+		TmuxCommand:             privateTmuxOwner.Command(t, tmuxPath),
+		WrapAgentSessionsInTmux: true,
+		Targets: []LaunchTarget{{
+			Key: "agent", Label: "agent", Kind: LaunchTargetAgent, Available: true,
+			Command: []string{"/bin/sh", "-c", script},
+		}, {
+			Key: string(LaunchTargetShell), Kind: LaunchTargetShell, Available: true,
+		}},
+	})
+	t.Cleanup(mgr.Shutdown)
+	info, err := mgr.Launch(t.Context(), "ws-1", dir, "agent")
+	require.NoError(err)
+	mgr.mu.Lock()
+	s := mgr.sessions[info.Key]
+	mgr.mu.Unlock()
+	require.NotNil(s)
+	require.Eventually(func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.inputModes.observed[2004]
+	}, 5*time.Second, 10*time.Millisecond)
+
+	require.ErrorIs(mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "review this"), ErrBracketedPasteInactive)
+	require.NoError(os.WriteFile(gate, nil, 0o600))
+	require.Eventually(func() bool {
+		err := mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "review this")
+		return err == nil
+	}, 5*time.Second, 20*time.Millisecond)
+	require.Eventually(func() bool {
+		data, err := os.ReadFile(received)
+		return err == nil && string(data) == "\x1b[200~review this\x1b[201~\r"
+	}, 5*time.Second, 20*time.Millisecond)
+}
+
 func TestManagerSubmitInitialMessageWritesEnterAsSeparateKeystrokeAfterPaste(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

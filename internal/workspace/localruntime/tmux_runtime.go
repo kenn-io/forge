@@ -7,11 +7,56 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"slices"
+	"strings"
 
 	"github.com/creack/pty/v2"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 )
+
+// tmuxAgentInputReady checks the application's terminal, not the attach
+// client's modes. Tmux advertises bracketed paste even before the agent
+// starts; input sent then can be echoed, line-buffered, and lost at startup.
+func (m *Manager) tmuxAgentInputReady(ctx context.Context, sessionName string) (bool, error) {
+	command := slices.Clone(m.tmuxCommand)
+	if len(command) == 0 {
+		if target, err := m.target(string(LaunchTargetShell)); err == nil {
+			command = slices.Clone(target.Command)
+		}
+	}
+	if len(command) == 0 {
+		command = config.DefaultTmuxCommand()
+	}
+	command, err := resolveTmuxCommand(command)
+	if err != nil {
+		return false, err
+	}
+	launcher := tmuxLauncher{Pane: tmuxPaneEnvironment{
+		clientEnv: TmuxClientEnvironment(os.Environ(), m.currentStripEnvVars()),
+	}}
+	output, err := launcher.output(ctx, append(command,
+		"display-message", "-p", "-t", sessionName, "#{pane_tty}"))
+	if err != nil {
+		return false, fmt.Errorf("find agent terminal: %w", err)
+	}
+	tty, err := os.Open(strings.TrimSpace(string(output)))
+	if err != nil {
+		return false, fmt.Errorf("open agent terminal: %w", err)
+	}
+	defer tty.Close()
+	// stty uses the same read-only invocation on macOS and Linux.
+	cmd := procutil.CommandContext(ctx, "stty", "-a")
+	cmd.Stdin = tty
+	var modes strings.Builder
+	cmd.Stdout = &modes
+	if err := procutil.Run(ctx, cmd, "agent terminal input mode"); err != nil {
+		return false, fmt.Errorf("read agent terminal mode: %w", err)
+	}
+	flags := strings.Fields(strings.ReplaceAll(modes.String(), ";", " "))
+	return slices.Contains(flags, "-icanon") && slices.Contains(flags, "-echo"), nil
+}
 
 type tmuxAttachLifecycle struct {
 	cmd  *exec.Cmd

@@ -22,6 +22,7 @@ nav = [
     {"Work in local sessions" = "workflows/workspaces.md"},
     {"Read and edit Docs" = "workflows/docs.md"},
   ]},
+  {"Devboxes" = "devboxes.md"},
   {"Federated fleet" = "federated-fleet.md"},
   {"Faster GitHub updates" = "activity-relay.md"},
   {"Integrations" = "integrations.md"},

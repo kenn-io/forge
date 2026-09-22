@@ -5,18 +5,19 @@ import type { PullRequest } from "./types.js";
 
 export const createPullRequestWorkspace = Effect.fn("Onboarding.createPullRequestWorkspace")(function* (
   pull: PullRequest,
+  devboxHostKey?: string,
 ) {
+  const body = {
+    provider: pull.repo.provider,
+    platform_host: pull.repo.platform_host,
+    owner: pull.repo.owner,
+    name: pull.repo.name,
+    mr_number: pull.Number,
+  };
   const data = yield* executeGeneratedApiRequest("create pull request workspace", (client, signal) =>
-    client.WorkspacesService.createWorkspace(
-      {
-        provider: pull.repo.provider,
-        platform_host: pull.repo.platform_host,
-        owner: pull.repo.owner,
-        name: pull.repo.name,
-        mr_number: pull.Number,
-      },
-      { signal },
-    ),
+    devboxHostKey
+      ? client.DevboxesService.createDevboxWorkspace({ connectionId: devboxHostKey.slice(7) }, body, { signal })
+      : client.WorkspacesService.createWorkspace(body, { signal }),
   );
   if (!data.id) {
     return yield* Effect.fail(

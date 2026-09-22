@@ -49,8 +49,11 @@ func NewClient(host string) *Client {
 // URL. Tests point this at a local fake server.
 func NewClientWithBase(apiBase string) *Client {
 	return &Client{
-		apiBase:    strings.TrimRight(apiBase, "/"),
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		apiBase: strings.TrimRight(apiBase, "/"),
+		httpClient: &http.Client{
+			Timeout:       30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 	}
 }
 

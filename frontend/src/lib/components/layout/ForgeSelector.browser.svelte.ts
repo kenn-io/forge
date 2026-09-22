@@ -133,6 +133,34 @@ describe("ForgeSelector (browser)", () => {
     }
   });
 
+  it.each([1280, 375])("distinguishes devboxes from fleet nodes at %ipx", async (width) => {
+    await page.viewport(width, 700);
+    snapshotHosts = [
+      host("devbox:compute-a", "Compute A", { kind: "devbox", federationRole: "devbox", baseURL: "" }),
+      host("spoke-a", "Build node"),
+      host("hub", "Main Forge", { kind: "self", federationRole: "hub" }),
+      host("devbox:compute-b", "Compute B", {
+        kind: "devbox",
+        federationRole: "devbox",
+        baseURL: "",
+        reachable: false,
+      }),
+    ];
+    await renderSelector({ compact: width < 640 });
+    await waitForDirectory();
+    await page.getByLabelText("Current Forge: Main Forge").click();
+
+    const rows = page.getByRole("listitem");
+    await expect.element(rows.filter({ hasText: "Main Forge" })).toHaveTextContent("Hub");
+    await expect.element(rows.filter({ hasText: "Build node" })).toHaveTextContent("Spoke");
+    await expect.element(rows.filter({ hasText: "Compute A" })).toHaveTextContent("Devbox");
+    await expect.element(rows.filter({ hasText: "Compute A" })).toHaveTextContent("online");
+    await expect.element(rows.filter({ hasText: "Compute B" })).toHaveTextContent("offline");
+    expect(document.querySelectorAll(".forge-selector li a")).toHaveLength(2);
+    const menu = page.getByRole("list", { name: "Forge fleet" }).element().getBoundingClientRect();
+    expect(menu.right).toBeLessThanOrEqual(width);
+  });
+
   it("removes hosts omitted by a later authoritative snapshot", async () => {
     const hub = host("hub", "Hub", {
       federationRole: "hub",

@@ -140,3 +140,9 @@ func (s *Handler) RegisterWorkspaceCleanup(api huma.API, hidden bool) {
 		Hidden:        hidden,
 	}, s.queueFederationWorkspaceCleanup)
 }
+
+// LocalSnapshot returns only this process's inventory; it never fans out.
+func (s *Handler) LocalSnapshot(ctx context.Context) (fleet.RawSnapshot, error) {
+	s.noteSnapshotDemand()
+	return s.buildLocalRaw(ctx)
+}

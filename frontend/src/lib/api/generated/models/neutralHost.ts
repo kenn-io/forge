@@ -13,6 +13,7 @@ export interface NeutralHost {
   generation?: number;
   hostname?: string;
   lastSeenAt?: string;
+  maintenance?: boolean;
   name: string;
   nodeID: string;
   platform?: string;

@@ -41,6 +41,8 @@ type configChangedEvent struct {
 // startup. It is taken once in newServer and compared in applyConfigChange
 // to detect drift that the watcher cannot fix without a restart.
 type startupConfigSnapshot struct {
+	ExecutionWorker                 config.ExecutionWorker
+	Devboxes                        config.Devboxes
 	Relay                           config.Relay
 	SyncInterval                    string
 	NotificationSyncInterval        string
@@ -105,6 +107,8 @@ func snapshotStartupConfig(cfg *config.Config) startupConfigSnapshot {
 		return startupConfigSnapshot{}
 	}
 	snap := startupConfigSnapshot{
+		ExecutionWorker:                 cfg.ExecutionWorker,
+		Devboxes:                        cfg.Devboxes,
 		Relay:                           cfg.Relay,
 		SyncInterval:                    cfg.SyncInterval,
 		NotificationSyncInterval:        cfg.Notifications.SyncInterval,
@@ -283,6 +287,9 @@ func initialRuntimeStripEnvNames(cfg *config.Config) []string {
 		return nil
 	}
 	names := cfg.TokenEnvNames()
+	if cfg.ExecutionWorker.Enabled {
+		names = append(names, "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "SSH_AUTH_SOCK", "SSH_AGENT_PID", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL")
+	}
 	slices.Sort(names)
 	return names
 }

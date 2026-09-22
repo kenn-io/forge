@@ -11,6 +11,8 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/devbox"
+	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -508,7 +510,7 @@ func providerTokenSources(
 }
 
 type serveControlPlanes struct {
-	Git      gitStartup
+	Git      gitclone.RouteResolver
 	Provider *providerControlPlane
 }
 
@@ -524,11 +526,14 @@ func buildServeControlPlanes(
 	resolver github.IdentityResolver,
 	disableSync bool,
 ) (serveControlPlanes, error) {
+	if cfg.ExecutionWorker.Enabled {
+		return serveControlPlanes{Git: devbox.NewBrokerClient(cfg.ExecutionWorker.BrokerSocket)}, nil
+	}
 	gitRoutes, err := buildGitStartup(cfg, set)
 	if err != nil {
 		return serveControlPlanes{}, err
 	}
-	result := serveControlPlanes{Git: gitRoutes}
+	result := serveControlPlanes{Git: &gitRoutes}
 	if cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
 		return result, nil
 	}
@@ -558,7 +563,7 @@ func buildServeControlPlanes(
 		return serveControlPlanes{}, err
 	}
 	result.Provider = &control
-	result.Git.ApplyProviderControlPlane(result.Provider)
+	gitRoutes.ApplyProviderControlPlane(result.Provider)
 	return result, nil
 }
 

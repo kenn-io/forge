@@ -88,7 +88,10 @@ describe("applySettingsHydration", () => {
 
   it("hydrates workspace preferences into the settings store", () => {
     const { settingsStore } = hydrate();
-    expect(settingsStore.getWorkspaceSettings()).toEqual(settingsPayload.workspaces);
+    expect(settingsStore.getWorkspaceSettings()).toEqual({
+      ...settingsPayload.workspaces,
+      default_execution_target: "",
+    });
   });
 
   it("hydrates the managed-clone Roborev preference into its own store value", () => {

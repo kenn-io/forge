@@ -240,6 +240,11 @@ func (s *Server) registerAPI(api huma.API) {
 		Summary:     "Get server version",
 		Tags:        []string{"System"},
 	}, s.getVersion)
+	if s.options.ExecutionWorker {
+		s.registerWorkerAPI(api)
+		s.workspaceAPI.RegisterExecution(api)
+		return
+	}
 
 	huma.Get(api, "/activity", s.listActivity,
 		httpapi.DocumentOperation("list-activity", "List activity", "Activity"))
@@ -454,6 +459,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Summary:     "Get host runtime session attach spec",
 		Tags:        []string{"Runtime"},
 	}, s.getHostRuntimeSessionAttachSpec)
+	s.registerDevboxAPI(api)
 }
 
 func (s *Server) registerProviderRepoAPI(api huma.API) {
@@ -524,6 +530,7 @@ func NewOpenAPI() *huma.OpenAPI {
 	s := &Server{}
 	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
 	s.registerAPI(api)
+	s.registerWorkerAPI(api)
 	return api.OpenAPI()
 }
 

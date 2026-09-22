@@ -27,6 +27,7 @@ raw markdown at /docs/<page>.md, and the docs index at /docs/index.md.
 - [Configuration](https://forge.kenn.io/docs/configuration.md): Config file reference and startup options
 - [Faster GitHub updates](https://forge.kenn.io/docs/activity-relay.md): Connect Forge to a shared relay, run the service, configure webhooks, and check a real update
 - [Commands](https://forge.kenn.io/docs/commands.md): CLI command reference for the kenn-forge binary
+- [Devboxes](https://forge.kenn.io/docs/devboxes.md): Run agent workspaces in Linux accounts over Tailscale, with organization-scoped GitHub App access
 - [Federated fleet](https://forge.kenn.io/docs/federated-fleet.md): Why to use a hub-and-spoke fleet, how ownership works, and how to set it up
 - [MCP companion](https://forge.kenn.io/docs/kenn-forge-mcp.md): Model Context Protocol server for agent access to the console
 - [Archive](https://forge.kenn.io/docs/archive.md): Historical activity archives beyond the live sync window

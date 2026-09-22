@@ -204,6 +204,8 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 		)
 		launchPull := &db.WorkspaceLaunchPull{
 			HeadBranch: pull.HeadBranch, SnapshotRevision: pull.SnapshotRevision,
+			BaseRepoID: repo.PlatformRepoID, BaseBranch: pull.BaseBranch,
+			BaseOID: pull.PlatformBaseSHA, HeadOID: pull.PlatformHeadSHA,
 		}
 		switch {
 		case headRepo == nil:

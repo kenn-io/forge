@@ -732,6 +732,7 @@ type Detail struct {
 
 // Workspaces configures behavior shared by PR- and issue-backed workspaces.
 type Workspaces struct {
+	DefaultExecutionTarget string `toml:"default_execution_target,omitempty" json:"default_execution_target,omitempty"`
 	// ShowAgentStatusInLists displays linked agent states in item lists.
 	ShowAgentStatusInLists bool `toml:"show_agent_status_in_lists,omitempty" json:"show_agent_status_in_lists"`
 	// AutoAssignOnCreate adds the authenticated provider user to the source
@@ -994,6 +995,8 @@ type Config struct {
 	Fleet             Fleet                    `toml:"fleet"`
 	API               API                      `toml:"api"`
 	MCP               MCP                      `toml:"mcp"`
+	ExecutionWorker   ExecutionWorker          `toml:"execution_worker"`
+	Devboxes          Devboxes                 `toml:"devboxes"`
 
 	// parsedAllowedHosts is the canonicalised form of AllowedHosts,
 	// populated by Validate so the server constructor does not have
@@ -1401,6 +1404,9 @@ func (c *Config) DataDirWasRelative() bool {
 
 // validate runs every config rule.
 func (c *Config) validate() error {
+	if err := c.validateDevboxes(); err != nil {
+		return err
+	}
 	if err := c.Relay.Validate(); err != nil {
 		return err
 	}
@@ -3624,6 +3630,8 @@ type configFile struct {
 	Fleet                       Fleet                    `toml:"fleet,omitempty"`
 	API                         API                      `toml:"api,omitempty"`
 	MCP                         MCP                      `toml:"mcp,omitempty"`
+	ExecutionWorker             ExecutionWorker          `toml:"execution_worker,omitempty"`
+	Devboxes                    Devboxes                 `toml:"devboxes,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -3669,6 +3677,8 @@ func (c *Config) Save(path string) error {
 		Fleet:                       cfg.Fleet,
 		API:                         cfg.API,
 		MCP:                         cfg.MCP,
+		ExecutionWorker:             cfg.ExecutionWorker,
+		Devboxes:                    cfg.Devboxes,
 	}
 	if cfg.DefaultPlatformHost == defaultPlatformHost {
 		f.DefaultPlatformHost = ""

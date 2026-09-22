@@ -15,14 +15,25 @@ export const quickActionWorkspaces = new SvelteSet<string>();
  * queued in the frontend launch state; the runtime session arrives through the
  * ordinary workspace runtime events.
  */
-export function runWorkspaceQuickAction(runtime: AppRuntime, workspaceId: string, action: QuickAction): void {
-  quickActionWorkspaces.add(workspaceId);
+export function runWorkspaceQuickAction(
+  runtime: AppRuntime,
+  workspaceId: string,
+  action: QuickAction,
+  hostKey?: string,
+): void {
+  quickActionWorkspaces.add(hostKey ? `${hostKey}\0${workspaceId}` : workspaceId);
   const program = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
-    client.WorkspacesService.launchWorkspaceAgentHandoff(
-      { id: workspaceId },
-      { target_key: action.agent, message: action.prompt },
-      { signal },
-    ),
+    hostKey?.startsWith("devbox:")
+      ? client.DevboxesService.launchDevboxHandoff(
+          { connectionId: hostKey.slice(7), id: workspaceId },
+          { target_key: action.agent, message: action.prompt },
+          { signal },
+        )
+      : client.WorkspacesService.launchWorkspaceAgentHandoff(
+          { id: workspaceId },
+          { target_key: action.agent, message: action.prompt },
+          { signal },
+        ),
   ).pipe(
     Effect.tap((result) =>
       Effect.sync(() => {

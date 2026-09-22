@@ -7,8 +7,9 @@ type NodeID string
 type Role string
 
 const (
-	RoleHub   Role = "hub"
-	RoleSpoke Role = "spoke"
+	RoleHub    Role = "hub"
+	RoleSpoke  Role = "spoke"
+	RoleDevbox Role = "devbox"
 )
 
 // RepositoryIdentity is the provider-verified cross-spoke repository key.
@@ -224,6 +225,7 @@ type RawWorkspaceKata struct {
 // NeutralHost is one host record in the hub's observer-independent
 // aggregate. It carries source facts, never projected kind or permissions.
 type NeutralHost struct {
+	Maintenance           bool              `json:"maintenance,omitempty"`
 	NodeID                NodeID            `json:"nodeID"`
 	FederationRole        Role              `json:"federationRole"`
 	Name                  string            `json:"name"`
@@ -333,7 +335,7 @@ type HostSummary struct {
 	NodeID                string                               `json:"nodeID"`
 	Name                  string                               `json:"name"`
 	Kind                  string                               `json:"kind"`
-	FederationRole        Role                                 `json:"federationRole" enum:"hub,spoke"`
+	FederationRole        Role                                 `json:"federationRole" enum:"hub,spoke,devbox"`
 	BaseURL               string                               `json:"baseURL,omitempty" format:"uri"`
 	Platform              string                               `json:"platform"`
 	PreferredTransport    string                               `json:"preferredTransport"`

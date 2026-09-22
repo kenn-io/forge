@@ -10,6 +10,10 @@ Kata issue, or the **New workspace** button.
   <figcaption>A workspace keeps its branch, linked item, files, diff, and running sessions together.</figcaption>
 </figure>
 
+For remote compute, connect a [devbox](../devboxes.md) and select it as your
+workspace machine. Agents, worktrees and tools then run in your account on that
+host while you supervise them from your usual Forge.
+
 ## Create the right workspace
 
 From a pull request, Kenn Forge checks out the pull request branch. From an

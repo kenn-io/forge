@@ -46,6 +46,10 @@ embedder protocol for arbitrary host state.
 - A backfilled workspace may keep a route-keyed managed clone from any current
   or historical route that has one stable owner; route reuse excludes that path
   (`internal/workspace/manager.go::Manager.workspaceManagedClonePaths`).
+- Execution workers may set `execution_worker.worktree_dir` for new worktrees;
+  GitHub.com uses `<root>/<owner>/<repo>/<item>` there. Keep runtime metadata and
+  clones under `data_dir`; existing workspace paths remain authoritative
+  (`internal/workspace/manager.go::workspaceRepoDir`).
 - New worktrees live at the plain `<platform>/<host>/<owner>/<name>/<item>`
   path so people can find them by repository name. Only when the catalog shows
   another stable repository has owned that route does the repository directory

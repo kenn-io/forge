@@ -959,7 +959,65 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	assert.False(cfg2.Workspaces.ShowAgentStatusInLists)
 	assert.True(cfg2.Workspaces.AutoAssignOnCreate)
 	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
+}
 
+func TestHandleUpdateSettingsDefaultExecutionTarget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, _, cfgPath := setupTestServerWithConfig(t)
+	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+
+	// A disconnected target stays selected; saving settings must not require it online.
+	response, err := client.HTTP.UpdateSettingsWithResponse(t.Context(), &generated.UpdateSettingsRequestOptions{
+		Body: &generated.UpdateSettingsBody{Workspaces: &generated.WorkspaceSettingsUpdate{
+			DefaultExecutionTarget: new("devbox:connection-a"),
+		}},
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
+	require.NotNil(response.JSON200)
+	assert.Equal(new("devbox:connection-a"), response.JSON200.Workspaces.DefaultExecutionTarget)
+	persisted, err := config.Load(cfgPath)
+	require.NoError(err)
+	assert.Equal("devbox:connection-a", persisted.Workspaces.DefaultExecutionTarget)
+	before, err := os.ReadFile(cfgPath)
+	require.NoError(err)
+
+	response, err = client.HTTP.UpdateSettingsWithResponse(t.Context(), &generated.UpdateSettingsRequestOptions{
+		Body: &generated.UpdateSettingsBody{
+			AirplaneMode: new(true),
+			Workspaces: &generated.WorkspaceSettingsUpdate{
+				DefaultExecutionTarget: new("devbox:"),
+				AutoAssignOnCreate:     new(true),
+			},
+		},
+	})
+	require.Error(err)
+	require.NotNil(response)
+	require.Equal(http.StatusBadRequest, response.StatusCode, string(response.Body))
+	require.NotNil(response.Error)
+	require.NotNil(response.Error.Detail)
+	assert.Contains(*response.Error.Detail, "workspaces.default_execution_target")
+	current, err := client.HTTP.GetSettingsWithResponse(t.Context())
+	require.NoError(err)
+	require.NotNil(current.JSON200)
+	assert.Equal(new("devbox:connection-a"), current.JSON200.Workspaces.DefaultExecutionTarget)
+	assert.False(current.JSON200.Workspaces.AutoAssignOnCreate)
+	assert.False(current.JSON200.AirplaneMode)
+	after, err := os.ReadFile(cfgPath)
+	require.NoError(err)
+	assert.Equal(before, after, "rejected settings must not change the config file")
+
+	response, err = client.HTTP.UpdateSettingsWithResponse(t.Context(), &generated.UpdateSettingsRequestOptions{
+		Body: &generated.UpdateSettingsBody{Workspaces: &generated.WorkspaceSettingsUpdate{
+			DefaultExecutionTarget: new(""),
+		}},
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
+	persisted, err = config.Load(cfgPath)
+	require.NoError(err)
+	assert.Empty(persisted.Workspaces.DefaultExecutionTarget)
 }
 
 func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {

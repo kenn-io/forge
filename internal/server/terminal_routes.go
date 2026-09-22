@@ -11,6 +11,11 @@ func terminalAPIConfig() huma.Config {
 }
 
 func (s *Server) registerTerminalAPI(api huma.API, _ []string) {
-	s.fleetAPI.RegisterTerminal(api)
-	s.workspaceAPI.RegisterTerminal(api)
+	if !s.options.ExecutionWorker {
+		s.fleetAPI.RegisterTerminal(api)
+		s.registerDevboxTerminalAPI(api)
+	}
+	if s.workspaces != nil {
+		s.workspaceAPI.RegisterTerminal(api)
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/server"
 )
 
@@ -19,12 +20,14 @@ func main() {
 	flag.StringVar(&out, "out", "frontend/openapi/openapi.yaml", "path to write the generated OpenAPI document")
 	flag.StringVar(&version, "version", "3.1", "OpenAPI version to write: 3.1 or 3.0")
 	flag.StringVar(&format, "format", "auto", "OpenAPI format to write: auto, json, or yaml")
-	flag.StringVar(&api, "api", "main", "API to generate: main or health")
+	flag.StringVar(&api, "api", "main", "API to generate: main, health, or devbox")
 	flag.Parse()
 
 	openAPI := server.NewClientOpenAPI()
 	if api == "health" {
 		openAPI = server.NewHealthOpenAPI()
+	} else if api == "devbox" {
+		openAPI = devbox.NewControlOpenAPI()
 	} else if api != "main" {
 		fmt.Fprintf(os.Stderr, "unsupported API %q\n", api)
 		os.Exit(1)

@@ -26,6 +26,18 @@ func (s *Handler) pushWorkspaceBranch(
 	ctx context.Context,
 	input *workspaceBranchActionInput,
 ) (*workspaceBranchActionOutput, error) {
+	if s.workerBroker != nil {
+		summary, err := s.getWorkspaceActionSummary(ctx, input.ID)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := s.workerBroker.Credential(ctx, summary.RepoOwner+"/"+summary.RepoName, "push"); err != nil {
+			return nil, httpapi.Forbidden(err.Error(), nil)
+		}
+		if err := s.workspaces.ValidateExecutionIdentity(ctx, summary.WorktreePath); err != nil {
+			return nil, httpapi.Validation("identity", err.Error())
+		}
+	}
 	return s.runWorkspaceBranchAction(ctx, input.ID, s.workspaces.PushWorktreeBranch)
 }
 
@@ -43,6 +55,9 @@ func (s *Handler) revealWorkspace(
 	summary, err := s.getWorkspaceActionSummary(ctx, input.ID)
 	if err != nil {
 		return nil, err
+	}
+	if s.executionWorker.Enabled {
+		return nil, httpapi.BadRequest(httpapi.CodeUnsupportedCapability, "This worktree is on the devbox: "+summary.WorktreePath, nil)
 	}
 	if err := revealWorkspacePath(ctx, summary.WorktreePath); err != nil {
 		if errors.Is(err, workspace.ErrRevealUnsupported) {
@@ -80,6 +95,7 @@ func (s *Handler) runWorkspaceBranchAction(
 		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
 	}
 	resp := s.refreshWorkspaceResponse(ctx, refreshed)
+	resp.PushState = s.workspaces.ExecutionPushState(ctx, refreshed)
 	return &workspaceBranchActionOutput{Body: resp}, nil
 }
 

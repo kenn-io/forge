@@ -56,6 +56,8 @@ func TestPushWorktreeBranchPushesAheadCommitsAndRunsHooks(t *testing.T) {
 func TestPushWorktreeBranchCreatesMissingRemoteBranch(t *testing.T) {
 	require := require.New(t)
 	work := gitfixture.DivergenceWorktree(t)
+	// Managed base checkouts can fetch only main; the push must still track feature.
+	runWorkspaceTestGit(t, work, "config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main")
 	remote := filepath.Join(filepath.Dir(work), "remote.git")
 	runWorkspaceTestGit(t, filepath.Dir(work), "--git-dir", remote, "branch", "-D", "feature")
 	runWorkspaceTestGit(t, work, "update-ref", "-d", "refs/remotes/origin/feature")
@@ -86,6 +88,7 @@ exec "${KENN_FORGE_TEST_REAL_GIT:?}" "$@"
 	)))
 	localCommit := strings.TrimSpace(string(runWorkspaceTestGit(t, work, "rev-parse", "HEAD")))
 	require.Equal(localCommit, remoteCommit)
+	require.Equal(localCommit, gitfixture.SHA(t, work, "refs/remotes/origin/feature"))
 }
 
 func TestPushWorktreeBranchRecreatesRemoteBranchWithStaleTrackingRef(t *testing.T) {
@@ -296,8 +299,11 @@ set -eu
 real="${KENN_FORGE_TEST_REAL_GIT:?}"
 capture="${KENN_FORGE_TEST_GIT_CAPTURE:?}"
 op="${1:-}"
+if [ "$op" = "-c" ]; then
+	op="${3:-}"
+fi
 case "$op" in
-push|fetch)
+push|fetch|ls-remote)
 	helper=""
 	i=0
 	count="${GIT_CONFIG_COUNT:-0}"
@@ -358,13 +364,9 @@ exec "$real" "$@"
 	data, err := os.ReadFile(capturePath)
 	require.NoError(err)
 	ops := strings.Split(strings.TrimSpace(string(data)), "\n")
-	// The push must carry the user's PAT, never the app installation token,
-	// so the pushed commits stay attributed to the user rather than the bot.
-	assert.Contains(ops, "push:pat-token")
-	assert.NotContains(ops, "push:app-token")
-	// Reads (the upstream refresh fetches) prefer the app installation token.
-	assert.Contains(ops, "fetch:app-token")
-	assert.NotContains(ops, "fetch:pat-token")
+	// Each network command resolves credentials, so avoid another fetch after push.
+	// Reads prefer the App; the push must stay on the user's mutation credential.
+	assert.Equal([]string{"ls-remote:app-token", "fetch:app-token", "push:pat-token"}, ops)
 
 	div, ok, err := WorktreeDivergence(t.Context(), work)
 	require.NoError(err)

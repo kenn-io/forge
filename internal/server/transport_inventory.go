@@ -195,6 +195,7 @@ func NewTransportInventory() (TransportInventory, error) {
 	restAdapter.defaultTransport = TransportWebSocket
 	s.fleetAPI.RegisterTerminal(api)
 	workspaceapi.RegisterTerminalInventory(api)
+	s.registerDevboxTerminalAPI(api)
 	restAdapter.defaultTransport = ""
 
 	wsAPI := newRecordingAPI(
@@ -202,6 +203,7 @@ func NewTransportInventory() (TransportInventory, error) {
 	)
 	s.fleetAPI.RegisterTerminal(wsAPI)
 	workspaceapi.RegisterTerminalInventory(wsAPI)
+	s.registerDevboxTerminalAPI(wsAPI)
 
 	roborevAPI := newRecordingAPI(
 		mux, "/api", roborevProxyAPIConfig(), recorder, "",

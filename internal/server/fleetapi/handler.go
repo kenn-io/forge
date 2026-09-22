@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/fleet"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -34,6 +35,7 @@ type Event struct {
 
 // Deps contains Fleet's durable services and root-owned integration hooks.
 type Deps struct {
+	ExecutionTargets            func(context.Context, time.Duration) []fleet.PeerResult
 	DB                          *db.DB
 	Syncer                      *ghclient.Syncer
 	Config                      ConfigSnapshot
@@ -66,6 +68,7 @@ type Deps struct {
 
 // Handler implements Fleet routes, caches, transports, and workers.
 type Handler struct {
+	executionTargets            func(context.Context, time.Duration) []fleet.PeerResult
 	db                          *db.DB
 	syncer                      *ghclient.Syncer
 	basePath                    string
@@ -120,6 +123,7 @@ func New(deps Deps) *Handler {
 		now = time.Now
 	}
 	h := &Handler{
+		executionTargets:            deps.ExecutionTargets,
 		db:                          deps.DB,
 		syncer:                      deps.Syncer,
 		basePath:                    deps.BasePath,

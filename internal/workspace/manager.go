@@ -39,6 +39,8 @@ import (
 // intentionally not a generic host worktree browser or arbitrary Git
 // automation layer.
 type Manager struct {
+	executionWorker           config.ExecutionWorker
+	credentialHelper          string
 	db                        *db.DB
 	worktreeDir               string
 	clones                    *gitclone.Manager
@@ -1033,6 +1035,12 @@ func (m *Manager) workspaceRepoDir(
 	ownerDir := filepath.Join(
 		m.worktreeDir, repo.Platform, repo.PlatformHost, repo.Owner,
 	)
+	if root := m.executionWorker.WorktreeDir; m.executionWorker.Enabled && root != "" {
+		ownerDir = filepath.Join(root, repo.Platform, repo.PlatformHost, repo.Owner)
+		if repo.Platform == "github" && repo.PlatformHost == "github.com" {
+			ownerDir = filepath.Join(root, repo.Owner)
+		}
+	}
 	routeDir := filepath.Join(ownerDir, repo.Name)
 	if repo.ID <= 0 {
 		return routeDir, nil
@@ -1526,6 +1534,9 @@ func (m *Manager) SetupWithOptions(
 		remote = gitSetupDir.remote
 	}
 	nextStage("finalize")
+	if err := m.configureExecutionWorktree(ctx, ws.WorktreePath); err != nil {
+		return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, err)
+	}
 	if ws.ItemType == db.WorkspaceItemTypePullRequest && ws.MRHeadRepo != nil {
 		currentBranch, branchErr := worktreeCurrentBranch(ctx, ws.WorktreePath)
 		if branchErr == nil && currentBranch != "" {
@@ -2637,7 +2648,7 @@ func ValidateWorktreeBasePath(
 	if strings.TrimSpace(insideWorkTree) != "true" {
 		return WorktreeBase{}, fmt.Errorf("path is not a git worktree: %s", abs)
 	}
-	if err := validateNoExecutableLocalGitConfig(ctx, abs); err != nil {
+	if err := validateNoExecutableLocalGitConfig(ctx, abs, ""); err != nil {
 		return WorktreeBase{}, err
 	}
 	remote, err := resolveWorktreeBaseRemote(
@@ -2703,12 +2714,21 @@ func workspaceRepoIdentity(
 	}, nil
 }
 
-func validateNoExecutableLocalGitConfig(ctx context.Context, dir string) error {
+func validateNoExecutableLocalGitConfig(ctx context.Context, dir, managedHelper string) error {
 	keys, err := localGitConfigKeys(ctx, dir)
 	if err != nil {
 		return fmt.Errorf("inspect executable local git config: %w", err)
 	}
 	for _, key := range keys {
+		if strings.EqualFold(key, "credential.helper") && managedHelper != "" {
+			out, err := procutil.Output(ctx, workspaceGitCommand(ctx, dir, "config", "--local", "--get-all", key), "git subprocess capacity")
+			if err != nil {
+				return fmt.Errorf("inspect managed Git helper: %w", err)
+			}
+			if strings.TrimSpace(string(out)) == managedHelper {
+				continue
+			}
+		}
 		if localGitConfigKeyMayExecute(key) {
 			return fmt.Errorf(
 				"local git config %q may execute or rewrite git commands",
@@ -4693,6 +4713,9 @@ func (m *Manager) GetSummary(
 		return nil, err
 	}
 	if summary != nil {
+		if err := m.applyExecutionSource(ctx, summary); err != nil {
+			return nil, err
+		}
 		m.upsertWorkspaceSummaryCache(*summary)
 	}
 	return summary, nil
@@ -4708,6 +4731,11 @@ func (m *Manager) ListSummaries(
 	}
 	if len(summaries) == 0 {
 		return m.cachedWorkspaceSummaries(), nil
+	}
+	for i := range summaries {
+		if err := m.applyExecutionSource(ctx, &summaries[i]); err != nil {
+			return nil, err
+		}
 	}
 	return m.setWorkspaceSummaryCache(summaries), nil
 }

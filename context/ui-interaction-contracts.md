@@ -333,6 +333,14 @@ Persisted controls must state their scope clearly.
   `schema-constraints` module, never from hand-copied numbers, and show an inline
   invalid state instead of sending a request the server would reject
   (`scripts/generate-schema-constraints.mjs`, `frontend/src/lib/components/settings/DetailSettings.svelte::validateLimit`).
+- Workspace machines are one list with one default control: this Forge
+  machine, connected devboxes, and unconnected assignments each appear once,
+  and a radio in the row is the only way to choose where new workspaces run.
+  A saved connection is not a status; Online/Offline comes from the fleet
+  snapshot's `devbox:` hosts, an offline row offers Reconnect, and the registry
+  that answered discovery is shown as text with the address form hidden until
+  discovery fails or the user chooses to change it
+  (`frontend/src/lib/components/settings/DevboxSettings.svelte::status`).
 - Rebasing must not hide commit authorship: show the original author and label a
   distinct committer, while preserving committer-based activity identity and time
   (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).

@@ -37,6 +37,7 @@ import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 
 const initial: WorkspaceSettings = {
+  default_execution_target: "",
   auto_assign_on_create: false,
   default_sidebar_view: "diff",
   show_agent_status_in_lists: false,

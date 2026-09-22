@@ -13,6 +13,7 @@ const publishedFiles = new Set([
   "archive.md",
   "commands.md",
   "configuration.md",
+  "devboxes.md",
   "federated-fleet.md",
   "index.md",
   "integrations.md",

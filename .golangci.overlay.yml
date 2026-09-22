@@ -42,20 +42,23 @@ linters:
         settings:
           # Schema CHECK constraints are an intentional SQLite invariant
           # (context/db-migrations.md). Historical migrations are immutable.
+          # sleeptest stays off until the polling-wait conversion in
+          # kenn-io/forge#1103 deletes it from this list.
           disable: [sqlcheck, sleeptest]
   disable:
-    # Many tests share package-level DB templates, httptest servers, and
-    # daemon fixtures; forcing t.Parallel() races those setups.
+    # kenn-io/forge#1154. Do not add t.Parallel() in bulk; shared DB,
+    # httptest, and daemon fixtures race.
     - tparallel
-    # Nested int64(int64(x)) casts in generated-client test call sites are a
-    # tracked cleanup, not a rollout blocker.
+    # kenn-io/forge#1152. unconvert, thelper, usestdlibvars, perfsprint,
+    # mirror, and gocritic. Almost all of the hits are in api_test.go.
     - unconvert
     - thelper
-    - bodyclose
     - usestdlibvars
     - perfsprint
     - mirror
     - gocritic
+    # kenn-io/forge#1153. Do not close a successful websocket.Dial body.
+    - bodyclose
   exclusions:
     rules:
       - linters:

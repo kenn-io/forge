@@ -134,6 +134,8 @@ linters:
             include-tests: false
           # Schema CHECK constraints are an intentional SQLite invariant
           # (context/db-migrations.md). Historical migrations are immutable.
+          # sleeptest stays off until the polling-wait conversion in
+          # kenn-io/forge#1103 deletes it from this list.
           disable: [sqlcheck, sleeptest]
     govet:
       disable:

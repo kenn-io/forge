@@ -7,4 +7,5 @@ export type HostSummaryFederationRole = (typeof HostSummaryFederationRole)[keyof
 export const HostSummaryFederationRole = {
   hub: "hub",
   spoke: "spoke",
+  devbox: "devbox",
 } as const;

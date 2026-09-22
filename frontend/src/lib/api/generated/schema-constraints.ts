@@ -4,6 +4,12 @@
  */
 
 export const schemaConstraints = {
+  Assignment: {
+    uid: { minimum: 0 },
+  },
+  Connection: {
+    uid: { minimum: 0 },
+  },
   CreateEnrollmentTokenInputBody: {
     expires_in_seconds: { minimum: 1, maximum: 86400 },
   },
@@ -39,6 +45,9 @@ export const schemaConstraints = {
   },
   SyncSettingsUpdate: {
     budget_per_hour: { minimum: 50, maximum: 15000 },
+  },
+  WorkerIdentity: {
+    uid: { minimum: 0 },
   },
   WorkspaceLaunchPull: {
     snapshot_revision: { minimum: 1 },

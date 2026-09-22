@@ -32,6 +32,7 @@ interface SaveWorkspaceSettingsOptions {
 }
 
 const WORKSPACE_SETTINGS_KEYS = [
+  "default_execution_target",
   "auto_assign_on_create",
   "default_sidebar_view",
   "show_agent_status_in_lists",

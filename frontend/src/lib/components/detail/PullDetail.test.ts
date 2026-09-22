@@ -230,6 +230,7 @@ function renderPullDetail(
   },
   options: {
     hideWorkspaceAction?: boolean;
+    defaultExecutionTarget?: string;
     phonePresentation?: boolean;
     onOpenWorkspace?: (workspaceId: string) => void;
     hideTabs?: boolean;
@@ -365,6 +366,10 @@ function renderPullDetail(
   detailRuntime = runtime;
   const settings = createSettingsStore();
   settings.setLaunchTargets(launchTargets);
+  settings.setWorkspaceSettings({
+    ...settings.getWorkspaceSettings(),
+    default_execution_target: options.defaultExecutionTarget ?? "",
+  });
   settings.setDetailSettings({ initial_timeline_entry_limit: 250 });
   settings.setModeVisibility({
     ...settings.getModeVisibility(),
@@ -1162,6 +1167,7 @@ describe("PullDetail activity refresh", () => {
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
             settings: {
+              getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getLaunchTargets: () => launchTargets,
               getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
               isModeVisible: () => false,
@@ -2012,6 +2018,7 @@ describe("PullDetail approvals", () => {
             },
             detailActivityView: createDetailActivityViewStore(),
             settings: {
+              getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getLaunchTargets: () => [],
               getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),
               isModeVisible: () => false,
@@ -2559,6 +2566,51 @@ describe("PullDetail inline workspace handoff", () => {
     number: 1,
     itemType: "pull",
   };
+
+  it.each([
+    ["github.com", true, ""],
+    ["github.com", false, "Devbox is in maintenance"],
+    ["github.example.com", true, "Devboxes currently support only github.com"],
+  ])("checks the saved devbox before creating from %s (workspaceWrite=%s)", async (platformHost, available, reason) => {
+    const detail = pullDetail();
+    detail.platform_host = platformHost;
+    Object.assign(detail.repo, { Host: platformHost, PlatformHost: platformHost, platform_host: platformHost });
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: {
+          hosts: [
+            {
+              configKey: "devbox:compute-a",
+              kind: "devbox",
+              operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
+            },
+          ],
+        },
+      }),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
+    };
+    renderPullDetail(detail, undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "devbox:compute-a",
+      detailProps: { platformHost },
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0]!;
+    if (reason) {
+      await waitFor(() => expect(create.getAttribute("title")).toContain(reason));
+      expect((create as HTMLButtonElement).disabled).toBe(true);
+      await fireEvent.click(create);
+      expect(apiClient.POST).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
+      await fireEvent.click(create);
+      await waitFor(() =>
+        expect(apiClient.POST).toHaveBeenCalledWith(
+          "/devboxes/{connection_id}/workspaces",
+          expect.objectContaining({ params: { path: { connection_id: "compute-a" } } }),
+        ),
+      );
+    }
+  });
 
   function deferredWorkspaceApiClient() {
     let resolvePost!: (value: { data?: { id: string; status: string; created?: boolean } }) => void;

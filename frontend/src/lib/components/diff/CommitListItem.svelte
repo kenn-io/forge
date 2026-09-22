@@ -38,7 +38,7 @@
   class:commit-item--active={active}
   class:commit-item--stats={showStats}
   onclick={handleClick}
-  title={commit.message}
+  title={`${commit.message}\nAuthor: ${commit.author_name}${commit.author_email ? ` <${commit.author_email}>` : ""}${commit.committer_name ? `\nCommitter: ${commit.committer_name} <${commit.committer_email ?? ""}>` : ""}`}
 >
   <StatusDot
     animated
@@ -55,7 +55,10 @@
       {/if}
     </span>
   {/if}
-  <span class="commit-item__date">{relativeDate(commit.authored_at)}</span>
+  <span class="commit-item__date">
+    {#if commit.pushed === false}<span class="commit-item__author">{commit.author_name}</span>{/if}
+    {relativeDate(commit.authored_at)}
+  </span>
 </button>
 
 <style>

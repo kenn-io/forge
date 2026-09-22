@@ -6,34 +6,42 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.T) {
-	for _, status := range []string{"ready", "creating", "error", "unavailable", "fairness", "stopped"} {
+	for _, status := range []string{"ready", "creating", "error", "unavailable", "fairness", "stopped", "identity-email", "identity-helper"} {
 		t.Run(status, func(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			ctx := t.Context()
 			database := dbtest.Open(t)
 			cwd := t.TempDir()
+			workspaceStatus := status
+			if strings.HasPrefix(status, "identity-") {
+				cwd = gitfixture.DivergenceWorktree(t)
+				workspaceStatus = "ready"
+			}
 			require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 				ID: "workspace", Platform: "github", PlatformHost: "github.com",
 				RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
 				ItemKey: db.AdHocWorkspaceItemKey("work/resume"), GitHeadRef: "work/resume",
-				WorkspaceBranch: "work/resume", WorktreePath: cwd, Status: status, TmuxSession: "forge-base",
+				WorkspaceBranch: "work/resume", WorktreePath: cwd, Status: workspaceStatus, TmuxSession: "forge-base",
 			}))
 			require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
 				WorkspaceID: "workspace", SessionKey: "saved-runtime", TargetKey: "custom-worker",
@@ -79,6 +87,28 @@ exec sleep 60
 			workspaces := workspace.NewManager(database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, AgentActivity: activity})
+			if strings.HasPrefix(status, "identity-") {
+				workspaces.SetExecutionWorker(config.ExecutionWorker{
+					Enabled: true, UID: 1001, GitHubUserID: 42, BrokerSocket: "/run/example/broker.sock",
+					CommitName: "Developer A", CommitEmail: "42+developer-a@users.noreply.github.com",
+				}, "/opt/example/bin/forge")
+				gitfixture.Run(t, cwd, "config", "user.name", "Developer A")
+				gitfixture.Run(t, cwd, "config", "user.email", "42+developer-a@users.noreply.github.com")
+				gitfixture.Run(t, cwd, "config", "user.useConfigOnly", "true")
+				gitfixture.Run(t, cwd, "config", "credential.helper", "!/opt/example/bin/forge devbox credential --socket /run/example/broker.sock")
+				key, valid, invalid := "user.email", "42+developer-a@users.noreply.github.com", "wrong@example.org"
+				if status == "identity-helper" {
+					key, valid, invalid = "credential.helper", "!/opt/example/bin/forge devbox credential --socket /run/example/broker.sock", "!false"
+				}
+				gitfixture.Run(t, cwd, "config", key, invalid)
+				require.NoError(handler.RestoreRuntimeSessions(ctx))
+				require.Empty(runtime.ListSessions("workspace"), "recovery must reject changed execution identity")
+				assert.NoFileExists(filepath.Join(cwd, "args"))
+				retained, err := database.ListAllWorkspaceRuntimeSessions(ctx)
+				require.NoError(err)
+				assert.Len(retained, 1, "keep the saved conversation for recovery after identity is repaired")
+				gitfixture.Run(t, cwd, "config", key, valid)
+			}
 			if status == "fairness" {
 				require.NoError(database.UpdateWorkspaceStatus(ctx, "workspace", "ready", nil))
 				require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{

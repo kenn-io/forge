@@ -22,6 +22,7 @@
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { executeOpaqueGeneratedApiRequest } from "../../api/generated-api.js";
   import { loadFleetSnapshot, type HostSummary } from "../../api/fleet-snapshot.js";
+  import { workspaceTargetUnavailableReason } from "../../stores/workspace-target.svelte.js";
   import type { ProblemBody } from "../../api/problems.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -136,9 +137,9 @@
                 ? [self]
                 : hosts.filter((host) => host.operationAvailability.workspaceWrite?.available === true);
             selectedWorkspaceHostKey =
-              workspaceHosts.find((host) => host.kind === "self")?.configKey ??
+              settings.getWorkspaceSettings().default_execution_target || (workspaceHosts.find((host) => host.kind === "self")?.configKey ??
               workspaceHosts[0]?.configKey ??
-              "";
+              "");
           }),
         ),
         Effect.asVoid,
@@ -362,19 +363,31 @@
       ? undefined
       : selectedWorkspaceHost?.configKey,
   );
+  const workspaceTargetReason = $derived(
+    selected && selectedWorkspaceHost
+      ? workspaceTargetUnavailableReason(selectedWorkspaceHost, selected)
+      : settings.getWorkspaceSettings().default_execution_target && !selectedWorkspaceHost
+        ? "Your preferred machine is unavailable. Choose another machine or reconnect it in Settings → Workspaces."
+        : "",
+  );
   const workspaceHostOptions = $derived<SelectDropdownOption[]>(
-    workspaceHosts.map((host) => {
-      const writeAvailability = host.operationAvailability.workspaceWrite;
-      const unavailableReason = writeAvailability?.unavailableReason || "Workspace creation is unavailable.";
+    [
+    ...(selectedWorkspaceHostKey && !selectedWorkspaceHost
+      ? [{ value: selectedWorkspaceHostKey, label: "Unavailable machine — choose another", disabled: true }]
+      : []),
+    ...workspaceHosts.map((host) => {
+      const unavailableReason = selected
+        ? workspaceTargetUnavailableReason(host, selected)
+        : "Pick a repository first.";
       return {
         value: host.configKey,
-        label: `${host.name.trim() || host.hostname?.trim() || host.configKey}${host.kind === "self" ? " (this machine)" : ""}`,
-        disabled: writeAvailability?.available !== true,
-        ...(writeAvailability?.available === true
+        label: `${host.name.trim() || host.hostname?.trim() || host.configKey}${host.kind === "self" ? " (this machine)" : host.kind === "devbox" ? " (devbox)" : ""}`,
+        disabled: unavailableReason !== "",
+        ...(unavailableReason === ""
           ? {}
           : { indicator: { tone: "danger" as const, title: unavailableReason } }),
       };
-    }),
+    })],
   );
 
   const selectedDaemon = $derived(
@@ -416,7 +429,7 @@
 
   const canSubmit = $derived(
     source === "repository"
-      ? selected !== null
+      ? selected !== null && workspaceTargetReason === ""
       : selectedKataReference !== null && selectedDaemonUsable,
   );
 
@@ -481,6 +494,10 @@
     const kataReference = selectedKataReference;
     const requestedSource = source;
     const daemonID = selectedDaemonID;
+    if (requestedSource === "repository" && workspaceTargetReason) {
+      error = workspaceTargetReason;
+      return;
+    }
     if (requestedSource === "repository" && !repo) {
       error = "Pick a repository.";
       return;
@@ -524,6 +541,15 @@
           };
           const routeParams = providerRouteParams(ref);
           const body = requested ? { branch: requested } : {};
+          if (remoteWorkspaceHostKey?.startsWith("devbox:")) {
+            return executeGeneratedApiRequest("create devbox workspace", (client, signal) =>
+              client.DevboxesService.createDevboxWorkspace(
+                { connectionId: remoteWorkspaceHostKey.slice(7) },
+                { provider: repo.provider, platform_host: repo.platformHost, owner: repo.owner, name: repo.name, ...body },
+                { signal },
+              ),
+            ).pipe(Effect.map(normalizeCreatedWorkspace));
+          }
           if (remoteWorkspaceHostKey) {
             return executeOpaqueGeneratedApiRequest("create fleet workspace", (client, signal) =>
               providerUsesHostRoute(ref)
@@ -709,7 +735,7 @@
         </small>
       </label>
 
-      {#if workspaceHostOptions.length > 1}
+      {#if workspaceHostOptions.length > 1 || settings.getWorkspaceSettings().default_execution_target}
         <label class="field">
           <span class="field-label">Run on</span>
           <SelectDropdown
@@ -722,7 +748,10 @@
             title="Workspace machine"
             disabled={submitting}
           />
-          <small class="field-hint">The selected Forge owns the worktree and runtime sessions.</small>
+          <small class="field-hint">Files, agents and tests run on the selected machine. Change the default in Settings → Workspaces.</small>
+          {#if workspaceTargetReason}
+            <p class="form-error" role="alert">{workspaceTargetReason}</p>
+          {/if}
         </label>
       {/if}
     {:else}

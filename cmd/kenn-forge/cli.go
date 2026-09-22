@@ -61,6 +61,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 	})
 
 	root.AddCommand(
+		newDevboxCommand(opts.RunServer),
 		newVersionCommand(opts.Stdout),
 		newConfigCommand(opts.Stdout),
 		newDocsCommand(opts.Stdout),

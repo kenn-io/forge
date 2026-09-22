@@ -84,6 +84,7 @@ type updateSettingsRequest struct {
 }
 
 type workspaceSettingsUpdate struct {
+	DefaultExecutionTarget *string `json:"default_execution_target,omitempty"`
 	ShowAgentStatusInLists *bool   `json:"show_agent_status_in_lists,omitempty"`
 	AutoAssignOnCreate     *bool   `json:"auto_assign_on_create,omitempty"`
 	DefaultSidebarView     *string `json:"default_sidebar_view,omitempty" enum:"diff,item"`
@@ -1067,6 +1068,11 @@ func (s *Server) updateLocalSettings(
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
+	if workspaces := input.Body.Workspaces; workspaces != nil && workspaces.DefaultExecutionTarget != nil {
+		if err := config.ValidateDefaultExecutionTarget(*workspaces.DefaultExecutionTarget); err != nil {
+			return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+		}
+	}
 	provider, err := s.fetchProviderSettings(ctx)
 	if err != nil {
 		return nil, err
@@ -1112,6 +1118,9 @@ func (s *Server) updateLocalSettings(
 		s.cfg.PullRequests = *input.Body.PullRequests
 	}
 	if input.Body.Workspaces != nil {
+		if input.Body.Workspaces.DefaultExecutionTarget != nil {
+			s.cfg.Workspaces.DefaultExecutionTarget = *input.Body.Workspaces.DefaultExecutionTarget
+		}
 		if input.Body.Workspaces.AutoAssignOnCreate != nil {
 			s.cfg.Workspaces.AutoAssignOnCreate = *input.Body.Workspaces.AutoAssignOnCreate
 		}

@@ -13,6 +13,7 @@ import NewWorkspaceDialog from "./NewWorkspaceDialog.svelte";
 const mockGet = vi.fn();
 const mockPost = vi.fn();
 const mockNavigate = vi.fn();
+let preferredTarget = "";
 const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
 const launchTargets = [
   {
@@ -79,7 +80,10 @@ async function renderDialog(props: Record<string, unknown> = {}) {
       [
         STORES_KEY,
         {
-          settings: { getLaunchTargets: () => launchTargets },
+          settings: {
+            getWorkspaceSettings: () => ({ default_execution_target: preferredTarget }),
+            getLaunchTargets: () => launchTargets,
+          },
         },
       ],
     ]),
@@ -106,6 +110,7 @@ describe("NewWorkspaceDialog", () => {
     runtimeCapture.current = makeAppRuntime();
     resetWorkspaceCreatePendingForTest();
     localStorage.clear();
+    preferredTarget = "";
     mockGet.mockReset();
     mockPost.mockReset();
     mockNavigate.mockReset();
@@ -396,6 +401,98 @@ describe("NewWorkspaceDialog", () => {
     });
     expect(options.body).toEqual({});
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/build-node/ws-new");
+  });
+
+  it("uses the preferred devbox and keeps its target separate from fleet peers", async () => {
+    preferredTarget = "devbox:compute-a";
+    mockGet.mockImplementation((path: string) =>
+      Promise.resolve({
+        data:
+          path === "/snapshot"
+            ? {
+                hosts: [
+                  {
+                    configKey: "hub",
+                    federationRole: "hub",
+                    kind: "self",
+                    name: "Hub",
+                    operationAvailability: { workspaceWrite: { available: true } },
+                  },
+                  {
+                    configKey: "devbox:compute-a",
+                    federationRole: "devbox",
+                    kind: "devbox",
+                    name: "Compute A",
+                    operationAvailability: { workspaceWrite: { available: true } },
+                  },
+                ],
+              }
+            : [repoFixture("acme", "widget")],
+      }),
+    );
+    await renderDialog();
+    await screen.findByRole("combobox", { name: /Workspace machine: Compute A \(devbox\)/ });
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost.mock.calls[0][0]).toBe("/devboxes/{connection_id}/workspaces");
+    expect(mockPost.mock.calls[0][1]).toMatchObject({
+      params: { path: { connection_id: "compute-a" } },
+      body: { provider: "github", owner: "acme", name: "widget" },
+    });
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/devbox%3Acompute-a/ws-new");
+  });
+
+  it.each([
+    ["github", "github.com", false, "Devbox is in maintenance"],
+    ["github", "github.example.com", true, "Devboxes currently support only github.com"],
+    ["gitlab", "gitlab.com", true, "Devboxes currently support only github.com"],
+    ["forgejo", "code.example.com", true, "Devboxes currently support only github.com"],
+    ["gitea", "git.example.com", true, "Devboxes currently support only github.com"],
+  ])("blocks an unavailable devbox for %s at %s (workspaceWrite=%s)", async (provider, host, available, reason) => {
+    preferredTarget = "devbox:compute-a";
+    mockGet.mockImplementation((path: string) =>
+      Promise.resolve({
+        data:
+          path === "/snapshot"
+            ? {
+                hosts: [
+                  {
+                    configKey: "local",
+                    federationRole: "hub",
+                    kind: "self",
+                    name: "Laptop",
+                    operationAvailability: { workspaceWrite: { available: true } },
+                  },
+                  {
+                    configKey: preferredTarget,
+                    federationRole: "devbox",
+                    kind: "devbox",
+                    name: "Compute A",
+                    operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
+                  },
+                ],
+              }
+            : [repoFixture("acme", "widget", host, provider)],
+      }),
+    );
+    await renderDialog();
+    await screen.findByRole("combobox", { name: /Workspace machine: Compute A \(devbox\)/ });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(screen.getByText(new RegExp(reason))).toBeTruthy();
+    // Enter/form submission must respect the same gate as the split button.
+    await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("does not create locally when the preferred devbox is unavailable", async () => {
+    preferredTarget = "devbox:missing";
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Your preferred machine is unavailable/)).toBeTruthy();
+    expect(mockPost).not.toHaveBeenCalled();
   });
 
   it("offers the suggested branch when the requested one already exists", async () => {

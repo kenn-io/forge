@@ -4,15 +4,16 @@ package fleet
 // NodeID comes from enrollment and remains authoritative over self-reported
 // payload fields.
 type PeerResult struct {
-	NodeID     NodeID
-	Name       string
-	BaseURL    string
-	Role       Role
-	Platform   string
-	ObservedAt string
-	Reachable  bool
-	Raw        *RawSnapshot
-	Err        *string
+	NodeID      NodeID
+	Name        string
+	BaseURL     string
+	Role        Role
+	Platform    string
+	ObservedAt  string
+	Reachable   bool
+	Maintenance bool
+	Raw         *RawSnapshot
+	Err         *string
 }
 
 // BuildNeutralAggregate combines local authority with direct member raw
@@ -98,7 +99,8 @@ func neutralMemberHost(member PeerResult) NeutralHost {
 	host := NeutralHost{
 		NodeID: member.NodeID, FederationRole: role, Name: name, BaseURL: member.BaseURL,
 		Platform: member.Platform, Reachable: member.Reachable, Error: member.Err,
-		LastSeenAt: member.ObservedAt,
+		Maintenance: member.Maintenance,
+		LastSeenAt:  member.ObservedAt,
 	}
 	if member.Raw == nil {
 		return host

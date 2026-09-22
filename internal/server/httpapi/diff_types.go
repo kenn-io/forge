@@ -30,12 +30,15 @@ type FilePreviewResponse struct {
 }
 
 type CommitResponse struct {
-	Stats      *gitclone.CommitStats `json:"stats,omitempty" doc:"Line counts against the first parent; omitted when unavailable. Binary files contribute no lines."`
-	SHA        string                `json:"sha"         doc:"Full commit SHA"`
-	Message    string                `json:"message"     doc:"First line of commit message"`
-	AuthorName string                `json:"author_name" doc:"Commit author display name"`
-	AuthoredAt time.Time             `json:"authored_at" doc:"Commit author date (RFC3339)"`
-	Pushed     *bool                 `json:"pushed,omitempty" doc:"Whether the commit is reachable from the workspace branch's upstream tracking ref; false means it has not been pushed. Omitted when push status is unknown, such as pull request commits."`
+	Stats          *gitclone.CommitStats `json:"stats,omitempty" doc:"Line counts against the first parent; omitted when unavailable. Binary files contribute no lines."`
+	AuthorEmail    string                `json:"author_email,omitempty"`
+	CommitterName  string                `json:"committer_name,omitempty"`
+	CommitterEmail string                `json:"committer_email,omitempty"`
+	SHA            string                `json:"sha"         doc:"Full commit SHA"`
+	Message        string                `json:"message"     doc:"First line of commit message"`
+	AuthorName     string                `json:"author_name" doc:"Commit author display name"`
+	AuthoredAt     time.Time             `json:"authored_at" doc:"Commit author date (RFC3339)"`
+	Pushed         *bool                 `json:"pushed,omitempty" doc:"Whether the commit is reachable from the workspace branch's upstream tracking ref; false means it has not been pushed. Omitted when push status is unknown, such as pull request commits."`
 }
 
 type CommitsResponse struct {

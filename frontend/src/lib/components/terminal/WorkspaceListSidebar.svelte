@@ -923,8 +923,8 @@
     closeContextMenu();
     const hostKey = ws.fleet_host_key;
     const refresh = hostKey
-      ? executeOpaqueGeneratedApiRequest("refresh remote workspace", (generatedClient, signal) =>
-          generatedClient.FleetService.refreshFleetWorkspace({ hostKey, id: ws.id }, { signal }),
+      ? executeOpaqueGeneratedApiRequest<unknown>("refresh remote workspace", (generatedClient, signal) =>
+          (hostKey.startsWith("devbox:") ? generatedClient.DevboxesService.refreshDevboxWorkspace({ connectionId: hostKey.slice(7),  id: ws.id }, { signal }) : generatedClient.FleetService.refreshFleetWorkspace({ hostKey, id: ws.id }, { signal })),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("refresh workspace", (generatedClient, signal) =>
           generatedClient.WorkspacesService.refreshWorkspace({ id: ws.id }, { signal }),
@@ -988,11 +988,11 @@
     const hostKey = ws.fleet_host_key;
     const command = hostKey
       ? action === "push"
-        ? executeOpaqueGeneratedApiRequest("push remote workspace branch", (generatedClient, signal) =>
-            generatedClient.FleetService.pushFleetWorkspaceBranch({ hostKey, id: ws.id }, { signal }),
+        ? executeOpaqueGeneratedApiRequest<unknown>("push remote workspace branch", (generatedClient, signal) =>
+            (hostKey.startsWith("devbox:") ? generatedClient.DevboxesService.pushDevboxWorkspace({ connectionId: hostKey.slice(7),  id: ws.id }, { signal }) : generatedClient.FleetService.pushFleetWorkspaceBranch({ hostKey, id: ws.id }, { signal })),
           ).pipe(Effect.asVoid)
-        : executeOpaqueGeneratedApiRequest("pull remote workspace branch", (generatedClient, signal) =>
-            generatedClient.FleetService.pullFleetWorkspaceBranch({ hostKey, id: ws.id }, { signal }),
+        : executeOpaqueGeneratedApiRequest<unknown>("pull remote workspace branch", (generatedClient, signal) =>
+            (hostKey.startsWith("devbox:") ? generatedClient.DevboxesService.pullDevboxWorkspace({ connectionId: hostKey.slice(7),  id: ws.id }, { signal }) : generatedClient.FleetService.pullFleetWorkspaceBranch({ hostKey, id: ws.id }, { signal })),
           ).pipe(Effect.asVoid)
       : action === "push"
         ? executeGeneratedApiRequest("push workspace branch", (generatedClient, signal) =>
@@ -1024,7 +1024,7 @@
     const label = revealLabel(ws);
     const hostKey = ws.fleet_host_key;
     const command = hostKey
-      ? executeOpaqueGeneratedApiRequest("reveal remote workspace path", (generatedClient, signal) =>
+      ? executeOpaqueGeneratedApiRequest<unknown>("reveal remote workspace path", (generatedClient, signal) =>
           generatedClient.FleetService.revealFleetWorkspace({ hostKey, id: ws.id }, { signal }),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("reveal workspace path", (generatedClient, signal) =>
@@ -1062,12 +1062,15 @@
     onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
     const hostKey = ws.fleet_host_key;
     const command = hostKey
-      ? executeOpaqueGeneratedApiRequest("delete remote workspace", (generatedClient, signal) =>
-          generatedClient.FleetService.deleteFleetWorkspace(
+      ? executeOpaqueGeneratedApiRequest<unknown>("delete remote workspace", (generatedClient, signal) =>
+          (hostKey.startsWith("devbox:") ? generatedClient.DevboxesService.deleteDevboxWorkspace({ connectionId: hostKey.slice(7),  id: ws.id },
+            force ? { force: true } : undefined,
+            { signal },
+          ) : generatedClient.FleetService.deleteFleetWorkspace(
             { hostKey, id: ws.id },
             force ? { force: true } : undefined,
             { signal },
-          ),
+          )),
         ).pipe(Effect.asVoid)
       : executeGeneratedApiRequest("delete workspace", (generatedClient, signal) =>
           generatedClient.WorkspacesService.deleteWorkspace(
@@ -1395,7 +1398,7 @@
                   <span
                     class="workspace-host-badge"
                     title={`Runs on ${workspaceHostName(ws)}`}
-                  >{workspaceHostName(ws)}</span>
+                  >{workspaceHostName(ws)}{ws.fleet_host_key?.startsWith("devbox:") ? " · Devbox" : ""}</span>
                 {/if}
                 {#if ws.status === "deleting" || ws.status === "deletion_failed"}
                   <span
@@ -1654,6 +1657,7 @@
         <span class="kit-filter-dropdown__dot"></span>
         <span class="kit-filter-dropdown__label">Copy worktree path</span>
       </button>
+      {#if !menuWorkspace.fleet_host_key?.startsWith("devbox:")}
       <button
         class="kit-filter-dropdown__item active"
         role="menuitem"
@@ -1666,6 +1670,7 @@
         <span class="kit-filter-dropdown__dot"></span>
         <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "reveal") ? "Opening..." : revealLabel(menuWorkspace)}</span>
       </button>
+      {/if}
     {/if}
 
     {#if itemURL}

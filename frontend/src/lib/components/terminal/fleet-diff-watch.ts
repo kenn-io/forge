@@ -95,10 +95,15 @@ export const watchFleetWorkspaceDiff = Effect.fn("FleetWorkspaceDiffWatch.live")
       Effect.tryPromise({
         try: async (signal) => {
           const response = await orvalRequest(
-            api.client.FleetService.getWatchFleetWorkspaceDiffUrl(
-              { hostKey: requestedHostKey, id: requestedWorkspaceId },
-              version === "" ? {} : { version },
-            ),
+            requestedHostKey.startsWith("devbox:")
+              ? api.client.DevboxesService.getWatchDevboxDiffUrl(
+                  { connectionId: requestedHostKey.slice(7), id: requestedWorkspaceId },
+                  version === "" ? {} : { version },
+                )
+              : api.client.FleetService.getWatchFleetWorkspaceDiffUrl(
+                  { hostKey: requestedHostKey, id: requestedWorkspaceId },
+                  version === "" ? {} : { version },
+                ),
             { signal },
           );
           const text = [204, 205, 304].includes(response.status) ? "" : await response.text();

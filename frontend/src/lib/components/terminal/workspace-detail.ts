@@ -19,7 +19,7 @@ export type WorkspaceDetail = Pick<
   | "tmux_session"
   | "worktree_path"
 > &
-  Partial<Pick<GeneratedWorkspace, "item_key" | "kata">> & {
+  Partial<Pick<GeneratedWorkspace, "item_key" | "kata" | "commit_attribution">> & {
     readonly associated_pr_number?: Exclude<GeneratedWorkspace["associated_pr_number"], undefined> | null;
     readonly error_message?: Exclude<GeneratedWorkspace["error_message"], undefined> | null;
     readonly item_type: "pull_request" | "issue" | "kata_task" | "adhoc";
@@ -53,7 +53,24 @@ const Kata = Schema.Struct({
   title: Schema.optionalKey(Schema.String),
 });
 
+const Attribution = Schema.Struct({
+  repository: Schema.String,
+  branch: Schema.String,
+  oid: Schema.String,
+  pushed: Schema.Boolean,
+  status: Schema.Literals(["matched", "preserved_author", "mismatch", "unverified"]),
+  message: Schema.String,
+  expected_github_user_id: Schema.Number,
+  author_id: Schema.Number,
+  committer_id: Schema.Number,
+  author_name: Schema.String,
+  author_email: Schema.String,
+  committer_name: Schema.String,
+  committer_email: Schema.String,
+});
+
 const WorkspaceDetailSchema = Schema.Struct({
+  commit_attribution: Schema.optionalKey(Attribution),
   associated_pr_number: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   created_at: Schema.String,
   enrichment_status: Schema.Literals(["not_applicable", "pending", "fresh", "stale", "failed"]),

@@ -985,6 +985,103 @@ components:
         - counts
         - coverage
       type: object
+    Assignment:
+      additionalProperties: false
+      properties:
+        account:
+          type: string
+        github_user_id:
+          format: int64
+          type: integer
+        host_id:
+          type: string
+        maintenance:
+          type: boolean
+        name:
+          type: string
+        node_id:
+          type: string
+        protocol:
+          format: int64
+          type: integer
+        role:
+          type: string
+        ssh_address:
+          type: string
+        ssh_host_fingerprint:
+          type: string
+        uid:
+          format: int32
+          minimum: 0
+          type: integer
+        url:
+          type: string
+      required:
+        - host_id
+        - name
+        - url
+        - account
+        - ssh_address
+        - ssh_host_fingerprint
+        - maintenance
+        - node_id
+        - uid
+        - github_user_id
+        - role
+        - protocol
+      type: object
+    Attribution:
+      additionalProperties: false
+      properties:
+        author_email:
+          type: string
+        author_id:
+          format: int64
+          type: integer
+        author_name:
+          type: string
+        branch:
+          type: string
+        committer_email:
+          type: string
+        committer_id:
+          format: int64
+          type: integer
+        committer_name:
+          type: string
+        expected_github_user_id:
+          format: int64
+          type: integer
+        message:
+          type: string
+        oid:
+          type: string
+        pushed:
+          type: boolean
+        repository:
+          type: string
+        status:
+          enum:
+            - matched
+            - preserved_author
+            - mismatch
+            - unverified
+          type: string
+      required:
+        - status
+        - message
+        - expected_github_user_id
+        - author_id
+        - committer_id
+        - author_name
+        - author_email
+        - committer_name
+        - committer_email
+        - repository
+        - branch
+        - oid
+        - pushed
+      type: object
     BodySnippet:
       additionalProperties: false
       properties:
@@ -1176,12 +1273,18 @@ components:
     CommitResponse:
       additionalProperties: false
       properties:
+        author_email:
+          type: string
         author_name:
           description: Commit author display name
           type: string
         authored_at:
           description: Commit author date (RFC3339)
           format: date-time
+          type: string
+        committer_email:
+          type: string
+        committer_name:
           type: string
         message:
           description: First line of commit message
@@ -1273,6 +1376,85 @@ components:
         - hidden_from_ui
         - issue_pr_references
       type: object
+    Connect-devboxRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/Connect-devboxRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        host_id:
+          type: string
+        registry:
+          type: string
+      required:
+        - registry
+        - host_id
+      type: object
+    Connection:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/Connection.json
+          format: uri
+          readOnly: true
+          type: string
+        account:
+          type: string
+        github_user_id:
+          format: int64
+          type: integer
+        host_id:
+          type: string
+        id:
+          type: string
+        maintenance:
+          type: boolean
+        name:
+          type: string
+        node_id:
+          type: string
+        protocol:
+          format: int64
+          type: integer
+        registry_id:
+          type: string
+        revision:
+          type: string
+        role:
+          type: string
+        ssh_address:
+          type: string
+        ssh_host_fingerprint:
+          type: string
+        uid:
+          format: int32
+          minimum: 0
+          type: integer
+        url:
+          type: string
+      required:
+        - id
+        - registry_id
+        - revision
+        - host_id
+        - name
+        - url
+        - account
+        - ssh_address
+        - ssh_host_fingerprint
+        - maintenance
+        - node_id
+        - uid
+        - github_user_id
+        - role
+        - protocol
+      type: object
     CreateAdHocWorkspaceHostInputBody:
       additionalProperties: false
       properties:
@@ -1304,6 +1486,40 @@ components:
           type: string
         reuse_existing_branch:
           type: boolean
+      type: object
+    CreateDevboxWorkspaceInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CreateDevboxWorkspaceInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          type: string
+        issue_number:
+          format: int64
+          type: integer
+        mr_number:
+          format: int64
+          type: integer
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+        reuse_existing_branch:
+          type: boolean
+      required:
+        - provider
+        - platform_host
+        - owner
+        - name
       type: object
     CreateDiffReviewDraftCommentHostInputBody:
       additionalProperties: false
@@ -1898,6 +2114,39 @@ components:
         - can_resolve
         - created_at
         - updated_at
+      type: object
+    Discovery:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/Discovery.json
+          format: uri
+          readOnly: true
+          type: string
+        devboxes:
+          items:
+            $ref: "#/components/schemas/Assignment"
+          type: array
+        github_user_id:
+          format: int64
+          type: integer
+        protocol:
+          format: int64
+          type: integer
+        registry_id:
+          type: string
+        registry_url:
+          type: string
+        revision:
+          type: string
+      required:
+        - registry_id
+        - revision
+        - protocol
+        - github_user_id
+        - devboxes
       type: object
     DocsBrowseEntry:
       additionalProperties: false
@@ -3126,6 +3375,7 @@ components:
           enum:
             - hub
             - spoke
+            - devbox
           type: string
         hostname:
           type: string
@@ -5141,6 +5391,8 @@ components:
           type: string
         lastSeenAt:
           type: string
+        maintenance:
+          type: boolean
         name:
           type: string
         nodeID:
@@ -6279,6 +6531,23 @@ components:
         - up_to_date
         - commit
         - short_commit
+      type: object
+    PushState:
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+        oid:
+          type: string
+        pushed:
+          type: boolean
+        repository:
+          type: string
+      required:
+        - repository
+        - branch
+        - oid
+        - pushed
       type: object
     QuickAction:
       additionalProperties: false
@@ -9064,6 +9333,60 @@ components:
         - commit
         - buildDate
       type: object
+    WorkerCreateRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkerCreateRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        branch:
+          type: string
+        launch_spec:
+          $ref: "#/components/schemas/WorkspaceLaunchSpec"
+        repository:
+          $ref: "#/components/schemas/WorkspaceLaunchRepository"
+        reuse_existing_branch:
+          type: boolean
+      required:
+        - repository
+        - branch
+        - reuse_existing_branch
+      type: object
+    WorkerIdentity:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkerIdentity.json
+          format: uri
+          readOnly: true
+          type: string
+        github_user_id:
+          format: int64
+          type: integer
+        node_id:
+          type: string
+        protocol:
+          format: int64
+          type: integer
+        role:
+          type: string
+        uid:
+          format: int32
+          minimum: 0
+          type: integer
+      required:
+        - node_id
+        - uid
+        - github_user_id
+        - role
+        - protocol
+      type: object
     WorkflowApprovalResponse:
       additionalProperties: false
       properties:
@@ -9614,7 +9937,15 @@ components:
     WorkspaceLaunchPull:
       additionalProperties: false
       properties:
+        base_branch:
+          type: string
+        base_oid:
+          type: string
+        base_repo_id:
+          type: string
         head_branch:
+          type: string
+        head_oid:
           type: string
         head_repo_clone_url:
           type: string
@@ -9816,6 +10147,8 @@ components:
         branch_upstream_missing:
           description: True when the current branch has an origin upstream configured but its local remote-tracking ref is absent; clients may offer Push so branch sync can verify or create the remote branch.
           type: boolean
+        commit_attribution:
+          $ref: "#/components/schemas/Attribution"
         commits_ahead:
           format: int64
           type: integer
@@ -9887,6 +10220,8 @@ components:
           type: string
         platform_host:
           type: string
+        push_state:
+          $ref: "#/components/schemas/PushState"
         repo:
           $ref: "#/components/schemas/RepoRefResponse"
         repo_name:
@@ -9958,6 +10293,8 @@ components:
       properties:
         auto_assign_on_create:
           type: boolean
+        default_execution_target:
+          type: string
         default_sidebar_view:
           enum:
             - diff
@@ -10084,6 +10421,8 @@ components:
       properties:
         auto_assign_on_create:
           type: boolean
+        default_execution_target:
+          type: string
         default_sidebar_view:
           enum:
             - diff
@@ -10938,6 +11277,975 @@ paths:
       summary: List historical archive status
       tags:
         - Archive
+  /devboxes:
+    get:
+      operationId: list-devbox-connections
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Connection"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List connected devboxes
+      tags:
+        - Devboxes
+    post:
+      operationId: connect-devbox
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Connect-devboxRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Connect your assigned devbox account
+      tags:
+        - Devboxes
+  /devboxes/discovery:
+    get:
+      operationId: discover-devboxes
+      parameters:
+        - explode: false
+          in: query
+          name: registry
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Discovery"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Discover your assigned devboxes
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}:
+    delete:
+      operationId: disconnect-devbox
+      parameters:
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Remove a connection without deleting remote work
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/reconnect:
+    post:
+      operationId: reconnect-devbox
+      parameters:
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Refresh an assigned worker credential and verify identity
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/terminal/paste-image:
+    post:
+      operationId: store-devbox-paste-image
+      parameters:
+        - in: header
+          name: Content-Type
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              contentMediaType: application/octet-stream
+              format: binary
+              type: string
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerminalPasteImageOutputBody"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces:
+    get:
+      operationId: list-devbox-workspaces
+      parameters:
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListWorkspacesOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+    post:
+      operationId: create-devbox-workspace
+      parameters:
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDevboxWorkspaceInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create a workspace on a connected devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}:
+    delete:
+      operationId: delete-devbox-workspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: force
+          schema:
+            type: boolean
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+    get:
+      operationId: get-devbox-workspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/agent-sessions:
+    get:
+      operationId: list-devbox-agent-sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListWorkspaceAgentSessionsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/commits:
+    get:
+      operationId: get-devbox-commits
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommitsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/diff:
+    get:
+      operationId: get-devbox-diff
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: "Diff base: head, pushed, or merge-target"
+          explode: false
+          in: query
+          name: base
+          schema:
+            description: "Diff base: head, pushed, or merge-target"
+            type: string
+        - description: Set to hide to ignore whitespace-only changes
+          explode: false
+          in: query
+          name: whitespace
+          schema:
+            description: Set to hide to ignore whitespace-only changes
+            type: string
+        - description: Optional file path to limit the returned patch
+          explode: false
+          in: query
+          name: path
+          schema:
+            description: Optional file path to limit the returned patch
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
+            type: string
+        - description: Optional snapshot_version returned by the workspace files endpoint
+          explode: false
+          in: query
+          name: revision
+          schema:
+            description: Optional snapshot_version returned by the workspace files endpoint
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiffResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/diff/watch:
+    get:
+      operationId: watch-devbox-diff
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: Last observed opaque workspace diff snapshot version
+          explode: false
+          in: query
+          name: version
+          schema:
+            description: Last observed opaque workspace diff snapshot version
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDiffWatchResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/file-preview:
+    get:
+      operationId: get-devbox-file-preview
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: "Diff base: head, pushed, or merge-target"
+          explode: false
+          in: query
+          name: base
+          schema:
+            description: "Diff base: head, pushed, or merge-target"
+            enum:
+              - head
+              - pushed
+              - merge-target
+            type: string
+        - description: Set to hide to ignore whitespace-only changes
+          explode: false
+          in: query
+          name: whitespace
+          schema:
+            description: Set to hide to ignore whitespace-only changes
+            enum:
+              - hide
+            type: string
+        - description: Changed file path to preview
+          explode: false
+          in: query
+          name: path
+          schema:
+            description: Changed file path to preview
+            type: string
+        - description: Optional diff side to read for context expansion
+          explode: false
+          in: query
+          name: side
+          schema:
+            description: Optional diff side to read for context expansion
+            enum:
+              - old
+              - new
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
+            type: string
+        - description: Optional snapshot_version returned by the workspace files endpoint
+          explode: false
+          in: query
+          name: revision
+          schema:
+            description: Optional snapshot_version returned by the workspace files endpoint
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilePreviewResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/files:
+    get:
+      operationId: get-devbox-files
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: "Diff base: head, pushed, or merge-target"
+          explode: false
+          in: query
+          name: base
+          schema:
+            description: "Diff base: head, pushed, or merge-target"
+            type: string
+        - description: Set to hide to ignore whitespace-only changes
+          explode: false
+          in: query
+          name: whitespace
+          schema:
+            description: Set to hide to ignore whitespace-only changes
+            type: string
+        - description: Scope to a single commit SHA
+          explode: false
+          in: query
+          name: commit
+          schema:
+            description: Scope to a single commit SHA
+            type: string
+        - description: Start SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: Start SHA for range diff (inclusive)
+            type: string
+        - description: End SHA for range diff (inclusive)
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: End SHA for range diff (inclusive)
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/pull:
+    post:
+      operationId: pull-devbox-workspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/push:
+    post:
+      operationId: push-devbox-workspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/refresh:
+    post:
+      operationId: refresh-devbox-workspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/retry:
+    post:
+      operationId: retry-devbox-workspace
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/runtime:
+    get:
+      operationId: get-devbox-runtime
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceRuntimeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs:
+    post:
+      operationId: launch-devbox-handoff
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LaunchWorkspaceAgentHandoffInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAgentHandoffResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/runtime/sessions:
+    post:
+      operationId: launch-devbox-session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LaunchWorkspaceRuntimeSessionInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfo"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}:
+    delete:
+      operationId: stop-devbox-session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+    patch:
+      operationId: rename-devbox-session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameWorkspaceRuntimeSessionInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfo"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec:
+    get:
+      operationId: get-devbox-attach-spec
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeAttachSpecResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/initial-message:
+    post:
+      operationId: send-devbox-initial-message
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitInitialMessageInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentInitialMessageStatusResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
   /docs/browse:
     get:
       operationId: browse-docs-folders
@@ -23197,6 +24505,96 @@ paths:
       summary: Get server version
       tags:
         - System
+  /worker:
+    get:
+      operationId: get-execution-worker
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerIdentity"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get authenticated execution worker identity
+      tags:
+        - Devboxes
+  /worker/snapshot:
+    get:
+      operationId: get-worker-snapshot
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RawSnapshot"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read this account's execution inventory
+      tags:
+        - Devboxes
+  /worker/workspaces:
+    post:
+      operationId: create-worker-workspace
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerCreateRequest"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create a worker workspace from controller context
+      tags:
+        - Devboxes
+  /worker/workspaces/{id}/context:
+    put:
+      operationId: refresh-worker-context
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceLaunchSpec"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Refresh controller-supplied workspace context
+      tags:
+        - Devboxes
   /workspaces:
     get:
       operationId: list-workspaces

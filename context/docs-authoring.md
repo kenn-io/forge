@@ -17,6 +17,12 @@ screenshots, or the Zensical site.
   `context/` topic docs, delete the artifacts, and do not convert them into ADRs.
 - Verify candidate documentation against implementation and tests before
   promoting it into living documentation.
+- Devbox App registration is a one-time manual GitHub workflow. Keep the complete
+  generic procedure in `docs/devboxes.md`; private deployments follow that guide
+  rather than adding registration commands or a separate setup flow.
+- The public devbox guide must stand alone for outside operators. Document host
+  roles, service setup and recovery without depending on a private provisioning
+  repository or exposing its infrastructure details.
 - Review substantial docs changes as rendered before-and-after blocks; source
   diffs miss navigation, theme, and generated screenshot changes.
   (`skills/docs-diff-review/SKILL.md`)

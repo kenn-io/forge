@@ -78,9 +78,9 @@ branch. Keep the OpenAPI enum stable and regenerate API artifacts with
 
 ## Server Construction
 
-`internal/server/httpapi` owns the shared HTTP problem contract. Server domain
-packages must use its constructors instead of direct `huma.Error4xx` /
-`huma.Error5xx` calls so status, wire code, and details stay consistent
+`internal/server/httpapi` owns the shared HTTP problem contract. All Huma services,
+including standalone devbox services, must use its constructors instead of direct
+`huma.Error4xx` / `huma.Error5xx` calls so status, wire code, and details stay consistent
 (`internal/server/httpapi/problems.go::ProblemError`).
 
 Huma uses Go's JSON v2 semantics for API bodies. Ordinary nil slices serialize

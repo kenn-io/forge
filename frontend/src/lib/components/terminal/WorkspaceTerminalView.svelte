@@ -2168,8 +2168,8 @@
     return Effect.gen(function* () {
       recordWorkspaceSwitchPhase("workspace-request-start", id, hostKey);
       const data = hostKey
-        ? yield* executeOpaqueGeneratedApiRequest("load fleet workspace", (generatedClient, signal) =>
-            generatedClient.FleetService.getFleetWorkspace({ hostKey, id }, { signal }),
+        ? yield* executeOpaqueGeneratedApiRequest<unknown>("load fleet workspace", (generatedClient, signal) =>
+            (hostKey.startsWith("devbox:") ? generatedClient.DevboxesService.getDevboxWorkspace({ connectionId: hostKey.slice(7),  id }, { signal }) : generatedClient.FleetService.getFleetWorkspace({ hostKey, id }, { signal })),
           )
         : yield* executeGeneratedApiRequest("load workspace", (generatedClient, signal) =>
             generatedClient.WorkspacesService.getWorkspace({ id }, { signal }),
@@ -4405,6 +4405,15 @@
                   <div class="workspace-actions">{@render workspaceControls()}</div>
                 </div>
               {/if}
+              {#if workspace?.commit_attribution}
+                {@const attribution = workspace.commit_attribution}
+                <details class="commit-attribution" class:attribution-warning={attribution.status === "mismatch" || attribution.status === "unverified"}>
+                  <summary>{attribution.message}</summary>
+                  <p>{attribution.repository} · {attribution.branch} · {attribution.oid.slice(0, 12)}</p>
+                  <p>Author: {attribution.author_name} &lt;{attribution.author_email}&gt; (GitHub ID {attribution.author_id || "unresolved"})</p>
+                  <p>Committer: {attribution.committer_name} &lt;{attribution.committer_email}&gt; (GitHub ID {attribution.committer_id || "unresolved"})</p>
+                </details>
+              {/if}
               {#if runtimeError}
                 <div class="runtime-error">{runtimeError}</div>
               {/if}
@@ -5269,6 +5278,9 @@
     min-width: 0;
     background: var(--bg-primary);
   }
+
+  .commit-attribution { padding: 8px 12px; font-size: var(--font-size-sm); }
+  .attribution-warning { color: var(--color-danger); }
 
   .workspace-toolbar {
     display: flex;

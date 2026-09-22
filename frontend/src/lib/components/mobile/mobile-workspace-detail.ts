@@ -11,8 +11,10 @@ export function loadMobileWorkspaceDetail(
   hostKey?: string,
 ): Effect.Effect<WorkspaceDetail, unknown, GeneratedApi> {
   if (hostKey) {
-    return executeOpaqueGeneratedApiRequest("load mobile Fleet workspace", (client, signal) =>
-      client.FleetService.getFleetWorkspace({ hostKey: hostKey, id: workspaceId }, { signal }),
+    return executeOpaqueGeneratedApiRequest<unknown>("load mobile Fleet workspace", (client, signal) =>
+      hostKey.startsWith("devbox:")
+        ? client.DevboxesService.getDevboxWorkspace({ connectionId: hostKey.slice(7), id: workspaceId }, { signal })
+        : client.FleetService.getFleetWorkspace({ hostKey: hostKey, id: workspaceId }, { signal }),
     ).pipe(Effect.flatMap((payload) => decodeWorkspaceDetail(payload, hostKey)));
   }
   return executeGeneratedApiRequest("load mobile workspace", (client, signal) =>

@@ -54,8 +54,10 @@ func (h *Handler) Start(parent context.Context, disableMonitors bool) {
 	})
 	if h.workspaces != nil && !disableMonitors {
 		h.runBackground(h.runWorkspaceWarmLoop)
-		h.runBackground(h.runWorkspacePRMonitorLoop)
-		h.runBackground(h.runWorkspacePushedHeadObserverLoop)
+		if !h.executionWorker.Enabled {
+			h.runBackground(h.runWorkspacePRMonitorLoop)
+			h.runBackground(h.runWorkspacePushedHeadObserverLoop)
+		}
 	}
 }
 
@@ -133,6 +135,9 @@ func (h *Handler) Shutdown(ctx context.Context) error {
 	h.stopBackground()
 	select {
 	case <-h.lifecycleDone:
+		if h.workerBroker != nil {
+			h.workerBroker.Close()
+		}
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()

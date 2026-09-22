@@ -37,6 +37,15 @@
 Use this document for daemon startup, discovery, request-origin validation,
 and the root event stream.
 
+## Execution workers
+
+- An execution worker owns one Unix account's worktrees and runtimes; its unscoped bearer
+  authorizes only the registered execution routes. Never enable Serve-header authentication
+  or provider/fleet administration in this role. (`internal/server/devbox_worker.go`)
+- The Linux GitHub broker authenticates Unix peer UIDs, narrows App tokens to admitted repositories,
+  and keeps personal GitHub credentials off workers. Human commit identity and the App push actor
+  are distinct; GitHub rulesets enforce protected-branch restrictions. (`internal/devbox/broker.go`)
+
 ## Startup Contracts
 
 - Bare `kenn-forge` is help-only, `serve` is foreground, and background

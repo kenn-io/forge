@@ -221,6 +221,9 @@ func buildHost(host NeutralHost, observer Observer, identity Identity) HostSumma
 	kind := "remote"
 	transport := "http"
 	policy := AvailabilityPolicy(RealCapabilityPolicy{})
+	if host.FederationRole == RoleDevbox {
+		kind = "devbox"
+	}
 	if isSelf {
 		kind = "self"
 		transport = "local"
@@ -268,6 +271,13 @@ func buildHost(host NeutralHost, observer Observer, identity Identity) HostSumma
 	if diags == nil {
 		diags = []HostDiagnostic{}
 	}
+	if host.Maintenance {
+		diags = append(diags, HostDiagnostic{
+			Code: "maintenance", Severity: "warning", Summary: "Devbox is in maintenance",
+			RecoverySuggestion: "This devbox is in maintenance. Choose another machine or wait for maintenance to finish.",
+			BlocksOperations:   []string{OpWorkspaceWrite},
+		})
+	}
 	h.Diagnostics = diags
 	if host.Capabilities != nil {
 		h.OperationAvailability = OperationAvailabilityFromState(
@@ -275,7 +285,7 @@ func buildHost(host NeutralHost, observer Observer, identity Identity) HostSumma
 		)
 	} else {
 		h.OperationAvailability = OperationAvailabilityFromState(
-			nil, CommandCapabilities{}, host.Reachable, policy,
+			diags, CommandCapabilities{}, host.Reachable, policy,
 		)
 	}
 	h.Error = host.Error

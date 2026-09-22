@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonruntime"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
@@ -327,6 +329,9 @@ func run(opts serve.Options) error {
 	if err := validateBackgroundLaunchConfig(cfg); err != nil {
 		return err
 	}
+	if cfg.ExecutionWorker.Enabled && (runtime.GOOS != "linux" || uint32(os.Getuid()) != cfg.ExecutionWorker.UID) {
+		return errors.New("execution worker must run as its configured non-root Linux account")
+	}
 	slog.Debug(
 		"config loaded",
 		"config_path", configPath,
@@ -381,20 +386,24 @@ func run(opts serve.Options) error {
 	if err != nil {
 		return fmt.Errorf("ensure auth token: %w", err)
 	}
-	federationCredentials, err := federationauth.Open(
-		federationauth.DefaultStorePath(cfg.DataDir),
-	)
-	if err != nil {
-		return fmt.Errorf("open federation credential store: %w", err)
-	}
-	federationEnrollments, err := federation.Open(
-		federation.DefaultStorePath(cfg.DataDir), federation.StoreOptions{},
-	)
-	if err != nil {
-		return fmt.Errorf("open federation enrollment store: %w", err)
-	}
-	if err := validateFederationHubOrigin(cfg, federationEnrollments); err != nil {
-		return err
+	var federationCredentials *federationauth.Store
+	var federationEnrollments *federation.Store
+	if !cfg.ExecutionWorker.Enabled {
+		federationCredentials, err = federationauth.Open(
+			federationauth.DefaultStorePath(cfg.DataDir),
+		)
+		if err != nil {
+			return fmt.Errorf("open federation credential store: %w", err)
+		}
+		federationEnrollments, err = federation.Open(
+			federation.DefaultStorePath(cfg.DataDir), federation.StoreOptions{},
+		)
+		if err != nil {
+			return fmt.Errorf("open federation enrollment store: %w", err)
+		}
+		if err := validateFederationHubOrigin(cfg, federationEnrollments); err != nil {
+			return err
+		}
 	}
 	ln, mcpLn, err := bindDaemonListeners(cfg)
 	if err != nil {
@@ -450,7 +459,10 @@ func run(opts serve.Options) error {
 		TailscaleServeUsers:   cfg.API.TailscaleServe.AllowedUsers,
 	}
 
-	startupOptions := server.ServerOptions{DaemonAccess: daemonAccess, MCPURL: mcpURL}
+	startupOptions := server.ServerOptions{DaemonAccess: daemonAccess, MCPURL: mcpURL, ExecutionWorker: cfg.ExecutionWorker.Enabled}
+	if cfg.ExecutionWorker.Enabled {
+		assets = nil
+	}
 	startupHandler := server.NewStartupHandler(assets, cfg, startupOptions, ln)
 	switcher := server.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{
@@ -655,10 +667,13 @@ func run(opts serve.Options) error {
 			)
 		},
 	})
-	spokeStartup := activateFederationSpokeAtStartup(
-		ctx, database, cfg, runtimeIdentity.LockMetadata.NodeID,
-		federationEnrollments, federationCredentials, nil,
-	)
+	spokeStartup := federationSpokeStartup{}
+	if federationEnrollments != nil {
+		spokeStartup = activateFederationSpokeAtStartup(
+			ctx, database, cfg, runtimeIdentity.LockMetadata.NodeID,
+			federationEnrollments, federationCredentials, nil,
+		)
+	}
 	if cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke && !spokeStartup.Active() {
 		slog.Warn(
 			"fleet spoke started with local execution only",
@@ -685,8 +700,11 @@ func run(opts serve.Options) error {
 		return nil
 	}
 	cloneMgr := gitclone.New(
-		filepath.Join(cfg.DataDir, "clones"), &controlPlanes.Git,
+		filepath.Join(cfg.DataDir, "clones"), controlPlanes.Git,
 	)
+	if broker, ok := controlPlanes.Git.(*devbox.BrokerClient); ok {
+		defer broker.Close()
+	}
 	configureCloneTransportPolicy(cloneMgr, cfg)
 
 	var archiveService *archive.Service
@@ -745,9 +763,19 @@ func run(opts serve.Options) error {
 		}
 	}
 
+	var devboxConnections *devbox.Connections
+	if !cfg.ExecutionWorker.Enabled && cfg.Fleet.RoleOrDefault() != config.FleetRoleSpoke {
+		devboxConnections, err = devbox.OpenConnections(cfg.DataDir)
+		if err != nil {
+			return err
+		}
+		defer devboxConnections.Close()
+	}
 	srv = server.NewWithConfig(
 		database, syncer, cloneMgr, assets,
 		cfg, configPath, server.ServerOptions{
+			ExecutionWorker:                  cfg.ExecutionWorker.Enabled,
+			Devboxes:                         devboxConnections,
 			DaemonAccess:                     daemonAccess,
 			FederationCredentials:            federationCredentials,
 			FederationEnrollments:            federationEnrollments,
@@ -765,7 +793,7 @@ func run(opts serve.Options) error {
 			Telemetry:                       telemetryReporter,
 			TokenSources:                    tokenSources,
 			Archive:                         archiveService,
-			DetachRuntimeSessionsForRestart: os.Getenv("KENN_FORGE_DEV_RESTART") == "1",
+			DetachRuntimeSessionsForRestart: cfg.ExecutionWorker.Enabled || os.Getenv("KENN_FORGE_DEV_RESTART") == "1",
 		},
 	)
 	srv.AttachHTTPServer(httpSrv, ln)

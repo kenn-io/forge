@@ -5,6 +5,7 @@ import type { WorkspacesDefaultSidebarView } from "./workspacesDefaultSidebarVie
 
 export interface Workspaces {
   auto_assign_on_create: boolean;
+  default_execution_target?: string;
   default_sidebar_view: WorkspacesDefaultSidebarView;
   show_agent_status_in_lists: boolean;
 }

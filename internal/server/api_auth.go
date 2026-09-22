@@ -92,6 +92,14 @@ func (s *Server) handleAuthBootstrap(
 func (s *Server) authorizeAPIRequest(
 	w http.ResponseWriter, r *http.Request,
 ) bool {
+	if s.options.ExecutionWorker {
+		if hasValidBearer(r, s.daemonRequests.token) {
+			return true
+		}
+		w.Header().Set("WWW-Authenticate", `Bearer realm="kenn-forge-worker"`)
+		writeProblemResponse(w, httpapi.NewProblem(http.StatusUnauthorized, httpapi.CodeUnauthorized, "missing or invalid worker bearer", nil))
+		return false
+	}
 	if s.isPreEnrollmentRequest(r) {
 		return true
 	}

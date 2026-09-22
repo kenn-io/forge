@@ -3,6 +3,36 @@
 Use this document for federation settings, snapshot aggregation, spoke routing,
 or remote workspace and session operations.
 
+## Devbox targets
+
+- Treat devboxes as first-class execution targets: measure interaction latency and GitHub calls
+  against local workflows, and remove repeated work without caching membership or permission
+  decisions. (`internal/devbox/broker.go::Broker.Credential`)
+- A successful push records the acknowledged commit in its tracking ref, including main-only
+  fetch configurations; do not refetch just to update that ref and repeat broker authorization.
+  (`internal/workspace/branch_sync.go::pushBranch`)
+- Hubs and standalone controllers own devbox connections and route directly to workers; spokes
+  remain local-only. Use `devbox:<connection-id>` keys, separate from fleet node keys, and never
+  project worker bearer tokens into browser data. (`internal/server/devboxes.go`)
+- Devboxes are execution targets, not enrolled fleet peers. Roster, accounts, tools and deployment
+  belong to an operator's private provisioning repository; public Forge owns the generic runtime
+  and connection contract. (`docs/devboxes.md`)
+- Machine lists, workspace selectors, and execution badges identify devboxes explicitly;
+  they have no browser UI to navigate to and must not appear as fleet spokes.
+  (`frontend/src/lib/components/layout/ForgeSelector.svelte`)
+- Maintenance blocks workspace creation without hiding existing workspaces or marking the worker
+  unreachable. (`internal/fleet/enrich.go::buildHost`)
+- Every creation entry point must check the chosen devbox's workspace availability and github.com
+  repository support; an unavailable default must never silently create locally.
+  (`frontend/src/lib/stores/workspace-target.svelte.ts`)
+- Validate saved default destinations on config load and settings writes, but preserve valid
+  devbox selections while disconnected. (`internal/config/devbox.go::ValidateDefaultExecutionTarget`)
+- Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
+  belong only on the direct tailnet connection. (`internal/server/devboxes.go::registerDevboxTerminalAPI`)
+- Devbox repository admission and launch context use GitHub node IDs, matching the controller's
+  catalog; numeric REST IDs scope App installation tokens, not workspace identity.
+  (`internal/server/workspaceapi/execution_worker.go::Handler.admitWorkerRepository`)
+
 ## Ownership And Topology
 
 - Every data directory has one random 128-bit lowercase-hex node ID; hostnames,

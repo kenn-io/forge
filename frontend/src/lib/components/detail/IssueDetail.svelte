@@ -29,6 +29,7 @@
   import DetailRefreshButton from "./DetailRefreshButton.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
+  import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
     import { AdaptiveActionGrid, Button, Chip, Modal } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
@@ -633,6 +634,10 @@
   // still in flight, and a round-trip back to this issue must keep the
   // button disabled or a second click sends a duplicate create.
   const workspaceCreateBlocked = $derived(workspaceCreating || isWorkspaceCreatePending(itemIdentity));
+  const workspaceTarget = createDefaultWorkspaceTarget(runtime,
+    () => settings.getWorkspaceSettings().default_execution_target ?? "",
+    () => itemIdentity,
+  );
   // Bumped per create request and on identity change (route-reset
   // effect): a workspace-create response whose generation no longer
   // matches arrived for an item this component stopped showing and must
@@ -791,7 +796,7 @@
   function createWorkspace(
     options: CreateWorkspaceOptions = {},
   ): void {
-    if (staleIssue) return;
+    if (staleIssue || workspaceTarget.reason) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
     const requestIdentity = $state.snapshot(itemIdentity);
@@ -845,11 +850,44 @@
     if (branchConflict) {
       branchConflict.error = null;
     }
+    const devboxTarget = workspaceTarget.hostKey;
     const program = executeGeneratedApiRequest("POST issue workspace", (client, signal) =>
-      providerUsesHostRoute(selectedRef) ? client.IssuesService.createIssueWorkspaceOnHost({ ...providerHostRouteParams(selectedRef), number: requestIdentity.number }, requestBody, { signal }) : client.IssuesService.createIssueWorkspace({ ...providerRouteParams(selectedRef), number: requestIdentity.number }, requestBody, { signal }),
+      devboxTarget
+        ? client.DevboxesService.createDevboxWorkspace(
+            { connectionId: devboxTarget.slice(7) },
+            {
+              provider: requestIdentity.provider,
+              platform_host: requestIdentity.platformHost ?? "github.com",
+              owner: requestIdentity.owner,
+              name: requestIdentity.name,
+              issue_number: requestIdentity.number,
+              branch: options.gitHeadRef ?? "",
+              reuse_existing_branch: options.reuseExistingBranch ?? false,
+            },
+            { signal },
+          )
+        : providerUsesHostRoute(selectedRef)
+          ? client.IssuesService.createIssueWorkspaceOnHost(
+              { ...providerHostRouteParams(selectedRef), number: requestIdentity.number },
+              requestBody,
+              { signal },
+            )
+          : client.IssuesService.createIssueWorkspace(
+              { ...providerRouteParams(selectedRef), number: requestIdentity.number },
+              requestBody,
+              { signal },
+            ),
     ).pipe(
       Effect.flatMap((data) =>
         Effect.sync(() => {
+          if (data?.id && devboxTarget) {
+            promoteWorkspaceCreateLaunch(requestIdentity, data.id, devboxTarget);
+            if (quickAction) runWorkspaceQuickAction(runtime, data.id, quickAction, devboxTarget);
+            if (!responseIsStale()) {
+              navigate(`/terminal/fleet/${encodeURIComponent(devboxTarget)}/${encodeURIComponent(data.id)}`);
+            }
+            return;
+          }
           if (data?.id) {
             // Publish the confirmed creation before any liveness guard: the
             // workspace exists server-side even after navigation or unmount.
@@ -1392,10 +1430,10 @@
             busyLabel="Creating..."
             launchTargets={settings.getLaunchTargets()}
             busy={workspaceCreateBlocked}
-            disabled={staleIssue}
+            disabled={staleIssue || workspaceTarget.reason !== ""}
             disabledReason={staleIssue
               ? "Refresh details before creating a workspace."
-              : createWorkspaceTitle}
+              : workspaceTarget.reason || createWorkspaceTitle}
             descriptionId={createWorkspaceDescriptionId}
             onCreate={(targetKey) => void createWorkspace(
               targetKey === undefined ? {} : { launchTargetKey: targetKey },
@@ -1468,7 +1506,7 @@
         <span id={createWorkspaceDescriptionId} class="kit-sr-only">
           {staleIssue
             ? "Refresh details before creating a workspace."
-            : createWorkspaceTitle}
+            : workspaceTarget.reason || createWorkspaceTitle}
         </span>
       {/if}
       <AdaptiveActionGrid

@@ -889,11 +889,17 @@ export function createDiffStore(opts: DiffStoreOptions) {
           ? executeGeneratedDefaultResponse<FilePreviewResponse>(
               "GET remote workspace file preview",
               (client, signal) =>
-                client.FleetService.getFleetWorkspaceFilePreview(
-                  { hostKey: workspaceHostKey, id: workspaceID },
-                  query,
-                  { signal },
-                ),
+                workspaceHostKey.startsWith("devbox:")
+                  ? client.DevboxesService.getDevboxFilePreview(
+                      { connectionId: workspaceHostKey.slice(7), id: workspaceID },
+                      query,
+                      { signal },
+                    )
+                  : client.FleetService.getFleetWorkspaceFilePreview(
+                      { hostKey: workspaceHostKey, id: workspaceID },
+                      query,
+                      { signal },
+                    ),
               isFilePreviewResponse,
             )
           : executeGeneratedApiRequest<FilePreviewResponse>("GET workspace file preview", (client, signal) =>
@@ -1176,11 +1182,17 @@ export function createDiffStore(opts: DiffStoreOptions) {
             ? executeGeneratedDefaultResponse<FilesResponse>(
                 "GET remote workspace diff files",
                 (client, signal) =>
-                  client.FleetService.getFleetWorkspaceFiles(
-                    { hostKey: workspaceHostKey, id: workspaceID },
-                    workspaceDiffQuery(base),
-                    { signal },
-                  ),
+                  workspaceHostKey.startsWith("devbox:")
+                    ? client.DevboxesService.getDevboxFiles(
+                        { connectionId: workspaceHostKey.slice(7), id: workspaceID },
+                        workspaceDiffQuery(base),
+                        { signal },
+                      )
+                    : client.FleetService.getFleetWorkspaceFiles(
+                        { hostKey: workspaceHostKey, id: workspaceID },
+                        workspaceDiffQuery(base),
+                        { signal },
+                      ),
                 (value): value is FilesResponse =>
                   typeof value === "object" && value !== null && "files" in value && !isProblem(value),
               )
@@ -1206,9 +1218,17 @@ export function createDiffStore(opts: DiffStoreOptions) {
             ? executeGeneratedDefaultResponse<DiffResponse>(
                 "GET remote workspace diff",
                 (client, signal) =>
-                  client.FleetService.getFleetWorkspaceDiff({ hostKey: workspaceHostKey, id: workspaceID }, query, {
-                    signal,
-                  }),
+                  workspaceHostKey.startsWith("devbox:")
+                    ? client.DevboxesService.getDevboxDiff(
+                        { connectionId: workspaceHostKey.slice(7), id: workspaceID },
+                        query,
+                        {
+                          signal,
+                        },
+                      )
+                    : client.FleetService.getFleetWorkspaceDiff({ hostKey: workspaceHostKey, id: workspaceID }, query, {
+                        signal,
+                      }),
                 (value): value is DiffResponse =>
                   typeof value === "object" && value !== null && "files" in value && !isProblem(value),
               )
@@ -1478,10 +1498,15 @@ export function createDiffStore(opts: DiffStoreOptions) {
           ? executeGeneratedDefaultResponse<CommitsResponse>(
               "GET remote workspace commits",
               (client, signal) =>
-                client.FleetService.getFleetWorkspaceCommits(
-                  { hostKey: workspaceHostKey, id: workspaceID },
-                  { signal },
-                ),
+                workspaceHostKey.startsWith("devbox:")
+                  ? client.DevboxesService.getDevboxCommits(
+                      { connectionId: workspaceHostKey.slice(7), id: workspaceID },
+                      { signal },
+                    )
+                  : client.FleetService.getFleetWorkspaceCommits(
+                      { hostKey: workspaceHostKey, id: workspaceID },
+                      { signal },
+                    ),
               (value): value is CommitsResponse =>
                 typeof value === "object" && value !== null && "commits" in value && !isProblem(value),
             )

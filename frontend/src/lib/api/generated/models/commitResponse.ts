@@ -4,10 +4,13 @@
 import type { CommitStats } from "./commitStats.ts";
 
 export interface CommitResponse {
+  author_email?: string;
   /** Commit author display name */
   author_name: string;
   /** Commit author date (RFC3339) */
   authored_at: string;
+  committer_email?: string;
+  committer_name?: string;
   /** First line of commit message */
   message: string;
   /** Whether the commit is reachable from the workspace branch's upstream tracking ref; false means it has not been pushed. Omitted when push status is unknown, such as pull request commits. */

@@ -2,6 +2,7 @@ package workspaceapi
 
 import (
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -27,6 +28,8 @@ type WorkspaceRef struct {
 }
 
 type workspaceResponse struct {
+	PushState             *devbox.PushState         `json:"push_state,omitempty"`
+	CommitAttribution     *devbox.Attribution       `json:"commit_attribution,omitempty"`
 	ID                    string                    `json:"id"`
 	Repo                  httpapi.RepoRefResponse   `json:"repo"`
 	PlatformHost          string                    `json:"platform_host"`

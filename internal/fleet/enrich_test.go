@@ -277,6 +277,43 @@ func TestHubEnrichesWorkspaceByStableProviderIdentity(t *testing.T) {
 	assert.Equal("Fix race", *enriched.Worktrees[0].PRTitle)
 }
 
+func TestHubEnrichesAdHocWorkspaceFromAssociatedPull(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	repository := RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widget",
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := database.UpsertRepoByProviderID(t.Context(), db.RepoIdentity{
+		Platform: repository.Provider, PlatformHost: repository.PlatformHost,
+		PlatformRepoID: repository.PlatformRepoID, Owner: repository.Owner, Name: repository.Name,
+	})
+	require.NoError(err)
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 9, Number: 9, Title: "Add search", Author: "dev",
+		State: db.MergeRequestStateMerged, HeadBranch: "feat/search", BaseBranch: "main",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	aggregate := NeutralSnapshot{
+		ProtocolVersion: 3,
+		Workspaces: []RawWorkspace{{
+			HostKey: "spoke-a", ID: "ws-adhoc", Repository: repository,
+			ItemType: db.WorkspaceItemTypeAdHoc, AssociatedPRNumber: new(9),
+		}},
+	}
+
+	enriched, err := EnrichProviderState(context.Background(), database, aggregate)
+	require.NoError(err)
+	require.Len(enriched.Workspaces, 1)
+	require.NotNil(enriched.Workspaces[0].MRState)
+	assert.Equal("merged", *enriched.Workspaces[0].MRState)
+	require.NotNil(enriched.Workspaces[0].MRTitle)
+	assert.Equal("Add search", *enriched.Workspaces[0].MRTitle)
+}
+
 func TestBuildWorkspaceSummariesPreservesSourceVisibility(t *testing.T) {
 	assert := assert.New(t)
 	workspaces := buildWorkspaceSummaries([]RawWorkspace{

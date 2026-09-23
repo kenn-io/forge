@@ -2199,6 +2199,31 @@ func (o *FederationRefreshWorkspaceLaunchSpecRequestOptions) GetHeader() (map[st
 	return nil, nil
 }
 
+// FederationQueryWorkspaceProviderStateRequestOptions is the options needed to make a request to FederationQueryWorkspaceProviderState.
+type FederationQueryWorkspaceProviderStateRequestOptions struct {
+	Body *FederationQueryWorkspaceProviderStateBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *FederationQueryWorkspaceProviderStateRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *FederationQueryWorkspaceProviderStateRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *FederationQueryWorkspaceProviderStateRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *FederationQueryWorkspaceProviderStateRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // QueueFederationWorkspaceCleanupRequestOptions is the options needed to make a request to QueueFederationWorkspaceCleanup.
 type QueueFederationWorkspaceCleanupRequestOptions struct {
 	PathParams *QueueFederationWorkspaceCleanupPath
@@ -11443,6 +11468,7 @@ type ClientInterface interface {
 	FederationAutoAssignWorkspaceItemWithResponse(ctx context.Context, options *FederationAutoAssignWorkspaceItemRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationAutoAssignWorkspaceItemResp, error)
 	FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Context, options *FederationResolveWorkspaceLaunchSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationResolveWorkspaceLaunchSpecResp, error)
 	FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Context, options *FederationRefreshWorkspaceLaunchSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationRefreshWorkspaceLaunchSpecResp, error)
+	FederationQueryWorkspaceProviderStateWithResponse(ctx context.Context, options *FederationQueryWorkspaceProviderStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationQueryWorkspaceProviderStateResp, error)
 	QueueFederationWorkspaceCleanupWithResponse(ctx context.Context, options *QueueFederationWorkspaceCleanupRequestOptions, reqEditors ...runtime.RequestEditorFn) (*QueueFederationWorkspaceCleanupResp, error)
 	CompleteFilesystemPathWithResponse(ctx context.Context, options *CompleteFilesystemPathRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CompleteFilesystemPathResp, error)
 	ValidateFilesystemRepoWithResponse(ctx context.Context, options *ValidateFilesystemRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ValidateFilesystemRepoResp, error)
@@ -16177,6 +16203,63 @@ func (c *Client) FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Co
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "FederationRefreshWorkspaceLaunchSpecResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// FederationQueryWorkspaceProviderState Read hub provider state for a spoke's workspaces
+func (c *Client) FederationQueryWorkspaceProviderStateWithResponse(ctx context.Context, options *FederationQueryWorkspaceProviderStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationQueryWorkspaceProviderStateResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workspace-state/query",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/federation/provider/workspace-state/query")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &FederationQueryWorkspaceProviderStateResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(FederationQueryWorkspaceProviderStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(FederationQueryWorkspaceProviderStateResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationQueryWorkspaceProviderStateResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -33353,6 +33436,22 @@ func (c *Client) FederationRefreshWorkspaceLaunchSpecRaw(ctx context.Context, ht
 	return httpClient.Do(req)
 }
 
+// FederationQueryWorkspaceProviderStateRaw returns an unread response. The caller must close its body.
+func (c *Client) FederationQueryWorkspaceProviderStateRaw(ctx context.Context, httpClient *http.Client, options *FederationQueryWorkspaceProviderStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workspace-state/query",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // QueueFederationWorkspaceCleanupRaw returns an unread response. The caller must close its body.
 func (c *Client) QueueFederationWorkspaceCleanupRaw(ctx context.Context, httpClient *http.Client, options *QueueFederationWorkspaceCleanupRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -39766,6 +39865,23 @@ func NewFederationRefreshWorkspaceLaunchSpecRequest(ctx context.Context, baseURL
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workspace-launch-spec/refresh",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewFederationQueryWorkspaceProviderStateRequest constructs a typed request for a caller-owned transport.
+func NewFederationQueryWorkspaceProviderStateRequest(ctx context.Context, baseURL string, options *FederationQueryWorkspaceProviderStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workspace-state/query",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -47512,6 +47628,8 @@ type FederationResolveWorkspaceLaunchSpecBody = WorkspaceLaunchRequest
 
 type FederationRefreshWorkspaceLaunchSpecBody = WorkspaceLaunchRequest
 
+type FederationQueryWorkspaceProviderStateBody = FederationWorkspaceProviderStateRequest
+
 type CreateFleetEnrollmentTokenBody = CreateEnrollmentTokenInputBody
 
 type CreateFleetIssueWorkspaceOnPlatformHostBody map[string]any
@@ -48728,6 +48846,10 @@ type FederationResolveWorkspaceLaunchSpecErrorResponse = ProblemError
 type FederationRefreshWorkspaceLaunchSpecResponse = WorkspaceLaunchSpec
 
 type FederationRefreshWorkspaceLaunchSpecErrorResponse = ProblemError
+
+type FederationQueryWorkspaceProviderStateResponse = FederationWorkspaceProviderStateResponse
+
+type FederationQueryWorkspaceProviderStateErrorResponse = ProblemError
 
 type QueueFederationWorkspaceCleanupErrorResponse = ProblemError
 
@@ -50399,6 +50521,14 @@ type FederationRefreshWorkspaceLaunchSpecResp struct {
 	StatusCode   int
 	Error        *FederationRefreshWorkspaceLaunchSpecErrorResponse
 	JSON200      *FederationRefreshWorkspaceLaunchSpecResponse
+}
+
+type FederationQueryWorkspaceProviderStateResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *FederationQueryWorkspaceProviderStateErrorResponse
+	JSON200      *FederationQueryWorkspaceProviderStateResponse
 }
 
 type QueueFederationWorkspaceCleanupResp struct {
@@ -53889,6 +54019,38 @@ type FederationWorkflowUpdate struct {
 	Reason         string `json:"reason"`
 	Source         string `json:"source"`
 	Status         string `json:"status"`
+}
+
+type FederationWorkspaceProviderState struct {
+	ID                 string  `json:"id"`
+	ItemLastActivityAt *string `json:"item_last_activity_at,omitempty"`
+	MrAdditions        *int64  `json:"mr_additions,omitempty"`
+	MrCiStatus         *string `json:"mr_ci_status,omitempty"`
+	MrDeletions        *int64  `json:"mr_deletions,omitempty"`
+	MrIsDraft          *bool   `json:"mr_is_draft,omitempty"`
+	MrReviewDecision   *string `json:"mr_review_decision,omitempty"`
+	MrState            *string `json:"mr_state,omitempty"`
+	MrTitle            *string `json:"mr_title,omitempty"`
+}
+
+type FederationWorkspaceProviderStateRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                              `json:"$schema,omitempty"`
+	Workspaces []FederationWorkspaceProviderSubject `json:"workspaces"`
+}
+
+type FederationWorkspaceProviderStateResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                            `json:"$schema,omitempty"`
+	Workspaces []FederationWorkspaceProviderState `json:"workspaces"`
+}
+
+type FederationWorkspaceProviderSubject struct {
+	AssociatedPrNumber *int64                               `json:"associated_pr_number,omitempty"`
+	ID                 string                               `json:"id"`
+	ItemNumber         int64                                `json:"item_number"`
+	ItemType           string                               `json:"item_type"`
+	Repository         FederationActivityRepositoryIdentity `json:"repository"`
 }
 
 type FilePreviewResponse struct {

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +40,7 @@ func (s *Handler) buildFleetSnapshot(
 	role := fleet.RoleHub
 	aggregate := fleet.BuildNeutralAggregate(local, nil)
 	aggregateIncomplete := false
+	localProviderState := false
 
 	if fleetConfig.RoleOrDefault() == config.FleetRoleHub {
 		aggregate, err = s.buildHubAggregate(
@@ -48,6 +51,15 @@ func (s *Handler) buildFleetSnapshot(
 		}
 	} else {
 		role = fleet.RoleSpoke
+		var providerState sync.WaitGroup
+		var pulled []fleet.RawWorkspace
+		if fleetConfig.Enabled && fleetConfig.Hub != nil && s.federationActive {
+			workspaces := slices.Clone(local.Workspaces)
+			timeout := hubAggregateTimeout(fleetConfig.PeerTimeoutOrDefault())
+			providerState.Go(func() {
+				pulled, localProviderState = s.pullHubProviderState(ctx, workspaces, timeout)
+			})
+		}
 		if includePeers && fleetConfig.Enabled && fleetConfig.Hub != nil {
 			if !s.federationActive {
 				aggregateIncomplete = true
@@ -83,15 +95,42 @@ func (s *Handler) buildFleetSnapshot(
 				}
 			}
 		}
+		providerState.Wait()
+		if localProviderState {
+			local.Workspaces = pulled
+		}
 	}
 
 	snapshot := fleet.ProjectForObserver(
 		aggregate,
 		local,
-		fleet.Observer{NodeID: local.NodeID, Role: role},
+		fleet.Observer{
+			NodeID: local.NodeID, Role: role, LocalProviderState: localProviderState,
+		},
 	)
 	snapshot.AggregateIncomplete = aggregateIncomplete
 	return snapshot, nil
+}
+
+// pullHubProviderState asks the hub for the provider state of this spoke's own
+// workspaces. The hub may be unable to reach the spoke, so the spoke cannot
+// rely on the hub's aggregate to carry that state. It runs alongside the
+// aggregate fetch within the same budget; on failure the caller falls back to
+// whatever state the aggregate carries.
+func (s *Handler) pullHubProviderState(
+	ctx context.Context, workspaces []fleet.RawWorkspace, timeout time.Duration,
+) ([]fleet.RawWorkspace, bool) {
+	if s.workspaceProviderState == nil {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	enriched, err := s.workspaceProviderState(ctx, workspaces)
+	if err != nil {
+		slog.Warn("load hub provider state for local workspaces", "err", err)
+		return nil, false
+	}
+	return enriched, true
 }
 
 func hubAggregateTimeout(memberTimeout time.Duration) time.Duration {

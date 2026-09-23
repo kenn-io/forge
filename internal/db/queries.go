@@ -5937,8 +5937,10 @@ const workspaceSummaryJoins = `
 	   AND r.lifecycle_state = 'active'
 	LEFT JOIN forge_merge_requests m
 	    ON m.repo_id = r.id
-	   AND m.number = w.item_number
-	   AND w.item_type = 'pull_request'
+	   AND m.number = CASE w.item_type
+	       WHEN 'pull_request' THEN w.item_number
+	       WHEN 'adhoc' THEN w.associated_pr_number
+	   END
 	   AND NOT EXISTS (
 	       SELECT 1
 	       FROM forge_archive_items a
@@ -6000,6 +6002,11 @@ func scanWorkspaceSummary(
 	s.CreatedAt = s.CreatedAt.UTC()
 	s.MRTitle = s.SourceTitle
 	s.MRState = s.SourceState
+	if s.ItemType == WorkspaceItemTypeAdHoc {
+		// An ad-hoc workspace joins its associated PR for display metadata,
+		// but that PR is not its source item.
+		s.SourceTitle, s.SourceState, s.SourceURL = nil, nil, nil
+	}
 	if s.ItemKey == "" && workspaceItemTypeKeysByNumber(s.ItemType) {
 		s.ItemKey = strconv.Itoa(s.ItemNumber)
 	}

@@ -62,13 +62,22 @@ func EnrichProviderState(
 		if err != nil {
 			return NeutralSnapshot{}, err
 		}
-		if repository == nil || workspace.ItemNumber <= 0 {
+		if repository == nil {
 			continue
 		}
-		switch strings.ToLower(strings.TrimSpace(workspace.ItemType)) {
+		itemType := strings.ToLower(strings.TrimSpace(workspace.ItemType))
+		itemNumber := workspace.ItemNumber
+		if itemType == db.WorkspaceItemTypeAdHoc && workspace.AssociatedPRNumber != nil {
+			// An ad-hoc workspace's linked PR is its item for display.
+			itemType, itemNumber = db.WorkspaceItemTypePullRequest, *workspace.AssociatedPRNumber
+		}
+		if itemNumber <= 0 {
+			continue
+		}
+		switch itemType {
 		case "pr", "pull_request", "merge_request":
 			pull, err := database.GetVisibleMergeRequestByRepoIDAndNumber(
-				ctx, repository.Repository.ID, workspace.ItemNumber,
+				ctx, repository.Repository.ID, itemNumber,
 			)
 			if err != nil {
 				return NeutralSnapshot{}, err
@@ -78,7 +87,7 @@ func EnrichProviderState(
 			}
 		case "issue":
 			issue, err := database.GetVisibleIssueByRepoIDAndNumber(
-				ctx, repository.Repository.ID, workspace.ItemNumber,
+				ctx, repository.Repository.ID, itemNumber,
 			)
 			if err != nil {
 				return NeutralSnapshot{}, err

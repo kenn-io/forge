@@ -3028,6 +3028,88 @@ components:
         - actor
         - reason
       type: object
+    FederationWorkspaceProviderState:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        item_last_activity_at:
+          type: string
+        mr_additions:
+          format: int64
+          type: integer
+        mr_ci_status:
+          type: string
+        mr_deletions:
+          format: int64
+          type: integer
+        mr_is_draft:
+          type: boolean
+        mr_review_decision:
+          type: string
+        mr_state:
+          type: string
+        mr_title:
+          type: string
+      required:
+        - id
+      type: object
+    FederationWorkspaceProviderStateRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationWorkspaceProviderStateRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        workspaces:
+          items:
+            $ref: "#/components/schemas/FederationWorkspaceProviderSubject"
+          maxItems: 500
+          type: array
+      required:
+        - workspaces
+      type: object
+    FederationWorkspaceProviderStateResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationWorkspaceProviderStateResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        workspaces:
+          items:
+            $ref: "#/components/schemas/FederationWorkspaceProviderState"
+          type: array
+      required:
+        - workspaces
+      type: object
+    FederationWorkspaceProviderSubject:
+      additionalProperties: false
+      properties:
+        associated_pr_number:
+          format: int64
+          type: integer
+        id:
+          type: string
+        item_number:
+          format: int64
+          type: integer
+        item_type:
+          type: string
+        repository:
+          $ref: "#/components/schemas/FederationActivityRepositoryIdentity"
+      required:
+        - id
+        - repository
+        - item_type
+        - item_number
+      type: object
     FilePreviewResponse:
       additionalProperties: false
       properties:
@@ -13340,6 +13422,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Refresh provider facts for a Forge spoke workspace
+      tags:
+        - Fleet
+  /federation/provider/workspace-state/query:
+    post:
+      operationId: federation-query-workspace-provider-state
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FederationWorkspaceProviderStateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederationWorkspaceProviderStateResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read hub provider state for a spoke's workspaces
       tags:
         - Fleet
   /federation/workspaces/{id}/cleanup:

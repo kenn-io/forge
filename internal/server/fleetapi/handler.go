@@ -35,18 +35,21 @@ type Event struct {
 
 // Deps contains Fleet's durable services and root-owned integration hooks.
 type Deps struct {
-	ExecutionTargets            func(context.Context, time.Duration) []fleet.PeerResult
-	DB                          *db.DB
-	Syncer                      *ghclient.Syncer
-	Config                      ConfigSnapshot
-	BasePath                    string
-	BuildVersion                func() string
-	Now                         func() time.Time
-	LocalHandler                func() http.Handler
-	Broadcast                   func(Event) uint64
-	Generation                  func() uint64
-	WorkspaceSnapshot           func(context.Context) (workspaceapi.FleetSnapshot, error)
-	WorkspaceStatsSnapshot      func(context.Context) (workspaceapi.FleetSnapshot, error)
+	ExecutionTargets       func(context.Context, time.Duration) []fleet.PeerResult
+	DB                     *db.DB
+	Syncer                 *ghclient.Syncer
+	Config                 ConfigSnapshot
+	BasePath               string
+	BuildVersion           func() string
+	Now                    func() time.Time
+	LocalHandler           func() http.Handler
+	Broadcast              func(Event) uint64
+	Generation             func() uint64
+	WorkspaceSnapshot      func(context.Context) (workspaceapi.FleetSnapshot, error)
+	WorkspaceStatsSnapshot func(context.Context) (workspaceapi.FleetSnapshot, error)
+	// WorkspaceProviderState asks the hub for the provider state of this
+	// spoke's own workspaces. Nil on hubs, which enrich from their own store.
+	WorkspaceProviderState      func(context.Context, []fleet.RawWorkspace) ([]fleet.RawWorkspace, error)
 	QueueWorkspaceDeletion      func(string) error
 	RuntimeSnapshot             func(string) workspaceapi.RuntimeSnapshot
 	RevalidateDiffs             func()
@@ -78,6 +81,7 @@ type Handler struct {
 	broadcast                   func(Event) uint64
 	generation                  func() uint64
 	workspaceSnapshot           func(context.Context) (workspaceapi.FleetSnapshot, error)
+	workspaceProviderState      func(context.Context, []fleet.RawWorkspace) ([]fleet.RawWorkspace, error)
 	queueWorkspaceDeletion      func(string) error
 	runtimeSnapshot             func(string) workspaceapi.RuntimeSnapshot
 	revalidateDiffs             func()
@@ -133,6 +137,7 @@ func New(deps Deps) *Handler {
 		broadcast:                   deps.Broadcast,
 		generation:                  deps.Generation,
 		workspaceSnapshot:           deps.WorkspaceSnapshot,
+		workspaceProviderState:      deps.WorkspaceProviderState,
 		queueWorkspaceDeletion:      deps.QueueWorkspaceDeletion,
 		runtimeSnapshot:             deps.RuntimeSnapshot,
 		revalidateDiffs:             deps.RevalidateDiffs,

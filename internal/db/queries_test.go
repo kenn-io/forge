@@ -5705,6 +5705,43 @@ func TestWorkspaceSummaries(t *testing.T) {
 	assert.Nil(missSum)
 }
 
+func TestAdHocWorkspaceSummaryShowsAssociatedPullState(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mr := testMR(repoID, 9, withMRTitle("Add search"), withMRBranches("feat/search", "main"))
+	mr.State = MergeRequestStateMerged
+	insertTestMRWithOptions(t, d, mr)
+	prNumber := 9
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
+		ID: "ws-adhoc", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: WorkspaceItemTypeAdHoc, ItemKey: "adhoc:feat/search",
+		AssociatedPRNumber: &prNumber,
+		GitHeadRef:         "feat/search", WorktreePath: "/tmp/ws-adhoc",
+		TmuxSession: "ws-adhoc", Status: "ready",
+	}))
+
+	summary, err := d.GetWorkspaceSummary(ctx, "ws-adhoc")
+	require.NoError(err)
+	require.NotNil(summary)
+	require.NotNil(summary.MRState)
+	require.Equal("merged", *summary.MRState)
+	require.NotNil(summary.MRTitle)
+	require.Equal("Add search", *summary.MRTitle)
+	// The associated PR is not the workspace's source item.
+	require.Nil(summary.SourceTitle)
+	require.Nil(summary.SourceState)
+	require.Nil(summary.SourceURL)
+
+	summaries, err := d.ListWorkspaceSummaries(ctx)
+	require.NoError(err)
+	require.Len(summaries, 1)
+	require.NotNil(summaries[0].MRState)
+	require.Equal("merged", *summaries[0].MRState)
+}
+
 func TestWorkspaceSummariesRetainWorkspaceWithoutRemovedPullMetadata(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

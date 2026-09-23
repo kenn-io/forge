@@ -75,7 +75,9 @@ func withFreshObserverState(
 	view.Projects = replaceObserverProjects(aggregate.Projects, local.Projects, key)
 	view.Worktrees = replaceObserverWorktrees(aggregate.Worktrees, local.Worktrees, key)
 	view.Sessions = replaceObserverSessions(aggregate.Sessions, local.Sessions, key)
-	view.Workspaces = replaceObserverWorkspaces(aggregate.Workspaces, local.Workspaces, key)
+	view.Workspaces = replaceObserverWorkspaces(
+		aggregate.Workspaces, local.Workspaces, key, !observer.LocalProviderState,
+	)
 	return view
 }
 
@@ -159,7 +161,12 @@ func replaceObserverSessions(all, local []RawSession, observer string) []RawSess
 	return append(out, stampedSessions(local, observer)...)
 }
 
-func replaceObserverWorkspaces(all, local []RawWorkspace, observer string) []RawWorkspace {
+// replaceObserverWorkspaces swaps the observer's aggregate rows for fresh local
+// ones and copies the aggregate's provider state onto them, unless the
+// observer already pulled that state for its own rows.
+func replaceObserverWorkspaces(
+	all, local []RawWorkspace, observer string, copyProviderState bool,
+) []RawWorkspace {
 	provider := make(map[string]RawWorkspace)
 	out := make([]RawWorkspace, 0, len(all)+len(local))
 	for _, workspace := range all {
@@ -170,9 +177,11 @@ func replaceObserverWorkspaces(all, local []RawWorkspace, observer string) []Raw
 		out = append(out, workspace)
 	}
 	local = stampedWorkspaces(local, observer)
-	for index := range local {
-		if enriched, ok := provider[local[index].ID]; ok {
-			copyProviderWorkspaceFields(&local[index], enriched)
+	if copyProviderState {
+		for index := range local {
+			if enriched, ok := provider[local[index].ID]; ok {
+				copyProviderWorkspaceFields(&local[index], enriched)
+			}
 		}
 	}
 	return append(out, local...)

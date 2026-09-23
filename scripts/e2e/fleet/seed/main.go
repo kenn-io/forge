@@ -31,6 +31,7 @@ func run(ctx context.Context, args []string) error {
 	cloneURL := fs.String("clone-url", "", "clone URL recorded in provider repository metadata")
 	platformHost := fs.String("platform-host", "github.com", "provider host recorded in fixture state")
 	startTmux := fs.Bool("start-tmux", false, "start the seeded workspace tmux session")
+	pullState := fs.String("pull-state", string(db.MergeRequestStateOpen), "state of the seeded pull request: open, closed, or merged")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -45,6 +46,11 @@ func run(ctx context.Context, args []string) error {
 	}
 	if *providerOnly && *cloneURL == "" {
 		return fmt.Errorf("-clone-url is required with -provider-only")
+	}
+	switch db.MergeRequestState(*pullState) {
+	case db.MergeRequestStateOpen, db.MergeRequestStateClosed, db.MergeRequestStateMerged:
+	default:
+		return fmt.Errorf("-pull-state must be open, closed, or merged")
 	}
 	if *cloneURL == "" {
 		*cloneURL = filepath.Join(filepath.Dir(*worktreePath), "origin.git")
@@ -75,7 +81,9 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer database.Close()
 
-	if err := seedProviderState(ctx, database, *platformHost, *cloneURL); err != nil {
+	if err := seedProviderState(
+		ctx, database, *platformHost, *cloneURL, db.MergeRequestState(*pullState),
+	); err != nil {
 		return err
 	}
 	if *providerOnly {
@@ -134,6 +142,7 @@ func run(ctx context.Context, args []string) error {
 
 func seedProviderState(
 	ctx context.Context, database *db.DB, platformHost, cloneURL string,
+	pullState db.MergeRequestState,
 ) error {
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:       "github",
@@ -161,7 +170,7 @@ func seedProviderState(
 		URL:             "https://github.com/acme/fleet-widget/pull/7",
 		Title:           "Fleet widget",
 		Author:          "fleet",
-		State:           db.MergeRequestStateOpen,
+		State:           pullState,
 		HeadBranch:      "feature/fleet-read",
 		BaseBranch:      "main",
 		PlatformHeadSHA: "fleet-head",

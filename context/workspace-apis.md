@@ -111,6 +111,9 @@ embedder protocol for arbitrary host state.
   (`internal/workspace/monitor.go::workspacePRMonitorEligible`); that number is
   the workspace's item identity for display, links, and search, so surfaces must
   never gate PR affordances on `item_type == "pull_request"` alone.
+  Local summaries and hub enrichment both take PR state and title from it, but
+  it is not the source item, so `Source*` fields stay empty
+  (`internal/db/queries.go::scanWorkspaceSummary`, `internal/fleet/provider_enrichment.go::EnrichProviderState`).
   A hub may route this creation to itself or a writable spoke; a spoke offers
   only itself as an execution target (`internal/server/fleetapi/fleet_proxy.go::Handler.registerFleetOperationRoutes`).
 - `GET /kata/daemons/{daemon_id}/references`: search canonical Kata issue references on an explicitly pinned daemon for link and workspace creation.

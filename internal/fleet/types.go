@@ -262,6 +262,9 @@ type NeutralSnapshot struct {
 type Observer struct {
 	NodeID NodeID
 	Role   Role
+	// LocalProviderState reports that the observer's own workspace rows
+	// already carry provider state, so the aggregate copy must not replace it.
+	LocalProviderState bool
 }
 
 // ---- capabilities + diagnostics ----

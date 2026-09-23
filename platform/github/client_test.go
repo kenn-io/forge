@@ -1,7 +1,7 @@
 package github_test
 
 import (
-	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -119,74 +119,55 @@ func TestRateLimitSnapshotPrefersCoreResponseHeaders(t *testing.T) {
 	}
 }
 
-type backgroundContextKey struct{}
-
-func TestViewerPermissionOverlayIsCachedForBackgroundReads(t *testing.T) {
+func TestViewerPermissionOverlayRevalidatesWithETag(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	viewerCalls := 0
+	viewerETag := `W/"v1"`
 	viewerPush := true
+	var validators []string
 	read := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(
 			`{"id":17,"name":"project-a","owner":{"login":"team-a"},"permissions":{"push":false}}`,
 		)), Request: req}, nil
 	})}
 	write := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		viewerCalls++
-		body := `{"id":17,"permissions":{"push":false},"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false}`
-		if viewerPush {
-			body = `{"id":17,"permissions":{"push":true},"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false}`
+		validator := req.Header.Get("If-None-Match")
+		validators = append(validators, validator)
+		if validator == viewerETag {
+			return &http.Response{StatusCode: http.StatusNotModified, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
 		}
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+		header := make(http.Header)
+		header.Set("ETag", viewerETag)
+		body := fmt.Sprintf(
+			`{"id":17,"permissions":{"push":%t},"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false}`,
+			viewerPush,
+		)
+		return &http.Response{StatusCode: 200, Header: header, Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
 	})}
 	client, err := github.NewClient(github.ClientConfig{
-		Host: "github.com", Read: read, Write: write, Notifications: write,
-		Clock:          func() time.Time { return now },
+		Host: "github.com", Read: read, Write: write, Notifications: write, Clock: time.Now,
 		Authentication: github.Authentication{InstallationActive: func(string) bool { return true }},
-		BackgroundContext: func(ctx context.Context) bool {
-			background, _ := ctx.Value(backgroundContextKey{}).(bool)
-			return background
-		},
 	})
 	require.NoError(err)
-	background := context.WithValue(t.Context(), backgroundContextKey{}, true)
 
-	repo, err := client.GetRepository(background, "team-a", "project-a")
+	repo, err := client.GetRepository(t.Context(), "team-a", "project-a")
 	require.NoError(err)
 	assert.True(repo.GetPermissions().GetPush())
-	assert.Equal(1, viewerCalls)
 
-	viewerPush = false
-	repo, err = client.GetRepository(background, "Team-A", "Project-A")
+	repo, err = client.GetRepository(t.Context(), "Team-A", "Project-A")
 	require.NoError(err)
-	assert.True(repo.GetPermissions().GetPush(), "background reads reuse the cached viewer overlay")
+	assert.True(repo.GetPermissions().GetPush(), "a 304 reuses the cached viewer overlay")
 	assert.True(repo.GetAllowSquashMerge())
 	assert.False(repo.GetAllowMergeCommit())
-	assert.Equal(1, viewerCalls, "background reads must not refetch the viewer overlay within the TTL")
 
+	viewerETag = `W/"v2"`
+	viewerPush = false
 	repo, err = client.GetRepository(t.Context(), "team-a", "project-a")
 	require.NoError(err)
-	assert.False(repo.GetPermissions().GetPush(), "foreground reads fetch fresh viewer permissions")
-	assert.Equal(2, viewerCalls)
+	assert.False(repo.GetPermissions().GetPush(), "a changed repository returns fresh permissions")
 
-	repo, err = client.GetRepository(background, "team-a", "project-a")
-	require.NoError(err)
-	assert.False(repo.GetPermissions().GetPush(), "foreground reads refresh the cached overlay")
-	assert.Equal(2, viewerCalls)
-
-	viewerPush = true
-	repo, err = client.GetRepository(github.WithFreshViewerPermissions(background), "team-a", "project-a")
-	require.NoError(err)
-	assert.True(repo.GetPermissions().GetPush(), "user-triggered runs refetch viewer permissions")
-	assert.Equal(3, viewerCalls)
-
-	viewerPush = false
-	now = now.Add(time.Hour)
-	repo, err = client.GetRepository(background, "team-a", "project-a")
-	require.NoError(err)
-	assert.False(repo.GetPermissions().GetPush(), "an expired overlay is refetched")
-	assert.Equal(4, viewerCalls)
+	assert.Equal([]string{"", `W/"v1"`, `W/"v1"`}, validators,
+		"every overlay read revalidates the cached ETag")
 }
 
 func TestListNotificationPageUsesUserScopedConditionalRequest(t *testing.T) {

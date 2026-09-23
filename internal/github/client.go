@@ -319,12 +319,11 @@ func NewClient(
 		MarkdownImages: &http.Client{Transport: wrapPublicGitHubAPIGuard(http.DefaultTransport)},
 		Clock:          time.Now, APIBase: apiBase, UploadBase: uploadBase, GraphQLEndpoint: graphQL,
 		ReadRate: githubRateObserver(rateTracker), NotificationRate: githubRateObserver(options.notificationRateTracker),
-		ViewerCacheTTL:    authenticatedViewerLoginTTL,
-		ReadOnlyContext:   IsArchiveSyncBudgetContext,
-		BackgroundContext: IsSyncBudgetContext,
-		GraphQLContext:    func(ctx context.Context) context.Context { return withQuotaResource(ctx, QuotaResourceGraphQL) },
-		InvalidateETags:   et.invalidateRepo,
-		Warning:           slog.Warn,
+		ViewerCacheTTL:  authenticatedViewerLoginTTL,
+		ReadOnlyContext: IsArchiveSyncBudgetContext,
+		GraphQLContext:  func(ctx context.Context) context.Context { return withQuotaResource(ctx, QuotaResourceGraphQL) },
+		InvalidateETags: et.invalidateRepo,
+		Warning:         slog.Warn,
 		Progress: func(owner, repo, kind string) platformgithub.Progress {
 			ref := RepoRef{Owner: owner, Name: repo, PlatformHost: platformHost}
 			progress := newIssueListFetchProgressLogger(ref, "rest")

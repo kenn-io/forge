@@ -99,7 +99,6 @@ type Client struct {
 	now                     func() time.Time
 	viewerCacheTTL          time.Duration
 	readOnlyContext         func(context.Context) bool
-	backgroundContext       func(context.Context) bool
 	graphQLContext          func(context.Context) context.Context
 	progressFactory         func(string, string, string) Progress
 	warning                 func(string, ...any)
@@ -111,18 +110,15 @@ type Client struct {
 	viewerRepos             map[string]viewerRepoOverlay
 }
 
-// viewerRepoOverlayTTL bounds how long background sync reuses the user's
-// repository permissions and merge settings. Both change rarely, and
-// foreground reads always refresh them.
-const viewerRepoOverlayTTL = time.Hour
-
+// viewerRepoOverlay is the user's view of a repository, kept with the ETag
+// that revalidates it.
 type viewerRepoOverlay struct {
 	permissions   *gh.RepositoryPermissions
 	mergeSettings bool
 	allowSquash   bool
 	allowMerge    bool
 	allowRebase   bool
-	fetchedAt     time.Time
+	etag          string
 }
 
 func (c *Client) writeGH() *gh.Client {
@@ -2141,10 +2137,10 @@ func (c *Client) GetRepository(
 	return r, nil
 }
 
-// viewerRepoOverlay returns the user's view of a repository. Background sync
-// reads every tracked repository each pass, so it reuses a recent overlay
-// rather than spending the user's credential on every read; foreground reads
-// and user-triggered runs always fetch and refresh the cache.
+// viewerRepoOverlay returns the user's view of a repository. Sync reads every
+// tracked repository on each pass, so the overlay is revalidated with its ETag:
+// GitHub answers an unchanged repository with a 304 that costs no rate limit,
+// and the cached overlay stays current without spending the user's credential.
 func (c *Client) viewerRepoOverlay(
 	ctx context.Context, owner, repo string,
 ) (viewerRepoOverlay, error) {
@@ -2152,17 +2148,25 @@ func (c *Client) viewerRepoOverlay(
 	if c.auth.CredentialKey != nil {
 		key = c.auth.CredentialKey() + "\x00" + key
 	}
-	if c.backgroundContext != nil && c.backgroundContext(ctx) && !freshViewerPermissions(ctx) {
-		c.viewerRepoMu.Lock()
-		cached, ok := c.viewerRepos[key]
-		c.viewerRepoMu.Unlock()
-		if ok && c.now().Sub(cached.fetchedAt) < viewerRepoOverlayTTL {
+	c.viewerRepoMu.Lock()
+	cached, ok := c.viewerRepos[key]
+	c.viewerRepoMu.Unlock()
+	req, err := c.writeGH().NewRequest(
+		ctx, http.MethodGet, fmt.Sprintf("repos/%v/%v", owner, repo), nil,
+	)
+	if err != nil {
+		return viewerRepoOverlay{}, err
+	}
+	if ok && cached.etag != "" {
+		req.Header.Set("If-None-Match", cached.etag)
+	}
+	viewerRepo := new(gh.Repository)
+	resp, err := c.writeGH().Do(req, viewerRepo)
+	c.trackWriteRate(resp)
+	if err != nil {
+		if ok && IsNotModified(err) {
 			return cached, nil
 		}
-	}
-	viewerRepo, viewerResp, err := c.writeGH().Repositories.Get(ctx, owner, repo)
-	c.trackWriteRate(viewerResp)
-	if err != nil {
 		return viewerRepoOverlay{}, err
 	}
 	overlay := viewerRepoOverlay{
@@ -2171,7 +2175,9 @@ func (c *Client) viewerRepoOverlay(
 		allowSquash:   viewerRepo.GetAllowSquashMerge(),
 		allowMerge:    viewerRepo.GetAllowMergeCommit(),
 		allowRebase:   viewerRepo.GetAllowRebaseMerge(),
-		fetchedAt:     c.now(),
+	}
+	if resp.Response != nil {
+		overlay.etag = resp.Header.Get("ETag")
 	}
 	c.viewerRepoMu.Lock()
 	if c.viewerRepos == nil {

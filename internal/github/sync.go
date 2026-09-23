@@ -4692,7 +4692,6 @@ func (s *Syncer) runOnceWithSlot(
 		ctx = withRepositoryFeatureCooldownBypass(
 			ctx, s.featureCooldowns.currentGeneration(),
 		)
-		ctx = platformgithub.WithFreshViewerPermissions(ctx)
 	} else if len(bypassRepos) > 0 {
 		ctx = withRepositoryFeatureCooldownBypassForRepos(
 			ctx, s.featureCooldowns.currentGeneration(), bypassRepos,

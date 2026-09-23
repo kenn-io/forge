@@ -352,6 +352,11 @@ func TestViewerPermissionOverlayChargesWriteBudget(t *testing.T) {
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			if r.Header.Get("Authorization") == "Bearer user-pat" {
+				if r.Header.Get("If-None-Match") == `W/"viewer"` {
+					w.WriteHeader(http.StatusNotModified)
+					return
+				}
+				w.Header().Set("ETag", `W/"viewer"`)
 				_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":true}}`))
 				return
 			}
@@ -403,7 +408,7 @@ func TestViewerPermissionOverlayChargesWriteBudget(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(2, readBudget.Spent())
 	assert.Equal(1, writeBudget.Spent(),
-		"repeated background reads reuse the cached viewer overlay")
+		"an unchanged viewer overlay revalidates with a 304 that spends no budget")
 
 	_, err = client.CreateIssueComment(t.Context(), "acme", "widgets", 5, "lgtm")
 	require.NoError(err)

@@ -186,6 +186,7 @@ func splitCheckContexts(contexts []platformgithub.GraphQLCheckContext) ([]*gh.Ch
 func adaptCheckRun(gql *platformgithub.GraphQLCheckRunFields) *gh.CheckRun {
 	url := sanitizeURL(gql.DetailsURL)
 	return &gh.CheckRun{
+		ID:          new(gql.DatabaseId),
 		Name:        new(gql.Name),
 		Status:      new(toLower(gql.Status)),
 		Conclusion:  new(toLower(gql.Conclusion)),

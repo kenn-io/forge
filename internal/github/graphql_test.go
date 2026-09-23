@@ -412,6 +412,43 @@ func TestAdaptCheckContext(t *testing.T) {
 	assert.Equal("success", statuses[0].GetState())
 }
 
+func TestNormalizeGraphQLChecksBreaksSuiteTieByRunID(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Re-running jobs can reuse the check suite, so without start times the
+	// suite creation times tie. GitHub may list the newer run first.
+	suiteCreated := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	cancelledEnd := suiteCreated.Add(3 * time.Second)
+	rerun := platformgithub.GraphQLCheckRunFields{
+		DatabaseId: 40_000_000_101,
+		Name:       "build",
+		Status:     "QUEUED",
+	}
+	cancelled := platformgithub.GraphQLCheckRunFields{
+		DatabaseId:  40_000_000_100,
+		Name:        "build",
+		Status:      "COMPLETED",
+		Conclusion:  "CANCELLED",
+		CompletedAt: &cancelledEnd,
+	}
+	contexts := []platformgithub.GraphQLCheckContext{
+		{Typename: "CheckRun", CheckRun: rerun},
+		{Typename: "CheckRun", CheckRun: cancelled},
+	}
+	for i := range contexts {
+		contexts[i].CheckRun.CheckSuite.CreatedAt = &suiteCreated
+		contexts[i].CheckRun.CheckSuite.App.Name = "GitHub Actions"
+	}
+
+	runs, statuses := splitCheckContexts(contexts)
+	checks := normalizeCIChecks(runs, statuses)
+
+	require.Len(checks, 1)
+	assert.Equal("queued", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
+}
+
 func TestAdaptCheckRunURLSanitization(t *testing.T) {
 	assert := assert.New(t)
 

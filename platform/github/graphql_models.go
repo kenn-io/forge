@@ -383,6 +383,7 @@ type GraphQLCheckContext struct {
 }
 
 type GraphQLCheckRunFields struct {
+	DatabaseId  int64 `graphql:"databaseId"`
 	Name        string
 	Status      string
 	Conclusion  string

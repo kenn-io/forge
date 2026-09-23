@@ -39,7 +39,7 @@ export function createWorkspaceItemSearchStore(runtime: AppRuntime) {
   let error = $state("");
   const refreshLock = Semaphore.makeUnsafe(1);
 
-  const refreshEffect = Effect.gen(function* () {
+  const loadEffect = Effect.gen(function* () {
     yield* Effect.sync(() => {
       error = "";
     });
@@ -63,13 +63,12 @@ export function createWorkspaceItemSearchStore(runtime: AppRuntime) {
         error = "Could not refresh PRs and issues. Type to retry.";
       }),
     ),
-    refreshLock.withPermitsIfAvailable(1),
-    Effect.asVoid,
   );
+  const refreshEffect = loadEffect.pipe(refreshLock.withPermits(1));
 
   function ensureLoaded(): void {
     if (items !== undefined && !error) return;
-    runtime.runCommand(refreshEffect, {
+    runtime.runCommand(loadEffect.pipe(refreshLock.withPermitsIfAvailable(1), Effect.asVoid), {
       operation: "load workspace search items",
       safeContext: {},
       onFailure: () => {},

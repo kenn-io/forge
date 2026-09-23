@@ -46,6 +46,37 @@ afterEach(async () => {
 });
 
 describe("app store composition", () => {
+  it("applies a sync refresh queued while the search cache is first loading", async () => {
+    const fixture = createMockApiFetch();
+    const firstRead = Promise.withResolvers<void>();
+    const releaseFirstRead = Promise.withResolvers<void>();
+    let pullReads = 0;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await fixture.fetch(input, init);
+      const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+      if (url.pathname !== "/api/v1/pulls") return response;
+      if (++pullReads > 1) return Response.json([]);
+      firstRead.resolve();
+      await releaseFirstRead.promise;
+      return response;
+    });
+    const { stores } = createAppStores({ runtime, getPage: () => "terminal" });
+    stores.workspaceItemSearch.ensureLoaded();
+    await firstRead.promise;
+    stores.workspaceItemSearch.ensureLoaded();
+    const refreshStarted = Promise.withResolvers<void>();
+    const refresh = runtime.runCommand(
+      Effect.sync(() => refreshStarted.resolve()).pipe(Effect.andThen(stores.workspaceItemSearch.refreshEffect)),
+      { operation: "test overlapping sync refresh", safeContext: {}, onFailure: () => {} },
+    );
+    await refreshStarted.promise;
+    releaseFirstRead.resolve();
+    await refresh.exit;
+    await vi.waitFor(() => expect(stores.workspaceItemSearch.isLoading()).toBe(false));
+    expect(stores.workspaceItemSearch.search("#55").pulls).toEqual([]);
+    expect(pullReads).toBe(2);
+  });
+
   it.each([
     ["data_changed", {}],
     ["reconnect.stale", { hub_connected: true }],

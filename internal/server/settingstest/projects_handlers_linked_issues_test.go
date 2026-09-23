@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
 
 // TestSetWorktreeLinkedIssuesRoute drives the
@@ -21,7 +23,7 @@ func TestSetWorktreeLinkedIssuesRoute(t *testing.T) {
 	}
 	require := require.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := servertest.SetupTestServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -33,8 +35,8 @@ func TestSetWorktreeLinkedIssuesRoute(t *testing.T) {
 		t, ts, projectID, "feat", wtPath, http.StatusCreated,
 	)
 
-	body := mustMarshal(t, map[string]any{"linked_issue_numbers": []int{57, 42, 42}})
-	resp := httpDo(t, ts, http.MethodPut,
+	body := serverfake.MustMarshal(t, map[string]any{"linked_issue_numbers": []int{57, 42, 42}})
+	resp := serverfake.HttpDo(t, ts, http.MethodPut,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/linked-issues",
 		body,
 	)
@@ -51,7 +53,7 @@ func TestSetWorktreeLinkedIssuesRoute(t *testing.T) {
 	resp.Body.Close()
 	require.Equal([]int{42, 57}, updated.LinkedIssueNumbers)
 
-	resp = httpDo(t, ts, http.MethodGet,
+	resp = serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees", nil,
 	)
 	t.Cleanup(func() {
@@ -80,7 +82,7 @@ func TestSetWorktreeLinkedIssuesRoute(t *testing.T) {
 	require.True(featFound, "the feat worktree is listed")
 	require.Equal([]int{42, 57}, featLinked)
 
-	resp = httpDo(t, ts, http.MethodPut,
+	resp = serverfake.HttpDo(t, ts, http.MethodPut,
 		"/api/v1/projects/"+projectID+"/worktrees/wtr_missing/linked-issues",
 		body,
 	)

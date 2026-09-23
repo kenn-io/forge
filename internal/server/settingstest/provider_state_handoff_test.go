@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func providerHandoffServerFixture(
@@ -24,7 +25,7 @@ func providerHandoffServerFixture(
 ) (*httptest.Server, *federationauth.Store, db.ProviderStateRepository) {
 	t.Helper()
 	database := dbtest.Open(t)
-	identity := verifiedGitHubRepoIdentity("github.com", "acme", "widget")
+	identity := serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget")
 	repoID, err := database.UpsertRepo(t.Context(), identity)
 	require.NoError(t, err)
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)

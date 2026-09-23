@@ -12,7 +12,11 @@ import (
 	"testing"
 	"time"
 
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
+
 	gh "github.com/google/go-github/v91/github"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -41,13 +46,13 @@ port = 8091
 [[repos]]
 owner = "acme"
 name = "widget"
-`, &mockGH{})
+`, &serverfake.MockGH{})
 }
 
 func setupTestServerWithConfigContent(
 	t *testing.T,
 	cfgContent string,
-	mock *mockGH,
+	mock *serverfake.MockGH,
 ) (*server.Server, *db.DB, string) {
 	return setupTestServerWithConfigContentAndOptions(
 		t, cfgContent, mock, server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
@@ -57,7 +62,7 @@ func setupTestServerWithConfigContent(
 func setupTestServerWithConfigContentAndOptions(
 	t *testing.T,
 	cfgContent string,
-	mock *mockGH,
+	mock *serverfake.MockGH,
 	options server.ServerOptions,
 ) (*server.Server, *db.DB, string) {
 	t.Helper()
@@ -84,7 +89,7 @@ func setupTestServerWithConfigContentAndOptions(
 		database, syncer, nil, nil, cfg, cfgPath,
 		options,
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return srv, database, cfgPath
 }
 
@@ -109,11 +114,11 @@ func TestServerStartupAppliesTmuxSettingsToExistingDedicatedServer(t *testing.T)
 [terminal]
 graphics = true
 tmux_mouse = false
-`, &mockGH{}, server.ServerOptions{
+`, &serverfake.MockGH{}, server.ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 		WorktreeDir:                   t.TempDir(),
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	commands, err := os.ReadFile(record)
 	require.NoError(err)
@@ -136,7 +141,7 @@ port = 8091
 [[repos]]
 owner = "acme"
 name = "widget"
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -168,7 +173,7 @@ func TestHandleUpdateSettingsDefaultExecutionTarget(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
-	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+	client := servertest.SetupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 
 	// A disconnected target stays selected; saving settings must not require it online.
 	response, err := client.HTTP.UpdateSettingsWithResponse(t.Context(), &generated.UpdateSettingsRequestOptions{
@@ -263,7 +268,7 @@ name = "widget"
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
 
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	trackers := map[string]*ghclient.RateTracker{
 		"github.com": ghclient.NewRateTracker(
 			database, "github.com", "host", "rest",
@@ -399,7 +404,7 @@ port = 8091
 	t.Cleanup(syncer.Stop)
 	srv := server.NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "github", "host": "github.com",
@@ -424,7 +429,7 @@ func TestHandlePreviewReposReportsMissingOwnerRoute(t *testing.T) {
 		"github.com",
 		&ghclient.Route{
 			Key:    ghclient.RouteKey{Host: "github.com", Owner: "org-a"},
-			Client: &mockGH{},
+			Client: &serverfake.MockGH{},
 		},
 	)
 	require.NoError(err)
@@ -493,8 +498,8 @@ func TestHandleBulkAddReposReturnsAlreadyConfiguredWhenAllSkippedBeforeValidatio
 	assert := assert.New(t)
 	require := require.New(t)
 	var apiCalls atomic.Int32
-	mock := &mockGH{
-		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
 			if repo == "api" {
 				apiCalls.Add(1)
 			}
@@ -530,7 +535,7 @@ name = "api"
 // key, the served SPA config carries it, and an empty key clears it.
 func TestSetActiveWorktreeRoute(t *testing.T) {
 	require := require.New(t)
-	srv, _ := setupTestServer(t)
+	srv, _ := servertest.SetupTestServer(t)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 
@@ -599,7 +604,7 @@ require_auth = true
 enabled = true
 role = "hub"
 base_url = "https://hub.example"
-`, &mockGH{}, server.ServerOptions{
+`, &serverfake.MockGH{}, server.ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 		FederationSpokeID:             hubID,
 		FederationEnrollments:         enrollments,
@@ -624,9 +629,9 @@ func TestNewServerRestoresProjectionWhenNativeStacksBootDisabled(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	database := dbtest.Open(t)
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -659,20 +664,20 @@ prefer_github_native_stacks = false
 `), 0o644))
 	cfg, err := config.Load(cfgPath)
 	require.NoError(err)
-	clients := map[string]ghclient.Client{"github.com": &mockGH{}}
+	clients := map[string]ghclient.Client{"github.com": &serverfake.MockGH{}}
 	syncer := ghclient.NewSyncer(clients, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv := server.NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	client := servertest.SetupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 
 	// No sync has run, and the repository is not even tracked.
 	resp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(resp.JSON200)
 	require.NotNil(resp.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(resp.JSON200.Members),
+	assert.Equal([]int64{10, 11}, serverfake.StackMemberNumbers(resp.JSON200.Members),
 		"a server booting with the preview disabled must not serve native ordering")
 }
 

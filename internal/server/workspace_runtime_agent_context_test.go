@@ -13,11 +13,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	gitcmd "go.kenn.io/kit/git/cmd"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -135,10 +137,10 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 			DisableWorkspaceBackgroundMonitors: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	issueWorktree := initServerWorkspaceGitRepo(t)
-	seedIssue(t, database, "acme", "widget", 7, "open")
+	serverfake.SeedIssue(t, database, "acme", "widget", 7, "open")
 	issueWorkspace := &db.Workspace{
 		ID: "ws-issue-context", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
@@ -148,7 +150,7 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 	}
 	require.NoError(database.InsertWorkspace(t.Context(), issueWorkspace))
 	issueRepo, err := database.GetRepoByIdentity(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	seedServerWorkspaceLaunchSpec(t, database, issueWorkspace, issueRepo.ID)

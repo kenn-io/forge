@@ -10,25 +10,24 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient"
 	"go.kenn.io/forge/internal/apiclient/generated"
-	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/pullapi"
@@ -36,1096 +35,20 @@ import (
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/testutil/gitsafe"
-	"go.kenn.io/forge/internal/testutil/processjob"
-	"go.kenn.io/forge/internal/testutil/testsignal"
-	"go.kenn.io/forge/internal/testutil/testtmux"
 	"go.kenn.io/forge/platform"
+
 	forgejoplatform "go.kenn.io/forge/platform/forgejo"
+
 	giteaplatform "go.kenn.io/forge/platform/gitea"
 	"go.kenn.io/forge/platform/gitealike"
+
 	platformgithub "go.kenn.io/forge/platform/github"
+
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
-	"golang.org/x/sync/semaphore"
 )
-
-const (
-	serverRuntimeHelperMarker        = "kenn-forge-runtime-helper"
-	serverPtyOwnerParentHelperMarker = "kenn-forge-pty-owner-parent-helper"
-)
-
-var privateTmuxOwner *testtmux.Owner
-
-var parallelServerTestSlots = semaphore.NewWeighted(4)
 
 func TestMain(m *testing.M) {
-	if code, ok := testtmux.CommandWrapperExitCode(); ok {
-		os.Exit(code)
-	}
-	if isServerHelperProcess() {
-		os.Exit(m.Run())
-	}
-	if err := processjob.ContainCurrentProcessTree(); err != nil {
-		fmt.Fprintf(os.Stderr, "contain server test process tree: %v\n", err)
-		os.Exit(1)
-	}
-	if testtmux.Supported() {
-		var ownerErr error
-		privateTmuxOwner, ownerErr = testtmux.New()
-		if ownerErr != nil {
-			fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", ownerErr)
-			os.Exit(1)
-		}
-	}
-	envDir, envDirErr := os.MkdirTemp("", "kenn-forge-server-tmux-env-*")
-	if envDirErr == nil {
-		_ = os.Setenv("KENN_FORGE_TMUX_ENV_DIR", envDir)
-	}
-	runCleanup, stopSignalCleanup := testsignal.Install(func() error {
-		return cleanupServerTestTmux(privateTmuxOwner)
-	}, func(err error) {
-		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
-	})
-	code := gitsafe.RunIsolatedMain(m)
-	if err := runCleanup(); err != nil {
-		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
-		if code == 0 {
-			code = 1
-		}
-	}
-	stopSignalCleanup()
-	if envDirErr == nil {
-		_ = os.RemoveAll(envDir)
-	}
-	os.Exit(code)
-}
-
-func isServerHelperProcess() bool {
-	if os.Getenv("KENN_FORGE_SERVER_RUNTIME_HELPER") == "1" ||
-		os.Getenv("KENN_FORGE_SERVER_PTY_OWNER_HELPER") == "1" {
-		return true
-	}
-	args := os.Args
-	if sep := slices.Index(args, "--"); sep >= 0 {
-		args = args[sep+1:]
-	}
-	return len(args) > 0 &&
-		(args[0] == serverRuntimeHelperMarker ||
-			args[0] == serverPtyOwnerParentHelperMarker ||
-			args[0] == "pty-owner")
-}
-
-func runParallelServerTest(t *testing.T) {
-	t.Helper()
-	t.Parallel()
-	require.NoError(t, parallelServerTestSlots.Acquire(t.Context(), 1))
-	t.Cleanup(func() { parallelServerTestSlots.Release(1) })
-}
-
-func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
-	t.Helper()
-	return context.WithTimeout(context.Background(), 15*time.Second)
-}
-
-func gracefulShutdown(t *testing.T, srv interface{ Shutdown(context.Context) error }) {
-	t.Helper()
-	ctx, cancel := cleanupContext(t)
-	defer cancel()
-	require.NoError(t, srv.Shutdown(ctx))
-}
-
-// mockGH implements ghclient.Client for testing.
-type mockGHNativeStackAPI struct {
-	listOpenPullRequests func(
-		context.Context, string, string,
-	) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error)
-	listStackPage func(
-		context.Context, string, string, int,
-	) (platformgithub.NativeStackPage, error)
-}
-
-type mockGH struct {
-	getRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
-	getPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getPullRequestIfChangedFn  func(context.Context, string, string, int, string) (*gh.PullRequest, string, bool, error)
-	getIssueFn                 func(context.Context, string, string, int) (*gh.Issue, error)
-	getIssueIfChangedFn        func(context.Context, string, string, int, string) (*gh.Issue, string, bool, error)
-	createIssueFn              func(context.Context, string, string, string, string) (*gh.Issue, error)
-	getUserFn                  func(context.Context, string) (*gh.User, error)
-	authenticatedViewerLoginFn func(context.Context) (string, error)
-	authenticatedViewerCalls   int
-	markReadyForReviewFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
-	convertToDraftFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
-	dismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
-	editPullRequestFn          func(context.Context, string, string, int, platformgithub.EditPullRequestOpts) (*gh.PullRequest, error)
-	editIssueFn                func(context.Context, string, string, int, string) (*gh.Issue, error)
-	editIssueContentFn         func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
-	createIssueCommentFn       func(context.Context, string, string, int, string) (*gh.IssueComment, error)
-	editIssueCommentFn         func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
-	deleteIssueCommentFn       func(context.Context, string, string, int64) error
-	createReviewCommentReplyFn func(context.Context, string, string, int, string, int64) (*gh.PullRequestComment, error)
-	createReviewFn             func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
-	createReviewWithCommentsFn func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
-	applyReviewSuggestionsFn   func(context.Context, string, string, int, platform.ApplyReviewSuggestionsInput) (*platform.AppliedReviewSuggestions, error)
-	mergePullRequestFn         func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
-	listWorkflowRunsForHeadFn  func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
-	approveWorkflowRunFn       func(context.Context, string, string, int64) error
-	listReposByOwnerFn         func(context.Context, string) ([]*gh.Repository, error)
-	listReleasesFn             func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
-	listTagsFn                 func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
-	listOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
-	nativeStackAPI             *mockGHNativeStackAPI
-	listPullRequestsPageFn     func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
-	listIssuesPageFn           func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
-	listCheckRunsForRefFn      func(context.Context, string, string, string) ([]*gh.CheckRun, error)
-	getCombinedStatusFn        func(context.Context, string, string, string) (*gh.CombinedStatus, error)
-	listPRTimelineEventsFn     func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error)
-	listOpenPRsErr             error
-	listOpenIssuesFn           func(context.Context, string, string) ([]*gh.Issue, error)
-	listIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
-	listReviewThreadsFn        func(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error)
-	rateLimitSnapshotFn        func(context.Context) (*platformgithub.RateLimitSnapshot, error)
-	rateLimitSnapshotCalls     int
-	listIssueCommentsErr       error
-	listNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
-	markNotificationReadFn     func(context.Context, string) error
-	getMarkdownImageFn         func(context.Context, string, string, string) (platform.MarkdownImage, error)
-}
-
-func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
-	if m.listOpenPullRequestsFn != nil {
-		return m.listOpenPullRequestsFn(ctx, owner, repo)
-	}
-	if m.listOpenPRsErr != nil {
-		return nil, m.listOpenPRsErr
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListOpenPullRequestsWithNativeStackHints(
-	ctx context.Context, owner, repo string,
-) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error) {
-	if m.nativeStackAPI != nil && m.nativeStackAPI.listOpenPullRequests != nil {
-		return m.nativeStackAPI.listOpenPullRequests(ctx, owner, repo)
-	}
-	prs, err := m.ListOpenPullRequests(ctx, owner, repo)
-	return prs, nil, err
-}
-
-func (m *mockGH) ListNativeStacksPage(
-	ctx context.Context, owner, repo string, page int,
-) (platformgithub.NativeStackPage, error) {
-	if m.nativeStackAPI != nil && m.nativeStackAPI.listStackPage != nil {
-		return m.nativeStackAPI.listStackPage(ctx, owner, repo, page)
-	}
-	return platformgithub.NativeStackPage{}, nil
-}
-
-func (m *mockGH) ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error) {
-	if m.listOpenIssuesFn != nil {
-		return m.listOpenIssuesFn(ctx, owner, repo)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error) {
-	if m.getIssueFn != nil {
-		return m.getIssueFn(ctx, owner, repo, number)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetIssueIfChanged(
-	ctx context.Context,
-	owner, repo string,
-	number int,
-	etag string,
-) (*gh.Issue, string, bool, error) {
-	if m.getIssueIfChangedFn != nil {
-		return m.getIssueIfChangedFn(ctx, owner, repo, number, etag)
-	}
-	issue, err := m.GetIssue(ctx, owner, repo, number)
-	return issue, "", false, err
-}
-
-func (m *mockGH) CreateIssue(
-	ctx context.Context, owner, repo, title, body string,
-) (*gh.Issue, error) {
-	if m.createIssueFn != nil {
-		return m.createIssueFn(ctx, owner, repo, title, body)
-	}
-	number := 1
-	now := gh.Timestamp{Time: time.Now().UTC()}
-	state := "open"
-	htmlURL := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
-	login := "fixture-bot"
-	return &gh.Issue{
-		Number:    &number,
-		Title:     &title,
-		Body:      &body,
-		State:     &state,
-		HTMLURL:   &htmlURL,
-		User:      &gh.User{Login: &login},
-		CreatedAt: &now,
-		UpdatedAt: &now,
-	}, nil
-}
-
-func (m *mockGH) GetUser(ctx context.Context, login string) (*gh.User, error) {
-	if m.getUserFn != nil {
-		return m.getUserFn(ctx, login)
-	}
-	return &gh.User{Login: &login}, nil
-}
-
-func (m *mockGH) AuthenticatedViewerLogin(ctx context.Context) (string, error) {
-	m.authenticatedViewerCalls++
-	if m.authenticatedViewerLoginFn != nil {
-		return m.authenticatedViewerLoginFn(ctx)
-	}
-	return "", nil
-}
-
-func (m *mockGH) GetRateLimitSnapshot(ctx context.Context) (*platformgithub.RateLimitSnapshot, error) {
-	m.rateLimitSnapshotCalls++
-	if m.rateLimitSnapshotFn != nil {
-		return m.rateLimitSnapshotFn(ctx)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListRepositoriesByOwner(
-	ctx context.Context, owner string,
-) ([]*gh.Repository, error) {
-	if m.listReposByOwnerFn != nil {
-		return m.listReposByOwnerFn(ctx, owner)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListReleases(
-	ctx context.Context, owner, repo string, perPage int,
-) ([]*gh.RepositoryRelease, error) {
-	if m.listReleasesFn != nil {
-		return m.listReleasesFn(ctx, owner, repo, perPage)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListTags(
-	ctx context.Context, owner, repo string, perPage int,
-) ([]*gh.RepositoryTag, error) {
-	if m.listTagsFn != nil {
-		return m.listTagsFn(ctx, owner, repo, perPage)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
-	if m.getPullRequestFn != nil {
-		return m.getPullRequestFn(ctx, owner, repo, number)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetPullRequestIfChanged(
-	ctx context.Context,
-	owner, repo string,
-	number int,
-	etag string,
-) (*gh.PullRequest, string, bool, error) {
-	if m.getPullRequestIfChangedFn != nil {
-		return m.getPullRequestIfChangedFn(ctx, owner, repo, number, etag)
-	}
-	pr, err := m.GetPullRequest(ctx, owner, repo, number)
-	return pr, "", false, err
-}
-
-func (m *mockGH) ListIssueComments(
-	ctx context.Context, owner, repo string, number int,
-) ([]*gh.IssueComment, error) {
-	if m.listIssueCommentsFn != nil {
-		return m.listIssueCommentsFn(ctx, owner, repo, number)
-	}
-	if m.listIssueCommentsErr != nil {
-		return nil, m.listIssueCommentsErr
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListIssueCommentsIfChanged(
-	ctx context.Context, owner, repo string, number int,
-) ([]*gh.IssueComment, error) {
-	if m.listIssueCommentsFn == nil && m.listIssueCommentsErr == nil {
-		return nil, &gh.ErrorResponse{
-			Response: &http.Response{StatusCode: http.StatusNotModified},
-		}
-	}
-	return m.ListIssueComments(ctx, owner, repo, number)
-}
-
-func (m *mockGH) ListReviews(
-	_ context.Context, _, _ string, _ int,
-) ([]*gh.PullRequestReview, error) {
-	return nil, nil
-}
-
-func (m *mockGH) ListPullRequestReviewThreads(
-	ctx context.Context,
-	owner string,
-	repo string,
-	number int,
-) ([]platformgithub.PullRequestReviewThread, error) {
-	if m.listReviewThreadsFn != nil {
-		return m.listReviewThreadsFn(ctx, owner, repo, number)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListCommits(
-	_ context.Context, _, _ string, _ int,
-) ([]*gh.RepositoryCommit, error) {
-	return nil, nil
-}
-
-func (m *mockGH) ListForcePushEvents(
-	_ context.Context, _, _ string, _ int,
-) ([]platformgithub.ForcePushEvent, error) {
-	return nil, nil
-}
-
-func (m *mockGH) ListPullRequestTimelineEvents(
-	ctx context.Context, owner, repo string, number int,
-) ([]platformgithub.PullRequestTimelineEvent, error) {
-	if m.listPRTimelineEventsFn != nil {
-		return m.listPRTimelineEventsFn(ctx, owner, repo, number)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetCombinedStatus(
-	ctx context.Context, owner, repo, ref string,
-) (*gh.CombinedStatus, error) {
-	if m.getCombinedStatusFn != nil {
-		return m.getCombinedStatusFn(ctx, owner, repo, ref)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListCheckRunsForRef(
-	ctx context.Context, owner, repo, ref string,
-) ([]*gh.CheckRun, error) {
-	if m.listCheckRunsForRefFn != nil {
-		return m.listCheckRunsForRefFn(ctx, owner, repo, ref)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListWorkflowRunsForHeadSHA(
-	ctx context.Context, owner, repo, headSHA string,
-) ([]*gh.WorkflowRun, error) {
-	if m.listWorkflowRunsForHeadFn != nil {
-		return m.listWorkflowRunsForHeadFn(ctx, owner, repo, headSHA)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ApproveWorkflowRun(
-	ctx context.Context, owner, repo string, runID int64,
-) error {
-	if m.approveWorkflowRunFn != nil {
-		return m.approveWorkflowRunFn(ctx, owner, repo, runID)
-	}
-	return nil
-}
-
-func (m *mockGH) CreateIssueComment(
-	ctx context.Context, owner, repo string, number int, body string,
-) (*gh.IssueComment, error) {
-	if m.createIssueCommentFn != nil {
-		return m.createIssueCommentFn(ctx, owner, repo, number, body)
-	}
-	id := int64(42)
-	return &gh.IssueComment{
-		ID:   &id,
-		Body: &body,
-	}, nil
-}
-
-func (m *mockGH) EditIssueComment(
-	ctx context.Context, owner, repo string, commentID int64, body string,
-) (*gh.IssueComment, error) {
-	if m.editIssueCommentFn != nil {
-		return m.editIssueCommentFn(ctx, owner, repo, commentID, body)
-	}
-	login := "fixture-bot"
-	now := gh.Timestamp{Time: time.Now().UTC()}
-	return &gh.IssueComment{
-		ID:        &commentID,
-		Body:      &body,
-		User:      &gh.User{Login: &login},
-		CreatedAt: &now,
-		UpdatedAt: &now,
-	}, nil
-}
-
-func (m *mockGH) DeleteIssueComment(
-	ctx context.Context, owner, repo string, commentID int64,
-) error {
-	if m.deleteIssueCommentFn != nil {
-		return m.deleteIssueCommentFn(ctx, owner, repo, commentID)
-	}
-	return nil
-}
-
-func (m *mockGH) CreatePullRequestReviewCommentReply(
-	ctx context.Context, owner, repo string, number int, body string, commentID int64,
-) (*gh.PullRequestComment, error) {
-	if m.createReviewCommentReplyFn != nil {
-		return m.createReviewCommentReplyFn(ctx, owner, repo, number, body, commentID)
-	}
-	id := commentID + 1
-	login := "fixture-bot"
-	now := gh.Timestamp{Time: time.Now().UTC()}
-	return &gh.PullRequestComment{
-		ID:        &id,
-		Body:      &body,
-		User:      &gh.User{Login: &login},
-		CreatedAt: &now,
-	}, nil
-}
-
-func (m *mockGH) GetRepository(
-	ctx context.Context, owner, repo string,
-) (*gh.Repository, error) {
-	if m.getRepositoryFn != nil {
-		return m.getRepositoryFn(ctx, owner, repo)
-	}
-	nodeID := "repo-" + owner + "-" + repo
-	return &gh.Repository{
-		Name:     &repo,
-		NodeID:   &nodeID,
-		Owner:    &gh.User{Login: &owner},
-		Archived: new(false),
-	}, nil
-}
-
-func (m *mockGH) CreateReview(
-	ctx context.Context, owner, repo string, number int, event string, body string,
-) (*gh.PullRequestReview, error) {
-	if m.createReviewFn != nil {
-		return m.createReviewFn(ctx, owner, repo, number, event, body)
-	}
-	id := int64(99)
-	state := "APPROVED"
-	return &gh.PullRequestReview{ID: &id, State: &state}, nil
-}
-
-func (m *mockGH) CreateReviewWithComments(
-	ctx context.Context,
-	owner, repo string,
-	number int,
-	event string,
-	body string,
-	commitID string,
-	comments []*gh.DraftReviewComment,
-) (*gh.PullRequestReview, error) {
-	if m.createReviewWithCommentsFn != nil {
-		return m.createReviewWithCommentsFn(ctx, owner, repo, number, event, body, commitID, comments)
-	}
-	return m.CreateReview(ctx, owner, repo, number, event, body)
-}
-
-func (m *mockGH) ApplyReviewSuggestions(
-	ctx context.Context,
-	owner string,
-	repo string,
-	number int,
-	input platform.ApplyReviewSuggestionsInput,
-) (*platform.AppliedReviewSuggestions, error) {
-	if m.applyReviewSuggestionsFn != nil {
-		return m.applyReviewSuggestionsFn(ctx, owner, repo, number, input)
-	}
-	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}, nil
-}
-
-func (m *mockGH) DismissReview(
-	ctx context.Context, owner, repo string, number int, reviewID int64, message string,
-) (*gh.PullRequestReview, error) {
-	if m.dismissReviewFn != nil {
-		return m.dismissReviewFn(ctx, owner, repo, number, reviewID, message)
-	}
-	return &gh.PullRequestReview{ID: &reviewID}, nil
-}
-
-func (m *mockGH) MarkPullRequestReadyForReview(
-	ctx context.Context, owner, repo string, number int,
-) (*gh.PullRequest, error) {
-	if m.markReadyForReviewFn != nil {
-		return m.markReadyForReviewFn(ctx, owner, repo, number)
-	}
-	draft := false
-	return &gh.PullRequest{Number: &number, Draft: &draft}, nil
-}
-
-func (m *mockGH) ConvertPullRequestToDraft(
-	ctx context.Context, owner, repo string, number int,
-) (*gh.PullRequest, error) {
-	if m.convertToDraftFn != nil {
-		return m.convertToDraftFn(ctx, owner, repo, number)
-	}
-	draft := true
-	state := "open"
-	return &gh.PullRequest{Number: &number, State: &state, Draft: &draft}, nil
-}
-
-func (m *mockGH) MergePullRequest(
-	ctx context.Context, owner, repo string, number int,
-	commitTitle, commitMessage, method, _ string,
-) (*gh.PullRequestMergeResult, error) {
-	if m.mergePullRequestFn != nil {
-		return m.mergePullRequestFn(ctx, owner, repo, number, commitTitle, commitMessage, method)
-	}
-	merged := true
-	sha := "abc123"
-	msg := "merged"
-	return &gh.PullRequestMergeResult{
-		Merged: &merged, SHA: &sha, Message: &msg,
-	}, nil
-}
-
-func (m *mockGH) EditPullRequest(
-	ctx context.Context, owner, repo string, number int, opts platformgithub.EditPullRequestOpts,
-) (*gh.PullRequest, error) {
-	if m.editPullRequestFn != nil {
-		return m.editPullRequestFn(ctx, owner, repo, number, opts)
-	}
-	pr := &gh.PullRequest{}
-	if opts.State != nil {
-		pr.State = opts.State
-	}
-	if opts.Title != nil {
-		pr.Title = opts.Title
-	}
-	if opts.Body != nil {
-		pr.Body = opts.Body
-	}
-	now := time.Now().UTC()
-	ghTime := gh.Timestamp{Time: now}
-	pr.UpdatedAt = &ghTime
-	return pr, nil
-}
-
-func (m *mockGH) EditIssue(
-	ctx context.Context, owner, repo string, number int, state string,
-) (*gh.Issue, error) {
-	if m.editIssueFn != nil {
-		return m.editIssueFn(ctx, owner, repo, number, state)
-	}
-	return &gh.Issue{State: &state}, nil
-}
-
-func (m *mockGH) EditIssueContent(
-	ctx context.Context, owner, repo string, number int, title *string, body *string,
-) (*gh.Issue, error) {
-	if m.editIssueContentFn != nil {
-		return m.editIssueContentFn(ctx, owner, repo, number, title, body)
-	}
-	out := &gh.Issue{}
-	if title != nil {
-		out.Title = title
-	}
-	if body != nil {
-		out.Body = body
-	}
-	return out, nil
-}
-
-func (m *mockGH) ListPullRequestsPage(
-	ctx context.Context, owner, repo, state string, page int,
-) ([]*gh.PullRequest, bool, error) {
-	if m.listPullRequestsPageFn != nil {
-		return m.listPullRequestsPageFn(ctx, owner, repo, state, page)
-	}
-	return nil, false, nil
-}
-
-func (m *mockGH) ListIssuesPage(
-	ctx context.Context, owner, repo, state string, page int,
-) ([]*gh.Issue, bool, error) {
-	if m.listIssuesPageFn != nil {
-		return m.listIssuesPageFn(ctx, owner, repo, state, page)
-	}
-	return nil, false, nil
-}
-
-func (m *mockGH) ListNotifications(ctx context.Context, opts ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
-	if m.listNotificationsFn != nil {
-		return m.listNotificationsFn(ctx, opts)
-	}
-	return nil, false, nil
-}
-
-func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string) error {
-	if m.markNotificationReadFn != nil {
-		return m.markNotificationReadFn(ctx, threadID)
-	}
-	return nil
-}
-
-func (m *mockGH) GetMarkdownImage(
-	ctx context.Context,
-	owner, repo, sourceURL string,
-) (platform.MarkdownImage, error) {
-	if m.getMarkdownImageFn != nil {
-		return m.getMarkdownImageFn(ctx, owner, repo, sourceURL)
-	}
-	return platform.MarkdownImage{}, nil
-}
-
-// InvalidateListETagsForRepo is a no-op for the server test mock,
-// which has no underlying HTTP cache.
-func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
-
-type apiTestGitLabProvider struct {
-	mu                               sync.Mutex
-	ref                              platform.RepoRef
-	capabilities                     *platform.Capabilities
-	mergeRequests                    []platform.MergeRequest
-	mergeRequestDetail               map[int]platform.MergeRequest
-	mergeRequestEvents               map[int][]platform.MergeRequestEvent
-	issues                           []platform.Issue
-	issueEvents                      map[int][]platform.IssueEvent
-	releases                         []platform.Release
-	tags                             []platform.Tag
-	ciChecks                         map[string][]platform.CICheck
-	ciErr                            error
-	reviewThreads                    []platform.MergeRequestReviewThread
-	reviewThreadsErr                 error
-	reviewThreadsFn                  func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
-	publishedReviews                 []platform.PublishDiffReviewDraftInput
-	publishReviewErr                 error
-	appliedSuggestions               []platform.ApplyReviewSuggestionsInput
-	applySuggestionsErr              error
-	applySuggestionsErrAfterMutation error
-	applySuggestionResult            *platform.AppliedReviewSuggestions
-	applySuggestionReturnsNil        bool
-	applySuggestionHead              string
-	applySuggestionsStarted          chan struct{}
-	applySuggestionsRelease          <-chan struct{}
-	cancelAfterApply                 func()
-	blockNextMRFetch                 atomic.Bool
-	mrFetchStarted                   chan struct{}
-	mrFetchRelease                   <-chan struct{}
-	rateLimitBuckets                 map[platform.OperationName][]platform.RateLimitBucket
-	resolvedThreads                  []string
-	unresolvedThreads                []string
-}
-
-func (p *apiTestGitLabProvider) Platform() platform.Kind {
-	return p.ref.Platform
-}
-
-func (p *apiTestGitLabProvider) Host() string {
-	return p.ref.Host
-}
-
-func (p *apiTestGitLabProvider) Capabilities() platform.Capabilities {
-	if p.capabilities != nil {
-		return *p.capabilities
-	}
-	return platform.Capabilities{
-		ReadRepositories:  true,
-		ReadMergeRequests: true,
-		ReadIssues:        true,
-		ReadComments:      true,
-		ReadReleases:      true,
-		ReadCI:            true,
-	}
-}
-
-func (p *apiTestGitLabProvider) OperationRateLimitBuckets(
-	operation platform.OperationName,
-) ([]platform.RateLimitBucket, bool) {
-	if p.rateLimitBuckets == nil {
-		return nil, false
-	}
-	buckets, ok := p.rateLimitBuckets[operation]
-	return buckets, ok
-}
-
-func (p *apiTestGitLabProvider) PublishDiffReviewDraft(
-	_ context.Context,
-	_ platform.RepoRef,
-	_ int,
-	input platform.PublishDiffReviewDraftInput,
-) (*platform.PublishedDiffReview, error) {
-	p.publishedReviews = append(p.publishedReviews, input)
-	return &platform.PublishedDiffReview{SubmittedAt: time.Now().UTC()}, p.publishReviewErr
-}
-
-func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-	input platform.ApplyReviewSuggestionsInput,
-) (*platform.AppliedReviewSuggestions, error) {
-	if p.applySuggestionsStarted != nil {
-		p.applySuggestionsStarted <- struct{}{}
-	}
-	if p.applySuggestionsRelease != nil {
-		<-p.applySuggestionsRelease
-	}
-	if p.applySuggestionsErr != nil {
-		return nil, p.applySuggestionsErr
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.appliedSuggestions = append(p.appliedSuggestions, input)
-	result := platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}
-	if p.applySuggestionResult != nil {
-		result = *p.applySuggestionResult
-	}
-	providerHead := result.CommitSHA
-	if p.applySuggestionHead != "" {
-		providerHead = p.applySuggestionHead
-	}
-	for i := range p.mergeRequests {
-		if p.mergeRequests[i].Number == number && providerHead != "" {
-			p.mergeRequests[i].HeadSHA = providerHead
-		}
-	}
-	if p.cancelAfterApply != nil {
-		p.cancelAfterApply()
-	}
-	if p.applySuggestionsErrAfterMutation != nil {
-		return nil, p.applySuggestionsErrAfterMutation
-	}
-	if p.applySuggestionReturnsNil {
-		return nil, nil
-	}
-	return &result, nil
-}
-
-func (p *apiTestGitLabProvider) ListMergeRequestReviewThreads(
-	ctx context.Context,
-	repo platform.RepoRef,
-	number int,
-) ([]platform.MergeRequestReviewThread, error) {
-	if p.reviewThreadsFn != nil {
-		return p.reviewThreadsFn(ctx, repo, number)
-	}
-	if p.reviewThreadsErr != nil {
-		return nil, p.reviewThreadsErr
-	}
-	return p.reviewThreads, nil
-}
-
-func (p *apiTestGitLabProvider) ResolveDiffReviewThread(
-	_ context.Context,
-	_ platform.RepoRef,
-	_ int,
-	providerThreadID string,
-) error {
-	p.resolvedThreads = append(p.resolvedThreads, providerThreadID)
-	return nil
-}
-
-func (p *apiTestGitLabProvider) UnresolveDiffReviewThread(
-	_ context.Context,
-	_ platform.RepoRef,
-	_ int,
-	providerThreadID string,
-) error {
-	p.unresolvedThreads = append(p.unresolvedThreads, providerThreadID)
-	return nil
-}
-
-func (p *apiTestGitLabProvider) GetRepository(
-	context.Context,
-	platform.RepoRef,
-) (platform.Repository, error) {
-	return platform.Repository{
-		Ref:                p.ref,
-		PlatformID:         p.ref.PlatformID,
-		PlatformExternalID: p.ref.PlatformExternalID,
-		DefaultBranch:      p.ref.DefaultBranch,
-		WebURL:             p.ref.WebURL,
-		CloneURL:           p.ref.CloneURL,
-	}, nil
-}
-
-func (p *apiTestGitLabProvider) ListRepositories(
-	context.Context,
-	string,
-	platform.RepositoryListOptions,
-) ([]platform.Repository, error) {
-	repo, err := p.GetRepository(context.Background(), p.ref)
-	if err != nil {
-		return nil, err
-	}
-	return []platform.Repository{repo}, nil
-}
-
-func (p *apiTestGitLabProvider) ListOpenMergeRequests(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.MergeRequest, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return slices.Clone(p.mergeRequests), nil
-}
-
-func (p *apiTestGitLabProvider) GetMergeRequest(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) (platform.MergeRequest, error) {
-	p.mu.Lock()
-	var found platform.MergeRequest
-	foundOK := false
-	if p.mergeRequestDetail != nil {
-		if mr, ok := p.mergeRequestDetail[number]; ok {
-			found = mr
-			foundOK = true
-		}
-	}
-	if !foundOK {
-		for _, mr := range p.mergeRequests {
-			if mr.Number == number {
-				found = mr
-				foundOK = true
-				break
-			}
-		}
-	}
-	p.mu.Unlock()
-	if foundOK {
-		if p.blockNextMRFetch.CompareAndSwap(true, false) {
-			if p.mrFetchStarted != nil {
-				p.mrFetchStarted <- struct{}{}
-			}
-			if p.mrFetchRelease != nil {
-				<-p.mrFetchRelease
-			}
-		}
-		return found, nil
-	}
-	return platform.MergeRequest{}, fmt.Errorf("missing merge request %d", number)
-}
-
-func (p *apiTestGitLabProvider) ListMergeRequestEvents(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) ([]platform.MergeRequestEvent, error) {
-	return p.mergeRequestEvents[number], nil
-}
-
-func (p *apiTestGitLabProvider) ListOpenIssues(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.Issue, error) {
-	return slices.Clone(p.issues), nil
-}
-
-func (p *apiTestGitLabProvider) GetIssue(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) (platform.Issue, error) {
-	for _, issue := range p.issues {
-		if issue.Number == number {
-			return issue, nil
-		}
-	}
-	return platform.Issue{}, fmt.Errorf("missing issue %d", number)
-}
-
-func (p *apiTestGitLabProvider) ListIssueEvents(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) ([]platform.IssueEvent, error) {
-	return p.issueEvents[number], nil
-}
-
-func (p *apiTestGitLabProvider) ListReleases(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.Release, error) {
-	return p.releases, nil
-}
-
-func (p *apiTestGitLabProvider) ListTags(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.Tag, error) {
-	return p.tags, nil
-}
-
-func (p *apiTestGitLabProvider) ListCIChecks(
-	_ context.Context,
-	_ platform.RepoRef,
-	sha string,
-) ([]platform.CICheck, error) {
-	if p.ciErr != nil {
-		return nil, p.ciErr
-	}
-	return p.ciChecks[sha], nil
-}
-
-// setupTestServer opens a temp DB, builds a Server, and returns both.
-func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
-	t.Helper()
-	return setupTestServerWithMock(t, &mockGH{})
-}
-
-func setupTestServerWithMock(t *testing.T, mock *mockGH) (*server.Server, *db.DB) {
-	t.Helper()
-	return setupTestServerWithRepos(t, mock, defaultTestRepos)
-}
-
-var defaultTestRepos = []ghclient.RepoRef{
-	{
-		Platform:           "github",
-		Owner:              "acme",
-		Name:               "widget",
-		PlatformHost:       "github.com",
-		PlatformExternalID: "repo-acme-widget",
-		CloneURL:           "https://github.com/acme/widget.git",
-	},
-}
-
-func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
-	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = "repo-" + strings.ToLower(owner+"-"+name)
-	return identity
-}
-
-func seedRepoLaunchMetadata(t *testing.T, database *db.DB, repoID int64) {
-	t.Helper()
-	ctx := t.Context()
-	repo, err := database.GetRepoByID(ctx, repoID)
-	require.NoError(t, err)
-	require.NotNil(t, repo)
-	require.NotEmpty(t, repo.PlatformRepoID)
-
-	cloneURL := strings.TrimSpace(repo.CloneURL)
-	if cloneURL == "" {
-		repoPath := strings.Trim(strings.TrimSpace(repo.RepoPath), "/")
-		if repoPath == "" {
-			repoPath = strings.Trim(repo.Owner, "/") + "/" + strings.Trim(repo.Name, "/")
-		}
-		cloneURL = "https://" + repo.PlatformHost + "/" + repoPath + ".git"
-	}
-	defaultBranch := strings.TrimSpace(repo.DefaultBranch)
-	if defaultBranch == "" {
-		defaultBranch = "main"
-	}
-	err = database.UpdateRepoProviderMetadata(
-		ctx, repoID,
-		db.RepoProviderMetadata{
-			PlatformRepoID: repo.PlatformRepoID,
-			WebURL:         strings.TrimSuffix(cloneURL, ".git"),
-			CloneURL:       cloneURL,
-			DefaultBranch:  defaultBranch,
-		},
-	)
-	require.NoError(t, err)
-}
-
-func setupTestServerWithRepos(
-	t *testing.T, mock *mockGH, repos []ghclient.RepoRef,
-) (*server.Server, *db.DB) {
-	return setupTestServerWithReposAndOptions(t, mock, repos, server.ServerOptions{})
-}
-
-func setupTestServerWithReposAndOptions(
-	t *testing.T, mock *mockGH, repos []ghclient.RepoRef, options server.ServerOptions,
-) (*server.Server, *db.DB) {
-	t.Helper()
-
-	database := dbtest.Open(t)
-	repos = append([]ghclient.RepoRef(nil), repos...)
-	for i := range repos {
-		repo := &repos[i]
-		if repo.PlatformExternalID == "" {
-			repo.PlatformExternalID = "repo-" + repo.Owner + "-" + repo.Name
-		}
-		_, err := database.UpsertRepo(
-			t.Context(), platformdb.DBRepoIdentity(platform.RepoRef{
-				Platform:           platform.Kind(repo.Platform),
-				Host:               repo.PlatformHost,
-				Owner:              repo.Owner,
-				Name:               repo.Name,
-				RepoPath:           repo.RepoPath,
-				PlatformExternalID: repo.PlatformExternalID,
-			}),
-		)
-		require.NoError(t, err)
-	}
-
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
-	// Drain any TriggerRun goroutines (fired by handlers like
-	// POST /sync) before tests tear down. Registered after the DB
-	// cleanup so LIFO ordering runs Stop first: without this, a
-	// leaked goroutine from one test's handler can outlive its DB.
-	t.Cleanup(syncer.Stop)
-	var cfg *config.Config
-	if options.WorktreeDir != "" {
-		cfg = &config.Config{Tmux: config.Tmux{
-			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
-		}}
-	}
-	srv := server.New(
-		database, syncer, nil, "/",
-		cfg, options,
-	)
-	// Registered after the DB cleanup so LIFO ordering runs Shutdown
-	// first and lets background goroutines finish before DB close.
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	return srv, database
-}
-
-func setupTestClient(t *testing.T, srv *server.Server) *apiclient.Client {
-	t.Helper()
-	return setupTestClientWithBaseURL(t, srv, "http://forge.test")
-}
-
-func setupTestClientWithBaseURL(
-	t *testing.T,
-	srv *server.Server,
-	baseURL string,
-) *apiclient.Client {
-	t.Helper()
-
-	httpClient := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			var body io.Reader = http.NoBody
-			if req.Body != nil {
-				payload, err := io.ReadAll(req.Body)
-				if err != nil {
-					return nil, err
-				}
-				_ = req.Body.Close()
-				body = strings.NewReader(string(payload))
-			}
-
-			serverReq := httptest.NewRequestWithContext(t.Context(), req.Method, req.URL.String(), body)
-			serverReq.Header = req.Header.Clone()
-			serverReq = serverReq.WithContext(req.Context())
-
-			rr := httptest.NewRecorder()
-			srv.ServeHTTP(rr, serverReq)
-			return rr.Result(), nil
-		}),
-	}
-
-	client, err := apiclient.NewWithHTTPClient(baseURL, httpClient)
-	require.NoError(t, err)
-
-	return client
+	os.Exit(serverfake.RunMain(m))
 }
 
 func testEDTTime(hour, minute int) time.Time {
@@ -1145,59 +68,6 @@ func assertTimePtrEqualsUTC(t *testing.T, got *time.Time, want time.Time) {
 	assert.Equal(t, want.UTC(), got.UTC())
 }
 
-// providerStatePR builds the provider's view of a seeded test PR after a
-// state mutation, the way the real provider returns it from an edit or a
-// post-merge fetch. The handler commits this snapshot through the canonical
-// parent-snapshot path, so updatedAt must be newer than the seeded row's or
-// the monotonic guard rejects it; merged/closed timestamps come from here,
-// not from any local clock.
-func providerStatePR(
-	number int,
-	state string,
-	updatedAt time.Time,
-	closedAt, mergedAt *time.Time,
-	headSHA string,
-) *gh.PullRequest {
-	toTimestamp := func(value *time.Time) *gh.Timestamp {
-		if value == nil {
-			return nil
-		}
-		return &gh.Timestamp{Time: *value}
-	}
-	numberText := strconv.Itoa(number)
-	pr := &gh.PullRequest{
-		ID:        new(int64(number) * 1000),
-		Number:    &number,
-		State:     &state,
-		Title:     new("Test PR #" + numberText),
-		HTMLURL:   new("https://github.com/acme/widget/pull/" + numberText),
-		User:      &gh.User{Login: new("testuser")},
-		CreatedAt: &gh.Timestamp{Time: updatedAt.Add(-2 * time.Hour)},
-		UpdatedAt: &gh.Timestamp{Time: updatedAt},
-		ClosedAt:  toTimestamp(closedAt),
-		MergedAt:  toTimestamp(mergedAt),
-		Head: &gh.PullRequestBranch{
-			Ref: new("feature"), SHA: &headSHA,
-			Repo: &gh.Repository{ID: new(int64(1)), FullName: new("acme/widget")},
-		},
-		Base: &gh.PullRequestBranch{
-			Ref: new("main"), SHA: new("base-sha"),
-			Repo: &gh.Repository{ID: new(int64(1)), FullName: new("acme/widget")},
-		},
-	}
-	if mergedAt != nil {
-		pr.Merged = new(true)
-		pr.MergedBy = &gh.User{Login: new("merger")}
-	}
-	return pr
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
 type staleReadyForReviewError struct{ err error }
 
 func (e *staleReadyForReviewError) Error() string { return e.err.Error() }
@@ -1208,106 +78,8 @@ func (e *staleReadyForReviewError) StatusCode() int { return http.StatusNotFound
 
 func (e *staleReadyForReviewError) IsStaleState() bool { return true }
 
-type seedPROpt func(*db.MergeRequest)
-
-func withSeedPRHeadSHA(headSHA string) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
-}
-
-func withSeedPRBaseSHA(baseSHA string) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.PlatformBaseSHA = baseSHA }
-}
-
-func withSeedPRTitle(title string) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.Title = title }
-}
-
-func withSeedPRAuthor(author string) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.Author = author }
-}
-
-func withSeedPRLifecycle(
-	state db.MergeRequestState,
-	mergedAt *time.Time,
-	closedAt *time.Time,
-) seedPROpt {
-	return func(pr *db.MergeRequest) {
-		pr.State = state
-		pr.MergedAt = mergedAt
-		pr.ClosedAt = closedAt
-	}
-}
-
-func withSeedPRCI(status, checksJSON string) seedPROpt {
-	return func(pr *db.MergeRequest) {
-		pr.CIStatus = status
-		pr.CIChecksJSON = checksJSON
-	}
-}
-
-func withSeedPRTimes(createdAt, updatedAt, lastActivityAt time.Time) seedPROpt {
-	return func(pr *db.MergeRequest) {
-		pr.CreatedAt = createdAt
-		pr.UpdatedAt = updatedAt
-		pr.LastActivityAt = lastActivityAt
-	}
-}
-
-// seedPR inserts a repo and a PR into the DB, returning the PR's internal ID.
-func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts ...seedPROpt) int64 {
-	t.Helper()
-	ctx := t.Context()
-
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
-	require.NoError(t, err)
-	seedRepoLaunchMetadata(t, database, repoID)
-
-	numberText := strconv.Itoa(number)
-	now := time.Now().UTC().Truncate(time.Second)
-	pr := &db.MergeRequest{
-		RepoID:           repoID,
-		PlatformID:       int64(number) * 1000,
-		Number:           number,
-		URL:              "https://github.com/" + owner + "/" + name + "/pull/" + numberText,
-		Title:            "Test PR #" + numberText,
-		Author:           "testuser",
-		State:            "open",
-		IsDraft:          false,
-		Body:             "test body",
-		HeadBranch:       "feature",
-		HeadRepoCloneURL: "https://github.com/" + owner + "/" + name + ".git",
-		BaseBranch:       "main",
-		Additions:        5,
-		Deletions:        2,
-		CommentCount:     0,
-		ReviewDecision:   "",
-		CIStatus:         "",
-		CreatedAt:        now,
-		UpdatedAt:        now,
-		LastActivityAt:   now,
-	}
-	for _, opt := range opts {
-		opt(pr)
-	}
-
-	prID, err := database.UpsertMergeRequest(ctx, pr)
-	require.NoError(t, err)
-	if pr.PlatformHeadSHA != "" {
-		require.NoError(t, database.UpdateDiffSHAs(
-			ctx, repoID, number,
-			pr.PlatformHeadSHA, pr.PlatformBaseSHA, "merge-base",
-		))
-	}
-	if len(pr.Labels) > 0 {
-		require.NoError(t, database.ReplaceMergeRequestLabels(ctx, repoID, prID, pr.Labels))
-	}
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
-
-	return prID
-}
-
 func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -1315,8 +87,8 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 	providerUpdatedAt := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	var gotCommentID int64
 	var gotBody string
-	mock := &mockGH{
-		createReviewCommentReplyFn: func(
+	mock := &serverfake.MockGH{
+		CreateReviewCommentReplyFn: func(
 			_ context.Context, owner, repo string, number int, body string, commentID int64,
 		) (*gh.PullRequestComment, error) {
 			assert.Equal("acme", owner)
@@ -1334,14 +106,14 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 				CreatedAt: &now,
 			}, nil
 		},
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-			return providerStatePR(number, "open", providerUpdatedAt, nil, nil, "head-sha"), nil
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			return serverfake.ProviderStatePR(number, "open", providerUpdatedAt, nil, nil, "head-sha"), nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	seededAt := providerUpdatedAt.Add(-2 * time.Minute)
-	mrID := seedPR(t, database, "acme", "widget", 7,
-		withSeedPRTimes(seededAt, seededAt, seededAt),
+	mrID := serverfake.SeedPR(t, database, "acme", "widget", 7,
+		serverfake.WithSeedPRTimes(seededAt, seededAt, seededAt),
 	)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -1411,11 +183,11 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 }
 
 func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
-	mock := &mockGH{
-		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+	mock := &serverfake.MockGH{
+		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			return nil, &gh.ErrorResponse{
 				Response: &http.Response{StatusCode: 405},
 				Message:  "Pull Request is not mergeable",
@@ -1423,10 +195,10 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
 		CommitTitle:     "title",
@@ -1441,11 +213,11 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 }
 
 func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
-	mock := &mockGH{
-		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+	mock := &serverfake.MockGH{
+		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			return nil, &gh.ErrorResponse{
 				Response: &http.Response{StatusCode: 409},
 				Message:  "Head branch was modified",
@@ -1453,10 +225,10 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
 		CommitTitle:     "title",
@@ -1471,19 +243,19 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 }
 
 func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
-	mock := &mockGH{
-		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+	mock := &serverfake.MockGH{
+		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			return nil, fmt.Errorf("connection refused")
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
 		CommitTitle:     "title",
@@ -1498,11 +270,11 @@ func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
 }
 
 func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
-	mock := &mockGH{
-		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+	mock := &serverfake.MockGH{
+		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			return nil, &gh.ErrorResponse{
 				Response: &http.Response{StatusCode: http.StatusUnprocessableEntity},
 				Message:  "Required status check is failing",
@@ -1510,10 +282,10 @@ func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
 		CommitTitle:     "title",
@@ -1528,11 +300,11 @@ func TestAPIMergePR422ForwardsGitHubMessage(t *testing.T) {
 }
 
 func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
-	mock := &mockGH{
-		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+	mock := &serverfake.MockGH{
+		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			return nil, &gh.ErrorResponse{
 				Response: &http.Response{StatusCode: http.StatusForbidden},
 				Message:  "Resource not accessible by integration",
@@ -1540,10 +312,10 @@ func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
 		CommitTitle:     "title",
@@ -1558,11 +330,11 @@ func TestAPIMergePR403ForwardsGitHubMessage(t *testing.T) {
 }
 
 func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
-	mock := &mockGH{
-		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+	mock := &serverfake.MockGH{
+		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			return nil, &gh.ErrorResponse{
 				Response: &http.Response{StatusCode: http.StatusServiceUnavailable},
 				Message:  "Service unavailable",
@@ -1570,10 +342,10 @@ func TestAPIMergePR5xxReturns502WithGitHubMessage(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
 		CommitTitle:     "title",
@@ -1598,8 +370,8 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 	})))
 	t.Cleanup(func() { slog.SetDefault(origLogger) })
 
-	mock := &mockGH{
-		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+	mock := &serverfake.MockGH{
+		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			return nil, &gh.ErrorResponse{
 				Response: &http.Response{StatusCode: http.StatusInternalServerError},
 				Message:  "GitHub Server Error",
@@ -1613,10 +385,10 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
 		CommitTitle:     "title",
@@ -1641,26 +413,26 @@ func TestAPIMergePRForwardsGitHubErrorDetailsAndLogsError(t *testing.T) {
 }
 
 func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	// The provider reports the merge in a non-UTC zone; the canonical
 	// post-merge resync must store it as UTC.
 	providerNow := testEDTTime(8, 30)
 	expectedHeadSHA := "reviewed-sha"
-	mock := &mockGH{
-		getPullRequestFn: func(
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(
 			context.Context, string, string, int,
 		) (*gh.PullRequest, error) {
-			return providerStatePR(
+			return serverfake.ProviderStatePR(
 				1, "closed", time.Now().UTC().Add(time.Hour),
 				&providerNow, &providerNow, expectedHeadSHA,
 			), nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePRInputBody{
 		CommitTitle:     "title",
@@ -1679,13 +451,13 @@ func TestAPIMergePRStoresUTCTimestamps(t *testing.T) {
 }
 
 func TestAPISyncPRPersistsMergeableState(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	mergeableState := "dirty"
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(1001)
 			sha := "abc123"
 			state := "open"
@@ -1708,12 +480,12 @@ func TestAPISyncPRPersistsMergeableState(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1, func(pr *db.MergeRequest) {
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, func(pr *db.MergeRequest) {
 		pr.UpdatedAt = now.Add(-time.Second)
 		pr.LastActivityAt = now.Add(-time.Second)
 	})
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -1728,15 +500,15 @@ func TestAPISyncPRPersistsMergeableState(t *testing.T) {
 }
 
 func TestAPISyncPRPersistsMergedActorInDetail(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 	mergedAt := now.Add(time.Minute)
 	mergedBy := "merge-admin"
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(1001)
 			sha := "abc123"
 			baseSHA := "def456"
@@ -1765,9 +537,9 @@ func TestAPISyncPRPersistsMergedActorInDetail(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	syncResp, err := client.HTTP.SyncPullWithResponse(ctx, &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -1787,7 +559,7 @@ func TestAPISyncPRPersistsMergedActorInDetail(t *testing.T) {
 }
 
 func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -1795,8 +567,8 @@ func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
 	mergedAt := now.Add(time.Minute)
 	mergedBy := "merge-admin"
 	var getPullCalls atomic.Int32
-	mock := &mockGH{
-		listOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		ListOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
 			number := 1
 			id := int64(1001)
 			sha := "abc123"
@@ -1826,14 +598,14 @@ func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
 				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &baseRef},
 			}}, nil
 		},
-		getPullRequestFn: func(_ context.Context, _ string, _ string, _ int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(_ context.Context, _ string, _ string, _ int) (*gh.PullRequest, error) {
 			getPullCalls.Add(1)
 			return nil, errors.New("detail lookup should not run")
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	client := servertest.SetupTestClient(t, srv)
 
 	syncResp, err := client.HTTP.TriggerSyncWithResponse(ctx, &generated.TriggerSyncRequestOptions{})
 	require.NoError(err)
@@ -1871,7 +643,7 @@ func TestAPIIndexSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
 }
 
 func TestAPIGetPullDoesNotFetchProviderForMissingMergedActor(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -1879,22 +651,22 @@ func TestAPIGetPullDoesNotFetchProviderForMissingMergedActor(t *testing.T) {
 	mergedAt := now.Add(time.Minute)
 	var getPullCalls atomic.Int32
 	var timelineCalls atomic.Int32
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _ string, _ string, _ int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _ string, _ string, _ int) (*gh.PullRequest, error) {
 			getPullCalls.Add(1)
 			return nil, errors.New("detail reads must not fetch pull request data")
 		},
-		listPRTimelineEventsFn: func(_ context.Context, _ string, _ string, _ int) ([]platformgithub.PullRequestTimelineEvent, error) {
+		ListPRTimelineEventsFn: func(_ context.Context, _ string, _ string, _ int) ([]platformgithub.PullRequestTimelineEvent, error) {
 			timelineCalls.Add(1)
 			return nil, errors.New("detail reads must not fetch timeline data")
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1,
-		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1,
+		serverfake.WithSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
 	)
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 
 	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -1912,7 +684,7 @@ func TestAPIGetPullDoesNotFetchProviderForMissingMergedActor(t *testing.T) {
 }
 
 func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name  string
 		state *string
@@ -1926,8 +698,8 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
-			mock := &mockGH{
-				getPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
+			mock := &serverfake.MockGH{
+				GetPullRequestFn: func(_ context.Context, _ string, _ string, number int) (*gh.PullRequest, error) {
 					id := int64(1001)
 					sha := "abc123"
 					baseSHA := "def456"
@@ -1951,11 +723,11 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 				},
 			}
 
-			srv, database := setupTestServerWithMock(t, mock)
-			seedPR(t, database, "acme", "widget", 1, func(pr *db.MergeRequest) {
+			srv, database := servertest.SetupTestServerWithMock(t, mock)
+			serverfake.SeedPR(t, database, "acme", "widget", 1, func(pr *db.MergeRequest) {
 				pr.MergeableState = "dirty"
-			}, withSeedPRHeadSHA("abc123"), withSeedPRBaseSHA("def456"))
-			client := setupTestClient(t, srv)
+			}, serverfake.WithSeedPRHeadSHA("abc123"), serverfake.WithSeedPRBaseSHA("def456"))
+			client := servertest.SetupTestClient(t, srv)
 
 			resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 			require.NoError(err)
@@ -1972,12 +744,12 @@ func TestAPISyncPRPreservesMergeableStateWhenRefreshHasNoAnswer(t *testing.T) {
 }
 
 func TestAPIApproveWorkflows(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
 			id := int64(1001)
 			sha := "abc123"
 			state := "open"
@@ -1997,7 +769,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 				Base:      &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
-		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+		ListWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
 			require.Equal("abc123", headSHA)
 			return []*gh.WorkflowRun{
 				{
@@ -2020,7 +792,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 				},
 			}, nil
 		},
-		approveWorkflowRunFn: func(_ context.Context, owner, repo string, runID int64) error {
+		ApproveWorkflowRunFn: func(_ context.Context, owner, repo string, runID int64) error {
 			require.Equal("acme", owner)
 			require.Equal("widget", repo)
 			approvedRunIDs = append(approvedRunIDs, runID)
@@ -2028,15 +800,15 @@ func TestAPIApproveWorkflows(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	repo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	require.NoError(database.UpdateMRWorkflowApproval(
 		t.Context(), repo.ID, 1, time.Now().UTC(), "abc123", true, 2,
 	))
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -2058,11 +830,11 @@ func TestAPIApproveWorkflows(t *testing.T) {
 }
 
 func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(1002)
 			sha := "abc123"
 			state := "open"
@@ -2082,15 +854,15 @@ func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 				Base:      &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
-		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+		ListWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
 			require.Equal("abc123", headSHA)
 			return nil, nil
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -2105,12 +877,12 @@ func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 }
 
 func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(1003)
 			sha := "abc123"
 			state := "open"
@@ -2130,7 +902,7 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 				Base:      &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
-		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+		ListWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
 			require.Equal("abc123", headSHA)
 			return []*gh.WorkflowRun{
 				{
@@ -2147,7 +919,7 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 				},
 			}, nil
 		},
-		approveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
+		ApproveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
 			approvedRunIDs = append(approvedRunIDs, runID)
 			if runID == 92 {
 				return fmt.Errorf("permission denied")
@@ -2156,9 +928,9 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.Error(err)
@@ -2179,12 +951,12 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 // ApproveWorkflowRun for a fork-triggered run when the run's head repo and
 // branch match the PR.
 func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(2002)
 			sha := "forkhead"
 			state := "open"
@@ -2209,7 +981,7 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 				Base: &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
-		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+		ListWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
 			require.Equal("forkhead", headSHA)
 			return []*gh.WorkflowRun{
 				{
@@ -2221,15 +993,15 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 				},
 			}, nil
 		},
-		approveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
+		ApproveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
 			approvedRunIDs = append(approvedRunIDs, runID)
 			return nil
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -2245,12 +1017,12 @@ func TestAPIApproveWorkflowsForForkPR(t *testing.T) {
 // endpoint does not call ApproveWorkflowRun for runs whose pull_requests
 // association points at a different PR sharing the same head SHA.
 func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(3002)
 			sha := "sharedsha"
 			state := "open"
@@ -2270,7 +1042,7 @@ func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
 				Base:      &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
-		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+		ListWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
 			require.Equal("sharedsha", headSHA)
 			return []*gh.WorkflowRun{
 				{
@@ -2287,15 +1059,15 @@ func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
 				},
 			}, nil
 		},
-		approveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
+		ApproveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
 			approvedRunIDs = append(approvedRunIDs, runID)
 			return nil
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -2311,12 +1083,12 @@ func TestAPIApproveWorkflowsIgnoresRunsForOtherPRAtSameSHA(t *testing.T) {
 // cross-approve. The PR's head repo is alice/widget; the run's head repo is
 // bob/widget. ApproveWorkflowRun must not be called.
 func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	approvedRunIDs := []int64{}
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(4001)
 			sha := "sharedsha"
 			state := "open"
@@ -2341,7 +1113,7 @@ func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
 				Base: &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
-		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+		ListWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
 			require.Equal("sharedsha", headSHA)
 			return []*gh.WorkflowRun{
 				{
@@ -2353,15 +1125,15 @@ func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
 				},
 			}, nil
 		},
-		approveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
+		ApproveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
 			approvedRunIDs = append(approvedRunIDs, runID)
 			return nil
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -2377,7 +1149,7 @@ func TestAPIApproveWorkflowsRejectsRunFromDifferentForkAtSameSHA(t *testing.T) {
 // PR with a stale recorded diff would render outdated content with no
 // indication.
 func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -2386,15 +1158,15 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, nil,
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
+		database, clones, serverfake.DefaultTestRepos, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 
-	seedPR(t, database, "acme", "widget", 5)
+	serverfake.SeedPR(t, database, "acme", "widget", 5)
 
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	mergedAt := now
@@ -2412,7 +1184,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 		"deadbeef00000000000000000000000000000003",
 	))
 
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -2429,7 +1201,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnMergedPR(t *testing.T) {
 // previous diffWarnings implementation suppressed warnings for any
 // non-open/non-merged state and the user would silently see no diff.
 func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -2438,15 +1210,15 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, nil,
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
+		database, clones, serverfake.DefaultTestRepos, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 
-	seedPR(t, database, "acme", "widget", 6)
+	serverfake.SeedPR(t, database, "acme", "widget", 6)
 
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	closedAt := now
@@ -2458,7 +1230,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 	// Diff SHAs intentionally left empty to simulate a closed PR whose
 	// diff sync errored out.
 
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(6)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -2475,7 +1247,7 @@ func TestAPIGetPullEmitsDiffWarningWhenSHAsMissingClosed(t *testing.T) {
 // detail page shows a warning instead of silently rendering an old
 // diff.
 func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -2484,15 +1256,15 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, nil,
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
+		database, clones, serverfake.DefaultTestRepos, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 
-	seedPR(t, database, "acme", "widget", 7)
+	serverfake.SeedPR(t, database, "acme", "widget", 7)
 
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	closedAt := now
@@ -2508,7 +1280,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 		"deadbeef00000000000000000000000000000003",
 	))
 
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -2525,7 +1297,7 @@ func TestAPIGetPullEmitsStaleDiffWarningOnClosedPR(t *testing.T) {
 // merge. A merged PR whose head matches but base differs must NOT
 // emit a warning.
 func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -2534,15 +1306,15 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, clones, defaultTestRepos, time.Minute, nil, nil,
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
+		database, clones, serverfake.DefaultTestRepos, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 
-	seedPR(t, database, "acme", "widget", 8)
+	serverfake.SeedPR(t, database, "acme", "widget", 8)
 
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	mergedAt := now
@@ -2559,7 +1331,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 		"deadbeef00000000000000000000000000000003",
 	))
 
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(8)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -2570,7 +1342,7 @@ func TestAPIGetPullNoDiffWarningOnMergedPRWithBaseDrift(t *testing.T) {
 }
 
 func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -2614,10 +1386,10 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	mergedMR.MergedBy = "merge-admin"
 	mergedMR.UpdatedAt = mergedAt
 	mergedMR.LastActivityAt = mergedAt
-	provider := &apiTestGitLabProvider{
-		ref:                ref,
-		mergeRequests:      []platform.MergeRequest{openMR},
-		mergeRequestDetail: map[int]platform.MergeRequest{7: mergedMR},
+	provider := &serverfake.ApiTestGitLabProvider{
+		Ref:                ref,
+		MergeRequests:      []platform.MergeRequest{openMR},
+		MergeRequestDetail: map[int]platform.MergeRequest{7: mergedMR},
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -2639,8 +1411,8 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	client := setupTestClient(t, srv)
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	client := servertest.SetupTestClient(t, srv)
 
 	syncer.RunOnce(ctx)
 
@@ -2666,7 +1438,7 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 }
 
 func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -2710,10 +1482,10 @@ func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *te
 	mergedMR.MergedBy = "merge-admin"
 	mergedMR.UpdatedAt = mergedAt
 	mergedMR.LastActivityAt = mergedAt
-	provider := &apiTestGitLabProvider{
-		ref:                ref,
-		mergeRequests:      []platform.MergeRequest{openMR},
-		mergeRequestDetail: map[int]platform.MergeRequest{7: mergedMR},
+	provider := &serverfake.ApiTestGitLabProvider{
+		Ref:                ref,
+		MergeRequests:      []platform.MergeRequest{openMR},
+		MergeRequestDetail: map[int]platform.MergeRequest{7: mergedMR},
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -2735,11 +1507,11 @@ func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *te
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	client := setupTestClient(t, srv)
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	client := servertest.SetupTestClient(t, srv)
 
 	syncer.RunOnce(ctx)
-	provider.mergeRequests = nil
+	provider.MergeRequests = nil
 	syncer.RunOnce(ctx)
 
 	stored, err := database.GetMergeRequest(
@@ -2753,7 +1525,7 @@ func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *te
 	require.Equal("merged", events[0].EventType)
 	require.Equal("merge-admin", events[0].Author)
 
-	provider.mergeRequestEvents = map[int][]platform.MergeRequestEvent{7: {{
+	provider.MergeRequestEvents = map[int][]platform.MergeRequestEvent{7: {{
 		Repo:               ref,
 		PlatformID:         9001,
 		PlatformExternalID: "gid://gitlab/Note/9001",
@@ -2782,17 +1554,17 @@ func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *te
 }
 
 func TestAPIPostPRCommentRejectsNilProviderPayload(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
-	mock := &mockGH{
-		createIssueCommentFn: func(context.Context, string, string, int, string) (*gh.IssueComment, error) {
+	mock := &serverfake.MockGH{
+		CreateIssueCommentFn: func(context.Context, string, string, int, string) (*gh.IssueComment, error) {
 			return nil, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	mrID := seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	mrID := serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.PostPrCommentWithResponse(t.Context(), &generated.PostPrCommentRequestOptions{PathParams: &generated.PostPrCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.PostPrCommentBody{Body: "Looks good"}})
 	require.Error(err)
@@ -2805,17 +1577,17 @@ func TestAPIPostPRCommentRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPIEditPRCommentRejectsNilProviderPayload(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
-	mock := &mockGH{
-		editIssueCommentFn: func(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
+	mock := &serverfake.MockGH{
+		EditIssueCommentFn: func(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
 			return nil, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	mrID := seedPR(t, database, "acme", "widget", 1)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	mrID := serverfake.SeedPR(t, database, "acme", "widget", 1)
 	commentID := int64(42)
 	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: mrID,
@@ -2825,7 +1597,7 @@ func TestAPIEditPRCommentRejectsNilProviderPayload(t *testing.T) {
 		CreatedAt:      time.Now().UTC(),
 		DedupeKey:      "comment-42",
 	}}))
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.EditPrCommentWithResponse(t.Context(), &generated.EditPrCommentRequestOptions{PathParams: &generated.EditPrCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1), CommentID: int64(commentID)}, Body: &generated.EditPrCommentBody{Body: "edited body"}})
 	require.Error(err)
@@ -2839,14 +1611,14 @@ func TestAPIEditPRCommentRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
 	var providerCalled atomic.Bool
 	var reviewCommitID string
-	mock := &mockGH{
-		createReviewWithCommentsFn: func(
+	mock := &serverfake.MockGH{
+		CreateReviewWithCommentsFn: func(
 			_ context.Context,
 			_, _ string,
 			_ int,
@@ -2867,10 +1639,10 @@ func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	expectedHeadSHA := "reviewed-sha"
-	mrID := seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	mrID := serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.ApprovePullWithResponse(t.Context(), &generated.ApprovePullRequestOptions{PathParams: &generated.ApprovePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.ApprovePullBody{ExpectedHeadSha: &expectedHeadSHA}})
 	require.NoError(err)
@@ -2886,12 +1658,12 @@ func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 }
 
 func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
-	mock := &mockGH{
-		mergePullRequestFn: func(
+	mock := &serverfake.MockGH{
+		MergePullRequestFn: func(
 			context.Context,
 			string,
 			string,
@@ -2903,10 +1675,10 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 			return nil, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	expectedHeadSHA := "reviewed-sha"
-	seedPR(t, database, "acme", "widget", 1, withSeedPRHeadSHA(expectedHeadSHA))
-	client := setupTestClient(t, srv)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(t.Context(), &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.MergePullBody{
 		Method:          "squash",
@@ -2924,20 +1696,20 @@ func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {
 }
 
 func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
-	srv, database := setupTestServerWithRepos(
+	srv, database := servertest.SetupTestServerWithRepos(
 		t,
-		&mockGH{},
+		&serverfake.MockGH{},
 		[]ghclient.RepoRef{{
 			Owner:        "Acme",
 			Name:         "widget",
 			PlatformHost: "github.com",
 		}},
 	)
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 
-	seedPR(t, database, "acme", "widget", 7)
+	serverfake.SeedPR(t, database, "acme", "widget", 7)
 
 	resp, err := client.HTTP.PostPrCommentWithResponse(t.Context(), &generated.PostPrCommentRequestOptions{PathParams: &generated.PostPrCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.PostPrCommentBody{Body: "looks good"}})
 	require.NoError(err)
@@ -2946,13 +1718,13 @@ func TestAPIPostPrCommentAllowsMixedCaseTrackedRepo(t *testing.T) {
 }
 
 func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(9876)
 	createdAt := time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC)
-	mock := &mockGH{
-		editIssueCommentFn: func(_ context.Context, owner, repo string, gotCommentID int64, body string) (*gh.IssueComment, error) {
+	mock := &serverfake.MockGH{
+		EditIssueCommentFn: func(_ context.Context, owner, repo string, gotCommentID int64, body string) (*gh.IssueComment, error) {
 			assert.Equal("acme", owner)
 			assert.Equal("widget", repo)
 			assert.Equal(commentID, gotCommentID)
@@ -2967,8 +1739,8 @@ func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	mrID := seedPR(t, database, "acme", "widget", 7)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	mrID := serverfake.SeedPR(t, database, "acme", "widget", 7)
 	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: mrID,
 		PlatformID:     &commentID,
@@ -3002,19 +1774,19 @@ func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 }
 
 func TestAPIEditPrCommentRejectsCommentFromDifferentPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	commentID := int64(5555)
 	var editCalls atomic.Int32
-	mock := &mockGH{
-		editIssueCommentFn: func(_ context.Context, _, _ string, _ int64, _ string) (*gh.IssueComment, error) {
+	mock := &serverfake.MockGH{
+		EditIssueCommentFn: func(_ context.Context, _, _ string, _ int64, _ string) (*gh.IssueComment, error) {
 			editCalls.Add(1)
 			return nil, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	routeMRID := seedPR(t, database, "acme", "widget", 7)
-	otherMRID := seedPR(t, database, "acme", "widget", 8)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	routeMRID := serverfake.SeedPR(t, database, "acme", "widget", 7)
+	otherMRID := serverfake.SeedPR(t, database, "acme", "widget", 8)
 	require.NotEqual(routeMRID, otherMRID)
 	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: otherMRID,
@@ -3041,13 +1813,13 @@ func TestAPIEditPrCommentRejectsCommentFromDifferentPR(t *testing.T) {
 }
 
 func TestAPIDeletePrCommentLeavesLocalStateForSync(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(9876)
 	var deleteCalls atomic.Int32
-	mock := &mockGH{
-		deleteIssueCommentFn: func(_ context.Context, owner, repo string, gotCommentID int64) error {
+	mock := &serverfake.MockGH{
+		DeleteIssueCommentFn: func(_ context.Context, owner, repo string, gotCommentID int64) error {
 			deleteCalls.Add(1)
 			assert.Equal("acme", owner)
 			assert.Equal("widget", repo)
@@ -3055,8 +1827,8 @@ func TestAPIDeletePrCommentLeavesLocalStateForSync(t *testing.T) {
 			return nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	mrID := seedPR(t, database, "acme", "widget", 7)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	mrID := serverfake.SeedPR(t, database, "acme", "widget", 7)
 	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: mrID,
 		PlatformID:     &commentID,
@@ -3081,17 +1853,17 @@ func TestAPIDeletePrCommentLeavesLocalStateForSync(t *testing.T) {
 }
 
 func TestAPIDeletePrCommentKeepsLocalCommentWhenProviderReportsNotFound(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(4321)
-	mock := &mockGH{
-		deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+	mock := &serverfake.MockGH{
+		DeleteIssueCommentFn: func(context.Context, string, string, int64) error {
 			return platform.ErrNotFound
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	mrID := seedPR(t, database, "acme", "widget", 7)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	mrID := serverfake.SeedPR(t, database, "acme", "widget", 7)
 	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: mrID,
 		PlatformID:     &commentID,
@@ -3115,20 +1887,20 @@ func TestAPIDeletePrCommentKeepsLocalCommentWhenProviderReportsNotFound(t *testi
 }
 
 func TestAPIDeletePrCommentRejectsAnotherParentBeforeProviderCall(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	commentID := int64(6543)
 	var deleteCalls atomic.Int32
-	mock := &mockGH{
-		deleteIssueCommentFn: func(context.Context, string, string, int64) error {
+	mock := &serverfake.MockGH{
+		DeleteIssueCommentFn: func(context.Context, string, string, int64) error {
 			deleteCalls.Add(1)
 			return nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 7)
-	otherMRID := seedPR(t, database, "acme", "widget", 8)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 7)
+	otherMRID := serverfake.SeedPR(t, database, "acme", "widget", 8)
 	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: otherMRID,
 		PlatformID:     &commentID,
@@ -3149,12 +1921,12 @@ func TestAPIDeletePrCommentRejectsAnotherParentBeforeProviderCall(t *testing.T) 
 }
 
 func TestAPIReadyForReview(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 
-	mock := &mockGH{
-		markReadyForReviewFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		MarkReadyForReviewFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(1001)
 			title := "Ready PR"
 			state := "open"
@@ -3177,15 +1949,15 @@ func TestAPIReadyForReview(t *testing.T) {
 			}, nil
 		},
 	}
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, defaultTestRepos, time.Minute, nil, nil)
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, serverfake.DefaultTestRepos, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(
 		database, syncer, nil, "/",
 		nil, server.ServerOptions{},
 	)
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -3225,30 +1997,30 @@ func TestAPIReadyForReview(t *testing.T) {
 }
 
 func TestAPIClosePR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
 	// The provider reports the close in a non-UTC zone; the handler commits
 	// the provider's own edit response, so closed_at comes from there.
 	providerClosedAt := testEDTTime(9, 15)
-	mock := &mockGH{
-		editPullRequestFn: func(
+	mock := &serverfake.MockGH{
+		EditPullRequestFn: func(
 			_ context.Context, _, _ string, number int, opts platformgithub.EditPullRequestOpts,
 		) (*gh.PullRequest, error) {
 			require.NotNil(opts.State)
-			return providerStatePR(
+			return serverfake.ProviderStatePR(
 				number, *opts.State, time.Now().UTC().Add(time.Hour),
 				&providerClosedAt, nil, "head-sha",
 			), nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1,
-		withSeedPRHeadSHA("head-sha"),
-		withSeedPRCI("success", `[{"name":"build","status":"completed","conclusion":"success","url":"","app":"GitHub Actions"}]`),
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1,
+		serverfake.WithSeedPRHeadSHA("head-sha"),
+		serverfake.WithSeedPRCI("success", `[{"name":"build","status":"completed","conclusion":"success","url":"","app":"GitHub Actions"}]`),
 	)
-	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	updatedAt := providerClosedAt.Add(-time.Hour)
 	number := 1
@@ -3269,7 +2041,7 @@ func TestAPIClosePR(t *testing.T) {
 		SourceUpdatedAt:        updatedAt,
 		SyncedAt:               updatedAt,
 	}}))
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
 	require.NoError(err)
@@ -3291,30 +2063,30 @@ func TestAPIClosePR(t *testing.T) {
 }
 
 func TestAPIReopenPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
-	mock := &mockGH{
-		editPullRequestFn: func(
+	mock := &serverfake.MockGH{
+		EditPullRequestFn: func(
 			_ context.Context, _, _ string, number int, opts platformgithub.EditPullRequestOpts,
 		) (*gh.PullRequest, error) {
 			require.NotNil(opts.State)
-			return providerStatePR(
+			return serverfake.ProviderStatePR(
 				number, *opts.State, time.Now().UTC().Add(time.Hour),
 				nil, nil, "head-sha",
 			), nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
 	ctx := t.Context()
 
 	// Close it first.
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now()
 	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, "closed", nil, &now))
 
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(ctx, &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "open"}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -3326,7 +2098,7 @@ func TestAPIReopenPR(t *testing.T) {
 }
 
 func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -3334,8 +2106,8 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	readyUpdatedAt := staleUpdatedAt.Add(30 * time.Minute)
 	syncStarted := make(chan struct{}, 1)
 	releaseSync := make(chan struct{})
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
 			syncStarted <- struct{}{}
 			<-releaseSync
 
@@ -3365,7 +2137,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 				Base:      &gh.PullRequestBranch{SHA: &baseSHA, Ref: &mainRef},
 			}, nil
 		},
-		markReadyForReviewFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
+		MarkReadyForReviewFn: func(_ context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
 			id := int64(101)
 			state := "open"
 			title := "ready for review"
@@ -3394,10 +2166,10 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	client := servertest.SetupTestClient(t, srv)
 
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -3470,7 +2242,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 }
 
 func TestAPIListPullsReportsHistoricalMergedPRFromMergedAt(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -3482,30 +2254,30 @@ func TestAPIListPullsReportsHistoricalMergedPRFromMergedAt(t *testing.T) {
 	headSHA := "abc123def456"
 	baseSHA := "def456abc123"
 	database := dbtest.Open(t)
-	seedPR(
+	serverfake.SeedPR(
 		t, database, "acme", "widget", number,
-		withSeedPRTitle(title),
-		withSeedPRAuthor("alice"),
-		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
-		withSeedPRTimes(now, now, mergedAt),
-		withSeedPRHeadSHA(headSHA),
-		withSeedPRBaseSHA(baseSHA),
+		serverfake.WithSeedPRTitle(title),
+		serverfake.WithSeedPRAuthor("alice"),
+		serverfake.WithSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt),
+		serverfake.WithSeedPRTimes(now, now, mergedAt),
+		serverfake.WithSeedPRHeadSHA(headSHA),
+		serverfake.WithSeedPRBaseSHA(baseSHA),
 	)
 
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
 		database,
 		nil,
-		defaultTestRepos,
+		serverfake.DefaultTestRepos,
 		time.Minute,
 		nil,
 		nil,
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 	filterState := "closed"
 	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{State: &filterState}})
 	require.NoError(err)
@@ -3521,32 +2293,25 @@ func TestAPIListPullsReportsHistoricalMergedPRFromMergedAt(t *testing.T) {
 	assert.True(apiPR.MergedAt.Equal(mergedAt))
 }
 
-func make422Error() error {
-	return &gh.ErrorResponse{
-		Response: &http.Response{StatusCode: http.StatusUnprocessableEntity},
-		Message:  "Validation Failed",
-	}
-}
-
 func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	mock := &mockGH{
-		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
-			return nil, make422Error()
+	mock := &serverfake.MockGH{
+		EditPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
+			return nil, serverfake.Make422Error()
 		},
-		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 			return nil, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
 	before, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(before)
 
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
 	require.Error(err)
 	require.NotNil(resp)
@@ -3561,16 +2326,16 @@ func TestAPIClosePR422NilFallbackPayloadDoesNotCorruptDB(t *testing.T) {
 }
 
 func TestAPIClosePR422AlreadyClosed(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	// EditPullRequest returns 422, but re-fetch shows PR is already closed.
 	// Should succeed since the requested state matches.
 	state := "closed"
-	mock := &mockGH{
-		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
-			return nil, make422Error()
+	mock := &serverfake.MockGH{
+		EditPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
+			return nil, serverfake.Make422Error()
 		},
-		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 			id := int64(1000)
 			now := gh.Timestamp{Time: time.Now().UTC()}
 			closedAt := gh.Timestamp{Time: time.Now().UTC()}
@@ -3584,9 +2349,9 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
 	require.NoError(err)
@@ -3599,16 +2364,16 @@ func TestAPIClosePR422AlreadyClosed(t *testing.T) {
 // When MarkPullRequestReadyForReview returns (nil, nil) the handler
 // must return 502 rather than claiming success with no PR payload.
 func TestAPIReadyForReview502OnNilPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
-	mock := &mockGH{
-		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		MarkReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 			return nil, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.Error(err)
@@ -3617,16 +2382,16 @@ func TestAPIReadyForReview502OnNilPR(t *testing.T) {
 }
 
 func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
-	mock := &mockGH{
-		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		MarkReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 			return nil, errors.New("marking acme/widget#1 ready for review: draft review threads still pending")
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.Error(err)
@@ -3641,7 +2406,7 @@ func TestAPIReadyForReviewReturnsUnderlyingErrorDetail(t *testing.T) {
 }
 
 func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	staleErr := &staleReadyForReviewError{
@@ -3649,11 +2414,11 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 			"marking acme/widget#1 ready for review: graphql errors: Could not resolve to a PullRequest with the global id of 'PR_kwDOAAABc84'.",
 		),
 	}
-	mock := &mockGH{
-		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		MarkReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 			return nil, staleErr
 		},
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(1001)
 			title := "Already ready"
 			state := "open"
@@ -3680,8 +2445,8 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
 
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
@@ -3690,7 +2455,7 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 	_, err = database.UpsertMergeRequest(t.Context(), pr)
 	require.NoError(err)
 
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -3703,17 +2468,17 @@ func TestAPIReadyForReviewStaleStateRefreshesAndReturnsSuccess(t *testing.T) {
 }
 
 func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	notFound := &gh.ErrorResponse{
 		Response: &http.Response{StatusCode: http.StatusNotFound, Status: "404 Not Found"},
 		Message:  "Not Found",
 	}
-	mock := &mockGH{
-		markReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		MarkReadyForReviewFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 			return nil, fmt.Errorf("marking acme/widget#1 ready for review: %w", notFound)
 		},
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(1001)
 			title := "Already ready"
 			state := "open"
@@ -3740,9 +2505,9 @@ func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -3755,15 +2520,15 @@ func TestAPIReadyForReview404RefreshesStaleDraftState(t *testing.T) {
 }
 
 func TestAPIClosePR422Merged(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	// EditPullRequest returns 422, re-fetch shows PR is merged.
 	// Should return 409.
 	merged := "closed"
-	mock := &mockGH{
-		editPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
-			return nil, make422Error()
+	mock := &serverfake.MockGH{
+		EditPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
+			return nil, serverfake.Make422Error()
 		},
-		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 			id := int64(1000)
 			now := gh.Timestamp{Time: time.Now().UTC()}
 			mergedBool := true
@@ -3777,9 +2542,9 @@ func TestAPIClosePR422Merged(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.SetPrGithubStateWithResponse(t.Context(), &generated.SetPrGithubStateRequestOptions{PathParams: &generated.SetPrGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetPrGithubStateBody{State: "closed"}})
 	require.Error(t, err)
@@ -3787,7 +2552,7 @@ func TestAPIClosePR422Merged(t *testing.T) {
 }
 
 func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -3802,8 +2567,8 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 	}
 	var captured capturedReview
 	submittedAt := gh.Timestamp{Time: time.Now().UTC().Truncate(time.Second)}
-	mock := &mockGH{
-		createReviewWithCommentsFn: func(
+	mock := &serverfake.MockGH{
+		CreateReviewWithCommentsFn: func(
 			_ context.Context,
 			owner, repo string,
 			number int,
@@ -3826,8 +2591,8 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 			return &gh.PullRequestReview{ID: &id, State: &state, SubmittedAt: &submittedAt}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 42)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 42)
 	mr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	require.NotNil(mr)
@@ -3882,7 +2647,7 @@ func TestAPIGitHubPublishReviewDraftSendsCommentsThroughServer(t *testing.T) {
 }
 
 func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -3890,8 +2655,8 @@ func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
 	// No getPullRequestFn: the default mock returns no PR, so this test
 	// also proves direct request-changes performs no provider head reads
 	// beyond the review submission — the same call shape as /approve.
-	mock := &mockGH{
-		createReviewWithCommentsFn: func(
+	mock := &serverfake.MockGH{
+		CreateReviewWithCommentsFn: func(
 			_ context.Context,
 			_, _ string,
 			_ int,
@@ -3912,8 +2677,8 @@ func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
 			return &gh.PullRequestReview{ID: &id, State: &state}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 42)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 42)
 	mr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	require.NotNil(mr)
@@ -3950,17 +2715,17 @@ func TestAPIGitHubRequestChangesDoesNotPublishSavedDraftComments(t *testing.T) {
 }
 
 func TestAPIGitHubReviewDraftHidesApproveForSelfAuthoredPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	mock := &mockGH{
-		authenticatedViewerLoginFn: func(context.Context) (string, error) {
+	mock := &serverfake.MockGH{
+		AuthenticatedViewerLoginFn: func(context.Context) (string, error) {
 			return "marius", nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 42, withSeedPRAuthor("marius"))
-	seedPR(t, database, "acme", "widget", 43, withSeedPRAuthor("someone-else"))
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 42, serverfake.WithSeedPRAuthor("marius"))
+	serverfake.SeedPR(t, database, "acme", "widget", 43, serverfake.WithSeedPRAuthor("someone-else"))
 
 	selfRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/42/review-draft", nil)
 	require.Equal(http.StatusOK, selfRR.Code, selfRR.Body.String())
@@ -3984,7 +2749,7 @@ func TestAPIGitHubReviewDraftHidesApproveForSelfAuthoredPR(t *testing.T) {
 }
 
 func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4071,7 +2836,7 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	database := dbtest.Open(t)
 	client, err := platformgitlab.NewClient(
 		"gitlab.example.com",
-		testTokenSource("token"),
+		serverfake.TestTokenSource("token"),
 		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"), platformgitlab.
 			WithTransport(http.DefaultTransport),
 	)
@@ -4095,7 +2860,7 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:       "gitlab",
@@ -4185,7 +2950,7 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 }
 
 func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -4213,7 +2978,7 @@ func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
 	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 42, "forgejo-head", "base", "merge"))
 	now := time.Now().UTC().Truncate(time.Second)
 	line := 7
-	provider.reviewThreads = []platform.MergeRequestReviewThread{{
+	provider.ReviewThreads = []platform.MergeRequestReviewThread{{
 		ProviderThreadID:  "comment-42",
 		ProviderReviewID:  "review-42",
 		ProviderCommentID: "comment-42",
@@ -4253,7 +3018,7 @@ func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
 	})
 
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
-	require.Len(provider.publishedReviews, 1)
+	require.Len(provider.PublishedReviews, 1)
 
 	detailRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/forgejo/acme/widgets/42", nil)
 	require.Equal(http.StatusOK, detailRR.Code, detailRR.Body.String())
@@ -4267,7 +3032,7 @@ func TestAPIForgejoPublishReviewDraftIngestsTimelineThread(t *testing.T) {
 }
 
 func TestAPIForgejoSyncPersistsCompleteLargeReviewDatasetBeforeSuccess(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -4297,11 +3062,11 @@ func TestAPIForgejoSyncPersistsCompleteLargeReviewDatasetBeforeSuccess(t *testin
 	require.Empty(events)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	provider.reviewThreads = make([]platform.MergeRequestReviewThread, 101)
-	for i := range provider.reviewThreads {
+	provider.ReviewThreads = make([]platform.MergeRequestReviewThread, 101)
+	for i := range provider.ReviewThreads {
 		line := i + 1
 		id := fmt.Sprintf("%d", line)
-		provider.reviewThreads[i] = platform.MergeRequestReviewThread{
+		provider.ReviewThreads[i] = platform.MergeRequestReviewThread{
 			ProviderThreadID: "thread-" + id, ProviderReviewID: "review-" + id,
 			ProviderCommentID: "comment-" + id, Body: "inline note " + id,
 			AuthorLogin: "ada",
@@ -4359,7 +3124,7 @@ func seedApplySuggestionReviewThread(t *testing.T, database *db.DB, mrID int64) 
 }
 
 func TestAPIApplyReviewSuggestionRejectsUnknownHeadRepoOnGitHub(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name             string
 		headRepoCloneURL string
@@ -4396,19 +3161,19 @@ func TestAPIApplyReviewSuggestionRejectsUnknownHeadRepoOnGitHub(t *testing.T) {
 				})
 
 			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-			var problem rawProblemDetail
+			var problem serverfake.RawProblemDetail
 			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 			assert.Equal(string(httpapi.CodeConflict), problem.Code)
 			assert.Equal("pull request head repository is unknown", problem.Detail)
 			require.NotNil(problem.Details)
 			assert.Equal("head_repo_unknown", problem.Details["reason"])
-			assert.Empty(provider.appliedSuggestions)
+			assert.Empty(provider.AppliedSuggestions)
 		})
 	}
 }
 
 func TestAPIApplyReviewSuggestionPassesHeadRepoToGitHubProvider(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -4451,15 +3216,15 @@ func TestAPIApplyReviewSuggestionPassesHeadRepoToGitHubProvider(t *testing.T) {
 		})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	require.Len(provider.appliedSuggestions, 1)
+	require.Len(provider.AppliedSuggestions, 1)
 	assert.Equal(
 		"https://github.example.com/fork/widget.git",
-		provider.appliedSuggestions[0].HeadRepoCloneURL,
+		provider.AppliedSuggestions[0].HeadRepoCloneURL,
 	)
 }
 
 func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name   string
 		reason string
@@ -4484,7 +3249,7 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 				t, &caps, "https://github.example.com/fork/widget.git",
 			)
 			ctx := t.Context()
-			provider.applySuggestionsErr = &platform.Error{
+			provider.ApplySuggestionsErr = &platform.Error{
 				Code:         platform.ErrCodeConflict,
 				Provider:     platform.KindGitHub,
 				PlatformHost: "github.example.com",
@@ -4518,7 +3283,7 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 				})
 
 			require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-			var problem rawProblemDetail
+			var problem serverfake.RawProblemDetail
 			require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 			assert.Equal(string(httpapi.CodeConflict), problem.Code)
 			require.NotNil(problem.Details)
@@ -4528,7 +3293,7 @@ func TestAPIApplyReviewSuggestionMapsProviderConflictReason(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -4544,7 +3309,7 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 		t, &caps, "https://github.example.com/fork/widget.git",
 	)
 	ctx := t.Context()
-	provider.applySuggestionsErr = &platform.Error{
+	provider.ApplySuggestionsErr = &platform.Error{
 		Code:         platform.ErrCodeStaleState,
 		Provider:     platform.KindGitHub,
 		PlatformHost: "github.example.com",
@@ -4578,13 +3343,13 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 		})
 
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	var problem rawProblemDetail
+	var problem serverfake.RawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.Equal(string(httpapi.CodeConflict), problem.Code)
 	assert.Equal("target changed since it was reviewed; refresh and retry", problem.Detail)
 	require.NotNil(problem.Details)
 	assert.Equal("stale_state", problem.Details["reason"])
-	assert.Empty(provider.appliedSuggestions)
+	assert.Empty(provider.AppliedSuggestions)
 	changed := readEventMatching(t, ch, func(ev syncevents.Event) bool {
 		return ev.Type == "data_changed"
 	})
@@ -4592,7 +3357,7 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 }
 
 func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name      string
 		kind      platform.Kind
@@ -4608,7 +3373,7 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			newClient: func(host, token, baseURL string) (platform.Provider, error) {
 				return giteaplatform.NewClient(
 					host,
-					testTokenSource(token),
+					serverfake.TestTokenSource(token),
 					giteaplatform.WithBaseURL(baseURL, true),
 					giteaplatform.WithServerVersion("1.26.0"),
 					giteaplatform.WithTransport(http.DefaultTransport),
@@ -4623,7 +3388,7 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			newClient: func(host, token, baseURL string) (platform.Provider, error) {
 				return forgejoplatform.NewClient(
 					host,
-					testTokenSource(token),
+					serverfake.TestTokenSource(token),
 					forgejoplatform.WithBaseURLForTesting(baseURL),
 					forgejoplatform.WithTransport(http.DefaultTransport),
 				)
@@ -4712,8 +3477,8 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			)
 			t.Cleanup(syncer.Stop)
 			srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-			t.Cleanup(func() { gracefulShutdown(t, srv) })
-			client := setupTestClient(t, srv)
+			t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+			client := servertest.SetupTestClient(t, srv)
 
 			syncer.RunOnce(ctx)
 			repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -4724,9 +3489,9 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 			require.NoError(err)
 			require.NotNil(repo)
 
-			assert.Equal("dirty", requireMR(t, database, repo.ID, 7).MergeableState)
-			assert.Empty(requireMR(t, database, repo.ID, 8).MergeableState)
-			assert.Empty(requireMR(t, database, repo.ID, 9).MergeableState)
+			assert.Equal("dirty", serverfake.RequireMR(t, database, repo.ID, 7).MergeableState)
+			assert.Empty(serverfake.RequireMR(t, database, repo.ID, 8).MergeableState)
+			assert.Empty(serverfake.RequireMR(t, database, repo.ID, 9).MergeableState)
 
 			detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: tt.host, Provider: string(tt.kind), Owner: "tea", Name: "kettle", Number: int64(7)}})
 			require.NoError(err)
@@ -4742,12 +3507,12 @@ func TestAPIGitealikeHTTPMergeabilityPersistsThroughServer(t *testing.T) {
 // safety coverage through the real route path.
 func setupGitealikeHeadPinServer(
 	t *testing.T,
-	transport *apiTestGitealikeTransport,
+	transport *serverfake.ApiTestGitealikeTransport,
 ) *apiclient.Client {
 	t.Helper()
 	require := require.New(t)
 	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
-	transport.repo = gitealike.RepositoryDTO{
+	transport.Repo = gitealike.RepositoryDTO{
 		ID:            101,
 		Owner:         gitealike.UserDTO{UserName: "tea"},
 		Name:          "kettle",
@@ -4758,7 +3523,7 @@ func setupGitealikeHeadPinServer(
 		Created:       base,
 		Updated:       base,
 	}
-	transport.pulls = []gitealike.PullRequestDTO{{
+	transport.Pulls = []gitealike.PullRequestDTO{{
 		ID:      201,
 		Index:   7,
 		HTMLURL: "https://gitea.test/tea/kettle/pulls/7",
@@ -4790,7 +3555,7 @@ func setupGitealikeHeadPinServer(
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	syncer.RunOnce(t.Context())
 	repo, err := database.GetRepoByIdentity(t.Context(), db.RepoIdentity{
 		Platform:     "gitea",
@@ -4800,7 +3565,7 @@ func setupGitealikeHeadPinServer(
 	require.NoError(err)
 	require.NotNil(repo)
 	require.NoError(database.UpdateDiffSHAs(t.Context(), repo.ID, 7, "abc123", "def456", "merge-base"))
-	return setupTestClient(t, srv)
+	return servertest.SetupTestClient(t, srv)
 }
 
 func decodeGitealikeConflict(t *testing.T, body []byte) (string, map[string]any) {
@@ -4814,11 +3579,11 @@ func decodeGitealikeConflict(t *testing.T, body []byte) (string, map[string]any)
 }
 
 func TestAPIGitealikePinnedMergeHeadMismatchIsStale(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	transport := &apiTestGitealikeTransport{
-		mergeErr: &gitealike.HTTPError{
+	transport := &serverfake.ApiTestGitealikeTransport{
+		MergeErr: &gitealike.HTTPError{
 			StatusCode: 409,
 			Message:    "head out of date",
 		},
@@ -4840,16 +3605,16 @@ func TestAPIGitealikePinnedMergeHeadMismatchIsStale(t *testing.T) {
 	require.NotNil(details)
 	assert.Equal("stale_state", details["reason"],
 		"the provider's head-mismatch rejection must surface as stale_state")
-	assert.Equal("abc123", transport.lastMergeOpts.ExpectedHeadSHA,
+	assert.Equal("abc123", transport.LastMergeOpts.ExpectedHeadSHA,
 		"the reviewed head must reach the provider as head_commit_id")
 }
 
 func TestAPIGitealikePinnedMergeGenericConflictStaysConflict(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	transport := &apiTestGitealikeTransport{
-		mergeErr: &gitealike.HTTPError{
+	transport := &serverfake.ApiTestGitealikeTransport{
+		MergeErr: &gitealike.HTTPError{
 			StatusCode: 409,
 			Message:    "merge conflict detected",
 		},
@@ -4874,10 +3639,10 @@ func TestAPIGitealikePinnedMergeGenericConflictStaysConflict(t *testing.T) {
 }
 
 func TestAPIGitealikeApproveSubmitsReview(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	transport := &apiTestGitealikeTransport{}
+	transport := &serverfake.ApiTestGitealikeTransport{}
 	client := setupGitealikeHeadPinServer(t, transport)
 
 	pin := "abc123"
@@ -4887,16 +3652,16 @@ func TestAPIGitealikeApproveSubmitsReview(t *testing.T) {
 	}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
-	assert.Contains(transport.mutationCalls, "review:7:lgtm:abc123")
+	assert.Contains(transport.MutationCalls, "review:7:lgtm:abc123")
 }
 
 func TestAPIGitealikeApproveRefreshesAfterMutation(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	transport := &apiTestGitealikeTransport{}
+	transport := &serverfake.ApiTestGitealikeTransport{}
 	client := setupGitealikeHeadPinServer(t, transport)
-	transport.headCalls = 0
+	transport.HeadCalls = 0
 
 	pin := "abc123"
 	resp, err := client.HTTP.ApprovePullOnHostWithResponse(t.Context(), &generated.ApprovePullOnHostRequestOptions{PathParams: &generated.ApprovePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.ApprovePullOnHostBody{
@@ -4905,29 +3670,20 @@ func TestAPIGitealikeApproveRefreshesAfterMutation(t *testing.T) {
 	}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
-	assert.Equal(1, transport.headCalls)
-	assert.Contains(transport.mutationCalls, "review:7:lgtm:abc123")
-}
-
-func requireMR(t *testing.T, database *db.DB, repoID int64, number int) *db.MergeRequest {
-	t.Helper()
-	require := require.New(t)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
-	require.NoError(err)
-	require.NotNil(mr)
-	return mr
+	assert.Equal(1, transport.HeadCalls)
+	assert.Contains(transport.MutationCalls, "review:7:lgtm:abc123")
 }
 
 func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
 	unmergeable := false
-	transport := &apiTestGitealikeTransport{
-		mergeErr: &gitealike.HTTPError{StatusCode: http.StatusConflict, Message: "pull request is out of date"},
-		repo: gitealike.RepositoryDTO{
+	transport := &serverfake.ApiTestGitealikeTransport{
+		MergeErr: &gitealike.HTTPError{StatusCode: http.StatusConflict, Message: "pull request is out of date"},
+		Repo: gitealike.RepositoryDTO{
 			ID:            101,
 			Owner:         gitealike.UserDTO{UserName: "tea"},
 			Name:          "kettle",
@@ -4938,7 +3694,7 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 			Created:       base,
 			Updated:       base,
 		},
-		pulls: []gitealike.PullRequestDTO{{
+		Pulls: []gitealike.PullRequestDTO{{
 			ID:        201,
 			Index:     7,
 			HTMLURL:   "https://gitea.test/tea/kettle/pulls/7",
@@ -4980,8 +3736,8 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	client := setupTestClient(t, srv)
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	client := servertest.SetupTestClient(t, srv)
 
 	syncer.RunOnce(ctx)
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -4992,8 +3748,8 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(repo)
 	require.NoError(database.UpdateDiffSHAs(ctx, repo.ID, 7, "abc123", "def456", "merge-base"))
-	expectedHeadSHA := requireMR(t, database, repo.ID, 7).PlatformHeadSHA
-	assert.Equal("dirty", requireMR(t, database, repo.ID, 7).MergeableState)
+	expectedHeadSHA := serverfake.RequireMR(t, database, repo.ID, 7).PlatformHeadSHA
+	assert.Equal("dirty", serverfake.RequireMR(t, database, repo.ID, 7).MergeableState)
 
 	resp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.MergePullOnHostBody{
 		Method:          "squash",
@@ -5005,13 +3761,13 @@ func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {
 	require.NotNil(resp)
 	require.Equal(http.StatusConflict, resp.StatusCode, string(resp.Body))
 	assert.Contains(string(resp.Body), "pull request is out of date")
-	assert.Contains(transport.mutationCalls, "merge:7:squash")
-	assert.Equal("Add kettle", requireMR(t, database, repo.ID, 7).Title)
+	assert.Contains(transport.MutationCalls, "merge:7:squash")
+	assert.Equal("Add kettle", serverfake.RequireMR(t, database, repo.ID, 7).Title)
 }
 
 func setupAPIGitealikeHeadPinServer(
 	t *testing.T,
-	transport *apiTestGitealikeTransport,
+	transport *serverfake.ApiTestGitealikeTransport,
 ) (*apiclient.Client, *db.DB) {
 	t.Helper()
 	require := require.New(t)
@@ -5043,8 +3799,8 @@ func setupAPIGitealikeHeadPinServer(
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	client := setupTestClient(t, srv)
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	client := servertest.SetupTestClient(t, srv)
 
 	syncer.RunOnce(ctx)
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -5058,12 +3814,12 @@ func setupAPIGitealikeHeadPinServer(
 	return client, database
 }
 
-func newAPIGitealikeHeadPinTransport(t *testing.T) *apiTestGitealikeTransport {
+func newAPIGitealikeHeadPinTransport(t *testing.T) *serverfake.ApiTestGitealikeTransport {
 	t.Helper()
 	base := time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC)
 	mergeable := true
-	return &apiTestGitealikeTransport{
-		repo: gitealike.RepositoryDTO{
+	return &serverfake.ApiTestGitealikeTransport{
+		Repo: gitealike.RepositoryDTO{
 			ID:            101,
 			Owner:         gitealike.UserDTO{UserName: "tea"},
 			Name:          "kettle",
@@ -5074,7 +3830,7 @@ func newAPIGitealikeHeadPinTransport(t *testing.T) *apiTestGitealikeTransport {
 			Created:       base,
 			Updated:       base,
 		},
-		pulls: []gitealike.PullRequestDTO{{
+		Pulls: []gitealike.PullRequestDTO{{
 			ID:        201,
 			Index:     7,
 			HTMLURL:   "https://gitea.test/tea/kettle/pulls/7",
@@ -5091,7 +3847,7 @@ func newAPIGitealikeHeadPinTransport(t *testing.T) *apiTestGitealikeTransport {
 }
 
 func TestAPIGitealikeMergePassesReviewedHeadPinToProvider(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -5104,7 +3860,7 @@ func TestAPIGitealikeMergePassesReviewedHeadPinToProvider(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(repo)
-	require.Equal("abc123", requireMR(t, database, repo.ID, 7).PlatformHeadSHA)
+	require.Equal("abc123", serverfake.RequireMR(t, database, repo.ID, 7).PlatformHeadSHA)
 	expectedHeadSHA := "abc123"
 
 	resp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.MergePullOnHostBody{
@@ -5116,16 +3872,16 @@ func TestAPIGitealikeMergePassesReviewedHeadPinToProvider(t *testing.T) {
 
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
-	assert.Equal([]string{"abc123"}, transport.mergeHeadPins)
+	assert.Equal([]string{"abc123"}, transport.MergeHeadPins)
 }
 
 func TestAPIGitealikeMergeHeadMismatchMapsToStaleState(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
 	transport := newAPIGitealikeHeadPinTransport(t)
-	transport.mergeErr = &gitealike.HTTPError{
+	transport.MergeErr = &gitealike.HTTPError{
 		StatusCode: http.StatusConflict,
 		Message:    "head target does not match",
 	}
@@ -5146,12 +3902,12 @@ func TestAPIGitealikeMergeHeadMismatchMapsToStaleState(t *testing.T) {
 	require.NotNil(resp.Error)
 	assert.Equal("conflict", string(resp.Error.Code))
 	require.NotNil(resp.Error.Details)
-	assert.Equal("stale_state", resp.Error.Details["reason"])
-	assert.Equal([]string{"abc123"}, transport.mergeHeadPins)
+	assert.Equal("stale_state", (resp.Error.Details)["reason"])
+	assert.Equal([]string{"abc123"}, transport.MergeHeadPins)
 }
 
 func TestAPIGitealikeApproveBeforeHeadRace(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -5166,11 +3922,11 @@ func TestAPIGitealikeApproveBeforeHeadRace(t *testing.T) {
 
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
-	assert.Contains(transport.mutationCalls, "review:7:approved:abc123")
+	assert.Contains(transport.MutationCalls, "review:7:approved:abc123")
 }
 
 func TestAPIGitealikeRequestChangesPassesReviewedHeadPinToProvider(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -5185,408 +3941,16 @@ func TestAPIGitealikeRequestChangesPassesReviewedHeadPinToProvider(t *testing.T)
 
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
-	assert.Equal("REQUEST_CHANGES", transport.lastReviewOpts.State)
-	assert.Equal("needs work", transport.lastReviewOpts.Body)
-	assert.Equal("abc123", transport.lastReviewOpts.CommitID)
-}
-
-type apiTestGitealikeTransport struct {
-	repo           gitealike.RepositoryDTO
-	pulls          []gitealike.PullRequestDTO
-	pullComments   []gitealike.CommentDTO
-	issues         []gitealike.IssueDTO
-	issueComments  []gitealike.CommentDTO
-	statuses       []gitealike.StatusDTO
-	mergeErr       error
-	actionRuns     []gitealike.ActionRunDTO
-	nextCommentID  int64
-	nextIssueID    int64
-	nextIssueIndex int
-	mutationCalls  []string
-	mergeHeadPins  []string
-	lastReviewOpts gitealike.ReviewOptions
-
-	lastMergeOpts gitealike.MergeOptions
-	// headOverrides, when non-empty, replaces the head SHA returned by
-	// successive GetPullRequest calls (the final entry repeats),
-	// simulating a push racing an in-flight mutation.
-	headOverrides []string
-	headCalls     int
-}
-
-func (t *apiTestGitealikeTransport) GetRepository(
-	context.Context,
-	string,
-	string,
-) (gitealike.RepositoryDTO, error) {
-	return t.repo, nil
-}
-
-func (t *apiTestGitealikeTransport) ListUserRepositories(
-	context.Context,
-	string,
-	gitealike.PageOptions,
-) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
-	return []gitealike.RepositoryDTO{t.repo}, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) ListOrgRepositories(
-	context.Context,
-	string,
-	gitealike.PageOptions,
-) ([]gitealike.RepositoryDTO, gitealike.Page, error) {
-	return []gitealike.RepositoryDTO{t.repo}, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) ListOpenPullRequests(
-	context.Context,
-	platform.RepoRef,
-	gitealike.PageOptions,
-) ([]gitealike.PullRequestDTO, gitealike.Page, error) {
-	return t.pulls, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) GetPullRequest(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) (gitealike.PullRequestDTO, error) {
-	for _, pr := range t.pulls {
-		if pr.Index == number {
-			t.headCalls++
-			if len(t.headOverrides) > 0 {
-				i := t.headCalls - 1
-				if i >= len(t.headOverrides) {
-					i = len(t.headOverrides) - 1
-				}
-				pr.Head.SHA = t.headOverrides[i]
-			}
-			return pr, nil
-		}
-	}
-	return gitealike.PullRequestDTO{}, platform.ErrNotFound
-}
-
-func (t *apiTestGitealikeTransport) ListPullRequestComments(
-	context.Context,
-	platform.RepoRef,
-	int,
-	gitealike.PageOptions,
-) ([]gitealike.CommentDTO, gitealike.Page, error) {
-	return t.pullComments, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) ListPullRequestReviews(
-	context.Context,
-	platform.RepoRef,
-	int,
-	gitealike.PageOptions,
-) ([]gitealike.ReviewDTO, gitealike.Page, error) {
-	return nil, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) ListPullRequestCommits(
-	context.Context,
-	platform.RepoRef,
-	int,
-	gitealike.PageOptions,
-) ([]gitealike.CommitDTO, gitealike.Page, error) {
-	return nil, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) ListOpenIssues(
-	context.Context,
-	platform.RepoRef,
-	gitealike.PageOptions,
-) ([]gitealike.IssueDTO, gitealike.Page, error) {
-	return t.issues, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) GetIssue(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) (gitealike.IssueDTO, error) {
-	for _, issue := range t.issues {
-		if issue.Index == number {
-			return issue, nil
-		}
-	}
-	return gitealike.IssueDTO{}, platform.ErrNotFound
-}
-
-func (t *apiTestGitealikeTransport) ListIssueComments(
-	context.Context,
-	platform.RepoRef,
-	int,
-	gitealike.PageOptions,
-) ([]gitealike.CommentDTO, gitealike.Page, error) {
-	return t.issueComments, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) ListReleases(
-	context.Context,
-	platform.RepoRef,
-	gitealike.PageOptions,
-) ([]gitealike.ReleaseDTO, gitealike.Page, error) {
-	return nil, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) ListTags(
-	context.Context,
-	platform.RepoRef,
-	gitealike.PageOptions,
-) ([]gitealike.TagDTO, gitealike.Page, error) {
-	return nil, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) ListStatuses(
-	context.Context,
-	platform.RepoRef,
-	string,
-	gitealike.PageOptions,
-) ([]gitealike.StatusDTO, gitealike.Page, error) {
-	return t.statuses, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) ListActionRuns(
-	context.Context,
-	platform.RepoRef,
-	string,
-	gitealike.PageOptions,
-) ([]gitealike.ActionRunDTO, gitealike.Page, error) {
-	return t.actionRuns, gitealike.Page{}, nil
-}
-
-func (t *apiTestGitealikeTransport) CreateIssueComment(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-	body string,
-) (gitealike.CommentDTO, error) {
-	if t.nextCommentID == 0 {
-		t.nextCommentID = 1
-	}
-	id := t.nextCommentID
-	t.nextCommentID++
-	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("create_comment:%d:%s", number, body))
-	comment := gitealike.CommentDTO{
-		ID:      id,
-		User:    gitealike.UserDTO{UserName: "mutation-bot"},
-		Body:    body,
-		Created: time.Now().UTC().Truncate(time.Second),
-		Updated: time.Now().UTC().Truncate(time.Second),
-	}
-	if issue := t.findIssue(number); issue != nil {
-		t.issueComments = upsertComment(t.issueComments, comment)
-		return comment, nil
-	}
-	t.pullComments = upsertComment(t.pullComments, comment)
-	return comment, nil
-}
-
-func (t *apiTestGitealikeTransport) EditIssueComment(
-	_ context.Context,
-	_ platform.RepoRef,
-	commentID int64,
-	body string,
-) (gitealike.CommentDTO, error) {
-	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("edit_comment:%d:%s", commentID, body))
-	comment := gitealike.CommentDTO{
-		ID:      commentID,
-		User:    gitealike.UserDTO{UserName: "mutation-bot"},
-		Body:    body,
-		Created: time.Now().UTC().Truncate(time.Second),
-		Updated: time.Now().UTC().Truncate(time.Second),
-	}
-	t.pullComments = upsertComment(t.pullComments, comment)
-	t.issueComments = upsertComment(t.issueComments, comment)
-	return comment, nil
-}
-
-func (t *apiTestGitealikeTransport) DeleteIssueComment(
-	_ context.Context,
-	_ platform.RepoRef,
-	commentID int64,
-) error {
-	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("delete_comment:%d", commentID))
-	t.pullComments = slices.DeleteFunc(t.pullComments, func(comment gitealike.CommentDTO) bool {
-		return comment.ID == commentID
-	})
-	t.issueComments = slices.DeleteFunc(t.issueComments, func(comment gitealike.CommentDTO) bool {
-		return comment.ID == commentID
-	})
-	return nil
-}
-
-func (t *apiTestGitealikeTransport) CreateIssue(
-	_ context.Context,
-	ref platform.RepoRef,
-	title string,
-	body string,
-) (gitealike.IssueDTO, error) {
-	if t.nextIssueID == 0 {
-		t.nextIssueID = 1
-	}
-	if t.nextIssueIndex == 0 {
-		t.nextIssueIndex = 1
-	}
-	id := t.nextIssueID
-	t.nextIssueID++
-	number := t.nextIssueIndex
-	t.nextIssueIndex++
-	t.mutationCalls = append(t.mutationCalls, "create_issue:"+title)
-	issue := gitealike.IssueDTO{
-		ID:      id,
-		Index:   number,
-		HTMLURL: fmt.Sprintf("https://%s/%s/%s/issues/%d", ref.Host, ref.Owner, ref.Name, number),
-		Title:   title,
-		User:    gitealike.UserDTO{UserName: "mutation-bot"},
-		State:   "open",
-		Body:    body,
-		Created: time.Now().UTC().Truncate(time.Second),
-		Updated: time.Now().UTC().Truncate(time.Second),
-	}
-	t.issues = append(t.issues, issue)
-	return issue, nil
-}
-
-func (t *apiTestGitealikeTransport) EditIssue(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-	opts gitealike.IssueMutationOptions,
-) (gitealike.IssueDTO, error) {
-	issue := t.findIssue(number)
-	if issue == nil {
-		return gitealike.IssueDTO{}, platform.ErrNotFound
-	}
-	if opts.State != nil {
-		issue.State = *opts.State
-		t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("edit_issue:%d:%s", number, *opts.State))
-	}
-	if opts.Title != nil {
-		issue.Title = *opts.Title
-	}
-	if opts.Body != nil {
-		issue.Body = *opts.Body
-	}
-	issue.Updated = time.Now().UTC().Truncate(time.Second)
-	if issue.State == "closed" {
-		closed := issue.Updated
-		issue.Closed = &closed
-	}
-	return *issue, nil
-}
-
-func (t *apiTestGitealikeTransport) EditPullRequest(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-	opts gitealike.PullRequestMutationOptions,
-) (gitealike.PullRequestDTO, error) {
-	pr := t.findPull(number)
-	if pr == nil {
-		return gitealike.PullRequestDTO{}, platform.ErrNotFound
-	}
-	if opts.State != nil {
-		pr.State = *opts.State
-		t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("edit_pull:%d:%s", number, *opts.State))
-	}
-	if opts.Title != nil {
-		pr.Title = *opts.Title
-	}
-	if opts.Body != nil {
-		pr.Body = *opts.Body
-	}
-	if opts.Title != nil || opts.Body != nil {
-		t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("edit_pull_content:%d:%s:%s", number, pr.Title, pr.Body))
-	}
-	pr.Updated = time.Now().UTC().Truncate(time.Second)
-	if pr.State == "closed" {
-		closed := pr.Updated
-		pr.Closed = &closed
-	}
-	return *pr, nil
-}
-
-func (t *apiTestGitealikeTransport) MergePullRequest(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-	opts gitealike.MergeOptions,
-) (gitealike.MergeResultDTO, error) {
-	pr := t.findPull(number)
-	if pr == nil {
-		return gitealike.MergeResultDTO{}, platform.ErrNotFound
-	}
-	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("merge:%d:%s", number, opts.Method))
-	t.mergeHeadPins = append(t.mergeHeadPins, opts.ExpectedHeadSHA)
-	t.lastMergeOpts = opts
-	if t.mergeErr != nil {
-		return gitealike.MergeResultDTO{}, t.mergeErr
-	}
-	now := time.Now().UTC().Truncate(time.Second)
-	pr.State = "merged"
-	pr.Merged = true
-	pr.MergedAt = &now
-	pr.Updated = now
-	return gitealike.MergeResultDTO{Merged: true, SHA: "merged-sha", Message: "merged"}, nil
-}
-
-func (t *apiTestGitealikeTransport) CreatePullReview(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-	opts gitealike.ReviewOptions,
-) (gitealike.ReviewDTO, error) {
-	if t.findPull(number) == nil {
-		return gitealike.ReviewDTO{}, platform.ErrNotFound
-	}
-	t.mutationCalls = append(t.mutationCalls, fmt.Sprintf("review:%d:%s:%s", number, opts.Body, opts.CommitID))
-	t.lastReviewOpts = opts
-	return gitealike.ReviewDTO{
-		ID:        980,
-		User:      gitealike.UserDTO{UserName: "mutation-bot"},
-		State:     opts.State,
-		Body:      opts.Body,
-		Submitted: time.Now().UTC().Truncate(time.Second),
-	}, nil
-}
-
-func (t *apiTestGitealikeTransport) findPull(number int) *gitealike.PullRequestDTO {
-	for i := range t.pulls {
-		if t.pulls[i].Index == number {
-			return &t.pulls[i]
-		}
-	}
-	return nil
-}
-
-func (t *apiTestGitealikeTransport) findIssue(number int) *gitealike.IssueDTO {
-	for i := range t.issues {
-		if t.issues[i].Index == number {
-			return &t.issues[i]
-		}
-	}
-	return nil
-}
-
-func upsertComment(comments []gitealike.CommentDTO, comment gitealike.CommentDTO) []gitealike.CommentDTO {
-	for i := range comments {
-		if comments[i].ID == comment.ID {
-			comments[i] = comment
-			return comments
-		}
-	}
-	return append(comments, comment)
+	assert.Equal("REQUEST_CHANGES", transport.LastReviewOpts.State)
+	assert.Equal("needs work", transport.LastReviewOpts.Body)
+	assert.Equal("abc123", transport.LastReviewOpts.CommitID)
 }
 
 func setupGitHubCapabilityServerWithProvider(
 	t *testing.T,
 	caps *platform.Capabilities,
 	headRepoCloneURL string,
-) (*server.Server, *db.DB, *apiTestGitLabProvider) {
+) (*server.Server, *db.DB, *serverfake.ApiTestGitLabProvider) {
 	t.Helper()
 	require := require.New(t)
 	ctx := t.Context()
@@ -5606,10 +3970,10 @@ func setupGitHubCapabilityServerWithProvider(
 		CloneURL:           "https://github.example.com/acme/widget.git",
 		DefaultBranch:      "main",
 	}
-	provider := &apiTestGitLabProvider{
-		ref:          ref,
-		capabilities: caps,
-		mergeRequests: []platform.MergeRequest{{
+	provider := &serverfake.ApiTestGitLabProvider{
+		Ref:               ref,
+		CapabilitiesValue: caps,
+		MergeRequests: []platform.MergeRequest{{
 			Repo:               ref,
 			PlatformID:         7101,
 			PlatformExternalID: "7101",
@@ -5648,7 +4012,7 @@ func setupGitHubCapabilityServerWithProvider(
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	syncer.RunOnce(ctx)
 	return srv, database, provider
@@ -5657,7 +4021,7 @@ func setupGitHubCapabilityServerWithProvider(
 func setupForgejoCapabilityServerWithProvider(
 	t *testing.T,
 	caps *platform.Capabilities,
-) (*server.Server, *db.DB, *apiTestGitLabProvider) {
+) (*server.Server, *db.DB, *serverfake.ApiTestGitLabProvider) {
 	t.Helper()
 	require := require.New(t)
 	ctx := t.Context()
@@ -5677,10 +4041,10 @@ func setupForgejoCapabilityServerWithProvider(
 		CloneURL:           "https://codeberg.org/acme/widgets.git",
 		DefaultBranch:      "main",
 	}
-	provider := &apiTestGitLabProvider{
-		ref:          ref,
-		capabilities: caps,
-		mergeRequests: []platform.MergeRequest{{
+	provider := &serverfake.ApiTestGitLabProvider{
+		Ref:               ref,
+		CapabilitiesValue: caps,
+		MergeRequests: []platform.MergeRequest{{
 			Repo:               ref,
 			PlatformID:         9001,
 			PlatformExternalID: "9001",
@@ -5718,89 +4082,22 @@ func setupForgejoCapabilityServerWithProvider(
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	syncer.RunOnce(ctx)
 	return srv, database, provider
 }
 
-func seedStackedPR(
-	t *testing.T, database *db.DB,
-	owner, name string, number int,
-	head, base string, state db.MergeRequestState, ci, review string,
-) int64 {
-	return seedStackedPRState(t, database, owner, name, number, head, base, state, ci, review, false, "")
-}
-
-func seedStackedPRDraft(
-	t *testing.T, database *db.DB,
-	owner, name string, number int,
-	head, base string, state db.MergeRequestState, ci, review string,
-	isDraft bool,
-) int64 {
-	return seedStackedPRState(t, database, owner, name, number, head, base, state, ci, review, isDraft, "")
-}
-
-func seedStackedPRState(
-	t *testing.T, database *db.DB,
-	owner, name string, number int,
-	head, base string, state db.MergeRequestState, ci, review string,
-	isDraft bool,
-	mergeableState string,
-) int64 {
-	t.Helper()
-	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
-	require.NoError(t, err)
-	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, name)
-	require.NoError(t, database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
-		CloneURL:      cloneURL,
-		DefaultBranch: "main",
-	}))
-	now := time.Now().UTC().Truncate(time.Second)
-	pr := &db.MergeRequest{
-		RepoID:           repoID,
-		PlatformID:       int64(number) * 1000,
-		Number:           number,
-		Title:            fmt.Sprintf("PR #%d: %s", number, head),
-		Author:           "testuser",
-		State:            state,
-		IsDraft:          isDraft,
-		HeadBranch:       head,
-		BaseBranch:       base,
-		HeadRepoCloneURL: cloneURL,
-		CIStatus:         ci,
-		ReviewDecision:   review,
-		MergeableState:   mergeableState,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-		LastActivityAt:   now,
-	}
-	prID, err := database.UpsertMergeRequest(ctx, pr)
-	require.NoError(t, err)
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
-	return prID
-}
-
-func runStackDetection(t *testing.T, database *db.DB, owner, name string) {
-	t.Helper()
-	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
-	require.NoError(t, err)
-	require.NotNil(t, repo)
-	require.NoError(t, stacks.RunDetection(ctx, database, repo.ID))
-}
-
 func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
-	srv, database := setupTestServer(t)
-	client := setupTestClient(t, srv)
+	srv, database := servertest.SetupTestServer(t)
+	client := servertest.SetupTestClient(t, srv)
 
 	// Draft base with green CI + approval; non-draft tip pending.
-	seedStackedPRDraft(t, database, "acme", "widget", 10, "feat/x", "main", db.MergeRequestStateOpen, "success", "APPROVED", true)
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/y", "feat/x", db.MergeRequestStateOpen, "pending", "")
-	runStackDetection(t, database, "acme", "widget")
+	serverfake.SeedStackedPRDraft(t, database, "acme", "widget", 10, "feat/x", "main", db.MergeRequestStateOpen, "success", "APPROVED", true)
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 11, "feat/y", "feat/x", db.MergeRequestStateOpen, "pending", "")
+	serverfake.RunStackDetection(t, database, "acme", "widget")
 
 	resp, err := client.HTTP.GetPullStackWithResponse(t.Context(), &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(t, err)
@@ -5808,27 +4105,6 @@ func TestAPIGetStackForPR_DraftNotBaseReady(t *testing.T) {
 	require.NotNil(t, resp.JSON200)
 	assert.NotEqual("base_ready", resp.JSON200.Health, "draft base must not be base_ready")
 	assert.NotEqual("all_green", resp.JSON200.Health, "draft stack must not be all_green")
-}
-
-func cleanupServerTestTmux(owner *testtmux.Owner) error {
-	if owner == nil {
-		return nil
-	}
-	return owner.Cleanup()
-}
-
-type rawProblemDetail struct {
-	Type    string         `json:"type"`
-	Title   string         `json:"title"`
-	Status  int            `json:"status"`
-	Detail  string         `json:"detail"`
-	Code    string         `json:"code"`
-	Details map[string]any `json:"details"`
-	Errors  []struct {
-		Message  string `json:"message"`
-		Location string `json:"location"`
-		Value    any    `json:"value"`
-	} `json:"errors"`
 }
 
 func readEventMatching(
@@ -5859,19 +4135,19 @@ func TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback(t *testing.
 	assert := assert.New(t)
 	require := require.New(t)
 	merged := false
-	mock := &mockGH{
-		mergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
+	mock := &serverfake.MockGH{
+		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			merged = true
 			return &gh.PullRequestMergeResult{}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	ctx := t.Context()
-	seedStackedPR(t, database, "acme", "widget", 100, "feature/a", "main", db.MergeRequestStateOpen, "", "")
-	seedStackedPR(t, database, "acme", "widget", 101, "feature/b", "feature/a", db.MergeRequestStateMerged, "", "")
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 100, "feature/a", "main", db.MergeRequestStateOpen, "", "")
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 101, "feature/b", "feature/a", db.MergeRequestStateMerged, "", "")
 	tipHeadSHA := "sha102"
-	seedStackedPR(t, database, "acme", "widget", 102, "feature/c", "feature/b", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 102, "feature/c", "feature/b", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -5896,7 +4172,7 @@ func TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback(t *testing.
 		},
 	}))
 	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42, 43}))
-	client := setupTestClient(t, srv)
+	client := servertest.SetupTestClient(t, srv)
 
 	resp, err := client.HTTP.MergePullWithResponse(ctx, &generated.MergePullRequestOptions{PathParams: &generated.MergePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(102)}, Body: &generated.MergePRInputBody{
 		Method:          "squash",

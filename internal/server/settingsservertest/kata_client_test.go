@@ -13,10 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/kata"
 	"go.kenn.io/forge/internal/server/kataclient"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestKataAPIClientExposesSnapshotEnrichmentMethods(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	_ = kataclient.KataAPIClient.ShowIssueByUIDWithResponse
 	_ = kataclient.KataAPIClient.PollEventsWithResponse
@@ -24,7 +25,7 @@ func TestKataAPIClientExposesSnapshotEnrichmentMethods(t *testing.T) {
 }
 
 func TestNewKataAPIClientUsesResolvedTargetAuth(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	var authorization string
@@ -50,7 +51,7 @@ func TestNewKataAPIClientUsesResolvedTargetAuth(t *testing.T) {
 }
 
 func TestKataAPIClientStreamEventsRawDoesNotBuffer(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	requestHeaders := make(chan http.Header, 1)
@@ -100,7 +101,7 @@ func TestKataAPIClientStreamEventsRawDoesNotBuffer(t *testing.T) {
 }
 
 func TestKataGeneratedHTTPDoerRejectsResponseBeyondEndpointBudget(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -129,7 +130,7 @@ func TestKataGeneratedHTTPDoerRejectsResponseBeyondEndpointBudget(t *testing.T) 
 }
 
 func TestKataGeneratedResponseLimitLeavesRoomForCompleteAuthorities(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	require.Equal(int64(128<<20), kataclient.KataGeneratedResponseLimit("/api/v1/issues"))

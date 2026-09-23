@@ -1,17 +1,16 @@
 package settingstest
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestServerUsesResponseCompressionMiddleware(t *testing.T) {
@@ -29,15 +28,5 @@ func TestServerUsesResponseCompressionMiddleware(t *testing.T) {
 	assert.Equal(http.StatusOK, rr.Code)
 	assert.Equal("zstd", rr.Header().Get("Content-Encoding"))
 	assert.Equal("Accept-Encoding", rr.Header().Get("Vary"))
-	assert.Contains(decodeZstdBody(t, rr.Body), "Add widget caching layer")
-}
-
-func decodeZstdBody(t *testing.T, body io.Reader) string {
-	t.Helper()
-	reader, err := zstd.NewReader(body)
-	require.NoError(t, err)
-	defer reader.Close()
-	data, err := io.ReadAll(reader)
-	require.NoError(t, err)
-	return string(data)
+	assert.Contains(serverfake.DecodeZstdBody(t, rr.Body), "Add widget caching layer")
 }

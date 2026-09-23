@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 type recordingTerminalClipboard struct {
@@ -78,7 +79,7 @@ func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
 		t.Run(tt.name, func(t *testing.T) {
 			clipboard := &recordingTerminalClipboard{}
 			srv := server.New(
-				openTestDB(t), nil, nil, "/", nil,
+				serverfake.OpenTestDB(t), nil, nil, "/", nil,
 				server.ServerOptions{
 					TerminalClipboard: clipboard,
 					HostCheck: authapi.HostCheckOptions{

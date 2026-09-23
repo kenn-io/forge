@@ -15,13 +15,18 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"go.kenn.io/forge/internal/archive"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	archivereport "go.kenn.io/forge/internal/archive/report"
 	"go.kenn.io/forge/internal/db"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
+
 	platformforgejo "go.kenn.io/forge/platform/forgejo"
+
 	platformgitea "go.kenn.io/forge/platform/gitea"
 )
 
@@ -102,7 +107,7 @@ func TestForgejoContainerSync(t *testing.T) {
 	budget := ghclient.NewSyncBudget(5000)
 	client, err := platformforgejo.NewClient(
 		manifest.Host,
-		testTokenSource(manifest.Token),
+		serverfake.TestTokenSource(manifest.Token),
 		platformforgejo.WithBaseURLForTesting(manifest.BaseURL),
 		platformforgejo.WithForegroundTimeoutForTesting(time.Minute),
 		platformforgejo.WithRateTracker(tracker),
@@ -142,7 +147,7 @@ func TestGiteaContainerSync(t *testing.T) {
 	budget := ghclient.NewSyncBudget(5000)
 	client, err := platformgitea.NewClient(
 		manifest.Host,
-		testTokenSource(manifest.Token),
+		serverfake.TestTokenSource(manifest.Token),
 		platformgitea.WithBaseURL(manifest.BaseURL, true),
 		platformgitea.WithForegroundTimeoutForTesting(time.Minute),
 		platformgitea.WithRateTracker(tracker),

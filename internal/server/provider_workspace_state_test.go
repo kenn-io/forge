@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
@@ -34,14 +35,14 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, hub) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hub) })
 	hubServer := httptest.NewServer(hub)
 	t.Cleanup(hubServer.Close)
-	seedPR(t, database, "acme", "widget", 1, func(pull *db.MergeRequest) {
+	serverfake.SeedPR(t, database, "acme", "widget", 1, func(pull *db.MergeRequest) {
 		pull.Title = "Merged change"
 		pull.State = db.MergeRequestStateMerged
 	})
-	seedPR(t, database, "acme", "widget", 2, func(pull *db.MergeRequest) {
+	serverfake.SeedPR(t, database, "acme", "widget", 2, func(pull *db.MergeRequest) {
 		pull.Title = "Linked change"
 	})
 	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(

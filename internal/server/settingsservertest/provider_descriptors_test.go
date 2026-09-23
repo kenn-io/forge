@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -69,7 +70,7 @@ func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
 			}, nil
 		}),
 		Clones: gitclone.New(t.TempDir(), descriptorCloneRoutes{
-			source: testTokenSource("spoke-git-token"),
+			source: serverfake.TestTokenSource("spoke-git-token"),
 		}),
 	}
 

@@ -22,6 +22,8 @@ import (
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/kit/daemon"
 )
 
@@ -49,29 +51,6 @@ func newTailscaleAuthTestServer(t *testing.T) (*httptest.Server, *server.Server)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	return ts, srv
-}
-
-func newFederationAuthTestServer(
-	t *testing.T, scopes ...federationauth.Scope,
-) (*httptest.Server, *federationauth.Store, string) {
-	t.Helper()
-	store, err := federationauth.Open(
-		filepath.Join(t.TempDir(), "federation-credentials.json"),
-	)
-	require.NoError(t, err)
-	token, err := store.MintInbound(
-		"fedcba9876543210fedcba9876543210", scopes,
-	)
-	require.NoError(t, err)
-	srv := server.New(dbtest.Open(t), nil, nil, "/", nil, server.ServerOptions{
-		DaemonAccess: authapi.DaemonAccessOptions{
-			Token: "local-secret", RequireAPIAuth: true,
-		},
-		FederationCredentials: store,
-	})
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	return ts, store, token
 }
 
 // TestDaemonPingContract protects authenticated readiness and the private
@@ -289,7 +268,7 @@ func TestFederationCredentialTakesPrecedenceOverTailscaleServeIdentity(t *testin
 	})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	response := authGet(t, ts, "/api/v1/federation/identity", func(request *http.Request) {
 		request.Header.Set("Authorization", "Bearer "+token)
@@ -418,7 +397,7 @@ func TestAPIAuthDisabledByDefault(t *testing.T) {
 func TestFederationAuthIsScopedIndependentlyOfLocalAuth(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ts, _, token := newFederationAuthTestServer(t, federationauth.ScopeSnapshotRead)
+	ts, _, token := servertest.NewFederationAuthTestServer(t, federationauth.ScopeSnapshotRead)
 
 	resp := authGet(t, ts, "/api/v1/snapshot/raw", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
@@ -460,7 +439,7 @@ func TestFederationAuthIsScopedIndependentlyOfLocalAuth(t *testing.T) {
 func TestFederationAuthTreatsEscapedSlashAsOneRouteParameter(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ts, _, token := newFederationAuthTestServer(t, federationauth.ScopeWorkspaceWrite)
+	ts, _, token := servertest.NewFederationAuthTestServer(t, federationauth.ScopeWorkspaceWrite)
 
 	req, err := http.NewRequestWithContext(t.Context(),
 		http.MethodPost,
@@ -482,7 +461,7 @@ func TestFederationAuthTreatsEscapedSlashAsOneRouteParameter(t *testing.T) {
 func TestFederationAuthRejectsInsufficientScopeAndSubjectMismatch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ts, _, token := newFederationAuthTestServer(t, federationauth.ScopeProviderRead)
+	ts, _, token := servertest.NewFederationAuthTestServer(t, federationauth.ScopeProviderRead)
 
 	resp := authGet(t, ts, "/api/v1/snapshot/raw", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
@@ -498,7 +477,7 @@ func TestFederationAuthRejectsInsufficientScopeAndSubjectMismatch(t *testing.T) 
 	assert.Equal("federationScopeDenied", problem.Details["reason"])
 	assert.Equal(string(federationauth.ScopeSnapshotRead), problem.Details["required_scope"])
 
-	ts, _, token = newFederationAuthTestServer(t, federationauth.ScopeSnapshotRead)
+	ts, _, token = servertest.NewFederationAuthTestServer(t, federationauth.ScopeSnapshotRead)
 	resp = authGet(t, ts, "/api/v1/snapshot/raw", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
 		r.Header.Set(federationauth.NodeIDHeader,
@@ -518,7 +497,7 @@ func TestFederationAuthRejectsInsufficientScopeAndSubjectMismatch(t *testing.T) 
 func TestRevokedFederationCredentialFailsOnNextRequest(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ts, store, token := newFederationAuthTestServer(t, federationauth.ScopeSnapshotRead)
+	ts, store, token := servertest.NewFederationAuthTestServer(t, federationauth.ScopeSnapshotRead)
 
 	resp := authGet(t, ts, "/api/v1/snapshot/raw", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
@@ -545,7 +524,7 @@ func TestRevokedFederationCredentialFailsOnNextRequest(t *testing.T) {
 func TestFederationProviderAuthRequiresExactProtocolAndScope(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ts, store, token := newFederationAuthTestServer(
+	ts, store, token := servertest.NewFederationAuthTestServer(
 		t, federationauth.ScopeProviderRead,
 	)
 

@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
@@ -36,7 +38,7 @@ func setupHostCheckServerWithToken(
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	return server.New(database, syncer, emptyFrontend(), "/", nil, server.ServerOptions{
+	return server.New(database, syncer, serverfake.EmptyFrontend(), "/", nil, server.ServerOptions{
 		HostCheck: opts,
 		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: token, RequireAPIAuth: token != "",
@@ -44,28 +46,10 @@ func setupHostCheckServerWithToken(
 	})
 }
 
-func bindLoopback8091() config.HostKey {
-	return config.HostKey{Host: "127.0.0.1", Port: "8091"}
-}
-
-func directDaemonRequest(t *testing.T, bearer string, headers http.Header) *http.Request {
-	t.Helper()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/snapshot", nil)
-	req.Host = "127.0.0.1:8091"
-	req.RemoteAddr = "127.0.0.1:1234"
-	if headers != nil {
-		req.Header = headers.Clone()
-	}
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	return req
-}
-
 func serveDirectDaemonRequest(t *testing.T, srv *server.Server, bearer string, headers http.Header) int {
 	t.Helper()
 	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, directDaemonRequest(t, bearer, headers))
+	srv.ServeHTTP(rr, serverfake.DirectDaemonRequest(t, bearer, headers))
 	return rr.Code
 }
 
@@ -74,7 +58,7 @@ func serveDirectDaemonRequest(t *testing.T, srv *server.Server, bearer string, h
 // remains subject to the existing proxy validation and rejection rules.
 func TestDirectDaemonBearerHostIntegration(t *testing.T) {
 	srv := setupHostCheckServerWithToken(t, authapi.HostCheckOptions{
-		Bind:              bindLoopback8091(),
+		Bind:              serverfake.BindLoopback8091(),
 		TrustReverseProxy: true,
 	}, "daemon-secret")
 	assert.Equal(t, http.StatusOK, serveDirectDaemonRequest(t, srv, "daemon-secret", nil))
@@ -90,9 +74,9 @@ func TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth(t *testing.T) {
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	srv := server.New(database, syncer, emptyFrontend(), "/", nil, server.ServerOptions{
+	srv := server.New(database, syncer, serverfake.EmptyFrontend(), "/", nil, server.ServerOptions{
 		HostCheck: authapi.HostCheckOptions{
-			Bind:              bindLoopback8091(),
+			Bind:              serverfake.BindLoopback8091(),
 			Allowed:           []config.HostKey{{Host: "mm.example.com"}},
 			TrustReverseProxy: true,
 		},
@@ -110,7 +94,7 @@ func TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth(t *testing.T) {
 //
 // Bind for every case is 127.0.0.1:8091.
 func TestHostCheckBackendHost(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	cases := []struct {
 		name    string
@@ -166,7 +150,7 @@ func TestHostCheckBackendHost(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := setupHostCheckServer(t, authapi.HostCheckOptions{
-				Bind:    bindLoopback8091(),
+				Bind:    serverfake.BindLoopback8091(),
 				Allowed: tc.allowed,
 			})
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
@@ -184,7 +168,7 @@ func TestHostCheckBackendHost(t *testing.T) {
 // Always also exercises that DNS-rebinding rejections from Step 2
 // run before any forwarded header is read.
 func TestHostCheckForwardedHost(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	cases := []struct {
 		name              string
@@ -329,7 +313,7 @@ func TestHostCheckForwardedHost(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := setupHostCheckServer(t, authapi.HostCheckOptions{
-				Bind:              bindLoopback8091(),
+				Bind:              serverfake.BindLoopback8091(),
 				Allowed:           tc.allowed,
 				TrustReverseProxy: tc.trustReverseProxy,
 			})
@@ -382,7 +366,7 @@ func TestCrossOriginProtectionUsesValidatedForwardedHost(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := setupHostCheckServer(t, authapi.HostCheckOptions{
-				Bind: bindLoopback8091(),
+				Bind: serverfake.BindLoopback8091(),
 				Allowed: []config.HostKey{
 					{Host: "forge.example", Port: "8080"},
 				},
@@ -407,7 +391,7 @@ func TestCrossOriginProtectionUsesValidatedForwardedHost(t *testing.T) {
 // operator can debug a rejected request from curl output alone.
 func TestHostCheck403BodyShape(t *testing.T) {
 	srv := setupHostCheckServer(t, authapi.HostCheckOptions{
-		Bind: bindLoopback8091(),
+		Bind: serverfake.BindLoopback8091(),
 	})
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
 	req.Host = "attacker.example:8091"

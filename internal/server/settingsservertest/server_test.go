@@ -1,43 +1,19 @@
 package settingsservertest
 
 import (
-	"errors"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/streamapi"
-	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
-
-func openTestDB(t *testing.T) *db.DB {
-	t.Helper()
-	return dbtest.Open(t)
-}
-
-type staticListenerAddr string
-
-func (a staticListenerAddr) Network() string { return "tcp" }
-
-func (a staticListenerAddr) String() string { return string(a) }
-
-type staticListener struct {
-	addr net.Addr
-}
-
-func (l staticListener) Accept() (net.Conn, error) { return nil, errors.New("unused listener") }
-
-func (l staticListener) Close() error { return nil }
-
-func (l staticListener) Addr() net.Addr { return l.addr }
 
 func TestAllowedHostsForListenerIncludesBoundLoopbackHost(t *testing.T) {
 	assert := assert.New(t)
 
-	allowed := streamapi.AllowedHostsForListener(staticListener{addr: staticListenerAddr("127.0.0.2:8123")})
+	allowed := streamapi.AllowedHostsForListener(serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.2:8123")})
 
 	assert.Contains(allowed, "127.0.0.2:8123")
 	assert.Contains(allowed, "127.0.0.1:8123")

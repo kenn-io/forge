@@ -28,7 +28,9 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/tokenauth"
+
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -49,11 +51,11 @@ func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
-	seedPR(t, database, "acme", "widget", 42)
+	serverfake.SeedPR(t, database, "acme", "widget", 42)
 	server := New(database, nil, nil, "/", nil, ServerOptions{
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, server) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, server) })
 
 	current, err := server.ResolveWorkspaceLaunchSpec(
 		t.Context(), providerplane.WorkspaceLaunchRequest{
@@ -122,9 +124,9 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(err)
-	seedPRForRepo(
+	serverfake.SeedPRForRepo(
 		t, hubDB, repoID, platformHost, "acme", "widget", mrNumber,
-		withSeedPRHeadSHA(headSHA), withSeedPRBaseSHA(baseSHA),
+		serverfake.WithSeedPRHeadSHA(headSHA), serverfake.WithSeedPRBaseSHA(baseSHA),
 		withSeedPRHeadRepoCloneURL(cloneURL),
 	)
 	require.NoError(hubDB.UpdateDiffSHAs(
@@ -156,7 +158,7 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 			DisableWorkspaceBackgroundMonitors: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, hubServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
 	hub := httptest.NewTLSServer(hubServer)
 	t.Cleanup(hub.Close)
 
@@ -176,11 +178,11 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 		FederationCredentials: spokeCredentials,
 		FederationHTTPClient:  hub.Client(),
 		Clones: gitclone.New(t.TempDir(), descriptorCloneRoutes{
-			source: testTokenSource("spoke-git-token"),
+			source: serverfake.TestTokenSource("spoke-git-token"),
 		}),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, nodeServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, nodeServer) })
 
 	response := testutil.DoJSON(
 		t, nodeServer, http.MethodGet,
@@ -196,9 +198,9 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
-	seedPR(
+	serverfake.SeedPR(
 		t, hubDB, "acme", "widget", 42,
-		withSeedPRHeadSHA("head-sha"), withSeedPRBaseSHA("base-sha"),
+		serverfake.WithSeedPRHeadSHA("head-sha"), serverfake.WithSeedPRBaseSHA("base-sha"),
 	)
 	repo, err := hubDB.GetRepoByIdentity(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
@@ -235,7 +237,7 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	)
 	observedAt := time.Date(2026, time.August, 22, 14, 0, 0, 0, time.UTC)
 	hubServer.now = func() time.Time { return observedAt }
-	t.Cleanup(func() { gracefulShutdown(t, hubServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
 	hub := httptest.NewTLSServer(hubServer)
 	t.Cleanup(hub.Close)
 
@@ -258,7 +260,7 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 		FederationHTTPClient:               hub.Client(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, nodeServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, nodeServer) })
 
 	descriptor, err := nodeServer.providerSource.GetDiffDescriptor(
 		t.Context(), pullapi.ItemIdentity{
@@ -319,7 +321,7 @@ func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
 		FederationCredentials:              hubCredentials,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, hubServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
 	hub := httptest.NewTLSServer(hubServer)
 	t.Cleanup(hub.Close)
 
@@ -343,7 +345,7 @@ func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, spokeServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, spokeServer) })
 
 	response := testutil.DoJSON(
 		t, spokeServer, http.MethodPost,
@@ -364,13 +366,13 @@ func TestRepositoryDescriptorOrdersObservationTimeWithRepositoryIdentity(t *test
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	seedPR(t, database, "acme", "widget", 42)
-	identity := verifiedGitHubRepoIdentity("github.com", "acme", "widget")
+	serverfake.SeedPR(t, database, "acme", "widget", 42)
+	identity := serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget")
 
 	server := New(database, nil, nil, "/", nil, ServerOptions{
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, server) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, server) })
 	clockCalled := make(chan struct{}, 1)
 	observedAt := time.Date(2026, time.August, 22, 18, 0, 0, 0, time.UTC)
 	server.now = func() time.Time {
@@ -434,7 +436,7 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	hubDB := dbtest.Open(t)
-	seedPR(t, hubDB, "acme", "widgets", 42)
+	serverfake.SeedPR(t, hubDB, "acme", "widgets", 42)
 
 	hubCredentials, err := federationauth.Open(
 		filepath.Join(t.TempDir(), "hub-credentials.json"),
@@ -457,7 +459,7 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	)
 	issuedAt := time.Date(2026, time.August, 22, 16, 30, 0, 0, time.UTC)
 	hubServer.now = func() time.Time { return issuedAt }
-	t.Cleanup(func() { gracefulShutdown(t, hubServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
 	hub := httptest.NewTLSServer(hubServer)
 	t.Cleanup(hub.Close)
 
@@ -481,11 +483,11 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 		FederationCredentials: spokeCredentials,
 		FederationHTTPClient:  hub.Client(),
 		Clones: gitclone.New(t.TempDir(), descriptorCloneRoutes{
-			source: testTokenSource("spoke-git-token"),
+			source: serverfake.TestTokenSource("spoke-git-token"),
 		}),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, nodeServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, nodeServer) })
 
 	spec, err := nodeServer.providerSource.ResolveWorkspaceLaunchSpec(
 		t.Context(), providerplane.WorkspaceLaunchRequest{
@@ -537,7 +539,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
-	seedPR(t, hubDB, "acme", "widgets", 1)
+	serverfake.SeedPR(t, hubDB, "acme", "widgets", 1)
 	diffRepo, err := testutil.SetupDiffRepo(t.Context(), t.TempDir(), hubDB)
 	require.NoError(err)
 	const hostedCloneURL = "https://github.com/acme/widgets.git"
@@ -579,7 +581,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	)
 	observedAt := time.Date(2026, time.August, 22, 15, 0, 0, 0, time.UTC)
 	hubServer.now = func() time.Time { return observedAt }
-	t.Cleanup(func() { gracefulShutdown(t, hubServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
 	hub := httptest.NewTLSServer(hubServer)
 
 	spokeCredentials, err := federationauth.Open(t.TempDir() + "/spoke-credentials.json")
@@ -596,7 +598,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	nodeDB := dbtest.Open(t)
 	nodeClones := gitclone.New(
 		filepath.Join(t.TempDir(), "spoke-clones"),
-		descriptorCloneRoutes{source: testTokenSource("spoke-git-token")},
+		descriptorCloneRoutes{source: serverfake.TestTokenSource("spoke-git-token")},
 	)
 	nodeClone, err := nodeClones.ClonePathForContext(
 		gitclone.WithRepositoryIdentity(t.Context(), diffRepo.PlatformRepoID),
@@ -646,7 +648,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 		Clones:                             nodeClones,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, nodeServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, nodeServer) })
 
 	for _, path := range []string{
 		"/api/v1/pulls/github/acme/widgets/1/diff",
@@ -682,7 +684,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 			DisableWorkspaceBackgroundMonitors: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, credentiallessNode) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, credentiallessNode) })
 	credentialProblem := testutil.DoJSON(
 		t, credentiallessNode, http.MethodGet,
 		"/api/v1/pulls/github/acme/widgets/1/diff", nil)

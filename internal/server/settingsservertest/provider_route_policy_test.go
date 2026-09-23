@@ -5,10 +5,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server/routepolicy"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestProviderRouteCoverageRejectsUnknownAndDuplicateOperations(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	registered := []routepolicy.RegisteredTransportOperation{{ID: "known"}}
 	_, err := routepolicy.BuildProviderRouteRules(registered, []routepolicy.ProviderRouteRule{{

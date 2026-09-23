@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -18,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -36,11 +37,11 @@ func TestProjectWorktreeRuntimeRejectsMismatchedProject(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
-	other := createRuntimeTestProject(t, srv.db, t.TempDir())
+	other := serverfake.CreateRuntimeTestProject(t, srv.db, t.TempDir())
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp := httpDo(t, ts, http.MethodGet,
+	resp := serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+other.ID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
 	require.Equal(http.StatusNotFound, resp.StatusCode)
@@ -74,7 +75,7 @@ func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp := httpDo(t, ts, http.MethodGet,
+	resp := serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+
 			"/runtime/sessions/"+sessionKey+"/attach-spec",
 		nil,
@@ -122,7 +123,7 @@ func TestProjectWorktreeRuntimeAttachSpecRejectsMissingTmuxSession(t *testing.T)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp := httpDo(t, ts, http.MethodGet,
+	resp := serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+
 			"/runtime/sessions/"+sessionKey+"/attach-spec",
 		nil,
@@ -160,7 +161,7 @@ func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp := httpDo(t, ts, http.MethodGet,
+	resp := serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
 	t.Cleanup(func() {
@@ -178,7 +179,7 @@ func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
 	assert.Equal(sessionKey, runtimeBody.Sessions[0]["key"])
 	assert.Equal(targetKey, runtimeBody.Sessions[0]["target_key"])
 
-	resp = httpDo(t, ts, http.MethodDelete,
+	resp = serverfake.HttpDo(t, ts, http.MethodDelete,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+
 			"/runtime/sessions/"+sessionKey,
 		nil,
@@ -281,7 +282,7 @@ command = ["/bin/sh", "-c", "sleep 60"]
 	}
 	cfg.Tmux.Command = slices.Clone(tmuxCommand)
 	database := dbtest.Open(t)
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	clients := map[string]ghclient.Client{"github.com": mock}
 	resolved := ghclient.ResolveConfiguredRepos(t.Context(), clients, cfg.Repos)
 	syncer := ghclient.NewSyncer(
@@ -296,8 +297,8 @@ command = ["/bin/sh", "-c", "sleep 60"]
 			HostCheckAllowLoopbackAnyPort: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	project := createRuntimeTestProject(t, database, t.TempDir())
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	project := serverfake.CreateRuntimeTestProject(t, database, t.TempDir())
 	worktreePath := t.TempDir()
 	worktree, err := database.CreateProjectWorktree(t.Context(), db.CreateProjectWorktreeInput{
 		ProjectID: project.ID,
@@ -306,16 +307,6 @@ command = ["/bin/sh", "-c", "sleep 60"]
 	})
 	require.NoError(t, err)
 	return srv, project.ID, worktree.ID
-}
-
-func createRuntimeTestProject(t *testing.T, database *db.DB, localPath string) *db.Project {
-	t.Helper()
-	project, err := database.CreateProject(t.Context(), db.CreateProjectInput{
-		DisplayName: "runtime-project",
-		LocalPath:   localPath,
-	})
-	require.NoError(t, err)
-	return project
 }
 
 func writeProjectRuntimeTmuxRecorder(t *testing.T) (script, record string) {
@@ -357,30 +348,4 @@ func writeProjectRuntimeTmuxProbe(
 
 func shellQuoteTest(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-}
-
-func mustMarshal(t *testing.T, v any) []byte {
-	t.Helper()
-	out, err := json.Marshal(v)
-	require.NoError(t, err)
-	return out
-}
-
-func httpDo(t *testing.T, ts *httptest.Server, method, path string, body []byte) *http.Response {
-	t.Helper()
-	var bodyReader io.Reader
-	if body != nil {
-		bodyReader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(t.Context(), method, ts.URL+path, bodyReader)
-	require.NoError(t, err)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	} else if method == http.MethodPost || method == http.MethodDelete ||
-		method == http.MethodPut || method == http.MethodPatch {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := ts.Client().Do(req)
-	require.NoError(t, err)
-	return resp
 }

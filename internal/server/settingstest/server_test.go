@@ -11,19 +11,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server"
-	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
-
-func openTestDB(t *testing.T) *db.DB {
-	t.Helper()
-	return dbtest.Open(t)
-}
 
 func newTestServer(t *testing.T) *server.Server {
 	t.Helper()
-	return server.New(openTestDB(t), nil, nil, "/", nil, server.ServerOptions{})
+	return server.New(serverfake.OpenTestDB(t), nil, nil, "/", nil, server.ServerOptions{})
 }
 
 func TestServeRejectsRebindingHost(t *testing.T) {
@@ -38,7 +32,7 @@ func TestServeRejectsRebindingHost(t *testing.T) {
 		errCh <- srv.Serve(ln)
 	}()
 	t.Cleanup(func() {
-		gracefulShutdown(t, srv)
+		serverfake.GracefulShutdown(t, srv)
 		err := <-errCh
 		require.ErrorIs(err, http.ErrServerClosed)
 	})
@@ -83,7 +77,7 @@ func TestServeAllowsBoundLoopbackHost(t *testing.T) {
 		errCh <- srv.Serve(ln)
 	}()
 	t.Cleanup(func() {
-		gracefulShutdown(t, srv)
+		serverfake.GracefulShutdown(t, srv)
 		err := <-errCh
 		require.ErrorIs(err, http.ErrServerClosed)
 	})

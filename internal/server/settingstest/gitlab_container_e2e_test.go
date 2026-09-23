@@ -22,12 +22,15 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
+
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
@@ -129,7 +132,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	client, err := platformgitlab.NewClient(
 		manifest.Host,
-		testTokenSource(manifest.Token),
+		serverfake.TestTokenSource(manifest.Token),
 		platformgitlab.WithBaseURLForTesting(manifest.APIURL),
 		platformgitlab.WithForegroundTimeoutForTesting(time.Minute), platformgitlab.
 			WithTransport(http.DefaultTransport),
@@ -246,7 +249,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	// Write surface: drive every GitLab mutation through kenn-forge's HTTP
 	// API against the live container.
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	encodedOwner := url.PathEscape(manifest.Owner)
 	pullBase := fmt.Sprintf(

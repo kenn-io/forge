@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func registerProjectForTest(t *testing.T, ts *httptest.Server, localPath string) string {
 	t.Helper()
-	body := mustMarshal(t, map[string]any{"local_path": localPath})
-	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
+	body := serverfake.MustMarshal(t, map[string]any{"local_path": localPath})
+	resp := serverfake.HttpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	defer resp.Body.Close()
 	var project struct {
@@ -27,8 +28,8 @@ func registerWorktreeForTest(
 	t *testing.T, ts *httptest.Server, projectID, branch, path string, wantStatus int,
 ) string {
 	t.Helper()
-	body := mustMarshal(t, map[string]any{"branch": branch, "path": path})
-	resp := httpDo(
+	body := serverfake.MustMarshal(t, map[string]any{"branch": branch, "path": path})
+	resp := serverfake.HttpDo(
 		t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees", body,
 	)

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestServerPtyOwnerHelperStopsWhenParentKilled(t *testing.T) {
@@ -30,7 +31,7 @@ func TestServerPtyOwnerHelperStopsWhenParentKilled(t *testing.T) {
 		os.Args[0],
 		"-test.run=TestServerPtyOwnerParentHelperProcess",
 		"--",
-		serverPtyOwnerParentHelperMarker,
+		serverfake.ServerPtyOwnerParentHelperMarker,
 		"-root", root,
 		"-session", session,
 	)
@@ -79,7 +80,7 @@ func TestServerPtyOwnerParentHelperProcess(t *testing.T) {
 	args := os.Args
 	sep := slices.Index(args, "--")
 	if sep < 0 || len(args) <= sep+1 ||
-		args[sep+1] != serverPtyOwnerParentHelperMarker {
+		args[sep+1] != serverfake.ServerPtyOwnerParentHelperMarker {
 		return
 	}
 	args = args[sep+2:]
@@ -96,7 +97,7 @@ func TestServerPtyOwnerParentHelperProcess(t *testing.T) {
 		Command: []string{"/bin/sh"},
 	}
 	require.NoError(t, client.Ensure(context.Background(), *session, os.TempDir()))
-	blockServerRuntimeHelper()
+	serverfake.BlockServerRuntimeHelper()
 }
 
 func testPtyOwnerParentContext(parentPID int) (context.Context, context.CancelFunc) {

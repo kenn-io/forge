@@ -13,16 +13,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
-
-const federationEventTestNodeID = "55555555555555555555555555555555"
 
 type testSSEFrame struct {
 	ID   string
@@ -113,7 +111,7 @@ func TestFederationEventEndpointEnforcesCredentialProtocolAndRequestBounds(t *te
 				request.Header.Set("Authorization", "Bearer "+test.token)
 				nodeID := test.nodeID
 				if nodeID == "" {
-					nodeID = federationEventTestNodeID
+					nodeID = serverfake.FederationEventTestNodeID
 				}
 				request.Header.Set(federationauth.NodeIDHeader, nodeID)
 			}
@@ -194,7 +192,7 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 		FederationSpokeID: hubID, FederationCredentials: hubCredentials,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, hub) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hub) })
 	hubHTTP := httptest.NewTLSServer(hub)
 	t.Cleanup(hubHTTP.Close)
 	for range 40 {
@@ -214,7 +212,7 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 		FederationSpokeActive: true,
 		FederationHTTPClient:  hubHTTP.Client(), DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, spoke) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, spoke) })
 
 	require.Eventually(func() bool {
 		records, _ := spoke.Hub().RingSnapshotSince(0)
@@ -279,7 +277,7 @@ func newFederationEventServer(
 	credentials, err := federationauth.Open(t.TempDir() + "/credentials.json")
 	require.NoError(t, err)
 	token, err := credentials.MintInbound(
-		federationEventTestNodeID, federationauth.SpokeToHubScopes(),
+		serverfake.FederationEventTestNodeID, federationauth.SpokeToHubScopes(),
 	)
 	require.NoError(t, err)
 	server := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
@@ -289,7 +287,7 @@ func newFederationEventServer(
 		FederationCredentials:              credentials,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, server) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, server) })
 	httpServer := httptest.NewServer(server)
 	t.Cleanup(httpServer.Close)
 	return server, httpServer, token
@@ -324,7 +322,7 @@ func federationEventRequest(t *testing.T, baseURL, token, cursor string) (*http.
 		return nil, err
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set(federationauth.NodeIDHeader, federationEventTestNodeID)
+	request.Header.Set(federationauth.NodeIDHeader, serverfake.FederationEventTestNodeID)
 	request.Header.Set(providerplane.ProtocolVersionHeader, providerplane.ProtocolVersionHeaderValue())
 	if cursor != "" {
 		request.Header.Set("Last-Event-ID", cursor)

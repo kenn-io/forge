@@ -13,6 +13,8 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/providerplane"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	forgeserver "go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -59,15 +61,15 @@ func TestLocalEnrollmentRestoresSpokePreparationBarrier(t *testing.T) {
 	database := dbtest.Open(t)
 	gate := providerplane.NewProviderWriteGate(database, true)
 	_, err := gate.BeginQuiesce(t.Context(), db.SpokePreparationBinding{
-		EnrollmentID: preparationEnrollmentID, HubNodeID: preparationHubNodeID,
-		LocalNodeID: preparationLocalNodeID, ProtocolVersion: federation.ProtocolVersion,
+		EnrollmentID: serverfake.PreparationEnrollmentID, HubNodeID: serverfake.PreparationHubNodeID,
+		LocalNodeID: serverfake.PreparationLocalNodeID, ProtocolVersion: federation.ProtocolVersion,
 	})
 	require.NoError(t, err)
 
 	enrollments, _ := openFederationPreparationStores(t, "restore-barrier")
 	require.NoError(t, enrollments.SaveLocal(t.Context(), federation.LocalEnrollment{
-		EnrollmentID: preparationEnrollmentID, NodeID: preparationLocalNodeID,
-		SpokeBaseURL: "https://spoke.example", HubID: preparationHubNodeID,
+		EnrollmentID: serverfake.PreparationEnrollmentID, NodeID: serverfake.PreparationLocalNodeID,
+		SpokeBaseURL: "https://spoke.example", HubID: serverfake.PreparationHubNodeID,
 		HubURL: "https://hub.example", ProtocolVersion: federation.ProtocolVersion,
 		State: federation.EnrollmentPending, ExpiresAt: time.Now().Add(time.Hour),
 	}))

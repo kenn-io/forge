@@ -9,25 +9,17 @@ import (
 	"testing"
 	"time"
 
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/settingsapi"
 	"go.kenn.io/forge/internal/testutil"
 )
-
-func seedVerifiedRepo(
-	t *testing.T, database *db.DB, identity db.RepoIdentity,
-) {
-	t.Helper()
-	entry, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), identity, time.Now().UTC(),
-	)
-	require.NoError(t, err)
-	require.NotNil(t, entry)
-}
 
 func listRepoNames(t *testing.T, srv *Server) []string {
 	t.Helper()
@@ -60,8 +52,8 @@ name = "widget"
 [[repos]]
 owner = "acme"
 name = "wid*"
-`, &mockGH{
-		listReposByOwnerFn: func(
+`, &serverfake.MockGH{
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
@@ -76,7 +68,7 @@ name = "wid*"
 	stream := streamConfigEvents(t, srv)
 	defer stream.Close()
 
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "R_widget",
@@ -131,9 +123,9 @@ name = "widget"
 [[repos]]
 owner = "acme"
 name = "wid*"
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "R_widget",
@@ -176,8 +168,8 @@ func TestConfigReloadClearsOrphanedVisibility(t *testing.T) {
 	assert := assert.New(t)
 	// The provider lists acme/widget so the glob keeps resolving the
 	// repository after the exact entry is removed from the TOML file.
-	mock := &mockGH{
-		listReposByOwnerFn: func(
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
@@ -203,7 +195,7 @@ owner = "acme"
 name = "wid*"
 `, mock)
 
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "R_widget",
@@ -265,9 +257,9 @@ name = "widget"
 [[repos]]
 owner = "acme"
 name = "wid*"
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "R_widget",

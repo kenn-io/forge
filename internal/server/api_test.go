@@ -24,17 +24,18 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
-	"go.kenn.io/forge/internal/platformdb"
-
 	"github.com/coder/websocket"
 	"github.com/creack/pty/v2"
+	"go.kenn.io/forge/internal/platformdb"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	gh "github.com/google/go-github/v91/github"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
@@ -57,26 +59,17 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfake"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
-	"go.kenn.io/forge/internal/testutil/gitsafe"
-	"go.kenn.io/forge/internal/testutil/processjob"
-	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/testutil/testtmux"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
-	platformgithub "go.kenn.io/forge/platform/github"
+
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"golang.org/x/sync/semaphore"
 )
 
-const (
-	serverRuntimeHelperMarker        = "kenn-forge-runtime-helper"
-	serverPtyOwnerParentHelperMarker = "kenn-forge-pty-owner-parent-helper"
-)
-
 var (
-	privateTmuxOwner        *testtmux.Owner
 	parallelServerTestSlots = semaphore.NewWeighted(4)
 	ptyE2ESemaphore         = semaphore.NewWeighted(1)
 	serverPtyOwnerParentPID = flag.Int(
@@ -90,60 +83,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	if code, ok := testtmux.CommandWrapperExitCode(); ok {
-		os.Exit(code)
-	}
-	if isServerHelperProcess() {
-		os.Exit(m.Run())
-	}
-	if err := processjob.ContainCurrentProcessTree(); err != nil {
-		fmt.Fprintf(os.Stderr, "contain server test process tree: %v\n", err)
-		os.Exit(1)
-	}
-	if testtmux.Supported() {
-		var ownerErr error
-		privateTmuxOwner, ownerErr = testtmux.New()
-		if ownerErr != nil {
-			fmt.Fprintf(os.Stderr, "initialize private test tmux owner: %v\n", ownerErr)
-			os.Exit(1)
-		}
-	}
-	envDir, envDirErr := os.MkdirTemp("", "kenn-forge-server-tmux-env-*")
-	if envDirErr == nil {
-		_ = os.Setenv("KENN_FORGE_TMUX_ENV_DIR", envDir)
-	}
-	runCleanup, stopSignalCleanup := testsignal.Install(func() error {
-		return cleanupServerTestTmux(privateTmuxOwner)
-	}, func(err error) {
-		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
-	})
-	code := gitsafe.RunIsolatedMain(m)
-	if err := runCleanup(); err != nil {
-		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
-		if code == 0 {
-			code = 1
-		}
-	}
-	stopSignalCleanup()
-	if envDirErr == nil {
-		_ = os.RemoveAll(envDir)
-	}
-	os.Exit(code)
-}
-
-func isServerHelperProcess() bool {
-	if os.Getenv("KENN_FORGE_SERVER_RUNTIME_HELPER") == "1" ||
-		os.Getenv("KENN_FORGE_SERVER_PTY_OWNER_HELPER") == "1" {
-		return true
-	}
-	args := os.Args
-	if sep := slices.Index(args, "--"); sep >= 0 {
-		args = args[sep+1:]
-	}
-	return len(args) > 0 &&
-		(args[0] == serverRuntimeHelperMarker ||
-			args[0] == serverPtyOwnerParentHelperMarker ||
-			args[0] == "pty-owner")
+	os.Exit(serverfake.RunMain(m))
 }
 
 func runParallelServerTest(t *testing.T) {
@@ -181,18 +121,6 @@ func requirePTYAvailable(t *testing.T) {
 	}
 	_ = ptmx.Close()
 	_ = tty.Close()
-}
-
-func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
-	t.Helper()
-	return context.WithTimeout(context.Background(), 15*time.Second)
-}
-
-func gracefulShutdown(t *testing.T, srv interface{ Shutdown(context.Context) error }) {
-	t.Helper()
-	ctx, cancel := cleanupContext(t)
-	defer cancel()
-	require.NoError(t, srv.Shutdown(ctx))
 }
 
 func recordRuntimeTmuxSessionForServerTest(
@@ -240,861 +168,20 @@ func runtimeSessionKeyForTest(
 	return workspaceID + "_" + hex.EncodeToString(sum[:8])
 }
 
-// mockGH implements ghclient.Client for testing.
-type mockGHNativeStackAPI struct {
-	listOpenPullRequests func(
-		context.Context, string, string,
-	) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error)
-	listStackPage func(
-		context.Context, string, string, int,
-	) (platformgithub.NativeStackPage, error)
-}
-
-type mockGH struct {
-	getRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
-	getPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
-	getPullRequestIfChangedFn  func(context.Context, string, string, int, string) (*gh.PullRequest, string, bool, error)
-	getIssueFn                 func(context.Context, string, string, int) (*gh.Issue, error)
-	getIssueIfChangedFn        func(context.Context, string, string, int, string) (*gh.Issue, string, bool, error)
-	createIssueFn              func(context.Context, string, string, string, string) (*gh.Issue, error)
-	getUserFn                  func(context.Context, string) (*gh.User, error)
-	authenticatedViewerLoginFn func(context.Context) (string, error)
-	authenticatedViewerCalls   int
-	markReadyForReviewFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
-	convertToDraftFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
-	dismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
-	editPullRequestFn          func(context.Context, string, string, int, platformgithub.EditPullRequestOpts) (*gh.PullRequest, error)
-	editIssueFn                func(context.Context, string, string, int, string) (*gh.Issue, error)
-	editIssueContentFn         func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
-	createIssueCommentFn       func(context.Context, string, string, int, string) (*gh.IssueComment, error)
-	editIssueCommentFn         func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
-	deleteIssueCommentFn       func(context.Context, string, string, int64) error
-	createReviewCommentReplyFn func(context.Context, string, string, int, string, int64) (*gh.PullRequestComment, error)
-	createReviewFn             func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
-	createReviewWithCommentsFn func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
-	applyReviewSuggestionsFn   func(context.Context, string, string, int, platform.ApplyReviewSuggestionsInput) (*platform.AppliedReviewSuggestions, error)
-	mergePullRequestFn         func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
-	listWorkflowRunsForHeadFn  func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
-	approveWorkflowRunFn       func(context.Context, string, string, int64) error
-	listReposByOwnerFn         func(context.Context, string) ([]*gh.Repository, error)
-	listReleasesFn             func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
-	listTagsFn                 func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
-	listOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
-	nativeStackAPI             *mockGHNativeStackAPI
-	listPullRequestsPageFn     func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
-	listIssuesPageFn           func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
-	listCheckRunsForRefFn      func(context.Context, string, string, string) ([]*gh.CheckRun, error)
-	getCombinedStatusFn        func(context.Context, string, string, string) (*gh.CombinedStatus, error)
-	listPRTimelineEventsFn     func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error)
-	listOpenPRsErr             error
-	listOpenIssuesFn           func(context.Context, string, string) ([]*gh.Issue, error)
-	listIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
-	listReviewThreadsFn        func(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error)
-	rateLimitSnapshotFn        func(context.Context) (*platformgithub.RateLimitSnapshot, error)
-	rateLimitSnapshotCalls     int
-	listIssueCommentsErr       error
-	listNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
-	markNotificationReadFn     func(context.Context, string) error
-	getMarkdownImageFn         func(context.Context, string, string, string) (platform.MarkdownImage, error)
-}
-
-func (m *mockGH) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
-	if m.listOpenPullRequestsFn != nil {
-		return m.listOpenPullRequestsFn(ctx, owner, repo)
-	}
-	if m.listOpenPRsErr != nil {
-		return nil, m.listOpenPRsErr
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListOpenPullRequestsWithNativeStackHints(
-	ctx context.Context, owner, repo string,
-) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error) {
-	if m.nativeStackAPI != nil && m.nativeStackAPI.listOpenPullRequests != nil {
-		return m.nativeStackAPI.listOpenPullRequests(ctx, owner, repo)
-	}
-	prs, err := m.ListOpenPullRequests(ctx, owner, repo)
-	return prs, nil, err
-}
-
-func (m *mockGH) ListNativeStacksPage(
-	ctx context.Context, owner, repo string, page int,
-) (platformgithub.NativeStackPage, error) {
-	if m.nativeStackAPI != nil && m.nativeStackAPI.listStackPage != nil {
-		return m.nativeStackAPI.listStackPage(ctx, owner, repo, page)
-	}
-	return platformgithub.NativeStackPage{}, nil
-}
-
-func (m *mockGH) ListOpenIssues(ctx context.Context, owner, repo string) ([]*gh.Issue, error) {
-	if m.listOpenIssuesFn != nil {
-		return m.listOpenIssuesFn(ctx, owner, repo)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetIssue(ctx context.Context, owner, repo string, number int) (*gh.Issue, error) {
-	if m.getIssueFn != nil {
-		return m.getIssueFn(ctx, owner, repo, number)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetIssueIfChanged(
-	ctx context.Context,
-	owner, repo string,
-	number int,
-	etag string,
-) (*gh.Issue, string, bool, error) {
-	if m.getIssueIfChangedFn != nil {
-		return m.getIssueIfChangedFn(ctx, owner, repo, number, etag)
-	}
-	issue, err := m.GetIssue(ctx, owner, repo, number)
-	return issue, "", false, err
-}
-
-func (m *mockGH) CreateIssue(
-	ctx context.Context, owner, repo, title, body string,
-) (*gh.Issue, error) {
-	if m.createIssueFn != nil {
-		return m.createIssueFn(ctx, owner, repo, title, body)
-	}
-	number := 1
-	now := gh.Timestamp{Time: time.Now().UTC()}
-	state := "open"
-	htmlURL := fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
-	login := "fixture-bot"
-	return &gh.Issue{
-		Number:    &number,
-		Title:     &title,
-		Body:      &body,
-		State:     &state,
-		HTMLURL:   &htmlURL,
-		User:      &gh.User{Login: &login},
-		CreatedAt: &now,
-		UpdatedAt: &now,
-	}, nil
-}
-
-func (m *mockGH) GetUser(ctx context.Context, login string) (*gh.User, error) {
-	if m.getUserFn != nil {
-		return m.getUserFn(ctx, login)
-	}
-	return &gh.User{Login: &login}, nil
-}
-
-func (m *mockGH) AuthenticatedViewerLogin(ctx context.Context) (string, error) {
-	m.authenticatedViewerCalls++
-	if m.authenticatedViewerLoginFn != nil {
-		return m.authenticatedViewerLoginFn(ctx)
-	}
-	return "", nil
-}
-
-func (m *mockGH) GetRateLimitSnapshot(ctx context.Context) (*platformgithub.RateLimitSnapshot, error) {
-	m.rateLimitSnapshotCalls++
-	if m.rateLimitSnapshotFn != nil {
-		return m.rateLimitSnapshotFn(ctx)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListRepositoriesByOwner(
-	ctx context.Context, owner string,
-) ([]*gh.Repository, error) {
-	if m.listReposByOwnerFn != nil {
-		return m.listReposByOwnerFn(ctx, owner)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListReleases(
-	ctx context.Context, owner, repo string, perPage int,
-) ([]*gh.RepositoryRelease, error) {
-	if m.listReleasesFn != nil {
-		return m.listReleasesFn(ctx, owner, repo, perPage)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListTags(
-	ctx context.Context, owner, repo string, perPage int,
-) ([]*gh.RepositoryTag, error) {
-	if m.listTagsFn != nil {
-		return m.listTagsFn(ctx, owner, repo, perPage)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
-	if m.getPullRequestFn != nil {
-		return m.getPullRequestFn(ctx, owner, repo, number)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetPullRequestIfChanged(
-	ctx context.Context,
-	owner, repo string,
-	number int,
-	etag string,
-) (*gh.PullRequest, string, bool, error) {
-	if m.getPullRequestIfChangedFn != nil {
-		return m.getPullRequestIfChangedFn(ctx, owner, repo, number, etag)
-	}
-	pr, err := m.GetPullRequest(ctx, owner, repo, number)
-	return pr, "", false, err
-}
-
-func (m *mockGH) ListIssueComments(
-	ctx context.Context, owner, repo string, number int,
-) ([]*gh.IssueComment, error) {
-	if m.listIssueCommentsFn != nil {
-		return m.listIssueCommentsFn(ctx, owner, repo, number)
-	}
-	if m.listIssueCommentsErr != nil {
-		return nil, m.listIssueCommentsErr
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListIssueCommentsIfChanged(
-	ctx context.Context, owner, repo string, number int,
-) ([]*gh.IssueComment, error) {
-	if m.listIssueCommentsFn == nil && m.listIssueCommentsErr == nil {
-		return nil, &gh.ErrorResponse{
-			Response: &http.Response{StatusCode: http.StatusNotModified},
-		}
-	}
-	return m.ListIssueComments(ctx, owner, repo, number)
-}
-
-func (m *mockGH) ListReviews(
-	_ context.Context, _, _ string, _ int,
-) ([]*gh.PullRequestReview, error) {
-	return nil, nil
-}
-
-func (m *mockGH) ListPullRequestReviewThreads(
-	ctx context.Context,
-	owner string,
-	repo string,
-	number int,
-) ([]platformgithub.PullRequestReviewThread, error) {
-	if m.listReviewThreadsFn != nil {
-		return m.listReviewThreadsFn(ctx, owner, repo, number)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListCommits(
-	_ context.Context, _, _ string, _ int,
-) ([]*gh.RepositoryCommit, error) {
-	return nil, nil
-}
-
-func (m *mockGH) ListForcePushEvents(
-	_ context.Context, _, _ string, _ int,
-) ([]platformgithub.ForcePushEvent, error) {
-	return nil, nil
-}
-
-func (m *mockGH) ListPullRequestTimelineEvents(
-	ctx context.Context, owner, repo string, number int,
-) ([]platformgithub.PullRequestTimelineEvent, error) {
-	if m.listPRTimelineEventsFn != nil {
-		return m.listPRTimelineEventsFn(ctx, owner, repo, number)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) GetCombinedStatus(
-	ctx context.Context, owner, repo, ref string,
-) (*gh.CombinedStatus, error) {
-	if m.getCombinedStatusFn != nil {
-		return m.getCombinedStatusFn(ctx, owner, repo, ref)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListCheckRunsForRef(
-	ctx context.Context, owner, repo, ref string,
-) ([]*gh.CheckRun, error) {
-	if m.listCheckRunsForRefFn != nil {
-		return m.listCheckRunsForRefFn(ctx, owner, repo, ref)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ListWorkflowRunsForHeadSHA(
-	ctx context.Context, owner, repo, headSHA string,
-) ([]*gh.WorkflowRun, error) {
-	if m.listWorkflowRunsForHeadFn != nil {
-		return m.listWorkflowRunsForHeadFn(ctx, owner, repo, headSHA)
-	}
-	return nil, nil
-}
-
-func (m *mockGH) ApproveWorkflowRun(
-	ctx context.Context, owner, repo string, runID int64,
-) error {
-	if m.approveWorkflowRunFn != nil {
-		return m.approveWorkflowRunFn(ctx, owner, repo, runID)
-	}
-	return nil
-}
-
-func (m *mockGH) CreateIssueComment(
-	ctx context.Context, owner, repo string, number int, body string,
-) (*gh.IssueComment, error) {
-	if m.createIssueCommentFn != nil {
-		return m.createIssueCommentFn(ctx, owner, repo, number, body)
-	}
-	id := int64(42)
-	return &gh.IssueComment{
-		ID:   &id,
-		Body: &body,
-	}, nil
-}
-
-func (m *mockGH) EditIssueComment(
-	ctx context.Context, owner, repo string, commentID int64, body string,
-) (*gh.IssueComment, error) {
-	if m.editIssueCommentFn != nil {
-		return m.editIssueCommentFn(ctx, owner, repo, commentID, body)
-	}
-	login := "fixture-bot"
-	now := gh.Timestamp{Time: time.Now().UTC()}
-	return &gh.IssueComment{
-		ID:        &commentID,
-		Body:      &body,
-		User:      &gh.User{Login: &login},
-		CreatedAt: &now,
-		UpdatedAt: &now,
-	}, nil
-}
-
-func (m *mockGH) DeleteIssueComment(
-	ctx context.Context, owner, repo string, commentID int64,
-) error {
-	if m.deleteIssueCommentFn != nil {
-		return m.deleteIssueCommentFn(ctx, owner, repo, commentID)
-	}
-	return nil
-}
-
-func (m *mockGH) CreatePullRequestReviewCommentReply(
-	ctx context.Context, owner, repo string, number int, body string, commentID int64,
-) (*gh.PullRequestComment, error) {
-	if m.createReviewCommentReplyFn != nil {
-		return m.createReviewCommentReplyFn(ctx, owner, repo, number, body, commentID)
-	}
-	id := commentID + 1
-	login := "fixture-bot"
-	now := gh.Timestamp{Time: time.Now().UTC()}
-	return &gh.PullRequestComment{
-		ID:        &id,
-		Body:      &body,
-		User:      &gh.User{Login: &login},
-		CreatedAt: &now,
-	}, nil
-}
-
-func (m *mockGH) GetRepository(
-	ctx context.Context, owner, repo string,
-) (*gh.Repository, error) {
-	if m.getRepositoryFn != nil {
-		return m.getRepositoryFn(ctx, owner, repo)
-	}
-	nodeID := "repo-" + owner + "-" + repo
-	return &gh.Repository{
-		Name:     &repo,
-		NodeID:   &nodeID,
-		Owner:    &gh.User{Login: &owner},
-		Archived: new(false),
-	}, nil
-}
-
-func (m *mockGH) CreateReview(
-	ctx context.Context, owner, repo string, number int, event string, body string,
-) (*gh.PullRequestReview, error) {
-	if m.createReviewFn != nil {
-		return m.createReviewFn(ctx, owner, repo, number, event, body)
-	}
-	id := int64(99)
-	state := "APPROVED"
-	return &gh.PullRequestReview{ID: &id, State: &state}, nil
-}
-
-func (m *mockGH) CreateReviewWithComments(
-	ctx context.Context,
-	owner, repo string,
-	number int,
-	event string,
-	body string,
-	commitID string,
-	comments []*gh.DraftReviewComment,
-) (*gh.PullRequestReview, error) {
-	if m.createReviewWithCommentsFn != nil {
-		return m.createReviewWithCommentsFn(ctx, owner, repo, number, event, body, commitID, comments)
-	}
-	return m.CreateReview(ctx, owner, repo, number, event, body)
-}
-
-func (m *mockGH) ApplyReviewSuggestions(
-	ctx context.Context,
-	owner string,
-	repo string,
-	number int,
-	input platform.ApplyReviewSuggestionsInput,
-) (*platform.AppliedReviewSuggestions, error) {
-	if m.applyReviewSuggestionsFn != nil {
-		return m.applyReviewSuggestionsFn(ctx, owner, repo, number, input)
-	}
-	return &platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}, nil
-}
-
-func (m *mockGH) DismissReview(
-	ctx context.Context, owner, repo string, number int, reviewID int64, message string,
-) (*gh.PullRequestReview, error) {
-	if m.dismissReviewFn != nil {
-		return m.dismissReviewFn(ctx, owner, repo, number, reviewID, message)
-	}
-	return &gh.PullRequestReview{ID: &reviewID}, nil
-}
-
-func (m *mockGH) MarkPullRequestReadyForReview(
-	ctx context.Context, owner, repo string, number int,
-) (*gh.PullRequest, error) {
-	if m.markReadyForReviewFn != nil {
-		return m.markReadyForReviewFn(ctx, owner, repo, number)
-	}
-	draft := false
-	return &gh.PullRequest{Number: &number, Draft: &draft}, nil
-}
-
-func (m *mockGH) ConvertPullRequestToDraft(
-	ctx context.Context, owner, repo string, number int,
-) (*gh.PullRequest, error) {
-	if m.convertToDraftFn != nil {
-		return m.convertToDraftFn(ctx, owner, repo, number)
-	}
-	draft := true
-	state := "open"
-	return &gh.PullRequest{Number: &number, State: &state, Draft: &draft}, nil
-}
-
-func (m *mockGH) MergePullRequest(
-	ctx context.Context, owner, repo string, number int,
-	commitTitle, commitMessage, method, _ string,
-) (*gh.PullRequestMergeResult, error) {
-	if m.mergePullRequestFn != nil {
-		return m.mergePullRequestFn(ctx, owner, repo, number, commitTitle, commitMessage, method)
-	}
-	merged := true
-	sha := "abc123"
-	msg := "merged"
-	return &gh.PullRequestMergeResult{
-		Merged: &merged, SHA: &sha, Message: &msg,
-	}, nil
-}
-
-func (m *mockGH) EditPullRequest(
-	ctx context.Context, owner, repo string, number int, opts platformgithub.EditPullRequestOpts,
-) (*gh.PullRequest, error) {
-	if m.editPullRequestFn != nil {
-		return m.editPullRequestFn(ctx, owner, repo, number, opts)
-	}
-	pr := &gh.PullRequest{}
-	if opts.State != nil {
-		pr.State = opts.State
-	}
-	if opts.Title != nil {
-		pr.Title = opts.Title
-	}
-	if opts.Body != nil {
-		pr.Body = opts.Body
-	}
-	now := time.Now().UTC()
-	ghTime := gh.Timestamp{Time: now}
-	pr.UpdatedAt = &ghTime
-	return pr, nil
-}
-
-func (m *mockGH) EditIssue(
-	ctx context.Context, owner, repo string, number int, state string,
-) (*gh.Issue, error) {
-	if m.editIssueFn != nil {
-		return m.editIssueFn(ctx, owner, repo, number, state)
-	}
-	return &gh.Issue{State: &state}, nil
-}
-
-func (m *mockGH) EditIssueContent(
-	ctx context.Context, owner, repo string, number int, title *string, body *string,
-) (*gh.Issue, error) {
-	if m.editIssueContentFn != nil {
-		return m.editIssueContentFn(ctx, owner, repo, number, title, body)
-	}
-	out := &gh.Issue{}
-	if title != nil {
-		out.Title = title
-	}
-	if body != nil {
-		out.Body = body
-	}
-	return out, nil
-}
-
-func (m *mockGH) ListPullRequestsPage(
-	ctx context.Context, owner, repo, state string, page int,
-) ([]*gh.PullRequest, bool, error) {
-	if m.listPullRequestsPageFn != nil {
-		return m.listPullRequestsPageFn(ctx, owner, repo, state, page)
-	}
-	return nil, false, nil
-}
-
-func (m *mockGH) ListIssuesPage(
-	ctx context.Context, owner, repo, state string, page int,
-) ([]*gh.Issue, bool, error) {
-	if m.listIssuesPageFn != nil {
-		return m.listIssuesPageFn(ctx, owner, repo, state, page)
-	}
-	return nil, false, nil
-}
-
-func (m *mockGH) ListNotifications(ctx context.Context, opts ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
-	if m.listNotificationsFn != nil {
-		return m.listNotificationsFn(ctx, opts)
-	}
-	return nil, false, nil
-}
-
-func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string) error {
-	if m.markNotificationReadFn != nil {
-		return m.markNotificationReadFn(ctx, threadID)
-	}
-	return nil
-}
-
-func (m *mockGH) GetMarkdownImage(
-	ctx context.Context,
-	owner, repo, sourceURL string,
-) (platform.MarkdownImage, error) {
-	if m.getMarkdownImageFn != nil {
-		return m.getMarkdownImageFn(ctx, owner, repo, sourceURL)
-	}
-	return platform.MarkdownImage{}, nil
-}
-
-// InvalidateListETagsForRepo is a no-op for the server test mock,
-// which has no underlying HTTP cache.
-func (m *mockGH) InvalidateListETagsForRepo(_, _ string, _ ...string) {}
-
-type apiTestGitLabProvider struct {
-	mu                               sync.Mutex
-	ref                              platform.RepoRef
-	capabilities                     *platform.Capabilities
-	mergeRequests                    []platform.MergeRequest
-	mergeRequestDetail               map[int]platform.MergeRequest
-	mergeRequestEvents               map[int][]platform.MergeRequestEvent
-	issues                           []platform.Issue
-	issueEvents                      map[int][]platform.IssueEvent
-	releases                         []platform.Release
-	tags                             []platform.Tag
-	ciChecks                         map[string][]platform.CICheck
-	ciErr                            error
-	reviewThreads                    []platform.MergeRequestReviewThread
-	reviewThreadsErr                 error
-	reviewThreadsFn                  func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
-	publishedReviews                 []platform.PublishDiffReviewDraftInput
-	publishReviewErr                 error
-	appliedSuggestions               []platform.ApplyReviewSuggestionsInput
-	applySuggestionsErr              error
-	applySuggestionsErrAfterMutation error
-	applySuggestionResult            *platform.AppliedReviewSuggestions
-	applySuggestionReturnsNil        bool
-	applySuggestionHead              string
-	applySuggestionsStarted          chan struct{}
-	applySuggestionsRelease          <-chan struct{}
-	cancelAfterApply                 func()
-	blockNextMRFetch                 atomic.Bool
-	mrFetchStarted                   chan struct{}
-	mrFetchRelease                   <-chan struct{}
-	rateLimitBuckets                 map[platform.OperationName][]platform.RateLimitBucket
-	resolvedThreads                  []string
-	unresolvedThreads                []string
-}
-
-func (p *apiTestGitLabProvider) Platform() platform.Kind {
-	return p.ref.Platform
-}
-
-func (p *apiTestGitLabProvider) Host() string {
-	return p.ref.Host
-}
-
-func (p *apiTestGitLabProvider) Capabilities() platform.Capabilities {
-	if p.capabilities != nil {
-		return *p.capabilities
-	}
-	return platform.Capabilities{
-		ReadRepositories:  true,
-		ReadMergeRequests: true,
-		ReadIssues:        true,
-		ReadComments:      true,
-		ReadReleases:      true,
-		ReadCI:            true,
-	}
-}
-
-func (p *apiTestGitLabProvider) OperationRateLimitBuckets(
-	operation platform.OperationName,
-) ([]platform.RateLimitBucket, bool) {
-	if p.rateLimitBuckets == nil {
-		return nil, false
-	}
-	buckets, ok := p.rateLimitBuckets[operation]
-	return buckets, ok
-}
-
-func (p *apiTestGitLabProvider) PublishDiffReviewDraft(
-	_ context.Context,
-	_ platform.RepoRef,
-	_ int,
-	input platform.PublishDiffReviewDraftInput,
-) (*platform.PublishedDiffReview, error) {
-	p.publishedReviews = append(p.publishedReviews, input)
-	return &platform.PublishedDiffReview{SubmittedAt: time.Now().UTC()}, p.publishReviewErr
-}
-
-func (p *apiTestGitLabProvider) ApplyReviewSuggestions(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-	input platform.ApplyReviewSuggestionsInput,
-) (*platform.AppliedReviewSuggestions, error) {
-	if p.applySuggestionsStarted != nil {
-		p.applySuggestionsStarted <- struct{}{}
-	}
-	if p.applySuggestionsRelease != nil {
-		<-p.applySuggestionsRelease
-	}
-	if p.applySuggestionsErr != nil {
-		return nil, p.applySuggestionsErr
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.appliedSuggestions = append(p.appliedSuggestions, input)
-	result := platform.AppliedReviewSuggestions{CommitSHA: "suggestion-commit-sha"}
-	if p.applySuggestionResult != nil {
-		result = *p.applySuggestionResult
-	}
-	providerHead := result.CommitSHA
-	if p.applySuggestionHead != "" {
-		providerHead = p.applySuggestionHead
-	}
-	for i := range p.mergeRequests {
-		if p.mergeRequests[i].Number == number && providerHead != "" {
-			p.mergeRequests[i].HeadSHA = providerHead
-		}
-	}
-	if p.cancelAfterApply != nil {
-		p.cancelAfterApply()
-	}
-	if p.applySuggestionsErrAfterMutation != nil {
-		return nil, p.applySuggestionsErrAfterMutation
-	}
-	if p.applySuggestionReturnsNil {
-		return nil, nil
-	}
-	return &result, nil
-}
-
-func (p *apiTestGitLabProvider) ListMergeRequestReviewThreads(
-	ctx context.Context,
-	repo platform.RepoRef,
-	number int,
-) ([]platform.MergeRequestReviewThread, error) {
-	if p.reviewThreadsFn != nil {
-		return p.reviewThreadsFn(ctx, repo, number)
-	}
-	if p.reviewThreadsErr != nil {
-		return nil, p.reviewThreadsErr
-	}
-	return p.reviewThreads, nil
-}
-
-func (p *apiTestGitLabProvider) ResolveDiffReviewThread(
-	_ context.Context,
-	_ platform.RepoRef,
-	_ int,
-	providerThreadID string,
-) error {
-	p.resolvedThreads = append(p.resolvedThreads, providerThreadID)
-	return nil
-}
-
-func (p *apiTestGitLabProvider) UnresolveDiffReviewThread(
-	_ context.Context,
-	_ platform.RepoRef,
-	_ int,
-	providerThreadID string,
-) error {
-	p.unresolvedThreads = append(p.unresolvedThreads, providerThreadID)
-	return nil
-}
-
-func (p *apiTestGitLabProvider) GetRepository(
-	context.Context,
-	platform.RepoRef,
-) (platform.Repository, error) {
-	return platform.Repository{
-		Ref:                p.ref,
-		PlatformID:         p.ref.PlatformID,
-		PlatformExternalID: p.ref.PlatformExternalID,
-		DefaultBranch:      p.ref.DefaultBranch,
-		WebURL:             p.ref.WebURL,
-		CloneURL:           p.ref.CloneURL,
-	}, nil
-}
-
-func (p *apiTestGitLabProvider) ListRepositories(
-	context.Context,
-	string,
-	platform.RepositoryListOptions,
-) ([]platform.Repository, error) {
-	repo, err := p.GetRepository(context.Background(), p.ref)
-	if err != nil {
-		return nil, err
-	}
-	return []platform.Repository{repo}, nil
-}
-
-func (p *apiTestGitLabProvider) ListOpenMergeRequests(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.MergeRequest, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return slices.Clone(p.mergeRequests), nil
-}
-
-func (p *apiTestGitLabProvider) GetMergeRequest(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) (platform.MergeRequest, error) {
-	p.mu.Lock()
-	var found platform.MergeRequest
-	foundOK := false
-	if p.mergeRequestDetail != nil {
-		if mr, ok := p.mergeRequestDetail[number]; ok {
-			found = mr
-			foundOK = true
-		}
-	}
-	if !foundOK {
-		for _, mr := range p.mergeRequests {
-			if mr.Number == number {
-				found = mr
-				foundOK = true
-				break
-			}
-		}
-	}
-	p.mu.Unlock()
-	if foundOK {
-		if p.blockNextMRFetch.CompareAndSwap(true, false) {
-			if p.mrFetchStarted != nil {
-				p.mrFetchStarted <- struct{}{}
-			}
-			if p.mrFetchRelease != nil {
-				<-p.mrFetchRelease
-			}
-		}
-		return found, nil
-	}
-	return platform.MergeRequest{}, fmt.Errorf("missing merge request %d", number)
-}
-
-func (p *apiTestGitLabProvider) ListMergeRequestEvents(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) ([]platform.MergeRequestEvent, error) {
-	return p.mergeRequestEvents[number], nil
-}
-
-func (p *apiTestGitLabProvider) ListOpenIssues(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.Issue, error) {
-	return slices.Clone(p.issues), nil
-}
-
-func (p *apiTestGitLabProvider) GetIssue(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) (platform.Issue, error) {
-	for _, issue := range p.issues {
-		if issue.Number == number {
-			return issue, nil
-		}
-	}
-	return platform.Issue{}, fmt.Errorf("missing issue %d", number)
-}
-
-func (p *apiTestGitLabProvider) ListIssueEvents(
-	_ context.Context,
-	_ platform.RepoRef,
-	number int,
-) ([]platform.IssueEvent, error) {
-	return p.issueEvents[number], nil
-}
-
-func (p *apiTestGitLabProvider) ListReleases(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.Release, error) {
-	return p.releases, nil
-}
-
-func (p *apiTestGitLabProvider) ListTags(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.Tag, error) {
-	return p.tags, nil
-}
-
-func (p *apiTestGitLabProvider) ListCIChecks(
-	_ context.Context,
-	_ platform.RepoRef,
-	sha string,
-) ([]platform.CICheck, error) {
-	if p.ciErr != nil {
-		return nil, p.ciErr
-	}
-	return p.ciChecks[sha], nil
-}
-
 // setupTestServer opens a temp DB, builds a Server, and returns both.
 func setupTestServer(t *testing.T) (*Server, *db.DB, *ghclient.Syncer) {
 	t.Helper()
-	return setupTestServerWithMock(t, &mockGH{})
+	return setupTestServerWithMock(t, &serverfake.MockGH{})
 }
 
 func setupNotificationsEnabledTestServer(t *testing.T) (*Server, *db.DB) {
 	t.Helper()
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
 		database,
 		nil,
-		defaultTestRepos,
+		serverfake.DefaultTestRepos,
 		time.Minute,
 		nil,
 		nil,
@@ -1104,91 +191,23 @@ func setupNotificationsEnabledTestServer(t *testing.T) (*Server, *db.DB) {
 		database, syncer, nil, "/",
 		notificationsEnabledConfig(), ServerOptions{},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return srv, database
 }
 
-func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB, *ghclient.Syncer) {
+func setupTestServerWithMock(t *testing.T, mock *serverfake.MockGH) (*Server, *db.DB, *ghclient.Syncer) {
 	t.Helper()
-	return setupTestServerWithRepos(t, mock, defaultTestRepos)
-}
-
-var defaultTestRepos = []ghclient.RepoRef{
-	{
-		Platform:           "github",
-		Owner:              "acme",
-		Name:               "widget",
-		PlatformHost:       "github.com",
-		PlatformExternalID: "repo-acme-widget",
-		CloneURL:           "https://github.com/acme/widget.git",
-	},
-}
-
-func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
-	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = "repo-" + strings.ToLower(owner+"-"+name)
-	return identity
-}
-
-func seedRepoLaunchMetadata(t *testing.T, database *db.DB, repoID int64) {
-	t.Helper()
-	ctx := t.Context()
-	repo, err := database.GetRepoByID(ctx, repoID)
-	require.NoError(t, err)
-	require.NotNil(t, repo)
-	require.NotEmpty(t, repo.PlatformRepoID)
-
-	cloneURL := strings.TrimSpace(repo.CloneURL)
-	if cloneURL == "" {
-		repoPath := strings.Trim(strings.TrimSpace(repo.RepoPath), "/")
-		if repoPath == "" {
-			repoPath = strings.Trim(repo.Owner, "/") + "/" + strings.Trim(repo.Name, "/")
-		}
-		cloneURL = "https://" + repo.PlatformHost + "/" + repoPath + ".git"
-	}
-	defaultBranch := strings.TrimSpace(repo.DefaultBranch)
-	if defaultBranch == "" {
-		defaultBranch = "main"
-	}
-	err = database.UpdateRepoProviderMetadata(
-		ctx, repoID,
-		db.RepoProviderMetadata{
-			PlatformRepoID: repo.PlatformRepoID,
-			WebURL:         strings.TrimSuffix(cloneURL, ".git"),
-			CloneURL:       cloneURL,
-			DefaultBranch:  defaultBranch,
-		},
-	)
-	require.NoError(t, err)
-}
-
-func markArchiveItemRemovedUpstreamForServerTest(
-	t *testing.T,
-	database *db.DB,
-	repoID int64,
-	itemType db.ArchiveItemType,
-	number int,
-) {
-	t.Helper()
-	now := time.Now().UTC().Truncate(time.Second)
-	_, err := database.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO forge_archive_items (
-			repo_id, item_type, item_number, provider_item_id,
-			provider_created_at, provider_updated_at, lifecycle_state
-		) VALUES (?, ?, ?, ?, ?, ?, 'removed_upstream')`,
-		repoID, itemType, number, fmt.Sprintf("%s-%d", itemType, number), now, now,
-	)
-	require.NoError(t, err)
+	return setupTestServerWithRepos(t, mock, serverfake.DefaultTestRepos)
 }
 
 func setupTestServerWithRepos(
-	t *testing.T, mock *mockGH, repos []ghclient.RepoRef,
+	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef,
 ) (*Server, *db.DB, *ghclient.Syncer) {
 	return setupTestServerWithReposAndOptions(t, mock, repos, ServerOptions{})
 }
 
 func setupTestServerWithReposAndOptions(
-	t *testing.T, mock *mockGH, repos []ghclient.RepoRef, options ServerOptions,
+	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef, options ServerOptions,
 ) (*Server, *db.DB, *ghclient.Syncer) {
 	t.Helper()
 
@@ -1230,7 +249,7 @@ func setupTestServerWithReposAndOptions(
 	)
 	// Registered after the DB cleanup so LIFO ordering runs Shutdown
 	// first and lets background goroutines finish before DB close.
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return srv, database, syncer
 }
 
@@ -1247,7 +266,7 @@ func setupTestClientWithBaseURL(
 	t.Helper()
 
 	httpClient := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Transport: serverfake.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			var body io.Reader = http.NoBody
 			if req.Body != nil {
 				payload, err := io.ReadAll(req.Body)
@@ -1313,109 +332,12 @@ func assertTimePtrEqualsUTC(t *testing.T, got *time.Time, want time.Time) {
 	assert.Equal(t, want.UTC(), got.UTC())
 }
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
-type seedPROpt func(*db.MergeRequest)
-
-func withSeedPRHeadSHA(headSHA string) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
-}
-
-func withSeedPRBaseSHA(baseSHA string) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.PlatformBaseSHA = baseSHA }
-}
-
-func withSeedPRHeadRepoCloneURL(cloneURL string) seedPROpt {
+func withSeedPRHeadRepoCloneURL(cloneURL string) serverfake.SeedPROpt {
 	return func(pr *db.MergeRequest) { pr.HeadRepoCloneURL = cloneURL }
 }
 
-func withSeedPRHeadBranch(branch string) seedPROpt {
+func withSeedPRHeadBranch(branch string) serverfake.SeedPROpt {
 	return func(pr *db.MergeRequest) { pr.HeadBranch = branch }
-}
-
-func withSeedPRTitle(title string) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.Title = title }
-}
-
-func withSeedPRAuthor(author string) seedPROpt {
-	return func(pr *db.MergeRequest) { pr.Author = author }
-}
-
-func withSeedPRLifecycle(
-	state db.MergeRequestState,
-	mergedAt *time.Time,
-	closedAt *time.Time,
-) seedPROpt {
-	return func(pr *db.MergeRequest) {
-		pr.State = state
-		pr.MergedAt = mergedAt
-		pr.ClosedAt = closedAt
-	}
-}
-
-func withSeedPRTimes(createdAt, updatedAt, lastActivityAt time.Time) seedPROpt {
-	return func(pr *db.MergeRequest) {
-		pr.CreatedAt = createdAt
-		pr.UpdatedAt = updatedAt
-		pr.LastActivityAt = lastActivityAt
-	}
-}
-
-// seedPR inserts a repo and a PR into the DB, returning the PR's internal ID.
-func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts ...seedPROpt) int64 {
-	t.Helper()
-	ctx := t.Context()
-
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
-	require.NoError(t, err)
-	seedRepoLaunchMetadata(t, database, repoID)
-
-	numberText := strconv.Itoa(number)
-	now := time.Now().UTC().Truncate(time.Second)
-	pr := &db.MergeRequest{
-		RepoID:           repoID,
-		PlatformID:       int64(number) * 1000,
-		Number:           number,
-		URL:              "https://github.com/" + owner + "/" + name + "/pull/" + numberText,
-		Title:            "Test PR #" + numberText,
-		Author:           "testuser",
-		State:            "open",
-		IsDraft:          false,
-		Body:             "test body",
-		HeadBranch:       "feature",
-		HeadRepoCloneURL: "https://github.com/" + owner + "/" + name + ".git",
-		BaseBranch:       "main",
-		Additions:        5,
-		Deletions:        2,
-		CommentCount:     0,
-		ReviewDecision:   "",
-		CIStatus:         "",
-		CreatedAt:        now,
-		UpdatedAt:        now,
-		LastActivityAt:   now,
-	}
-	for _, opt := range opts {
-		opt(pr)
-	}
-
-	prID, err := database.UpsertMergeRequest(ctx, pr)
-	require.NoError(t, err)
-	if pr.PlatformHeadSHA != "" {
-		require.NoError(t, database.UpdateDiffSHAs(
-			ctx, repoID, number,
-			pr.PlatformHeadSHA, pr.PlatformBaseSHA, "merge-base",
-		))
-	}
-	if len(pr.Labels) > 0 {
-		require.NoError(t, database.ReplaceMergeRequestLabels(ctx, repoID, prID, pr.Labels))
-	}
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
-
-	return prID
 }
 
 func insertTestActivityPR(
@@ -1452,8 +374,8 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 	runParallelServerTest(t)
 	require := require.New(t)
 	var providerCalls atomic.Int64
-	mock := &mockGH{
-		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
 			providerCalls.Add(1)
 			return nil, errors.New("removed pull must not be fetched")
 		},
@@ -1461,9 +383,9 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 
 	srv, database, _ := setupTestServerWithMock(t, mock)
 	ctx := t.Context()
-	seedPR(t, database, "acme", "widget", 1)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
 	repo, err := database.GetRepoByIdentity(
-		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -1488,7 +410,7 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 	resp, err := client.HTTP.EnqueuePrSyncWithResponse(ctx, &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, resp.StatusCode, string(resp.Body))
-	markArchiveItemRemovedUpstreamForServerTest(
+	serverfake.MarkArchiveItemRemovedUpstreamForServerTest(
 		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1,
 	)
 	close(releaseFirst)
@@ -1511,8 +433,8 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	mock := &mockGH{
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(2001)
 			sha := "abc123"
 			state := "open"
@@ -1532,7 +454,7 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 				Base:      &gh.PullRequestBranch{Ref: new("main")},
 			}, nil
 		},
-		listWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+		ListWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
 			require.Equal("abc123", headSHA)
 			return []*gh.WorkflowRun{
 				{
@@ -1546,7 +468,7 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 	}
 
 	srv, database, _ := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.EnqueuePrSyncWithResponse(t.Context(), &generated.EnqueuePrSyncRequestOptions{PathParams: &generated.EnqueuePrSyncPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
@@ -1590,9 +512,9 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 		CloneURL:           "https://gitlab.example.com/group/subgroup/project.git",
 		DefaultBranch:      "main",
 	}
-	provider := &apiTestGitLabProvider{
-		ref: ref,
-		mergeRequests: []platform.MergeRequest{{
+	provider := &serverfake.ApiTestGitLabProvider{
+		Ref: ref,
+		MergeRequests: []platform.MergeRequest{{
 			Repo:               ref,
 			PlatformID:         7001,
 			PlatformExternalID: "gid://gitlab/MergeRequest/7001",
@@ -1649,7 +571,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 		database, syncer, nil, nil, cfg,
 		filepath.Join(t.TempDir(), "config.toml"), ServerOptions{},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	syncer.RunOnce(ctx)
@@ -1728,10 +650,10 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	mergedMR.MergedBy = "merge-admin"
 	mergedMR.UpdatedAt = mergedAt
 	mergedMR.LastActivityAt = mergedAt
-	provider := &apiTestGitLabProvider{
-		ref:                ref,
-		mergeRequests:      []platform.MergeRequest{openMR},
-		mergeRequestDetail: map[int]platform.MergeRequest{7: mergedMR},
+	provider := &serverfake.ApiTestGitLabProvider{
+		Ref:                ref,
+		MergeRequests:      []platform.MergeRequest{openMR},
+		MergeRequestDetail: map[int]platform.MergeRequest{7: mergedMR},
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -1758,11 +680,11 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	syncer.RunOnce(ctx)
-	provider.mergeRequests = nil
+	provider.MergeRequests = nil
 	syncer.RunOnce(ctx)
 
 	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
@@ -1838,9 +760,9 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 		MergedAt:           &mergedAt,
 		ClosedAt:           &mergedAt,
 	}
-	provider := &apiTestGitLabProvider{
-		ref:                ref,
-		mergeRequestDetail: map[int]platform.MergeRequest{7: providerMR},
+	provider := &serverfake.ApiTestGitLabProvider{
+		Ref:                ref,
+		MergeRequestDetail: map[int]platform.MergeRequest{7: providerMR},
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -1862,7 +784,7 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	srv.now = func() time.Time { return now }
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	changed, err := syncer.BackfillMergedActorEventOnProvider(ctx, repoID, 7)
@@ -1877,10 +799,10 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 	assert.Empty(before.JSON200.Events[0].Author)
 
 	events, _ := srv.Hub().Subscribe(ctx, false)
-	provider.mu.Lock()
+	provider.Mu.Lock()
 	providerMR.MergedBy = "merge-admin"
-	provider.mergeRequestDetail[7] = providerMR
-	provider.mu.Unlock()
+	provider.MergeRequestDetail[7] = providerMR
+	provider.Mu.Unlock()
 	syncer.RunOnce(ctx)
 
 	var refreshPayload struct {
@@ -2000,7 +922,7 @@ func TestAPIForgejoHostCloneFetchFollowsReloadedToken(t *testing.T) {
 		CloneURL:           cloneURL,
 		DefaultBranch:      "main",
 	}
-	registry, err := platform.NewRegistry(&apiTestGitLabProvider{ref: repoRef})
+	registry, err := platform.NewRegistry(&serverfake.ApiTestGitLabProvider{Ref: repoRef})
 	require.NoError(err)
 
 	database := dbtest.Open(t)
@@ -2027,7 +949,7 @@ func TestAPIForgejoHostCloneFetchFollowsReloadedToken(t *testing.T) {
 		database, syncer, clones, nil, cfg, cfgPath,
 		ServerOptions{Clones: clones, TokenSources: sourceSet},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	waitForConfigWatcher(t, srv, 2*time.Second)
 	stream := streamConfigEvents(t, srv)
@@ -2155,57 +1077,6 @@ func parseCapturedCredentials(raw string) []string {
 	return tokens
 }
 
-// seedIssue inserts a repo and an issue into the DB.
-func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, state string) int64 {
-	t.Helper()
-	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
-	require.NoError(t, err)
-	seedRepoLaunchMetadata(t, database, repoID)
-
-	now := time.Now().UTC().Truncate(time.Second)
-	issue := &db.Issue{
-		RepoID: repoID, PlatformID: int64(number) * 1000, Number: number,
-		URL:   fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, name, number),
-		Title: "Test Issue", Author: "testuser", State: state,
-		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
-	}
-	if state == "closed" {
-		issue.ClosedAt = &now
-	}
-	issueID, err := database.UpsertIssue(ctx, issue)
-	require.NoError(t, err)
-	return issueID
-}
-
-func seedWorkspace(
-	t *testing.T,
-	database *db.DB,
-	id, owner, name, itemType string,
-	number int,
-) {
-	t.Helper()
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", owner, name),
-	)
-	require.NoError(t, err)
-	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
-		ID:              id,
-		RepoID:          repoID,
-		Platform:        "github",
-		PlatformHost:    "github.com",
-		RepoOwner:       owner,
-		RepoName:        name,
-		ItemType:        itemType,
-		ItemNumber:      number,
-		GitHeadRef:      "feature/" + id,
-		WorkspaceBranch: "kenn-forge/" + id,
-		WorktreePath:    filepath.Join(t.TempDir(), id),
-		TmuxSession:     id,
-		Status:          "ready",
-	}))
-}
-
 func TestAPICloseIssue(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
@@ -2213,7 +1084,7 @@ func TestAPICloseIssue(t *testing.T) {
 	srv, database, _ := setupTestServer(t)
 	handlerNow := testEDTTime(10, 45)
 	setTestServerNow(t, srv, handlerNow)
-	seedIssue(t, database, "acme", "widget", 5, "open")
+	serverfake.SeedIssue(t, database, "acme", "widget", 5, "open")
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.SetIssueGithubStateWithResponse(t.Context(), &generated.SetIssueGithubStateRequestOptions{PathParams: &generated.SetIssueGithubStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5)}, Body: &generated.SetIssueGithubStateBody{State: "closed"}})
@@ -2293,7 +1164,7 @@ func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
@@ -2383,7 +1254,7 @@ func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
@@ -2411,7 +1282,7 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	ctx := t.Context()
 
 	srv, database, _ := setupTestServerWithReposAndOptions(
-		t, &mockGH{}, defaultTestRepos,
+		t, &serverfake.MockGH{}, serverfake.DefaultTestRepos,
 		ServerOptions{
 			WorktreeDir:                        t.TempDir(),
 			DisableWorkspaceBackgroundMonitors: true,
@@ -2455,7 +1326,7 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	require.NotNil(resp)
 	require.Equal(http.StatusBadRequest, resp.StatusCode, string(resp.Body))
 
-	var problem rawProblemDetail
+	var problem serverfake.RawProblemDetail
 	require.NoError(json.Unmarshal(resp.Body, &problem))
 	assert.Equal("validationError", problem.Code)
 	assert.Equal("body.provider", problem.Details["field"])
@@ -2467,7 +1338,7 @@ func TestAPICreateWorkspaceRejectsOmittedProviderForUnambiguousRepo(t *testing.T
 	ctx := t.Context()
 
 	srv, database, _ := setupTestServerWithReposAndOptions(
-		t, &mockGH{}, defaultTestRepos,
+		t, &serverfake.MockGH{}, serverfake.DefaultTestRepos,
 		ServerOptions{
 			WorktreeDir:                        t.TempDir(),
 			DisableWorkspaceBackgroundMonitors: true,
@@ -2514,7 +1385,7 @@ func TestMRListIncludesWorktreeLinks(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
-	prID := seedPR(t, database, "acme", "widget", 1)
+	prID := serverfake.SeedPR(t, database, "acme", "widget", 1)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	require.NoError(database.SetWorktreeLinks(
@@ -2546,7 +1417,7 @@ func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
-	prID := seedPR(t, database, "acme", "widget", 1)
+	prID := serverfake.SeedPR(t, database, "acme", "widget", 1)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	require.NoError(database.SetWorktreeLinks(
@@ -2853,7 +1724,7 @@ func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
 
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
 
-	var problem rawProblemDetail
+	var problem serverfake.RawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.Equal("unsupportedCapability", problem.Code)
 	require.NotNil(problem.Details)
@@ -3197,8 +2068,8 @@ func TestAPIPublishReviewDraftUsesPlatformHeadSHAWhenDiffHeadIsUnavailable(t *te
 		map[string]string{"action": "approve", "body": "looks good"})
 
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
-	require.Len(provider.publishedReviews, 1)
-	assert.Equal(mr.PlatformHeadSHA, provider.publishedReviews[0].HeadSHA)
+	require.Len(provider.PublishedReviews, 1)
+	assert.Equal(mr.PlatformHeadSHA, provider.PublishedReviews[0].HeadSHA)
 }
 
 func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
@@ -3215,16 +2086,16 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 	}
 	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
-	provider.publishReviewErr = &platform.Error{
+	provider.PublishReviewErr = &platform.Error{
 		Code:         platform.ErrCodeStaleState,
 		Provider:     platform.KindGitLab,
 		PlatformHost: "gitlab.example.com",
 		Capability:   "approve_merge_request",
 		Hint:         "approval 99 was removed after the head moved",
 	}
-	provider.mergeRequests[0].HeadSHA = "fresh-head"
-	provider.blockNextMRFetch.Store(true)
-	provider.mrFetchStarted = make(chan struct{}, 1)
+	provider.MergeRequests[0].HeadSHA = "fresh-head"
+	provider.BlockNextMRFetch.Store(true)
+	provider.MrFetchStarted = make(chan struct{}, 1)
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -3261,7 +2132,7 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 		map[string]string{"action": "approve", "body": "looks good"})
 
 	require.Equal(http.StatusConflict, publishRR.Code, publishRR.Body.String())
-	var problem rawProblemDetail
+	var problem serverfake.RawProblemDetail
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&problem))
 	assert.Equal("conflict", problem.Code)
 	assert.Contains(problem.Detail, "approval 99 was removed")
@@ -3271,9 +2142,9 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 	assert.Equal("gitlab", details["provider"])
 	assert.Equal("gitlab.example.com", details["platformHost"])
 	assert.Equal("approval 99 was removed after the head moved", details["context"])
-	require.Len(provider.publishedReviews, 1)
+	require.Len(provider.PublishedReviews, 1)
 	select {
-	case <-provider.mrFetchStarted:
+	case <-provider.MrFetchStarted:
 	case <-time.After(10 * time.Second):
 		require.Fail("background refresh did not reach the provider")
 	}
@@ -3297,7 +2168,7 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 	}
 	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
-	provider.publishReviewErr = &platform.DiffReviewPublishPartialError{
+	provider.PublishReviewErr = &platform.DiffReviewPublishPartialError{
 		Err: &platform.Error{
 			Code:         platform.ErrCodeStaleState,
 			Provider:     platform.KindGitLab,
@@ -3306,9 +2177,9 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 			Hint:         "summary note already posted before stale approval",
 		},
 	}
-	provider.mergeRequests[0].HeadSHA = "fresh-head"
-	provider.blockNextMRFetch.Store(true)
-	provider.mrFetchStarted = make(chan struct{}, 1)
+	provider.MergeRequests[0].HeadSHA = "fresh-head"
+	provider.BlockNextMRFetch.Store(true)
+	provider.MrFetchStarted = make(chan struct{}, 1)
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -3345,7 +2216,7 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 		map[string]string{"action": "approve", "body": "looks good"})
 
 	require.Equal(http.StatusConflict, publishRR.Code, publishRR.Body.String())
-	var problem rawProblemDetail
+	var problem serverfake.RawProblemDetail
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&problem))
 	assert.Equal("conflict", problem.Code)
 	require.NotNil(problem.Details)
@@ -3355,7 +2226,7 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 	assert.EqualValues(0, details["publishedCommentCount"])
 	assert.Equal("summary note already posted before stale approval", details["context"])
 	select {
-	case <-provider.mrFetchStarted:
+	case <-provider.MrFetchStarted:
 	case <-time.After(10 * time.Second):
 		require.Fail("background refresh did not reach the provider")
 	}
@@ -3414,7 +2285,7 @@ func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.
 		map[string]string{"action": "comment"})
 
 	require.Equal(http.StatusBadRequest, publishRR.Code, publishRR.Body.String())
-	require.Empty(provider.publishedReviews)
+	require.Empty(provider.PublishedReviews)
 }
 
 func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
@@ -3479,7 +2350,7 @@ func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
 	assertUnsupportedCapabilityProblem(
 		t, rejectRR.Body, "gitlab", "gitlab.example.com", "review_action_request_changes",
 	)
-	require.Empty(provider.publishedReviews)
+	require.Empty(provider.PublishedReviews)
 
 	publishRR := testutil.DoJSON(
 		t,
@@ -3489,8 +2360,8 @@ func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
 		map[string]string{"action": "approve", "body": "approved"})
 
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
-	require.Len(provider.publishedReviews, 1)
-	published := provider.publishedReviews[0]
+	require.Len(provider.PublishedReviews, 1)
+	published := provider.PublishedReviews[0]
 	assert.Equal(platform.ReviewActionApprove, published.Action)
 	assert.Equal("approved", published.Body)
 	require.Len(published.Comments, 1)
@@ -3516,8 +2387,8 @@ func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testin
 	}
 	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
-	provider.publishReviewErr = &platform.DiffReviewPublishPartialError{Err: errors.New("approval failed")}
-	provider.reviewThreadsErr = errors.New("transient review thread refresh failure")
+	provider.PublishReviewErr = &platform.DiffReviewPublishPartialError{Err: errors.New("approval failed")}
+	provider.ReviewThreadsErr = errors.New("transient review thread refresh failure")
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -3558,7 +2429,7 @@ func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testin
 	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
 	require.Equal("partially_published", publishStatus.Status)
-	require.Len(provider.publishedReviews, 1)
+	require.Len(provider.PublishedReviews, 1)
 	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
 	require.NotNil(draft)
@@ -3623,13 +2494,13 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 	}}))
 	now := time.Now().UTC().Truncate(time.Second)
 	providerUpdatedAt := now.Add(2 * time.Minute)
-	provider.mergeRequests[0].UpdatedAt = providerUpdatedAt
-	provider.mergeRequests[0].LastActivityAt = providerUpdatedAt
+	provider.MergeRequests[0].UpdatedAt = providerUpdatedAt
+	provider.MergeRequests[0].LastActivityAt = providerUpdatedAt
 	line := 42
 	replyLine := 43
 	hiddenRootMetadata := `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`
 	hiddenReplyMetadata := `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`
-	provider.reviewThreads = []platform.MergeRequestReviewThread{
+	provider.ReviewThreads = []platform.MergeRequestReviewThread{
 		{
 			ProviderThreadID:  "thread-7",
 			ProviderCommentID: "comment-7",
@@ -3688,10 +2559,10 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 		map[string]string{"action": "comment", "body": "review summary"})
 
 	require.Equal(http.StatusOK, publishRR.Code, publishRR.Body.String())
-	require.Len(provider.publishedReviews, 1)
-	assert.Equal(platform.ReviewActionComment, provider.publishedReviews[0].Action)
-	require.Len(provider.publishedReviews[0].Comments, 1)
-	assert.Equal("current-head", provider.publishedReviews[0].Comments[0].Range.DiffHeadSHA)
+	require.Len(provider.PublishedReviews, 1)
+	assert.Equal(platform.ReviewActionComment, provider.PublishedReviews[0].Action)
+	require.Len(provider.PublishedReviews[0].Comments, 1)
+	assert.Equal("current-head", provider.PublishedReviews[0].Comments[0].Range.DiffHeadSHA)
 
 	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
@@ -3756,7 +2627,7 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 	now := time.Now().UTC().Truncate(time.Second)
 	originalLine := 9
 	replyLine := 10
-	provider.reviewThreads = []platform.MergeRequestReviewThread{
+	provider.ReviewThreads = []platform.MergeRequestReviewThread{
 		{
 			ProviderThreadID:  "discussion-1",
 			ProviderCommentID: "101",
@@ -3882,9 +2753,9 @@ func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
 		staleDerivedActivity, mr.ID,
 	)
 	require.NoError(err)
-	provider.mergeRequests[0].UpdatedAt = providerUpdatedAt
-	provider.mergeRequests[0].LastActivityAt = providerUpdatedAt
-	provider.reviewThreads = nil
+	provider.MergeRequests[0].UpdatedAt = providerUpdatedAt
+	provider.MergeRequests[0].LastActivityAt = providerUpdatedAt
+	provider.ReviewThreads = nil
 
 	syncRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync", nil)
 	require.Equal(http.StatusOK, syncRR.Code, syncRR.Body.String())
@@ -3936,7 +2807,7 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 		DedupeKey:          "gitlab:gitlab.example.com:group/project:mr:7:note:2",
 	}}))
 	line := 9
-	provider.reviewThreads = []platform.MergeRequestReviewThread{{
+	provider.ReviewThreads = []platform.MergeRequestReviewThread{{
 		ProviderThreadID:  "discussion-2",
 		ProviderCommentID: "2",
 		Body:              "canonical inline diff note",
@@ -4002,7 +2873,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 	now := time.Now().UTC().Truncate(time.Second)
 	line := 42
 	hiddenMetadata := `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`
-	provider.reviewThreads = []platform.MergeRequestReviewThread{{
+	provider.ReviewThreads = []platform.MergeRequestReviewThread{{
 		ProviderThreadID:  "thread-atomic",
 		ProviderCommentID: "comment-atomic",
 		Body:              "hidden provider comment",
@@ -4017,7 +2888,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 	}}
 	var reviewThreadCalls atomic.Int32
 	reviewThreadRefreshStarted := make(chan struct{}, 1)
-	provider.reviewThreadsFn = func(
+	provider.ReviewThreadsFn = func(
 		context.Context,
 		platform.RepoRef,
 		int,
@@ -4029,7 +2900,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 		if call == 2 {
 			reviewThreadRefreshStarted <- struct{}{}
 		}
-		return provider.reviewThreads, nil
+		return provider.ReviewThreads, nil
 	}
 
 	basePath := "/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/review-draft"
@@ -4058,7 +2929,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 	var publishStatus pullapi.ActionStatusBody
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&publishStatus))
 	require.Equal("published", publishStatus.Status)
-	require.Len(provider.publishedReviews, 1)
+	require.Len(provider.PublishedReviews, 1)
 	draft, err := database.GetMRReviewDraft(ctx, mr.ID)
 	require.NoError(err)
 	require.Nil(draft)
@@ -4095,7 +2966,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 	assert.Equal("review_comment", events[0].EventType)
 	assert.JSONEq(hiddenMetadata, events[0].MetadataJSON)
 	assert.GreaterOrEqual(reviewThreadCalls.Load(), int32(2))
-	assert.Len(provider.publishedReviews, 1)
+	assert.Len(provider.PublishedReviews, 1)
 }
 
 func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
@@ -4151,7 +3022,7 @@ func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusOK, resolveRR.Code, resolveRR.Body.String())
-	assert.Equal([]string{"thread-7"}, provider.resolvedThreads)
+	assert.Equal([]string{"thread-7"}, provider.ResolvedThreads)
 	thread, err := database.GetMRReviewThread(ctx, mr.ID, threads[0].ID)
 	require.NoError(err)
 	require.NotNil(thread)
@@ -4165,7 +3036,7 @@ func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusOK, unresolveRR.Code, unresolveRR.Body.String())
-	assert.Equal([]string{"thread-7"}, provider.unresolvedThreads)
+	assert.Equal([]string{"thread-7"}, provider.UnresolvedThreads)
 	thread, err = database.GetMRReviewThread(ctx, mr.ID, threads[0].ID)
 	require.NoError(err)
 	require.NotNil(thread)
@@ -4396,8 +3267,8 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
 	assert.Equal("applied", response.Status)
 	assert.Equal("suggestion-commit-sha", response.CommitSHA)
-	require.Len(provider.appliedSuggestions, 1)
-	applied := provider.appliedSuggestions[0]
+	require.Len(provider.AppliedSuggestions, 1)
+	applied := provider.AppliedSuggestions[0]
 	require.Len(applied.Suggestions, 1)
 	assert.Equal("feature/gitlab", applied.HeadBranch)
 	assert.Equal("https://gitlab.example.com/fork/project.git", applied.HeadRepoCloneURL)
@@ -4452,13 +3323,13 @@ func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
 		})
 
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	var problem rawProblemDetail
+	var problem serverfake.RawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.Equal(string(httpapi.CodeConflict), problem.Code)
 	assert.Equal("pull request is not open", problem.Detail)
 	require.NotNil(problem.Details)
 	assert.Equal("not_open", problem.Details["reason"])
-	assert.Empty(provider.appliedSuggestions)
+	assert.Empty(provider.AppliedSuggestions)
 }
 
 func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.T) {
@@ -4476,7 +3347,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.
 	}
 	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
-	provider.applySuggestionResult = &platform.AppliedReviewSuggestions{}
+	provider.ApplySuggestionResult = &platform.AppliedReviewSuggestions{}
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -4526,7 +3397,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T
 	}
 	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
-	provider.applySuggestionReturnsNil = true
+	provider.ApplySuggestionReturnsNil = true
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -4576,7 +3447,7 @@ func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
 	}
 	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
-	provider.applySuggestionsErr = errors.New("provider response was lost")
+	provider.ApplySuggestionsErr = errors.New("provider response was lost")
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
@@ -4721,7 +3592,7 @@ func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *te
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(rr.Body.String(), "body.suggestions[0].replacement")
-	assert.Empty(provider.appliedSuggestions)
+	assert.Empty(provider.AppliedSuggestions)
 }
 
 func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t *testing.T) {
@@ -4797,7 +3668,7 @@ func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t 
 		})
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	assert.Empty(provider.appliedSuggestions)
+	assert.Empty(provider.AppliedSuggestions)
 
 	rr = testutil.DoJSON(
 		t,
@@ -4813,8 +3684,8 @@ func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t 
 		})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	require.Len(provider.appliedSuggestions, 1)
-	assert.Equal("return actualSuggestion();", provider.appliedSuggestions[0].Suggestions[0].Replacement)
+	require.Len(provider.AppliedSuggestions, 1)
+	assert.Equal("return actualSuggestion();", provider.AppliedSuggestions[0].Suggestions[0].Replacement)
 }
 
 func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailSync(t *testing.T) {
@@ -4843,8 +3714,8 @@ func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailS
 	require.NoError(err)
 	require.NotNil(mr)
 	thread := seedApplySuggestionReviewThread(t, database, mr.ID)
-	provider.blockNextMRFetch.Store(true)
-	provider.mrFetchStarted = make(chan struct{}, 1)
+	provider.BlockNextMRFetch.Store(true)
+	provider.MrFetchStarted = make(chan struct{}, 1)
 
 	rr := testutil.DoJSON(
 		t,
@@ -4860,9 +3731,9 @@ func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailS
 		})
 
 	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-	require.Empty(provider.appliedSuggestions)
+	require.Empty(provider.AppliedSuggestions)
 	select {
-	case <-provider.mrFetchStarted:
+	case <-provider.MrFetchStarted:
 		require.Fail("pre-provider validation failure queued detail sync")
 	case <-time.After(100 * time.Millisecond):
 	}
@@ -4953,7 +3824,7 @@ func setupGitLabCapabilityServerWithCaps(
 func setupGitLabCapabilityServerWithProvider(
 	t *testing.T,
 	caps *platform.Capabilities,
-) (*Server, *db.DB, *apiTestGitLabProvider, *ghclient.Syncer) {
+) (*Server, *db.DB, *serverfake.ApiTestGitLabProvider, *ghclient.Syncer) {
 	t.Helper()
 	require := require.New(t)
 	ctx := t.Context()
@@ -4973,10 +3844,10 @@ func setupGitLabCapabilityServerWithProvider(
 		CloneURL:           "https://gitlab.example.com/group/project.git",
 		DefaultBranch:      "main",
 	}
-	provider := &apiTestGitLabProvider{
-		ref:          ref,
-		capabilities: caps,
-		mergeRequests: []platform.MergeRequest{{
+	provider := &serverfake.ApiTestGitLabProvider{
+		Ref:               ref,
+		CapabilitiesValue: caps,
+		MergeRequests: []platform.MergeRequest{{
 			Repo:               ref,
 			PlatformID:         7001,
 			PlatformExternalID: "gid://gitlab/MergeRequest/7001",
@@ -4995,7 +3866,7 @@ func setupGitLabCapabilityServerWithProvider(
 			UpdatedAt:          now,
 			LastActivityAt:     now,
 		}},
-		issues: []platform.Issue{{
+		Issues: []platform.Issue{{
 			Repo:               ref,
 			PlatformID:         8001,
 			PlatformExternalID: "gid://gitlab/Issue/8001",
@@ -5034,7 +3905,7 @@ func setupGitLabCapabilityServerWithProvider(
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	syncer.RunOnce(ctx)
 	return srv, database, provider, syncer
@@ -5111,7 +3982,7 @@ func TestAPIActivityFencesRepositoryReconciliationAcrossEventAndWorkspaceReads(t
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -5248,15 +4119,15 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 		sha = gitfixture.SHA(t, tmpWork, sha+"^1")
 	}
 
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	repos := []ghclient.RepoRef{{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"}}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, repos, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv = New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
 
-	seedPR(t, database, "acme", "widget", 1)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := database.UpsertRepo(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 	require.NoError(t, database.UpdateDiffSHAs(ctx, repoID, 1, headSHA, mergeBase, mergeBase))
 
@@ -5467,7 +4338,7 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	now := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 
 	repo, err := database.GetRepoByIdentity(
-		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -5545,10 +4416,10 @@ func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
 		SyncedAt:               base.Add(10 * time.Minute),
 	}}))
 	mergedAt := base.Add(20 * time.Minute)
-	seedPR(t, database, "acme", "widget", number,
-		withSeedPRTitle("Review before repo sync"),
-		withSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, nil),
-		withSeedPRTimes(base, mergedAt, mergedAt))
+	serverfake.SeedPR(t, database, "acme", "widget", number,
+		serverfake.WithSeedPRTitle("Review before repo sync"),
+		serverfake.WithSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, nil),
+		serverfake.WithSeedPRTimes(base, mergedAt, mergedAt))
 
 	types := []string{"notification"}
 	since := base.Add(-time.Minute).Format(time.RFC3339)
@@ -5576,9 +4447,9 @@ func TestAPIListActivityScopesNotificationsToTrackedRepos(t *testing.T) {
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	number := 7
 
-	trackedRepoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	trackedRepoID, err := database.UpsertRepo(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	removedRepoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "removed"))
+	removedRepoID, err := database.UpsertRepo(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	insertTestActivityPR(t, database, trackedRepoID, "acme", "widget", number, "Tracked notification", base)
 	insertTestActivityPR(t, database, removedRepoID, "acme", "removed", number, "Removed notification", base)
@@ -5636,63 +4507,6 @@ func TestAPIListActivityScopesNotificationsToTrackedRepos(t *testing.T) {
 }
 
 // --- Stacks E2E ---
-
-func seedStackedPR(
-	t *testing.T, database *db.DB,
-	owner, name string, number int,
-	head, base string, state db.MergeRequestState, ci, review string,
-) int64 {
-	return seedStackedPRState(t, database, owner, name, number, head, base, state, ci, review, false, "")
-}
-
-func seedStackedPRState(
-	t *testing.T, database *db.DB,
-	owner, name string, number int,
-	head, base string, state db.MergeRequestState, ci, review string,
-	isDraft bool,
-	mergeableState string,
-) int64 {
-	t.Helper()
-	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
-	require.NoError(t, err)
-	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, name)
-	require.NoError(t, database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
-		CloneURL:      cloneURL,
-		DefaultBranch: "main",
-	}))
-	now := time.Now().UTC().Truncate(time.Second)
-	pr := &db.MergeRequest{
-		RepoID:           repoID,
-		PlatformID:       int64(number) * 1000,
-		Number:           number,
-		Title:            fmt.Sprintf("PR #%d: %s", number, head),
-		Author:           "testuser",
-		State:            state,
-		IsDraft:          isDraft,
-		HeadBranch:       head,
-		BaseBranch:       base,
-		HeadRepoCloneURL: cloneURL,
-		CIStatus:         ci,
-		ReviewDecision:   review,
-		MergeableState:   mergeableState,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-		LastActivityAt:   now,
-	}
-	prID, err := database.UpsertMergeRequest(ctx, pr)
-	require.NoError(t, err)
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
-	return prID
-}
-
-func stackMemberNumbers(members []generated.StackMemberResponse) []int64 {
-	numbers := make([]int64, len(members))
-	for i, member := range members {
-		numbers[i] = member.Number
-	}
-	return numbers
-}
 
 // setupTestServerWithWorkspaces creates a test server wired with
 // both a gitclone.Manager and a workspace.Manager backed by a
@@ -5777,14 +4591,14 @@ func setupWorkspaceServerFixtureWithHostAndOptions(
 	enableEnrichment ...bool,
 ) workspaceServerFixture {
 	return setupWorkspaceServerFixtureWithMockHostAndOptions(
-		t, cfg, &mockGH{}, platformHost, options, enableEnrichment...,
+		t, cfg, &serverfake.MockGH{}, platformHost, options, enableEnrichment...,
 	)
 }
 
 func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	t *testing.T,
 	cfg *config.Config,
-	mock *mockGH,
+	mock *serverfake.MockGH,
 	platformHost string,
 	options ServerOptions,
 	enableEnrichment ...bool,
@@ -5881,9 +4695,9 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	// artifact cleanup has listed workspaces. The DB cleanup was
 	// registered earlier, so it remains open for artifact cleanup.
 	t.Cleanup(func() { cleanupWorkspaceServerFixtureArtifacts(t, srv, database) })
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-	seedPROnHost(
+	serverfake.SeedPROnHost(
 		t, database, platformHost, "acme", "widget", 1,
 		withSeedPRHeadRepoCloneURL("https://github.com/acme/widget.git"),
 	)
@@ -6020,13 +4834,6 @@ func cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
 	return errors.Join(errs...)
 }
 
-func cleanupServerTestTmux(owner *testtmux.Owner) error {
-	if owner == nil {
-		return nil
-	}
-	return owner.Cleanup()
-}
-
 func forgeTmuxSessions(
 	ctx context.Context,
 	tmuxCommand []string,
@@ -6147,7 +4954,7 @@ func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
 	client, database, _, _ := setupTestServerWithWorkspaces(t)
 	ctx := t.Context()
 
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 
@@ -6285,7 +5092,7 @@ func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 	})
 
 	var killed bool
-	for _, argv := range readTmuxRecord(t, record) {
+	for _, argv := range serverfake.ReadTmuxRecord(t, record) {
 		if len(argv) >= 3 &&
 			argv[0] == "kill-session" &&
 			argv[1] == "-t" &&
@@ -6362,7 +5169,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 	require.Contains(err.Error(), "permission denied")
 
 	killedSessions := map[string]bool{}
-	for _, argv := range readTmuxRecord(t, record) {
+	for _, argv := range serverfake.ReadTmuxRecord(t, record) {
 		if len(argv) >= 3 &&
 			argv[0] == "kill-session" {
 			killedSessions[argv[2]] = true
@@ -6486,7 +5293,7 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 	assert.Empty(legacyStored.TerminalBackend)
 
 	ts.Close()
-	gracefulShutdown(t, fixture.server)
+	serverfake.GracefulShutdown(t, fixture.server)
 
 	availableTmux := filepath.Join(dir, "available-tmux")
 	require.NoError(os.WriteFile(
@@ -6505,7 +5312,7 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 			PtyOwnerDir: ptyOwnerDir,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 	restartedTS := httptest.NewServer(restarted)
 	t.Cleanup(restartedTS.Close)
@@ -6548,7 +5355,7 @@ func TestWorkspaceRuntimePtyOwnerPersistenceFailureRollsBackSessionE2E(t *testin
 		requestCtx,
 		http.MethodPost,
 		"/api/v1/workspaces/"+ws.ID+"/runtime/sessions",
-		mustMarshal(t, map[string]any{
+		serverfake.MustMarshal(t, map[string]any{
 			"target_key": string(localruntime.LaunchTargetPlainShell),
 		}),
 	)
@@ -6631,7 +5438,7 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	require.NoError(conn.Close(websocket.StatusNormalClosure, "restart"))
 	ts.Close()
 
-	gracefulShutdown(t, fixture.server)
+	serverfake.GracefulShutdown(t, fixture.server)
 
 	cfg := &config.Config{Tmux: config.Tmux{
 		Command: []string{filepath.Join(dir, "missing-tmux")},
@@ -6642,7 +5449,7 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	restarted := New(
 		fixture.database, fixture.syncer, nil, "/", cfg, options,
 	)
-	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
 	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
@@ -6718,7 +5525,7 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 		},
 	))
 
-	gracefulShutdown(t, fixture.server)
+	serverfake.GracefulShutdown(t, fixture.server)
 
 	cfg := &config.Config{Tmux: config.Tmux{
 		Command: []string{filepath.Join(dir, "missing-tmux")},
@@ -6729,7 +5536,7 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	restarted := New(
 		fixture.database, fixture.syncer, nil, "/", cfg, options,
 	)
-	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
 	runtimeResp, err := restartedClient.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
@@ -6810,7 +5617,7 @@ func TestWorkspaceDeleteStopsPtyOwnerAgentAfterServerRestartE2E(t *testing.T) {
 
 	_, err = os.Stat(filepath.Join(ptyOwnerDir, sessionKey))
 	require.NoError(err)
-	gracefulShutdown(t, fixture.server)
+	serverfake.GracefulShutdown(t, fixture.server)
 
 	options := ptyOwnerServerOptions(ptyOwnerDir)
 	options.Clones = fixture.clones
@@ -6818,7 +5625,7 @@ func TestWorkspaceDeleteStopsPtyOwnerAgentAfterServerRestartE2E(t *testing.T) {
 	restarted := New(
 		fixture.database, fixture.syncer, nil, "/", cfg, options,
 	)
-	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
 	force := true
@@ -6937,7 +5744,7 @@ func TestWorkspaceRuntimeIncludesStoredRuntimeSessionsAfterReloadE2E(t *testing.
 	dir := t.TempDir()
 	tmuxPath := filepath.Join(dir, "fake-tmux")
 	database := dbtest.Open(t)
-	seedPR(t, database, "acme", "widget", 1)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
 	worktreeDir := filepath.Join(dir, "worktrees")
 	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
 	restoredSession := runtimeTmuxSessionNameForTest("0000000000000001", "helper")
@@ -7005,7 +5812,7 @@ exit 0
 	srv := New(database, nil, nil, "/", cfg, ServerOptions{
 		WorktreeDir: worktreeDir,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
 	require.Len(srv.runtime.ListSessions(ws.ID), 1)
@@ -7100,7 +5907,7 @@ exit 0
 
 	var newSession []string
 	require.Eventually(func() bool {
-		for _, argv := range readTmuxRecord(t, record) {
+		for _, argv := range serverfake.ReadTmuxRecord(t, record) {
 			if len(argv) > 0 &&
 				argv[0] == "new-session" &&
 				runtimeTmuxNewSessionCommandContains(t, argv, agentPath) {
@@ -7151,7 +5958,7 @@ exit 0
 	assert.Equal(workspaceapi.TmuxActivitySourceTitle, listed.TmuxActivitySource)
 	require.NotNil(listed.TmuxPaneTitle)
 	assert.Equal("⠴ t3code-b5014b03", *listed.TmuxPaneTitle)
-	assert.Contains(readTmuxRecord(t, record), []string{
+	assert.Contains(serverfake.ReadTmuxRecord(t, record), []string{
 		"display-message", "-p", "-t", session, "#{pane_title}",
 	})
 	stored, err := database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
@@ -7218,7 +6025,7 @@ fi
 exit 0
 `), 0o755))
 
-	seedPR(t, database, "acme", "widget", 1)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
 
 	ws := &workspace.Workspace{
 		ID:              "0000000000000001",
@@ -7242,7 +6049,7 @@ exit 0
 	srv := New(database, nil, nil, "/", cfg, ServerOptions{
 		WorktreeDir: worktreeDir,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 	var got *generated.WorkspaceResponse
 	require.Eventually(func() bool {
@@ -7261,7 +6068,7 @@ exit 0
 	assert.Equal(workspaceapi.TmuxActivitySourceTitle, got.TmuxActivitySource)
 	require.NotNil(got.TmuxPaneTitle)
 	assert.Equal("⠴ t3code-b5014b03", *got.TmuxPaneTitle)
-	assert.Contains(readTmuxRecord(t, record), []string{
+	assert.Contains(serverfake.ReadTmuxRecord(t, record), []string{
 		"display-message", "-p", "-t",
 		sessionName, "#{pane_title}",
 	})
@@ -7336,7 +6143,7 @@ exit 0
 	var sessionName string
 	require.Eventually(func() bool {
 		name, ok := findRuntimeTmuxNewSessionName(
-			t, readTmuxRecord(t, record), ws.ID, "",
+			t, serverfake.ReadTmuxRecord(t, record), ws.ID, "",
 		)
 		if ok {
 			sessionName = name
@@ -7344,7 +6151,7 @@ exit 0
 		return sessionName != ""
 	}, 2*time.Second, 20*time.Millisecond)
 	var runtimeNewSession []string
-	for _, argv := range readTmuxRecord(t, record) {
+	for _, argv := range serverfake.ReadTmuxRecord(t, record) {
 		if len(argv) > 0 &&
 			argv[0] == "new-session" &&
 			slices.Contains(argv, sessionName) {
@@ -7355,14 +6162,14 @@ exit 0
 	require.NotNil(runtimeNewSession)
 	assert.Contains(runtimeNewSession, "@forge_owner")
 	assert.False(slices.ContainsFunc(
-		readTmuxRecord(t, record),
+		serverfake.ReadTmuxRecord(t, record),
 		func(argv []string) bool {
 			return len(argv) > 0 &&
 				argv[0] == "set-option" &&
 				slices.Contains(argv, sessionName)
 		},
 	))
-	assert.NotContains(readTmuxRecord(t, record), []string{
+	assert.NotContains(serverfake.ReadTmuxRecord(t, record), []string{
 		"kill-session", "-t", sessionName,
 	})
 
@@ -7528,10 +6335,10 @@ func TestWorkspaceRuntimeTmuxSessionsHashUnsafeTargetKeysE2E(
 	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
-	assert.Contains(readTmuxRecord(t, record), []string{
+	assert.Contains(serverfake.ReadTmuxRecord(t, record), []string{
 		"kill-session", "-t", slashSession,
 	})
-	assert.Contains(readTmuxRecord(t, record), []string{
+	assert.Contains(serverfake.ReadTmuxRecord(t, record), []string{
 		"kill-session", "-t", colonSession,
 	})
 }
@@ -7582,7 +6389,7 @@ func TestWorkspaceRuntimeStopClearsStoredWrappedAgentSessionAfterRuntimeForgetE2
 	stored, err = database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
-	assert.Contains(readTmuxRecord(t, record), []string{
+	assert.Contains(serverfake.ReadTmuxRecord(t, record), []string{
 		"kill-session", "-t", sessionName,
 	})
 }
@@ -7695,7 +6502,7 @@ func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
 	started, err := fixture.database.BeginWorkspaceDeletion(ctx, ws.ID)
 	require.NoError(err)
 	require.True(started)
-	gracefulShutdown(t, fixture.server)
+	serverfake.GracefulShutdown(t, fixture.server)
 	var databasePath string
 	require.NoError(fixture.database.ReadDB().QueryRowContext(
 		ctx, "SELECT file FROM pragma_database_list WHERE name = 'main'",
@@ -7713,7 +6520,7 @@ func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
 			DisableWorkspaceEnrichment: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
 	getResp, err := restartedClient.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
@@ -8112,7 +6919,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 		return statErr == nil
 	}, 2*time.Second, 20*time.Millisecond)
 
-	gracefulShutdown(t, fixture.server)
+	serverfake.GracefulShutdown(t, fixture.server)
 	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
 	require.Len(stored, 1)
@@ -8123,7 +6930,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 			WorktreeDir: fixture.worktrees,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
 	require.NoError(err)
@@ -8186,7 +6993,7 @@ func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(
 	ownerPath := sessionPath + ".owner"
 	require.NoError(os.WriteFile(ownerPath, []byte("attacker-owner\n"), 0o644))
 
-	gracefulShutdown(t, fixture.server)
+	serverfake.GracefulShutdown(t, fixture.server)
 	restarted := New(
 		fixture.database, fixture.syncer, nil, "/", cfg,
 		ServerOptions{
@@ -8194,7 +7001,7 @@ func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(
 			WorktreeDir: fixture.worktrees,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
 	stored, err = fixture.database.ListWorkspaceRuntimeTmuxSessions(ctx, ws.ID)
@@ -8637,7 +7444,7 @@ func isolatedRealTmuxCommand(t *testing.T, tmuxPath string) []string {
 	if !testtmux.Supported() {
 		t.Skip("real tmux tests require Unix")
 	}
-	return privateTmuxOwner.Command(t, tmuxPath)
+	return serverfake.PrivateTmuxOwner.Command(t, tmuxPath)
 }
 
 func serverRuntimeHelperCommand(mode string) []string {
@@ -8645,7 +7452,7 @@ func serverRuntimeHelperCommand(mode string) []string {
 		os.Args[0],
 		"-test.run=TestServerRuntimeHelperProcess",
 		"--",
-		serverRuntimeHelperMarker,
+		serverfake.ServerRuntimeHelperMarker,
 		mode,
 	}
 }
@@ -8655,7 +7462,7 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 	if sep := slices.Index(args, "--"); sep >= 0 {
 		args = args[sep+1:]
 	}
-	if len(args) > 0 && args[0] == serverRuntimeHelperMarker {
+	if len(args) > 0 && args[0] == serverfake.ServerRuntimeHelperMarker {
 		args = args[1:]
 	} else if os.Getenv("KENN_FORGE_SERVER_RUNTIME_HELPER") != "1" {
 		return
@@ -8666,13 +7473,13 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 	mode := args[0]
 	switch mode {
 	case "sleep":
-		blockServerRuntimeHelper()
+		serverfake.BlockServerRuntimeHelper()
 	case "echo":
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err == nil {
 			fmt.Print("echo:" + line)
 		}
-		blockServerRuntimeHelper()
+		serverfake.BlockServerRuntimeHelper()
 	case "size-live":
 		reader := bufio.NewReader(os.Stdin)
 		for {
@@ -8705,12 +7512,6 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 		os.Exit(7)
 	default:
 		os.Exit(2)
-	}
-}
-
-func blockServerRuntimeHelper() {
-	for {
-		time.Sleep(time.Hour)
 	}
 }
 
@@ -8800,20 +7601,6 @@ type rawIssueDetailResponse struct {
 	Workspace    *rawIssueWorkspaceRef `json:"workspace"`
 }
 
-type rawProblemDetail struct {
-	Type    string         `json:"type"`
-	Title   string         `json:"title"`
-	Status  int            `json:"status"`
-	Detail  string         `json:"detail"`
-	Code    string         `json:"code"`
-	Details map[string]any `json:"details"`
-	Errors  []struct {
-		Message  string `json:"message"`
-		Location string `json:"location"`
-		Value    any    `json:"value"`
-	} `json:"errors"`
-}
-
 func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	runParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
@@ -8841,8 +7628,8 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	author := "alice"
 	cloneURL := "https://github.com/acme/widget.git"
 	intPointer := func(value int) *int { return &value }
-	mock := &mockGH{
-		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+	mock := &serverfake.MockGH{
+		GetIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
 			return &gh.Issue{
 				ID:        &issueID,
 				Number:    intPointer(7),
@@ -8855,7 +7642,7 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 				UpdatedAt: &gh.Timestamp{Time: now},
 			}, nil
 		},
-		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+		ListOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
 			return []*gh.PullRequest{{
 				ID:        &prID,
 				Number:    intPointer(42),
@@ -8873,7 +7660,7 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 				Base: &gh.PullRequestBranch{Ref: &baseRef, SHA: &baseSHA},
 			}}, nil
 		},
-		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
 			return &gh.PullRequest{
 				ID:        &prID,
 				Number:    intPointer(42),
@@ -8901,7 +7688,7 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 		},
 	)
 
-	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+	serverfake.SeedIssue(t, fixture.database, "acme", "widget", 7, "open")
 	createRR := testutil.DoJSON(
 		t,
 		fixture.server,
@@ -8951,7 +7738,7 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	require.NotNil(stored.AssociatedPRNumber)
 	assert.Equal(42, *stored.AssociatedPRNumber)
 
-	repo, err := fixture.database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := fixture.database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	pr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 42)
@@ -8983,8 +7770,8 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 	author := "alice"
 	cloneURL := "https://github.com/acme/widget.git"
 	intPointer := func(value int) *int { return &value }
-	mock := &mockGH{
-		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		ListOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
 			return []*gh.PullRequest{{
 				ID:        &prID,
 				Number:    intPointer(42),
@@ -9002,7 +7789,7 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 				Base: &gh.PullRequestBranch{Ref: &baseRef, SHA: &baseSHA},
 			}}, nil
 		},
-		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
 			return &gh.PullRequest{
 				ID:        &prID,
 				Number:    intPointer(42),
@@ -9101,7 +7888,7 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 
 	repo, err := fixture.database.GetRepoByIdentity(
 		ctx,
-		verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -9133,8 +7920,8 @@ func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
 	headRef := "feature"
 	baseRef := "main"
 	var issueDetailCalls atomic.Int64
-	mock := &mockGH{
-		listOpenIssuesFn: func(context.Context, string, string) ([]*gh.Issue, error) {
+	mock := &serverfake.MockGH{
+		ListOpenIssuesFn: func(context.Context, string, string) ([]*gh.Issue, error) {
 			return []*gh.Issue{{
 				ID: &issueID, Number: &issueNumber, Title: &issueTitle,
 				State: &issueState, HTMLURL: &issueURL,
@@ -9142,11 +7929,11 @@ func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
 				CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
 			}}, nil
 		},
-		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+		GetIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
 			issueDetailCalls.Add(1)
 			return nil, errors.New("removed issue must not be fetched")
 		},
-		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+		ListOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
 			return []*gh.PullRequest{{
 				ID: &prID, Number: &prNumber, Title: &prTitle,
 				State: &prState, HTMLURL: &prURL,
@@ -9164,7 +7951,7 @@ func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
 			DisableWorkspaceBackgroundMonitors: true,
 		},
 	)
-	seedIssue(t, fixture.database, "acme", "widget", issueNumber, "open")
+	serverfake.SeedIssue(t, fixture.database, "acme", "widget", issueNumber, "open")
 
 	createRR := testutil.DoJSON(
 		t, fixture.server, http.MethodPost,
@@ -9176,11 +7963,11 @@ func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
 	waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
 
 	repo, err := fixture.database.GetRepoByIdentity(
-		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
-	markArchiveItemRemovedUpstreamForServerTest(
+	serverfake.MarkArchiveItemRemovedUpstreamForServerTest(
 		t, fixture.database, repo.ID, db.ArchiveItemTypeIssue, issueNumber,
 	)
 	before := issueDetailCalls.Load()
@@ -9226,18 +8013,18 @@ func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.
 		}
 	}
 	var detailCalls atomic.Int32
-	mock := &mockGH{
-		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		ListOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
 			return []*gh.PullRequest{buildPR(1, "list title", now.Add(time.Minute))}, nil
 		},
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			detailCalls.Add(1)
 			return buildPR(number, "detail title", now.Add(2*time.Minute)), nil
 		},
 		// The seeded open issue leaves the (empty) open list and its
 		// closed-item refresh fails: an issue-scope partial failure on
 		// every repo index sync.
-		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+		GetIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
 			return nil, errors.New("closed issue refresh failed")
 		},
 	}
@@ -9248,7 +8035,7 @@ func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.
 			DisableWorkspaceBackgroundMonitors: true,
 		},
 	)
-	seedIssue(t, fixture.database, "acme", "widget", 8, "open")
+	serverfake.SeedIssue(t, fixture.database, "acme", "widget", 8, "open")
 
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	before := detailCalls.Load()
@@ -9271,7 +8058,7 @@ func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.
 		"the targeted PR-detail refresh must still run")
 
 	repo, err := fixture.database.GetRepoByIdentity(
-		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -9318,11 +8105,11 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 		}
 	}
 	var pr1DetailCalls atomic.Int32
-	mock := &mockGH{
-		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+	mock := &serverfake.MockGH{
+		ListOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
 			return []*gh.PullRequest{buildPR(1, "list title", now.Add(3*time.Minute))}, nil
 		},
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			// Seeded PR #2 leaves the open list and its closed-item
 			// refresh fails: a merge-request-scope partial failure on
 			// every repo index sync. PR #1 detail stays healthy.
@@ -9340,12 +8127,12 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 			DisableWorkspaceBackgroundMonitors: true,
 		},
 	)
-	seedPR(t, fixture.database, "acme", "widget", 2)
+	serverfake.SeedPR(t, fixture.database, "acme", "widget", 2)
 
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	repo, err := fixture.database.GetRepoByIdentity(
-		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -9363,7 +8150,7 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 
 	require.Equal(http.StatusBadGateway, refreshRR.Code, refreshRR.Body.String())
 
-	var problem rawProblemDetail
+	var problem serverfake.RawProblemDetail
 	require.NoError(json.NewDecoder(refreshRR.Body).Decode(&problem))
 	assert.Equal("upstreamError", problem.Code)
 	assert.Contains(problem.Detail, "merge request sync items failed")
@@ -9378,7 +8165,7 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 		"no detail refresh may land on the workspace PR row")
 
 	refreshedRepo, err := fixture.database.GetRepoByIdentity(
-		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(refreshedRepo)
@@ -9403,8 +8190,8 @@ func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 	author := "alice"
 	intPointer := func(value int) *int { return &value }
 	str := func(v string) *string { return &v }
-	mock := &mockGH{
-		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+	mock := &serverfake.MockGH{
+		GetIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
 			return &gh.Issue{
 				ID:        &issueID,
 				Number:    intPointer(7),
@@ -9417,14 +8204,14 @@ func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 				UpdatedAt: &gh.Timestamp{Time: now},
 			}, nil
 		},
-		listOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+		ListOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
 			return nil, nil
 		},
 		// The fixture seeds PR #1 as open; with the open list empty,
 		// closure detection refreshes it. Serve a valid closed PR so
 		// the repo sync cycle stays clean and the refresh reaches the
 		// association-inspection failure this test targets.
-		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			id := int64(9001)
 			return &gh.PullRequest{
 				ID:        &id,
@@ -9448,7 +8235,7 @@ func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 		},
 	)
 
-	seedIssue(t, fixture.database, "acme", "widget", 7, "open")
+	serverfake.SeedIssue(t, fixture.database, "acme", "widget", 7, "open")
 	createRR := testutil.DoJSON(
 		t,
 		fixture.server,
@@ -9474,7 +8261,7 @@ func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 		http.StatusInternalServerError, refreshRR.Code, refreshRR.Body.String(),
 	)
 
-	var problem rawProblemDetail
+	var problem serverfake.RawProblemDetail
 	require.NoError(json.NewDecoder(refreshRR.Body).Decode(&problem))
 	assert.Equal("internalError", problem.Code)
 	assert.Contains(problem.Detail, "refresh workspace PR association")
@@ -9530,7 +8317,7 @@ func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
 	}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
-	seedPROnHost(
+	serverfake.SeedPROnHost(
 		t, fixture.database,
 		platformHost, "acme", "widget", prNumber,
 		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
@@ -9604,7 +8391,7 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 			DefaultBranch: "main",
 		},
 	))
-	seedPRForRepo(
+	serverfake.SeedPRForRepo(
 		t, fixture.database, repoID, platformHost, "acme", "widget", mrNumber,
 		withSeedPRHeadBranch(headBranch),
 		withSeedPRHeadRepoCloneURL("http://"+platformHost+"/acme/widget.git"),
@@ -9657,7 +8444,7 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 	}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
-	seedPROnHost(
+	serverfake.SeedPROnHost(
 		t, fixture.database,
 		platformHost, "acme", "widget", prNumber,
 		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
@@ -9715,7 +8502,7 @@ func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
 	}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
-	seedPROnHost(
+	serverfake.SeedPROnHost(
 		t, fixture.database,
 		platformHost, "acme", "widget", prNumber,
 		withSeedPRHeadRepoCloneURL("https://"+platformHost+"/acme/widget.git"),
@@ -9932,69 +8719,12 @@ func TestWorkspaceDeleteDoesNotCleanupReplacementCloneFromStaleLocalBaseE2E(t *t
 	assert.Nil(got)
 }
 
-// seedPROnHost seeds a repo on a specific platform host and
-// inserts a PR for it.
-func seedPROnHost(
-	t *testing.T, database *db.DB,
-	host, owner, name string, number int,
-	opts ...seedPROpt,
-) int64 {
-	t.Helper()
-	ctx := t.Context()
-
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity(host, owner, name))
-	require.NoError(t, err)
-
-	return seedPRForRepo(t, database, repoID, host, owner, name, number, opts...)
-}
-
-func seedPRForRepo(
-	t *testing.T, database *db.DB,
-	repoID int64, host, owner, name string, number int,
-	opts ...seedPROpt,
-) int64 {
-	t.Helper()
-	ctx := t.Context()
-	seedRepoLaunchMetadata(t, database, repoID)
-	now := time.Now().UTC().Truncate(time.Second)
-	pr := &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     int64(number) * 1000,
-		Number:         number,
-		URL:            fmt.Sprintf("https://%s/%s/%s/pull/%d", host, owner, name, number),
-		Title:          fmt.Sprintf("Test PR #%d", number),
-		Author:         "testuser",
-		State:          "open",
-		IsDraft:        false,
-		Body:           "test body",
-		HeadBranch:     "feature",
-		BaseBranch:     "main",
-		Additions:      5,
-		Deletions:      2,
-		CommentCount:   0,
-		ReviewDecision: "",
-		CIStatus:       "",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
-	}
-	for _, opt := range opts {
-		opt(pr)
-	}
-
-	prID, err := database.UpsertMergeRequest(ctx, pr)
-	require.NoError(t, err)
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
-
-	return prID
-}
-
 // --- edit-issue-content (PATCH) tests ---
 func TestSyncIssueUntrackedRepoReturnsForbidden(t *testing.T) {
 	require := require.New(t)
 
-	srv, database, _ := setupTestServerWithMock(t, &mockGH{})
-	seedIssue(t, database, "acme", "retired", 3, "open")
+	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{})
+	serverfake.SeedIssue(t, database, "acme", "retired", 3, "open")
 	client := setupTestClient(t, srv)
 
 	resp, err := client.HTTP.SyncIssueWithResponse(t.Context(), &generated.SyncIssueRequestOptions{

@@ -1,6 +1,8 @@
 package server
 
 import (
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	jsonv2 "encoding/json/v2"
 	"testing"
 
@@ -14,7 +16,7 @@ func TestRelayWorkflowActivitySignalsOnlyActions(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := newTestServer(t)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	repoID, err := srv.db.UpsertRepo(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_project", Owner: "team", Name: "project",
 	})

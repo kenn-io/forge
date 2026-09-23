@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
 
 // TestFilesystemComplete covers GET /api/v1/filesystem/complete: directory
@@ -22,7 +24,7 @@ func TestFilesystemComplete(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := servertest.SetupTestServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -35,7 +37,7 @@ func TestFilesystemComplete(t *testing.T) {
 	))
 
 	decode := func(partial string) []string {
-		resp := httpDo(t, ts, http.MethodGet,
+		resp := serverfake.HttpDo(t, ts, http.MethodGet,
 			"/api/v1/filesystem/complete?path="+url.QueryEscape(partial), nil)
 		t.Cleanup(func() {
 			if resp != nil && resp.Body != nil {
@@ -76,7 +78,7 @@ func TestFilesystemValidateRepo(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _ := servertest.SetupTestServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -89,7 +91,7 @@ func TestFilesystemValidateRepo(t *testing.T) {
 	require.NoError(os.MkdirAll(filepath.Join(repo, "subdir"), 0o755))
 
 	decode := func(path string) (bool, string, string) {
-		resp := httpDo(t, ts, http.MethodGet,
+		resp := serverfake.HttpDo(t, ts, http.MethodGet,
 			"/api/v1/filesystem/validate-repo?path="+url.QueryEscape(path), nil)
 		t.Cleanup(func() {
 			if resp != nil && resp.Body != nil {

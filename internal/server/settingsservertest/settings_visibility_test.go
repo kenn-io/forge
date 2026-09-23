@@ -1,7 +1,6 @@
 package settingsservertest
 
 import (
-	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -9,55 +8,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
+
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 )
-
-func seedVerifiedRepo(
-	t *testing.T, database *db.DB, identity db.RepoIdentity,
-) {
-	t.Helper()
-	entry, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), identity, time.Now().UTC(),
-	)
-	require.NoError(t, err)
-	require.NotNil(t, entry)
-}
-
-func settingsReposFromBody(t *testing.T, body []byte) []ghclient.ConfiguredRepoStatus {
-	t.Helper()
-	var resp struct {
-		Repos []ghclient.ConfiguredRepoStatus `json:"repos"`
-	}
-	require.NoError(t, json.Unmarshal(body, &resp))
-	return resp.Repos
-}
-
-func listRepoNames(t *testing.T, srv *server.Server) []string {
-	t.Helper()
-	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	var repos []struct {
-		Name string `json:"name"`
-	}
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &repos))
-	names := make([]string, 0, len(repos))
-	for _, repo := range repos {
-		names = append(names, repo.Name)
-	}
-	return names
-}
 
 func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _, syncer := setupTestServerWithConfig(t)
+	srv, database, _, syncer := servertest.SetupTestServerWithConfig(t)
 
 	// The provider renamed acme/widget to acme-renamed/widget-renamed. The
 	// tracked ref carries the current route plus exact-entry provenance, and
 	// the catalog row holds the stable provider id.
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "R_widget",
@@ -77,23 +43,23 @@ func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
 		map[string]bool{"hidden": true})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	repos := settingsReposFromBody(t, rr.Body.Bytes())
+	repos := serverfake.SettingsReposFromBody(t, rr.Body.Bytes())
 	require.Len(repos, 1)
 	assert.True(repos[0].HiddenFromUI,
 		"configured entry reports hidden through rename provenance")
 	assert.Equal("acme-renamed/widget-renamed", repos[0].TrackedRepoPath,
 		"settings expose the current provider route for selection cleanup")
-	assert.Empty(listRepoNames(t, srv),
+	assert.Empty(servertest.ListRepoNames(t, srv),
 		"renamed hidden repo stays out of the catalog")
 }
 
 func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _, syncer := setupTestServerWithConfig(t)
+	srv, database, _, syncer := servertest.SetupTestServerWithConfig(t)
 
 	// R_old was verified at acme/widget and hidden there.
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "R_old",
@@ -137,11 +103,11 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	repos := settingsReposFromBody(t, rr.Body.Bytes())
+	repos := serverfake.SettingsReposFromBody(t, rr.Body.Bytes())
 	require.Len(repos, 1)
 	assert.False(repos[0].HiddenFromUI,
 		"replacement repo must not inherit hidden state through the reused route")
-	assert.Equal([]string{"widget"}, listRepoNames(t, srv),
+	assert.Equal([]string{"widget"}, servertest.ListRepoNames(t, srv),
 		"replacement repo stays in the interactive catalog")
 
 	// Hiding the entry now targets the replacement's stable identity.
@@ -163,10 +129,10 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _, syncer := setupTestServerWithConfig(t)
+	srv, database, _, syncer := servertest.SetupTestServerWithConfig(t)
 
 	// R_old owned acme/widget until a different repository took the route.
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "R_old",
@@ -208,9 +174,9 @@ func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _, syncer := setupTestServerWithConfig(t)
+	srv, database, _, syncer := servertest.SetupTestServerWithConfig(t)
 
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "R_widget",
@@ -232,7 +198,7 @@ func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
 		map[string]bool{"hidden": true})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	repos := settingsReposFromBody(t, rr.Body.Bytes())
+	repos := serverfake.SettingsReposFromBody(t, rr.Body.Bytes())
 	require.Len(repos, 1)
 	assert.True(repos[0].HiddenFromUI,
 		"route-only tracked refs resolve through the catalog row")

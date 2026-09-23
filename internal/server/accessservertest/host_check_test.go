@@ -9,25 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/authapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
-
-func bindLoopback8091() config.HostKey {
-	return config.HostKey{Host: "127.0.0.1", Port: "8091"}
-}
-
-func directDaemonRequest(t *testing.T, bearer string, headers http.Header) *http.Request {
-	t.Helper()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/snapshot", nil)
-	req.Host = "127.0.0.1:8091"
-	req.RemoteAddr = "127.0.0.1:1234"
-	if headers != nil {
-		req.Header = headers.Clone()
-	}
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	return req
-}
 
 // TestDirectDaemonBearerClassification protects the native-client trust
 // boundary without constructing the full application. If the classifier is
@@ -54,11 +37,11 @@ func TestDirectDaemonBearerClassification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bind := bindLoopback8091()
+			bind := serverfake.BindLoopback8091()
 			if tt.bind.Host != "" {
 				bind = tt.bind
 			}
-			req := directDaemonRequest(t, tt.bearer, tt.headers)
+			req := serverfake.DirectDaemonRequest(t, tt.bearer, tt.headers)
 			req.Host, req.RemoteAddr = tt.host, tt.remoteAddr
 			if tt.cookie {
 				req.AddCookie(&http.Cookie{Name: authapi.AuthCookieName, Value: "secret"})

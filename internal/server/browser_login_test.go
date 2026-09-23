@@ -12,13 +12,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/browserloginapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 const (
@@ -105,7 +105,7 @@ func newBrowserLoginHub(t *testing.T, hostCheck authapi.HostCheckOptions) *brows
 	srv.now = clock.Now
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return &browserLoginFixture{
 		ts: ts, srv: srv, clock: clock, peerToken: token,
 		enrollments: enrollments, lease: lease,

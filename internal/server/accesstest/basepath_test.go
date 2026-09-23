@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -20,14 +22,14 @@ func setupWithBasePath(t *testing.T, basePath string, frontend fs.FS) *server.Se
 	t.Helper()
 	database := dbtest.Open(t)
 
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(
 		database, syncer, frontend, basePath,
 		nil, server.ServerOptions{},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return srv
 }
 

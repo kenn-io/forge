@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -107,7 +109,7 @@ agent_sessions = false
 	tmuxPath, recordPath := writeRuntimeCommandFakeTmux(t)
 	cfg.Tmux.Command = []string{tmuxPath}
 	database := dbtest.Open(t)
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	clients := map[string]ghclient.Client{"github.com": mock}
 	resolved := ghclient.ResolveConfiguredRepos(t.Context(), clients, cfg.Repos)
 	syncer := ghclient.NewSyncer(
@@ -122,8 +124,8 @@ agent_sessions = false
 			HostCheckAllowLoopbackAnyPort: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	project := createRuntimeTestProject(t, database, t.TempDir())
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	project := serverfake.CreateRuntimeTestProject(t, database, t.TempDir())
 	worktree, err := database.CreateProjectWorktree(
 		t.Context(), db.CreateProjectWorktreeInput{
 			ProjectID: project.ID,
@@ -154,7 +156,7 @@ func TestProjectWorktreeRuntimeListsStoredCommandSessionLabel(t *testing.T) {
 		},
 	))
 
-	resp := httpDo(t, ts, http.MethodGet,
+	resp := serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
 	t.Cleanup(func() {

@@ -17,13 +17,13 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	forgeserver "go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
-
-const federationEventTestNodeID = "55555555555555555555555555555555"
 
 type testSSEFrame struct {
 	ID   string
@@ -88,7 +88,7 @@ func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
 	}, time.Now().Add(time.Minute))
 	require.NoError(err)
 	_, err = enrollments.Begin(t.Context(), oneTime.Token, federation.JoinRequest{
-		EnrollmentID: enrollmentID, NodeID: federationEventTestNodeID,
+		EnrollmentID: enrollmentID, NodeID: serverfake.FederationEventTestNodeID,
 		BaseURL: spoke.URL, Platform: "linux",
 		ProtocolVersion: federation.ProtocolVersion,
 		HubCredential:   "hub-credential",
@@ -101,11 +101,11 @@ func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
 	credentials, err := federationauth.Open(filepath.Join(dir, "credentials.json"))
 	require.NoError(err)
 	token, err := credentials.MintInbound(
-		federationEventTestNodeID, federationauth.SpokeToHubScopes(),
+		serverfake.FederationEventTestNodeID, federationauth.SpokeToHubScopes(),
 	)
 	require.NoError(err)
 	require.NoError(credentials.StoreOutbound(
-		federationEventTestNodeID, "hub-calls-spoke-token",
+		serverfake.FederationEventTestNodeID, "hub-calls-spoke-token",
 		federationauth.HubToSpokeScopes(),
 	))
 	cfg := &config.Config{
@@ -115,7 +115,7 @@ func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
 			Enabled: true, Role: config.FleetRoleHub,
 			BaseURL: "https://hub.example",
 			Members: []config.FleetMember{{
-				NodeID: federationEventTestNodeID, BaseURL: spoke.URL,
+				NodeID: serverfake.FederationEventTestNodeID, BaseURL: spoke.URL,
 				State: federation.EnrollmentActive,
 			}},
 		},
@@ -133,7 +133,7 @@ func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
 		HostCheckAllowLoopbackAnyPort:      true,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, server) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, server) })
 	httpServer := httptest.NewServer(server)
 	t.Cleanup(httpServer.Close)
 	stream := openFederationEventStream(t, httpServer, token, "")
@@ -168,7 +168,7 @@ func newFederationEventServer(
 	credentials, err := federationauth.Open(t.TempDir() + "/credentials.json")
 	require.NoError(t, err)
 	token, err := credentials.MintInbound(
-		federationEventTestNodeID, federationauth.SpokeToHubScopes(),
+		serverfake.FederationEventTestNodeID, federationauth.SpokeToHubScopes(),
 	)
 	require.NoError(t, err)
 	server := forgeserver.New(dbtest.Open(t), nil, nil, "/", nil, forgeserver.ServerOptions{
@@ -178,7 +178,7 @@ func newFederationEventServer(
 		FederationCredentials:              credentials,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, server) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, server) })
 	httpServer := httptest.NewServer(server)
 	t.Cleanup(httpServer.Close)
 	return server, httpServer, token
@@ -213,7 +213,7 @@ func federationEventRequest(t *testing.T, baseURL, token, cursor string) (*http.
 		return nil, err
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set(federationauth.NodeIDHeader, federationEventTestNodeID)
+	request.Header.Set(federationauth.NodeIDHeader, serverfake.FederationEventTestNodeID)
 	request.Header.Set(providerplane.ProtocolVersionHeader, providerplane.ProtocolVersionHeaderValue())
 	if cursor != "" {
 		request.Header.Set("Last-Event-ID", cursor)

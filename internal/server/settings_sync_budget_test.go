@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/testutil"
@@ -26,7 +28,7 @@ func setupSyncBudgetTestServer(t *testing.T) (*Server, string) {
 
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
 		database, nil, nil, time.Minute, nil,
 		map[string]*ghclient.SyncBudget{
 			"github.com": ghclient.NewSyncBudgetWithEssentialReserve(cfg.BudgetPerHour()),
@@ -37,7 +39,7 @@ func setupSyncBudgetTestServer(t *testing.T) (*Server, string) {
 		database, syncer, nil, nil, cfg, cfgPath,
 		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return srv, cfgPath
 }
 

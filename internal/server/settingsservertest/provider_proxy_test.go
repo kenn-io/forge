@@ -29,6 +29,7 @@ import (
 	"go.kenn.io/forge/internal/server/routepolicy"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -231,17 +232,17 @@ func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
-	pullID := seedPR(t, hubDB, "acme", "widget", 1,
-		withSeedPRTimes(base, base, base))
-	seedPR(t, hubDB, "acme", "widget", 2,
-		withSeedPRTimes(base.Add(time.Minute), base.Add(time.Minute), base.Add(time.Minute)))
+	pullID := serverfake.SeedPR(t, hubDB, "acme", "widget", 1,
+		serverfake.WithSeedPRTimes(base, base, base))
+	serverfake.SeedPR(t, hubDB, "acme", "widget", 2,
+		serverfake.WithSeedPRTimes(base.Add(time.Minute), base.Add(time.Minute), base.Add(time.Minute)))
 	require.NoError(hubDB.UpsertMREvents(t.Context(), []db.MREvent{{
 		MergeRequestID: pullID, EventType: "issue_comment", Author: "reviewer",
 		Body: "provider-owned activity", CreatedAt: base.Add(2 * time.Minute),
 		DedupeKey: "federated-provider-activity",
 	}}))
 	hubRepo, err := hubDB.GetRepoByIdentity(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(hubRepo)
@@ -263,13 +264,13 @@ func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
 			DisableWorkspaceBackgroundMonitors: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, hubServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
 	hub := httptest.NewTLSServer(hubServer)
 	t.Cleanup(hub.Close)
 
 	nodeDB := dbtest.Open(t)
-	seedPR(t, nodeDB, "acme", "widget", 1)
-	seedWorkspace(
+	serverfake.SeedPR(t, nodeDB, "acme", "widget", 1)
+	serverfake.SeedWorkspace(
 		t, nodeDB, "ws-spoke-only", "acme", "widget",
 		db.WorkspaceItemTypePullRequest, 1,
 	)
@@ -294,7 +295,7 @@ func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
 		FederationHTTPClient:               hub.Client(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, nodeServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, nodeServer) })
 	spoke := httptest.NewServer(nodeServer)
 	t.Cleanup(spoke.Close)
 

@@ -15,29 +15,23 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/syncevents"
-	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
-
-func openTestDB(t *testing.T) *db.DB {
-	t.Helper()
-	return dbtest.Open(t)
-}
 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
-	return New(openTestDB(t), nil, nil, "/", nil, ServerOptions{})
+	return New(serverfake.OpenTestDB(t), nil, nil, "/", nil, ServerOptions{})
 }
 
 func TestWorkspaceClockDoesNotReplaceRootServerClock(t *testing.T) {
 	assert := assert.New(t)
 	workspaceNow := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
-	srv := New(openTestDB(t), nil, nil, "/", nil, ServerOptions{
+	srv := New(serverfake.OpenTestDB(t), nil, nil, "/", nil, ServerOptions{
 		WorkspaceNow: func() time.Time { return workspaceNow },
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	assert.WithinDuration(time.Now(), srv.now(), time.Second)
 	assert.NotEqual(workspaceNow, srv.now())

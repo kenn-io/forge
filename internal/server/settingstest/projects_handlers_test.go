@@ -1,7 +1,6 @@
 package settingstest
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -18,9 +17,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -32,7 +34,7 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp := httpDo(t, ts, http.MethodGet,
+	resp := serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
 	t.Cleanup(func() {
@@ -52,7 +54,7 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 	assert.Empty(runtimeBody.Sessions)
 	assert.Nil(runtimeBody.ShellSession)
 
-	resp = httpDo(t, ts, http.MethodPost,
+	resp = serverfake.HttpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/shell", nil,
 	)
 	t.Cleanup(func() {
@@ -71,7 +73,7 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 	assert.Equal("plain_shell", shell["target_key"])
 	assert.NotContains(shell, "workspace_id")
 
-	resp = httpDo(t, ts, http.MethodGet,
+	resp = serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
 	require.Equal(http.StatusOK, resp.StatusCode)
@@ -80,7 +82,7 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 	require.NotNil(runtimeBody.ShellSession)
 	assert.Equal(shellKey, (*runtimeBody.ShellSession)["key"])
 
-	resp = httpDo(t, ts, http.MethodGet,
+	resp = serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+
 			"/runtime/sessions/"+shellKey+"/attach-spec",
 		nil,
@@ -97,7 +99,7 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 	assert.Contains(string(payload), "badRequest")
 	assert.Contains(string(payload), "not tmux-backed")
 
-	resp = httpDo(t, ts, http.MethodDelete,
+	resp = serverfake.HttpDo(t, ts, http.MethodDelete,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/sessions/"+shellKey,
 		nil,
 	)
@@ -113,8 +115,8 @@ func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	body := mustMarshal(t, map[string]any{"target_key": "helper"})
-	resp := httpDo(t, ts, http.MethodPost,
+	body := serverfake.MustMarshal(t, map[string]any{"target_key": "helper"})
+	resp := serverfake.HttpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/sessions", body,
 	)
 	t.Cleanup(func() {
@@ -136,7 +138,7 @@ func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 
 	// Agent launches are never singletons: a second launch of the same target
 	// starts a distinct session. Only plain_shell is reused, via /runtime/shell.
-	resp = httpDo(t, ts, http.MethodPost,
+	resp = serverfake.HttpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/sessions", body,
 	)
 	t.Cleanup(func() {
@@ -152,7 +154,7 @@ func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 	require.NotEmpty(secondKey)
 	assert.NotEqual(sessionKey, secondKey)
 
-	resp = httpDo(t, ts, http.MethodGet,
+	resp = serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
 	t.Cleanup(func() {
@@ -175,7 +177,7 @@ func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 	assert.ElementsMatch([]string{sessionKey, secondKey}, listedKeys)
 
 	for _, key := range []string{sessionKey, secondKey} {
-		resp = httpDo(t, ts, http.MethodDelete,
+		resp = serverfake.HttpDo(t, ts, http.MethodDelete,
 			"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/sessions/"+key,
 			nil,
 		)
@@ -192,8 +194,8 @@ func TestProjectWorktreeRuntimeRejectsPlainShellOnSessionsRoute(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	body := mustMarshal(t, map[string]any{"target_key": "plain_shell"})
-	resp := httpDo(t, ts, http.MethodPost,
+	body := serverfake.MustMarshal(t, map[string]any{"target_key": "plain_shell"})
+	resp := serverfake.HttpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/sessions", body,
 	)
 	require.Equal(http.StatusBadRequest, resp.StatusCode)
@@ -212,7 +214,7 @@ func TestProjectWorktreeRuntimeAttachSpecRejectsNonOwnedSession(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp := httpDo(t, ts, http.MethodGet,
+	resp := serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+
 			"/runtime/sessions/missing-session/attach-spec",
 		nil,
@@ -263,7 +265,7 @@ command = ["/bin/sh", "-c", "sleep 60"]
 	}
 	cfg.Tmux.Command = slices.Clone(tmuxCommand)
 	database := dbtest.Open(t)
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	clients := map[string]ghclient.Client{"github.com": mock}
 	resolved := ghclient.ResolveConfiguredRepos(t.Context(), clients, cfg.Repos)
 	syncer := ghclient.NewSyncer(
@@ -278,8 +280,8 @@ command = ["/bin/sh", "-c", "sleep 60"]
 			HostCheckAllowLoopbackAnyPort: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	project := createRuntimeTestProject(t, database, t.TempDir())
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	project := serverfake.CreateRuntimeTestProject(t, database, t.TempDir())
 	worktreePath := t.TempDir()
 	worktree, err := database.CreateProjectWorktree(t.Context(), db.CreateProjectWorktreeInput{
 		ProjectID: project.ID,
@@ -288,16 +290,6 @@ command = ["/bin/sh", "-c", "sleep 60"]
 	})
 	require.NoError(t, err)
 	return srv, project.ID, worktree.ID
-}
-
-func createRuntimeTestProject(t *testing.T, database *db.DB, localPath string) *db.Project {
-	t.Helper()
-	project, err := database.CreateProject(t.Context(), db.CreateProjectInput{
-		DisplayName: "runtime-project",
-		LocalPath:   localPath,
-	})
-	require.NoError(t, err)
-	return project
 }
 
 func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
@@ -336,30 +328,4 @@ func initLocalOnlyGitRepo(ctx context.Context, dir string) error {
 		return err
 	}
 	return nil
-}
-
-func mustMarshal(t *testing.T, v any) []byte {
-	t.Helper()
-	out, err := json.Marshal(v)
-	require.NoError(t, err)
-	return out
-}
-
-func httpDo(t *testing.T, ts *httptest.Server, method, path string, body []byte) *http.Response {
-	t.Helper()
-	var bodyReader io.Reader
-	if body != nil {
-		bodyReader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(t.Context(), method, ts.URL+path, bodyReader)
-	require.NoError(t, err)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	} else if method == http.MethodPost || method == http.MethodDelete ||
-		method == http.MethodPut || method == http.MethodPatch {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := ts.Client().Do(req)
-	require.NoError(t, err)
-	return resp
 }

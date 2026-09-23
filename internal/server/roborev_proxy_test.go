@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -44,7 +46,7 @@ endpoint = %q
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
 		database, nil, nil, time.Minute, nil, nil,

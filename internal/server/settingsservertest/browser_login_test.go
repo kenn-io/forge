@@ -11,15 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server/browserloginapi"
-	"go.kenn.io/forge/internal/server/httpapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
-
-func decodeProblem(t *testing.T, response *http.Response) httpapi.ProblemError {
-	t.Helper()
-	var problem httpapi.ProblemError
-	require.NoError(t, json.NewDecoder(response.Body).Decode(&problem))
-	return problem
-}
 
 func TestBrowserLoginTicketRequiresActivePeerGrant(t *testing.T) {
 	for _, test := range []struct {
@@ -35,7 +29,7 @@ func TestBrowserLoginTicketRequiresActivePeerGrant(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			ts, _, token := newFederationAuthTestServer(t, test.scopes...)
+			ts, _, token := servertest.NewFederationAuthTestServer(t, test.scopes...)
 			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
 				ts.URL+"/api/v1/federation/browser-login-tickets", nil)
 			require.NoError(err)
@@ -46,7 +40,7 @@ func TestBrowserLoginTicketRequiresActivePeerGrant(t *testing.T) {
 			defer response.Body.Close()
 			require.Equal(test.status, response.StatusCode)
 			if test.status != http.StatusOK {
-				problem := decodeProblem(t, response)
+				problem := serverfake.DecodeProblem(t, response)
 				assert.Equal("federationScopeDenied", problem.Details["reason"])
 				assert.Equal(string(federationauth.ScopeBrowserLogin), problem.Details["required_scope"])
 				return

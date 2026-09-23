@@ -11,24 +11,24 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/apiclient"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/routepolicy"
@@ -126,62 +126,6 @@ func setTmuxRecorderPaneOutput(t *testing.T, record, output string) {
 	require.NoError(t, os.WriteFile(
 		record+".pane-output", []byte(output+"\n"), 0o644,
 	))
-}
-
-func readTmuxRecord(t *testing.T, path string) [][]string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	require.NoError(t, err)
-	// Split on NUL. Each record is "<argc>\0<arg0>\0<arg1>\0...\0",
-	// so a flushed stream always ends with a trailing \0 and Split
-	// produces a final empty element after it. Strip exactly one
-	// trailing empty so we don't mistake it for part of the next
-	// record. Interior empty elements are real args (the NUL framing
-	// exists to preserve them) and must NOT be skipped.
-	parts := strings.Split(string(data), "\x00")
-	if len(parts) > 0 && parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	var out [][]string
-	for i := 0; i < len(parts); {
-		n, err := strconv.Atoi(parts[i])
-		if err != nil {
-			// Trailing record is mid-write: argc isn't a valid
-			// integer yet. Stop; the next poll will see the full
-			// record once the recorder script flushes.
-			break
-		}
-		if i+1+n > len(parts) {
-			// argc is parsed but not all args are on disk yet.
-			// Same treatment: defer to the next poll.
-			break
-		}
-		i++
-		argv := parts[i : i+n]
-		for j := range argv {
-			argv[j] = normalizeRecordedTmuxArg(argv[j])
-		}
-		out = append(out, argv)
-		i += n
-	}
-	return out
-}
-
-func normalizeRecordedTmuxArg(arg string) string {
-	if runtime.GOOS != "windows" {
-		return arg
-	}
-	switch arg {
-	case "#session_name":
-		return "#{session_name}"
-	case "#pane_title":
-		return "#{pane_title}"
-	default:
-		return arg
-	}
 }
 
 func argAfter(argv []string, flag string) (string, bool) {
@@ -282,7 +226,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	repos := []ghclient.RepoRef{
 		{Platform: "github", Owner: "acme", Name: "widget", PlatformHost: "github.com"},
 	}
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
 		database, nil, repos, time.Minute, nil, nil,
@@ -298,7 +242,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 		Clones:      clones,
 		WorktreeDir: worktreeDir,
 	})
-	seedPR(t, database, "acme", "widget", 1)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
 
 	// Real listener — WebSocket Dial needs a real TCP endpoint.
 	// The generated API client also points at this URL rather than
@@ -332,7 +276,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	// to the normal transport, which still reaches the httptest
 	// server over TCP so WebSocket upgrades continue to work.
 	httpClient := &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Transport: serverfake.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			if req.Method != http.MethodGet && req.Header.Get("Content-Type") == "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -369,7 +313,7 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 	var argvs [][]string
 	require.Eventually(
 		func() bool {
-			argvs = readTmuxRecord(t, record)
+			argvs = serverfake.ReadTmuxRecord(t, record)
 			for _, argv := range argvs {
 				if len(argv) >= 2 && argv[1] == "new-session" {
 					return true
@@ -479,7 +423,7 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
@@ -587,7 +531,7 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(
-		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -712,7 +656,7 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	require.Equal(createResp.JSON202.ID, response.JSON200.WorkspaceActivity[0].Workspace.ID)
 
 	repo, err := database.GetRepoByIdentity(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -742,7 +686,7 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(
-		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -946,7 +890,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 
 	require.Eventually(
 		func() bool {
-			argvs := readTmuxRecord(t, record)
+			argvs := serverfake.ReadTmuxRecord(t, record)
 			for _, argv := range argvs {
 				if len(argv) >= 2 && argv[1] == "new-session" {
 					return true
@@ -965,15 +909,15 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 	require.NoError(srv.Shutdown(shutdownCtx))
 
 	restartSyncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
-		database, nil, defaultTestRepos, time.Minute, nil, nil,
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
+		database, nil, serverfake.DefaultTestRepos, time.Minute, nil, nil,
 	)
 	t.Cleanup(restartSyncer.Stop)
 	restarted := New(
 		database, restartSyncer, nil, "/",
 		nil, ServerOptions{WorktreeDir: filepath.Join(dir, "restart-worktrees")},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, restarted) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
 
 	getResp, err := restartedClient.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
@@ -1149,7 +1093,7 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 
 	require.Eventually(
 		func() bool {
-			argvs := readTmuxRecord(t, record)
+			argvs := serverfake.ReadTmuxRecord(t, record)
 			for _, argv := range argvs {
 				if len(argv) >= 2 && argv[1] == "new-session" {
 					return true
@@ -1196,7 +1140,7 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 	require.NotNil(ready)
 	assert.Nil(ready.ErrorMessage)
 
-	argvs := readTmuxRecord(t, record)
+	argvs := serverfake.ReadTmuxRecord(t, record)
 	var newSessionCount int
 	for _, argv := range argvs {
 		if len(argv) >= 2 && argv[1] == "new-session" {
@@ -1259,7 +1203,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 
 	require.Eventually(
 		func() bool {
-			argvs := readTmuxRecord(t, record)
+			argvs := serverfake.ReadTmuxRecord(t, record)
 			for _, argv := range argvs {
 				if len(argv) >= 2 && argv[1] == "new-session" {
 					return true
@@ -1412,7 +1356,7 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	// The recorded argv should contain an attach-session invocation
 	// with our "wrap" prefix.
 	var attach []string
-	for _, argv := range readTmuxRecord(t, record) {
+	for _, argv := range serverfake.ReadTmuxRecord(t, record) {
 		if len(argv) >= 3 &&
 			argv[1] == "-u" &&
 			argv[2] == "attach-session" {
@@ -1664,7 +1608,7 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 	// The recorded argv should contain a kill-session invocation
 	// with our "wrap" prefix.
 	var kill []string
-	for _, argv := range readTmuxRecord(t, record) {
+	for _, argv := range serverfake.ReadTmuxRecord(t, record) {
 		if len(argv) >= 2 && argv[1] == "kill-session" {
 			kill = argv
 			break

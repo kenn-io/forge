@@ -12,11 +12,11 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server/activityapi"
 	"go.kenn.io/forge/internal/server/compression"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestHumaResponseCompressionNegotiatesZstdAndBrotli(t *testing.T) {
@@ -125,7 +125,7 @@ func TestHumaResponseCompressionStreamsWhenBodyExceedsCap(t *testing.T) {
 		decode   func(*testing.T, io.Reader) string
 	}{
 		{"br", decodeBrotliBody},
-		{"zstd", decodeZstdBody},
+		{"zstd", serverfake.DecodeZstdBody},
 	} {
 		t.Run(tc.encoding, func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
@@ -221,16 +221,6 @@ func registerCompressionTestRoutes(api huma.API) {
 		resp.Body.Text = strings.Repeat("oversized-payload ", 300_000)
 		return resp, nil
 	})
-}
-
-func decodeZstdBody(t *testing.T, body io.Reader) string {
-	t.Helper()
-	reader, err := zstd.NewReader(body)
-	require.NoError(t, err)
-	defer reader.Close()
-	data, err := io.ReadAll(reader)
-	require.NoError(t, err)
-	return string(data)
 }
 
 func decodeBrotliBody(t *testing.T, body io.Reader) string {

@@ -23,7 +23,10 @@ fixtures, or changing shell-script coverage.
   inside the package's single test unit. Put new tests that need only the
   exported API there; whole-server tests go in the `*servertest` packages.
   Tests keep the dependencies they pass to `server.New` (for example the
-  syncer) instead of reading them back from `Server` fields. `tools/movetests`
+  syncer) instead of reading them back from `Server` fields. Shared helpers
+  live once: root-independent mocks and seeders in `internal/testutil/serverfake`
+  (root tests import it too), server-building fixtures in
+  `internal/testutil/servertest`; never copy helpers into each test package. `tools/movetests`
   re-runs the split (`tools/movetests/server.json`, `tools/movetests/server-integration.json`).
 - CI bounds Go package/test fan-out with `-p` and `-parallel`; do not cap
   `GOMAXPROCS` globally, because test-launched servers inherit that CPU limit.

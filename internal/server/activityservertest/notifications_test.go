@@ -13,43 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/notificationapi"
 )
-
-func seedServerNotification(t *testing.T, database *db.DB) int64 {
-	t.Helper()
-	require := require.New(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	number := 42
-	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{{
-		Platform:               "github",
-		PlatformHost:           "github.com",
-		PlatformNotificationID: "thread-42",
-		RepoID:                 &repoID,
-		RepoOwner:              "acme",
-		RepoName:               "widget",
-		SubjectType:            "PullRequest",
-		SubjectTitle:           "Review requested",
-		WebURL:                 "https://github.com/acme/widget/pull/42",
-		ItemNumber:             &number,
-		ItemType:               "pr",
-		ItemAuthor:             "octocat",
-		Reason:                 "review_requested",
-		Unread:                 true,
-		Participating:          true,
-		SourceUpdatedAt:        now,
-		SyncedAt:               now,
-	}}))
-	items, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread"})
-	require.NoError(err)
-	require.Len(items, 1)
-	return items[0].ID
-}
 
 func notificationsEnabledConfig() *config.Config {
 	// Notifications are always on; a non-nil config is all the server
@@ -59,8 +29,8 @@ func notificationsEnabledConfig() *config.Config {
 
 func TestNotificationsAPIListsAndQueuesReadWithoutDone(t *testing.T) {
 	require := require.New(t)
-	database := openTestDB(t)
-	id := seedServerNotification(t, database)
+	database := serverfake.OpenTestDB(t)
+	id := serverfake.SeedServerNotification(t, database)
 	s := server.New(database, nil, nil, "/", notificationsEnabledConfig(), server.ServerOptions{})
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -115,8 +85,8 @@ func TestNotificationRepoFiltersRejectBlankProvider(t *testing.T) {
 func TestNotificationsAPIMapsNeutralFieldsToExistingGitHubJSON(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	database := serverfake.OpenTestDB(t)
+	repoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	number := 42
@@ -179,8 +149,8 @@ func getNotificationsForTest(t *testing.T, baseURL string, state string) itemapi
 func TestNotificationsAPIShowsClosedLinkedItemsAsDone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	database := serverfake.OpenTestDB(t)
+	repoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	closedAt := now.Add(time.Hour)
@@ -231,8 +201,8 @@ func TestNotificationsAPIShowsClosedLinkedItemsAsDone(t *testing.T) {
 func TestNotificationsAPIReclosesLinkedItemsAfterUndone(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	database := serverfake.OpenTestDB(t)
+	repoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	closedAt := now.Add(time.Hour)
@@ -289,10 +259,10 @@ func newTestNotificationServer(t *testing.T, database *db.DB) *httptest.Server {
 func TestNotificationsAPIUsesActiveTrackedRepos(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	database := openTestDB(t)
-	trackedRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	database := serverfake.OpenTestDB(t)
+	trackedRepoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	removedRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "removed"))
+	removedRepoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{
@@ -328,10 +298,10 @@ func TestNotificationsAPIUsesActiveTrackedRepos(t *testing.T) {
 func TestNotificationsAPIAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	database := openTestDB(t)
-	githubRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	database := serverfake.OpenTestDB(t)
+	githubRepoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	gheRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("ghe.example.com", "acme", "widget"))
+	gheRepoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{
@@ -376,8 +346,8 @@ func TestNotificationsAPIAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T)
 func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	database := openTestDB(t)
-	id := seedServerNotification(t, database)
+	database := serverfake.OpenTestDB(t)
+	id := serverfake.SeedServerNotification(t, database)
 	s := server.New(database, nil, nil, "/", notificationsEnabledConfig(), server.ServerOptions{})
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -422,10 +392,10 @@ func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {
 
 func TestNotificationsAPIBulkMutationsScopeToTrackedRepos(t *testing.T) {
 	require := require.New(t)
-	database := openTestDB(t)
-	trackedRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	database := serverfake.OpenTestDB(t)
+	trackedRepoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	removedRepoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "removed"))
+	removedRepoID, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{
@@ -566,8 +536,8 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			require := require.New(t)
-			database := openTestDB(t)
-			id := seedServerNotification(t, database)
+			database := serverfake.OpenTestDB(t)
+			id := serverfake.SeedServerNotification(t, database)
 			missingID := id + 999
 			if tt.setup != nil {
 				require.NoError(tt.setup(t.Context(), database, id, time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC)))
@@ -604,7 +574,7 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 func TestNotificationsAPIRouteFieldsFollowRepositoryRename(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	database := openTestDB(t)
+	database := serverfake.OpenTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	_, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",

@@ -8,19 +8,14 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/server/spokeapi"
-)
-
-const (
-	preparationHubNodeID    = "0123456789abcdef0123456789abcdef"
-	preparationLocalNodeID  = "fedcba9876543210fedcba9876543210"
-	preparationEnrollmentID = "11111111111111111111111111111111"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestHubPreparationSealMustMatchRequestedBinding(t *testing.T) {
 	require := require.New(t)
 	request := db.SpokePreparationSealRequest{
-		EnrollmentID: preparationEnrollmentID, NodeID: preparationLocalNodeID,
-		HubNodeID:        preparationHubNodeID,
+		EnrollmentID: serverfake.PreparationEnrollmentID, NodeID: serverfake.PreparationLocalNodeID,
+		HubNodeID:        serverfake.PreparationHubNodeID,
 		ProtocolVersion:  federation.ProtocolVersion,
 		MigrationVersion: db.WorkspaceLaunchSpecMigrationVersion,
 		ReceiptsDigest:   "receipts", DrainedAckGeneration: 1,

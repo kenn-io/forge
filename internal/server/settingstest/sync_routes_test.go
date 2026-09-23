@@ -9,11 +9,12 @@ import (
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestArchiveStartRejectsDisabledSyncer(t *testing.T) {
 	require := require.New(t)
-	database := openTestDB(t)
+	database := serverfake.OpenTestDB(t)
 	syncer := github.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	syncer.DisableSync()

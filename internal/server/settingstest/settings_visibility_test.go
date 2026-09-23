@@ -1,7 +1,6 @@
 package settingstest
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,77 +11,45 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
-func seedVerifiedRepo(
-	t *testing.T, database *db.DB, identity db.RepoIdentity,
-) {
-	t.Helper()
-	entry, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), identity, time.Now().UTC(),
-	)
-	require.NoError(t, err)
-	require.NotNil(t, entry)
-}
-
-func settingsReposFromBody(t *testing.T, body []byte) []ghclient.ConfiguredRepoStatus {
-	t.Helper()
-	var resp struct {
-		Repos []ghclient.ConfiguredRepoStatus `json:"repos"`
-	}
-	require.NoError(t, json.Unmarshal(body, &resp))
-	return resp.Repos
-}
-
-func listRepoNames(t *testing.T, srv *server.Server) []string {
-	t.Helper()
-	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	var repos []struct {
-		Name string `json:"name"`
-	}
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &repos))
-	names := make([]string, 0, len(repos))
-	for _, repo := range repos {
-		names = append(names, repo.Name)
-	}
-	return names
-}
-
 func TestHandleUpdateRepoUIVisibilityHidesAndShows(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _ := setupTestServerWithConfig(t)
 
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "repo-acme-widget",
 		Owner:          "acme",
 		Name:           "widget",
 	})
-	require.Equal([]string{"widget"}, listRepoNames(t, srv))
+	require.Equal([]string{"widget"}, servertest.ListRepoNames(t, srv))
 
 	rr := testutil.DoJSON(t, srv, http.MethodPut,
 		"/api/v1/repo/github/acme/widget/ui-visibility",
 		map[string]bool{"hidden": true})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	repos := settingsReposFromBody(t, rr.Body.Bytes())
+	repos := serverfake.SettingsReposFromBody(t, rr.Body.Bytes())
 	require.Len(repos, 1)
 	assert.True(repos[0].HiddenFromUI,
 		"settings response marks the hidden entry")
-	assert.Empty(listRepoNames(t, srv),
+	assert.Empty(servertest.ListRepoNames(t, srv),
 		"interactive catalog omits the hidden repo")
 
 	// Settings remains the unfiltered management surface.
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	repos = settingsReposFromBody(t, rr.Body.Bytes())
+	repos = serverfake.SettingsReposFromBody(t, rr.Body.Bytes())
 	require.Len(repos, 1)
 	assert.True(repos[0].HiddenFromUI)
 
@@ -91,10 +58,10 @@ func TestHandleUpdateRepoUIVisibilityHidesAndShows(t *testing.T) {
 		map[string]bool{"hidden": false})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	repos = settingsReposFromBody(t, rr.Body.Bytes())
+	repos = serverfake.SettingsReposFromBody(t, rr.Body.Bytes())
 	require.Len(repos, 1)
 	assert.False(repos[0].HiddenFromUI)
-	assert.Equal([]string{"widget"}, listRepoNames(t, srv))
+	assert.Equal([]string{"widget"}, servertest.ListRepoNames(t, srv))
 }
 
 func TestServerStartupClearsOrphanedVisibility(t *testing.T) {
@@ -154,7 +121,7 @@ name = "gadget"
 
 	// Boot restores tracked refs from provider snapshots before the server
 	// is constructed; mirror that order here.
-	clients := map[string]ghclient.Client{"github.com": &mockGH{}}
+	clients := map[string]ghclient.Client{"github.com": &serverfake.MockGH{}}
 	syncer := ghclient.NewSyncer(
 		clients, database, nil, []ghclient.RepoRef{
 			{
@@ -198,7 +165,7 @@ func TestHandleUpdateRepoUIVisibilityWithoutSyncer(t *testing.T) {
 	// the change and then failing to build the settings response would leave
 	// the client without the saved state.
 	database := dbtest.Open(t)
-	seedVerifiedRepo(t, database, db.RepoIdentity{
+	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: "R_widget",
@@ -229,7 +196,7 @@ name = "widget"
 		map[string]bool{"hidden": true})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	repos := settingsReposFromBody(t, rr.Body.Bytes())
+	repos := serverfake.SettingsReposFromBody(t, rr.Body.Bytes())
 	require.Len(repos, 1)
 	assert.True(repos[0].HiddenFromUI,
 		"the response reports the saved state without tracked refs")
@@ -318,7 +285,7 @@ port = 8091
 [[repos]]
 owner = "acme"
 name = "widget-*"
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
 	rr := testutil.DoJSON(t, srv, http.MethodPut,
 		"/api/v1/repo/github/acme/widget-*/ui-visibility",

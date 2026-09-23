@@ -110,12 +110,12 @@ branch-based views, checks, terminal output, `--jq`, `--template`, unsupported
 fields, missing or incomplete stored data, and unavailable daemons. Use `--repo`
 or `GH_REPO` when the checkout has multiple remotes. `FORGE_GH_CONFIG` selects a non-default Forge config file.
 
-Command names and outcomes are appended to `forge-gh-usage.jsonl` in Forge's
-config directory. Argument values and result data are not recorded. To count
-which commands are served or delegated:
+Full argument arrays (`argv`), command names, and outcomes are appended to
+`forge-gh-usage.jsonl` in Forge's default config directory, including flag
+values. To rank the exact invocations that are served or delegated:
 
 ```sh
-jq -s 'group_by([.command,.reason]) | map({command: .[0].command, reason: .[0].reason, count: length})' ~/.kenn/forge/forge-gh-usage.jsonl
+jq -s 'group_by([.argv,.reason]) | map({argv: .[0].argv, reason: .[0].reason, count: length}) | sort_by(-.count)' ~/.kenn/forge/forge-gh-usage.jsonl
 ```
 
 ## Documentation

@@ -65,10 +65,11 @@ or remote workspace and session operations.
 - Hub provider enrichment keys by stable repository identity and item
   number; local numeric repository IDs never cross the federation wire
   (`internal/fleet/provider_enrichment.go::EnrichProviderState`).
-- A spoke pulls provider state for its own workspace rows from the hub; it
-  never relies on the hub aggregate for them, because an outbound-disabled
-  or unreachable spoke is absent from that aggregate
-  (`internal/server/fleetapi/fleet_hub.go::Handler.withHubProviderState`,
+- A spoke pulls provider state for its own workspace rows from the hub,
+  alongside and independent of the aggregate fetch and within its budget,
+  because an outbound-disabled or unreachable spoke is absent from that
+  aggregate. Only a failed pull falls back to aggregate-carried state
+  (`internal/server/fleetapi/fleet_hub.go::Handler.pullHubProviderState`,
   `internal/server/provider_workspace_state.go::Server.federationQueryWorkspaceProviderState`).
 - Spokes replace their aggregate entries with fresh local authority. Raw endpoints
   never re-export aggregates, which keeps federation data flow acyclic

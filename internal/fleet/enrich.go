@@ -76,7 +76,7 @@ func withFreshObserverState(
 	view.Worktrees = replaceObserverWorktrees(aggregate.Worktrees, local.Worktrees, key)
 	view.Sessions = replaceObserverSessions(aggregate.Sessions, local.Sessions, key)
 	view.Workspaces = replaceObserverWorkspaces(
-		aggregate.Workspaces, local.Workspaces, key, observer.Role != RoleSpoke,
+		aggregate.Workspaces, local.Workspaces, key, !observer.LocalProviderState,
 	)
 	return view
 }
@@ -162,9 +162,8 @@ func replaceObserverSessions(all, local []RawSession, observer string) []RawSess
 }
 
 // replaceObserverWorkspaces swaps the observer's aggregate rows for fresh local
-// ones. A hub copies the provider state it enriched onto its own rows; a spoke
-// has already pulled that state for its rows, because the hub may not have
-// been able to fetch them into the aggregate.
+// ones and copies the aggregate's provider state onto them, unless the
+// observer already pulled that state for its own rows.
 func replaceObserverWorkspaces(
 	all, local []RawWorkspace, observer string, copyProviderState bool,
 ) []RawWorkspace {

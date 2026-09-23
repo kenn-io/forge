@@ -266,40 +266,30 @@ func TestSpokeProjectionConsumesHubAggregateAndRefreshesSelf(t *testing.T) {
 	require.FailNow("hub host missing from spoke projection")
 }
 
-func TestSpokeShowsPulledProviderStateWhenHubCannotReachIt(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	// An outbound-disabled spoke is absent from the hub aggregate, so the
-	// aggregate carries no provider state for the spoke's workspaces.
-	aggregate := fleet.NeutralSnapshot{
-		ProtocolVersion: federation.ProtocolVersion,
-		Hosts: []fleet.NeutralHost{{
-			NodeID: fleet.NodeID(testHubNodeID), FederationRole: fleet.RoleHub,
-			Name: "hub", BaseURL: "https://hub.example", Reachable: true,
-		}},
-	}
-	token := "spoke-calls-hub-token-000000000000000"
-	hub := httptest.NewTLSServer(http.HandlerFunc(func(
-		writer http.ResponseWriter, _ *http.Request,
-	) {
-		writer.Header().Set("Content-Type", "application/json")
-		assert.NoError(json.NewEncoder(writer).Encode(aggregate))
-	}))
-	defer hub.Close()
+// newProviderStateSpoke builds an active spoke whose hub serves hubHandler and
+// whose provider-state lookup is pull. The spoke owns one workspace, ws-merged.
+func newProviderStateSpoke(
+	t *testing.T,
+	hubHandler http.HandlerFunc,
+	peerTimeout string,
+	pull func(context.Context, []fleet.RawWorkspace) ([]fleet.RawWorkspace, error),
+) *Handler {
+	t.Helper()
+	hub := httptest.NewTLSServer(hubHandler)
+	t.Cleanup(hub.Close)
 	credentials, err := federationauth.Open(filepath.Join(
 		t.TempDir(), "federation-credentials.json",
 	))
-	require.NoError(err)
-	require.NoError(credentials.StoreOutbound(
-		testHubNodeID, token, federationauth.SpokeToHubScopes(),
+	require.NoError(t, err)
+	require.NoError(t, credentials.StoreOutbound(
+		testHubNodeID, "spoke-calls-hub-token-000000000000000", federationauth.SpokeToHubScopes(),
 	))
-	var queried []string
-	server := New(Deps{
+	return New(Deps{
 		DB: dbtest.Open(t), NodeID: testMemberNodeID,
 		FederationActive: true,
 		Credentials:      credentials, FederationHTTPClient: testTLSClient(t, hub),
 		Config: ConfigSnapshot{Fleet: config.Fleet{
-			Enabled: true, Role: config.FleetRoleSpoke,
+			Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: peerTimeout,
 			BaseURL: "https://spoke.example",
 			Hub: &config.FleetHub{
 				NodeID: testHubNodeID, Name: "hub", BaseURL: hub.URL,
@@ -310,25 +300,55 @@ func TestSpokeShowsPulledProviderStateWhenHubCannotReachIt(t *testing.T) {
 				ID: "ws-merged", Status: "ready", ItemType: "pull_request", ItemNumber: 7,
 			}}}, nil
 		},
-		WorkspaceProviderState: func(
-			_ context.Context, workspaces []fleet.RawWorkspace,
-		) ([]fleet.RawWorkspace, error) {
-			out := append([]fleet.RawWorkspace(nil), workspaces...)
-			for index := range out {
-				queried = append(queried, out[index].ID)
-				out[index].MRState = new("merged")
-				out[index].MRTitle = new("Merged change")
-			}
-			return out, nil
-		},
+		WorkspaceProviderState: pull,
 	})
+}
+
+func serveHubAggregate(t *testing.T, aggregate fleet.NeutralSnapshot) http.HandlerFunc {
+	return func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		assert.NoError(t, json.NewEncoder(writer).Encode(aggregate))
+	}
+}
+
+func hubOnlyAggregate(workspaces ...fleet.RawWorkspace) fleet.NeutralSnapshot {
+	return fleet.NeutralSnapshot{
+		ProtocolVersion: federation.ProtocolVersion,
+		Hosts: []fleet.NeutralHost{{
+			NodeID: fleet.NodeID(testHubNodeID), FederationRole: fleet.RoleHub,
+			Name: "hub", BaseURL: "https://hub.example", Reachable: true,
+		}},
+		Workspaces: workspaces,
+	}
+}
+
+func pullMerged(_ context.Context, workspaces []fleet.RawWorkspace) ([]fleet.RawWorkspace, error) {
+	out := append([]fleet.RawWorkspace(nil), workspaces...)
+	for index := range out {
+		out[index].MRState = new("merged")
+		out[index].MRTitle = new("Merged change")
+	}
+	return out, nil
+}
+
+func snapshotWorkspaceState(t *testing.T, snapshot fleet.Snapshot) string {
+	t.Helper()
+	require.Len(t, snapshot.Workspaces, 1)
+	require.Equal(t, "ws-merged", snapshot.Workspaces[0].ID)
+	require.NotNil(t, snapshot.Workspaces[0].MRState)
+	return *snapshot.Workspaces[0].MRState
+}
+
+func TestSpokeShowsPulledProviderStateWhenHubCannotReachIt(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	// An outbound-disabled spoke is absent from the hub aggregate, so the
+	// aggregate carries no provider state for the spoke's workspaces.
+	server := newProviderStateSpoke(t, serveHubAggregate(t, hubOnlyAggregate()), "", pullMerged)
 
 	snapshot, err := server.buildFleetSnapshot(t.Context(), true)
 	require.NoError(err)
-	assert.Equal([]string{"ws-merged"}, queried)
-	require.Len(snapshot.Workspaces, 1)
-	require.NotNil(snapshot.Workspaces[0].MRState)
-	assert.Equal("merged", *snapshot.Workspaces[0].MRState)
+	assert.Equal("merged", snapshotWorkspaceState(t, snapshot))
 	require.NotNil(snapshot.Workspaces[0].MRTitle)
 	assert.Equal("Merged change", *snapshot.Workspaces[0].MRTitle)
 
@@ -336,6 +356,41 @@ func TestSpokeShowsPulledProviderStateWhenHubCannotReachIt(t *testing.T) {
 	require.NoError(err)
 	require.Len(raw.Workspaces, 1)
 	assert.Nil(raw.Workspaces[0].MRState, "raw snapshots carry only producer-local facts")
+}
+
+func TestSpokeFallsBackToAggregateProviderStateWhenPullFails(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	aggregate := hubOnlyAggregate(fleet.RawWorkspace{
+		HostKey: testMemberNodeID, ID: "ws-merged", Status: "ready",
+		MRState: new("merged"),
+	})
+	stalledPull := func(ctx context.Context, _ []fleet.RawWorkspace) ([]fleet.RawWorkspace, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	server := newProviderStateSpoke(t, serveHubAggregate(t, aggregate), "50ms", stalledPull)
+
+	started := time.Now()
+	snapshot, err := server.buildFleetSnapshot(t.Context(), true)
+	require.NoError(err)
+	assert.Less(time.Since(started), 2*time.Second, "a stalled pull must stay within the snapshot budget")
+	assert.False(snapshot.AggregateIncomplete)
+	assert.Equal("merged", snapshotWorkspaceState(t, snapshot))
+}
+
+func TestSpokePullsProviderStateWhenAggregateFails(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	failingHub := func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, "aggregate unavailable", http.StatusBadGateway)
+	}
+	server := newProviderStateSpoke(t, failingHub, "", pullMerged)
+
+	snapshot, err := server.buildFleetSnapshot(t.Context(), true)
+	require.NoError(err)
+	assert.True(snapshot.AggregateIncomplete)
+	assert.Equal("merged", snapshotWorkspaceState(t, snapshot))
 }
 
 func TestSpokeAggregateAllowsHubMemberFanoutToReachItsOwnDeadline(t *testing.T) {

@@ -308,6 +308,84 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 	}
 }
 
+// TestFleetContainerSpokeShowsMergedPullWhenHubCannotReachIt reproduces a
+// spoke the hub cannot call back into. The spoke's own provider copy stays
+// open while the hub has seen the merge; the spoke's workspace list must still
+// show the hub's merged state and title.
+func TestFleetContainerSpokeShowsMergedPullWhenHubCannotReachIt(t *testing.T) {
+	if os.Getenv("KENN_FORGE_FLEET_CONTAINER_E2E") != "1" {
+		t.Skip("set KENN_FORGE_FLEET_CONTAINER_E2E=1 to run fleet container e2e")
+	}
+	require := require.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Minute)
+	defer cancel()
+	fixture := startFleetContainerStack(t, ctx, fleetContainerStackOptions{
+		HubPortEnv:     "KENN_FORGE_FLEET_PROVIDER_STATE_HUB_PORT",
+		ProjectEnv:     "KENN_FORGE_FLEET_PROVIDER_STATE_COMPOSE_PROJECT",
+		DefaultProject: "kenn-forge-fleet-provider-state-e2e",
+	})
+	const workspaceID = "fleet-member-ws-7"
+	hubSnapshotHasWorkspace := func() bool {
+		var snapshot fleet.Snapshot
+		getFleetContainerJSON(t, fixture.HubURL+"/api/v1/snapshot?include_peers=true", fixture.HubToken, &snapshot)
+		for _, workspace := range snapshot.Workspaces {
+			if workspace.ID == workspaceID {
+				return true
+			}
+		}
+		return false
+	}
+	require.Eventually(hubSnapshotHasWorkspace, 30*time.Second, 500*time.Millisecond,
+		"the hub must first reach the member's workspace")
+
+	// The hub syncs the merge; the member's local copy still says open.
+	seedFleetContainerWithArgs(
+		t, ctx, fixture.Hub, "/data/hub",
+		"-provider-only", "-pull-state", "merged",
+		"-platform-host", fleetContainerGitHost,
+		"-clone-url", "git://"+fleetContainerGitHost+"/acme/fleet-widget.git",
+	)
+	fleetContainerExecOutput(t, ctx, fixture.Hub, "sh", "-c",
+		`awk -v id="$1" '{ print } index($0, "node_id = \"" id "\"") { print "outbound_disabled = true" }' `+
+			`/data/hub/hub.toml > /data/hub/hub.toml.next && mv /data/hub/hub.toml.next /data/hub/hub.toml`,
+		"sh", fixture.MemberNodeID,
+	)
+	require.Eventually(func() bool { return !hubSnapshotHasWorkspace() },
+		30*time.Second, 500*time.Millisecond,
+		"the hub must stop fetching the outbound-disabled member")
+
+	var workspace fleet.WorkspaceSummary
+	require.EventuallyWithT(func(collect *assert.CollectT) {
+		code, reader, err := fixture.Member.Exec(ctx, []string{
+			"curl", "-fsS", "-H", "Authorization: Bearer " + fixture.MemberToken,
+			"http://127.0.0.1:8091/api/v1/snapshot?include_peers=true",
+		}, tcexec.Multiplexed())
+		if !assert.NoError(collect, err) {
+			return
+		}
+		body, err := io.ReadAll(reader)
+		if !assert.NoError(collect, err) || !assert.Equal(collect, 0, code, string(body)) {
+			return
+		}
+		var snapshot fleet.Snapshot
+		if !assert.NoError(collect, json.Unmarshal(body, &snapshot)) {
+			return
+		}
+		found := false
+		for _, candidate := range snapshot.Workspaces {
+			if candidate.ID == workspaceID {
+				workspace, found = candidate, true
+			}
+		}
+		if assert.True(collect, found, "member snapshot lists its workspace") &&
+			assert.NotNil(collect, workspace.MRState) {
+			assert.Equal(collect, "merged", *workspace.MRState)
+		}
+	}, 30*time.Second, time.Second, "the member must show the hub's merged state")
+	require.NotNil(workspace.MRTitle)
+	require.Equal("Fleet widget", *workspace.MRTitle)
+}
+
 func waitForFleetContainerPublishedHTTP() wait.Strategy {
 	return wait.ForListeningPort("18092/tcp").WithStartupTimeout(5 * time.Minute)
 }
@@ -449,10 +527,22 @@ func activateFleetContainerMember(
 	require.NoError(t, err)
 	require.Equal(t, 0, code)
 	tokenFilePresent = false
-	fleetContainerExecOutput(t, ctx, member,
-		"/data/member/kenn-forge", "fleet", "prepare-spoke",
-		"--config", "/data/member/member.toml",
-	)
+	// The first preparation can race the hub's launch-specification handoff;
+	// a later attempt reports ready once the hub resolves it.
+	require.Eventually(t, func() bool {
+		code, reader, err := member.Exec(ctx, []string{
+			"/data/member/kenn-forge", "fleet", "prepare-spoke",
+			"--config", "/data/member/member.toml",
+		}, tcexec.Multiplexed())
+		if err != nil {
+			return false
+		}
+		raw, _ := io.ReadAll(reader)
+		if code != 0 {
+			t.Logf("spoke preparation not ready yet: %s", raw)
+		}
+		return code == 0
+	}, time.Minute, 2*time.Second, "spoke preparation must become ready")
 
 	stopTimeout := 30 * time.Second
 	require.NoError(t, member.Stop(ctx, &stopTimeout))
@@ -470,10 +560,11 @@ func activateFleetContainerMember(
 	}, 5*time.Minute, time.Second,
 		"prepared member must restart with its federation TLS listener ready",
 	)
-	fleetContainerExecOutput(t, ctx, member,
-		"tmux", "-L", "kenn-forge", "new-session", "-d",
-		"-s", "kenn-forge-fleet-member-ws-7",
-		"-c", "/data/member/worktrees/widget-pr-7", "sh",
+	// The restarted daemon may already have restored the workspace session.
+	fleetContainerExecOutput(t, ctx, member, "sh", "-c",
+		`tmux -L kenn-forge has-session -t kenn-forge-fleet-member-ws-7 2>/dev/null || `+
+			`tmux -L kenn-forge new-session -d -s kenn-forge-fleet-member-ws-7 `+
+			`-c /data/member/worktrees/widget-pr-7 sh`,
 	)
 }
 

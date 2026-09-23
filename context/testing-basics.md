@@ -27,7 +27,9 @@ fixtures, or changing shell-script coverage.
   to trigger it (`frontend/scripts/generate-api-client.mjs::generateClient`).
 - `make api-generate` skips a client generator only when its inputs and its
   generated output both match the last successful run; list every generator
-  input and output path (`scripts/cached-generate.sh`).
+  input and output path (`scripts/cached-generate.sh`). The hook runs in
+  parallel with golangci-lint by maintainer decision; a rare one-off collision
+  is accepted for the time saved (`prek.toml`).
 - Go static-analysis targets run with `-trimpath` so fresh worktrees reuse cached
   export data; tests keep real paths for `runtime.Caller` fixtures
   (`Makefile::GO_ANALYSIS_ENV`). Run standalone analyzers such as NilAway as

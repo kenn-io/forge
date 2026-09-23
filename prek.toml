@@ -8,9 +8,13 @@ default_stages = ["pre-commit"]
 #   1-3 file fixers, each mutating domain isolated from same-file hooks
 #   4   frontend-deps (bun install mutates node_modules, which every
 #       Node-based hook below reads; it must finish before they start)
-#   5   api-generate (rewrites generated Go/TS consumed by later groups)
+#   8   lint-config-check (kennlint config must match before Go lint runs)
 #   10  independent lanes: Go lint (golangci-lint --fix rewrites .go files),
-#       frontend core, rust, scripts
+#       api-generate, frontend core, rust, scripts. api-generate only rewrites
+#       generated clients when the API changed and mostly spends its time
+#       compiling the server, so it overlaps with lint instead of preceding
+#       it; a rare collision with --fix or a real API change fails once and
+#       passes on retry, which is accepted for the ~3s saved per commit.
 #   20  read-only Go consumers, concurrent with each other; they read .go
 #       files, so they start after golangci-lint's fixes land
 
@@ -41,8 +45,8 @@ hooks = [
   { id = "gofmt", name = "gofmt + goimports + gofumpt (via custom-gcl fmt)", language = "system", entry = "./scripts/run-hook-go.sh make fmt", files = "\\.go$", pass_filenames = false, priority = 3 },
   { id = "cargo-fmt", name = "cargo fmt", language = "system", entry = "cargo fmt --all", files = "^(Cargo\\.toml|Cargo\\.lock|rust/.*\\.rs|rust/.*/Cargo\\.toml)$", pass_filenames = false, priority = 3 },
   { id = "frontend-deps", name = "install workspace dependencies", language = "system", entry = "make frontend-deps", always_run = true, pass_filenames = false, priority = 4 },
-  { id = "api-generate", name = "regenerate api clients", language = "system", entry = "make api-generate", files = "^(go\\.mod|go\\.sum|cmd/kenn-forge-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$", exclude = "(^internal/apiclient/generated/client\\.go|_test\\.go)$", pass_filenames = false, priority = 5 },
   { id = "lint-config-check", name = "kennlint config drift", language = "system", entry = "./scripts/run-hook-go.sh make lint-config-check", files = "^(\\.golangci(\\.overlay)?\\.yml|\\.custom-gcl\\.yml|go\\.mod|go\\.sum)$", pass_filenames = false, priority = 8 },
+  { id = "api-generate", name = "regenerate api clients", language = "system", entry = "make api-generate", files = "^(go\\.mod|go\\.sum|cmd/kenn-forge-openapi/.*\\.go|internal/server/.*\\.go|internal/db/.*\\.go|internal/apiclient/.*|frontend/package\\.json|frontend/bun\\.lock)$", exclude = "(^internal/apiclient/generated/client\\.go|_test\\.go)$", pass_filenames = false, priority = 10 },
   { id = "golangci-lint", name = "golangci-lint --fix", language = "system", entry = "./scripts/run-hook-go.sh make lint", files = "^(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false, priority = 10 },
   { id = "golangci-lint-check", name = "golangci-lint check", language = "system", entry = "./scripts/run-hook-go.sh make lint-check", stages = [
     "pre-push",

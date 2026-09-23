@@ -291,6 +291,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // --- polling ---
 
   let detailPollingGeneration = 0;
+  let activeDetailRef: DetailRequestRef | null = null;
   let unsubSyncComplete: (() => void) | null = null;
 
   // --- reads ---
@@ -1007,6 +1008,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function clearDetail(): void {
     rememberDetail();
+    activeDetailRef = null;
     ++syncGeneration;
     ++selectionGeneration;
     activeSelectionKey = null;
@@ -2151,6 +2153,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function startDetailPolling(owner: string, name: string, number: number, identity: DetailRequestOptions): void {
     const ref = detailRequestRef(owner, name, number, identity);
+    activeDetailRef = ref;
     const pollingGeneration = ++detailPollingGeneration;
     if (unsubSyncComplete !== null) {
       unsubSyncComplete();
@@ -2189,6 +2192,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function stopDetailPolling(): void {
+    activeDetailRef = null;
     detailPollingGeneration += 1;
     if (unsubSyncComplete !== null) {
       unsubSyncComplete();
@@ -2202,6 +2206,15 @@ export function createDetailStore(opts: DetailStoreOptions) {
       operation: "stop pull request detail polling",
       safeContext: {},
       onFailure: () => {},
+    });
+  }
+
+  function refreshActiveDetailEffect() {
+    return Effect.suspend(() => {
+      const ref = activeDetailRef;
+      return ref === null || syncing
+        ? Effect.void
+        : refreshDetailOnlyEffect(ref.owner, ref.name, ref.number, ref).pipe(Effect.asVoid);
     });
   }
 
@@ -2778,6 +2791,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     loadDetail,
     refreshDetailOnly,
     refreshDetailOnlyEffect,
+    refreshActiveDetailEffect,
     syncDetailEffect,
     syncDetailNow,
     refreshPendingCI,

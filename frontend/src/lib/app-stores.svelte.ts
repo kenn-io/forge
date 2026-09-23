@@ -219,6 +219,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
 
   function refreshVisibleData(refreshDetail = true): Effect.Effect<void, ProviderEventsError, AppServices> {
     switch (gp()) {
+      case "terminal":
+        return refreshDetail ? observeHubFailure(detailStore.refreshActiveDetailEffect()) : Effect.void;
       case "pulls":
       case "mobile-pulls":
         return observeHubFailure(pullsStore.reconcilePullsEffect());

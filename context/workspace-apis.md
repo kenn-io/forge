@@ -588,6 +588,8 @@ server check exactly.
 
 ## Diff Snapshot Coherence
 
+- Repeat workspace visits restore bounded browser snapshots by host and complete diff query; retain files and patches only as a matching revision pair, and revalidate without blanking that pair
+  (`frontend/src/lib/stores/diff.svelte.ts::startWorkspaceDiff`).
 - Files and patches project from one immutable snapshot. Preview membership is
   revision-pinned too, but new-side bytes remain live and may move afterward
   (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache`).
@@ -601,9 +603,9 @@ server check exactly.
 - A workspace response is user-visibly stale only when a bounded, coalesced
   head-only probe confirms cached/current Git HEAD mismatch and queues refresh;
   cache age, probe timeout, and resolution failure do not warn (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache.Get`).
-- Local workspace selection reuses the singleton provider SSE connection;
-  workspace subscribers attach before `workspace_id` selection and release
-  with it (`frontend/src/lib/stores/events.svelte.ts::createEventsStore`).
+- Local diff selection reuses the singleton provider SSE connection. Local selection
+  leases and fleet diff watches run only while the Diff pane is visible; workspace
+  and provider updates remain subscribed independently (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::watchFleetWorkspaceDiff`).
 - Late workspace subscribers receive current connected state, so route mount
   does not depend on a future reconnect (`frontend/src/lib/stores/events.svelte.ts::subscribeWorkspaceEvents`).
 - Workspace event fan-out is lossless while subscribed; an event burst must not
@@ -624,7 +626,7 @@ server check exactly.
   retries it with the normal watch backoff; unsupported watch responses remain
   terminal and fall back to request-driven diff loading.
 - Workspace switching keeps runtime and shell reads on their own critical path.
-  The previous sidebar is replaced immediately by a neutral placeholder. The
+  A repeat visit restores its cached sidebar; a cold visit shows a neutral placeholder. The
   new diff panel mounts after matching workspace metadata and either matching
   runtime state or a terminal runtime error, so a runtime API failure cannot
   leave workspace details hidden forever. Panel cancellation uses a per-load
@@ -633,10 +635,12 @@ server check exactly.
 - Manual workspace refresh schedules asynchronous validation for every cached
   key belonging to that workspace, whether or not the workspace currently has
   a local selection lease, even when provider refresh later fails. Workspace
-  responses and runtime readiness never wait on Git. Failure preserves the
-  last-known-good snapshot; preserving browser refreshes retry with capped,
-  cancelable backoff only when retained files and diff share a snapshot version,
-  while cold loads expose blocking errors
+  responses and runtime readiness never wait on Git. Failed refreshes preserve
+  the last-known-good snapshot, including repeat visits, except when a missing
+  or rejected scope invalidates both visible and retained data. Temporary
+  commit-list errors stay in the commit picker and do not block diff refresh. Preserving
+  browser refreshes retry with capped, cancelable backoff only when retained
+  files and diff share a snapshot version; cold loads expose blocking errors
   (`frontend/src/lib/stores/diff.svelte.ts::loadWorkspaceDiff`).
   A changed fingerprint publishes through `workspace_diff_changed` when ready.
   Watcher hints validate selected keys even inside the freshness interval;

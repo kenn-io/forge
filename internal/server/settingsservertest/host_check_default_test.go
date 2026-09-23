@@ -1,4 +1,4 @@
-package server
+package settingsservertest
 
 import (
 	"io/fs"
@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/streamapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -27,10 +28,10 @@ func TestNewRejectsUnvalidatedConfigWithNonLoopbackHost(t *testing.T) {
 	assert.PanicsWithError(t,
 		`server: config did not provide valid Host check options: config: host "0.0.0.0" is not loopback; only loopback addresses are supported`,
 		func() {
-			New(database, syncer, emptyFrontend(), "/", &config.Config{
+			server.New(database, syncer, emptyFrontend(), "/", &config.Config{
 				Host: "0.0.0.0",
 				Port: 8091,
-			}, ServerOptions{})
+			}, server.ServerOptions{})
 		},
 	)
 }

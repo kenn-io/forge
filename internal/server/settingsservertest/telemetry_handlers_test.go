@@ -1,4 +1,4 @@
-package server
+package settingsservertest
 
 import (
 	"encoding/json"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/telemetryapi"
 )
 
@@ -28,13 +29,13 @@ func (f *fakeTelemetry) Close() error { return nil }
 
 func (f *fakeTelemetry) Enabled() bool { return f.enabled }
 
-func newTelemetryTestServer(t *testing.T, telemetry *fakeTelemetry) *Server {
+func newTelemetryTestServer(t *testing.T, telemetry *fakeTelemetry) *server.Server {
 	t.Helper()
-	options := ServerOptions{}
+	options := server.ServerOptions{}
 	if telemetry != nil {
 		options.Telemetry = telemetry
 	}
-	srv := New(
+	srv := server.New(
 		openTestDB(t), nil, nil, "/", nil,
 		options,
 	)

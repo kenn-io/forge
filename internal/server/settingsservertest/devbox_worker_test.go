@@ -1,4 +1,4 @@
-package server
+package settingsservertest
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	forgeserver "go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/devboxapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -22,7 +23,7 @@ func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.DataDir = t.TempDir()
 	cfg.ExecutionWorker = config.ExecutionWorker{Enabled: true, UID: 1001, GitHubUserID: 1234, BrokerSocket: "/run/example/broker.sock"}
-	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
+	srv := forgeserver.New(dbtest.Open(t), nil, nil, "/", cfg, forgeserver.ServerOptions{
 		ExecutionWorker:               true,
 		DaemonAccess:                  authapi.DaemonAccessOptions{Token: "worker-test-secret", RequireAPIAuth: true},
 		FederationSpokeID:             "0123456789abcdef0123456789abcdef",

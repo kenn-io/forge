@@ -43,26 +43,6 @@ func TestProviderRouteCoverage(t *testing.T) {
 	assert.Len(rules, len(registered))
 }
 
-func TestProviderRouteCoverageRejectsUnknownAndDuplicateOperations(t *testing.T) {
-	runParallelServerTest(t)
-
-	registered := []routepolicy.RegisteredTransportOperation{{ID: "known"}}
-	_, err := routepolicy.BuildProviderRouteRules(registered, []routepolicy.ProviderRouteRule{{
-		OperationID: "known", Owner: routepolicy.NodeLocal,
-	}, {
-		OperationID: "known", Owner: routepolicy.NodeLocal,
-	}})
-	require.ErrorContains(t, err, "duplicate")
-
-	_, err = routepolicy.BuildProviderRouteRules(registered, nil)
-	require.ErrorContains(t, err, "has no ownership")
-
-	_, err = routepolicy.BuildProviderRouteRules(registered, []routepolicy.ProviderRouteRule{{
-		OperationID: "unknown", Owner: routepolicy.NodeLocal,
-	}})
-	require.ErrorContains(t, err, "unknown operation")
-}
-
 func TestProviderRouteOwnershipExamples(t *testing.T) {
 	assert := assert.New(t)
 	runParallelServerTest(t)

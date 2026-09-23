@@ -1,4 +1,4 @@
-package server
+package accessservertest
 
 import (
 	"net/http"

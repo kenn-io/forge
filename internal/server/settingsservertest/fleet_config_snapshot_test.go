@@ -1,10 +1,9 @@
-package server
+package settingsservertest
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/streamapi"
 )

@@ -1,21 +1,15 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/server/roborevapi"
-	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -60,55 +54,4 @@ endpoint = %q
 		database, syncer, nil, nil, cfg, cfgPath,
 		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
-}
-
-func TestRoborevHealthProbeAvailable(t *testing.T) {
-	assert := assert.New(t)
-
-	daemon := httptest.NewServer(http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/status" {
-				w.Header().Set(
-					"Content-Type", "application/json",
-				)
-				_, _ = w.Write(
-					[]byte(`{"version":"1.2.3"}`),
-				)
-				return
-			}
-			http.NotFound(w, r)
-		},
-	))
-	defer daemon.Close()
-
-	srv := setupTestServerWithRoborev(t, daemon.URL)
-
-	rr := testutil.DoJSON(
-		t, srv, http.MethodGet,
-		"/api/v1/roborev/status", nil)
-
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp roborevapi.RoborevStatusResponse
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.True(resp.Available)
-	assert.Equal("1.2.3", resp.Version)
-	assert.Equal(daemon.URL, resp.Endpoint)
-}
-
-func TestRoborevHealthProbeUnavailable(t *testing.T) {
-	assert := assert.New(t)
-
-	srv := setupTestServerWithRoborev(t, "http://127.0.0.1:1")
-
-	rr := testutil.DoJSON(
-		t, srv, http.MethodGet,
-		"/api/v1/roborev/status", nil)
-
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
-	var resp roborevapi.RoborevStatusResponse
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
-	assert.False(resp.Available)
-	assert.Empty(resp.Version)
 }

@@ -1,4 +1,4 @@
-package server
+package accessservertest
 
 import (
 	"io"
@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/compression"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -22,15 +23,15 @@ func setupSPAAssetServer(
 	t *testing.T,
 	basePath string,
 	frontend fs.FS,
-	options ServerOptions,
-) *Server {
+	options server.ServerOptions,
+) *server.Server {
 	t.Helper()
 	database := dbtest.Open(t)
 
 	mock := &mockGH{}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	return New(
+	return server.New(
 		database,
 		syncer,
 		frontend,
@@ -50,7 +51,7 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 		},
 	}
 
-	srv := setupSPAAssetServer(t, "/", frontend, ServerOptions{})
+	srv := setupSPAAssetServer(t, "/", frontend, server.ServerOptions{})
 
 	cases := []struct {
 		name string

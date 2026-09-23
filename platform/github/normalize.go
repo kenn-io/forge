@@ -759,7 +759,13 @@ func deriveCIStatusFromChecks(checks []platform.CICheck) string {
 	return "success"
 }
 
+// ciCheckCandidateIsNewer prefers the higher provider ID because GitHub assigns
+// check run and commit status IDs in creation order. Timestamps order
+// candidates only when an ID is missing, as for GraphQL status contexts.
 func ciCheckCandidateIsNewer(existing, candidate ciCheckCandidate) bool {
+	if existing.id != 0 && candidate.id != 0 && existing.id != candidate.id {
+		return candidate.id > existing.id
+	}
 	if existing.at.IsZero() != candidate.at.IsZero() {
 		return existing.at.IsZero()
 	}

@@ -3994,7 +3994,10 @@ func writeServerInfoFile(path string, info e2eServerInfo) error {
 	// Federation-mode server info contains local API bearers for its three
 	// isolated daemons. Keep the file private (0600, atomicfile's default)
 	// even in a caller-supplied directory.
-	if err := atomicfile.WriteFile(path, append(content, '\n')); err != nil {
+	// ErrPublished means the file is already in place and only a later
+	// directory fsync failed.
+	err = atomicfile.WriteFile(path, append(content, '\n'))
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("write server info file: %w", err)
 	}
 	return nil

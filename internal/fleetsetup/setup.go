@@ -655,7 +655,13 @@ func (r *Runner) applyConfig(plan Plan, transaction *transaction) error {
 	}
 	transaction.record(func(context.Context) error {
 		if existed {
-			return r.deps.writeFile(plan.ConfigPath, previous, 0o600)
+			// Save writes through a symlinked config, so restore through
+			// it too instead of replacing the link.
+			target := plan.ConfigPath
+			if resolved, err := filepath.EvalSymlinks(target); err == nil {
+				target = resolved
+			}
+			return r.deps.writeFile(target, previous, 0o600)
 		}
 		if err := r.deps.remove(plan.ConfigPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

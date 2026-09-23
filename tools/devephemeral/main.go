@@ -435,7 +435,10 @@ func writeStatusFile(path string, status ephemeralStatus) error {
 	}
 	content = append(content, '\n')
 
-	if err := atomicfile.WriteFile(path, content, atomicfile.WithPerm(0o644)); err != nil {
+	// ErrPublished means the file is already in place and only a later
+	// directory fsync failed.
+	err = atomicfile.WriteFile(path, content, atomicfile.WithPerm(0o644))
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("write status file: %w", err)
 	}
 	return nil

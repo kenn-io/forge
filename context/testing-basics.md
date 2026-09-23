@@ -26,7 +26,8 @@ fixtures, or changing shell-script coverage.
   to trigger it (`frontend/scripts/generate-api-client.mjs::generateClient`).
 - Go static-analysis targets run with `-trimpath` so fresh worktrees reuse cached
   export data; tests keep real paths for `runtime.Caller` fixtures
-  (`Makefile::GO_ANALYSIS_ENV`).
+  (`Makefile::GO_ANALYSIS_ENV`). Run standalone analyzers such as NilAway as
+  `go vet -vettool` so results are cached per package (`Makefile::nilaway`).
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.
 - Repository-wide Go tests do not run from Git hooks. Any future fast hook
   lane must select a small set of packages rather than require per-test opt-outs.

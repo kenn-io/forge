@@ -450,7 +450,10 @@ fmt-check: custom-gcl
 		exit 1; \
 	fi
 
-# Run NilAway against first-party Go packages
+# Run NilAway against first-party Go packages. Running it as a go vet tool
+# caches results per package in the Go build cache, so unchanged packages are
+# not re-analyzed (a clean re-run takes ~0.5s instead of ~8s). Vet always loads
+# test variants; -exclude-test-files drops diagnostics that involve them.
 nilaway: ensure-embed-dir
 	@if [ -z "$(NILAWAY_BIN)" ]; then \
 		echo "nilaway not found. Install with:" >&2; \
@@ -461,7 +464,7 @@ nilaway: ensure-embed-dir
 		echo "failed to determine module path" >&2; \
 		exit 1; \
 	}; \
-		$(GO_ANALYSIS_ENV) "$(NILAWAY_BIN)" -include-pkgs="$$module_path" -test=false ./...
+		$(GO_ANALYSIS_ENV) go vet -vettool="$(NILAWAY_BIN)" -include-pkgs="$$module_path" -exclude-test-files ./...
 
 # Tidy dependencies
 tidy:

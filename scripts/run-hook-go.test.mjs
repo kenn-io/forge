@@ -22,11 +22,17 @@ function assertSucceeded(result) {
   assert.equal(result.status, 0, result.error?.message ?? result.stderr ?? "hook runner failed");
 }
 
-test("Go hooks default to four-way concurrency", () => {
+test("Go hooks use native concurrency by default", () => {
   const result = run();
 
   assertSucceeded(result);
-  assert.equal(result.stdout, "4|4");
+  assert.equal(result.stdout, "|");
+});
+
+test("Go hooks reject an invalid concurrency cap", () => {
+  const result = run({ KENN_FORGE_HOOK_GO_CONCURRENCY: "0" });
+
+  assert.equal(result.status, 2);
 });
 
 test("Go hook concurrency is configurable", () => {
@@ -48,7 +54,7 @@ test("Go hooks preserve explicit tool-specific limits", () => {
 });
 
 test("Go hooks preserve an explicitly empty package limit", () => {
-  const result = run({ GO_TEST_P: "" });
+  const result = run({ GO_TEST_P: "", KENN_FORGE_HOOK_GO_CONCURRENCY: "4" });
 
   assertSucceeded(result);
   assert.equal(result.stdout, "4|");

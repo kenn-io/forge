@@ -14,9 +14,10 @@ fixtures, or changing shell-script coverage.
   `context.WithoutCancel(t.Context())` or `context.Background()`
   (`internal/testutil/servertest/servertest.go::registerCleanup`).
   Unix-socket fixtures keep a short `/tmp` root rather than `t.TempDir()`.
-- Routine local Go lanes and hooks bound package/processor concurrency and share
-  Go caches; `GO_TEST_P=` intentionally restores native package concurrency.
-  (`scripts/run-hook-go.sh`, `prek.toml`)
+- Direct Make test lanes bound package concurrency (`GO_TEST_P=` restores
+  native concurrency). Go hooks run uncapped and the read-only Go consumers run
+  concurrently after `golangci-lint --fix`; `KENN_FORGE_HOOK_GO_CONCURRENCY`
+  opts into a cap (`scripts/run-hook-go.sh`, `prek.toml`).
 - CI bounds Go package/test fan-out with `-p` and `-parallel`; do not cap
   `GOMAXPROCS` globally, because test-launched servers inherit that CPU limit.
 - Do not overlap frontend/e2e asset builds with Go compilation; replacing embedded

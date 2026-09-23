@@ -9,8 +9,10 @@ default_stages = ["pre-commit"]
 #   4   frontend-deps (bun install mutates node_modules, which every
 #       Node-based hook below reads; it must finish before they start)
 #   5   api-generate (rewrites generated Go/TS consumed by later groups)
-#   10  independent lanes: bounded Go lint, frontend core, rust, scripts
-#   20+ bounded Go consumers, serialized to avoid multiplying host load
+#   10  independent lanes: Go lint (golangci-lint --fix rewrites .go files),
+#       frontend core, rust, scripts
+#   20  read-only Go consumers, concurrent with each other; they read .go
+#       files, so they start after golangci-lint's fixes land
 
 [[repos]]
 repo = "builtin"
@@ -51,10 +53,10 @@ hooks = [
   { id = "font-size-token-check", name = "enforce font-size design tokens", language = "system", entry = "make font-size-token-check", files = "^(scripts/check-font-size-tokens\\.(ts|test\\.ts)|frontend/src/.*\\.(svelte|css|ts))$", pass_filenames = false, priority = 10 },
   { id = "script-tests", name = "script regression tests", language = "system", entry = "make script-tests", files = "^(scripts/.*\\.(mjs|ts|sh|py)|frontend/scripts/.*\\.ts|docs/screenshots/.*\\.(md|ts)|package\\.json|bun\\.lock)$", pass_filenames = false, priority = 10 },
   { id = "playwright-version-check", name = "browser CI image matches pinned toolchain", language = "system", entry = "make playwright-version-check", files = "^(scripts/check-playwright-version\\.mjs|\\.github/docker/playwright/Dockerfile|\\.github/workflows/ci\\.yml|package\\.json|frontend/package\\.json|packages/github-app-ui/package\\.json)$", pass_filenames = false, priority = 10 },
-  { id = "huma-check", name = "shared Huma API contract", language = "system", entry = "./scripts/run-hook-go.sh make huma-check", files = "(\\.(go|json|ya?ml|toml|sh|mk|m?[jt]sx?|cjs|svelte|vue)|(^|/)(go\\.(mod|sum)|[Mm]akefile|GNUmakefile|[Jj]ustfile))$", exclude = "(_test\\.go|\\.d\\.ts)$|\\.(test|spec|stories|browser)\\.|(^|/)(e2e|tests?|__tests__|__mocks__|mocks|fixtures)/", pass_filenames = false, priority = 21 },
-  { id = "huma-route-check", name = "prevent non-Huma Go routes", language = "system", entry = "./scripts/run-hook-go.sh make huma-route-check", files = "^(tools/nohttpmux/.*\\.go|cmd/.*\\.go|internal/.*\\.go|kenn-forge\\.go)$", exclude = "^(cmd|internal)/.*_test\\.go$", pass_filenames = false, priority = 23 },
-  { id = "migration-history-check", name = "enforce immutable history and one migration per PR", language = "system", entry = "./scripts/run-hook-go.sh make migration-history-check", files = "^internal/db/migrations/.*$", pass_filenames = false, priority = 24 },
-  { id = "timing-budget-check", name = "reject unreviewed sub-second test polling budgets", language = "system", entry = "./scripts/run-hook-go.sh make timing-budget-check", files = "^(tools/timingbudgetcheck/.*\\.go|.*_test\\.go)$", pass_filenames = false, priority = 25 },
+  { id = "huma-check", name = "shared Huma API contract", language = "system", entry = "./scripts/run-hook-go.sh make huma-check", files = "(\\.(go|json|ya?ml|toml|sh|mk|m?[jt]sx?|cjs|svelte|vue)|(^|/)(go\\.(mod|sum)|[Mm]akefile|GNUmakefile|[Jj]ustfile))$", exclude = "(_test\\.go|\\.d\\.ts)$|\\.(test|spec|stories|browser)\\.|(^|/)(e2e|tests?|__tests__|__mocks__|mocks|fixtures)/", pass_filenames = false, priority = 20 },
+  { id = "huma-route-check", name = "prevent non-Huma Go routes", language = "system", entry = "./scripts/run-hook-go.sh make huma-route-check", files = "^(tools/nohttpmux/.*\\.go|cmd/.*\\.go|internal/.*\\.go|kenn-forge\\.go)$", exclude = "^(cmd|internal)/.*_test\\.go$", pass_filenames = false, priority = 20 },
+  { id = "migration-history-check", name = "enforce immutable history and one migration per PR", language = "system", entry = "./scripts/run-hook-go.sh make migration-history-check", files = "^internal/db/migrations/.*$", pass_filenames = false, priority = 20 },
+  { id = "timing-budget-check", name = "reject unreviewed sub-second test polling budgets", language = "system", entry = "./scripts/run-hook-go.sh make timing-budget-check", files = "^(tools/timingbudgetcheck/.*\\.go|.*_test\\.go)$", pass_filenames = false, priority = 20 },
   { id = "nilaway", name = "nilaway", language = "system", entry = "./scripts/run-hook-go.sh make nilaway", stages = [
     "pre-push",
   ], types_or = [

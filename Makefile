@@ -29,9 +29,9 @@ CUSTOM_GCL := ./custom-gcl
 KIT_MODULE := go.kenn.io/kit
 KIT_VERSION := $(shell go list -m -f '{{.Version}}' $(KIT_MODULE))
 KENNLINT := go run $(KIT_MODULE)/cmd/kennlint@$(KIT_VERSION)
-# Static-analysis tools load packages via `go list -export`. Without -trimpath
-# the Go build cache is keyed by absolute source path, so every new worktree
-# recompiles export data for the whole module (~15s) before any check runs.
+# Static-analysis and code-generation tools run with -trimpath. Without it the
+# Go build cache is keyed by absolute source path, so every new worktree
+# recompiles the whole module (~15s) before any check or generator runs.
 # Tests keep real paths because runtime.Caller-based fixtures depend on them.
 GO_ANALYSIS_ENV = GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-trimpath -buildvcs=false"
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
@@ -266,11 +266,11 @@ guardrail-check: check-vite-plus-bin
 
 # Regenerate the checked-in OpenAPI document and generated clients
 api-generate: frontend-deps
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; $(GO_ANALYSIS_ENV) go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
 	node frontend/scripts/generate-api-client.mjs
-	go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
-	go run ./cmd/kenn-forge-openapi -api devbox -out internal/apiclient/devbox/openapi.yaml
-	go generate ./internal/apiclient/...
+	$(GO_ANALYSIS_ENV) go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
+	$(GO_ANALYSIS_ENV) go run ./cmd/kenn-forge-openapi -api devbox -out internal/apiclient/devbox/openapi.yaml
+	$(GO_ANALYSIS_ENV) go generate ./internal/apiclient/...
 
 # Regenerate the roborev TypeScript client from the checked-in OpenAPI spec
 roborev-api-generate: frontend-deps

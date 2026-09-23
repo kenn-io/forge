@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	gh "github.com/google/go-github/v91/github"
 	"github.com/spf13/pflag"
+	"go.kenn.io/forge/internal/db"
 )
 
 // Query contains only combinations whose semantics match gh. Unknown flags and
@@ -93,17 +93,14 @@ func (q Query) Valid() bool {
 // Encode mirrors cli/cli's api.PullRequest.ExportData and jsonExporter.Write:
 // sorted keys, literal HTML characters, null optional dates, and one newline.
 // Explicit options retain gh's byte format with the repository's v2 encoder.
-func Encode(q Query, pulls []*gh.PullRequest) ([]byte, error) {
+func Encode(q Query, pulls []db.MergeRequest) ([]byte, error) {
 	rows := make([]map[string]any, 0, len(pulls))
 	for _, pr := range pulls {
-		state := strings.ToUpper(pr.GetState())
-		if pr.MergedAt != nil {
-			state = "MERGED"
-		}
+		state := strings.ToUpper(string(pr.State))
 		values := map[string]any{
-			"number": pr.GetNumber(), "title": pr.GetTitle(), "body": pr.GetBody(), "state": state, "url": pr.GetHTMLURL(),
-			"isDraft": pr.GetDraft(), "headRefName": pr.GetHead().GetRef(), "headRefOid": pr.GetHead().GetSHA(), "baseRefName": pr.GetBase().GetRef(),
-			"createdAt": pr.GetCreatedAt().Time, "updatedAt": pr.GetUpdatedAt().Time, "closedAt": pr.ClosedAt, "mergedAt": pr.MergedAt,
+			"number": pr.Number, "title": pr.Title, "body": pr.Body, "state": state, "url": pr.URL,
+			"isDraft": pr.IsDraft, "headRefName": pr.HeadBranch, "headRefOid": pr.PlatformHeadSHA, "baseRefName": pr.BaseBranch,
+			"createdAt": pr.CreatedAt, "updatedAt": pr.UpdatedAt, "closedAt": pr.ClosedAt, "mergedAt": pr.MergedAt,
 		}
 		row := make(map[string]any, len(q.Fields))
 		for _, f := range q.Fields {

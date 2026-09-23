@@ -1,20 +1,18 @@
 package ghshim
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
-	"time"
 
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
 )
 
@@ -74,101 +72,17 @@ func TestJSONMatchesRealGH(t *testing.T) {
 			require.NoError(json.Unmarshal([]byte(tc.rest), &pr))
 			q, _, ok := Parse(args)
 			require.True(ok)
-			actual, err := Encode(q, []*gh.PullRequest{&pr})
+			stored := db.MergeRequest{Number: pr.GetNumber(), Title: pr.GetTitle(), Body: pr.GetBody(), State: db.MergeRequestState(pr.GetState()), URL: pr.GetHTMLURL(), IsDraft: pr.GetDraft(), HeadBranch: pr.GetHead().GetRef(), PlatformHeadSHA: pr.GetHead().GetSHA(), BaseBranch: pr.GetBase().GetRef(), CreatedAt: pr.GetCreatedAt().Time, UpdatedAt: pr.GetUpdatedAt().Time}
+			if pr.ClosedAt != nil {
+				stored.ClosedAt = &pr.ClosedAt.Time
+			}
+			if pr.MergedAt != nil {
+				stored.MergedAt = &pr.MergedAt.Time
+				stored.State = db.MergeRequestStateMerged
+			}
+			actual, err := Encode(q, []db.MergeRequest{stored})
 			require.NoError(err)
 			assert.Equal(string(expected), string(actual))
 		})
 	}
-}
-
-type provider struct {
-	pages    int
-	requests int
-	fail     bool
-}
-
-func (p *provider) GetPullRequest(context.Context, string, string, int) (*gh.PullRequest, error) {
-	p.requests++
-	return &gh.PullRequest{Number: new(7), State: new("open")}, nil
-}
-func (p *provider) ListPullRequestsPage(_ context.Context, owner, repo, state string, page int) ([]*gh.PullRequest, bool, error) {
-	p.pages++
-	if owner != "acme" || repo != "widget" || state != "closed" {
-		return nil, false, fmt.Errorf("wrong query")
-	}
-	if page == 2 && p.fail {
-		return nil, false, fmt.Errorf("provider failed")
-	}
-	pr := &gh.PullRequest{Number: new(page), State: new("closed"), Head: &gh.PullRequestBranch{Ref: new("topic")}, CreatedAt: &gh.Timestamp{Time: time.Date(2026, 1, page, 0, 0, 0, 0, time.UTC)}}
-	if page == 2 {
-		pr.MergedAt = &gh.Timestamp{Time: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}
-	}
-	return []*gh.PullRequest{pr}, page == 1, nil
-}
-
-func TestCacheCompleteListsFilterAfterSorting(t *testing.T) {
-	require := require.New(t)
-	t.Parallel()
-	assert := assert.New(t)
-	p := &provider{}
-	var cache Cache
-	q, _, ok := Parse(strings.Fields("pr list --state closed --head topic --limit 1 --json number,state"))
-	require.True(ok)
-	q.Owner = "acme"
-	q.Repo = "widget"
-	data, err := cache.Query(t.Context(), p, "stable-id/route-1", q)
-	require.NoError(err)
-	assert.JSONEq(`[{"number":2,"state":"MERGED"}]`, string(data))
-	q.State = "merged"
-	data, err = cache.Query(t.Context(), p, "stable-id/route-1", q)
-	require.NoError(err)
-	assert.JSONEq(`[{"number":2,"state":"MERGED"}]`, string(data))
-	assert.Equal(2, p.pages)
-	q.Head = "absent"
-	data, err = cache.Query(t.Context(), p, "stable-id/route-1", q)
-	require.NoError(err)
-	assert.Equal("[]\n", string(data))
-	assert.Equal(2, p.pages)
-	_, err = cache.Query(t.Context(), p, "stable-id/route-2", q)
-	require.NoError(err)
-	assert.Equal(4, p.pages)
-}
-
-func TestIncompleteHydrationNeverReturnsOrCachesPartialOutput(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	t.Parallel()
-	p := &provider{fail: true}
-	var cache Cache
-	q, _, ok := Parse(strings.Fields("pr list --state closed --json number"))
-	require.True(ok)
-	q.Owner = "acme"
-	q.Repo = "widget"
-	data, err := cache.Query(t.Context(), p, "repo", q)
-	require.Error(err)
-	assert.Empty(data)
-	p.fail = false
-	data, err = cache.Query(t.Context(), p, "repo", q)
-	require.NoError(err)
-	assert.Equal("[{\"number\":2},{\"number\":1}]\n", string(data))
-	assert.Equal(4, p.pages)
-}
-
-func TestExpiredViewHydratesAgain(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	t.Parallel()
-	p := &provider{}
-	var cache Cache
-	q, _, ok := Parse(strings.Fields("pr view 7 --json number"))
-	require.True(ok)
-	_, err := cache.Query(t.Context(), p, "repo", q)
-	require.NoError(err)
-	for key, value := range cache.entries {
-		value.until = time.Time{}
-		cache.entries[key] = value
-	}
-	_, err = cache.Query(t.Context(), p, "repo", q)
-	require.NoError(err)
-	assert.Equal(2, p.requests)
 }

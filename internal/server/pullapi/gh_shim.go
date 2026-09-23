@@ -2,7 +2,6 @@ package pullapi
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"go.kenn.io/forge/internal/ghshim"
@@ -51,15 +50,9 @@ func (s *Handler) ghShim(ctx context.Context, input *ghShimInput) (*ghShimOutput
 	if err != nil || !found {
 		return fallback("untracked")
 	}
-	client, err := s.syncer.DirectClientForHost(q.Host)
+	output, err := ghshim.Read(ctx, s.db, *repo, q)
 	if err != nil {
-		return fallback("provider_unavailable")
-	}
-	// Cache identity includes the stable repository and current route generation.
-	identity := fmt.Sprintf("%d/%v", repo.ID, fence)
-	output, err := s.ghCache.Query(ctx, client, identity, q)
-	if err != nil {
-		return fallback("hydration_failed")
+		return fallback("data_unavailable")
 	}
 	matches, err := s.resolver.RepositoryRouteFenceMatches(ctx, *repo, fence)
 	if err != nil || !matches {

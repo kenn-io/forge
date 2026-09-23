@@ -4295,16 +4295,16 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(workspaceControlsBusy()).toBe(false));
   });
 
-  it("keeps its own toolbar on the standalone Workspaces tab", async () => {
+  it("keeps workspace controls in the standalone tab strip", async () => {
     render(WorkspaceTerminalView, {
       props: {
         workspaceId: "ws-1",
       },
     });
 
-    // That tab's panes have no tab strip to hold the controls, so the bar stays
-    // and nothing is published for a detail pane to render.
-    await waitFor(() => expect(document.querySelector(".workspace-toolbar")).not.toBeNull());
+    const tabs = await screen.findByRole("tablist", { name: "Workflow group tabs" });
+    expect(within(tabs).getByRole("button", { name: "Launch", exact: true })).toBeTruthy();
+    expect(within(tabs).getByRole("button", { name: "Workflow presets" })).toBeTruthy();
     expect(hostedWorkspaceControls()).toBeNull();
   });
 
@@ -4895,10 +4895,10 @@ describe("WorkspaceTerminalView", () => {
       return launchRequest.promise;
     });
     const launchButton = screen.getByRole("button", { name: "Launch" });
-    const launchMenu = launchButton.closest(".launch-menu");
-    expect(launchMenu).not.toBeNull();
     await fireEvent.click(launchButton);
-    await fireEvent.click(within(launchMenu as HTMLElement).getByRole("button", { name: "Helper" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Run configurations" })).getByRole("button", { name: "Helper" }),
+    );
     await launchStarted.promise;
 
     firstView.unmount();

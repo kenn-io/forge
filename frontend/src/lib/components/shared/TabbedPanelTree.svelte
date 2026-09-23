@@ -915,9 +915,11 @@
     margin-left: auto;
     padding-right: 4px;
     /* Sits above the tab strip's bottom-border pseudo-element. */
-    position: relative;
+    position: sticky;
+    right: 0;
     z-index: 2;
     flex-shrink: 0;
+    background: var(--bg-inset);
   }
 
   :global(.tabbed-panel-split-divider) {

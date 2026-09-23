@@ -4456,14 +4456,8 @@
         >
           <div class="terminal-area">
             <div class="workspace-surface">
-              {#if !controlsInPane}
-                <!-- Kept for the standalone Workspaces tab, whose panes have no tab
-                     strip to hold the controls, and for a flattened detail surface,
-                     which suppresses per-leaf chrome. Otherwise the pane's own
-                     popover renders these, and a bar here would be a second copy of
-                     them above the terminal. -->
+              {#if !controlsInPane && (paneFlattened || !runtimeLive || renderedWorkflowTree?.type !== "leaf")}
                 <div class="workspace-toolbar">
-                  <div class="workspace-toolbar-title">Workflow</div>
                   <div class="workspace-actions">{@render workspaceControls()}</div>
                 </div>
               {/if}
@@ -4511,6 +4505,7 @@
                       dragScope={surfaceLayout?.dragScope}
                       promotion={workflowPromotion}
                       node={renderedWorkflowTree}
+                      toolbar={!controlsInPane && !paneFlattened && renderedWorkflowTree.type === "leaf" ? workspaceToolbar : undefined}
                       tabs={workflowTabDescriptors}
                       {activeTabKey}
                       inputActive={workspaceContainerInputActive && renderedWorkspaceInputRegion === "workflow"}
@@ -4897,6 +4892,10 @@
 <!-- The workspace's own controls, defined here because every one of them is wired
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
+{#snippet workspaceToolbar()}
+  <div class="workspace-actions">{@render workspaceControls()}</div>
+{/snippet}
+
 {#snippet workspaceControls()}
   {#if controlsInPane && inlineDock && inlineDockMode !== null && workspaceLive && workspace?.status === "ready"}
     <!-- The dock's own modes, which the header bar carries everywhere it still
@@ -5349,7 +5348,7 @@
   .workspace-toolbar {
     display: flex;
     align-items: stretch;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: var(--space-4);
     height: 30px;
     padding: 0 6px 0 0;
@@ -5357,17 +5356,6 @@
     border-left: 1px solid var(--border-default);
     background: var(--bg-inset);
     flex-shrink: 0;
-  }
-
-  .workspace-toolbar-title {
-    display: inline-flex;
-    align-items: center;
-    padding: 0 10px;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
   }
 
   .workspace-actions {

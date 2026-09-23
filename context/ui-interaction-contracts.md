@@ -702,6 +702,9 @@ Keyboard handlers must have one clear owner for each key press.
 - An empty workflow container retires behind its surface-hosted bottom dock instead
   of resizing the recursive tree. Promoted panes then fill the stored branch, and
   demotion restores the untouched arrangement (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneRowOnlyFor`).
+- Standalone workspaces with one workflow group share one row for tabs and controls;
+  keep Presets and Launch icon-only, with accessible names and tooltips
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceToolbar`).
 - A detail pane NEVER shows the workspace's own header bar (name, branch, Expand and
   Collapse Terminal, Delete). The pane's tab strip already names the workspace and
   carries its controls. A flattened surface keeps the chrome, since it has no

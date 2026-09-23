@@ -51,6 +51,7 @@
     activeTabKey: WorkflowTabKey;
     inputActive?: boolean;
     renderTab: Snippet<[WorkflowTabKey, boolean]>;
+    toolbar?: Snippet | undefined;
     disabled?: boolean;
     onSelectTab?: ((tabKey: WorkflowTabKey) => void) | undefined;
     onFocusPane?: ((tabKey: WorkflowTabKey) => void) | undefined;
@@ -81,6 +82,7 @@
     activeTabKey,
     inputActive = true,
     renderTab: renderWorkflowTab,
+    toolbar,
     disabled = false,
     onSelectTab,
     onFocusPane,
@@ -163,6 +165,7 @@
   {activeTabKey}
   {inputActive}
   {disabled}
+  leafActions={toolbar}
   tablistLabel="Workflow group tabs"
   leafLabel="Workflow group"
   dropTargetsLabel="Workflow group drop targets"

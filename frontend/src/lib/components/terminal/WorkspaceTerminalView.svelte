@@ -2101,7 +2101,7 @@
     if (tab === "reviews") {
       return ws.item_type === "pull_request";
     }
-    return getWorkspacePRNumber(ws) !== null;
+    return ws.repo.owner !== "" && ws.repo.name !== "";
   }
 
   function syncSidebarTabForWorkspace(ws: Workspace): void {
@@ -4303,7 +4303,7 @@
                       Kata
                     </button>
                   {/if}
-                  {#if getWorkspacePRNumber(workspace) !== null}
+                  {#if workspace.repo.owner !== "" && workspace.repo.name !== ""}
                     <button
                       class="panel-toggle-btn"
                       class:active={sidebarOpen && sidebarTab === "pr"}

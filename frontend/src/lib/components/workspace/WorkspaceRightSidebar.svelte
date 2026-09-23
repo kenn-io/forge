@@ -1,6 +1,6 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
-  import PullDetail from "../detail/PullDetail.svelte";
+  import WorkspacePRPanel from "./WorkspacePRPanel.svelte";
   import IssueDetail from "../detail/IssueDetail.svelte";
   import WorkspaceDiffPanel from "./WorkspaceDiffPanel.svelte";
   import WorkspaceReviewsPanel from "./WorkspaceReviewsPanel.svelte";
@@ -92,21 +92,16 @@
       />
     {/key}
   {:else if activeTab === "pr"}
-    {#if hasPR}
-      {#key `pr:${provider}:${platformHost ?? ""}:${repoPath}:${associatedPRNumber ?? 0}:${refreshToken}`}
-        <div class="pr-scroll" inert={disabled}>
-          <PullDetail
-            {provider}
-            {platformHost}
-            {platformRepoId}
-            owner={repoOwner}
-            name={repoName}
-            {repoPath}
-            number={associatedPRNumber ?? 0}
-            hideTabs={true}
-            hideWorkspaceAction={true}
-          />
-        </div>
+    {#if hasRepo}
+      {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${provider}:${platformHost ?? ""}:${platformRepoId ?? repoPath}`}
+        <WorkspacePRPanel
+          {workspaceID}
+          {workspaceHostKey}
+          repo={{ provider, platformHost, platformRepoId, owner: repoOwner, name: repoName, repoPath }}
+          linkedPRNumber={associatedPRNumber}
+          {refreshToken}
+          {disabled}
+        />
       {/key}
     {:else}
       <EmptyState title="No linked PR" />

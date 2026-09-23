@@ -253,6 +253,9 @@ Persisted controls must state their scope clearly.
 - The workspace details tab is keyed by host-aware workspace identity; an unsupported
   tab may fall back only for the current live workspace, never rewrite another
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
+- The PR picker remembers a browser-local viewing choice per workspace and host;
+  it must never change the workspace association or diff merge target
+  (`frontend/src/lib/components/workspace/WorkspacePRPanel.svelte::selectPR`).
 - URL query state belongs in the route only when deep-linking or back/forward
   navigation is part of the feature contract.
 - Activity detail selection uses one URL-backed slot for pull requests, issues,

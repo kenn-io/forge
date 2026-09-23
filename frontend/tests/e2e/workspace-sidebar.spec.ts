@@ -4334,6 +4334,44 @@ test.describe("sidebar PR tab", () => {
     await expect(page.locator(".right-sidebar .detail-title")).toContainText("Add browser regression coverage");
   });
 
+  test("searches PRs by title and number and remembers the viewed PR after reload", async ({ page }) => {
+    const searches: URL[] = [];
+    const api = createMockApiHandler();
+    await page.route("**/api/v1/pulls?**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("state") !== "all") return route.fallback();
+      searches.push(url);
+      expect(url.searchParams.get("repo")).toBe("github|github.com/acme/widgets");
+      const response = api.handle({ method: "GET", url, bodyText: "" });
+      const pulls = await response.json();
+      await route.fulfill({ json: pulls.filter((pull: { Number: number }) => pull.Number === 55) });
+    });
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
+    const sidebar = page.locator(".right-sidebar");
+    await sidebar.getByRole("button", { name: /^Search PRs: / }).click();
+    const search = page.getByRole("combobox", { name: "Search PRs", exact: true });
+    await search.fill("theme");
+    await expect(page.getByRole("option", { name: /#55.*Refactor theme system/ })).toBeVisible();
+    await expect.poll(() => searches.some((url) => url.searchParams.get("q") === "theme")).toBe(true);
+    await search.fill("#55");
+    await expect.poll(() => searches.some((url) => url.searchParams.get("q") === "#55")).toBe(true);
+    await expect(page.getByRole("option", { name: /#55.*Refactor theme system/ })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("workspace-pr-picker.png") });
+    await search.press("ArrowDown");
+    await search.press("Enter");
+    await expect(sidebar.locator(".detail-title")).toHaveText("Refactor theme system");
+
+    await page.reload();
+    await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Refactor theme system");
+    await page.getByRole("button", { name: "Refresh workspace details" }).click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Refactor theme system");
+    await sidebar.getByRole("button", { name: /^Search PRs: / }).click();
+    await page.getByRole("option", { name: "Use linked PR", exact: true }).click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Add browser regression coverage");
+  });
+
   for (const item of [
     { workspace: testWorkspace, tab: "PR", width: "650" },
     { workspace: testIssueWorkspace, tab: "Issue", width: "350" },
@@ -4402,7 +4440,7 @@ test.describe("sidebar PR tab", () => {
     });
   }
 
-  test("workspace without associated PR hides malformed PR tab", async ({ page }) => {
+  test("workspace without associated PR can choose one to view", async ({ page }) => {
     const noLinkedPR = {
       ...testIssueWorkspace,
       associated_pr_number: null,
@@ -4413,7 +4451,14 @@ test.describe("sidebar PR tab", () => {
 
     await page.goto("/terminal/ws-issue-7");
 
-    await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toHaveCount(0);
+    await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
+    const sidebar = page.locator(".right-sidebar");
+    await expect(sidebar.getByText("No linked PR")).toBeVisible();
+    await sidebar.getByRole("button", { name: /^Search PRs: / }).click();
+    await page.getByRole("option", { name: /#55.*Refactor theme system/ }).click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Refactor theme system");
+    await page.getByRole("button", { name: "Diff", exact: true }).click();
+    await expect(sidebar.getByRole("button", { name: "Compare with merge target" })).toHaveCount(0);
   });
 });
 
@@ -5755,14 +5800,14 @@ test.describe("issue workspace sidebar", () => {
     });
   });
 
-  test("issue workspaces show an Issue toggle instead of PR and Reviews when no PR is linked", async ({ page }) => {
+  test("issue workspaces offer Issue and PR browsing without Reviews", async ({ page }) => {
     await setupTerminalMocks(page, {
       workspace: testIssueWorkspace,
     });
     await page.goto("/terminal/ws-issue-7");
 
     await expect(page.locator(".panel-toggle-btn", { hasText: "Issue" })).toBeVisible();
-    await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toHaveCount(0);
+    await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toBeVisible();
     await expect(page.locator(".panel-toggle-btn", { hasText: "Reviews" })).toHaveCount(0);
   });
 
@@ -5783,7 +5828,7 @@ test.describe("issue workspace sidebar", () => {
     await page.goto("/terminal/ws-issue-7");
 
     await expect(page.locator(".panel-toggle-btn", { hasText: "Issue" })).toBeVisible();
-    await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toHaveCount(0);
+    await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toBeVisible();
 
     const refreshButton = page.getByRole("button", { name: "Refresh workspace details" });
     await expect(refreshButton).toHaveAttribute("aria-label", "Refresh workspace details");
@@ -5895,7 +5940,7 @@ test.describe("issue workspace sidebar", () => {
     ).toHaveCount(0);
   });
 
-  test("issue workspace gains PR tab after workspace_status refetch and keeps manual PR selection", async ({
+  test("issue workspace gains a linked PR after workspace_status refetch and keeps the selected tab", async ({
     page,
   }) => {
     let currentWorkspace: WorkspaceFixture = {
@@ -5972,7 +6017,7 @@ test.describe("issue workspace sidebar", () => {
 
     await page.goto("/terminal/ws-issue-7");
 
-    await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toHaveCount(0);
+    await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toBeVisible();
 
     currentWorkspace = testIssueWorkspaceWithAssociatedPR;
     await page.evaluate(() => {

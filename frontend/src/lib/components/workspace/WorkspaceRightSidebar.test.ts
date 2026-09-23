@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
+import { createAppStores } from "../../app-stores.svelte.js";
+import { createMockApiFetch } from "../../../test/mockApiFetch.js";
 import type { StoreInstances } from "../../types.js";
 import WorkspaceRightSidebarTestHarness from "./WorkspaceRightSidebarTestHarness.svelte";
 
@@ -140,6 +142,69 @@ describe("WorkspaceRightSidebar", () => {
     cleanup();
     vi.restoreAllMocks();
     await Effect.runPromise(runtime.disposeEffect);
+  });
+
+  it("remembers a viewed PR per workspace and host without changing the linked PR", async () => {
+    localStorage.clear();
+    const api = createMockApiFetch([
+      ({ url }) =>
+        url.pathname === "/api/v1/pulls"
+          ? Response.json([
+              { Number: 55, Title: "Refactor theme system", State: "merged", MergedAt: null, IsDraft: false },
+            ])
+          : undefined,
+    ]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);
+    const { stores } = createAppStores({ runtime });
+    const sidebarProps = {
+      activeTab: "pr" as const,
+      workspaceID: "ws-1",
+      worktreePath: "/tmp/worktrees/ws-1",
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widgets",
+      repoPath: "acme/widgets",
+      ownerItemType: "pull_request" as const,
+      ownerItemNumber: 42,
+      associatedPRNumber: 42,
+      branch: "feature/widgets",
+      roborevBaseUrl: "/api/roborev",
+      workspaceHostKey: undefined as string | undefined,
+    };
+    const view = render(WorkspaceRightSidebarTestHarness, {
+      props: { runtime, sidebarProps },
+      context: new Map([[STORES_KEY, stores]]),
+    });
+    await screen.findByRole("heading", { name: "Add browser regression coverage" });
+    await fireEvent.click(screen.getByRole("button", { name: /^Search PRs: / }));
+    await fireEvent.input(screen.getByRole("combobox", { name: "Search PRs" }), { target: { value: "#55" } });
+    await fireEvent.mouseDown(await screen.findByRole("option", { name: /#55.*Refactor theme system.*Merged/ }));
+    await screen.findByRole("heading", { name: "Refactor theme system" });
+    expect(
+      api.requests.some(
+        ({ url }) =>
+          url.pathname === "/api/v1/pulls" &&
+          url.searchParams.get("q") === "#55" &&
+          url.searchParams.get("state") === "all" &&
+          url.searchParams.get("repo") === "github|github.com/acme/widgets",
+      ),
+    ).toBe(true);
+
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, workspaceID: "ws-2" } });
+    await screen.findByRole("heading", { name: "Add browser regression coverage" });
+    await view.rerender({ runtime, sidebarProps });
+    await screen.findByRole("heading", { name: "Refactor theme system" });
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, workspaceHostKey: "peer" } });
+    await screen.findByRole("heading", { name: "Add browser regression coverage" });
+    await view.rerender({ runtime, sidebarProps });
+    await screen.findByRole("heading", { name: "Refactor theme system" });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Search PRs: / }));
+    await fireEvent.mouseDown(await screen.findByRole("option", { name: "Use linked PR" }));
+    await screen.findByRole("heading", { name: "Add browser regression coverage" });
+    expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
+    localStorage.clear();
   });
 
   it.each(["pull_request", "issue", "kata_task", "adhoc"] as const)(

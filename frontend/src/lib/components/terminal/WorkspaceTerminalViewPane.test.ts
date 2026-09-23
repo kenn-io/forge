@@ -266,9 +266,13 @@ describe("WorkspaceTerminalView pane props", () => {
     expect(screen.getByRole("button", { name: "Reviews" })).toBeTruthy();
   });
 
-  it("refreshes workspace details and reveals a newly associated PR", async () => {
+  it("keeps PR browsing available while refreshing an issue workspace association", async () => {
     mocks.runtimeClient.getWorkspace.mockResolvedValue(readyIssueWorkspaceData);
-    mocks.runtimeClient.refreshWorkspace.mockResolvedValue({ ...readyIssueWorkspaceData, associated_pr_number: 42 });
+    mocks.runtimeClient.refreshWorkspace.mockResolvedValue({
+      ...readyIssueWorkspaceData,
+      associated_pr_number: 42,
+      git_head_ref: "feature/refreshed",
+    });
 
     render(WorkspaceTerminalView, {
       props: {
@@ -278,11 +282,12 @@ describe("WorkspaceTerminalView pane props", () => {
     });
 
     await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
-    expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
+    expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh workspace details" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "PR" })).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText("feature/refreshed").length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
     expect(mocks.runtimeClient.refreshWorkspace).toHaveBeenCalledWith(
       { id: "ws-1" },
       { signal: expect.any(AbortSignal) },

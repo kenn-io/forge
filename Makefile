@@ -29,6 +29,11 @@ CUSTOM_GCL := ./custom-gcl
 KIT_MODULE := go.kenn.io/kit
 KIT_VERSION := $(shell go list -m -f '{{.Version}}' $(KIT_MODULE))
 KENNLINT := go run $(KIT_MODULE)/cmd/kennlint@$(KIT_VERSION)
+# Static-analysis tools load packages via `go list -export`. Without -trimpath
+# the Go build cache is keyed by absolute source path, so every new worktree
+# recompiles export data for the whole module (~15s) before any check runs.
+# Tests keep real paths because runtime.Caller-based fixtures depend on them.
+GO_ANALYSIS_ENV = GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-trimpath -buildvcs=false"
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
@@ -230,7 +235,7 @@ font-size-token-check: check-vite-plus-bin
 
 # Prevent application HTTP routes from bypassing Huma registration
 huma-route-check:
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/nohttpmux ./...
+	$(GO_ANALYSIS_ENV) go run ./tools/nohttpmux ./...
 
 # Keep the browser CI image in lockstep with the Playwright, Bun, and Vite+ pins
 playwright-version-check: check-vite-plus-bin
@@ -252,7 +257,7 @@ migration-history-check:
 
 # Reject unreviewed sub-second test polling budgets.
 timing-budget-check:
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/timingbudgetcheck .
+	$(GO_ANALYSIS_ENV) go run ./tools/timingbudgetcheck .
 
 guardrail-check: check-vite-plus-bin
 	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests docs-branding-check timing-budget-check
@@ -261,7 +266,7 @@ guardrail-check: check-vite-plus-bin
 # Regenerate the checked-in OpenAPI document and generated clients
 api-generate: frontend-deps
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
-	cd frontend && $(VITE_PLUS_FRONTEND_BIN) build --logLevel warn
+	node frontend/scripts/generate-api-client.mjs
 	go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
 	go run ./cmd/kenn-forge-openapi -api devbox -out internal/apiclient/devbox/openapi.yaml
 	go generate ./internal/apiclient/...
@@ -410,13 +415,14 @@ custom-gcl: check-mise
 	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through
-# custom-gcl (canonical golangci-lint plus kennlint analyzers).
+# custom-gcl (canonical golangci-lint plus kennlint analyzers). -trimpath lets
+# a fresh worktree reuse cached export data.
 lint: ensure-embed-dir lint-config-check custom-gcl
-	$(CUSTOM_GCL) run --fix ./...
+	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run --fix ./...
 
 # Check Go lint without mutating files; used by CI and pre-push.
 lint-check: ensure-embed-dir lint-config-check custom-gcl
-	$(CUSTOM_GCL) run ./...
+	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run ./...
 
 # Apply the v2 formatters (gofmt, goimports, gofumpt) to every file in place.
 fmt: custom-gcl
@@ -451,7 +457,7 @@ nilaway: ensure-embed-dir
 		echo "failed to determine module path" >&2; \
 		exit 1; \
 	}; \
-		"$(NILAWAY_BIN)" -include-pkgs="$$module_path" -test=false ./...
+		$(GO_ANALYSIS_ENV) "$(NILAWAY_BIN)" -include-pkgs="$$module_path" -test=false ./...
 
 # Tidy dependencies
 tidy:
@@ -535,4 +541,4 @@ help:
 
 # Enforce the shared API contract without rewriting files during verification.
 huma-check:
-	go run go.kenn.io/kit/cmd/huma-check@$(HUMA_CHECK_VERSION) -fix=false ./...
+	$(GO_ANALYSIS_ENV) go run go.kenn.io/kit/cmd/huma-check@$(HUMA_CHECK_VERSION) -fix=false ./...

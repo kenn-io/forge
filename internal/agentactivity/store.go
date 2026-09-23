@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.kenn.io/kit/atomicfile"
 )
 
 type State string
@@ -429,24 +431,10 @@ func (s *Store) writeReport(report Report) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(s.root, ".agent-activity-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, s.reportPath(report.Agent, report.SessionID)); err != nil {
+	// Reports are rewritten on every activity event, so skip fsync as
+	// before. ErrPublished means the report is already visible.
+	err = atomicfile.WriteFile(s.reportPath(report.Agent, report.SessionID), data, atomicfile.WithoutSync())
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
 	s.invalidateCache()

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"go.kenn.io/kit/atomicfile"
 )
 
 var errDiffCacheFileTooLarge = errors.New("diff file exceeds MCP diff cache")
@@ -65,26 +67,12 @@ func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 
 	// Stage the replacement fully before touching published state so a failed
 	// write never removes the current same-name diff or evicts other entries.
-	tmp, err := os.CreateTemp(d.dir, base+".*.tmp")
+	staged, err := atomicfile.Create(path, atomicfile.WithoutSync())
 	if err != nil {
 		return "", 0, err
 	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		_ = tmp.Close()
-		return "", 0, err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return "", 0, err
-	}
-	if err := tmp.Close(); err != nil {
+	defer func() { _ = staged.Abort() }()
+	if _, err := staged.Write(data); err != nil {
 		return "", 0, err
 	}
 
@@ -113,10 +101,10 @@ func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 		evictCursor = next
 	}
 
-	if err := os.Rename(tmpPath, path); err != nil {
+	// ErrPublished means the diff is already visible at path.
+	if err := staged.Commit(); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return "", 0, err
 	}
-	cleanup = false
 	if existing := d.entries[base]; existing != nil {
 		d.totalBytes -= existing.Value.(diffFileEntry).size
 		d.lru.Remove(existing)

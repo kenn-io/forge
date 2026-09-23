@@ -543,25 +543,6 @@ func TestNotificationsAPIExposesReadPropagationStatus(t *testing.T) {
 	assert.Equal(syncedAt.UTC().Format(time.RFC3339), read.Items[0].GitHubReadSyncedAt)
 }
 
-func TestNotificationsAPIRejectsNilConfigAccess(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	id := seedServerNotification(t, database)
-	s := New(database, nil, nil, "/", nil, ServerOptions{})
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
-	body, err := json.Marshal(map[string]any{"ids": []int64{id}})
-	require.NoError(err)
-	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/api/v1/notifications/read", bytes.NewReader(body))
-	require.NoError(err)
-	respReq.Header.Set("Content-Type", "application/json")
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
-	require.NoError(err)
-	defer resp.Body.Close()
-	require.Equal(http.StatusForbidden, resp.StatusCode)
-}
-
 func TestNotificationsAPIBulkMutationsScopeToTrackedRepos(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)

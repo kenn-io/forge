@@ -1,4 +1,4 @@
-package server
+package settingstest
 
 import (
 	"net/http"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 )
 
@@ -16,7 +17,7 @@ func TestArchiveStartRejectsDisabledSyncer(t *testing.T) {
 	syncer := github.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	syncer.DisableSync()
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 
 	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/archive/start", map[string]bool{"all": true})
 	require.Equal(http.StatusServiceUnavailable, rr.Code, rr.Body.String())

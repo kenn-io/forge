@@ -1,4 +1,4 @@
-package server
+package settingstest
 
 import (
 	"bytes"
@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
@@ -244,7 +245,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	// Write surface: drive every GitLab mutation through kenn-forge's HTTP
 	// API against the live container.
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	encodedOwner := url.PathEscape(manifest.Owner)

@@ -1,4 +1,4 @@
-package server
+package activitytest
 
 import (
 	"context"
@@ -7,23 +7,24 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server"
 )
 
 func TestEventHubGenerationReadsWithoutBroadcast(t *testing.T) {
-	h := NewEventHub()
+	h := server.NewEventHub()
 	defer h.Close()
 
 	g0 := h.Generation()
-	h.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	h.Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 	assert.Equal(t, g0+1, h.Generation(), "Generation must advance by exactly one per Broadcast")
 }
 
 func TestEventHub_SubscribeReceivesBroadcast(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	ch, _ := hub.Subscribe(t.Context(), true)
-	hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	hub.Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 
 	select {
 	case ev := <-ch:
@@ -34,7 +35,7 @@ func TestEventHub_SubscribeReceivesBroadcast(t *testing.T) {
 }
 
 func TestEventHub_UnsubscribeOnContextCancel(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -53,7 +54,7 @@ func TestEventHub_UnsubscribeOnContextCancel(t *testing.T) {
 }
 
 func TestEventHub_ConcurrentBroadcastSafety(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	ch, _ := hub.Subscribe(t.Context(), true)
@@ -61,13 +62,13 @@ func TestEventHub_ConcurrentBroadcastSafety(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		for i := range 100 {
-			hub.Broadcast(Event{Type: "sync_status", Data: i})
+			hub.Broadcast(server.Event{Type: "sync_status", Data: i})
 		}
 		close(done)
 	}()
 	go func() {
 		for i := range 100 {
-			hub.Broadcast(Event{Type: "data_changed", Data: i})
+			hub.Broadcast(server.Event{Type: "data_changed", Data: i})
 		}
 	}()
 
@@ -79,14 +80,14 @@ func TestEventHub_ConcurrentBroadcastSafety(t *testing.T) {
 }
 
 func TestEventHub_SlowConsumerEvicted(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	ch, _ := hub.Subscribe(t.Context(), true)
 
 	// Fill buffer (16) + one more to trigger eviction
 	for i := range 17 {
-		hub.Broadcast(Event{Type: "data_changed", Data: i})
+		hub.Broadcast(server.Event{Type: "data_changed", Data: i})
 	}
 
 	// Drain buffered events; channel should close
@@ -98,10 +99,10 @@ func TestEventHub_SlowConsumerEvicted(t *testing.T) {
 }
 
 func TestEventHub_SyncStatusCachedForNewSubscribers(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	hub.Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": true}})
+	hub.Broadcast(server.Event{Type: "sync_status", Data: map[string]bool{"running": true}})
 
 	ch, _ := hub.Subscribe(t.Context(), true)
 
@@ -114,10 +115,10 @@ func TestEventHub_SyncStatusCachedForNewSubscribers(t *testing.T) {
 }
 
 func TestEventHub_DataChangedNotCached(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	hub.Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
 
 	ch, _ := hub.Subscribe(t.Context(), true)
 
@@ -130,7 +131,7 @@ func TestEventHub_DataChangedNotCached(t *testing.T) {
 }
 
 func TestEventHub_NoCacheBeforeAnyBroadcast(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	ch, _ := hub.Subscribe(t.Context(), true)
@@ -144,11 +145,11 @@ func TestEventHub_NoCacheBeforeAnyBroadcast(t *testing.T) {
 }
 
 func TestEventHub_CacheUpdatedOnLatestSyncStatus(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	hub.Broadcast(Event{Type: "sync_status", Data: "t1"})
-	hub.Broadcast(Event{Type: "sync_status", Data: "t2"})
+	hub.Broadcast(server.Event{Type: "sync_status", Data: "t1"})
+	hub.Broadcast(server.Event{Type: "sync_status", Data: "t2"})
 
 	ch, _ := hub.Subscribe(t.Context(), true)
 
@@ -159,14 +160,14 @@ func TestEventHub_CacheUpdatedOnLatestSyncStatus(t *testing.T) {
 func TestEventHub_CachedStatusesPreserveIDOrder(t *testing.T) {
 	assert := assert.New(t)
 
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	configID := hub.Broadcast(Event{
+	configID := hub.Broadcast(server.Event{
 		Type: "config.changed",
 		Data: map[string]any{"valid": true},
 	})
-	syncID := hub.Broadcast(Event{Type: "sync_status", Data: "running"})
+	syncID := hub.Broadcast(server.Event{Type: "sync_status", Data: "running"})
 
 	ch, _ := hub.Subscribe(t.Context(), true)
 
@@ -179,14 +180,14 @@ func TestEventHub_CachedStatusesPreserveIDOrder(t *testing.T) {
 }
 
 func TestEventHub_CachesHubConnectionWithOtherStatusesInIDOrder(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	connectionID := hub.Broadcast(Event{
+	connectionID := hub.Broadcast(server.Event{
 		Type: "hub_connection_changed", Data: map[string]bool{"connected": false},
 	})
-	configID := hub.Broadcast(Event{Type: "config.changed", Data: map[string]bool{"valid": true}})
-	syncID := hub.Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": false}})
+	configID := hub.Broadcast(server.Event{Type: "config.changed", Data: map[string]bool{"valid": true}})
+	syncID := hub.Broadcast(server.Event{Type: "sync_status", Data: map[string]bool{"running": false}})
 
 	ch, _ := hub.Subscribe(t.Context(), true)
 	first, second, third := <-ch, <-ch, <-ch
@@ -200,13 +201,13 @@ func TestEventHub_CachesHubConnectionWithOtherStatusesInIDOrder(t *testing.T) {
 func TestEventHub_SubscribeOrderingWithBroadcast(t *testing.T) {
 	assert := assert.New(t)
 
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	hub.Broadcast(Event{Type: "sync_status", Data: "cached"})
+	hub.Broadcast(server.Event{Type: "sync_status", Data: "cached"})
 
 	ch, _ := hub.Subscribe(t.Context(), true)
-	hub.Broadcast(Event{Type: "data_changed", Data: "live"})
+	hub.Broadcast(server.Event{Type: "data_changed", Data: "live"})
 
 	ev1 := <-ch
 	assert.Equal("sync_status", ev1.Event.Type)
@@ -218,7 +219,7 @@ func TestEventHub_SubscribeOrderingWithBroadcast(t *testing.T) {
 }
 
 func TestEventHub_CloseUnsubscribesAll(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 
 	ch1, done := hub.Subscribe(t.Context(), true)
 	ch2, _ := hub.Subscribe(t.Context(), true)
@@ -240,10 +241,10 @@ func TestEventHub_CloseUnsubscribesAll(t *testing.T) {
 }
 
 func TestEventHub_ConfigChangedCachedForNewSubscribers(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	hub.Broadcast(Event{
+	hub.Broadcast(server.Event{
 		Type: "config.changed",
 		Data: map[string]any{"valid": true},
 	})
@@ -261,14 +262,14 @@ func TestEventHub_ConfigChangedCachedForNewSubscribers(t *testing.T) {
 func TestEventHub_LatestConfigStatusReplayedToLateSubscriber(t *testing.T) {
 	assert := assert.New(t)
 
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	hub.Broadcast(Event{
+	hub.Broadcast(server.Event{
 		Type: "config.changed",
 		Data: map[string]any{"valid": false, "error": "first"},
 	})
-	hub.Broadcast(Event{
+	hub.Broadcast(server.Event{
 		Type: "config.changed",
 		Data: map[string]any{"valid": true},
 	})
@@ -283,7 +284,7 @@ func TestEventHub_LatestConfigStatusReplayedToLateSubscriber(t *testing.T) {
 }
 
 func TestEventHub_BroadcastAfterSlowConsumerEviction(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	// Subscribe slow consumer — never read
@@ -291,38 +292,38 @@ func TestEventHub_BroadcastAfterSlowConsumerEviction(t *testing.T) {
 
 	// Fill + overflow to evict
 	for i := range 17 {
-		hub.Broadcast(Event{Type: "data_changed", Data: i})
+		hub.Broadcast(server.Event{Type: "data_changed", Data: i})
 	}
 
 	// New broadcast should not panic (evicted subscriber gone)
-	hub.Broadcast(Event{Type: "data_changed", Data: "after-eviction"})
+	hub.Broadcast(server.Event{Type: "data_changed", Data: "after-eviction"})
 }
 
 func TestEventHub_BroadcastAssignsMonotonicIDs(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	assert := assert.New(t)
 	for i := uint64(1); i <= 5; i++ {
-		got := hub.Broadcast(Event{Type: "data_changed", Data: i})
+		got := hub.Broadcast(server.Event{Type: "data_changed", Data: i})
 		assert.Equal(i, got, "id %d should match broadcast order", i)
 	}
 }
 
 func TestEventHub_BroadcastIDStartsAtOne(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
-	assert.Equal(t, uint64(1), hub.Broadcast(Event{Type: "data_changed", Data: nil}))
+	assert.Equal(t, uint64(1), hub.Broadcast(server.Event{Type: "data_changed", Data: nil}))
 }
 
 func TestEventHubBroadcastBuildUsesAssignedIDInPayload(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	id := hub.BroadcastBuild(func(id uint64) Event {
-		return Event{Type: "kata.tasks.invalidated", Data: map[string]uint64{"cursor": id}}
+	id := hub.BroadcastBuild(func(id uint64) server.Event {
+		return server.Event{Type: "kata.tasks.invalidated", Data: map[string]uint64{"cursor": id}}
 	})
 
 	replay, stale := hub.RingSnapshotSince(0)
@@ -333,7 +334,7 @@ func TestEventHubBroadcastBuildUsesAssignedIDInPayload(t *testing.T) {
 }
 
 func TestEventHubAcceptsSyntheticStaleIDAsCurrentHead(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	_, staleID, stale := hub.ReplaySnapshotSince(99)
@@ -346,11 +347,11 @@ func TestEventHubAcceptsSyntheticStaleIDAsCurrentHead(t *testing.T) {
 
 func TestEventHub_RingSnapshotSince_ReplaysNewer(t *testing.T) {
 	assert := assert.New(t)
-	hub := NewEventHubWithCapacity(8)
+	hub := server.NewEventHubWithCapacity(8)
 	defer hub.Close()
 
 	for i := 1; i <= 5; i++ {
-		hub.Broadcast(Event{Type: "data_changed", Data: i})
+		hub.Broadcast(server.Event{Type: "data_changed", Data: i})
 	}
 
 	replay, stale := hub.RingSnapshotSince(2)
@@ -362,11 +363,11 @@ func TestEventHub_RingSnapshotSince_ReplaysNewer(t *testing.T) {
 }
 
 func TestEventHub_RingSnapshotSince_StaleCursor(t *testing.T) {
-	hub := NewEventHubWithCapacity(4)
+	hub := server.NewEventHubWithCapacity(4)
 	defer hub.Close()
 
 	for i := 1; i <= 10; i++ {
-		hub.Broadcast(Event{Type: "data_changed", Data: i})
+		hub.Broadcast(server.Event{Type: "data_changed", Data: i})
 	}
 
 	// Oldest in the ring is id 7 (10-4+1). Cursor 2 is stale.
@@ -377,11 +378,11 @@ func TestEventHub_RingSnapshotSince_StaleCursor(t *testing.T) {
 
 func TestEventHub_RingSnapshotSince_AtOrAheadHead(t *testing.T) {
 	assert := assert.New(t)
-	hub := NewEventHubWithCapacity(8)
+	hub := server.NewEventHubWithCapacity(8)
 	defer hub.Close()
 
 	for i := 1; i <= 3; i++ {
-		hub.Broadcast(Event{Type: "data_changed", Data: i})
+		hub.Broadcast(server.Event{Type: "data_changed", Data: i})
 	}
 
 	replay, stale := hub.RingSnapshotSince(3)
@@ -395,7 +396,7 @@ func TestEventHub_RingSnapshotSince_AtOrAheadHead(t *testing.T) {
 
 func TestEventHub_RingSnapshotSince_EmptyRing(t *testing.T) {
 	assert := assert.New(t)
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	replay, stale := hub.RingSnapshotSince(0)
@@ -412,11 +413,11 @@ func TestEventHub_RingSnapshotSince_AdjacentCursorIsLive(t *testing.T) {
 	require := require.New(t)
 	// Cursor exactly one less than oldest is "the next event we missed
 	// is the oldest one in the ring" — not stale.
-	hub := NewEventHubWithCapacity(4)
+	hub := server.NewEventHubWithCapacity(4)
 	defer hub.Close()
 
 	for i := 1; i <= 10; i++ {
-		hub.Broadcast(Event{Type: "data_changed", Data: i})
+		hub.Broadcast(server.Event{Type: "data_changed", Data: i})
 	}
 
 	// oldest = 7; cursor = 6 means client saw event 6 and missed 7,8,9,10.
@@ -429,11 +430,11 @@ func TestEventHub_RingSnapshotSince_AdjacentCursorIsLive(t *testing.T) {
 
 func TestEventHub_AssignSyntheticIDIncrementsWithoutRecord(t *testing.T) {
 	assert := assert.New(t)
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	hub.Broadcast(Event{Type: "data_changed", Data: 1})
-	hub.Broadcast(Event{Type: "data_changed", Data: 2})
+	hub.Broadcast(server.Event{Type: "data_changed", Data: 1})
+	hub.Broadcast(server.Event{Type: "data_changed", Data: 2})
 
 	syn := hub.AssignSyntheticID()
 	assert.Equal(uint64(3), syn)
@@ -446,13 +447,13 @@ func TestEventHub_AssignSyntheticIDIncrementsWithoutRecord(t *testing.T) {
 	assert.Equal(uint64(2), replay[1].ID)
 
 	// Next real broadcast continues from after the synthetic id.
-	next := hub.Broadcast(Event{Type: "data_changed", Data: 3})
+	next := hub.Broadcast(server.Event{Type: "data_changed", Data: 3})
 	assert.Equal(uint64(4), next)
 }
 
 func TestEventHub_ReplaySnapshotSinceAssignsStaleIDBeforeFutureBroadcast(t *testing.T) {
 	assert := assert.New(t)
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
 	replay, staleID, stale := hub.ReplaySnapshotSince(99)
@@ -460,18 +461,18 @@ func TestEventHub_ReplaySnapshotSinceAssignsStaleIDBeforeFutureBroadcast(t *test
 	assert.Empty(replay)
 	assert.Equal(uint64(1), staleID)
 
-	next := hub.Broadcast(Event{Type: "data_changed", Data: "after-stale"})
+	next := hub.Broadcast(server.Event{Type: "data_changed", Data: "after-stale"})
 	assert.Equal(uint64(2), next)
 }
 
 func TestEventHub_CapacityRetainsLatest(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	hub := NewEventHubWithCapacity(3)
+	hub := server.NewEventHubWithCapacity(3)
 	defer hub.Close()
 
 	for i := 1; i <= 7; i++ {
-		hub.Broadcast(Event{Type: "data_changed", Data: i})
+		hub.Broadcast(server.Event{Type: "data_changed", Data: i})
 	}
 
 	replay, stale := hub.RingSnapshotSince(4)
@@ -484,15 +485,15 @@ func TestEventHub_CapacityRetainsLatest(t *testing.T) {
 
 func TestNewEventHubWithCapacity_RejectsZero(t *testing.T) {
 	assert.Panics(t, func() {
-		_ = NewEventHubWithCapacity(0)
+		_ = server.NewEventHubWithCapacity(0)
 	})
 }
 
 func TestEventHub_CachedSyncStatusPreservesID(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	wantID := hub.Broadcast(Event{Type: "sync_status", Data: "v1"})
+	wantID := hub.Broadcast(server.Event{Type: "sync_status", Data: "v1"})
 
 	ch, _ := hub.Subscribe(t.Context(), true)
 	select {
@@ -505,10 +506,10 @@ func TestEventHub_CachedSyncStatusPreservesID(t *testing.T) {
 }
 
 func TestEventHub_SubscribeWithoutCachedSkipsInjection(t *testing.T) {
-	hub := NewEventHub()
+	hub := server.NewEventHub()
 	defer hub.Close()
 
-	hub.Broadcast(Event{Type: "sync_status", Data: "v1"})
+	hub.Broadcast(server.Event{Type: "sync_status", Data: "v1"})
 
 	ch, _ := hub.Subscribe(t.Context(), false)
 	select {

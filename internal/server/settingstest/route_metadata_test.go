@@ -1,4 +1,4 @@
-package server
+package settingstest
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server"
 )
 
 var allowedAPITags = map[string]struct{}{
@@ -124,7 +125,7 @@ func usesKnownSingleTag(tags []string) bool {
 // unique metadata from the API taxonomy.
 func TestHumaContractMetadata(t *testing.T) {
 	require := require.New(t)
-	openAPI := NewOpenAPI()
+	openAPI := server.NewOpenAPI()
 	require.NotNil(openAPI)
 	require.NotEmpty(openAPI.Paths, "OpenAPI document should expose paths")
 

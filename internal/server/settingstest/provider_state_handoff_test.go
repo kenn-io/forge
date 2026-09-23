@@ -1,4 +1,4 @@
-package server
+package settingstest
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -35,9 +36,9 @@ func providerHandoffServerFixture(
 	require.NoError(t, err)
 	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
 	require.NoError(t, err)
-	srv := New(database, nil, nil, "/", nil, ServerOptions{
+	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{
 		FederationCredentials: credentials,
-		DaemonAccess: DaemonAccessOptions{
+		DaemonAccess: server.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 		},
 	})

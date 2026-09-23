@@ -1,4 +1,4 @@
-package server
+package accesstest
 
 import (
 	"context"
@@ -17,12 +17,20 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
+type healthResponse struct {
+	Status   string `json:"status"`
+	Version  string `json:"version"`
+	Revision string `json:"revision"`
+	Modified bool   `json:"modified"`
+}
+
 func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
-	switcher := NewSwitchHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	switcher := server.NewSwitchHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 
@@ -55,12 +63,12 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 		Port:     8091,
 		BasePath: "/",
 	}
-	handler := NewStartupHandler(
+	handler := server.NewStartupHandler(
 		frontend,
 		cfg,
-		ServerOptions{},
+		server.ServerOptions{},
 		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
-		BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
+		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
 	rootReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
@@ -119,12 +127,12 @@ func TestStartupHandlerUsesHostValidation(t *testing.T) {
 		Port:     8091,
 		BasePath: "/",
 	}
-	handler := NewStartupHandler(
+	handler := server.NewStartupHandler(
 		frontend,
 		cfg,
-		ServerOptions{},
+		server.ServerOptions{},
 		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
-		BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
+		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
@@ -146,12 +154,12 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 		Port:     8091,
 		BasePath: "/kenn-forge/",
 	}
-	handler := NewStartupHandler(
+	handler := server.NewStartupHandler(
 		frontend,
 		cfg,
-		ServerOptions{},
+		server.ServerOptions{},
 		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
-		BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
+		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/", nil)
@@ -214,12 +222,12 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 		},
 	}
 
-	switcher := NewSwitchHandler(NewStartupHandler(
+	switcher := server.NewSwitchHandler(server.NewStartupHandler(
 		frontend,
 		cfg,
-		ServerOptions{},
+		server.ServerOptions{},
 		ln,
-		BuildInfo{},
+		server.BuildInfo{},
 	))
 	httpSrv := &http.Server{Handler: switcher}
 	errCh := make(chan error, 1)
@@ -229,7 +237,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 		}
 	}()
 
-	var fullServer *Server
+	var fullServer *server.Server
 	t.Cleanup(func() {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
@@ -269,9 +277,9 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 		database, nil, nil, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
-	fullServer = New(
+	fullServer = server.New(
 		database, syncer, frontend, "/", cfg,
-		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
+		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
 	fullServer.AttachHTTPServer(httpSrv, ln)
 	switcher.Swap(fullServer)

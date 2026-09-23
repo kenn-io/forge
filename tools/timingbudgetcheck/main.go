@@ -28,7 +28,7 @@ var allowedBudgets = map[budgetKey]budgetAllowance{
 		reason: "Real syncer over an openTestDB SQLite fixture. The test holds syncer.statusMu across terminal publication, and mutex waits are not durably blocking in a synctest bubble.",
 	},
 	{
-		path:      "internal/server/api_test.go",
+		path:      "internal/server/pulltest/api_test.go",
 		function:  "TestAPIEnqueuePRSyncQueuesOneRerun",
 		assertion: "github.com/stretchr/testify/assert.Never",
 		budget:    100 * time.Millisecond,

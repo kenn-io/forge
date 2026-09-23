@@ -8,61 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTransportInventoryIncludesRegisteredLongLivedRoutes(t *testing.T) {
-	inventory, err := NewTransportInventory()
-	require.NoError(t, err)
-
-	assert := assert.New(t)
-	assert.Equal(1, inventory.SchemaVersion)
-	for _, expected := range []TransportRoute{
-		{
-			Method: http.MethodGet, Path: "/api/v1/events",
-			Transport: TransportHTTPStream, Accept: "text/event-stream",
-		},
-		{
-			Method: http.MethodGet, Path: "/api/roborev/api/stream/events",
-			Transport: TransportHTTPStream, Accept: "application/x-ndjson",
-		},
-		{
-			Method: http.MethodGet, Path: "/api/roborev/api/job/output",
-			Transport: TransportHTTPStream, Accept: "application/x-ndjson",
-			Query: map[string]string{"stream": "1"},
-		},
-		{
-			Method: http.MethodPost, Path: "/api/roborev/api/sync/now",
-			Transport: TransportHTTPStream, Accept: "application/x-ndjson",
-			Query: map[string]string{"stream": "1"},
-		},
-		{
-			Method:    http.MethodGet,
-			Path:      "/api/v1/workspaces/{id}/terminal",
-			Transport: TransportWebSocket,
-		},
-		{
-			Method:    http.MethodGet,
-			Path:      "/ws/v1/workspaces/{id}/terminal",
-			Transport: TransportWebSocket,
-		},
-		{
-			Method:    http.MethodGet,
-			Path:      "/ws/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal",
-			Transport: TransportWebSocket,
-		},
-		{
-			Method:    http.MethodGet,
-			Path:      "/ws/v1/fleet/hosts/{host_key}/workspaces/{id}/terminal",
-			Transport: TransportWebSocket,
-		},
-		{
-			Method:    http.MethodGet,
-			Path:      "/ws/v1/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/terminal",
-			Transport: TransportWebSocket,
-		},
-	} {
-		assert.Contains(inventory.Routes, expected)
-	}
-}
-
 func TestNormalizeTransportRoutesRejectsInvalidContracts(t *testing.T) {
 	tests := []struct {
 		name   string

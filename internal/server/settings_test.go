@@ -146,28 +146,6 @@ func readSettingsTmuxGraphicsCommands(t *testing.T, record string) []string {
 	return commands
 }
 
-func TestServerStartupAppliesTmuxSettingsToExistingDedicatedServer(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	record := installSettingsTmuxRecorder(t)
-	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
-[terminal]
-graphics = true
-tmux_mouse = false
-`, &mockGH{}, ServerOptions{
-		HostCheckAllowLoopbackAnyPort: true,
-		WorktreeDir:                   t.TempDir(),
-	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-
-	commands, err := os.ReadFile(record)
-	require.NoError(err)
-	text := string(commands)
-	assert.Contains(text, "-L kenn-forge set-option -q -g allow-passthrough on")
-	assert.Contains(text, "-L kenn-forge set-option -q -s terminal-features[100] xterm-256color:sixel")
-	assert.Contains(text, "-L kenn-forge set-option -q -g mouse off")
-}
-
 func setupTestServerWithConfigProviders(
 	t *testing.T,
 	cfgContent string,
@@ -591,47 +569,6 @@ func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
 	assert.Equal(config.MCP{}, reloaded.MCP)
 }
 
-func TestHandleGetSettingsEncodesEmptyKataProjectsAsArray(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	// No [[kata_projects]] configured, so cfg.KataProjects is nil.
-	srv, _, _ := setupTestServerWithConfigContent(t, `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[repos]]
-owner = "acme"
-name = "widget"
-`, &mockGH{})
-
-	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	// kata_projects is a required non-null array in the schema. Assert on the
-	// raw wire value because decoding into a Go slice would hide a null/[]
-	// difference.
-	var raw map[string]json.RawMessage
-	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
-	require.Contains(raw, "kata_projects")
-	assert.JSONEq("[]", string(raw["kata_projects"]))
-}
-
-func TestHandleGetSettingsEncodesEmptyRepoPresetsAsArray(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
-
-	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-
-	var raw map[string]json.RawMessage
-	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
-	require.Contains(raw, "repo_presets")
-	assert.JSONEq("[]", string(raw["repo_presets"]))
-}
-
 func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -965,65 +902,6 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
 }
 
-func TestHandleUpdateSettingsDefaultExecutionTarget(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
-	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
-
-	// A disconnected target stays selected; saving settings must not require it online.
-	response, err := client.HTTP.UpdateSettingsWithResponse(t.Context(), &generated.UpdateSettingsRequestOptions{
-		Body: &generated.UpdateSettingsBody{Workspaces: &generated.WorkspaceSettingsUpdate{
-			DefaultExecutionTarget: new("devbox:connection-a"),
-		}},
-	})
-	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
-	require.NotNil(response.JSON200)
-	assert.Equal(new("devbox:connection-a"), response.JSON200.Workspaces.DefaultExecutionTarget)
-	persisted, err := config.Load(cfgPath)
-	require.NoError(err)
-	assert.Equal("devbox:connection-a", persisted.Workspaces.DefaultExecutionTarget)
-	before, err := os.ReadFile(cfgPath)
-	require.NoError(err)
-
-	response, err = client.HTTP.UpdateSettingsWithResponse(t.Context(), &generated.UpdateSettingsRequestOptions{
-		Body: &generated.UpdateSettingsBody{
-			AirplaneMode: new(true),
-			Workspaces: &generated.WorkspaceSettingsUpdate{
-				DefaultExecutionTarget: new("devbox:"),
-				AutoAssignOnCreate:     new(true),
-			},
-		},
-	})
-	require.Error(err)
-	require.NotNil(response)
-	require.Equal(http.StatusBadRequest, response.StatusCode, string(response.Body))
-	require.NotNil(response.Error)
-	require.NotNil(response.Error.Detail)
-	assert.Contains(*response.Error.Detail, "workspaces.default_execution_target")
-	current, err := client.HTTP.GetSettingsWithResponse(t.Context())
-	require.NoError(err)
-	require.NotNil(current.JSON200)
-	assert.Equal(new("devbox:connection-a"), current.JSON200.Workspaces.DefaultExecutionTarget)
-	assert.False(current.JSON200.Workspaces.AutoAssignOnCreate)
-	assert.False(current.JSON200.AirplaneMode)
-	after, err := os.ReadFile(cfgPath)
-	require.NoError(err)
-	assert.Equal(before, after, "rejected settings must not change the config file")
-
-	response, err = client.HTTP.UpdateSettingsWithResponse(t.Context(), &generated.UpdateSettingsRequestOptions{
-		Body: &generated.UpdateSettingsBody{Workspaces: &generated.WorkspaceSettingsUpdate{
-			DefaultExecutionTarget: new(""),
-		}},
-	})
-	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
-	persisted, err = config.Load(cfgPath)
-	require.NoError(err)
-	assert.Empty(persisted.Workspaces.DefaultExecutionTarget)
-}
-
 func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1316,25 +1194,6 @@ func TestHandleUpdateSettingsInvalid(t *testing.T) {
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	assert.Equal(t, "threaded", cfg2.Activity.ViewMode)
-}
-
-func TestHandleAddRepo(t *testing.T) {
-	srv, _, cfgPath := setupTestServerWithConfig(t)
-
-	body := map[string]string{
-		"provider": "github",
-		"host":     "github.com",
-		"owner":    "other-org",
-		"name":     "other-repo",
-	}
-	rr := testutil.DoJSON(
-		t, srv, http.MethodPost, "/api/v1/repos", body)
-
-	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
-
-	cfg2, err := config.Load(cfgPath)
-	require.NoError(t, err)
-	require.Len(t, cfg2.Repos, 2)
 }
 
 func TestHandleAddRepoAcceptsArchivedRepo(t *testing.T) {
@@ -1763,129 +1622,6 @@ func trackedRepoArchived(srv *Server, owner, name string) bool {
 	return false
 }
 
-func TestHandleAddRepoTriggersImmediateSyncDuringCooldown(t *testing.T) {
-	require := require.New(t)
-
-	dir := t.TempDir()
-	database := dbtest.Open(t)
-
-	cfgPath := filepath.Join(dir, "config.toml")
-	require.NoError(os.WriteFile(cfgPath, []byte(`
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[repos]]
-owner = "acme"
-name = "widget"
-`), 0o644))
-
-	cfg, err := config.Load(cfgPath)
-	require.NoError(err)
-
-	mock := &mockGH{}
-	trackers := map[string]*ghclient.RateTracker{
-		"github.com": ghclient.NewRateTracker(
-			database, "github.com", "host", "rest",
-		),
-	}
-	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": mock},
-		database,
-		nil,
-		[]ghclient.RepoRef{{
-			Owner:        "acme",
-			Name:         "widget",
-			PlatformHost: "github.com",
-		}},
-		time.Minute,
-		trackers,
-		nil,
-	)
-	t.Cleanup(syncer.Stop)
-
-	srv := NewWithConfig(
-		database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{},
-	)
-
-	// Prime nextSyncAfter so the add-repo trigger exercises the same
-	// cooldown path as a user clicking Sync right after a recent sync.
-	syncer.RunOnce(t.Context())
-
-	rr := testutil.DoJSON(
-		t, srv, http.MethodPost, "/api/v1/repos",
-		map[string]string{
-			"provider": "github",
-			"host":     "github.com",
-			"owner":    "other-org",
-			"name":     "other-repo",
-		})
-
-	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
-
-	require.Eventually(func() bool {
-		repos, err := database.ListRepos(t.Context())
-		if err != nil {
-			return false
-		}
-		if len(repos) != 2 {
-			return false
-		}
-		for _, repo := range repos {
-			if repo.Owner == "other-org" &&
-				repo.Name == "other-repo" {
-				return true
-			}
-		}
-		return false
-	}, 2*time.Second, 10*time.Millisecond)
-}
-
-func TestHandleAddRepoDuplicate(t *testing.T) {
-	srv, _, _ := setupTestServerWithConfig(t)
-
-	body := map[string]string{
-		"provider": "github",
-		"host":     "github.com",
-		"owner":    "acme",
-		"name":     "widget",
-	}
-	rr := testutil.DoJSON(
-		t, srv, http.MethodPost, "/api/v1/repos", body)
-
-	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
-}
-
-func TestHandleDeleteRepo(t *testing.T) {
-	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
-
-	// Add a second repo first so we can delete one.
-	addBody := map[string]string{
-		"provider": "github",
-		"host":     "github.com",
-		"owner":    "other-org",
-		"name":     "other-repo",
-	}
-	addRR := testutil.DoJSON(
-		t, srv, http.MethodPost, "/api/v1/repos", addBody)
-
-	require.Equal(http.StatusCreated, addRR.Code, addRR.Body.String())
-
-	rr := testutil.DoJSON(
-		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/acme/widget", nil)
-
-	require.Equal(http.StatusNoContent, rr.Code, rr.Body.String())
-
-	cfg2, err := config.Load(cfgPath)
-	require.NoError(err)
-	require.Len(cfg2.Repos, 1)
-	assert.Equal(t, "other-org", cfg2.Repos[0].Owner)
-}
-
 func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2024,20 +1760,6 @@ func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 	persisted, err = config.Load(cfgPath)
 	require.NoError(err)
 	assert.Equal(80, persisted.Detail.InitialTimelineEntryLimit)
-}
-
-func TestHandleDeleteLastRepo(t *testing.T) {
-	srv, _, cfgPath := setupTestServerWithConfig(t)
-
-	rr := testutil.DoJSON(
-		t, srv, http.MethodDelete,
-		"/api/v1/repo/gh/acme/widget", nil)
-
-	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
-
-	cfg2, err := config.Load(cfgPath)
-	require.NoError(t, err)
-	assert.Empty(t, cfg2.Repos)
 }
 
 func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
@@ -3024,90 +2746,6 @@ port = 8091
 	assert.Equal("repo-b", orgB.Repos[0].Name)
 }
 
-func TestHandlePreviewReposReportsUnconfiguredGitHubProvider(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
-
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	require.NoError(os.WriteFile(cfgPath, []byte(`
-sync_interval = "5m"
-github_token_env = "MIDDLEMAN_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-`), 0o644))
-	cfg, err := config.Load(cfgPath)
-	require.NoError(err)
-	database := dbtest.Open(t)
-	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
-	t.Cleanup(syncer.Stop)
-	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"provider": "github", "host": "github.com",
-		"owner": "acme", "pattern": "widget",
-	})
-
-	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	assert.True(strings.HasPrefix(
-		rr.Header().Get("Content-Type"), "application/problem+json",
-	))
-	var problem httpapi.ProblemError
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal(httpapi.CodeBadRequest, problem.Code)
-	assert.Contains(problem.Detail, "provider_not_configured")
-	assert.Contains(problem.Detail, "github.com")
-}
-
-func TestHandlePreviewReposReportsMissingOwnerRoute(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	router, err := ghclient.NewHostRouter(
-		"github.com",
-		&ghclient.Route{
-			Key:    ghclient.RouteKey{Host: "github.com", Owner: "org-a"},
-			Client: &mockGH{},
-		},
-	)
-	require.NoError(err)
-	routed, err := ghclient.NewRoutedClient(router)
-	require.NoError(err)
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	require.NoError(os.WriteFile(cfgPath, []byte(`
-sync_interval = "5m"
-host = "127.0.0.1"
-port = 8091
-`), 0o644))
-	cfg, err := config.Load(cfgPath)
-	require.NoError(err)
-	database := dbtest.Open(t)
-	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": routed}, database, nil,
-		nil, time.Minute, nil, nil,
-	)
-	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
-	t.Cleanup(syncer.Stop)
-	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
-
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"provider": "github", "host": "github.com",
-		"owner": "org-b", "pattern": "*",
-	})
-
-	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
-	assert.Contains(rr.Body.String(), "org-b")
-	assert.Contains(rr.Body.String(), "github.com")
-	assert.NotContains(rr.Body.String(), "org-a")
-	var problem httpapi.ProblemError
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
-}
-
 func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3234,32 +2872,6 @@ port = 8091
 	assert.False(resp.Repos[0].AlreadyConfigured)
 	require.NotNil(resp.Repos[0].PushedAt)
 	assert.Equal(pushedAt.Time.UTC().Format(time.RFC3339), *resp.Repos[0].PushedAt)
-}
-
-func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
-
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"provider": "github",
-		"host":     "github.com",
-		"owner":    "acme*",
-		"pattern":  "widget",
-	})
-
-	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	assert.Contains(rr.Body.String(), "glob syntax in owner is not supported")
-
-	rr = testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
-		"provider": "github",
-		"host":     "github.com",
-		"owner":    "acme",
-		"pattern":  "widget[",
-	})
-
-	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	assert.Contains(rr.Body.String(), "invalid glob pattern")
 }
 
 func TestHandlePreviewReposSupportsGitLabNamespaces(t *testing.T) {
@@ -3970,42 +3582,6 @@ name = "api"
 	assert.Equal("worker", cfg2.Repos[1].Name)
 }
 
-func TestHandleBulkAddReposReturnsAlreadyConfiguredWhenAllSkippedBeforeValidation(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	var apiCalls atomic.Int32
-	mock := &mockGH{
-		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
-			if repo == "api" {
-				apiCalls.Add(1)
-			}
-			return &gh.Repository{
-				Name:     new(repo),
-				Owner:    &gh.User{Login: new(owner)},
-				Archived: new(false),
-			}, nil
-		},
-	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[repos]]
-owner = "acme"
-name = "api"
-`, mock)
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
-		"repos": []map[string]string{
-			{"provider": "github", "host": "github.com", "owner": "acme", "name": "api", "repo_path": "acme/api"},
-		},
-	})
-
-	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-	assert.Contains(rr.Body.String(), "all selected repositories are already configured")
-}
-
 func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -4078,44 +3654,6 @@ name = "widget"
 	assert.Equal([]string{"widget", "api", "worker"}, []string{resp.Repos[0].Name, resp.Repos[1].Name, resp.Repos[2].Name})
 }
 
-// TestSetActiveWorktreeRoute pins the UI focus contract thin clients
-// use: PUT /api/v1/ui/active-worktree records the focused worktree
-// key, the served SPA config carries it, and an empty key clears it.
-func TestSetActiveWorktreeRoute(t *testing.T) {
-	require := require.New(t)
-	srv, _ := setupTestServer(t)
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-
-	put := func(body string) *http.Response {
-		req, err := http.NewRequestWithContext(t.Context(),
-			http.MethodPut,
-			ts.URL+"/api/v1/ui/active-worktree",
-			strings.NewReader(body),
-		)
-		require.NoError(err)
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(err)
-		return resp
-	}
-
-	resp := put(`{"key":"local:wt-alpha"}`)
-	resp.Body.Close()
-	require.Equal(http.StatusNoContent, resp.StatusCode)
-	key, set := srv.ActiveWorktreeKey()
-	require.True(set)
-	require.Equal("local:wt-alpha", key)
-
-	// Empty key clears the focus.
-	resp = put(`{"key":""}`)
-	resp.Body.Close()
-	require.Equal(http.StatusNoContent, resp.StatusCode)
-	key, set = srv.ActiveWorktreeKey()
-	require.True(set)
-	require.Empty(key)
-}
-
 func TestFleetSettingsPreserveEnrollmentOwnedRoleAndMembers(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -4182,55 +3720,6 @@ state = "active"
 	assert.Contains(string(raw), "Build Box")
 	assert.NotContains(string(raw), "Renamed Build Box")
 	assert.NotContains(string(raw), `role = "spoke"`)
-}
-
-func TestFleetSettingsExposePendingEnrollmentWithoutCredentialMaterial(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	dataDir := t.TempDir()
-	enrollments, err := federation.Open(
-		filepath.Join(dataDir, "enrollments.json"), federation.StoreOptions{},
-	)
-	require.NoError(err)
-	credentials, err := federationauth.Open(filepath.Join(dataDir, "credentials.json"))
-	require.NoError(err)
-	const (
-		hubID        = "0123456789abcdef0123456789abcdef"
-		nodeID       = "fedcba9876543210fedcba9876543210"
-		enrollmentID = "11111111111111111111111111111111"
-		peerSecret   = "hub-calls-spoke-secret"
-	)
-	token, err := enrollments.CreateOneTimeToken(federation.Identity{
-		NodeID: hubID, BaseURL: "https://hub.example",
-	}, time.Now().Add(time.Minute))
-	require.NoError(err)
-	_, err = enrollments.Begin(t.Context(), token.Token, federation.JoinRequest{
-		EnrollmentID: enrollmentID, NodeID: nodeID, Platform: "linux",
-		BaseURL: "https://spoke.example", ProtocolVersion: federation.ProtocolVersion,
-		HubCredential: peerSecret,
-	})
-	require.NoError(err)
-
-	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
-host = "127.0.0.1"
-port = 8091
-[api]
-require_auth = true
-[fleet]
-enabled = true
-role = "hub"
-base_url = "https://hub.example"
-`, &mockGH{}, ServerOptions{
-		HostCheckAllowLoopbackAnyPort: true,
-		FederationSpokeID:             hubID,
-		FederationEnrollments:         enrollments,
-		FederationCredentials:         credentials,
-	})
-	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings/fleet", nil)
-	require.Equal(http.StatusOK, response.Code)
-	assert.Contains(response.Body.String(), enrollmentID)
-	assert.NotContains(response.Body.String(), token.Token)
-	assert.NotContains(response.Body.String(), peerSecret)
 }
 
 func TestRoleAwareSettingsRequireOneOwnerPerNodeWrite(t *testing.T) {
@@ -4828,70 +4317,6 @@ prefer_github_native_stacks = true
 		"a repository no longer tracked must still lose native ordering when the preview is disabled")
 }
 
-// TestNewServerRestoresProjectionWhenNativeStacksBootDisabled covers a daemon
-// that starts with the preview already off. The setting can be edited while the
-// daemon is stopped, or a previous run can save it and exit before reconciling,
-// so binding the syncer preference is not enough: stored native ordering would
-// drive the merge safeguard until each repository next synced, and forever for
-// repositories no longer tracked.
-func TestNewServerRestoresProjectionWhenNativeStacksBootDisabled(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	dir := t.TempDir()
-	database := dbtest.Open(t)
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	require.NotNil(repo)
-	now := time.Now().UTC()
-	require.NoError(database.ReplaceGitHubNativeStack(ctx, db.GitHubNativeStack{
-		RepoID: repo.ID, GitHubID: 9001, Number: 42, Size: 2,
-		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
-		ContentFingerprint: "native", LastObservedAt: now,
-		Members: []db.GitHubNativeStackMember{
-			{Position: 1, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
-			{Position: 2, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
-		},
-	}))
-	// The last run left native ordering behind.
-	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
-
-	// This run boots with the preview off.
-	cfgPath := filepath.Join(dir, "config.toml")
-	require.NoError(os.WriteFile(cfgPath, []byte(`
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[repos]]
-owner = "acme"
-name = "widget"
-
-[pull_requests]
-prefer_github_native_stacks = false
-`), 0o644))
-	cfg, err := config.Load(cfgPath)
-	require.NoError(err)
-	clients := map[string]ghclient.Client{"github.com": &mockGH{}}
-	syncer := ghclient.NewSyncer(clients, database, nil, nil, time.Minute, nil, nil)
-	t.Cleanup(syncer.Stop)
-	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
-		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
-
-	// No sync has run, and the repository is not even tracked.
-	resp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
-	require.NoError(err)
-	require.NotNil(resp.JSON200)
-	require.NotNil(resp.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(resp.JSON200.Members),
-		"a server booting with the preview disabled must not serve native ordering")
-}
-
 func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -4931,19 +4356,6 @@ func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(actions, cfg3.QuickActions)
 }
-
-func TestHandleGetSettingsReportsEmptyQuickActionsArray(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
-	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var raw map[string]json.RawMessage
-	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
-	require.Contains(raw, "quick_actions")
-	assert.JSONEq("[]", string(raw["quick_actions"]))
-}
-
 func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

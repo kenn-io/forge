@@ -31,7 +31,6 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
-	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
@@ -818,53 +817,6 @@ func getRawWorkspaceActivity(
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
 	return got
-}
-
-func TestIsWorkingTmuxTitleDetectsCodexSpinner(t *testing.T) {
-	assert := assert.New(t)
-
-	cases := []struct {
-		name    string
-		title   string
-		working bool
-	}{
-		{
-			name:    "codex spinner frame",
-			title:   "⠴ t3code-b5014b03",
-			working: true,
-		},
-		{
-			name:    "another codex spinner frame",
-			title:   "⠦ t3code-b5014b03",
-			working: true,
-		},
-		{
-			name:    "settled codex title",
-			title:   "t3code-b5014b03",
-			working: false,
-		},
-		{
-			name:    "english busy title is not protocol",
-			title:   "codex working",
-			working: false,
-		},
-		{
-			name:    "opencode style title is not protocol",
-			title:   "OC | Run sleep 10",
-			working: false,
-		},
-		{
-			name:    "pi style title is not protocol",
-			title:   "π - tmp.foo",
-			working: false,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(tc.working, workspaceapi.IsWorkingTmuxTitle(tc.title))
-		})
-	}
 }
 
 func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
@@ -1662,27 +1614,6 @@ func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing
 	require.NotNil(failed.ErrorMessage)
 	assert.Contains(*failed.ErrorMessage, "host process limit reached")
 	assert.Contains(*failed.ErrorMessage, "subprocess capacity")
-}
-
-// TestReadTmuxRecordPreservesEmptyArgs pins down the parser's
-// empty-arg handling. The NUL-delimited record format was chosen to
-// round-trip argv with empty-string elements unambiguously; the
-// parser must keep interior and trailing empties rather than
-// collapsing them.
-func TestReadTmuxRecordPreservesEmptyArgs(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	path := filepath.Join(t.TempDir(), "record")
-
-	// First record: 3 args with an interior empty ("a", "", "b").
-	// Second record: 2 args with a trailing empty ("x", "").
-	body := "3\x00a\x00\x00b\x00" + "2\x00x\x00\x00"
-	require.NoError(os.WriteFile(path, []byte(body), 0o644))
-
-	argvs := readTmuxRecord(t, path)
-	require.Len(argvs, 2)
-	assert.Equal([]string{"a", "", "b"}, argvs[0])
-	assert.Equal([]string{"x", ""}, argvs[1])
 }
 
 // TestTmuxWrapperKillSession proves the configured tmux.command

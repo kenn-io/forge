@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -18,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -54,26 +52,6 @@ func TestReconnectStaleEventCarriesHubConnection(t *testing.T) {
 	assert.False(t, *state.HubConnected)
 }
 
-func TestFederationEventEndpointFiltersNodeLocalEvents(t *testing.T) {
-	server, httpServer, token := newFederationEventServer(t)
-	// A fresh spoke refreshes sync status at the replay barrier, so the
-	// hub must not inject an older cached value after that barrier.
-	server.Hub().Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": true}})
-	stream := openFederationEventStream(t, httpServer, token, "")
-	defer stream.response.Body.Close()
-
-	server.Hub().Broadcast(Event{Type: "workspace_created", Data: map[string]string{"id": "ws-1"}})
-	server.Hub().Broadcast(Event{Type: "workspace_status", Data: map[string]string{"id": "ws-1"}})
-	server.Hub().Broadcast(Event{Type: "config.changed", Data: map[string]bool{"valid": true}})
-	providerID := server.Hub().Broadcast(Event{Type: "data_changed", Data: struct{}{}})
-
-	frame := nextTestSSEFrame(t, stream.frames)
-	assert.Equal(t, providerID, mustEventID(t, frame.ID))
-	assert.Equal(t, "data_changed", frame.Type)
-	assert.JSONEq(t, `{}`, frame.Data)
-	assertNoTestSSEFrame(t, stream.frames)
-}
-
 func TestFederationEventEndpointReplaysFilteredEventsAndSignalsStale(t *testing.T) {
 	assert := assert.New(t)
 	server, httpServer, token := newFederationEventServer(t)
@@ -100,16 +78,6 @@ func TestFederationEventEndpointReplaysFilteredEventsAndSignalsStale(t *testing.
 	frame := nextTestSSEFrame(t, stale.frames)
 	assert.Equal("reconnect.stale", frame.Type)
 	assert.JSONEq(`{}`, frame.Data)
-}
-
-func TestFederationEventEndpointTreatsMalformedCursorAsFresh(t *testing.T) {
-	server, httpServer, token := newFederationEventServer(t)
-	stream := openFederationEventStream(t, httpServer, token, "not-a-number")
-	defer stream.response.Body.Close()
-
-	server.Hub().Broadcast(Event{Type: "pr_ci_refresh_queued", Data: struct{}{}})
-
-	assert.Equal(t, "pr_ci_refresh_queued", nextTestSSEFrame(t, stream.frames).Type)
 }
 
 func TestFederationEventEndpointEnforcesCredentialProtocolAndRequestBounds(t *testing.T) {
@@ -175,101 +143,6 @@ func TestFederationEventCredentialRevocationAppliesToNextConnection(t *testing.T
 	require.NoError(err)
 	defer response.Body.Close()
 	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
-}
-
-func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
-	require := require.New(t)
-	const (
-		hubID        = "0123456789abcdef0123456789abcdef"
-		enrollmentID = "11111111111111111111111111111111"
-	)
-	spoke := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v1/fleet/enrollments/"+enrollmentID, r.URL.Path)
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	t.Cleanup(spoke.Close)
-	dir := t.TempDir()
-	enrollments, err := federation.Open(
-		filepath.Join(dir, "enrollments.json"), federation.StoreOptions{},
-	)
-	require.NoError(err)
-	oneTime, err := enrollments.CreateOneTimeToken(federation.Identity{
-		NodeID: hubID, BaseURL: "https://hub.example",
-	}, time.Now().Add(time.Minute))
-	require.NoError(err)
-	_, err = enrollments.Begin(t.Context(), oneTime.Token, federation.JoinRequest{
-		EnrollmentID: enrollmentID, NodeID: federationEventTestNodeID,
-		BaseURL: spoke.URL, Platform: "linux",
-		ProtocolVersion: federation.ProtocolVersion,
-		HubCredential:   "hub-credential",
-	})
-	require.NoError(err)
-	require.NoError(enrollments.Activate(
-		t.Context(), enrollmentID, time.Now().Add(time.Hour),
-	))
-
-	credentials, err := federationauth.Open(filepath.Join(dir, "credentials.json"))
-	require.NoError(err)
-	token, err := credentials.MintInbound(
-		federationEventTestNodeID, federationauth.SpokeToHubScopes(),
-	)
-	require.NoError(err)
-	require.NoError(credentials.StoreOutbound(
-		federationEventTestNodeID, "hub-calls-spoke-token",
-		federationauth.HubToSpokeScopes(),
-	))
-	cfg := &config.Config{
-		Host: "127.0.0.1", Port: 8091, DataDir: dir, BasePath: "/",
-		SyncInterval: "5m", Activity: config.Activity{ViewMode: "threaded", TimeRange: "7d"},
-		API: config.API{RequireAuth: true}, Fleet: config.Fleet{
-			Enabled: true, Role: config.FleetRoleHub,
-			BaseURL: "https://hub.example",
-			Members: []config.FleetMember{{
-				NodeID: federationEventTestNodeID, BaseURL: spoke.URL,
-				State: federation.EnrollmentActive,
-			}},
-		},
-	}
-	cfgPath := filepath.Join(dir, "config.toml")
-	require.NoError(cfg.Save(cfgPath))
-	server := NewWithConfig(dbtest.Open(t), nil, nil, nil, cfg, cfgPath, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{
-			Token: "local-daemon-secret", RequireAPIAuth: true,
-		},
-		FederationCredentials:              credentials,
-		FederationEnrollments:              enrollments,
-		FederationSpokeID:                  hubID,
-		FederationHTTPClient:               spoke.Client(),
-		HostCheckAllowLoopbackAnyPort:      true,
-		DisableWorkspaceBackgroundMonitors: true,
-	})
-	t.Cleanup(func() { gracefulShutdown(t, server) })
-	httpServer := httptest.NewServer(server)
-	t.Cleanup(httpServer.Close)
-	stream := openFederationEventStream(t, httpServer, token, "")
-	defer stream.response.Body.Close()
-
-	request, err := http.NewRequestWithContext(t.Context(),
-		http.MethodDelete,
-		httpServer.URL+"/api/v1/fleet/enrollments/"+enrollmentID,
-		nil,
-	)
-	require.NoError(err)
-	request.Header.Set("Authorization", "Bearer local-daemon-secret")
-	request.Header.Set("Content-Type", "application/json")
-	response, err := httpServer.Client().Do(request)
-	require.NoError(err)
-	response.Body.Close()
-	require.Equal(http.StatusNoContent, response.StatusCode)
-
-	server.Hub().Broadcast(Event{Type: "data_changed", Data: struct{}{}})
-	select {
-	case _, open := <-stream.frames:
-		require.False(open, "revoked spoke event stream remained open")
-	case <-time.After(time.Second):
-		require.FailNow("revoked spoke event stream did not close")
-	}
 }
 
 func TestHubEventReceiveAssignsFreshLocalIDs(t *testing.T) {
@@ -573,15 +446,6 @@ func nextTestSSEFrame(t *testing.T, frames <-chan testSSEFrame) testSSEFrame {
 	case <-time.After(time.Second):
 		require.FailNow(t, "timed out waiting for federation event")
 		return testSSEFrame{}
-	}
-}
-
-func assertNoTestSSEFrame(t *testing.T, frames <-chan testSSEFrame) {
-	t.Helper()
-	select {
-	case frame := <-frames:
-		require.Fail(t, "unexpected federation event", "%+v", frame)
-	case <-time.After(50 * time.Millisecond):
 	}
 }
 

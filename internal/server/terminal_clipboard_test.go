@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 type recordingTerminalClipboard struct {
@@ -60,7 +61,7 @@ func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			clipboard := &recordingTerminalClipboard{}
 			srv := New(
-				openTestDB(t), nil, nil, "/", nil,
+				serverfake.OpenTestDB(t), nil, nil, "/", nil,
 				ServerOptions{TerminalClipboard: clipboard},
 			)
 			body, err := json.Marshal(map[string]string{
@@ -90,7 +91,7 @@ func TestTerminalClipboardWritePreservesUnicode(t *testing.T) {
 	const text = "clipboard — Unicode\u00a0text"
 	clipboard := &recordingTerminalClipboard{}
 	srv := New(
-		openTestDB(t), nil, nil, "/", nil,
+		serverfake.OpenTestDB(t), nil, nil, "/", nil,
 		ServerOptions{TerminalClipboard: clipboard},
 	)
 	body, err := json.Marshal(map[string]string{"text": text})
@@ -115,7 +116,7 @@ func TestTerminalClipboardWritePreservesUnicode(t *testing.T) {
 func TestTerminalClipboardWriteRejectsOversizedText(t *testing.T) {
 	clipboard := &recordingTerminalClipboard{}
 	srv := New(
-		openTestDB(t), nil, nil, "/", nil,
+		serverfake.OpenTestDB(t), nil, nil, "/", nil,
 		ServerOptions{TerminalClipboard: clipboard},
 	)
 	body, err := json.Marshal(map[string]string{
@@ -144,7 +145,7 @@ func TestTerminalClipboardWriteReportsNativeFailure(t *testing.T) {
 		err: errors.New("clipboard unavailable"),
 	}
 	srv := New(
-		openTestDB(t), nil, nil, "/", nil,
+		serverfake.OpenTestDB(t), nil, nil, "/", nil,
 		ServerOptions{TerminalClipboard: clipboard},
 	)
 	body := strings.NewReader(`{"text":"copy me"}`)

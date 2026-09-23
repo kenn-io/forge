@@ -15,7 +15,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
@@ -29,6 +28,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
@@ -260,10 +260,10 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
 	now := time.Now().UTC().Truncate(time.Second)
-	unassignedID := seedPR(t, database, "acme", "widget", 1)
-	assignedID := seedPR(t, database, "acme", "widget", 2)
+	unassignedID := serverfake.SeedPR(t, database, "acme", "widget", 1)
+	assignedID := serverfake.SeedPR(t, database, "acme", "widget", 2)
 	repo, err := database.GetRepoByIdentity(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -306,10 +306,10 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	assert := assert.New(t)
 	require := require.New(t)
 	hub, hubDatabase, _ := setupTestServer(t)
-	unassignedIssueID := seedIssue(t, hubDatabase, "acme", "widget", 7, "open")
-	assignedIssueID := seedIssue(t, hubDatabase, "acme", "widget", 8, "open")
+	unassignedIssueID := serverfake.SeedIssue(t, hubDatabase, "acme", "widget", 7, "open")
+	assignedIssueID := serverfake.SeedIssue(t, hubDatabase, "acme", "widget", 8, "open")
 	hubRepo, err := hubDatabase.GetRepoByIdentity(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(hubRepo)
@@ -321,9 +321,7 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	))
 
 	spoke, spokeDatabase, _ := setupTestServer(t)
-	spokeRepoID, err := reposeed.Seed(
-		t.Context(), spokeDatabase, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
-	)
+	spokeRepoID, err := reposeed.Seed(t.Context(), spokeDatabase, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 	require.NoError(err)
 	spoke.providerSource = &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
@@ -466,7 +464,7 @@ func TestNodeProviderRoutesStopWhenFleetIsDisabled(t *testing.T) {
 		FederationCredentials: credentials, FederationHTTPClient: hub.Client(),
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	spoke := httptest.NewServer(srv)
 	t.Cleanup(spoke.Close)
 
@@ -577,7 +575,7 @@ func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
 	})
 
 	require.Equal(http.StatusOK, published.Code, published.Body.String())
-	assert.Len(provider.publishedReviews, 1)
+	assert.Len(provider.PublishedReviews, 1)
 
 	repo, err := hubDB.GetRepoByIdentity(t.Context(), db.RepoIdentity{
 		Platform: "gitlab", PlatformHost: "gitlab.example.com", RepoPath: "group/project",
@@ -601,16 +599,16 @@ func TestFederatedWorkflowHasOneHubOwner(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
-	seedPR(t, hubDB, "acme", "widget", 42)
+	serverfake.SeedPR(t, hubDB, "acme", "widget", 42)
 	repo, err := hubDB.GetRepoByIdentity(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
 	hubServer := New(hubDB, nil, nil, "/", nil, ServerOptions{
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, hubServer) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
 	hub := httptest.NewTLSServer(hubServer)
 	t.Cleanup(hub.Close)
 
@@ -672,7 +670,7 @@ func newFederatedProviderNodeForTest(
 		FederationHTTPClient:               httpClient,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, server) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, server) })
 	return server, database
 }
 

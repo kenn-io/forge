@@ -12,11 +12,14 @@ import (
 	"testing"
 	"time"
 
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -109,7 +112,7 @@ agent_sessions = false
 	tmuxPath, recordPath := writeRuntimeCommandFakeTmux(t)
 	cfg.Tmux.Command = []string{tmuxPath}
 	database := dbtest.Open(t)
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	clients := map[string]ghclient.Client{"github.com": mock}
 	resolved := ghclient.ResolveConfiguredRepos(t.Context(), clients, cfg.Repos)
 	syncer := ghclient.NewSyncer(
@@ -124,8 +127,8 @@ agent_sessions = false
 			HostCheckAllowLoopbackAnyPort: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	project := createRuntimeTestProject(t, database, t.TempDir())
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	project := serverfake.CreateRuntimeTestProject(t, database, t.TempDir())
 	worktree, err := database.CreateProjectWorktree(
 		t.Context(), db.CreateProjectWorktreeInput{
 			ProjectID: project.ID,
@@ -148,18 +151,13 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 	sessionsPath := "/api/v1/projects/" + projectID +
 		"/worktrees/" + worktreeID + "/runtime/sessions"
 
-	body := mustMarshal(t, map[string]any{
+	body := serverfake.MustMarshal(t, map[string]any{
 		"session_key": "surface:host:wt:shell:leaf",
 		"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 		"env":         map[string]string{"CUSTOM_SESSION_VAR": "custom-value"},
 		"label":       "My Shell",
 	})
-	resp := httpDo(t, ts, http.MethodPost, sessionsPath, body)
-	t.Cleanup(func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	})
+	resp := serverfake.HttpDo(t, ts, http.MethodPost, sessionsPath, body)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var session map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&session))
@@ -172,12 +170,7 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 
 	// Re-ensure with the same session key returns the live session
 	// instead of launching a duplicate.
-	resp = httpDo(t, ts, http.MethodPost, sessionsPath, body)
-	t.Cleanup(func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	})
+	resp = serverfake.HttpDo(t, ts, http.MethodPost, sessionsPath, body)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var second map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&second))
@@ -185,7 +178,7 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 	assert.Equal(session["key"], second["key"])
 	assert.Equal(tmuxSession, second["tmux_session"])
 
-	resp = httpDo(t, ts, http.MethodGet,
+	resp = serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime", nil,
 	)
 	t.Cleanup(func() {
@@ -202,7 +195,7 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 	require.Len(runtimeBody.Sessions, 1)
 	assert.Equal("My Shell", runtimeBody.Sessions[0]["label"])
 
-	resp = httpDo(t, ts, http.MethodGet,
+	resp = serverfake.HttpDo(t, ts, http.MethodGet,
 		sessionsPath+"/surface:host:wt:shell:leaf/attach-spec", nil,
 	)
 	t.Cleanup(func() {
@@ -217,7 +210,7 @@ func TestProjectWorktreeRuntimeCommandSessionLifecycle(t *testing.T) {
 	assert.Equal("tmux", spec["kind"])
 	assert.Equal(tmuxSession, spec["tmux_session"])
 
-	resp = httpDo(t, ts, http.MethodDelete,
+	resp = serverfake.HttpDo(t, ts, http.MethodDelete,
 		sessionsPath+"/surface:host:wt:shell:leaf", nil,
 	)
 	require.Equal(http.StatusNoContent, resp.StatusCode)
@@ -247,8 +240,8 @@ func TestProjectWorktreeRuntimeCommandSessionValidation(t *testing.T) {
 		{},
 	}
 	for _, payload := range cases {
-		resp := httpDo(t, ts, http.MethodPost,
-			sessionsPath, mustMarshal(t, payload),
+		resp := serverfake.HttpDo(t, ts, http.MethodPost,
+			sessionsPath, serverfake.MustMarshal(t, payload),
 		)
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(err)
@@ -279,12 +272,12 @@ func TestProjectWorktreeCommandSessionExpandsHomeCWD(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	body := mustMarshal(t, map[string]any{
+	body := serverfake.MustMarshal(t, map[string]any{
 		"session_key": "surface:p:w:shell:home",
 		"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 		"cwd":         "~",
 	})
-	resp := httpDo(t, ts, http.MethodPost,
+	resp := serverfake.HttpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+
 			"/runtime/sessions", body)
 	require.Equal(http.StatusOK, resp.StatusCode)

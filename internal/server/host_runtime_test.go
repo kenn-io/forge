@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
@@ -31,12 +31,7 @@ func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 		},
 	))
 
-	resp := httpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
-	t.Cleanup(func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	})
+	resp := serverfake.HttpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var listBody struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -49,7 +44,7 @@ func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 		"kenn-forge-stored-console", listBody.Sessions[0]["tmux_session"],
 	)
 
-	resp = httpDo(t, ts, http.MethodDelete,
+	resp = serverfake.HttpDo(t, ts, http.MethodDelete,
 		"/api/v1/runtime/sessions/surface:host:console:console:root", nil,
 	)
 	require.Equal(http.StatusNoContent, resp.StatusCode)

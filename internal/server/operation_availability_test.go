@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/operationapi"
@@ -39,7 +40,7 @@ func splitTestDescriptor(writeCandidate tokenauth.Candidate) tokenauth.Descripto
 }
 
 func newSplitTestServerWithMock(
-	t *testing.T, writeCandidate tokenauth.Candidate, mock *mockGH,
+	t *testing.T, writeCandidate tokenauth.Candidate, mock *serverfake.MockGH,
 ) (*Server, *tokenauth.SourceSet, *ghclient.Syncer) {
 	t.Helper()
 	database := dbtest.Open(t)
@@ -57,10 +58,8 @@ func newSplitTestServerWithMock(
 	})
 	set.Upsert(splitTestDescriptor(writeCandidate))
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{TokenSources: set})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	_, err := reposeed.Seed(
-		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
-	)
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 	require.NoError(t, err)
 	return srv, set, syncer
 }
@@ -70,11 +69,11 @@ func TestAPIPullDetailOperationsSkipViewerLookupWhenSubmitReviewUnavailable(t *t
 	assert := assert.New(t)
 
 	t.Setenv("SPLIT_WRITE_CRED_PAT", "")
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	srv, _, _ := newSplitTestServerWithMock(t, tokenauth.Candidate{
 		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT",
 	}, mock)
-	seedPR(t, srv.db, "acme", "widget", 1, withSeedPRAuthor("marius"))
+	serverfake.SeedPR(t, srv.db, "acme", "widget", 1, serverfake.WithSeedPRAuthor("marius"))
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -83,6 +82,6 @@ func TestAPIPullDetailOperationsSkipViewerLookupWhenSubmitReviewUnavailable(t *t
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.NotNil(resp.Repo.Operations)
 	assert.Equal(operationapi.AvailabilityCodeMissingWriteCredential, resp.Repo.Operations.SubmitReview.Code)
-	assert.Zero(mock.authenticatedViewerCalls,
+	assert.Zero(mock.AuthenticatedViewerCalls,
 		"viewer lookup must not run when the write credential already blocks review submission")
 }

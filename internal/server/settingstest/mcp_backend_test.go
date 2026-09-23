@@ -9,11 +9,13 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/httpapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
 
 func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 42)
+	srv, database := servertest.SetupTestServer(t)
+	serverfake.SeedPR(t, database, "acme", "widget", 42)
 
 	_, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
 		Type: "pr", Provider: "github", PlatformHost: "github.com",
@@ -30,16 +32,16 @@ func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
 func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 42, func(pr *db.MergeRequest) {
+	srv, database := servertest.SetupTestServer(t)
+	serverfake.SeedPR(t, database, "acme", "widget", 42, func(pr *db.MergeRequest) {
 		pr.MergeableState = "dirty"
 		pr.ReviewDecision = "CHANGES_REQUESTED"
 		pr.CIStatus = "success"
 		pr.PlatformHeadSHA = "head-one"
 		pr.CIChecksJSON = `[{"name":"unit","status":"completed","conclusion":"success"}]`
 	})
-	seedPR(t, database, "acme", "widget", 43, withSeedPRLifecycle("closed", nil, new(time.Now().UTC())))
-	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedPR(t, database, "acme", "widget", 43, serverfake.WithSeedPRLifecycle("closed", nil, new(time.Now().UTC())))
+	repo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	identity := mcpserver.RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
@@ -74,14 +76,14 @@ func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
 func TestMCPBackendFiltersPullLabelsBeforePagination(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database := servertest.SetupTestServer(t)
 	for number, name := range []string{"bug", "debug", "bug"} {
-		id := seedPR(t, database, "acme", "widget", number+1)
-		repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+		id := serverfake.SeedPR(t, database, "acme", "widget", number+1)
+		repo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 		require.NoError(err)
 		require.NoError(database.ReplaceMergeRequestLabels(t.Context(), repo.ID, id, []db.Label{{Name: name}}))
 	}
-	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	identity := mcpserver.RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
@@ -113,15 +115,15 @@ func TestMCPBackendFiltersPullLabelsBeforePagination(t *testing.T) {
 func TestMCPBackendListsPullsWithMalformedCachedChecks(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 42, func(pr *db.MergeRequest) {
+	srv, database := servertest.SetupTestServer(t)
+	serverfake.SeedPR(t, database, "acme", "widget", 42, func(pr *db.MergeRequest) {
 		pr.CIChecksJSON = `[{"name":"unit","conclusion":"success"}]`
 	})
-	seedPR(t, database, "acme", "widget", 43, func(pr *db.MergeRequest) {
+	serverfake.SeedPR(t, database, "acme", "widget", 43, func(pr *db.MergeRequest) {
 		pr.MergeableState = "dirty"
 		pr.CIChecksJSON = `[{"name":"partial","conclusion":"success"},{"name":42}]`
 	})
-	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{
 		Repository: mcpserver.RepositoryIdentity{
@@ -146,18 +148,18 @@ func TestMCPBackendListsPullsWithMalformedCachedChecks(t *testing.T) {
 func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database := servertest.SetupTestServer(t)
 	ctx := t.Context()
-	seedPR(t, database, "acme", "widget", 1)
-	seedPR(t, database, "acme", "widget", 2)
-	seedIssue(t, database, "acme", "widget", 3, "open")
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	serverfake.SeedPR(t, database, "acme", "widget", 2)
+	serverfake.SeedIssue(t, database, "acme", "widget", 3, "open")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
-	markArchiveItemRemovedUpstreamForServerTest(
+	serverfake.MarkArchiveItemRemovedUpstreamForServerTest(
 		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1,
 	)
-	markArchiveItemRemovedUpstreamForServerTest(
+	serverfake.MarkArchiveItemRemovedUpstreamForServerTest(
 		t, database, repo.ID, db.ArchiveItemTypeIssue, 3,
 	)
 	backend := srv.MCPBackend()

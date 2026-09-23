@@ -16,9 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"go.kenn.io/forge/internal/apiclient/generated"
-
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/forge/internal/apiclient/generated"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/configreload"
@@ -43,21 +45,10 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-const defaultTestConfigContent = `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[repos]]
-owner = "acme"
-name = "widget"
-`
-
 func setupTestServerWithConfig(
 	t *testing.T,
 ) (*Server, *db.DB, string, *ghclient.Syncer) {
-	return setupTestServerWithConfigContent(t, defaultTestConfigContent, &mockGH{})
+	return setupTestServerWithConfigContent(t, serverfake.DefaultTestConfigContent, &serverfake.MockGH{})
 }
 
 // setupTestServerWithConfigContentNoSyncer builds a config-backed server that
@@ -75,14 +66,14 @@ func setupTestServerWithConfigContentNoSyncer(
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	srv := NewWithConfig(database, nil, nil, nil, cfg, cfgPath, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return srv, database, cfgPath
 }
 
 func setupTestServerWithConfigContent(
 	t *testing.T,
 	cfgContent string,
-	mock *mockGH,
+	mock *serverfake.MockGH,
 ) (*Server, *db.DB, string, *ghclient.Syncer) {
 	t.Helper()
 	return setupTestServerWithConfigContentAndOptions(
@@ -93,7 +84,7 @@ func setupTestServerWithConfigContent(
 func setupTestServerWithConfigContentAndOptions(
 	t *testing.T,
 	cfgContent string,
-	mock *mockGH,
+	mock *serverfake.MockGH,
 	options ServerOptions,
 ) (*Server, *db.DB, string, *ghclient.Syncer) {
 	t.Helper()
@@ -120,7 +111,7 @@ func setupTestServerWithConfigContentAndOptions(
 		database, syncer, nil, nil, cfg, cfgPath,
 		options,
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return srv, database, cfgPath, syncer
 }
 
@@ -171,7 +162,7 @@ func TestHandleGetSettingsReportsRepositoryCurrentlyAtUnpinnedRoute(t *testing.T
 [[repos]]
 owner = "acme"
 name = "widget"
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 		Owner: "acme", Name: "widget",
@@ -205,7 +196,7 @@ port = 8091
 enabled = true
 port = 9092
 diff_cache_mb = 256
-`, &mockGH{}, ServerOptions{
+`, &serverfake.MockGH{}, ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 		MCPURL:                        "http://127.0.0.1:9092/mcp",
 	})
@@ -278,7 +269,7 @@ name = "widget"
 [[repo_presets]]
 name = "Existing"
 repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = 1004, repo_path = "acme/widget" }]
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
 	srv.configReloadMu.Lock()
 	srv.cfgPath = t.TempDir()
@@ -460,7 +451,7 @@ port = 8091
 [[repos]]
 owner = "acme"
 name = "widget"
-`, &mockGH{}, ServerOptions{
+`, &serverfake.MockGH{}, ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 		WorktreeDir:                   t.TempDir(),
 	})
@@ -493,7 +484,7 @@ port = 8091
 [[repos]]
 owner = "acme"
 name = "widget"
-`, &mockGH{}, ServerOptions{
+`, &serverfake.MockGH{}, ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 		WorktreeDir:                   t.TempDir(),
 	})
@@ -533,7 +524,7 @@ port = 8091
 [[repos]]
 owner = "acme"
 name = "widget"
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	srv.runtime = localruntime.NewManager(localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key: "codex", Label: "Codex", Kind: localruntime.LaunchTargetAgent,
@@ -833,8 +824,8 @@ name = "widget"
 
 	[fleet]
 	role = "hub"
-	`, &mockGH{}, ServerOptions{HostCheckAllowLoopbackAnyPort: true})
-	seedVerifiedRepo(t, hubDB, verifiedGitHubRepoIdentity(
+	`, &serverfake.MockGH{}, ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+	serverfake.SeedVerifiedRepo(t, hubDB, serverfake.VerifiedGitHubRepoIdentity(
 		"github.com", "acme", "widget",
 	))
 	hubHTTP := httptest.NewTLSServer(hub)
@@ -890,7 +881,7 @@ base_url = %q
 			DisableWorkspaceBackgroundMonitors: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, spoke) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, spoke) })
 
 	autoAssign := true
 	response := testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
@@ -1076,7 +1067,7 @@ port = 8091
 
 [workspaces]
 auto_assign_on_create = false
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	srv.providerSource = &spokeapi.HubProviderSource{
 		Client: providerPlaneClientFunc(func(
 			context.Context, federationauth.Scope, *http.Request,
@@ -1109,7 +1100,7 @@ port = 8091
 
 [fleet]
 peer_timeout = "50ms"
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	srv.providerSource = &spokeapi.HubProviderSource{
 		Client: providerPlaneClientFunc(func(
 			ctx context.Context, _ federationauth.Scope, _ *http.Request,
@@ -1183,7 +1174,7 @@ base_url = "https://spoke.example"
 [fleet.hub]
 node_id = "0123456789abcdef0123456789abcdef"
 base_url = "https://hub.example"
-`, &mockGH{}, ServerOptions{
+`, &serverfake.MockGH{}, ServerOptions{
 		HostCheckAllowLoopbackAnyPort: true,
 		FederationSpokeID:             proxyTestNodeID,
 	})
@@ -1245,11 +1236,11 @@ name = "widget"
 
 [pull_requests]
 prefer_github_native_stacks = true
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	ctx := t.Context()
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -1274,7 +1265,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{11, 10}, stackMemberNumbers(after.JSON200.Members),
+	assert.Equal([]int64{11, 10}, serverfake.StackMemberNumbers(after.JSON200.Members),
 		"a superseded disable must not overwrite the projection the current preference produced")
 }
 func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
@@ -1283,7 +1274,7 @@ func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
 	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 host = "127.0.0.1"
 port = 8091
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	srv.syncer = nil
 	srv.cfg.Fleet.Enabled = true
 	srv.fleetEnabledAtBoot = true

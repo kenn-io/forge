@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/ratelimit"
 	"go.kenn.io/forge/internal/server"
@@ -367,7 +369,7 @@ func newServerWithRateTracker(t *testing.T) (*server.Server, *db.DB, *ratelimit.
 	database := dbtest.Open(t)
 	rt := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
@@ -376,7 +378,7 @@ func newServerWithRateTracker(t *testing.T) (*server.Server, *db.DB, *ratelimit.
 	)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return srv, database, rt
 }
 
@@ -385,7 +387,7 @@ func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, _ := newServerWithRateTracker(t)
-	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 	require.NoError(err)
 	// Keep merge available so this fixture isolates the healthy path.
 	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
@@ -407,7 +409,7 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, rt := newServerWithRateTracker(t)
-	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 	require.NoError(err)
 	// Keep merge available so this fixture isolates rate limiting.
 	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
@@ -440,7 +442,7 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	restRT := ghclient.NewRateTracker(database, "github.com", "host", "rest")
 	gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
@@ -449,14 +451,14 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": ghclient.NewGraphQLFetcher(
-			testTokenSource("fake-token"), "github.com", gqlRT, nil,
+			serverfake.TestTokenSource("fake-token"), "github.com", gqlRT, nil,
 		),
 	})
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 	require.NoError(err)
 	// Keep merge available so this fixture isolates GraphQL tracker state.
 	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
@@ -487,7 +489,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		gqlRT := ghclient.NewRateTracker(database, "github.com", "host", "graphql")
 		key := ratelimit.RateBucketKey("github", "github.com", "host")
 		syncer := ghclient.NewSyncer(
-			map[string]ghclient.Client{"github.com": &mockGH{}},
+			map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
 			database, nil,
 			[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 			time.Minute,
@@ -501,9 +503,9 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		})
 		t.Cleanup(syncer.Stop)
 		srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-		t.Cleanup(func() { gracefulShutdown(t, srv) })
+		t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-		_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+		_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 		require.NoError(err)
 		gqlRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
@@ -522,15 +524,15 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		assert := assert.New(t)
 		database := dbtest.Open(t)
 		gqlRT := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "host", "graphql")
-		provider := &apiTestGitLabProvider{
-			ref: platform.RepoRef{
+		provider := &serverfake.ApiTestGitLabProvider{
+			Ref: platform.RepoRef{
 				Platform: platform.KindGitLab,
 				Host:     "gitlab.example.com",
 				Owner:    "group",
 				Name:     "project",
 				RepoPath: "group/project",
 			},
-			capabilities: &platform.Capabilities{
+			CapabilitiesValue: &platform.Capabilities{
 				ReadRepositories:            true,
 				ReadMergeRequests:           true,
 				ReviewSuggestionApplication: true,
@@ -558,7 +560,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		})
 		t.Cleanup(syncer.Stop)
 		srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-		t.Cleanup(func() { gracefulShutdown(t, srv) })
+		t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 		_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
 			Platform:       "gitlab",
@@ -587,22 +589,22 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
 		database := dbtest.Open(t)
-		provider := &apiTestGitLabProvider{
-			ref: platform.RepoRef{
+		provider := &serverfake.ApiTestGitLabProvider{
+			Ref: platform.RepoRef{
 				Platform: platform.KindGitLab,
 				Host:     "gitlab.example.com",
 				Owner:    "group",
 				Name:     "project",
 				RepoPath: "group/project",
 			},
-			capabilities: &platform.Capabilities{
+			CapabilitiesValue: &platform.Capabilities{
 				ReadRepositories:            true,
 				ReadMergeRequests:           true,
 				ReviewSuggestionApplication: true,
 				MutationHeadBinding:         true,
 				ReadReviewThreads:           true,
 			},
-			rateLimitBuckets: map[platform.OperationName][]platform.RateLimitBucket{
+			RateLimitBuckets: map[platform.OperationName][]platform.RateLimitBucket{
 				platform.OperationApplyReviewSuggestion: buckets,
 			},
 		}
@@ -623,7 +625,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		)
 		t.Cleanup(syncer.Stop)
 		srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-		t.Cleanup(func() { gracefulShutdown(t, srv) })
+		t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 		_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
 			Platform:       "gitlab",
@@ -670,7 +672,7 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	writeGQLRT := ghclient.NewRateTracker(database, "github.com", "user:1", "graphql_write")
 	key := ratelimit.RateBucketKey("github", "github.com", "host")
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": &mockGH{}},
+		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
@@ -681,9 +683,9 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	syncer.SetWriteGQLRateTrackers(map[string]*ghclient.RateTracker{key: writeGQLRT})
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 	require.NoError(err)
 	// Keep merge available so this fixture isolates write tracker state.
 	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
@@ -811,7 +813,7 @@ func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T)
 }
 
 type writeCredentialProbeClient struct {
-	*mockGH
+	*serverfake.MockGH
 	err   error
 	calls int
 }
@@ -825,7 +827,7 @@ func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
-	client := &writeCredentialProbeClient{mockGH: &mockGH{}, err: ghclient.ErrIdentityChanged}
+	client := &writeCredentialProbeClient{MockGH: &serverfake.MockGH{}, err: ghclient.ErrIdentityChanged}
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": client}, database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
@@ -840,8 +842,8 @@ func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
 	require.NoError(err)
 	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	_, err = reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	_, err = reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 	require.NoError(err)
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
@@ -862,7 +864,7 @@ func TestAPIRepoResponseDisablesWritesWhenConfiguredRouterHasNoRoute(t *testing.
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
-	client := &mockGH{}
+	client := &serverfake.MockGH{}
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": client}, database, nil,
 		[]ghclient.RepoRef{{Owner: "other", Name: "widget", PlatformHost: "github.com"}},
@@ -877,8 +879,8 @@ func TestAPIRepoResponseDisablesWritesWhenConfiguredRouterHasNoRoute(t *testing.
 	require.NoError(err)
 	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	_, err = reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "other", "widget"))
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	_, err = reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "other", "widget"),)
 	require.NoError(err)
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/other/widget", nil)
@@ -915,11 +917,11 @@ func splitTestDescriptor(writeCandidate tokenauth.Candidate) tokenauth.Descripto
 func newSplitTestServer(
 	t *testing.T, writeCandidate tokenauth.Candidate,
 ) (*server.Server, *tokenauth.SourceSet, *ghclient.Syncer) {
-	return newSplitTestServerWithMock(t, writeCandidate, &mockGH{})
+	return newSplitTestServerWithMock(t, writeCandidate, &serverfake.MockGH{})
 }
 
 func newSplitTestServerWithMock(
-	t *testing.T, writeCandidate tokenauth.Candidate, mock *mockGH,
+	t *testing.T, writeCandidate tokenauth.Candidate, mock *serverfake.MockGH,
 ) (*server.Server, *tokenauth.SourceSet, *ghclient.Syncer) {
 	t.Helper()
 	database := dbtest.Open(t)
@@ -937,8 +939,8 @@ func newSplitTestServerWithMock(
 	})
 	set.Upsert(splitTestDescriptor(writeCandidate))
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{TokenSources: set})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 	require.NoError(t, err)
 	return srv, set, syncer
 }
@@ -948,7 +950,7 @@ func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, _ := setupTestServer(t)
-	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
 	require.NoError(err)
 	// Schema defaults viewer_can_merge to 1; flip to false so the
 	// merge gate (not the capability gate) decides this case.
@@ -974,15 +976,15 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	mock := &mockGH{
-		authenticatedViewerLoginFn: func(context.Context) (string, error) {
+	mock := &serverfake.MockGH{
+		AuthenticatedViewerLoginFn: func(context.Context) (string, error) {
 			return "marius", nil
 		},
 	}
 	srv, database, _ := setupTestServerWithMock(t, mock)
-	seedPR(t, database, "acme", "widget", 1, withSeedPRAuthor("marius"))
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRAuthor("marius"))
 	repo, err := database.GetRepoByIdentity(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)
@@ -1004,6 +1006,6 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
 	require.Equal(http.StatusOK, rr.Code)
-	assert.Equal(1, mock.authenticatedViewerCalls,
+	assert.Equal(1, mock.AuthenticatedViewerCalls,
 		"provider should cache the authenticated viewer login")
 }

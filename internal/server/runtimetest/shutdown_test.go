@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
 
 // TestServerShutdownIsIdempotent verifies that Shutdown can be called
 // more than once without panicking on the internal WaitGroup.
 func TestServerShutdownIsIdempotent(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, _ := servertest.SetupTestServer(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -27,7 +28,7 @@ func TestServerShutdownIsIdempotent(t *testing.T) {
 // fail fast.
 func TestServerShutdownStopsHTTPListener(t *testing.T) {
 	require := require.New(t)
-	srv, _ := setupTestServer(t)
+	srv, _ := servertest.SetupTestServer(t)
 
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
@@ -72,7 +73,7 @@ func TestServerShutdownStopsHTTPListener(t *testing.T) {
 
 func TestServerShutdownClosesSSESubscribers(t *testing.T) {
 	require := require.New(t)
-	srv, _ := setupTestServer(t)
+	srv, _ := servertest.SetupTestServer(t)
 
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)

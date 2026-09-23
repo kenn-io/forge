@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func launchCommandSessionForDeleteTest(
@@ -22,12 +22,12 @@ func launchCommandSessionForDeleteTest(
 	sessionKey string,
 ) (tmuxSession string) {
 	t.Helper()
-	body := mustMarshal(t, map[string]any{
+	body := serverfake.MustMarshal(t, map[string]any{
 		"session_key": sessionKey,
 		"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 		"label":       "Delete Test Shell",
 	})
-	resp := httpDo(t, ts, http.MethodPost,
+	resp := serverfake.HttpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+
 			"/runtime/sessions",
 		body,
@@ -72,9 +72,9 @@ func TestRemoveProjectWorktreeStopsRuntimeSessions(t *testing.T) {
 		t, ts, projectID, worktreeID, "surface:host:wt:shell:leaf",
 	)
 
-	resp := httpDo(t, ts, http.MethodPost,
+	resp := serverfake.HttpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/delete",
-		mustMarshal(t, map[string]any{}),
+		serverfake.MustMarshal(t, map[string]any{}),
 	)
 	require.Equal(http.StatusNoContent, resp.StatusCode)
 	resp.Body.Close()
@@ -102,7 +102,7 @@ func TestDeleteProjectStopsWorktreeRuntimeSessions(t *testing.T) {
 		t, ts, projectID, worktreeID, "surface:host:wt:shell:leaf",
 	)
 
-	resp := httpDo(t, ts, http.MethodDelete,
+	resp := serverfake.HttpDo(t, ts, http.MethodDelete,
 		"/api/v1/projects/"+projectID, nil,
 	)
 	require.Equal(http.StatusNoContent, resp.StatusCode)
@@ -131,7 +131,7 @@ func TestDeleteProjectWorktreeKillsStoredTmuxSession(t *testing.T) {
 		},
 	))
 
-	resp := httpDo(t, ts, http.MethodDelete,
+	resp := serverfake.HttpDo(t, ts, http.MethodDelete,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID, nil,
 	)
 	require.Equal(http.StatusNoContent, resp.StatusCode)

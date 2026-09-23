@@ -1,15 +1,15 @@
 package settingstest
 
 import (
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"go.kenn.io/forge/internal/config"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -53,7 +53,7 @@ func TestNewDerivesHostCheckFromUnvalidatedConfig(t *testing.T) {
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	srv := server.New(database, syncer, emptyFrontend(), "/", &config.Config{
+	srv := server.New(database, syncer, serverfake.EmptyFrontend(), "/", &config.Config{
 		Host:              "127.0.0.1",
 		Port:              8091,
 		AllowedHosts:      []string{"mm.example.com"},
@@ -76,13 +76,5 @@ func newServerForDefaultTest(t *testing.T) *server.Server {
 	t.Cleanup(syncer.Stop)
 	// cfg=nil, ServerOptions zero — exercise the test-friendly
 	// default branch of resolveHostCheckOptions.
-	return server.New(database, syncer, emptyFrontend(), "/", nil, server.ServerOptions{})
-}
-
-func emptyFrontend() fs.FS {
-	return fstest.MapFS{
-		"index.html": &fstest.MapFile{
-			Data: []byte("<!DOCTYPE html><html><body>ok</body></html>"),
-		},
-	}
+	return server.New(database, syncer, serverfake.EmptyFrontend(), "/", nil, server.ServerOptions{})
 }

@@ -7,6 +7,9 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	jsonv2 "encoding/json/v2"
 	"fmt"
 	"io"
@@ -29,6 +32,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -158,7 +162,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	})
 	require.NoError(err)
 	budget := ghclient.NewSyncBudget(1000)
-	upstream, err := ghclient.NewClient(testTokenSource("test-token"), "github.com", nil, budget, ghclient.WithBaseURLForTesting(provider.URL))
+	upstream, err := ghclient.NewClient(serverfake.TestTokenSource("test-token"), "github.com", nil, budget, ghclient.WithBaseURLForTesting(provider.URL))
 	require.NoError(err)
 	// A blocked clone directory produces a real non-fatal diff failure without
 	// contacting a remote. PR metadata and CI must still be published once.
@@ -170,7 +174,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	syncer := newConsumer()
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", &config.Config{}, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	client := &http.Client{Timeout: 10 * time.Second}
 	refreshed := make(chan int, 16)
 	syncer.SetOnRelayRefresh(func(ctx context.Context, repoID int64, target string, number int) {

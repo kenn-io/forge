@@ -14,7 +14,7 @@ import (
 // TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient is a
 // black-box migration of TestWorkspaceCreateIssueBranchConflictReturnsTyped409
 // (still in internal/server/api_test.go). The original asserts the same
-// behavior using a package-local rawProblemDetail struct; this version
+// behavior using a package-local serverfake.RawProblemDetail struct; this version
 // decodes through generated.ErrorModel so a regression that drifts the
 // 409 response shape away from the published OpenAPI contract fails this
 // test.

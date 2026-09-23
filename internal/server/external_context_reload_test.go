@@ -18,11 +18,12 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestConfigReloadPublishesExternalContextSources(t *testing.T) {
 	require := require.New(t)
-	srv, _, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
+	srv, _, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &serverfake.MockGH{})
 	require.Empty(srv.externalContext.Sources())
 	executable, err := os.Executable()
 	require.NoError(err)
@@ -49,7 +50,7 @@ func TestExternalContextUsesHubSyncedPull(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 42, func(pull *db.MergeRequest) {
+	serverfake.SeedPR(t, database, "acme", "widget", 42, func(pull *db.MergeRequest) {
 		pull.PlatformHeadSHA = "local-stale-head"
 		pull.PlatformBaseSHA = "local-stale-base"
 	})

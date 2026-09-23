@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
@@ -23,19 +24,14 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 	defer ts.Close()
 
 	cwd := t.TempDir()
-	body := mustMarshal(t, map[string]any{
+	body := serverfake.MustMarshal(t, map[string]any{
 		"session_key": "surface:host:console:console:root",
 		"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 		"env":         map[string]string{"CUSTOM_SESSION_VAR": "custom-value"},
 		"label":       "Console",
 		"cwd":         cwd,
 	})
-	resp := httpDo(t, ts, http.MethodPost, "/api/v1/runtime/sessions", body)
-	t.Cleanup(func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	})
+	resp := serverfake.HttpDo(t, ts, http.MethodPost, "/api/v1/runtime/sessions", body)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var session map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&session))
@@ -47,12 +43,7 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 	require.NotEmpty(tmuxSession)
 
 	// Re-ensure returns the live session instead of launching again.
-	resp = httpDo(t, ts, http.MethodPost, "/api/v1/runtime/sessions", body)
-	t.Cleanup(func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	})
+	resp = serverfake.HttpDo(t, ts, http.MethodPost, "/api/v1/runtime/sessions", body)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var second map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&second))
@@ -60,12 +51,7 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 	assert.Equal(session["key"], second["key"])
 	assert.Equal(tmuxSession, second["tmux_session"])
 
-	resp = httpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
-	t.Cleanup(func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	})
+	resp = serverfake.HttpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var listBody struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -75,7 +61,7 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 	require.Len(listBody.Sessions, 1)
 	assert.Equal("Console", listBody.Sessions[0]["label"])
 
-	resp = httpDo(t, ts, http.MethodGet,
+	resp = serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/runtime/sessions/surface:host:console:console:root/attach-spec",
 		nil,
 	)
@@ -91,13 +77,13 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 	assert.Equal("tmux", spec["kind"])
 	assert.Equal(tmuxSession, spec["tmux_session"])
 
-	resp = httpDo(t, ts, http.MethodDelete,
+	resp = serverfake.HttpDo(t, ts, http.MethodDelete,
 		"/api/v1/runtime/sessions/surface:host:console:console:root", nil,
 	)
 	require.Equal(http.StatusNoContent, resp.StatusCode)
 	resp.Body.Close()
 
-	resp = httpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
+	resp = serverfake.HttpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NoError(json.NewDecoder(resp.Body).Decode(&listBody))
 	resp.Body.Close()
@@ -134,8 +120,8 @@ func TestHostRuntimeCommandSessionValidation(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		resp := httpDo(t, ts, http.MethodPost,
-			"/api/v1/runtime/sessions", mustMarshal(t, tc.payload),
+		resp := serverfake.HttpDo(t, ts, http.MethodPost,
+			"/api/v1/runtime/sessions", serverfake.MustMarshal(t, tc.payload),
 		)
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(err)
@@ -166,12 +152,12 @@ func TestHostRuntimeCommandSessionExpandsHomeCWD(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	body := mustMarshal(t, map[string]any{
+	body := serverfake.MustMarshal(t, map[string]any{
 		"session_key": "surface:host:console:home",
 		"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 		"cwd":         "~",
 	})
-	resp := httpDo(t, ts, http.MethodPost, "/api/v1/runtime/sessions", body)
+	resp := serverfake.HttpDo(t, ts, http.MethodPost, "/api/v1/runtime/sessions", body)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 
@@ -202,13 +188,13 @@ func TestFleetHostRuntimeSessionRoutesE2E(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	body := mustMarshal(t, map[string]any{
+	body := serverfake.MustMarshal(t, map[string]any{
 		"session_key": "surface:host:console:fleet-e2e",
 		"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 		"label":       "Fleet Console",
 		"cwd":         t.TempDir(),
 	})
-	resp := httpDo(t, ts, http.MethodPost,
+	resp := serverfake.HttpDo(t, ts, http.MethodPost,
 		"/api/v1/fleet/hosts/self/runtime/sessions", body)
 	t.Cleanup(func() {
 		if resp != nil && resp.Body != nil {
@@ -228,12 +214,7 @@ func TestFleetHostRuntimeSessionRoutesE2E(t *testing.T) {
 
 	// The fleet surface carries launch/stop/attach-spec; listings come
 	// from the snapshot. The local listing confirms the launch landed.
-	resp = httpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
-	t.Cleanup(func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	})
+	resp = serverfake.HttpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var listBody struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -243,7 +224,7 @@ func TestFleetHostRuntimeSessionRoutesE2E(t *testing.T) {
 	require.Len(listBody.Sessions, 1)
 	assert.Equal("Fleet Console", listBody.Sessions[0]["label"])
 
-	resp = httpDo(t, ts, http.MethodDelete,
+	resp = serverfake.HttpDo(t, ts, http.MethodDelete,
 		"/api/v1/fleet/hosts/self/runtime/sessions/surface:host:console:fleet-e2e",
 		nil)
 	require.Equal(http.StatusNoContent, resp.StatusCode)

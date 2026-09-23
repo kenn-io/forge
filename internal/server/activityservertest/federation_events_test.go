@@ -13,9 +13,8 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
-
-const federationEventTestNodeID = "55555555555555555555555555555555"
 
 func TestHubEventLifecyclePausesUntilFleetIsEnabled(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -80,10 +79,10 @@ func TestDisabledFederationSpokeSeedsDisconnectedStateForFreshSubscriber(t *test
 			NodeID: hubID, BaseURL: "https://hub.example",
 		},
 	}}, server.ServerOptions{
-		FederationSpokeID: federationEventTestNodeID, FederationSpokeActive: true,
+		FederationSpokeID: serverfake.FederationEventTestNodeID, FederationSpokeActive: true,
 		FederationCredentials: credentials, DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, spoke) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, spoke) })
 
 	events, _ := spoke.Hub().Subscribe(t.Context(), true)
 	select {

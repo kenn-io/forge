@@ -14,14 +14,16 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
-	runParallelServerTest(t)
-	acquireRootWorkspaceGitSlot(t)
+	serverfake.RunParallelServerTest(t)
+	serverfake.AcquireRootWorkspaceGitSlot(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	d := dbtest.Open(t)
@@ -107,9 +109,9 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 
 func seedServerWorkspaceRepo(t *testing.T, d *db.DB) int64 {
 	t.Helper()
-	repoID, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(t.Context(), d, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
-	seedRepoLaunchMetadata(t, d, repoID)
+	serverfake.SeedRepoLaunchMetadata(t, d, repoID)
 	return repoID
 }
 

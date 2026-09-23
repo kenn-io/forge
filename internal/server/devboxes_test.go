@@ -30,12 +30,13 @@ import (
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	database := dbtest.Open(t)
-	seedPR(t, database, "acme", "widget", 7)
+	serverfake.SeedPR(t, database, "acme", "widget", 7)
 	platformRepoID := testutil.FixtureRepoID("acme", "widget")
 	entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com", PlatformRepoID: platformRepoID, Owner: "acme", Name: "widgets",
@@ -44,7 +45,7 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 	require.NoError(database.UpdateRepoProviderObservation(t.Context(), entry.Repository.ID, db.RepoProviderMetadata{
 		CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
 	}, nil, nil))
-	seedIssueForRepo(t, database, entry.Repository.ID, "github.com", "acme", "widgets", 7, "open", "Update project")
+	serverfake.SeedIssueForRepo(t, database, entry.Repository.ID, "github.com", "acme", "widgets", 7, "open", "Update project")
 	var creations, contextRefreshes atomic.Int32
 	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
@@ -91,7 +92,7 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(connections.Close)
 	controller := New(database, nil, nil, "/", nil, ServerOptions{Devboxes: connections, DisableWorkspaceBackgroundMonitors: true})
-	t.Cleanup(func() { gracefulShutdown(t, controller) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, controller) })
 	for _, itemField := range []string{"branch", "mr_number", "issue_number"} {
 		body := map[string]any{"provider": "github", "platform_host": "github.com", "owner": "acme", "name": "widget", "platform_repo_id": platformRepoID, itemField: 7}
 		if itemField == "branch" {
@@ -128,9 +129,9 @@ func TestDevboxCreationRejectsCachedRepositoryRouteReplacement(t *testing.T) {
 			entry, err := database.ObserveRepository(t.Context(), replacement)
 			require.NoError(err)
 			if itemField == "mr_number" {
-				seedPRForRepo(t, database, entry.Repository.ID, "github.com", "example-org", "project", 7)
+				serverfake.SeedPRForRepo(t, database, entry.Repository.ID, "github.com", "example-org", "project", 7)
 			} else {
-				seedIssueForRepo(t, database, entry.Repository.ID, "github.com", "example-org", "project", 7, "open", "Update project")
+				serverfake.SeedIssueForRepo(t, database, entry.Repository.ID, "github.com", "example-org", "project", 7, "open", "Update project")
 			}
 
 			var creations atomic.Int32

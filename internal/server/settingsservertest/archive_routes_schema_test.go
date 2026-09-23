@@ -6,10 +6,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/stretchr/testify/assert"
 	"go.kenn.io/forge/internal/server/archiveapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestArchiveReportResponseTransformSchemaNamesReportSchema(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	property := &huma.Schema{}
 	schema := &huma.Schema{

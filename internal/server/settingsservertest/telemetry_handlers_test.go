@@ -9,46 +9,17 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/telemetryapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
-
-type fakeTelemetry struct {
-	enabled    bool
-	event      string
-	properties map[string]any
-}
-
-func (f *fakeTelemetry) Capture(event string, properties map[string]any) error {
-	f.event = event
-	f.properties = properties
-	return nil
-}
-
-func (f *fakeTelemetry) Close() error { return nil }
-
-func (f *fakeTelemetry) Enabled() bool { return f.enabled }
-
-func newTelemetryTestServer(t *testing.T, telemetry *fakeTelemetry) *server.Server {
-	t.Helper()
-	options := server.ServerOptions{}
-	if telemetry != nil {
-		options.Telemetry = telemetry
-	}
-	srv := server.New(
-		openTestDB(t), nil, nil, "/", nil,
-		options,
-	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	return srv
-}
 
 func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	telemetry := &fakeTelemetry{enabled: true}
-	srv := newTelemetryTestServer(t, telemetry)
+	telemetry := &serverfake.FakeTelemetry{EnabledValue: true}
+	srv := servertest.NewTelemetryTestServer(t, telemetry)
 
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
@@ -61,10 +32,10 @@ func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	assert.Equal(http.StatusAccepted, rr.Code)
-	assert.Equal("app_loaded", telemetry.event)
-	assert.Equal("pulls", telemetry.properties["view"])
-	assert.NotContains(telemetry.properties, "distinct_id")
-	assert.True(telemetry.properties["$geoip_disable"].(bool))
+	assert.Equal("app_loaded", telemetry.Event)
+	assert.Equal("pulls", telemetry.Properties["view"])
+	assert.NotContains(telemetry.Properties, "distinct_id")
+	assert.True(telemetry.Properties["$geoip_disable"].(bool))
 
 	var body telemetryapi.TelemetryEventResponse
 	err := json.NewDecoder(rr.Body).Decode(&body)
@@ -76,7 +47,7 @@ func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testin
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv := newTelemetryTestServer(t, nil)
+	srv := servertest.NewTelemetryTestServer(t, nil)
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/telemetry/events",

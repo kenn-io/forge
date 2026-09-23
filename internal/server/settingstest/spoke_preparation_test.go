@@ -15,14 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	forgeserver "go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
-)
-
-const (
-	preparationHubNodeID    = "0123456789abcdef0123456789abcdef"
-	preparationLocalNodeID  = "fedcba9876543210fedcba9876543210"
-	preparationEnrollmentID = "11111111111111111111111111111111"
 )
 
 func openFederationPreparationStores(
@@ -44,9 +40,9 @@ func TestAbortPreparationFromNodeShapedServerRequiresRestart(t *testing.T) {
 	require := require.New(t)
 	enrollments, credentials := openFederationPreparationStores(t, "abort-spoke")
 	require.NoError(enrollments.SaveLocal(t.Context(), federation.LocalEnrollment{
-		EnrollmentID: preparationEnrollmentID, NodeID: preparationLocalNodeID,
+		EnrollmentID: serverfake.PreparationEnrollmentID, NodeID: serverfake.PreparationLocalNodeID,
 		SpokeBaseURL:    "https://spoke.example",
-		HubID:           preparationHubNodeID,
+		HubID:           serverfake.PreparationHubNodeID,
 		HubURL:          "https://hub.example",
 		ProtocolVersion: federation.ProtocolVersion, State: federation.EnrollmentPending,
 		ExpiresAt: time.Now().Add(-time.Minute),
@@ -66,10 +62,10 @@ base_url = "https://spoke.example"
 [fleet.hub]
 node_id = "0123456789abcdef0123456789abcdef"
 base_url = "https://hub.example"
-`, &mockGH{}, forgeserver.ServerOptions{
+`, &serverfake.MockGH{}, forgeserver.ServerOptions{
 		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
-		FederationSpokeID: preparationLocalNodeID, HostCheckAllowLoopbackAnyPort: true,
+		FederationSpokeID: serverfake.PreparationLocalNodeID, HostCheckAllowLoopbackAnyPort: true,
 	})
 	daemon := httptest.NewServer(srv)
 	t.Cleanup(daemon.Close)
@@ -99,18 +95,18 @@ func TestForcedAbortPreservesHubRevocationPath(t *testing.T) {
 	assert := assert.New(t)
 	enrollments, credentials := openFederationPreparationStores(t, "forced-abort")
 	require.NoError(enrollments.SaveLocal(t.Context(), federation.LocalEnrollment{
-		EnrollmentID: preparationEnrollmentID, NodeID: preparationLocalNodeID,
+		EnrollmentID: serverfake.PreparationEnrollmentID, NodeID: serverfake.PreparationLocalNodeID,
 		SpokePlatform: "linux", SpokeBaseURL: "https://spoke.example",
-		HubID: preparationHubNodeID, HubURL: "https://hub.example",
+		HubID: serverfake.PreparationHubNodeID, HubURL: "https://hub.example",
 		ProtocolVersion: federation.ProtocolVersion, State: federation.EnrollmentPending,
 		ExpiresAt: time.Now().Add(time.Hour), PreparationRequired: true,
 	}))
 	require.NoError(credentials.StoreOutbound(
-		preparationHubNodeID, "spoke-to-hub-token",
+		serverfake.PreparationHubNodeID, "spoke-to-hub-token",
 		federationauth.PendingSpokeToHubScopes(),
 	))
 	require.NoError(credentials.StoreInbound(
-		preparationHubNodeID, "hub-to-spoke-token",
+		serverfake.PreparationHubNodeID, "hub-to-spoke-token",
 		federationauth.PendingHubToSpokeScopes(),
 	))
 	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
@@ -128,11 +124,11 @@ base_url = "https://spoke.example"
 [fleet.hub]
 node_id = "0123456789abcdef0123456789abcdef"
 base_url = "https://hub.example"
-`, &mockGH{}, forgeserver.ServerOptions{
+`, &serverfake.MockGH{}, forgeserver.ServerOptions{
 		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
-		FederationSpokeID: preparationLocalNodeID,
-		FederationHTTPClient: &http.Client{Transport: roundTripFunc(func(
+		FederationSpokeID: serverfake.PreparationLocalNodeID,
+		FederationHTTPClient: &http.Client{Transport: serverfake.RoundTripFunc(func(
 			*http.Request,
 		) (*http.Response, error) {
 			return nil, errors.New("hub offline")
@@ -141,7 +137,7 @@ base_url = "https://hub.example"
 	})
 	server := httptest.NewServer(srv)
 	t.Cleanup(server.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	abort, err := http.NewRequestWithContext(
 		t.Context(), http.MethodPost,
@@ -160,7 +156,7 @@ base_url = "https://hub.example"
 	local, ok := enrollments.Local()
 	require.True(ok)
 	assert.Equal(federation.EnrollmentRevoked, local.State)
-	_, ok = credentials.Outbound(preparationHubNodeID)
+	_, ok = credentials.Outbound(serverfake.PreparationHubNodeID)
 	assert.False(ok)
 	principal, ok := credentials.Authenticate("hub-to-spoke-token")
 	require.True(ok)
@@ -171,12 +167,12 @@ base_url = "https://hub.example"
 
 	revoke, err := http.NewRequestWithContext(
 		t.Context(), http.MethodDelete,
-		server.URL+"/api/v1/fleet/enrollments/"+preparationEnrollmentID,
+		server.URL+"/api/v1/fleet/enrollments/"+serverfake.PreparationEnrollmentID,
 		http.NoBody,
 	)
 	require.NoError(err)
 	revoke.Header.Set("Authorization", "Bearer hub-to-spoke-token")
-	revoke.Header.Set(federationauth.NodeIDHeader, preparationHubNodeID)
+	revoke.Header.Set(federationauth.NodeIDHeader, serverfake.PreparationHubNodeID)
 	revoke.Header.Set("Content-Type", "application/json")
 	response, err = server.Client().Do(revoke)
 	require.NoError(err)

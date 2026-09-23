@@ -14,6 +14,8 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 )
 
@@ -44,11 +46,11 @@ func TestToNotificationResponseRejectsBlankProvider(t *testing.T) {
 
 func TestNotificationsAPIExposesBackgroundSyncStatus(t *testing.T) {
 	require := require.New(t)
-	database := openTestDB(t)
+	database := serverfake.OpenTestDB(t)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{
-			"github.com": &mockGH{
-				listNotificationsFn: func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
+			"github.com": &serverfake.MockGH{
+				ListNotificationsFn: func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
 					return nil, false, errors.New("notification API unavailable")
 				},
 			},
@@ -95,11 +97,11 @@ func TestNotificationsAPIExposesBackgroundSyncStatus(t *testing.T) {
 
 func TestGlobalSyncExposesNotificationSyncFailure(t *testing.T) {
 	require := require.New(t)
-	database := openTestDB(t)
+	database := serverfake.OpenTestDB(t)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{
-			"github.com": &mockGH{
-				listNotificationsFn: func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
+			"github.com": &serverfake.MockGH{
+				ListNotificationsFn: func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
 					return nil, false, errors.New("notification API unavailable")
 				},
 			},
@@ -109,7 +111,7 @@ func TestGlobalSyncExposesNotificationSyncFailure(t *testing.T) {
 		time.Minute, nil, nil,
 	)
 	s := New(database, syncer, nil, "/", notificationsEnabledConfig(), ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, s) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, s) })
 	ts := httptest.NewServer(s)
 	defer ts.Close()
 

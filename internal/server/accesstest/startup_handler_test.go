@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/config"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/hostapi"
@@ -69,7 +71,7 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 		frontend,
 		cfg,
 		server.ServerOptions{},
-		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
+		serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.1:8091")},
 		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
@@ -133,7 +135,7 @@ func TestStartupHandlerUsesHostValidation(t *testing.T) {
 		frontend,
 		cfg,
 		server.ServerOptions{},
-		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
+		serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.1:8091")},
 		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
@@ -160,7 +162,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 		frontend,
 		cfg,
 		server.ServerOptions{},
-		staticListener{addr: staticListenerAddr("127.0.0.1:8091")},
+		serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.1:8091")},
 		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
@@ -273,7 +275,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 	assert.Contains(apiBody, `"reason":"starting"`)
 
 	database := dbtest.Open(t)
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
 		database, nil, nil, time.Minute, nil, nil,

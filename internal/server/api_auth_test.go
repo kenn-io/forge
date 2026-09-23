@@ -14,7 +14,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
@@ -22,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func newAuthTestServer(t *testing.T, token string) *httptest.Server {
@@ -270,7 +270,7 @@ func TestPendingHubCredentialExpiresUntilPreparationIsPinned(t *testing.T) {
 	srv.now = func() time.Time { return now }
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	requestIdentity := func() *http.Response {
 		return authGet(t, ts, "/api/v1/federation/identity", func(r *http.Request) {
 			r.Header.Set("Authorization", "Bearer "+token)
@@ -321,7 +321,7 @@ func TestPendingHubCredentialCanRevokeLocalEnrollmentBeforeRoleTransition(t *tes
 	})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	request, err := http.NewRequestWithContext(t.Context(),
 		http.MethodDelete, ts.URL+"/api/v1/fleet/enrollments/"+enrollmentID, http.NoBody,
@@ -383,7 +383,7 @@ func TestPendingSpokeCredentialCannotRevokeSiblingEnrollment(t *testing.T) {
 	})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	request, err := http.NewRequestWithContext(t.Context(),
 		http.MethodDelete, ts.URL+"/api/v1/fleet/enrollments/"+siblingID, http.NoBody,
@@ -447,7 +447,7 @@ func TestLeaseUnawareHubEnrollmentCredentialIsInactive(t *testing.T) {
 	})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	requestIdentity := func() *http.Response {
 		return authGet(t, ts, "/api/v1/federation/identity", func(r *http.Request) {
@@ -564,7 +564,7 @@ func TestActiveHubCredentialRequiresActiveSpokeStartup(t *testing.T) {
 			})
 			ts := httptest.NewServer(srv)
 			t.Cleanup(ts.Close)
-			t.Cleanup(func() { gracefulShutdown(t, srv) })
+			t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 			request, err := http.NewRequestWithContext(t.Context(),
 				http.MethodPost, ts.URL+"/api/v1/runtime/sessions", strings.NewReader(`{}`),
@@ -622,7 +622,7 @@ func TestFederationAuthenticationKeepsBootTopologyUntilRestart(t *testing.T) {
 	})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	srv.cfgMu.Lock()
 	srv.cfg.Fleet.Role = config.FleetRoleHub
@@ -676,7 +676,7 @@ func TestRevokedSpokeCredentialOnlyRetriesRevocation(t *testing.T) {
 	})
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	identity := authGet(t, ts, "/api/v1/federation/identity", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
@@ -742,7 +742,7 @@ func TestPendingSpokeCredentialExpiresUntilPreparationIsPinned(t *testing.T) {
 	srv.now = func() time.Time { return now }
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	requestIdentity := func() *http.Response {
 		return authGet(t, ts, "/api/v1/federation/identity", func(r *http.Request) {
 			r.Header.Set("Authorization", "Bearer "+token)
@@ -804,7 +804,7 @@ func TestPendingSpokeCredentialOnlyAccessesPreparationProviderRoutes(t *testing.
 	srv.now = func() time.Time { return now }
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	request := func(method, path, body string) *http.Response {
 		req, requestErr := http.NewRequestWithContext(t.Context(), method, ts.URL+path, strings.NewReader(body))
 		require.NoError(requestErr)
@@ -866,7 +866,7 @@ func TestFederationProviderSettingsUseDedicatedProjection(t *testing.T) {
 		FederationCredentials:              credentials,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	request := func(path string) *http.Response {

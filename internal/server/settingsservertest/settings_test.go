@@ -31,75 +31,16 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/gitealike"
 )
 
-const defaultTestConfigContent = `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[[repos]]
-owner = "acme"
-name = "widget"
-`
-
-func setupTestServerWithConfig(
-	t *testing.T,
-) (*server.Server, *db.DB, string, *ghclient.Syncer) {
-	return setupTestServerWithConfigContent(t, defaultTestConfigContent, &mockGH{})
-}
-
-func setupTestServerWithConfigContent(
-	t *testing.T,
-	cfgContent string,
-	mock *mockGH,
-) (*server.Server, *db.DB, string, *ghclient.Syncer) {
-	return setupTestServerWithConfigContentAndOptions(
-		t, cfgContent, mock, server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
-	)
-}
-
-func setupTestServerWithConfigContentAndOptions(
-	t *testing.T,
-	cfgContent string,
-	mock *mockGH,
-	options server.ServerOptions,
-) (*server.Server, *db.DB, string, *ghclient.Syncer) {
-	t.Helper()
-
-	dir := t.TempDir()
-	database := dbtest.Open(t)
-	cfgPath := filepath.Join(dir, "config.toml")
-	err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644)
-	require.NoError(t, err)
-
-	cfg, err := config.Load(cfgPath)
-	require.NoError(t, err)
-
-	clients := map[string]ghclient.Client{"github.com": mock}
-	resolved := ghclient.ResolveConfiguredRepos(
-		t.Context(), clients, cfg.Repos,
-	)
-	syncer := ghclient.NewSyncer(
-		clients, database, nil, resolved.Expanded,
-		time.Minute, nil, nil,
-	)
-	t.Cleanup(syncer.Stop)
-	srv := server.NewWithConfig(
-		database, syncer, nil, nil, cfg, cfgPath,
-		options,
-	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	return srv, database, cfgPath, syncer
-}
-
 func setupTestServerWithConfigProviders(
 	t *testing.T,
 	cfgContent string,
-	mock *mockGH,
+	mock *serverfake.MockGH,
 	providers ...platform.Provider,
 ) (*server.Server, *db.DB, string, *ghclient.Syncer) {
 	t.Helper()
@@ -127,7 +68,7 @@ func setupTestServerWithConfigProviders(
 		database, syncer, nil, nil, cfg, cfgPath,
 		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return srv, database, cfgPath, syncer
 }
 
@@ -317,7 +258,7 @@ func (t *gitealikeImportTransport) ListStatuses(
 func TestHandleGetSettings(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -331,7 +272,7 @@ name = "widget"
 key = "codex"
 label = "Codex"
 command = ["codex", "--full-auto"]
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -371,7 +312,7 @@ command = ["codex", "--full-auto"]
 func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
 	mcp := config.MCP{Enabled: true, Port: 9092, DiffCacheMB: 256}
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{MCP: &spokeapi.McpSettingsUpdate{
@@ -398,7 +339,7 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 func TestHandleUpdateSettingsMergesMCPFields(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -407,7 +348,7 @@ port = 8091
 [mcp]
 port = 9092
 diff_cache_mb = 256
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]any{
 		"mcp": map[string]any{"enabled": true},
@@ -439,7 +380,7 @@ diff_cache_mb = 256
 func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Roborev: &spokeapi.RoborevSettingsUpdate{InitManagedClones: new(true)},
@@ -458,7 +399,7 @@ func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
 func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 	first := config.RepoPreset{Name: "Review queue", Repos: []config.RepoPresetRepository{{
 		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001, RepoPath: "acme/widgets",
 	}}}
@@ -498,7 +439,7 @@ func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
 	mappings := []config.KataProjectRepoMapping{
 		{
@@ -541,7 +482,7 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 func TestHandleUpdateSettings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
 	activity := config.Activity{
 		ViewMode:   "threaded",
@@ -606,7 +547,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, _, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -618,11 +559,11 @@ name = "widget"
 
 [pull_requests]
 prefer_github_native_stacks = true
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	ctx := t.Context()
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -636,13 +577,13 @@ prefer_github_native_stacks = true
 		},
 	}))
 	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
-	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+	client := servertest.SetupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 
 	before, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
-	assert.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
+	assert.Equal([]int64{11, 10}, serverfake.StackMemberNumbers(before.JSON200.Members))
 
 	disabled := config.PullRequests{}
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
@@ -654,12 +595,12 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(after.JSON200.Members))
+	assert.Equal([]int64{10, 11}, serverfake.StackMemberNumbers(after.JSON200.Members))
 }
 
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
 	assert := assert.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -677,7 +618,7 @@ hide_bots = true
 
 [modes]
 docs = false
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
 	terminal := config.Terminal{
 		FontFamily:       "\"Iosevka Term\", monospace",
@@ -712,7 +653,7 @@ docs = false
 
 func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 	assert := assert.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 	disabled := false
 	agents := []config.Agent{{
 		Key:     "codex",
@@ -747,7 +688,7 @@ func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 }
 
 func TestHandleUpdateSettingsInvalid(t *testing.T) {
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
 	activity := config.Activity{
 		ViewMode:  "kanban",
@@ -770,8 +711,8 @@ func TestHandleUpdateSettingsInvalid(t *testing.T) {
 func TestHandleAddRepoAcceptsArchivedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -781,7 +722,7 @@ func TestHandleAddRepoAcceptsArchivedRepo(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, cfgPath, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -812,8 +753,8 @@ func TestHandleAddRepoRefreshesArchivedStateForTrackedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	archivedNow := atomic.Bool{}
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -822,7 +763,7 @@ func TestHandleAddRepoRefreshesArchivedStateForTrackedRepo(t *testing.T) {
 				Archived: new(archivedNow.Load()),
 			}, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
@@ -832,7 +773,7 @@ func TestHandleAddRepoRefreshesArchivedStateForTrackedRepo(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -864,8 +805,8 @@ func TestHandleRefreshRepoUpdatesArchivedStateForOverlappingEntries(t *testing.T
 	assert := assert.New(t)
 	require := require.New(t)
 	archivedNow := atomic.Bool{}
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -874,7 +815,7 @@ func TestHandleRefreshRepoUpdatesArchivedStateForOverlappingEntries(t *testing.T
 				Archived: new(archivedNow.Load()),
 			}, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
@@ -884,7 +825,7 @@ func TestHandleRefreshRepoUpdatesArchivedStateForOverlappingEntries(t *testing.T
 			}}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -931,21 +872,22 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 	require := require.New(t)
 	archivedNow := atomic.Bool{}
 	var detailRepos sync.Map
+	var listedRepos sync.Map
 	detailErr := errors.New("detail fetch short-circuited")
-	mock := &mockGH{
-		getPullRequestIfChangedFn: func(
+	mock := &serverfake.MockGH{
+		GetPullRequestIfChangedFn: func(
 			_ context.Context, _, repo string, _ int, _ string,
 		) (*gh.PullRequest, string, bool, error) {
 			detailRepos.Store(repo, true)
 			return nil, "", false, detailErr
 		},
-		getPullRequestFn: func(
+		GetPullRequestFn: func(
 			_ context.Context, _, repo string, _ int,
 		) (*gh.PullRequest, error) {
 			detailRepos.Store(repo, true)
 			return nil, detailErr
 		},
-		getRepositoryFn: func(
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -955,7 +897,7 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 				Archived: new(repo == "widget" && archivedNow.Load()),
 			}, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
@@ -973,8 +915,16 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 				},
 			}, nil
 		},
+		ListNotificationsFn: func(
+			_ context.Context, opts ghclient.NotificationListOptions,
+		) ([]ghclient.NotificationThread, bool, error) {
+			if opts.RepoName != "" {
+				listedRepos.Store(opts.RepoName, true)
+			}
+			return nil, false, nil
+		},
 	}
-	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, database, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1060,7 +1010,7 @@ func trackedRepoArchived(syncer *ghclient.Syncer, owner, name string) bool {
 func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
 	addBody := map[string]string{
 		"provider": "github",
@@ -1131,7 +1081,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 			TimeRange: "30d",
 		},
 	}
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", cfg, server.ServerOptions{})
@@ -1171,7 +1121,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -1200,8 +1150,8 @@ func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	mock := &mockGH{
-		listReposByOwnerFn: func(
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
@@ -1223,7 +1173,7 @@ func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1250,8 +1200,8 @@ name = "*"
 func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	mock := &mockGH{
-		listReposByOwnerFn: func(
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
@@ -1273,7 +1223,7 @@ func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1303,8 +1253,8 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	includeRefreshRepo := atomic.Bool{}
-	mock := &mockGH{
-		listReposByOwnerFn: func(
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			repos := []*gh.Repository{
@@ -1335,7 +1285,7 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 			return repos, nil
 		},
 	}
-	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, database, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1368,8 +1318,8 @@ name = "*"
 func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -1378,7 +1328,7 @@ func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
 				Archived: new(false),
 			}, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
@@ -1390,7 +1340,7 @@ func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1419,8 +1369,8 @@ name = "worker"
 }
 
 func TestHandleDeleteRepoRebuildsExpandedSetFromRemainingPatterns(t *testing.T) {
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -1429,7 +1379,7 @@ func TestHandleDeleteRepoRebuildsExpandedSetFromRemainingPatterns(t *testing.T) 
 				Archived: new(false),
 			}, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
@@ -1441,7 +1391,7 @@ func TestHandleDeleteRepoRebuildsExpandedSetFromRemainingPatterns(t *testing.T) 
 			}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1466,8 +1416,8 @@ name = "tools"
 }
 
 func TestHandleDeleteGlobKeepsRenamedExactEntryRepo(t *testing.T) {
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -1475,7 +1425,7 @@ func TestHandleDeleteGlobKeepsRenamedExactEntryRepo(t *testing.T) {
 				Owner: &gh.User{Login: new(owner)},
 			}, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
@@ -1484,7 +1434,7 @@ func TestHandleDeleteGlobKeepsRenamedExactEntryRepo(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1526,8 +1476,8 @@ name = "*"
 }
 
 func TestHandleDeleteExactEntryClearsProvenanceOnGlobKeptRepo(t *testing.T) {
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -1535,7 +1485,7 @@ func TestHandleDeleteExactEntryClearsProvenanceOnGlobKeptRepo(t *testing.T) {
 				Owner: &gh.User{Login: new(owner)},
 			}, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
@@ -1544,7 +1494,7 @@ func TestHandleDeleteExactEntryClearsProvenanceOnGlobKeptRepo(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1579,8 +1529,8 @@ name = "*"
 }
 
 func TestHandleDeleteExactEntryIgnoresSamePathOnOtherHost(t *testing.T) {
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -1588,7 +1538,7 @@ func TestHandleDeleteExactEntryIgnoresSamePathOnOtherHost(t *testing.T) {
 				Owner: &gh.User{Login: new(owner)},
 			}, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
@@ -1597,7 +1547,7 @@ func TestHandleDeleteExactEntryIgnoresSamePathOnOtherHost(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1636,8 +1586,8 @@ platform_host = "ghe.example.com"
 }
 
 func TestHandleDeleteExactEntryIgnoresSamePathOnOtherProvider(t *testing.T) {
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
@@ -1645,7 +1595,7 @@ func TestHandleDeleteExactEntryIgnoresSamePathOnOtherProvider(t *testing.T) {
 				Owner: &gh.User{Login: new(owner)},
 			}, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
@@ -1654,7 +1604,7 @@ func TestHandleDeleteExactEntryIgnoresSamePathOnOtherProvider(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1696,7 +1646,7 @@ name = "tools"
 
 func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {
 	require := require.New(t)
-	srv, _, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1711,7 +1661,7 @@ platform = "gitlab"
 platform_host = "gitlab.com"
 owner = "acme"
 name = "widget"
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
 	rr := testutil.DoJSON(
 		t, srv, http.MethodDelete,
@@ -1732,8 +1682,8 @@ func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fail := true
-	mock := &mockGH{
-		listReposByOwnerFn: func(
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			if fail {
@@ -1746,7 +1696,7 @@ func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1775,14 +1725,14 @@ name = "*"
 func TestGetSettingsDoesNotCallGitHub(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	mock := &mockGH{
-		getRepositoryFn: func(
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(
 			_ context.Context, _, _ string,
 		) (*gh.Repository, error) {
 			require.FailNow("GET /settings must not call GetRepository")
 			return nil, nil
 		},
-		listReposByOwnerFn: func(
+		ListReposByOwnerFn: func(
 			_ context.Context, _ string,
 		) ([]*gh.Repository, error) {
 			require.FailNow("GET /settings must not call ListRepositoriesByOwner")
@@ -1835,8 +1785,8 @@ name = "widget"
 func TestGlobMatchingIsCaseInsensitive(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	mock := &mockGH{
-		listReposByOwnerFn: func(
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
@@ -1846,7 +1796,7 @@ func TestGlobMatchingIsCaseInsensitive(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1873,7 +1823,7 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 	// activity change survives in both memory and on disk.
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
 	// Change activity via the update handler.
 	rr := testutil.DoJSON(
@@ -1915,8 +1865,8 @@ func TestConcurrentRefreshAndDeleteDoesNotResurrect(t *testing.T) {
 	var calls atomic.Int32
 	ghBlocked := make(chan struct{}, 1)
 	ghUnblock := make(chan struct{})
-	mock := &mockGH{
-		listReposByOwnerFn: func(
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			// The setup helper resolves the glob once at
@@ -1933,7 +1883,7 @@ func TestConcurrentRefreshAndDeleteDoesNotResurrect(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1998,7 +1948,7 @@ name = "*"
 // other field the UI touches) must not silently erase tmux.command.
 func TestHandleUpdateSettingsPreservesTmuxCommand(t *testing.T) {
 	assert := assert.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2010,7 +1960,7 @@ name = "widget"
 
 [tmux]
 command = ["systemd-run", "--user", "--scope", "tmux"]
-`, &mockGH{})
+`, &serverfake.MockGH{})
 
 	body := spokeapi.UpdateSettingsRequest{
 		Activity: &config.Activity{
@@ -2040,8 +1990,8 @@ func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
 	publicRepo := false
 	regularRepo := false
 	forkRepo := true
-	mock := &mockGH{
-		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
 					Name:        new("widget"),
@@ -2075,7 +2025,7 @@ func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2122,8 +2072,8 @@ name = "widget-*"
 func TestHandlePreviewReposRoutesGitHubByOwner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	ownerClient := func(expected, repoName string) *mockGH {
-		return &mockGH{listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
+	ownerClient := func(expected, repoName string) *serverfake.MockGH {
+		return &serverfake.MockGH{ListReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
 			if !strings.EqualFold(owner, expected) {
 				return nil, fmt.Errorf("wrong owner route: %s", owner)
 			}
@@ -2135,7 +2085,7 @@ func TestHandlePreviewReposRoutesGitHubByOwner(t *testing.T) {
 	}
 	router, err := ghclient.NewHostRouter(
 		"github.com",
-		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com"}, Client: &mockGH{}},
+		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com"}, Client: &serverfake.MockGH{}},
 		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com", Owner: "org-a"}, Client: ownerClient("org-a", "repo-a")},
 		&ghclient.Route{Key: ghclient.RouteKey{Host: "github.com", Owner: "org-b"}, Client: ownerClient("org-b", "repo-b")},
 	)
@@ -2192,8 +2142,8 @@ func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
 	description := "personal dotfiles"
 	var listCalls atomic.Int32
 	var getCalls atomic.Int32
-	mock := &mockGH{
-		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
 			listCalls.Add(1)
 			assert.Equal("mariusvniekerk", owner)
 			return []*gh.Repository{
@@ -2208,14 +2158,14 @@ func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
 				},
 			}, nil
 		},
-		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
 			getCalls.Add(1)
 			assert.Equal("mariusvniekerk", owner)
 			assert.Equal("dotfiles2026", repo)
 			return nil, errors.New("not found")
 		},
 	}
-	srv, _, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2257,13 +2207,13 @@ func TestHandlePreviewReposUsesExactLookupForConcreteRepo(t *testing.T) {
 	description := "A conda-smithy repository for tesseract"
 	var listCalls atomic.Int32
 	var getCalls atomic.Int32
-	mock := &mockGH{
-		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
+	mock := &serverfake.MockGH{
+		ListReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
 			listCalls.Add(1)
 			assert.Fail("concrete repo preview should not list repositories", "owner: %s", owner)
 			return []*gh.Repository{}, nil
 		},
-		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
 			getCalls.Add(1)
 			assert.Equal("anacondarecipes", owner)
 			assert.Equal("tesseract-feedstock", repo)
@@ -2278,7 +2228,7 @@ func TestHandlePreviewReposUsesExactLookupForConcreteRepo(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2361,7 +2311,7 @@ platform = "gitlab"
 platform_host = "gitlab.example.com"
 owner = "Group/Subgroup"
 name = "Project"
-`, &mockGH{}, provider)
+`, &serverfake.MockGH{}, provider)
 
 	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "gitlab",
@@ -2439,7 +2389,7 @@ platform_host = "codeberg.example.com"
 owner = "ForgeOrg"
 name = "Widget"
 repo_path = "ForgeOrg/Widget"
-`, &mockGH{}, provider)
+`, &serverfake.MockGH{}, provider)
 
 	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 		"provider": "forgejo",
@@ -2475,8 +2425,8 @@ func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var getCalls atomic.Int32
-	mock := &mockGH{
-		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
 			getCalls.Add(1)
 			return &gh.Repository{
 				Name:     new(strings.ToUpper(repo)),
@@ -2485,7 +2435,7 @@ func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, cfgPath, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2553,7 +2503,7 @@ sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
-`, &mockGH{}, provider)
+`, &serverfake.MockGH{}, provider)
 
 	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
@@ -2647,7 +2597,7 @@ sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
 port = 8091
-`, &mockGH{}, provider)
+`, &serverfake.MockGH{}, provider)
 
 	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/bulk", map[string]any{
 		"repos": []map[string]string{
@@ -2699,8 +2649,8 @@ port = 8091
 func TestHandleBulkAddReposValidationFailureChangesNothing(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	mock := &mockGH{
-		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
 			if repo == "missing" {
 				return nil, errors.New("not found")
 			}
@@ -2711,7 +2661,7 @@ func TestHandleBulkAddReposValidationFailureChangesNothing(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, cfgPath, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2742,8 +2692,8 @@ func TestHandleBulkAddReposSkipsAlreadyConfiguredBeforeValidation(t *testing.T) 
 	assert := assert.New(t)
 	require := require.New(t)
 	var apiCalls atomic.Int32
-	mock := &mockGH{
-		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
 			if repo == "api" {
 				apiCalls.Add(1)
 				return nil, errors.New("stale configured repo should not be validated")
@@ -2755,7 +2705,7 @@ func TestHandleBulkAddReposSkipsAlreadyConfiguredBeforeValidation(t *testing.T) 
 			}, nil
 		},
 	}
-	srv, _, cfgPath, syncer := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, syncer := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2787,8 +2737,8 @@ func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
 	unblockGet := make(chan struct{})
 	getStarted := make(chan struct{}, 1)
 	var apiCalls atomic.Int32
-	mock := &mockGH{
-		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
 			if repo == "api" && apiCalls.Add(1) == 1 {
 				getStarted <- struct{}{}
 				<-unblockGet
@@ -2800,7 +2750,7 @@ func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2856,7 +2806,7 @@ name = "widget"
 func TestFleetSettingsPreserveEnrollmentOwnedRoleAndMembers(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t, `
 host = "127.0.0.1"
 port = 8091
 
@@ -2873,7 +2823,7 @@ node_id = "fedcba9876543210fedcba9876543210"
 name = "Build Box"
 base_url = "https://spoke.example"
 state = "active"
-	`, &mockGH{})
+	`, &serverfake.MockGH{})
 
 	get := func() spokeapi.FleetSettingsResponse {
 		response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings/fleet", nil)
@@ -2929,7 +2879,7 @@ state = "active"
 func TestHandleUpdateSettingsRestoresProjectionAfterRequestCancellation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, _, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2941,11 +2891,11 @@ name = "widget"
 
 [pull_requests]
 prefer_github_native_stacks = true
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	ctx := t.Context()
-	seedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
-	seedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	serverfake.SeedStackedPR(t, database, "acme", "widget", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -2959,12 +2909,12 @@ prefer_github_native_stacks = true
 		},
 	}))
 	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
-	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+	client := servertest.SetupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 	before, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
-	require.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
+	require.Equal([]int64{11, 10}, serverfake.StackMemberNumbers(before.JSON200.Members))
 
 	var buf bytes.Buffer
 	require.NoError(json.NewEncoder(&buf).Encode(spokeapi.UpdateSettingsRequest{
@@ -2982,7 +2932,7 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(after.JSON200.Members),
+	assert.Equal([]int64{10, 11}, serverfake.StackMemberNumbers(after.JSON200.Members),
 		"committed-state reconciliation must not depend on the request context")
 }
 
@@ -2993,7 +2943,7 @@ prefer_github_native_stacks = true
 func TestHandleUpdateSettingsRestoresProjectionForUntrackedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, _, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -3005,12 +2955,12 @@ name = "widget"
 
 [pull_requests]
 prefer_github_native_stacks = true
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	ctx := t.Context()
 	// "removed" is absent from config, so the syncer never tracked it.
-	seedStackedPR(t, database, "acme", "removed", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
-	seedStackedPR(t, database, "acme", "removed", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "removed"))
+	serverfake.SeedStackedPR(t, database, "acme", "removed", 10, "feat/base", "main", db.MergeRequestStateOpen, "", "")
+	serverfake.SeedStackedPR(t, database, "acme", "removed", 11, "feat/tip", "feat/base", db.MergeRequestStateOpen, "", "")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "removed"))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Now().UTC()
@@ -3027,12 +2977,12 @@ prefer_github_native_stacks = true
 	// The cache row is gone but the projection it produced remains, so the
 	// native ordering cannot be found by looking for native rows.
 	require.NoError(database.DeleteGitHubNativeStacks(ctx, repo.ID, []int{42}))
-	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
+	client := servertest.SetupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 	before, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "removed", Number: int64(10)}})
 	require.NoError(err)
 	require.NotNil(before.JSON200)
 	require.NotNil(before.JSON200.Members)
-	require.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
+	require.Equal([]int64{11, 10}, serverfake.StackMemberNumbers(before.JSON200.Members))
 
 	disabled := config.PullRequests{}
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
@@ -3045,14 +2995,14 @@ prefer_github_native_stacks = true
 	require.NoError(err)
 	require.NotNil(after.JSON200)
 	require.NotNil(after.JSON200.Members)
-	assert.Equal([]int64{10, 11}, stackMemberNumbers(after.JSON200.Members),
+	assert.Equal([]int64{10, 11}, serverfake.StackMemberNumbers(after.JSON200.Members),
 		"a repository no longer tracked must still lose native ordering when the preview is disabled")
 }
 
 func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 	actions := []config.QuickAction{{
 		Label:  "Rebase",
 		Agent:  "codex",

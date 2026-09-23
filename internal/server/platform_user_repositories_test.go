@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func ghUserReposCall(pageSize, page int) string {
@@ -25,7 +26,7 @@ func decodeUserRepositories(
 	t *testing.T, ts *httptest.Server, path string,
 ) (int, []byte) {
 	t.Helper()
-	resp := httpDo(t, ts, http.MethodGet, path, nil)
+	resp := serverfake.HttpDo(t, ts, http.MethodGet, path, nil)
 	defer resp.Body.Close()
 	var buf json.RawMessage
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&buf))

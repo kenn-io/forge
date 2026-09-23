@@ -2,45 +2,20 @@ package accesstest
 
 import (
 	"bytes"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
-	"go.kenn.io/forge/internal/testutil/dbtest"
+	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
-
-func setupSPAAssetServer(
-	t *testing.T,
-	basePath string,
-	frontend fs.FS,
-	options server.ServerOptions,
-) *server.Server {
-	t.Helper()
-	database := dbtest.Open(t)
-
-	mock := &mockGH{}
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, nil, time.Minute, nil, nil)
-	t.Cleanup(syncer.Stop)
-	return server.New(
-		database,
-		syncer,
-		frontend,
-		basePath,
-		nil,
-		options,
-	)
-}
 
 // TestBootstrapActiveWorktreeKey covers daemon-side focus state in the SPA bootstrap.
 func TestBootstrapActiveWorktreeKey(t *testing.T) {
@@ -51,7 +26,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 	}
 
 	t.Run("set key is served", func(t *testing.T) {
-		srv := setupSPAAssetServer(t, "/app/", frontend, server.ServerOptions{})
+		srv := servertest.SetupSPAAssetServer(t, "/app/", frontend, server.ServerOptions{})
 		srv.SetActiveWorktreeKey("wt-123")
 
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/app/", nil)
@@ -64,7 +39,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 	})
 
 	t.Run("no key means no served config", func(t *testing.T) {
-		srv := setupSPAAssetServer(t, "/app/", frontend, server.ServerOptions{})
+		srv := servertest.SetupSPAAssetServer(t, "/app/", frontend, server.ServerOptions{})
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/app/", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
@@ -89,7 +64,7 @@ func TestSPACacheHeaders(t *testing.T) {
 		},
 	}
 
-	srv := setupSPAAssetServer(t, "/", frontend, server.ServerOptions{})
+	srv := servertest.SetupSPAAssetServer(t, "/", frontend, server.ServerOptions{})
 
 	cases := []struct {
 		name         string
@@ -169,7 +144,7 @@ func TestSPAAssetsServePrecompressedRepresentations(t *testing.T) {
 
 	for _, basePath := range []string{"/", "/app/"} {
 		t.Run(basePath, func(t *testing.T) {
-			srv := setupSPAAssetServer(t, basePath, frontend, server.ServerOptions{})
+			srv := servertest.SetupSPAAssetServer(t, basePath, frontend, server.ServerOptions{})
 			for _, tc := range []struct {
 				name, method, acceptEncoding, byteRange, wantEncoding string
 				wantStatus                                            int

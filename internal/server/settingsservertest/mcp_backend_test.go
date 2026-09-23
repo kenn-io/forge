@@ -10,6 +10,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/itemapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
@@ -17,8 +18,8 @@ func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
-	pullID := seedPR(t, database, "acme", "widget", 42)
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	pullID := serverfake.SeedPR(t, database, "acme", "widget", 42)
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)

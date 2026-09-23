@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -90,7 +91,7 @@ func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {
 	require := require.New(t)
 	_, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	item := mcpserver.ItemIdentity{
@@ -127,9 +128,9 @@ func TestMCPWorkspaceReusePreservesRepositoryIdentity(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			database := dbtest.Open(t)
-			seedPR(t, database, "acme", "widget", 42)
-			seedIssue(t, database, "acme", "widget", 42, "open")
-			seedWorkspace(t, database, "ws-existing", "acme", "widget", itemType, 42)
+			serverfake.SeedPR(t, database, "acme", "widget", 42)
+			serverfake.SeedIssue(t, database, "acme", "widget", 42, "open")
+			serverfake.SeedWorkspace(t, database, "ws-existing", "acme", "widget", itemType, 42)
 			resolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})
 			srv := &Server{db: database, repoResolver: resolver, now: time.Now}
 			spec, err := srv.ResolveWorkspaceLaunchSpec(t.Context(), providerplane.WorkspaceLaunchRequest{
@@ -176,7 +177,7 @@ func TestMCPAdHocWorkspaceRejectsRouteReplacementBeforeReuse(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 	database := dbtest.Open(t)
-	identity := verifiedGitHubRepoIdentity("github.com", "acme", "widget")
+	identity := serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget")
 	_, err := database.ObserveRepository(ctx, identity)
 	require.NoError(err)
 	resolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})
@@ -244,7 +245,7 @@ func TestMCPWorkspaceRepositoryRejectsHubDescriptorWithAnotherID(t *testing.T) {
 	srv := New(database, nil, nil, "/", nil, ServerOptions{
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	srv.providerSource = &spokeapi.HubProviderSource{Client: client, Db: database}
 	backend := mcpBackend{server: srv}
 
@@ -264,8 +265,8 @@ func TestMCPBackendResolvesRepositoryByProviderIDAcrossRename(t *testing.T) {
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
-	seedPR(t, database, "acme", "widget", 42, withSeedPRTitle("renamed repository pull"))
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedPR(t, database, "acme", "widget", 42, serverfake.WithSeedPRTitle("renamed repository pull"))
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	renamed := db.GitHubRepoIdentity("github.com", "acme", "gadget")
@@ -301,8 +302,8 @@ func TestMCPBackendRejectsIDWhoseRouteWasReusedByAnotherRepository(t *testing.T)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
-	seedPR(t, database, "acme", "widget", 42)
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedPR(t, database, "acme", "widget", 42)
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	_, err = database.ObserveRepository(ctx, db.RepoIdentity{
@@ -325,9 +326,9 @@ func TestMCPBackendRejectsIDWhoseRouteWasReusedByAnotherRepository(t *testing.T)
 func TestSpokePreparationBlocksMCPWorkflowMutation(t *testing.T) {
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 7)
+	serverfake.SeedPR(t, database, "acme", "widget", 7)
 	repo, err := database.GetRepoByIdentity(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)

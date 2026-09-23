@@ -14,12 +14,14 @@ import (
 	"testing"
 	"time"
 
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
@@ -164,7 +166,7 @@ agent_sessions = true
 	require.NoError(t, err)
 	cfg.Tmux.Command = tmux.command
 	database := dbtest.Open(t)
-	mock := &mockGH{}
+	mock := &serverfake.MockGH{}
 	clients := map[string]ghclient.Client{"github.com": mock}
 	resolved := ghclient.ResolveConfiguredRepos(t.Context(), clients, cfg.Repos)
 	syncer := ghclient.NewSyncer(
@@ -179,8 +181,8 @@ agent_sessions = true
 			HostCheckAllowLoopbackAnyPort: true,
 		},
 	)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	project := createRuntimeTestProject(t, database, t.TempDir())
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	project := serverfake.CreateRuntimeTestProject(t, database, t.TempDir())
 	worktree, err := database.CreateProjectWorktree(
 		t.Context(), db.CreateProjectWorktreeInput{
 			ProjectID: project.ID,
@@ -235,7 +237,7 @@ func waitForRuntimeWriterWait(t *testing.T, database *db.DB, baseline int64) {
 
 func runtimeLaunchRequestBody(t *testing.T, sessionKey string) []byte {
 	t.Helper()
-	return mustMarshal(t, map[string]any{
+	return serverfake.MustMarshal(t, map[string]any{
 		"session_key": sessionKey,
 		"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 		"label":       "Rollback shell",
@@ -350,7 +352,7 @@ func TestCommandSameKeyPersistenceOwnership(t *testing.T) {
 			fixture := setupRuntimeLaunchRollbackFixture(t, false)
 			scope := test.scope(fixture)
 			cwd := t.TempDir()
-			body := mustMarshal(t, map[string]any{
+			body := serverfake.MustMarshal(t, map[string]any{
 				"session_key": test.sessionKey,
 				"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 				"label":       test.label,
@@ -703,8 +705,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 					"/worktrees/" + worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
-				t.Helper()
-				return mustMarshal(t, map[string]any{"target_key": "helper"})
+				return serverfake.MustMarshal(t, map[string]any{"target_key": "helper"})
 			},
 		},
 		{
@@ -714,8 +715,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 					"/worktrees/" + worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
-				t.Helper()
-				return mustMarshal(t, map[string]any{
+				return serverfake.MustMarshal(t, map[string]any{
 					"session_key": "surface:project:rollback:command",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 					"label":       "Rollback Command",
@@ -796,8 +796,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReusedTmuxSessio
 					"/worktrees/" + worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
-				t.Helper()
-				return mustMarshal(t, map[string]any{
+				return serverfake.MustMarshal(t, map[string]any{
 					"session_key": "surface:project:rollback:reused",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 					"label":       "Rollback Reused Command",
@@ -868,7 +867,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReattachedComman
 	scope := workspaceapi.ProjectWorktreeRuntimeScope(fixture.worktreeID)
 	path := "/api/v1/projects/" + fixture.projectID + "/worktrees/" +
 		fixture.worktreeID + "/runtime/sessions"
-	body := mustMarshal(t, map[string]any{
+	body := serverfake.MustMarshal(t, map[string]any{
 		"session_key": "surface:project:rollback:reattached",
 		"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 		"label":       "Rollback Reattached Command",
@@ -939,7 +938,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPre
 		fixture.server, ctx, http.MethodPost,
 		"/api/v1/projects/"+fixture.projectID+"/worktrees/"+fixture.worktreeID+
 			"/runtime/sessions",
-		mustMarshal(t, map[string]any{
+		serverfake.MustMarshal(t, map[string]any{
 			"session_key": "surface:project:rollback:failure",
 			"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 			"label":       "Rollback Failure Command",
@@ -987,8 +986,7 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 				return "/api/v1/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
-				t.Helper()
-				return mustMarshal(t, map[string]any{
+				return serverfake.MustMarshal(t, map[string]any{
 					"session_key": "surface:exit-race:host",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 					"label":       "Exit-race command",
@@ -1033,8 +1031,7 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 					"/worktrees/" + fixture.worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
-				t.Helper()
-				return mustMarshal(t, map[string]any{"target_key": "helper"})
+				return serverfake.MustMarshal(t, map[string]any{"target_key": "helper"})
 			},
 			scope: func(fixture runtimeLaunchRollbackFixture) string {
 				return workspaceapi.ProjectWorktreeRuntimeScope(fixture.worktreeID)
@@ -1055,8 +1052,7 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 					"/worktrees/" + fixture.worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
-				t.Helper()
-				return mustMarshal(t, map[string]any{
+				return serverfake.MustMarshal(t, map[string]any{
 					"session_key": "surface:exit-race:project",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
 					"label":       "Exit-race command",

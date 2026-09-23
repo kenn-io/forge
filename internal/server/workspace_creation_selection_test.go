@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
@@ -26,10 +27,10 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 			t.Parallel()
 			assert, require := assert.New(t), require.New(t)
 			database := dbtest.Open(t)
-			seedPR(t, database, "acme", "widget", 42)
-			seedIssue(t, database, "acme", "widget", 42, "open")
-			seedPR(t, database, "acme", "widget", 43)
-			seedIssue(t, database, "acme", "widget", 43, "open")
+			serverfake.SeedPR(t, database, "acme", "widget", 42)
+			serverfake.SeedIssue(t, database, "acme", "widget", 42, "open")
+			serverfake.SeedPR(t, database, "acme", "widget", 43)
+			serverfake.SeedIssue(t, database, "acme", "widget", 43, "open")
 			renamed, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 				Platform: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 				Owner: "acme", Name: "widgets",
@@ -47,7 +48,7 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 				WorktreeDir: filepath.Join(t.TempDir(), "worktrees"), PtyOwnerInProcess: true,
 				DisableWorkspaceBackgroundMonitors: true,
 			})
-			t.Cleanup(func() { gracefulShutdown(t, hub) })
+			t.Cleanup(func() { serverfake.GracefulShutdown(t, hub) })
 			server, workspaceDB, prefix := hub, database, "/api/v1"
 			if target == "spoke" {
 				remote := httptest.NewTLSServer(hub)
@@ -67,11 +68,11 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 					WorktreeDir: filepath.Join(t.TempDir(), "worktrees"), PtyOwnerInProcess: true,
 					DisableWorkspaceBackgroundMonitors: true,
 				})
-				t.Cleanup(func() { gracefulShutdown(t, server) })
+				t.Cleanup(func() { serverfake.GracefulShutdown(t, server) })
 				// Only launch admission needs credentials. The workspace manager has
 				// no clone manager, so background setup cannot run external Git.
 				server.providerSource.Clones = gitclone.New(t.TempDir(), descriptorCloneRoutes{
-					source: testTokenSource("spoke-git-token"),
+					source: serverfake.TestTokenSource("spoke-git-token"),
 				})
 				prefix += "/fleet/hosts/self"
 			}

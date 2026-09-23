@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/config"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestDocFolderDaemonBindingWarnsWhenCatalogTargetMissingOnStartup(t *testing.T) {
@@ -37,8 +38,8 @@ local = true
 			{ID: "notes", Name: "Notes", Path: root, Daemon: "gone"},
 		},
 	}
-	srv := New(openTestDB(t), nil, nil, "/", cfg, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	srv := New(serverfake.OpenTestDB(t), nil, nil, "/", cfg, ServerOptions{})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	logs := logBuf.String()
 	assert.Contains(logs, "doc folder references missing Kata daemon")
@@ -62,8 +63,8 @@ local = true
 	updatedRoot := t.TempDir()
 	initialConfig := validReloadConfigWithDocFolderDaemon("notes", "Notes", initialRoot, "home")
 	updatedConfig := validReloadConfigWithDocFolderDaemon("handbook", "Handbook", updatedRoot, "gone")
-	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, initialConfig, &mockGH{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, initialConfig, &serverfake.MockGH{})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	logBuf := &lockedBuffer{}
 	origLogger := slog.Default()
@@ -99,8 +100,8 @@ local = true
 	updatedRoot := t.TempDir()
 	initialConfig := validReloadConfigWithDocFolderDaemon("notes", "Notes", initialRoot, "home")
 	updatedConfig := validReloadConfigWithDocFolderDaemon("handbook", "Handbook", updatedRoot, "gone")
-	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, initialConfig, &mockGH{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, initialConfig, &serverfake.MockGH{})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	waitForConfigWatcher(t, srv, 2*time.Second)
 	stream := streamConfigEvents(t, srv)
 	defer stream.Close()

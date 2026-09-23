@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -220,7 +221,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	replacement.PlatformRepoID = 1002
 	entry, err := controllerDB.ObserveRepository(ctx, replacement)
 	require.NoError(err)
-	seedPRForRepo(t, controllerDB, entry.Repository.ID, "github.com", "example-org", "project", 7)
+	serverfake.SeedPRForRepo(t, controllerDB, entry.Repository.ID, "github.com", "example-org", "project", 7)
 	routeReused.Store(true)
 	require.NoError(database.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
 	require.NoError(database.PutWorkspaceLaunchSpec(ctx, ws.ID, spec))

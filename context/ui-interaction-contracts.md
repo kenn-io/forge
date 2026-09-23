@@ -717,6 +717,9 @@ Keyboard handlers must have one clear owner for each key press.
   carries its controls. A flattened surface keeps the chrome, since it has no
   per-leaf strip to carry any of it
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
+- Push identity confirmation is supporting metadata, not a workspace banner. Keep
+  details on demand and describe the last pushed commit, not the current login
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceControls`).
 - A pane's tab strip carries ONE structural control, Maximize. Split right and Split
   down were removed: a single-tab leaf cannot split, so on the panes that most need
   it they were permanently greyed, and elsewhere they duplicated the two routes that

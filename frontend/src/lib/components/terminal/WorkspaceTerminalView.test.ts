@@ -911,6 +911,55 @@ describe("WorkspaceTerminalView", () => {
     expect(tab.querySelector(".kit-harness-icon--openai")).not.toBeNull();
   });
 
+  it.each([
+    ["matched", "Last push", "GitHub confirms your author and committer identity."],
+    ["preserved_author", "Last push", "This commit preserves another author's identity."],
+    ["mismatch", "Check push identity", "Check the commit identity before continuing."],
+    ["unverified", "Verify push identity", "Push succeeded; GitHub attribution has not been verified."],
+  ])("keeps %s push details behind the workspace control", async (status, label, message) => {
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(
+          Response.json({
+            ...workspaceResponse,
+            commit_attribution: {
+              status,
+              message,
+              repository: "acme/widget",
+              branch: "feature/session-exit",
+              oid: "0123456789abcdef0123456789abcdef01234567",
+              pushed: true,
+              expected_github_user_id: 123,
+              author_id: 123,
+              committer_id: 123,
+              author_name: "Alex Example",
+              author_email: "alex@example.test",
+              committer_name: "Sam Example",
+              committer_email: "sam@example.test",
+            },
+          }),
+        );
+      }
+      return fallback(input, init);
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    const trigger = await screen.findByRole("button", { name: label });
+    expect(screen.queryByText(message)).toBeNull();
+    await fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Last push" });
+    expect(within(dialog).getByText(message)).toBeTruthy();
+    expect(within(dialog).getByText("Alex Example")).toBeTruthy();
+    expect(within(dialog).getByText("sam@example.test")).toBeTruthy();
+    expect(within(dialog).getByText("0123456789ab")).toBeTruthy();
+    await view.rerender({ workspaceId: "" });
+    expect(screen.queryByRole("dialog", { name: "Last push" })).toBeNull();
+    await view.rerender({ workspaceId: "ws-1" });
+    await screen.findByRole("button", { name: label });
+    expect(screen.queryByRole("dialog", { name: "Last push" })).toBeNull();
+  });
+
   it("persists toolbar font zoom through shared settings", async () => {
     render(WorkspaceTerminalView, {
       props: {

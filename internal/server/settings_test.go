@@ -1496,7 +1496,6 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	archivedNow := atomic.Bool{}
-	var listedRepos sync.Map
 	var detailRepos sync.Map
 	detailErr := errors.New("detail fetch short-circuited")
 	mock := &mockGH{
@@ -1539,14 +1538,6 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 					Archived: new(false),
 				},
 			}, nil
-		},
-		listNotificationsFn: func(
-			_ context.Context, opts ghclient.NotificationListOptions,
-		) ([]ghclient.NotificationThread, bool, error) {
-			if opts.RepoName != "" {
-				listedRepos.Store(opts.RepoName, true)
-			}
-			return nil, false, nil
 		},
 	}
 	srv, database, _ := setupTestServerWithConfigContent(t, `
@@ -1597,10 +1588,16 @@ name = "*"
 	require.True(trackedRepoArchived(srv, "acme", "widget"))
 
 	require.NoError(srv.syncer.SyncNotifications(t.Context()))
-	_, listedTools := listedRepos.Load("tools")
-	assert.True(listedTools, "live repo notifications should sync")
-	_, listedWidget := listedRepos.Load("widget")
-	assert.False(listedWidget,
+	toolsWatermark, err := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "acme", "tools",
+	)
+	require.NoError(err)
+	assert.NotNil(toolsWatermark, "live repo notifications should sync")
+	widgetWatermark, err := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "acme", "widget",
+	)
+	require.NoError(err)
+	assert.Nil(widgetWatermark,
 		"archived repo must not receive notification polling after refresh")
 
 	// Clear anything recorded by earlier phases so the assertions below

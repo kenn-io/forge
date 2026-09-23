@@ -292,6 +292,11 @@ func (s *Syncer) notificationClientForHost(kind platform.Kind, host string) (not
 	return client, true
 }
 
+// syncNotificationsForHost lists notifications once per user identity rather
+// than once per repository: notifications belong to the user, and per-repository
+// polling spent two requests per tracked repository on every pass. Watermarks
+// stay per repository identity, so a repository whose route is unavailable or
+// fenced reports its error without holding back healthy repositories.
 func (s *Syncer) syncNotificationsForHost(
 	ctx context.Context,
 	kind platform.Kind,
@@ -305,13 +310,25 @@ func (s *Syncer) syncNotificationsForHost(
 	if len(trackedRepos) == 0 {
 		return nil
 	}
-	// Watermarks are per repository identity: a repository whose credential
-	// route is unavailable or exhausted reports its error without holding
-	// back watermark advancement for the healthy repositories on the host.
 	var repoErrs []error
+	var buckets []string
+	groups := map[string][]RepoRef{}
 	for _, repo := range trackedRepos {
-		if err := s.syncNotificationsForRepo(
-			ctx, kind, host, client, tracked, repo, startedAt, providerWork,
+		bucket, err := s.bucketKeyForRepo(repo, repoPlatform(repo) == platform.KindGitHub)
+		if err != nil {
+			repoErrs = append(repoErrs, fmt.Errorf(
+				"notification sync of %s/%s on %s: %w", repo.Owner, repo.Name, host, err,
+			))
+			continue
+		}
+		if _, ok := groups[bucket]; !ok {
+			buckets = append(buckets, bucket)
+		}
+		groups[bucket] = append(groups[bucket], repo)
+	}
+	for _, bucket := range buckets {
+		if err := s.syncNotificationsForIdentity(
+			ctx, kind, host, client, bucket, groups[bucket], startedAt, providerWork,
 		); err != nil {
 			repoErrs = append(repoErrs, err)
 		}
@@ -319,54 +336,300 @@ func (s *Syncer) syncNotificationsForHost(
 	return errors.Join(repoErrs...)
 }
 
-func (s *Syncer) syncNotificationsForRepo(
+// notificationRepoTarget is a repository whose identity and route fence were
+// verified for this pass, so listed threads may be written under its fence.
+type notificationRepoTarget struct {
+	repo       RepoRef
+	identity   db.RepoIdentity
+	routeFence db.RepositoryRouteFence
+	watermark  *db.NotificationSyncWatermark
+	stale      bool
+}
+
+func (s *Syncer) syncNotificationsForIdentity(
 	ctx context.Context,
 	kind platform.Kind,
 	host string,
 	client notificationClient,
-	tracked map[string]RepoRef,
-	repo RepoRef,
+	bucket string,
+	repos []RepoRef,
 	startedAt time.Time,
 	providerWork *notificationProviderWork,
 ) error {
-	for range 2 {
-		retry, err := s.syncNotificationsForRepoAttempt(
-			ctx, kind, host, client, tracked, repo, startedAt, providerWork,
+	platformName := string(kind)
+	fullSync := false
+	var since *time.Time
+	for _, repo := range repos {
+		watermark, err := s.db.GetNotificationSyncWatermark(
+			ctx, platformName, host, repo.Owner, repo.Name,
 		)
-		if err != nil || !retry {
-			return err
+		if err != nil {
+			return fmt.Errorf(
+				"load notification sync watermark for %s/%s on %s: %w",
+				repo.Owner, repo.Name, host, err,
+			)
+		}
+		if watermark == nil || shouldFullSyncNotifications(startedAt, watermark) {
+			fullSync = true
+			continue
+		}
+		value := watermark.LastSuccessfulSyncAt.Add(-notificationSyncSinceOverlap).UTC()
+		if since == nil || value.Before(*since) {
+			since = &value
 		}
 	}
-	return fmt.Errorf(
+	if fullSync {
+		since = nil
+	}
+	if len(repos) == 0 {
+		return nil
+	}
+	lead := repos[0]
+	lister := notificationPageListerFor(client, lead)
+	if err := s.ensureNotificationBudget(lead, client, 1); err != nil {
+		return err
+	}
+	// With a validator from the last complete pass, the first participating
+	// page doubles as a change probe: GitHub scopes Last-Modified to the
+	// user's whole notification set, and a 304 costs no rate limit, so an
+	// unchanged inbox skips identity checks and listing entirely. Full syncs
+	// stay unconditional because they exist to observe read-state changes a
+	// validator may not reflect.
+	var firstParticipating *platformgithub.NotificationPage
+	if ifModifiedSince := s.notificationValidator(bucket); !fullSync && ifModifiedSince != "" {
+		page, err := lister(ctx, NotificationListOptions{
+			All: true, Participating: true, Since: since, Page: 1,
+		}, ifModifiedSince)
+		if err != nil {
+			return fmt.Errorf("list participating notifications on %s page 1: %w", host, err)
+		}
+		if page.NotModified {
+			return nil
+		}
+		firstParticipating = &page
+	}
+
+	var repoErrs []error
+	targets := map[string]*notificationRepoTarget{}
+	for _, repo := range repos {
+		target, err := s.prepareNotificationRepo(ctx, kind, host, client, repo, providerWork)
+		if err != nil {
+			repoErrs = append(repoErrs, err)
+			continue
+		}
+		target.watermark, err = s.db.GetNotificationSyncWatermark(
+			ctx, platformName, host, target.repo.Owner, target.repo.Name,
+		)
+		if err != nil {
+			repoErrs = append(repoErrs, fmt.Errorf(
+				"load notification sync watermark for %s/%s on %s: %w",
+				target.repo.Owner, target.repo.Name, host, err,
+			))
+			continue
+		}
+		targets[notificationRepoKey(platformName, host, target.repo.Owner, target.repo.Name)] = target
+	}
+	if len(targets) == 0 {
+		return errors.Join(repoErrs...)
+	}
+
+	participating := map[string]bool{}
+	lastModified := ""
+	for pageNumber := 1; ; pageNumber++ {
+		var page platformgithub.NotificationPage
+		if pageNumber == 1 && firstParticipating != nil {
+			page = *firstParticipating
+		} else {
+			if err := s.ensureNotificationBudget(lead, client, 1); err != nil {
+				return errors.Join(append(repoErrs, err)...)
+			}
+			var err error
+			page, err = lister(ctx, NotificationListOptions{
+				All: true, Participating: true, Since: since, Page: pageNumber,
+			}, "")
+			if err != nil {
+				return errors.Join(append(repoErrs, fmt.Errorf(
+					"list participating notifications on %s page %d: %w", host, pageNumber, err,
+				))...)
+			}
+		}
+		if pageNumber == 1 {
+			lastModified = page.LastModified
+		}
+		for _, thread := range page.Threads {
+			if thread.ID != "" {
+				participating[thread.ID] = true
+			}
+		}
+		if !page.HasNext {
+			break
+		}
+	}
+
+	for pageNumber := 1; ; pageNumber++ {
+		if err := s.ensureNotificationBudget(lead, client, 1); err != nil {
+			return errors.Join(append(repoErrs, err)...)
+		}
+		page, err := lister(ctx, NotificationListOptions{
+			All: true, Since: since, Page: pageNumber,
+		}, "")
+		if err != nil {
+			return errors.Join(append(repoErrs, fmt.Errorf(
+				"list notifications on %s page %d: %w", host, pageNumber, err,
+			))...)
+		}
+		if err := s.persistNotificationPage(
+			ctx, platformName, host, targets, participating, page.Threads, pageNumber,
+		); err != nil {
+			return errors.Join(append(repoErrs, err)...)
+		}
+		if !page.HasNext {
+			break
+		}
+	}
+
+	complete := len(repoErrs) == 0
+	for _, target := range targets {
+		if target.stale {
+			complete = false
+			continue
+		}
+		committed, err := s.db.UpdateNotificationSyncWatermarkIfRouteFence(
+			ctx, platformName, host, target.repo.Owner, target.repo.Name,
+			target.routeFence, startedAt,
+			watermarkLastFullSyncAt(target.watermark, startedAt, fullSync),
+		)
+		if err != nil {
+			repoErrs = append(repoErrs, fmt.Errorf(
+				"store notification sync watermark for %s/%s on %s: %w",
+				target.repo.Owner, target.repo.Name, host, err,
+			))
+			complete = false
+			continue
+		}
+		if !committed {
+			complete = false
+		}
+	}
+	// Record the validator only when every repository in the group advanced;
+	// otherwise a later 304 could skip threads a fenced repository missed.
+	if complete && lastModified != "" {
+		s.setNotificationValidator(bucket, lastModified)
+	}
+	return errors.Join(repoErrs...)
+}
+
+// persistNotificationPage writes one host-wide page under each verified
+// repository's route fence. Threads for repositories outside this identity's
+// verified set are ignored; a repository whose fence moved is marked stale so
+// its watermark does not advance.
+func (s *Syncer) persistNotificationPage(
+	ctx context.Context,
+	platformName string,
+	host string,
+	targets map[string]*notificationRepoTarget,
+	participating map[string]bool,
+	threads []NotificationThread,
+	pageNumber int,
+) error {
+	byRepo := map[string][]db.Notification{}
+	now := time.Now().UTC()
+	for _, thread := range threads {
+		key := notificationRepoKey(platformName, host, thread.RepoOwner, thread.RepoName)
+		target, ok := targets[key]
+		if !ok || target.stale {
+			continue
+		}
+		thread.Participating = participating[thread.ID]
+		// Only notifications anchored to a PR or issue have an in-app
+		// destination and meaningful triage. CI/check-suite, discussion,
+		// release, and other subjects are worthless in kenn-forge, so do
+		// not persist them.
+		if (thread.ItemType != "pr" && thread.ItemType != "issue") || thread.ItemNumber == nil {
+			continue
+		}
+		// "author" notifications fire for any activity on a thread the
+		// user opened ("Your thread"); the triggering comment/review/state
+		// change is already its own row in the feed, so they are pure
+		// duplication. Drop them while keeping comment, subscribed, and
+		// the attention-requesting reasons (mention, review_requested, ...).
+		if thread.Reason == "author" {
+			continue
+		}
+		notification, err := s.notificationToDB(ctx, host, target.repo, thread, now)
+		if err != nil {
+			return fmt.Errorf(
+				"normalize notification %s for %s/%s on %s page %d: %w",
+				thread.ID, target.repo.Owner, target.repo.Name, host, pageNumber, err,
+			)
+		}
+		byRepo[key] = append(byRepo[key], notification)
+	}
+	for key, notifications := range byRepo {
+		target, ok := targets[key]
+		if !ok || target == nil {
+			continue
+		}
+		committed, err := s.db.UpsertNotificationsIfRouteFence(
+			ctx, notifications, target.identity, target.routeFence,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"upsert notifications for %s/%s on %s page %d: %w",
+				target.repo.Owner, target.repo.Name, host, pageNumber, err,
+			)
+		}
+		if !committed {
+			target.stale = true
+		}
+	}
+	return nil
+}
+
+// prepareNotificationRepo verifies a repository's provider identity and
+// captures its route fence before notifications are written for it.
+func (s *Syncer) prepareNotificationRepo(
+	ctx context.Context,
+	kind platform.Kind,
+	host string,
+	client notificationClient,
+	repo RepoRef,
+	providerWork *notificationProviderWork,
+) (*notificationRepoTarget, error) {
+	for range 2 {
+		target, retry, err := s.prepareNotificationRepoAttempt(
+			ctx, host, client, repo, providerWork,
+		)
+		if err != nil || !retry {
+			return target, err
+		}
+	}
+	return nil, fmt.Errorf(
 		"repository route changed repeatedly during notification sync of %s/%s on %s",
 		repo.Owner, repo.Name, host,
 	)
 }
 
-func (s *Syncer) syncNotificationsForRepoAttempt(
+func (s *Syncer) prepareNotificationRepoAttempt(
 	ctx context.Context,
-	kind platform.Kind,
 	host string,
 	client notificationClient,
-	tracked map[string]RepoRef,
 	repo RepoRef,
-	startedAt time.Time,
 	providerWork *notificationProviderWork,
-) (bool, error) {
-	platformName := string(kind)
+) (*notificationRepoTarget, bool, error) {
 	if err := s.ensureNotificationIdentityBudget(repo, client); err != nil {
-		return false, err
+		return nil, false, err
 	}
 	resolved, observedRepoID, providerRepo, observedAt, accepted, err :=
 		s.reconcileRepoIdentityObservation(ctx, repo)
 	if err != nil {
-		return false, fmt.Errorf(
+		return nil, false, fmt.Errorf(
 			"verify repository identity before notification sync of %s/%s on %s: %w",
 			repo.Owner, repo.Name, host, err,
 		)
 	}
 	if !accepted {
-		return true, nil
+		return nil, true, nil
 	}
 	repo = resolved
 	observedIdentity := platformdb.DBRepoIdentity(platformRepoRef(repo))
@@ -374,13 +637,13 @@ func (s *Syncer) syncNotificationsForRepoAttempt(
 		ctx, observedIdentity, observedRepoID,
 	)
 	if err != nil {
-		return false, fmt.Errorf(
+		return nil, false, fmt.Errorf(
 			"capture repository route before notification sync of %s/%s on %s: %w",
 			repo.Owner, repo.Name, host, err,
 		)
 	}
 	if !found {
-		return true, nil
+		return nil, true, nil
 	}
 	providerWork.addRepo(ctx, repo)
 	if s.afterNotificationRepoIdentityReconciled != nil {
@@ -393,165 +656,74 @@ func (s *Syncer) syncNotificationsForRepoAttempt(
 		)
 		if err != nil {
 			if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
-				return true, nil
+				return nil, true, nil
 			}
-			return false, fmt.Errorf(
+			return nil, false, fmt.Errorf(
 				"persist repository settings before notification sync of %s/%s on %s: %w",
 				repo.Owner, repo.Name, host, err,
 			)
 		}
 		if !applied {
-			return true, nil
+			return nil, true, nil
 		}
 	}
-	if err := s.ensureNotificationBudget(repo, client, 1); err != nil {
-		return false, err
-	}
-	trackedRepo := repo
-	trackedRepo.RepoID = observedRepoID
-	tracked[notificationRepoKey(platformName, host, repo.Owner, repo.Name)] = trackedRepo
-	watermark, err := s.db.GetNotificationSyncWatermark(
-		ctx, platformName, host, repo.Owner, repo.Name,
-	)
-	if err != nil {
-		return false, fmt.Errorf(
-			"load notification sync watermark for %s/%s on %s: %w",
-			repo.Owner, repo.Name, host, err,
-		)
-	}
-	var since *time.Time
-	fullSync := shouldFullSyncNotifications(startedAt, watermark)
-	if watermark != nil && !fullSync {
-		value := watermark.LastSuccessfulSyncAt.Add(-notificationSyncSinceOverlap).UTC()
-		since = &value
-	}
-	participatingIDs, err := s.listParticipatingNotificationIDs(
-		ctx, host, client, []RepoRef{repo}, since,
-	)
-	if err != nil {
-		return false, err
-	}
-	for page := 1; ; page++ {
-		if err := s.ensureNotificationBudget(repo, client, 1); err != nil {
-			return false, err
-		}
-		threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
-			All:       true,
-			Since:     since,
-			Page:      page,
-			RepoOwner: repo.Owner,
-			RepoName:  repo.Name,
-		})
-		if err != nil {
-			return false, fmt.Errorf(
-				"list notifications for %s/%s on %s page %d: %w",
-				repo.Owner, repo.Name, host, page, err,
-			)
-		}
-		notifications := make([]db.Notification, 0, len(threads))
-		now := time.Now().UTC()
-		for _, thread := range threads {
-			if thread.RepoOwner == "" {
-				thread.RepoOwner = repo.Owner
-			}
-			if thread.RepoName == "" {
-				thread.RepoName = repo.Name
-			}
-			if participatingIDs[thread.ID] {
-				thread.Participating = true
-			}
-			key := notificationRepoKey(platformName, host, thread.RepoOwner, thread.RepoName)
-			trackedRepo, ok := tracked[key]
-			if !ok {
-				continue
-			}
-			trackedRepo.RepoID = observedRepoID
-			// Only notifications anchored to a PR or issue have an in-app
-			// destination and meaningful triage. CI/check-suite, discussion,
-			// release, and other subjects are worthless in kenn-forge, so do
-			// not persist them.
-			if (thread.ItemType != "pr" && thread.ItemType != "issue") || thread.ItemNumber == nil {
-				continue
-			}
-			// "author" notifications fire for any activity on a thread the
-			// user opened ("Your thread"); the triggering comment/review/state
-			// change is already its own row in the feed, so they are pure
-			// duplication. Drop them while keeping comment, subscribed, and
-			// the attention-requesting reasons (mention, review_requested, ...).
-			if thread.Reason == "author" {
-				continue
-			}
-			notification, err := s.notificationToDB(ctx, host, trackedRepo, thread, now)
-			if err != nil {
-				return false, fmt.Errorf(
-					"normalize notification %s for %s/%s on %s page %d: %w",
-					thread.ID, repo.Owner, repo.Name, host, page, err,
-				)
-			}
-			notifications = append(notifications, notification)
-		}
-		committed, err := s.db.UpsertNotificationsIfRouteFence(
-			ctx, notifications, observedIdentity, routeFence,
-		)
-		if err != nil {
-			return false, fmt.Errorf("upsert notifications for %s/%s on %s page %d: %w", repo.Owner, repo.Name, host, page, err)
-		}
-		if !committed {
-			return true, nil
-		}
-		if !hasNext {
-			break
-		}
-	}
-	lastFullSyncAt := watermarkLastFullSyncAt(watermark, startedAt, fullSync)
-	committed, err := s.db.UpdateNotificationSyncWatermarkIfRouteFence(
-		ctx, platformName, host, repo.Owner, repo.Name,
-		routeFence, startedAt, lastFullSyncAt,
-	)
-	if err != nil {
-		return false, fmt.Errorf(
-			"store notification sync watermark for %s/%s on %s: %w",
-			repo.Owner, repo.Name, host, err,
-		)
-	}
-	return !committed, nil
+	repo.RepoID = observedRepoID
+	return &notificationRepoTarget{
+		repo: repo, identity: observedIdentity, routeFence: routeFence,
+	}, false, nil
 }
 
-func (s *Syncer) listParticipatingNotificationIDs(
-	ctx context.Context,
-	host string,
-	client notificationClient,
-	trackedRepos []RepoRef,
-	since *time.Time,
-) (map[string]bool, error) {
-	participating := map[string]bool{}
-	for _, repo := range trackedRepos {
-		for page := 1; ; page++ {
-			if err := s.ensureNotificationBudget(repo, client, 1); err != nil {
-				return nil, err
-			}
-			threads, hasNext, err := client.ListNotifications(ctx, NotificationListOptions{
-				All:           true,
-				Participating: true,
-				Since:         since,
-				Page:          page,
-				RepoOwner:     repo.Owner,
-				RepoName:      repo.Name,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("list participating notifications for %s/%s on %s page %d: %w", repo.Owner, repo.Name, host, page, err)
-			}
-			for _, thread := range threads {
-				if thread.ID != "" {
-					participating[thread.ID] = true
-				}
-			}
-			if !hasNext {
-				break
-			}
+// The provider must expose the routed page listing, or notification sync
+// silently loses conditional requests and falls back to unrouted listing.
+var _ routedNotificationPageLister = (*platformgithub.Provider)(nil)
+
+type notificationPageLister func(
+	context.Context, NotificationListOptions, string,
+) (platformgithub.NotificationPage, error)
+
+type routedNotificationPageLister interface {
+	ListNotificationPageForRepo(
+		context.Context, string, string, NotificationListOptions, string,
+	) (platformgithub.NotificationPage, error)
+}
+
+// notificationPageListerFor lists host-wide through the credential route of
+// lead. Clients without a routed page listing fall back to an unconditional
+// host-wide listing.
+func notificationPageListerFor(client notificationClient, lead RepoRef) notificationPageLister {
+	if routed, ok := client.(routedNotificationPageLister); ok {
+		return func(
+			ctx context.Context, opts NotificationListOptions, ifModifiedSince string,
+		) (platformgithub.NotificationPage, error) {
+			return routed.ListNotificationPageForRepo(
+				ctx, lead.Owner, lead.Name, opts, ifModifiedSince,
+			)
 		}
 	}
-	return participating, nil
+	return func(
+		ctx context.Context, opts NotificationListOptions, _ string,
+	) (platformgithub.NotificationPage, error) {
+		threads, hasNext, err := client.ListNotifications(ctx, opts)
+		if err != nil {
+			return platformgithub.NotificationPage{}, err
+		}
+		return platformgithub.NotificationPage{Threads: threads, HasNext: hasNext}, nil
+	}
+}
+
+func (s *Syncer) notificationValidator(bucket string) string {
+	s.notificationSyncMu.RLock()
+	defer s.notificationSyncMu.RUnlock()
+	return s.notificationValidators[bucket]
+}
+
+func (s *Syncer) setNotificationValidator(bucket, lastModified string) {
+	s.notificationSyncMu.Lock()
+	defer s.notificationSyncMu.Unlock()
+	if s.notificationValidators == nil {
+		s.notificationValidators = map[string]string{}
+	}
+	s.notificationValidators[bucket] = lastModified
 }
 
 // ensureNotificationBudget checks both ceilings for an operation that can spend

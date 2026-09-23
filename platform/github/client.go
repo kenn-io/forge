@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,6 +106,19 @@ type Client struct {
 	viewerLogin             string
 	viewerLoginAt           time.Time
 	viewerLoginCacheKey     string
+	viewerRepoMu            sync.Mutex
+	viewerRepos             map[string]viewerRepoOverlay
+}
+
+// viewerRepoOverlay is the user's view of a repository, kept with the ETag
+// that revalidates it.
+type viewerRepoOverlay struct {
+	permissions   *gh.RepositoryPermissions
+	mergeSettings bool
+	allowSquash   bool
+	allowMerge    bool
+	allowRebase   bool
+	etag          string
 }
 
 func (c *Client) writeGH() *gh.Client {
@@ -222,6 +236,70 @@ func (c *Client) ListNotifications(ctx context.Context, opts platform.Notificati
 		threads = append(threads, c.normalizeNotification(notification))
 	}
 	return threads, resp != nil && resp.NextPage != 0, nil
+}
+
+// NotificationPage is one page of the authenticated user's notifications
+// across every repository. NotModified reports a 304 for a conditional
+// request; LastModified is the validator GitHub returned.
+type NotificationPage struct {
+	Threads      []platform.NotificationThread
+	HasNext      bool
+	LastModified string
+	NotModified  bool
+}
+
+// NotificationPageAPI lists the authenticated user's notifications across
+// every repository. GitHub scopes Last-Modified to the user's whole
+// notification set rather than to the URL, and a 304 costs no rate limit, so
+// one conditional request proves nothing changed anywhere.
+type NotificationPageAPI interface {
+	ListNotificationPage(
+		ctx context.Context, opts platform.NotificationListOptions, ifModifiedSince string,
+	) (NotificationPage, error)
+}
+
+var _ NotificationPageAPI = (*Client)(nil)
+
+func (c *Client) ListNotificationPage(
+	ctx context.Context, opts platform.NotificationListOptions, ifModifiedSince string,
+) (NotificationPage, error) {
+	query := url.Values{}
+	query.Set("all", strconv.FormatBool(opts.All))
+	query.Set("participating", strconv.FormatBool(opts.Participating))
+	if opts.Since != nil {
+		query.Set("since", opts.Since.UTC().Format(time.RFC3339))
+	}
+	query.Set("page", strconv.Itoa(max(opts.Page, 1)))
+	query.Set("per_page", "100")
+	req, err := c.notificationGH().NewRequest(
+		ctx, http.MethodGet, "notifications?"+query.Encode(), nil,
+	)
+	if err != nil {
+		return NotificationPage{}, err
+	}
+	if ifModifiedSince != "" {
+		req.Header.Set("If-Modified-Since", ifModifiedSince)
+	}
+	var notifications []*gh.Notification
+	resp, err := c.notificationGH().Do(req, &notifications)
+	c.trackNotificationRate(resp)
+	if err != nil {
+		if IsNotModified(err) {
+			return NotificationPage{NotModified: true, LastModified: ifModifiedSince}, nil
+		}
+		return NotificationPage{}, err
+	}
+	page := NotificationPage{
+		Threads: make([]platform.NotificationThread, 0, len(notifications)),
+		HasNext: resp.NextPage != 0,
+	}
+	if resp.Response != nil {
+		page.LastModified = resp.Header.Get("Last-Modified")
+	}
+	for _, notification := range notifications {
+		page.Threads = append(page.Threads, c.normalizeNotification(notification))
+	}
+	return page, nil
 }
 
 func (c *Client) GetNotificationThread(ctx context.Context, threadID string) (platform.NotificationThread, error) {
@@ -2036,23 +2114,78 @@ func (c *Client) GetRepository(
 		r.Permissions = nil
 		return r, nil
 	}
-	viewerRepo, viewerResp, viewerErr := c.writeGH().Repositories.Get(ctx, owner, repo)
-	c.trackWriteRate(viewerResp)
-	if viewerErr != nil {
+	overlay, err := c.viewerRepoOverlay(ctx, owner, repo)
+	if err != nil {
 		c.warn(
 			"viewer permission refresh failed; merge permission unknown until it succeeds",
-			"repo", owner+"/"+repo, "err", viewerErr,
+			"repo", owner+"/"+repo, "err", err,
 		)
 		r.Permissions = nil
 		return r, nil
 	}
-	r.Permissions = viewerRepo.Permissions
-	if MergeSettingsComplete(viewerRepo) {
-		r.AllowSquashMerge = viewerRepo.AllowSquashMerge
-		r.AllowMergeCommit = viewerRepo.AllowMergeCommit
-		r.AllowRebaseMerge = viewerRepo.AllowRebaseMerge
+	if overlay.permissions != nil {
+		permissions := *overlay.permissions
+		r.Permissions = &permissions
+	} else {
+		r.Permissions = nil
+	}
+	if overlay.mergeSettings {
+		r.AllowSquashMerge = new(overlay.allowSquash)
+		r.AllowMergeCommit = new(overlay.allowMerge)
+		r.AllowRebaseMerge = new(overlay.allowRebase)
 	}
 	return r, nil
+}
+
+// viewerRepoOverlay returns the user's view of a repository. Sync reads every
+// tracked repository on each pass, so the overlay is revalidated with its ETag:
+// GitHub answers an unchanged repository with a 304 that costs no rate limit,
+// and the cached overlay stays current without spending the user's credential.
+func (c *Client) viewerRepoOverlay(
+	ctx context.Context, owner, repo string,
+) (viewerRepoOverlay, error) {
+	key := strings.ToLower(owner) + "/" + strings.ToLower(repo)
+	if c.auth.CredentialKey != nil {
+		key = c.auth.CredentialKey() + "\x00" + key
+	}
+	c.viewerRepoMu.Lock()
+	cached, ok := c.viewerRepos[key]
+	c.viewerRepoMu.Unlock()
+	req, err := c.writeGH().NewRequest(
+		ctx, http.MethodGet, fmt.Sprintf("repos/%v/%v", owner, repo), nil,
+	)
+	if err != nil {
+		return viewerRepoOverlay{}, err
+	}
+	if ok && cached.etag != "" {
+		req.Header.Set("If-None-Match", cached.etag)
+	}
+	viewerRepo := new(gh.Repository)
+	resp, err := c.writeGH().Do(req, viewerRepo)
+	c.trackWriteRate(resp)
+	if err != nil {
+		if ok && IsNotModified(err) {
+			return cached, nil
+		}
+		return viewerRepoOverlay{}, err
+	}
+	overlay := viewerRepoOverlay{
+		permissions:   viewerRepo.Permissions,
+		mergeSettings: MergeSettingsComplete(viewerRepo),
+		allowSquash:   viewerRepo.GetAllowSquashMerge(),
+		allowMerge:    viewerRepo.GetAllowMergeCommit(),
+		allowRebase:   viewerRepo.GetAllowRebaseMerge(),
+	}
+	if resp.Response != nil {
+		overlay.etag = resp.Header.Get("ETag")
+	}
+	c.viewerRepoMu.Lock()
+	if c.viewerRepos == nil {
+		c.viewerRepos = map[string]viewerRepoOverlay{}
+	}
+	c.viewerRepos[key] = overlay
+	c.viewerRepoMu.Unlock()
+	return overlay, nil
 }
 
 func MergeSettingsComplete(repo *gh.Repository) bool {

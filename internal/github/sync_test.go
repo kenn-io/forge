@@ -2229,12 +2229,18 @@ func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
 	number := 7
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	client := &mockClient{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			if repo == "broken" {
+				return nil, boom
+			}
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				ID: new(int64(1)), NodeID: &nodeID, Name: &repo, Owner: &gh.User{Login: &owner},
+			}, nil
+		},
 		listNotificationsFn: func(
 			_ context.Context, opts NotificationListOptions,
 		) ([]NotificationThread, bool, error) {
-			if opts.RepoName == "broken" {
-				return nil, false, boom
-			}
 			if opts.Participating {
 				return nil, false, nil
 			}
@@ -2289,15 +2295,24 @@ func TestSyncNotificationsSkipsArchivedRepos(t *testing.T) {
 		)
 		require.NoError(err)
 	}
-	var listedRepos sync.Map
+	number := 7
+	thread := func(name string) NotificationThread {
+		return NotificationThread{
+			ID: "thread-" + name, RepoOwner: "acme", RepoName: name,
+			SubjectType: "PullRequest", SubjectTitle: "Review requested",
+			WebURL:     "https://github.com/acme/" + name + "/pull/7",
+			ItemNumber: &number, ItemType: "pr", Reason: "mention",
+			Unread: true, UpdatedAt: time.Now().UTC(),
+		}
+	}
 	client := &mockClient{
 		listNotificationsFn: func(
 			_ context.Context, opts NotificationListOptions,
 		) ([]NotificationThread, bool, error) {
-			if opts.RepoName != "" {
-				listedRepos.Store(opts.RepoName, true)
+			if opts.Participating {
+				return nil, false, nil
 			}
-			return nil, false, nil
+			return []NotificationThread{thread("frozen"), thread("widget")}, false, nil
 		},
 	}
 	syncer := NewSyncer(
@@ -2310,11 +2325,15 @@ func TestSyncNotificationsSkipsArchivedRepos(t *testing.T) {
 	)
 
 	require.NoError(syncer.SyncNotifications(t.Context()))
-	_, listedWidget := listedRepos.Load("widget")
-	assert.True(listedWidget, "live repo notifications should sync")
-	_, listedFrozen := listedRepos.Load("frozen")
-	assert.False(listedFrozen,
-		"archived repo must not receive notification polling")
+	items, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(items, 1, "archived repo notifications must not be stored")
+	assert.Equal("thread-widget", items[0].PlatformNotificationID)
+	frozenWatermark, err := database.GetNotificationSyncWatermark(
+		t.Context(), "github", "github.com", "acme", "frozen",
+	)
+	require.NoError(err)
+	assert.Nil(frozenWatermark, "archived repo must not receive notification polling")
 }
 
 func TestAckRepoBucketsIncludesArchivedTrackedRepos(t *testing.T) {
@@ -2367,7 +2386,7 @@ func TestSyncNotificationsSkipsUnroutedRepoAndAdvancesRoutedSibling(t *testing.T
 	number := 7
 	client := &mockClient{
 		listNotificationsFn: func(_ context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
-			if opts.Participating || opts.RepoName != "widget" {
+			if opts.Participating {
 				return nil, false, nil
 			}
 			return []NotificationThread{{
@@ -2644,13 +2663,13 @@ func TestSyncNotificationsReadsAllRepositoryNotificationPages(t *testing.T) {
 	assert.Equal(int32(1), participatingCalls.Load())
 	assert.Equal(int32(6), listCalls.Load())
 	if assert.Len(seen, 7) {
-		assert.Equal("acme", seen[0].RepoOwner)
-		assert.Equal("widget", seen[0].RepoName)
+		assert.Empty(seen[0].RepoOwner, "notifications are listed host-wide")
+		assert.Empty(seen[0].RepoName, "notifications are listed host-wide")
 		assert.True(seen[0].Participating)
 		last := seen[len(seen)-1]
 		assert.Equal(6, last.Page)
-		assert.Equal("acme", last.RepoOwner)
-		assert.Equal("widget", last.RepoName)
+		assert.Empty(last.RepoOwner, "notifications are listed host-wide")
+		assert.Empty(last.RepoName, "notifications are listed host-wide")
 		assert.False(last.Participating)
 	}
 	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
@@ -4546,16 +4565,16 @@ func TestSyncNotificationsUsesPersistedSinceWatermark(t *testing.T) {
 	assert.True(seen[0].All)
 	assert.True(seen[0].Participating)
 	assert.Equal(1, seen[0].Page)
-	assert.Equal("acme", seen[0].RepoOwner)
-	assert.Equal("widget", seen[0].RepoName)
+	assert.Empty(seen[0].RepoOwner, "notifications are listed host-wide")
+	assert.Empty(seen[0].RepoName, "notifications are listed host-wide")
 	if assert.NotNil(seen[0].Since) {
 		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[0].Since))
 	}
 	assert.True(seen[1].All)
 	assert.False(seen[1].Participating)
 	assert.Equal(1, seen[1].Page)
-	assert.Equal("acme", seen[1].RepoOwner)
-	assert.Equal("widget", seen[1].RepoName)
+	assert.Empty(seen[1].RepoOwner, "notifications are listed host-wide")
+	assert.Empty(seen[1].RepoName, "notifications are listed host-wide")
 	if assert.NotNil(seen[1].Since) {
 		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[1].Since))
 	}
@@ -4698,15 +4717,16 @@ func TestSyncNotificationsRetriesAfterRepositoryReplacement(t *testing.T) {
 	close(release)
 	require.NoError(<-done)
 
-	restored, err := d.GetNotificationSyncWatermark(
+	held, err := d.GetNotificationSyncWatermark(
 		ctx, "github", "github.com", "acme", "alpha",
 	)
 	require.NoError(err)
-	assert.NotNil(restored)
-	assert.Equal(int32(4), calls.Load())
+	assert.Nil(held,
+		"a repository whose route moved mid-pass must not advance; the next pass full-syncs it")
+	assert.Equal(int32(2), calls.Load())
 	notifications, err := d.ListNotifications(ctx, db.ListNotificationsOpts{State: "all"})
 	require.NoError(err)
-	assert.Empty(notifications)
+	assert.Empty(notifications, "threads listed under a replaced route must not be written")
 }
 
 func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
@@ -4741,18 +4761,18 @@ func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
 	assert.True(seen[0].All)
 	assert.True(seen[0].Participating)
 	assert.Equal(1, seen[0].Page)
-	assert.Equal("acme", seen[0].RepoOwner)
-	assert.Equal("widget", seen[0].RepoName)
+	assert.Empty(seen[0].RepoOwner, "notifications are listed host-wide")
+	assert.Empty(seen[0].RepoName, "notifications are listed host-wide")
 	assert.Nil(seen[0].Since)
 	assert.True(seen[1].All)
 	assert.False(seen[1].Participating)
 	assert.Equal(1, seen[1].Page)
-	assert.Equal("acme", seen[1].RepoOwner)
-	assert.Equal("widget", seen[1].RepoName)
+	assert.Empty(seen[1].RepoOwner, "notifications are listed host-wide")
+	assert.Empty(seen[1].RepoName, "notifications are listed host-wide")
 	assert.Nil(seen[1].Since)
 }
 
-func TestSyncNotificationsNewRepoFullSyncsWithoutResettingSiblings(t *testing.T) {
+func TestSyncNotificationsNewRepoFullSyncSharesOneListing(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -4785,38 +4805,25 @@ func TestSyncNotificationsNewRepoFullSyncsWithoutResettingSiblings(t *testing.T)
 	)
 
 	require.NoError(syncer.SyncNotifications(t.Context()))
-	require.Len(seen, 4)
-	// Repos scan in sorted order: the newly tracked repository has no
-	// watermark and full-syncs, while the established sibling keeps its
-	// incremental since window instead of being reset by the tracked-set
-	// change.
-	assert.True(seen[0].All)
+	// One host-wide listing serves every repository of the identity, so the
+	// newly tracked repository's full sync is a single shared listing rather
+	// than a per-repository pass on top of the sibling's incremental one.
+	require.Len(seen, 2)
 	assert.True(seen[0].Participating)
-	assert.Equal(1, seen[0].Page)
-	assert.Equal("acme", seen[0].RepoOwner)
-	assert.Equal("new-repo", seen[0].RepoName)
-	assert.Nil(seen[0].Since)
-	assert.True(seen[1].All)
 	assert.False(seen[1].Participating)
-	assert.Equal(1, seen[1].Page)
-	assert.Equal("acme", seen[1].RepoOwner)
-	assert.Equal("new-repo", seen[1].RepoName)
-	assert.Nil(seen[1].Since)
-	assert.True(seen[2].All)
-	assert.True(seen[2].Participating)
-	assert.Equal(1, seen[2].Page)
-	assert.Equal("acme", seen[2].RepoOwner)
-	assert.Equal("widget", seen[2].RepoName)
-	if assert.NotNil(seen[2].Since) {
-		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[2].Since))
+	for _, opts := range seen {
+		assert.True(opts.All)
+		assert.Equal(1, opts.Page)
+		assert.Nil(opts.Since)
+		assert.Empty(opts.RepoOwner, "notifications are listed host-wide")
 	}
-	assert.True(seen[3].All)
-	assert.False(seen[3].Participating)
-	assert.Equal(1, seen[3].Page)
-	assert.Equal("acme", seen[3].RepoOwner)
-	assert.Equal("widget", seen[3].RepoName)
-	if assert.NotNil(seen[3].Since) {
-		assert.True(watermark.Add(-notificationSyncSinceOverlap).Equal(*seen[3].Since))
+	for _, name := range []string{"widget", "new-repo"} {
+		advanced, err := d.GetNotificationSyncWatermark(
+			t.Context(), "github", "github.com", "acme", name,
+		)
+		require.NoError(err)
+		require.NotNil(advanced)
+		assert.True(advanced.LastSuccessfulSyncAt.After(watermark))
 	}
 }
 
@@ -24129,4 +24136,95 @@ func TestSyncRepoErrsWhenSettingsObservationKeepsLosing(t *testing.T) {
 	require.Len(repos, 1)
 	require.Contains(repos[0].LastSyncError, "kept losing")
 	require.NotNil(repos[0].LastSyncStartedAt)
+}
+
+// conditionalNotificationClient adds GitHub's conditional host-wide
+// notification listing to mockClient.
+type conditionalNotificationClient struct {
+	*mockClient
+	listNotificationPageFn func(
+		context.Context, NotificationListOptions, string,
+	) (platformgithub.NotificationPage, error)
+}
+
+func (c *conditionalNotificationClient) ListNotificationPage(
+	ctx context.Context, opts NotificationListOptions, ifModifiedSince string,
+) (platformgithub.NotificationPage, error) {
+	return c.listNotificationPageFn(ctx, opts, ifModifiedSince)
+}
+
+func TestSyncNotificationsListsOncePerIdentityAndSkipsUnchangedInbox(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	for _, name := range []string{"widget", "gadget"} {
+		_, err := d.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", name))
+		require.NoError(err)
+	}
+	number := 7
+	const lastModified = "Wed, 01 May 2026 10:00:00 GMT"
+	var validators []string
+	var repositoryReads atomic.Int32
+	inner := &mockClient{
+		getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			repositoryReads.Add(1)
+			nodeID := "repo-" + owner + "-" + repo
+			return &gh.Repository{
+				ID: new(int64(1)), NodeID: &nodeID, Name: &repo, Owner: &gh.User{Login: &owner},
+			}, nil
+		},
+	}
+	client := &conditionalNotificationClient{
+		mockClient: inner,
+		listNotificationPageFn: func(
+			_ context.Context, opts NotificationListOptions, ifModifiedSince string,
+		) (platformgithub.NotificationPage, error) {
+			assert.Empty(opts.RepoOwner, "notifications are listed host-wide")
+			validators = append(validators, ifModifiedSince)
+			if ifModifiedSince == lastModified {
+				return platformgithub.NotificationPage{NotModified: true}, nil
+			}
+			if opts.Participating {
+				return platformgithub.NotificationPage{LastModified: lastModified}, nil
+			}
+			var threads []NotificationThread
+			for _, name := range []string{"widget", "gadget", "untracked"} {
+				threads = append(threads, NotificationThread{
+					ID: "thread-" + name, RepoOwner: "acme", RepoName: name,
+					SubjectType: "PullRequest", SubjectTitle: "Review requested",
+					WebURL:     "https://github.com/acme/" + name + "/pull/7",
+					ItemNumber: &number, ItemType: "pr", Reason: "mention",
+					Unread: true, UpdatedAt: time.Now().UTC(),
+				})
+			}
+			return platformgithub.NotificationPage{Threads: threads}, nil
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, d, nil,
+		[]RepoRef{
+			{Owner: "acme", Name: "widget", PlatformHost: "github.com"},
+			{Owner: "acme", Name: "gadget", PlatformHost: "github.com"},
+		},
+		time.Minute, nil, nil,
+	)
+
+	require.NoError(syncer.SyncNotifications(t.Context()))
+	assert.Equal([]string{"", ""}, validators,
+		"the first pass lists participating and all threads once for both repositories")
+	items, err := d.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.PlatformNotificationID)
+	}
+	assert.ElementsMatch([]string{"thread-widget", "thread-gadget"}, ids,
+		"threads for untracked repositories are ignored")
+	readsAfterFirstPass := repositoryReads.Load()
+
+	require.NoError(syncer.SyncNotifications(t.Context()))
+	assert.Equal([]string{"", "", lastModified}, validators,
+		"an unchanged inbox costs one conditional request")
+	assert.Equal(readsAfterFirstPass, repositoryReads.Load(),
+		"an unchanged inbox skips repository identity checks")
 }

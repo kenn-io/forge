@@ -67,6 +67,7 @@ import type {
   GetPullPathParameters,
   GetPullStackOnHostPathParameters,
   GetPullStackPathParameters,
+  GhShimResponse,
   GithubStateHostInputBody,
   GithubStateInputBody,
   GithubStateOutputBody,
@@ -92,6 +93,7 @@ import type {
   PublishDiffReviewDraftInputBody,
   PublishPrReviewDraftOnHostPathParameters,
   PublishPrReviewDraftPathParameters,
+  Query,
   RefreshPullCiOnHostPathParameters,
   RefreshPullCiPathParameters,
   ReplyToDiscussionHostInputBody,
@@ -148,6 +150,31 @@ type NonReadonly<T> = [T] extends [UnionToIntersection<T>]
       [P in keyof Writable<T>]: T[P] extends object ? NonReadonly<NonNullable<T[P]>> : T[P];
     }
   : DistributeReadOnlyOverUnions<T>;
+
+export const getQueryGhUrl = () => {
+  return `/gh/query`;
+};
+
+/**
+ * @summary Query GitHub CLI cached data
+ */
+export const queryGh = async (
+  query: NonReadonly<Query>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<GhShimResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<GhShimResponse>(getQueryGhUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(query),
+  });
+};
 
 export const getGetPullOnHostUrl = ({ platformHost, provider, owner, name, number }: GetPullOnHostPathParameters) => {
   return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}`;

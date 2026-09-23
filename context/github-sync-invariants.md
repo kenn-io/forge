@@ -858,3 +858,11 @@ Also see [`context/testing.md`](./testing.md):
 - If you change GraphQL query shape in `internal/github/graphql.go` or
   `platform/github`, run the gated live GitHub validation for the owning
   package as well.
+
+## GitHub CLI shim
+
+- A partial sync/archive is not a complete `gh pr list` result. Hydrate complete
+  lists or delegate the original invocation; never silently omit unsupported
+  fields or filters (`internal/ghshim/cache.go::Cache.Query`).
+- Preserve upstream `gh` output bytes for intercepted commands; keep real-CLI
+  differential tests when growing coverage (`internal/ghshim/query_test.go::TestJSONMatchesRealGH`).

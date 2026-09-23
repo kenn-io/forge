@@ -3974,6 +3974,31 @@ func (o *AbortFederationSpokePreparationRequestOptions) GetHeader() (map[string]
 	return nil, nil
 }
 
+// QueryGhRequestOptions is the options needed to make a request to QueryGh.
+type QueryGhRequestOptions struct {
+	Body *QueryGhBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *QueryGhRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *QueryGhRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *QueryGhRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *QueryGhRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // ListWorkflowRunsOnHostRequestOptions is the options needed to make a request to ListWorkflowRunsOnHost.
 type ListWorkflowRunsOnHostRequestOptions struct {
 	PathParams *ListWorkflowRunsOnHostPath
@@ -11525,6 +11550,7 @@ type ClientInterface interface {
 	JoinFederationWithResponse(ctx context.Context, options *JoinFederationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*JoinFederationResp, error)
 	PrepareFederationSpokeWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*PrepareFederationSpokeResp, error)
 	AbortFederationSpokePreparationWithResponse(ctx context.Context, options *AbortFederationSpokePreparationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AbortFederationSpokePreparationResp, error)
+	QueryGhWithResponse(ctx context.Context, options *QueryGhRequestOptions, reqEditors ...runtime.RequestEditorFn) (*QueryGhResp, error)
 	ListWorkflowRunsOnHostWithResponse(ctx context.Context, options *ListWorkflowRunsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkflowRunsOnHostResp, error)
 	ListWorkflowRunJobsOnHostWithResponse(ctx context.Context, options *ListWorkflowRunJobsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkflowRunJobsOnHostResp, error)
 	ListWorkflowsOnHostWithResponse(ctx context.Context, options *ListWorkflowsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkflowsOnHostResp, error)
@@ -18314,6 +18340,63 @@ func (c *Client) AbortFederationSpokePreparationWithResponse(ctx context.Context
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "AbortFederationSpokePreparationResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// QueryGh Query GitHub CLI cached data
+func (c *Client) QueryGhWithResponse(ctx context.Context, options *QueryGhRequestOptions, reqEditors ...runtime.RequestEditorFn) (*QueryGhResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/gh/query",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/gh/query")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &QueryGhResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(QueryGhErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(QueryGhResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "QueryGhResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -34320,6 +34403,22 @@ func (c *Client) AbortFederationSpokePreparationRaw(ctx context.Context, httpCli
 	return httpClient.Do(req)
 }
 
+// QueryGhRaw returns an unread response. The caller must close its body.
+func (c *Client) QueryGhRaw(ctx context.Context, httpClient *http.Client, options *QueryGhRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/gh/query",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // ListWorkflowRunsOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) ListWorkflowRunsOnHostRaw(ctx context.Context, httpClient *http.Client, options *ListWorkflowRunsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -40806,6 +40905,23 @@ func NewAbortFederationSpokePreparationRequest(ctx context.Context, baseURL stri
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/prepare-spoke/abort",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewQueryGhRequest constructs a typed request for a caller-owned transport.
+func NewQueryGhRequest(ctx context.Context, baseURL string, options *QueryGhRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/gh/query",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -47672,6 +47788,8 @@ type JoinFederationBody = LocalJoinInputBody
 
 type AbortFederationSpokePreparationBody = AbortFederationSpokeInputBody
 
+type QueryGhBody = Query
+
 type DispatchWorkflowOnHostBody = WorkflowDispatchBody
 
 type CreateIssueOnHostBody = CreateIssueHostInputBody
@@ -48976,6 +49094,10 @@ type PrepareFederationSpokeErrorResponse = ProblemError
 type AbortFederationSpokePreparationResponse = SpokePreparationAbortReport
 
 type AbortFederationSpokePreparationErrorResponse = ProblemError
+
+type QueryGhResponse = GhShimResponse
+
+type QueryGhErrorResponse = ProblemError
 
 type ListWorkflowRunsOnHostResponse = WorkflowRunsResponse
 
@@ -50881,6 +51003,14 @@ type AbortFederationSpokePreparationResp struct {
 	StatusCode   int
 	Error        *AbortFederationSpokePreparationErrorResponse
 	JSON200      *AbortFederationSpokePreparationResponse
+}
+
+type QueryGhResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *QueryGhErrorResponse
+	JSON200      *QueryGhResponse
 }
 
 type ListWorkflowRunsOnHostResp struct {
@@ -54119,6 +54249,14 @@ type FleetSettingsResponse struct {
 	Sessions        FleetSessions `json:"sessions"`
 }
 
+type GhShimResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Handled bool    `json:"handled"`
+	Output  string  `json:"output"`
+	Reason  string  `json:"reason"`
+}
+
 type GitChangesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string         `json:"$schema,omitempty"`
@@ -55468,6 +55606,21 @@ type PushState struct {
 	Oid        string `json:"oid"`
 	Pushed     bool   `json:"pushed"`
 	Repository string `json:"repository"`
+}
+
+type Query struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string  `json:"$schema,omitempty"`
+	Base    string   `json:"base"`
+	Command string   `json:"command"`
+	Fields  []string `json:"fields"`
+	Head    string   `json:"head"`
+	Host    string   `json:"host"`
+	Limit   int64    `json:"limit"`
+	Number  int64    `json:"number"`
+	Owner   string   `json:"owner"`
+	Repo    string   `json:"repo"`
+	State   string   `json:"state"`
 }
 
 type QuickAction struct {

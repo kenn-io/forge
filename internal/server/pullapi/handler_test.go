@@ -35,6 +35,7 @@ func TestHandlerRegistersPullRoutes(t *testing.T) {
 	pull := "/pulls/{provider}/{owner}/{name}/{number}"
 	hostPull := "/host/{platform_host}" + pull
 	want := map[string]routeContract{
+		"query-gh":    {http.MethodPost, "/gh/query", http.StatusOK},
 		"list-pulls":  {http.MethodGet, "/pulls", http.StatusOK},
 		"list-stacks": {http.MethodGet, "/stacks", http.StatusOK},
 	}

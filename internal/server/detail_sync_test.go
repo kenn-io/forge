@@ -11,7 +11,7 @@ import (
 )
 
 func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)

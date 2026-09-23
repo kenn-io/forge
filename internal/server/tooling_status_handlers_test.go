@@ -54,7 +54,7 @@ func decodeToolingStatus(
 func TestToolingStatusHappyPath(t *testing.T) {
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{
 		outputs: map[string]string{
 			"git --version": "git version 2.44.0 (Apple Git-170)",
@@ -86,7 +86,7 @@ func TestToolingStatusHappyPath(t *testing.T) {
 func TestToolingStatusMissingGh(t *testing.T) {
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{
 		outputs: map[string]string{
 			"git --version": "git version 2.44.0",
@@ -121,7 +121,7 @@ func TestToolingStatusMissingGh(t *testing.T) {
 func TestToolingStatusCachesProbes(t *testing.T) {
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{}
 	srv.toolingRun = runner.run
 	ts := httptest.NewServer(srv)
@@ -143,7 +143,7 @@ func TestToolingStatusProbesConfiguredHosts(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	srv.cfgMu.Lock()
 	srv.cfg = &config.Config{
 		Platforms: []config.PlatformConfig{

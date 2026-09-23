@@ -50,11 +50,7 @@ import (
 	"go.kenn.io/forge/platform/gitealike"
 )
 
-func setupTestServerWithConfig(
-	t *testing.T,
-) (*Server, *db.DB, string) {
-	t.Helper()
-	return setupTestServerWithConfigContent(t, `
+const defaultTestConfigContent = `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -63,14 +59,38 @@ port = 8091
 [[repos]]
 owner = "acme"
 name = "widget"
-`, &mockGH{})
+`
+
+func setupTestServerWithConfig(
+	t *testing.T,
+) (*Server, *db.DB, string, *ghclient.Syncer) {
+	return setupTestServerWithConfigContent(t, defaultTestConfigContent, &mockGH{})
+}
+
+// setupTestServerWithConfigContentNoSyncer builds a config-backed server that
+// was never given a syncer, for settings paths that must work without one.
+func setupTestServerWithConfigContentNoSyncer(
+	t *testing.T,
+	cfgContent string,
+) (*Server, *db.DB, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	database := dbtest.Open(t)
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(cfgContent), 0o644))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	srv := NewWithConfig(database, nil, nil, nil, cfg, cfgPath, ServerOptions{})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	return srv, database, cfgPath
 }
 
 func setupTestServerWithConfigContent(
 	t *testing.T,
 	cfgContent string,
 	mock *mockGH,
-) (*Server, *db.DB, string) {
+) (*Server, *db.DB, string, *ghclient.Syncer) {
 	t.Helper()
 	return setupTestServerWithConfigContentAndOptions(
 		t, cfgContent, mock, ServerOptions{HostCheckAllowLoopbackAnyPort: true},
@@ -82,7 +102,7 @@ func setupTestServerWithConfigContentAndOptions(
 	cfgContent string,
 	mock *mockGH,
 	options ServerOptions,
-) (*Server, *db.DB, string) {
+) (*Server, *db.DB, string, *ghclient.Syncer) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -108,7 +128,7 @@ func setupTestServerWithConfigContentAndOptions(
 		options,
 	)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	return srv, database, cfgPath
+	return srv, database, cfgPath, syncer
 }
 
 func installSettingsTmuxRecorder(t *testing.T) string {
@@ -157,7 +177,7 @@ func setupTestServerWithConfigProviders(
 	cfgContent string,
 	mock *mockGH,
 	providers ...platform.Provider,
-) (*Server, *db.DB, string) {
+) (*Server, *db.DB, string, *ghclient.Syncer) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -184,7 +204,7 @@ func setupTestServerWithConfigProviders(
 		ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	return srv, database, cfgPath
+	return srv, database, cfgPath, syncer
 }
 
 type repoImportTestProvider struct {
@@ -373,7 +393,7 @@ func (t *gitealikeImportTransport) ListStatuses(
 func TestHandleGetSettings(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -426,7 +446,7 @@ command = ["codex", "--full-auto"]
 
 func TestHandleGetSettingsReportsRepositoryCurrentlyAtUnpinnedRoute(t *testing.T) {
 	require := require.New(t)
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, _ := setupTestServerWithConfigContent(t, `
 [[repos]]
 owner = "acme"
 name = "widget"
@@ -454,7 +474,7 @@ name = "widget"
 func TestHandleGetSettingsReportsMCPDesiredAndActiveState(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+	srv, _, _, _ := setupTestServerWithConfigContentAndOptions(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -486,7 +506,7 @@ diff_cache_mb = 256
 func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	mcp := config.MCP{Enabled: true, Port: 9092, DiffCacheMB: 256}
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{MCP: &spokeapi.McpSettingsUpdate{
@@ -513,7 +533,7 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 func TestHandleUpdateSettingsMergesMCPFields(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -553,20 +573,20 @@ diff_cache_mb = 256
 
 func TestAirplaneModeSettingsPersistAndReload(t *testing.T) {
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, syncer := setupTestServerWithConfig(t)
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]bool{"airplane_mode": true})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var response map[string]any
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
 	require.Equal(true, response["airplane_mode"])
-	require.False(srv.syncer.AutomaticSyncEnabled())
+	require.False(syncer.AutomaticSyncEnabled())
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(err)
 	require.True(reloaded.AirplaneMode)
 	reloaded.AirplaneMode = false
 	require.NoError(reloaded.Save(cfgPath))
 	srv.configreload.HandleConfigFileChanged()
-	require.True(srv.syncer.AutomaticSyncEnabled())
+	require.True(syncer.AutomaticSyncEnabled())
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
@@ -576,7 +596,7 @@ func TestAirplaneModeSettingsPersistAndReload(t *testing.T) {
 func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Roborev: &spokeapi.RoborevSettingsUpdate{InitManagedClones: new(true)},
@@ -595,7 +615,7 @@ func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
 func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{MCP: &spokeapi.McpSettingsUpdate{
 		Enabled: new(true), Port: new(8091),
@@ -612,7 +632,7 @@ func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
 func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 	first := config.RepoPreset{Name: "Review queue", Repos: []config.RepoPresetRepository{{
 		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001, RepoPath: "acme/widgets",
 	}}}
@@ -651,7 +671,7 @@ func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 
 func TestCreateRepoPresetRejectsSaveFailureWithoutPublishing(t *testing.T) {
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -682,7 +702,7 @@ repos = [{ provider = "github", platform_host = "github.com", platform_repo_id =
 func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	modes := config.DefaultModeVisibility()
 	*modes.Docs = true
@@ -728,7 +748,7 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 
 func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.T) {
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
+	srv, _, _, _ := setupTestServerWithConfig(t)
 	require.False(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
 	require.False(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 	require.False(srv.issueAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
@@ -770,7 +790,7 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 
 func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
+	srv, _, _, _ := setupTestServerWithConfig(t)
 
 	srv.configReloadMu.Lock()
 	done := make(chan error, 1)
@@ -806,7 +826,7 @@ func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {
 func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	mappings := []config.KataProjectRepoMapping{
 		{
@@ -849,7 +869,7 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 func TestHandleUpdateSettings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	activity := config.Activity{
 		ViewMode:   "threaded",
@@ -914,7 +934,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 	srv.cfg.Workspaces.AutoAssignOnCreate = true
 	srv.cfg.Workspaces.ShowAgentStatusInLists = true
 	require.NoError(srv.cfg.Save(cfgPath))
@@ -945,7 +965,7 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -998,7 +1018,7 @@ prefer_github_native_stacks = true
 
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
 	assert := assert.New(t)
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1052,7 +1072,7 @@ docs = false
 func TestHandleUpdateTerminalSettingsAppliesMouseToDedicatedTmuxServer(t *testing.T) {
 	require := require.New(t)
 	record := installSettingsTmuxRecorder(t)
-	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+	srv, _, _, _ := setupTestServerWithConfigContentAndOptions(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1085,7 +1105,7 @@ name = "widget"
 func TestHandleUpdateTerminalSettingsAppliesGraphicsToDedicatedTmuxServer(t *testing.T) {
 	require := require.New(t)
 	record := installSettingsTmuxRecorder(t)
-	srv, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+	srv, _, _, _ := setupTestServerWithConfigContentAndOptions(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1119,7 +1139,7 @@ name = "widget"
 
 func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 	assert := assert.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 	disabled := false
 	agents := []config.Agent{{
 		Key:     "codex",
@@ -1163,7 +1183,7 @@ func TestHandleUpdateSettingsRefreshesRuntimeTargets(t *testing.T) {
 		[]byte("#!/bin/sh\nexit 0\n"),
 		0o755,
 	))
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1218,7 +1238,7 @@ func findRuntimeTargetForSettingsTest(
 }
 
 func TestHandleUpdateSettingsInvalid(t *testing.T) {
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	activity := config.Activity{
 		ViewMode:  "kanban",
@@ -1252,7 +1272,7 @@ func TestHandleAddRepoAcceptsArchivedRepo(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1275,7 +1295,7 @@ name = "widget"
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(err)
 	require.Len(cfg2.Repos, 2)
-	assert.True(srv.syncer.IsTrackedRepo("other-org", "frozen"),
+	assert.True(syncer.IsTrackedRepo("other-org", "frozen"),
 		"archived repo is tracked archive-only after add")
 }
 
@@ -1303,7 +1323,7 @@ func TestHandleAddRepoRefreshesArchivedStateForTrackedRepo(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1313,7 +1333,7 @@ port = 8091
 owner = "acme"
 name = "*"
 `, mock)
-	require.True(srv.syncer.IsTrackedRepo("acme", "widget"))
+	require.True(syncer.IsTrackedRepo("acme", "widget"))
 
 	// The repo gets archived on the provider; adding an overlapping exact
 	// entry must refresh the tracked ref, not keep the stale live one.
@@ -1327,7 +1347,7 @@ name = "*"
 
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
-	assert.True(trackedRepoArchived(srv, "acme", "widget"),
+	assert.True(trackedRepoArchived(syncer, "acme", "widget"),
 		"overlapping add must apply fresh archived state")
 }
 
@@ -1355,7 +1375,7 @@ func TestHandleRefreshRepoUpdatesArchivedStateForOverlappingEntries(t *testing.T
 			}}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1369,8 +1389,8 @@ name = "widget"
 owner = "acme"
 name = "*"
 `, mock)
-	require.True(srv.syncer.IsTrackedRepo("acme", "widget"))
-	require.False(trackedRepoArchived(srv, "acme", "widget"))
+	require.True(syncer.IsTrackedRepo("acme", "widget"))
+	require.False(trackedRepoArchived(syncer, "acme", "widget"))
 
 	// widget matches both the exact entry and the glob; a refresh after the
 	// provider archives it must update the tracked ref even though the
@@ -1382,14 +1402,14 @@ name = "*"
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	assert.True(trackedRepoArchived(srv, "acme", "widget"),
+	assert.True(trackedRepoArchived(syncer, "acme", "widget"),
 		"glob refresh must apply fresh archived state to overlapping repos")
-	assert.Equal("acme/widget", trackedRepoProvenancePath(srv, "acme", "widget"),
+	assert.Equal("acme/widget", trackedRepoProvenancePath(syncer, "acme", "widget"),
 		"glob refresh through the API must keep the exact entry's provenance")
 }
 
-func trackedRepoProvenancePath(srv *Server, owner, name string) string {
-	for _, repo := range srv.syncer.TrackedRepos() {
+func trackedRepoProvenancePath(syncer *ghclient.Syncer, owner, name string) string {
+	for _, repo := range syncer.TrackedRepos() {
 		if strings.EqualFold(repo.Owner, owner) && strings.EqualFold(repo.Name, name) {
 			return repo.ConfiguredRepoPath
 		}
@@ -1445,7 +1465,7 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1475,11 +1495,11 @@ name = "*"
 		})
 		require.NoError(err)
 	}
-	srv.syncer.SetActiveMRWindow(4 * time.Hour)
-	require.True(srv.syncer.IsTrackedRepo("acme", "widget"))
+	syncer.SetActiveMRWindow(4 * time.Hour)
+	require.True(syncer.IsTrackedRepo("acme", "widget"))
 	// Stop background sync loops so the refresh-triggered async full sync
 	// cannot populate the lane recorders; each lane runs synchronously below.
-	srv.syncer.Stop()
+	syncer.Stop()
 
 	// The provider archives widget; the refresh applies the transition and
 	// the live lanes must stop touching it while the live sibling keeps
@@ -1490,9 +1510,9 @@ name = "*"
 		"/api/v1/repo/gh/acme/*/refresh", nil)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	require.True(trackedRepoArchived(srv, "acme", "widget"))
+	require.True(trackedRepoArchived(syncer, "acme", "widget"))
 
-	require.NoError(srv.syncer.SyncNotifications(t.Context()))
+	require.NoError(syncer.SyncNotifications(t.Context()))
 	toolsWatermark, err := database.GetNotificationSyncWatermark(
 		t.Context(), "github", "github.com", "acme", "tools",
 	)
@@ -1511,7 +1531,7 @@ name = "*"
 		detailRepos.Delete(key)
 		return true
 	})
-	srv.syncer.SyncWatchedMRs(t.Context())
+	syncer.SyncWatchedMRs(t.Context())
 	_, detailTools := detailRepos.Load("tools")
 	assert.True(detailTools, "live repo open MR should fast-sync")
 	_, detailWidget := detailRepos.Load("widget")
@@ -1522,8 +1542,8 @@ name = "*"
 func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	srv, _, _, syncer := setupTestServerWithConfig(t)
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "old-name",
 		PlatformHost: "github.com", RepoPath: "acme/old-name",
 		PlatformRepoID: 1001,
@@ -1537,7 +1557,7 @@ func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T)
 		PlatformRepoID: 1001, Archived: true,
 	}})
 
-	tracked := srv.syncer.TrackedRepos()
+	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	assert.Equal("new-name", tracked[0].Name)
 	assert.True(tracked[0].Archived)
@@ -1546,8 +1566,8 @@ func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T)
 func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	srv, _, _, syncer := setupTestServerWithConfig(t)
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
 		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
@@ -1562,7 +1582,7 @@ func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 		PlatformRepoID: 1001, Archived: true,
 	}})
 
-	tracked := srv.syncer.TrackedRepos()
+	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	assert.True(tracked[0].Archived)
 	assert.Equal("acme/tools", tracked[0].ConfiguredRepoPath)
@@ -1571,8 +1591,8 @@ func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	srv, _, _, syncer := setupTestServerWithConfig(t)
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
 		PlatformHost: "github.com", RepoPath: "acme/tools",
 		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
@@ -1596,7 +1616,7 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 		},
 	})
 
-	tracked := srv.syncer.TrackedRepos()
+	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 2)
 	byName := make(map[string]ghclient.RepoRef, len(tracked))
 	for _, repo := range tracked {
@@ -1611,8 +1631,8 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	srv, _, _, syncer := setupTestServerWithConfig(t)
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
 		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
@@ -1625,14 +1645,14 @@ func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {
 		PlatformRepoID: 1001, Archived: true,
 	}}, []config.Repo{{Owner: "acme", Name: "tools"}, glob})
 
-	tracked := srv.syncer.TrackedRepos()
+	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	assert.True(tracked[0].Archived)
 	assert.Equal("acme/tools", tracked[0].ConfiguredRepoPath)
 }
 
-func trackedRepoArchived(srv *Server, owner, name string) bool {
-	for _, repo := range srv.syncer.TrackedRepos() {
+func trackedRepoArchived(syncer *ghclient.Syncer, owner, name string) bool {
+	for _, repo := range syncer.TrackedRepos() {
 		if strings.EqualFold(repo.Owner, owner) && strings.EqualFold(repo.Name, name) {
 			return repo.Archived
 		}
@@ -1643,7 +1663,7 @@ func trackedRepoArchived(srv *Server, owner, name string) bool {
 func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	addBody := map[string]string{
 		"provider": "github",
@@ -1754,7 +1774,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -1806,7 +1826,7 @@ func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1856,7 +1876,7 @@ func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1876,9 +1896,9 @@ name = "*"
 	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Equal(3, resp.Repos[0].MatchedRepoCount)
-	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
-	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "globber"))
-	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "archived"),
+	assert.True(syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
+	assert.True(syncer.IsTrackedRepo("roborev-dev", "globber"))
+	assert.True(syncer.IsTrackedRepo("roborev-dev", "archived"),
 		"archived repos stay tracked as archive-only")
 }
 
@@ -1915,7 +1935,7 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 			return repos, nil
 		},
 	}
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1925,7 +1945,7 @@ port = 8091
 owner = "roborev-dev"
 name = "*"
 `, mock)
-	srv.syncer.Stop()
+	syncer.Stop()
 	includeRefreshRepo.Store(true)
 
 	rr := testutil.DoJSON(
@@ -1970,7 +1990,7 @@ func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -1994,8 +2014,8 @@ name = "worker"
 	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 2)
-	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
-	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "worker"))
+	assert.True(syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
+	assert.True(syncer.IsTrackedRepo("roborev-dev", "worker"))
 }
 
 func TestHandleDeleteRepoRebuildsExpandedSetFromRemainingPatterns(t *testing.T) {
@@ -2021,7 +2041,7 @@ func TestHandleDeleteRepoRebuildsExpandedSetFromRemainingPatterns(t *testing.T) 
 			}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2041,8 +2061,8 @@ name = "tools"
 		"/api/v1/repo/gh/roborev-dev/*", nil)
 
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
-	assert.True(t, srv.syncer.IsTrackedRepo("roborev-dev", "tools"))
-	assert.False(t, srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
+	assert.True(t, syncer.IsTrackedRepo("roborev-dev", "tools"))
+	assert.False(t, syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 }
 
 func TestHandleDeleteGlobKeepsRenamedExactEntryRepo(t *testing.T) {
@@ -2064,7 +2084,7 @@ func TestHandleDeleteGlobKeepsRenamedExactEntryRepo(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2082,7 +2102,7 @@ name = "*"
 	// The exact entry's repo was renamed provider-side; only provenance
 	// still ties the tracked ref to the entry. A second repo matches only
 	// the glob.
-	srv.syncer.SetRepos([]ghclient.RepoRef{
+	syncer.SetRepos([]ghclient.RepoRef{
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 			PlatformHost: "github.com", RepoPath: "acme/tools-new",
@@ -2100,9 +2120,9 @@ name = "*"
 		"/api/v1/repo/gh/acme/*", nil)
 
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
-	assert.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"),
+	assert.True(t, syncer.IsTrackedRepo("acme", "tools-new"),
 		"deleting the glob must keep the renamed repo its exact entry still claims")
-	assert.False(t, srv.syncer.IsTrackedRepo("acme", "widgets"))
+	assert.False(t, syncer.IsTrackedRepo("acme", "widgets"))
 }
 
 func TestHandleDeleteExactEntryClearsProvenanceOnGlobKeptRepo(t *testing.T) {
@@ -2124,7 +2144,7 @@ func TestHandleDeleteExactEntryClearsProvenanceOnGlobKeptRepo(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2139,7 +2159,7 @@ owner = "acme"
 name = "*"
 `, mock)
 
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
 		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
@@ -2153,8 +2173,8 @@ name = "*"
 		"/api/v1/repo/gh/acme/tools", nil)
 
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
-	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
-	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
+	require.True(t, syncer.IsTrackedRepo("acme", "tools-new"))
+	assert.Empty(t, trackedRepoProvenancePath(syncer, "acme", "tools-new"),
 		"provenance must clear when its exact entry is removed")
 }
 
@@ -2177,7 +2197,7 @@ func TestHandleDeleteExactEntryIgnoresSamePathOnOtherHost(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2197,7 +2217,7 @@ name = "tools"
 platform_host = "ghe.example.com"
 `, mock)
 
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
 		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
@@ -2210,8 +2230,8 @@ platform_host = "ghe.example.com"
 		"/api/v1/repo/gh/acme/tools", nil)
 
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
-	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
-	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
+	require.True(t, syncer.IsTrackedRepo("acme", "tools-new"))
+	assert.Empty(t, trackedRepoProvenancePath(syncer, "acme", "tools-new"),
 		"an entry with the same path on another host must not retain provenance")
 }
 
@@ -2234,7 +2254,7 @@ func TestHandleDeleteExactEntryIgnoresSamePathOnOtherProvider(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2255,7 +2275,7 @@ owner = "acme"
 name = "tools"
 `, mock)
 
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
 		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
@@ -2269,14 +2289,14 @@ name = "tools"
 		"/api/v1/repo/gh/acme/tools", nil)
 
 	require.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
-	require.True(t, srv.syncer.IsTrackedRepo("acme", "tools-new"))
-	assert.Empty(t, trackedRepoProvenancePath(srv, "acme", "tools-new"),
+	require.True(t, syncer.IsTrackedRepo("acme", "tools-new"))
+	assert.Empty(t, trackedRepoProvenancePath(syncer, "acme", "tools-new"),
 		"an entry with the same path on another provider must not retain provenance")
 }
 
 func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2326,7 +2346,7 @@ func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2338,7 +2358,7 @@ name = "*"
 `, mock)
 	// Prime the syncer with a previously resolved match so we can
 	// verify it survives a failed refresh.
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:        "roborev-dev",
 		Name:         "kenn-forge",
 		PlatformHost: "github.com",
@@ -2349,7 +2369,7 @@ name = "*"
 		"/api/v1/repo/gh/roborev-dev/*/refresh", nil)
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
-	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
+	assert.True(syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 }
 
 func TestGetSettingsDoesNotCallGitHub(t *testing.T) {
@@ -2426,7 +2446,7 @@ func TestGlobMatchingIsCaseInsensitive(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2442,7 +2462,7 @@ name = "Widget-*"
 		"/api/v1/repo/gh/acme/Widget-*/refresh", nil)
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	assert.True(srv.syncer.IsTrackedRepo("acme", "Widget-API"))
+	assert.True(syncer.IsTrackedRepo("acme", "Widget-API"))
 }
 
 func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
@@ -2453,7 +2473,7 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 	// activity change survives in both memory and on disk.
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	// Change activity via the update handler.
 	rr := testutil.DoJSON(
@@ -2513,7 +2533,7 @@ func TestConcurrentRefreshAndDeleteDoesNotResurrect(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2523,7 +2543,7 @@ port = 8091
 owner = "roborev-dev"
 name = "*"
 `, mock)
-	require.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
+	require.True(syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 
 	refreshDone := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
@@ -2551,7 +2571,7 @@ name = "*"
 		"/api/v1/repo/gh/roborev-dev/*", nil)
 
 	require.Equal(http.StatusNoContent, delRR.Code, delRR.Body.String())
-	require.False(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
+	require.False(syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
 
 	close(ghUnblock)
 	var refreshRR *httptest.ResponseRecorder
@@ -2566,7 +2586,7 @@ name = "*"
 
 	// The deleted repo must not have reappeared after the
 	// refresh completed.
-	assert.False(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"),
+	assert.False(syncer.IsTrackedRepo("roborev-dev", "kenn-forge"),
 		"deleted repo resurrected by concurrent refresh")
 }
 
@@ -2578,7 +2598,7 @@ name = "*"
 // other field the UI touches) must not silently erase tmux.command.
 func TestHandleUpdateSettingsPreservesTmuxCommand(t *testing.T) {
 	assert := assert.New(t)
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2655,7 +2675,7 @@ func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2795,7 +2815,7 @@ func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
 			return nil, errors.New("not found")
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2858,7 +2878,7 @@ func TestHandlePreviewReposUsesExactLookupForConcreteRepo(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -2930,7 +2950,7 @@ func TestHandlePreviewReposSupportsGitLabNamespaces(t *testing.T) {
 			},
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigProviders(t, `
+	srv, _, _, _ := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -3007,7 +3027,7 @@ func TestHandlePreviewReposSupportsForgejoOrgFallback(t *testing.T) {
 	provider := gitealike.NewProvider(
 		platform.KindForgejo, "codeberg.example.com", transport,
 	)
-	srv, _, _ := setupTestServerWithConfigProviders(t, `
+	srv, _, _, _ := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -3065,7 +3085,7 @@ func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -3094,8 +3114,8 @@ name = "widget"
 	assert.Equal("acme", resp.Repos[1].Owner)
 	assert.Equal("api", resp.Repos[1].Name)
 	assert.Equal("worker", resp.Repos[2].Name)
-	assert.True(srv.syncer.IsTrackedRepo("acme", "api"))
-	assert.True(srv.syncer.IsTrackedRepo("acme", "worker"))
+	assert.True(syncer.IsTrackedRepo("acme", "api"))
+	assert.True(syncer.IsTrackedRepo("acme", "worker"))
 
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -3128,7 +3148,7 @@ func TestHandleBulkAddReposPersistsGitLabProviderIdentity(t *testing.T) {
 			DefaultBranch: ref.DefaultBranch,
 		}},
 	}
-	srv, database, cfgPath := setupTestServerWithConfigProviders(t, `
+	srv, database, cfgPath, syncer := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -3164,7 +3184,7 @@ port = 8091
 	assert.Equal("Group/Subgroup", cfg2.Repos[0].Owner)
 	assert.Equal("Project", cfg2.Repos[0].Name)
 	assert.Equal("Group/Subgroup/Project", cfg2.Repos[0].RepoPath)
-	assert.True(srv.syncer.IsTrackedRepoOnHost("Group/Subgroup", "Project", "gitlab.example.com"))
+	assert.True(syncer.IsTrackedRepoOnHost("Group/Subgroup", "Project", "gitlab.example.com"))
 
 	dbRepo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
@@ -3331,7 +3351,7 @@ func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {
 	provider := gitealike.NewProvider(
 		platform.KindGitea, "gitea.example.com", transport,
 	)
-	srv, database, cfgPath := setupTestServerWithConfigProviders(t, `
+	srv, database, cfgPath, syncer := setupTestServerWithConfigProviders(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -3367,7 +3387,7 @@ port = 8091
 	assert.Equal("Team", cfg2.Repos[0].Owner)
 	assert.Equal("Service", cfg2.Repos[0].Name)
 	assert.Equal("Team/Service", cfg2.Repos[0].RepoPath)
-	assert.True(srv.syncer.IsTrackedRepoOnHost("Team", "Service", "gitea.example.com"))
+	assert.True(syncer.IsTrackedRepoOnHost("Team", "Service", "gitea.example.com"))
 
 	ref := platform.RepoRef{
 		Platform:   platform.KindGitea,
@@ -3400,7 +3420,7 @@ func TestHandleBulkAddReposValidationFailureChangesNothing(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -3419,7 +3439,7 @@ name = "widget"
 	})
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
-	assert.False(srv.syncer.IsTrackedRepo("acme", "api"))
+	assert.False(syncer.IsTrackedRepo("acme", "api"))
 
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -3444,7 +3464,7 @@ func TestHandleBulkAddReposSkipsAlreadyConfiguredBeforeValidation(t *testing.T) 
 			}, nil
 		},
 	}
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -3462,7 +3482,7 @@ name = "api"
 	})
 
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
-	assert.True(srv.syncer.IsTrackedRepo("acme", "worker"))
+	assert.True(syncer.IsTrackedRepo("acme", "worker"))
 
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -3489,7 +3509,7 @@ func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -3545,7 +3565,7 @@ name = "widget"
 func TestFleetSettingsPreserveEnrollmentOwnedRoleAndMembers(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
+	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, `
 host = "127.0.0.1"
 port = 8091
 
@@ -3613,7 +3633,7 @@ state = "active"
 func TestRoleAwareSettingsRequireOneOwnerPerNodeWrite(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	hub, hubDB, _ := setupTestServerWithConfigContentAndOptions(t, `
+	hub, hubDB, _, _ := setupTestServerWithConfigContentAndOptions(t, `
 host = "127.0.0.1"
 port = 8091
 
@@ -3784,11 +3804,10 @@ base_url = %q
 func TestNodeWorktreeBaseOverrideFollowsHubRepositoryIdentity(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, configPath := setupTestServerWithConfigContent(t, `
+	srv, database, configPath := setupTestServerWithConfigContentNoSyncer(t, `
 host = "127.0.0.1"
 port = 8091
-`, &mockGH{})
-	srv.syncer = nil
+`)
 	projection := spokeapi.ProviderSettingsResponse{
 		Repos: []ghclient.ConfiguredRepoStatus{{
 			Provider: "github", PlatformHost: "github.com",
@@ -3873,7 +3892,7 @@ port = 8091
 func TestNodeLocalSettingsCommitWhileHubIsUnavailable(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, configPath := setupTestServerWithConfigContent(t, `
+	srv, _, configPath, _ := setupTestServerWithConfigContent(t, `
 host = "127.0.0.1"
 port = 8091
 
@@ -3906,7 +3925,7 @@ auto_assign_on_create = false
 func TestNodeLocalSettingsSaveStopsWaitingForHubAtPeerTimeout(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, configPath := setupTestServerWithConfigContent(t, `
+	srv, _, configPath, _ := setupTestServerWithConfigContent(t, `
 host = "127.0.0.1"
 port = 8091
 
@@ -3942,7 +3961,7 @@ peer_timeout = "50ms"
 
 func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
+	srv, _, _, _ := setupTestServerWithConfig(t)
 	srv.cfg.Fleet.Enabled = false
 	srv.cfg.Fleet.Role = config.FleetRoleSpoke
 	srv.providerSource = &spokeapi.HubProviderSource{
@@ -3968,7 +3987,7 @@ func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
 func TestInactiveSpokeSettingsStayLocal(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, configPath := setupTestServerWithConfigContentAndOptions(t, `
+	srv, _, configPath, _ := setupTestServerWithConfigContentAndOptions(t, `
 host = "127.0.0.1"
 port = 8091
 
@@ -4011,7 +4030,7 @@ base_url = "https://hub.example"
 }
 
 func TestRoleAwareSettingsRejectFederationWriteToHubLocalPolicy(t *testing.T) {
-	srv, _, _ := setupTestServerWithConfig(t)
+	srv, _, _, _ := setupTestServerWithConfig(t)
 	autoAssign := true
 	ctx := federationauth.WithPrincipal(t.Context(), federationauth.Principal{
 		NodeID: proxyTestNodeID,
@@ -4036,7 +4055,7 @@ func TestRoleAwareSettingsRejectFederationWriteToHubLocalPolicy(t *testing.T) {
 func TestHandleUpdateSettingsRestoresProjectionAfterRequestCancellation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -4101,7 +4120,7 @@ prefer_github_native_stacks = true
 func TestReconcileNativeStackProjectionSkipsSupersededDisable(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -4132,7 +4151,7 @@ prefer_github_native_stacks = true
 	}))
 	require.NoError(stacks.RunDetectionWithNativeStacks(ctx, database, repo.ID, []int{42}))
 	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
-	require.True(srv.syncer.PrefersGitHubNativeStacks())
+	require.True(syncer.PrefersGitHubNativeStacks())
 
 	// A disable observed the enabled value, but by the time it reaches
 	// reconciliation a later enable has already won the swap.
@@ -4153,7 +4172,7 @@ prefer_github_native_stacks = true
 func TestHandleUpdateSettingsRestoresProjectionForUntrackedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -4212,7 +4231,7 @@ prefer_github_native_stacks = true
 func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, _, cfgPath := setupTestServerWithConfig(t)
+	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 	actions := []config.QuickAction{{
 		Label:  "Rebase",
 		Agent:  "codex",
@@ -4251,7 +4270,7 @@ func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
 func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 host = "127.0.0.1"
 port = 8091
 `, &mockGH{})
@@ -4303,7 +4322,7 @@ port = 8091
 
 func TestHubAppliesSyncBudgetFromSpoke(t *testing.T) {
 	require := require.New(t)
-	srv, _, configPath := setupTestServerWithConfig(t)
+	srv, _, configPath, _ := setupTestServerWithConfig(t)
 	srv.syncer = nil
 	ctx := federationauth.WithPrincipal(t.Context(), federationauth.Principal{
 		NodeID: proxyTestNodeID,

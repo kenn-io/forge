@@ -75,7 +75,7 @@ func (r *pullLifecycleRecorder) Shutdown(ctx context.Context) error {
 // TestServerShutdownWaitsForBackgroundTask verifies that Shutdown
 // blocks until an in-flight runBackground task returns.
 func TestServerShutdownWaitsForBackgroundTask(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 
 	release := make(chan struct{})
 	var finished atomic.Bool
@@ -105,7 +105,7 @@ func TestServerShutdownWaitsForBackgroundTask(t *testing.T) {
 // TestServerShutdownTimesOut verifies that Shutdown honours the
 // caller's ctx when a background task ignores its own cancellation.
 func TestServerShutdownTimesOut(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 
 	stuck := make(chan struct{})
 	srv.streamapi.RunBackground(func(_ context.Context) {
@@ -123,7 +123,7 @@ func TestServerShutdownTimesOut(t *testing.T) {
 // Shutdown starts, runBackground drops new submissions so bg.Add
 // cannot race with bg.Wait.
 func TestServerShutdownPreventsNewBackgroundTasks(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -141,7 +141,7 @@ func TestServerShutdownPreventsNewBackgroundTasks(t *testing.T) {
 // TestServerShutdownRaceNoPanic exercises runBackground concurrently
 // with Shutdown to catch WaitGroup Add/Wait races under -race.
 func TestServerShutdownRaceNoPanic(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 
 	done := make(chan struct{})
 	go func() {
@@ -161,7 +161,7 @@ func TestServerShutdownRaceNoPanic(t *testing.T) {
 // Shutdown call with a longer deadline can still drain background
 // work that the first call timed out waiting for.
 func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 
 	release := make(chan struct{})
 	srv.streamapi.RunBackground(func(_ context.Context) {
@@ -182,7 +182,7 @@ func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
 
 func TestServerShutdownDoesNotAdvancePastActiveWorkspaceConsumers(t *testing.T) {
 	require := require.New(t)
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	releaseConsumer := make(chan struct{})
 	releaseRootWork := make(chan struct{})
 	consumerReleased := false
@@ -238,7 +238,7 @@ func TestServerShutdownDoesNotAdvancePastActiveWorkspaceConsumers(t *testing.T) 
 
 func TestServerShutdownWaitsForHubEventClient(t *testing.T) {
 	require := require.New(t)
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	transport := &blockingHubEventTransport{
 		started: make(chan struct{}), canceled: make(chan struct{}), release: make(chan struct{}),
 	}
@@ -314,7 +314,7 @@ func TestWorkspaceDependencyShutdownPreservesOrderAcrossTimeoutRetry(t *testing.
 // http.Server.Shutdown and blocks until the handler drains.
 func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 	require := require.New(t)
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
@@ -391,7 +391,7 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 
 func TestServerShutdownStopsPullBeforeHTTPDrainAndRetriesDependencyWait(t *testing.T) {
 	require := require.New(t)
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	pull := newPullLifecycleRecorder()
 	srv.pullLifecycle = pull
 

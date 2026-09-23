@@ -22,7 +22,7 @@ import (
 
 func TestConfigReloadPublishesExternalContextSources(t *testing.T) {
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
+	srv, _, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
 	require.Empty(srv.externalContext.Sources())
 	executable, err := os.Executable()
 	require.NoError(err)
@@ -48,7 +48,7 @@ command = [%q]
 func TestExternalContextUsesHubSyncedPull(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 42, func(pull *db.MergeRequest) {
 		pull.PlatformHeadSHA = "local-stale-head"
 		pull.PlatformBaseSHA = "local-stale-base"

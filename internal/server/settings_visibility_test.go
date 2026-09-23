@@ -55,7 +55,7 @@ func listRepoNames(t *testing.T, srv *Server) []string {
 func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _ := setupTestServerWithConfig(t)
+	srv, database, _, syncer := setupTestServerWithConfig(t)
 
 	// The provider renamed acme/widget to acme-renamed/widget-renamed. The
 	// tracked ref carries the current route plus exact-entry provenance, and
@@ -67,7 +67,7 @@ func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
 		Owner:          "acme-renamed",
 		Name:           "widget-renamed",
 	})
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme-renamed",
 		Name:               "widget-renamed",
 		PlatformHost:       "github.com",
@@ -93,7 +93,7 @@ func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
 func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _ := setupTestServerWithConfig(t)
+	srv, database, _, syncer := setupTestServerWithConfig(t)
 
 	// R_old was verified at acme/widget and hidden there.
 	seedVerifiedRepo(t, database, db.RepoIdentity{
@@ -103,7 +103,7 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 		Owner:          "acme",
 		Name:           "widget",
 	})
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
@@ -130,7 +130,7 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 	)
 	require.NoError(err)
 	require.NotNil(entry)
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
@@ -166,7 +166,7 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _ := setupTestServerWithConfig(t)
+	srv, database, _, syncer := setupTestServerWithConfig(t)
 
 	// R_old owned acme/widget until a different repository took the route.
 	seedVerifiedRepo(t, database, db.RepoIdentity{
@@ -189,7 +189,7 @@ func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 	require.NotNil(entry)
 
 	// The tracked snapshot lags reconciliation and still references R_old.
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
@@ -211,7 +211,7 @@ func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 func TestDeleteConfiguredRepoClearsOrphanedVisibility(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -247,7 +247,7 @@ name = "wid*"
 		Owner:          "acme",
 		Name:           "widget",
 	})
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
@@ -282,7 +282,7 @@ name = "wid*"
 
 func TestDeleteConfiguredRepoClearsVisibilityDespiteCanceledRequest(t *testing.T) {
 	require := require.New(t)
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -304,7 +304,7 @@ name = "wid*"
 		Owner:          "acme",
 		Name:           "widget",
 	})
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
@@ -352,7 +352,7 @@ func TestConfigReloadClearsOrphanedVisibility(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, database, cfgPath := setupTestServerWithConfigContent(t, `
+	srv, database, cfgPath, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -374,7 +374,7 @@ name = "wid*"
 		Owner:          "acme",
 		Name:           "widget",
 	})
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
@@ -416,7 +416,7 @@ name = "wid*"
 func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _ := setupTestServerWithConfig(t)
+	srv, database, _, syncer := setupTestServerWithConfig(t)
 
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
@@ -428,7 +428,7 @@ func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
 	// The tracked snapshot has not resolved a stable provider id yet; the
 	// route is the only address. Hidden correlation must still report the
 	// saved state instead of skipping identity-less refs.
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
@@ -454,7 +454,7 @@ func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
 func TestRepoUIVisibilityMutationSerializesWithOrphanSweep(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -476,7 +476,7 @@ name = "wid*"
 		Owner:          "acme",
 		Name:           "widget",
 	})
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",

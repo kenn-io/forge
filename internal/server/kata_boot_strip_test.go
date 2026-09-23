@@ -28,7 +28,7 @@ name = "prod"
 url = "https://kata2.example.com"
 `), 0o600))
 
-	srv, _, _ := setupTestServerWithConfigContentAndOptions(
+	srv, _, _, _ := setupTestServerWithConfigContentAndOptions(
 		t, validReloadConfig, &mockGH{}, ServerOptions{
 			HostCheckAllowLoopbackAnyPort:      true,
 			WorktreeDir:                        t.TempDir(),

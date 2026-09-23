@@ -39,7 +39,7 @@ func TestListUserRepositories(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{
 		outputs: map[string]string{
 			ghUserReposCall(100, 1): `[
@@ -77,7 +77,7 @@ func TestListUserRepositories(t *testing.T) {
 func TestListUserRepositoriesClampsLimit(t *testing.T) {
 	require := require.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{
 		outputs: map[string]string{
 			ghUserReposCall(100, 1): "[]",
@@ -134,7 +134,7 @@ func TestListUserRepositoriesProblemCodes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv, _ := setupTestServer(t)
+			srv, _, _ := setupTestServer(t)
 			runner := &recordingToolingRunner{
 				errs: map[string]error{
 					ghUserReposCall(100, 1): tc.err,
@@ -165,7 +165,7 @@ func TestListUserRepositoriesRejectsUnimplementedProvider(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{}
 	srv.toolingRun = runner.run
 	ts := httptest.NewServer(srv)
@@ -212,7 +212,7 @@ func TestListUserRepositoriesPaginatesAndTargetsHost(t *testing.T) {
 		)
 	}
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{
 		outputs: map[string]string{
 			hostCall(100, 1): repoJSON(100),
@@ -249,7 +249,7 @@ func TestListUserRepositoriesTruncatesMidPageLimit(t *testing.T) {
 	for i := range 100 {
 		full = append(full, fmt.Sprintf(`{"full_name":"acme/r%d"}`, i))
 	}
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{
 		outputs: map[string]string{
 			ghUserReposCall(100, 1): "[" + strings.Join(full, ",") + "]",
@@ -285,7 +285,7 @@ func TestListUserRepositoriesUpstreamErrorCarriesHost(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{
 		errs: map[string]error{
 			"gh api --hostname ghe.example.com user/repos?per_page=100&page=1&affiliation=owner,collaborator,organization_member&sort=updated": errors.New(

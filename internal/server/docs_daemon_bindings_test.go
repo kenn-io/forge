@@ -62,7 +62,7 @@ local = true
 	updatedRoot := t.TempDir()
 	initialConfig := validReloadConfigWithDocFolderDaemon("notes", "Notes", initialRoot, "home")
 	updatedConfig := validReloadConfigWithDocFolderDaemon("handbook", "Handbook", updatedRoot, "gone")
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, initialConfig, &mockGH{})
+	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, initialConfig, &mockGH{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	logBuf := &lockedBuffer{}
@@ -99,7 +99,7 @@ local = true
 	updatedRoot := t.TempDir()
 	initialConfig := validReloadConfigWithDocFolderDaemon("notes", "Notes", initialRoot, "home")
 	updatedConfig := validReloadConfigWithDocFolderDaemon("handbook", "Handbook", updatedRoot, "gone")
-	srv, _, cfgPath := setupTestServerWithConfigContent(t, initialConfig, &mockGH{})
+	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, initialConfig, &mockGH{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	waitForConfigWatcher(t, srv, 2*time.Second)
 	stream := streamConfigEvents(t, srv)

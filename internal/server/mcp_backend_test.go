@@ -43,7 +43,7 @@ func TestDaemonPingPublishesMCPURL(t *testing.T) {
 func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	pullID := seedPR(t, database, "acme", "widget", 42)
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
@@ -303,7 +303,7 @@ func TestMCPWorkspaceRepositoryRejectsHubDescriptorWithAnotherID(t *testing.T) {
 func TestMCPBackendResolvesRepositoryByProviderIDAcrossRename(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	seedPR(t, database, "acme", "widget", 42, withSeedPRTitle("renamed repository pull"))
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
@@ -340,7 +340,7 @@ func TestMCPBackendResolvesRepositoryByProviderIDAcrossRename(t *testing.T) {
 func TestMCPBackendRejectsIDWhoseRouteWasReusedByAnotherRepository(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	seedPR(t, database, "acme", "widget", 42)
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
@@ -365,7 +365,7 @@ func TestMCPBackendRejectsIDWhoseRouteWasReusedByAnotherRepository(t *testing.T)
 
 func TestSpokePreparationBlocksMCPWorkflowMutation(t *testing.T) {
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 7)
 	repo, err := database.GetRepoByIdentity(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),

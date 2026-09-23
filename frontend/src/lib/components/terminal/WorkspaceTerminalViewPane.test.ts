@@ -11,6 +11,7 @@ import { pushModalFrame, resetModalStack } from "../../stores/keyboard/modal-sta
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
     getWorkspace: vi.fn(),
+    getFleetWorkspace: vi.fn(),
     refreshWorkspace: vi.fn(),
   },
   showFlash: vi.fn(),
@@ -40,6 +41,9 @@ vi.mock("../../app/runtime-context.js", async () => {
       WorkspacesService: {
         getWorkspace: mocks.runtimeClient.getWorkspace,
         refreshWorkspace: mocks.runtimeClient.refreshWorkspace,
+      },
+      FleetService: {
+        getFleetWorkspace: mocks.runtimeClient.getFleetWorkspace,
       },
     }),
   );
@@ -180,6 +184,7 @@ describe("WorkspaceTerminalView pane props", () => {
 
   beforeEach(() => {
     mocks.runtimeClient.getWorkspace.mockReset();
+    mocks.runtimeClient.getFleetWorkspace.mockReset();
     mocks.runtimeClient.refreshWorkspace.mockReset();
     mocks.showFlash.mockReset();
     mocks.workspaceEventsSubscriber = undefined;
@@ -270,9 +275,23 @@ describe("WorkspaceTerminalView pane props", () => {
     const key = `kenn-forge-workspace-viewed-pr:["${host}","ws-1"]`;
     localStorage.setItem(key, "55");
     mocks.runtimeClient.getWorkspace.mockResolvedValue(readyIssueWorkspaceData);
-    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    mocks.runtimeClient.getFleetWorkspace.mockResolvedValue({
+      ...readyIssueWorkspaceData,
+      fleet_host_key: "peer",
+      git_head_ref: "feature/peer-workspace",
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
     if (host === "self") expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
+    else expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
+
+    await view.rerender({ workspaceHostKey: "peer" });
+    await screen.findAllByText("feature/peer-workspace");
+    expect(mocks.runtimeClient.getFleetWorkspace).toHaveBeenCalledWith(
+      { hostKey: "peer", id: "ws-1" },
+      { signal: expect.any(AbortSignal) },
+    );
+    if (host === "peer") expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
     else expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
     localStorage.removeItem(key);
   });

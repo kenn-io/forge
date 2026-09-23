@@ -1089,7 +1089,7 @@ func (p *apiTestGitLabProvider) ListCIChecks(
 }
 
 // setupTestServer opens a temp DB, builds a Server, and returns both.
-func setupTestServer(t *testing.T) (*Server, *db.DB) {
+func setupTestServer(t *testing.T) (*Server, *db.DB, *ghclient.Syncer) {
 	t.Helper()
 	return setupTestServerWithMock(t, &mockGH{})
 }
@@ -1115,7 +1115,7 @@ func setupNotificationsEnabledTestServer(t *testing.T) (*Server, *db.DB) {
 	return srv, database
 }
 
-func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB) {
+func setupTestServerWithMock(t *testing.T, mock *mockGH) (*Server, *db.DB, *ghclient.Syncer) {
 	t.Helper()
 	return setupTestServerWithRepos(t, mock, defaultTestRepos)
 }
@@ -1190,13 +1190,13 @@ func markArchiveItemRemovedUpstreamForServerTest(
 
 func setupTestServerWithRepos(
 	t *testing.T, mock *mockGH, repos []ghclient.RepoRef,
-) (*Server, *db.DB) {
+) (*Server, *db.DB, *ghclient.Syncer) {
 	return setupTestServerWithReposAndOptions(t, mock, repos, ServerOptions{})
 }
 
 func setupTestServerWithReposAndOptions(
 	t *testing.T, mock *mockGH, repos []ghclient.RepoRef, options ServerOptions,
-) (*Server, *db.DB) {
+) (*Server, *db.DB, *ghclient.Syncer) {
 	t.Helper()
 
 	database := dbtest.Open(t)
@@ -1238,7 +1238,7 @@ func setupTestServerWithReposAndOptions(
 	// Registered after the DB cleanup so LIFO ordering runs Shutdown
 	// first and lets background goroutines finish before DB close.
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	return srv, database
+	return srv, database, syncer
 }
 
 func setupTestClient(t *testing.T, srv *Server) *apiclient.Client {
@@ -1471,7 +1471,7 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 			return "TestUser", nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -1522,7 +1522,7 @@ func TestAPIUnassignedFiltersPullsIssuesAndActivity(t *testing.T) {
 
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -1610,7 +1610,7 @@ func TestAPIListPullsUsesProviderActivityAfterIndexSync(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, syncer := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1,
 		withSeedPRTitle("Preserve activity"),
 		withSeedPRTimes(base, base, staleDerivedActivity),
@@ -1621,7 +1621,7 @@ func TestAPIListPullsUsesProviderActivityAfterIndexSync(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
 	require.NoError(err)
@@ -1663,7 +1663,7 @@ func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, syncer := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1,
 		withSeedPRTitle("Cached CI PR"),
 		withSeedPRHeadSHA(headSHA),
@@ -1673,7 +1673,7 @@ func TestAPIListPullsKeepsCachedCIDecorationsAfterIndexSync(t *testing.T) {
 	)
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
 	require.NoError(err)
@@ -1754,10 +1754,10 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _ := setupTestServerWithMock(t, mock)
+	srv, _, syncer := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
 
-	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
+	require.NoError(syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
 	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -1791,7 +1791,7 @@ func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 
 	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
 	seedPROnHost(t, database, "github.com", "acme", "worker", 2)
@@ -1844,7 +1844,7 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	ctx := t.Context()
 	seedPR(t, database, "acme", "widget", 1)
 	repo, err := database.GetRepoByIdentity(
@@ -1930,7 +1930,7 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 		},
 	}
 
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
 
@@ -1959,7 +1959,7 @@ func TestAPIConfiguredRepoFiltersUseProviderIdentity(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
-	srv, database, _ := setupTestServerWithConfig(t)
+	srv, database, _, syncer := setupTestServerWithConfig(t)
 	client := setupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 
 	_, err := database.UpsertRepo(ctx, db.RepoIdentity{
@@ -1980,7 +1980,7 @@ func TestAPIConfiguredRepoFiltersUseProviderIdentity(t *testing.T) {
 		RepoPath:       "acme/widget",
 	})
 	require.NoError(err)
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform:     platform.KindGitHub,
 		PlatformHost: "github.com",
 		Owner:        "acme",
@@ -2605,7 +2605,7 @@ func TestAPIListRepoSummaries(t *testing.T) {
 		{Platform: "github", Owner: "acme", Name: "tools", PlatformHost: "github.com"},
 		{Platform: "github", Owner: "acme", Name: "archived", PlatformHost: "github.com"},
 	}
-	srv, database := setupTestServerWithRepos(t, &mockGH{}, repos)
+	srv, database, _ := setupTestServerWithRepos(t, &mockGH{}, repos)
 	client := setupTestClient(t, srv)
 
 	_, err := testutil.SeedFixtures(context.Background(), database)
@@ -2702,7 +2702,7 @@ func TestAPIListRepoSummariesIncludesDefaultPlatformHost(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, database, _ := setupTestServerWithConfigContent(t, `
+	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
 default_platform_host = "ghe.example.com"
 
 [[repos]]
@@ -2715,7 +2715,7 @@ platform_host = "ghe.example.com"
 		t.Context(), verifiedGitHubRepoIdentity("ghe.example.com", "acme", "widgets"),
 	)
 	require.NoError(err)
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
+	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:        "acme",
 		Name:         "widgets",
 		PlatformHost: "ghe.example.com",
@@ -2735,7 +2735,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 
 	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
@@ -2884,7 +2884,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 
 	githubRepoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
@@ -2937,7 +2937,7 @@ func TestAPICommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -3004,7 +3004,7 @@ func TestAPICommentAutocompleteGitLabMergeRequestReferencesScopesByProvider(t *t
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -3075,9 +3075,9 @@ func TestAPISyncStatus(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, syncer := setupTestServer(t)
 	client := setupTestClient(t, srv)
-	srv.syncer.RunOnce(t.Context())
+	syncer.RunOnce(t.Context())
 
 	resp, err := client.HTTP.GetSyncStatusWithResponse(t.Context())
 	require.NoError(err)
@@ -3121,10 +3121,10 @@ func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) 
 			}}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, syncer := setupTestServerWithMock(t, mock)
 
-	srv.syncer.RunOnce(ctx)
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 	assert.Equal(int32(1), issueListCalls.Load(),
 		"background sync must suppress the disabled issue scope")
 	repo, err := database.GetRepoByIdentity(
@@ -3137,7 +3137,7 @@ func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) 
 
 	issuesDisabled.Store(false)
 	done := make(chan struct{}, 1)
-	srv.syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
+	syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
 		if !status.Running {
 			select {
 			case done <- struct{}{}:
@@ -3322,7 +3322,7 @@ func TestAPICloseIssue(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
 
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	handlerNow := testEDTTime(10, 45)
 	setTestServerNow(t, srv, handlerNow)
 	seedIssue(t, database, "acme", "widget", 5, "open")
@@ -3522,7 +3522,7 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 
-	srv, database := setupTestServerWithReposAndOptions(
+	srv, database, _ := setupTestServerWithReposAndOptions(
 		t, &mockGH{}, defaultTestRepos,
 		ServerOptions{
 			WorktreeDir:                        t.TempDir(),
@@ -3578,7 +3578,7 @@ func TestAPICreateWorkspaceRejectsOmittedProviderForUnambiguousRepo(t *testing.T
 	require := require.New(t)
 	ctx := t.Context()
 
-	srv, database := setupTestServerWithReposAndOptions(
+	srv, database, _ := setupTestServerWithReposAndOptions(
 		t, &mockGH{}, defaultTestRepos,
 		ServerOptions{
 			WorktreeDir:                        t.TempDir(),
@@ -3689,17 +3689,17 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, _ := setupTestServerWithMock(t, mock)
+	srv, _, syncer := setupTestServerWithMock(t, mock)
 
 	// Wire a real GraphQLFetcher pointing at the mock GraphQL server
 	// into the syncer.
 	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
-	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
 	})
 
 	// Trigger the real sync pipeline.
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	// Verify through the HTTP API that issue data flowed end-to-end.
 	client := setupTestClient(t, srv)
@@ -3875,7 +3875,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	assert.Zero(int(graphQLPRCalls.Load()),
 		"large existing repo refresh should not bulk-fetch PRs through GraphQL")
@@ -4020,7 +4020,7 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 	first, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, first.StatusCode)
@@ -4038,7 +4038,7 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 		`UPDATE forge_merge_requests SET detail_fetched_at = ? WHERE id = ?`, staleDetail, mrID,
 	)
 	require.NoError(err)
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 	second, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, second.StatusCode)
@@ -4187,7 +4187,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	assert.Zero(int(graphQLIssueCalls.Load()),
 		"large existing repo refresh should not bulk-fetch issues through GraphQL")
@@ -4293,7 +4293,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 			}}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, syncer := setupTestServerWithMock(t, mock)
 
 	// Pre-seed DB with a stale CommentCount (5). REST fallback fails,
 	// so UpsertIssue's value is what survives. With the bug, it's 5.
@@ -4332,11 +4332,11 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	require.NoError(err)
 
 	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
-	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
 	})
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	// API must expose GraphQL TotalCount (42), not stale DB (5).
 	// With the preservation bug, count would remain 5.
@@ -4448,7 +4448,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -4467,7 +4467,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 		UpdatedAt: &gh.Timestamp{Time: now.Add(4 * time.Minute)},
 	}}
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -4579,7 +4579,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -4593,7 +4593,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	mockComments = []*gh.IssueComment{}
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -4727,7 +4727,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
 	require.NoError(err)
@@ -4740,7 +4740,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	targetComments = []*gh.IssueComment{}
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
 	require.NoError(err)
@@ -4833,7 +4833,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -4852,7 +4852,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 		UpdatedAt: &gh.Timestamp{Time: now.Add(4 * time.Minute)},
 	}}
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -4948,7 +4948,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -4962,7 +4962,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	mockComments = []*gh.IssueComment{}
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -5087,7 +5087,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
 	require.NoError(err)
@@ -5100,7 +5100,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	targetComments = []*gh.IssueComment{}
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
 	require.NoError(err)
@@ -5185,7 +5185,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
+	require.NoError(syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
 	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -5200,7 +5200,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	currentUpdatedAt = now.Add(4 * time.Minute)
 	currentComments = []*gh.IssueComment{}
 
-	require.NoError(srv.syncer.SyncMR(ctx, "acme", "widget", prNumber))
+	require.NoError(syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
 	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -5278,7 +5278,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	require.NoError(srv.syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
+	require.NoError(syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
 
 	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -5293,7 +5293,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 	currentUpdatedAt = now.Add(time.Minute)
 	currentComments = []*gh.IssueComment{}
 
-	require.NoError(srv.syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
+	require.NoError(syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
 
 	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -5392,7 +5392,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -5407,7 +5407,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	currentUpdatedAt = secondUpdatedAt
 	currentCommentJSON = `{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -5574,7 +5574,7 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 	assert.Zero(restCommentCalls.Load())
 
 	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
@@ -5589,7 +5589,7 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	}
 
 	partialComments = true
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 	assert.Equal(int32(1), restCommentCalls.Load())
 
 	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
@@ -5718,7 +5718,7 @@ func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	resp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -5886,10 +5886,10 @@ func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	phase = "closed"
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	closedResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -5900,7 +5900,7 @@ func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.
 	assert.Empty(closedResp.JSON200.Events)
 
 	phase = "reopened"
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	reopenedResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
 	require.NoError(err)
@@ -6016,14 +6016,14 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 		},
 	}
 
-	srv, _ := setupTestServerWithMock(t, mock)
+	srv, _, syncer := setupTestServerWithMock(t, mock)
 	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
-	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
 	})
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -6038,7 +6038,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	currentUpdatedAt = secondUpdatedAt
 	currentCommentsJSON = `{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -6215,7 +6215,7 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 	assert.Zero(restCommentCalls.Load())
 	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -6260,7 +6260,7 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	currentUpdatedAt = secondUpdatedAt
 	firstVisibility = `"isMinimized":false,"minimizedReason":null`
 	reviewThreadsPageInfo = `{"hasNextPage":true,"endCursor":"thread-cursor"}`
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 	assert.Zero(restCommentCalls.Load())
 	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -6387,15 +6387,15 @@ func TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteRevie
 		},
 	}
 
-	srv, _ := setupTestServerWithMock(t, mock)
+	srv, _, syncer := setupTestServerWithMock(t, mock)
 	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
-	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
 	})
 	client := setupTestClient(t, srv)
 
 	// First pass persists the APPROVED decision through the real pipeline.
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
@@ -6409,7 +6409,7 @@ func TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteRevie
 	currentReviewDecision = "CHANGES_REQUESTED"
 	currentReviewsConn = `{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"review-cursor"}}`
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
@@ -6508,14 +6508,14 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApproval(t *testing.T) {
 		},
 	}
 
-	srv, _ := setupTestServerWithMock(t, mock)
+	srv, _, syncer := setupTestServerWithMock(t, mock)
 	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
-	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
 	})
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -6633,14 +6633,14 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR(t *testing.T) {
 		},
 	}
 
-	srv, _ := setupTestServerWithMock(t, mock)
+	srv, _, syncer := setupTestServerWithMock(t, mock)
 	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
-	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
 	})
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -6743,14 +6743,14 @@ func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
 		},
 	}
 
-	srv, _ := setupTestServerWithMock(t, mock)
+	srv, _, syncer := setupTestServerWithMock(t, mock)
 	gqlClient := githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client())
-	srv.syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
 		"github.com": ghclient.NewGraphQLFetcherWithClient(gqlClient, nil),
 	})
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
@@ -6802,8 +6802,8 @@ func TestAPIStateMutationDoesNotRecoverFromProviderWhenSyncDisabled(t *testing.T
 					return nil, nil
 				},
 			}
-			srv, database := setupTestServerWithMock(t, mock)
-			srv.syncer.DisableSync()
+			srv, database, syncer := setupTestServerWithMock(t, mock)
+			syncer.DisableSync()
 			client := setupTestClient(t, srv)
 			var status int
 			if itemType == "pull request" {
@@ -6826,7 +6826,7 @@ func TestAPIStateMutationDoesNotRecoverFromProviderWhenSyncDisabled(t *testing.T
 func TestMRListIncludesWorktreeLinks(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	prID := seedPR(t, database, "acme", "widget", 1)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -6858,7 +6858,7 @@ func TestMRListIncludesWorktreeLinks(t *testing.T) {
 func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	prID := seedPR(t, database, "acme", "widget", 1)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -7432,7 +7432,7 @@ func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing
 			return nil, errors.New("provider should not be called")
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 42, withSeedPRAuthor("marius"))
 	mr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
@@ -7493,7 +7493,7 @@ func TestAPIGitHubApprovePullRejectsSelfApprovalBeforeProvider(t *testing.T) {
 			return nil, errors.New("provider should not be called")
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 42, withSeedPRAuthor("marius"))
 
 	approveRR := testutil.DoJSON(
@@ -7574,7 +7574,7 @@ func TestAPIPublishReviewDraftUsesPlatformHeadSHAWhenDiffHeadIsUnavailable(t *te
 		ReviewDraftMutation:    true,
 		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment, platform.ReviewActionApprove},
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -7627,7 +7627,7 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 		ReviewDraftMutation:    true,
 		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionApprove},
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 	provider.publishReviewErr = &platform.Error{
 		Code:         platform.ErrCodeStaleState,
@@ -7709,7 +7709,7 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 		ReviewDraftMutation:    true,
 		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionApprove},
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 	provider.publishReviewErr = &platform.DiffReviewPublishPartialError{
 		Err: &platform.Error{
@@ -7791,7 +7791,7 @@ func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.
 		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
 		NativeMultilineRanges:  false,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -7847,7 +7847,7 @@ func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
 			platform.ReviewActionApprove,
 		},
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -7928,7 +7928,7 @@ func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testin
 		ReviewDraftMutation:    true,
 		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 	provider.publishReviewErr = &platform.DiffReviewPublishPartialError{Err: errors.New("approval failed")}
 	provider.reviewThreadsErr = errors.New("transient review thread refresh failure")
@@ -8196,7 +8196,7 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 		ReviewDraftMutation:    true,
 		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -8354,7 +8354,7 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 		ReadComments:      true,
 		ReadReviewThreads: true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -8449,7 +8449,7 @@ func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
 		ReadComments:      true,
 		ReadReviewThreads: true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -8526,7 +8526,7 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 		ReadComments:      true,
 		ReadReviewThreads: true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -8600,7 +8600,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 		ReviewDraftMutation:    true,
 		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -8724,7 +8724,7 @@ func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
 		ReadComments:           true,
 		ReviewThreadResolution: true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -8801,7 +8801,7 @@ func TestAPIResolveReviewThreadReturnsServerErrorForCorruptStoredThread(t *testi
 		NativeMultilineRanges:  true,
 		ReadReviewThreads:      true,
 	}
-	srv, database, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, _, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -8955,7 +8955,7 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -9036,7 +9036,7 @@ func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -9089,7 +9089,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 	provider.applySuggestionResult = &platform.AppliedReviewSuggestions{}
 
@@ -9139,7 +9139,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 	provider.applySuggestionReturnsNil = true
 
@@ -9189,7 +9189,7 @@ func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 	provider.applySuggestionsErr = errors.New("provider response was lost")
 
@@ -9238,7 +9238,7 @@ func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, _, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -9287,7 +9287,7 @@ func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *te
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -9352,7 +9352,7 @@ func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t 
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -9445,13 +9445,13 @@ func TestAPIApplyReviewSuggestionRejectsRateLimitedOperationBeforeProviderCall(t
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, syncer := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 	provider.rateLimitBuckets = map[platform.OperationName][]platform.RateLimitBucket{
 		platform.OperationApplyReviewSuggestion: {platform.RateLimitBucketREST},
 	}
 	rt := ghclient.NewPlatformRateTracker(database, "gitlab", "gitlab.example.com", "host", "rest")
-	srv.syncer.RateTrackers()[ghclient.RateBucketKey("gitlab", "gitlab.example.com", "host")] = rt
+	syncer.RateTrackers()[ghclient.RateBucketKey("gitlab", "gitlab.example.com", "host")] = rt
 	rt.UpdateFromRate(ghclient.Rate{
 		Limit:     5000,
 		Remaining: 0,
@@ -9521,7 +9521,7 @@ func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailS
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -9572,7 +9572,7 @@ func TestAPIApplyReviewSuggestionRejectsStaleHead(t *testing.T) {
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	srv, database, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
+	srv, database, _, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	ctx := t.Context()
 
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
@@ -9638,14 +9638,14 @@ func setupGitLabCapabilityServerWithCaps(
 	caps *platform.Capabilities,
 ) (*Server, *db.DB) {
 	t.Helper()
-	srv, database, _ := setupGitLabCapabilityServerWithProvider(t, caps)
+	srv, database, _, _ := setupGitLabCapabilityServerWithProvider(t, caps)
 	return srv, database
 }
 
 func setupGitLabCapabilityServerWithProvider(
 	t *testing.T,
 	caps *platform.Capabilities,
-) (*Server, *db.DB, *apiTestGitLabProvider) {
+) (*Server, *db.DB, *apiTestGitLabProvider, *ghclient.Syncer) {
 	t.Helper()
 	require := require.New(t)
 	ctx := t.Context()
@@ -9729,7 +9729,7 @@ func setupGitLabCapabilityServerWithProvider(
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
 	syncer.RunOnce(ctx)
-	return srv, database, provider
+	return srv, database, provider, syncer
 }
 
 func assertUnsupportedCapabilityProblem(
@@ -10512,7 +10512,7 @@ func TestAPIActivityFencesRepositoryReconciliationAcrossEventAndWorkspaceReads(t
 	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
@@ -10730,7 +10730,7 @@ func TestAPIListActivity(t *testing.T) {
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
 	prID := seedPR(t, database, "acme", "widget", 1)
@@ -10879,7 +10879,7 @@ func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	for number := 1; number <= 11; number++ {
 		activityAt := now.Add(-time.Duration(number) * time.Minute)
@@ -10909,7 +10909,7 @@ func TestAPIListCollapsedActivitySearchLimitCountsDistinctParents(t *testing.T) 
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
 
@@ -11027,7 +11027,7 @@ func TestAPIListCollapsedActivityRetainsVisibleEventsForBotParents(t *testing.T)
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 	prID := seedPR(
@@ -11070,7 +11070,7 @@ func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *te
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 	createdAt := now.Add(-30 * 24 * time.Hour)
@@ -11120,8 +11120,7 @@ func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *te
 
 func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t *testing.T) {
 	runParallelServerTest(t)
-
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 	activityAt := now.Add(-time.Hour)
@@ -11191,7 +11190,7 @@ func TestAPIListActivitySeparatesEventAndParentSnapshotCaps(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "many-parents"))
@@ -11460,7 +11459,7 @@ func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 
@@ -11538,7 +11537,7 @@ func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
 func TestAPIListActivityReturnsParentRecencyWhenCommitEventsAreFiltered(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	// The hidden commit is the newest rendered ledger event, so it defines
@@ -11586,7 +11585,7 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, syncer := setupTestServer(t)
 	srv.cfg = &config.Config{}
 	ctx := t.Context()
 	now := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
@@ -11596,10 +11595,10 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	)
 	require.NoError(err)
 	require.NotNil(repo)
-	tracked := srv.syncer.TrackedRepos()
+	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	tracked[0].RepoID = repo.ID
-	srv.syncer.SetRepos(tracked)
+	syncer.SetRepos(tracked)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repo.ID, PlatformID: 702, Number: 702,
 		URL: "https://github.com/acme/gadget/pull/702", Title: "Renamed activity",
@@ -11704,7 +11703,7 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 	runParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
 
@@ -11882,7 +11881,7 @@ func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
@@ -11946,7 +11945,7 @@ func TestAPIListActivityFiltersConfiguredReposByHost(t *testing.T) {
 	runParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database, _ := setupTestServerWithConfig(t)
+	srv, database, _, _ := setupTestServerWithConfig(t)
 
 	seedPROnHost(t, database, "github.com", "acme", "widget", 1)
 	seedPROnHost(t, database, "ghe.example.com", "acme", "widget", 2)
@@ -12069,14 +12068,14 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, syncer := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
 
 	// Wire the production hook and run one sync pass. RunOnce will fetch
 	// from the mock, persist PRs into DB, then invoke OnSyncCompleted,
 	// which runs stack detection.
-	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
-	srv.syncer.RunOnce(ctx)
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.RunOnce(ctx)
 
 	// Stacks should be populated purely by the hook path.
 	listResp, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{}})
@@ -12150,11 +12149,11 @@ func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
 			},
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, syncer := setupTestServerWithMock(t, mock)
 	client := setupTestClient(t, srv)
-	srv.syncer.SetPreferGitHubNativeStacks(true)
-	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
-	srv.syncer.RunOnce(ctx)
+	syncer.SetPreferGitHubNativeStacks(true)
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.RunOnce(ctx)
 
 	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
@@ -12220,7 +12219,7 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{{
+	srv, database, syncer := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{{
 		Owner:        "acme",
 		Name:         "widget",
 		PlatformHost: "github.com",
@@ -12228,8 +12227,8 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing
 	}})
 	client := setupTestClient(t, srv)
 
-	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
-	srv.syncer.RunOnce(ctx)
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.RunOnce(ctx)
 
 	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}})
 	require.NoError(err)
@@ -12293,7 +12292,7 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
 			}, nil
 		},
 	}
-	srv, database := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{{
+	srv, database, syncer := setupTestServerWithRepos(t, mock, []ghclient.RepoRef{{
 		Owner:        "acme",
 		Name:         "widget",
 		PlatformHost: "github.com",
@@ -12301,8 +12300,8 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
 	}})
 	client := setupTestClient(t, srv)
 
-	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
-	srv.syncer.RunOnce(ctx)
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.RunOnce(ctx)
 
 	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(751)}})
 	require.NoError(err)
@@ -12369,10 +12368,10 @@ func TestDisplayNameCacheE2E(t *testing.T) {
 		},
 	}
 
-	srv, _ := setupTestServerWithMock(t, mock)
+	srv, _, syncer := setupTestServerWithMock(t, mock)
 
 	// First sync: populates display name via GetUser.
-	srv.syncer.RunOnce(t.Context())
+	syncer.RunOnce(t.Context())
 	require.Positive(getUserCalls, "first sync should call GetUser")
 	firstCalls := getUserCalls
 
@@ -12382,7 +12381,7 @@ func TestDisplayNameCacheE2E(t *testing.T) {
 	require.Contains(rr.Body.String(), `"AuthorDisplayName":"Alice Smith"`)
 
 	// Second sync: cache hit, no new GetUser calls.
-	srv.syncer.RunOnce(t.Context())
+	syncer.RunOnce(t.Context())
 	require.Equal(firstCalls, getUserCalls,
 		"second sync must not re-fetch cached display names")
 
@@ -12426,6 +12425,7 @@ func setupTestServerWithWorkspacesServerAndEnrichment(
 
 type workspaceServerFixture struct {
 	server    *Server
+	syncer    *ghclient.Syncer
 	client    *apiclient.Client
 	database  *db.DB
 	clones    *gitclone.Manager
@@ -12592,6 +12592,7 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	client := setupTestClientWithBaseURL(t, srv, clientBaseURL)
 	return workspaceServerFixture{
 		server:    srv,
+		syncer:    syncer,
 		client:    client,
 		database:  database,
 		clones:    clones,
@@ -13194,7 +13195,7 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 		Command: []string{availableTmux},
 	}}
 	restarted := New(
-		fixture.database, fixture.server.syncer, nil, "/", restartedCfg,
+		fixture.database, fixture.syncer, nil, "/", restartedCfg,
 		ServerOptions{
 			Clones:      fixture.clones,
 			WorktreeDir: fixture.worktrees,
@@ -13336,7 +13337,7 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	options.Clones = fixture.clones
 	options.WorktreeDir = fixture.worktrees
 	restarted := New(
-		fixture.database, fixture.server.syncer, nil, "/", cfg, options,
+		fixture.database, fixture.syncer, nil, "/", cfg, options,
 	)
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
@@ -13423,7 +13424,7 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	options.Clones = fixture.clones
 	options.WorktreeDir = fixture.worktrees
 	restarted := New(
-		fixture.database, fixture.server.syncer, nil, "/", cfg, options,
+		fixture.database, fixture.syncer, nil, "/", cfg, options,
 	)
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
@@ -13512,7 +13513,7 @@ func TestWorkspaceDeleteStopsPtyOwnerAgentAfterServerRestartE2E(t *testing.T) {
 	options.Clones = fixture.clones
 	options.WorktreeDir = fixture.worktrees
 	restarted := New(
-		fixture.database, fixture.server.syncer, nil, "/", cfg, options,
+		fixture.database, fixture.syncer, nil, "/", cfg, options,
 	)
 	t.Cleanup(func() { gracefulShutdown(t, restarted) })
 	restartedClient := setupTestClient(t, restarted)
@@ -14487,7 +14488,7 @@ func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
 	t.Cleanup(func() { require.NoError(restartedDatabase.Close()) })
 
 	restarted := New(
-		restartedDatabase, fixture.server.syncer, nil, "/", nil,
+		restartedDatabase, fixture.syncer, nil, "/", nil,
 		ServerOptions{
 			Clones:                     fixture.clones,
 			WorktreeDir:                fixture.worktrees,
@@ -14899,7 +14900,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 	require.NoError(err)
 	require.Len(stored, 1)
 	restarted := New(
-		fixture.database, fixture.server.syncer, nil, "/", cfg,
+		fixture.database, fixture.syncer, nil, "/", cfg,
 		ServerOptions{
 			Clones:      fixture.clones,
 			WorktreeDir: fixture.worktrees,
@@ -14970,7 +14971,7 @@ func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(
 
 	gracefulShutdown(t, fixture.server)
 	restarted := New(
-		fixture.database, fixture.server.syncer, nil, "/", cfg,
+		fixture.database, fixture.syncer, nil, "/", cfg,
 		ServerOptions{
 			Clones:      fixture.clones,
 			WorktreeDir: fixture.worktrees,
@@ -16845,7 +16846,7 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 			},
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, syncer := setupTestServerWithMock(t, mock)
 	_, err := database.UpsertRepo(ctx, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
@@ -16870,12 +16871,12 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 		},
 	}))
 	clock := observed.Add(11 * time.Hour)
-	srv.syncer.SetClock(func() time.Time { return clock })
-	srv.syncer.SetPreferGitHubNativeStacks(true)
-	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.SetClock(func() time.Time { return clock })
+	syncer.SetPreferGitHubNativeStacks(true)
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}})
 	require.NoError(err)
@@ -16887,7 +16888,7 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 
 	// Two hours later the cached stack is past its own 12h window.
 	clock = observed.Add(13 * time.Hour)
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	stackResp, err = client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}})
 	require.NoError(err)
@@ -16975,7 +16976,7 @@ func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
 			},
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, syncer := setupTestServerWithMock(t, mock)
 	seedStackedPR(t, database, "acme", "widget", 900, "feature/z", "main", db.MergeRequestStateMerged, "", "")
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
@@ -16989,11 +16990,11 @@ func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
 			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "feature/b", HeadSHA: "sha101"},
 		},
 	}))
-	srv.syncer.SetPreferGitHubNativeStacks(true)
-	srv.syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.SetPreferGitHubNativeStacks(true)
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
 	client := setupTestClient(t, srv)
 
-	srv.syncer.RunOnce(ctx)
+	syncer.RunOnce(ctx)
 
 	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}})
 	require.NoError(err)
@@ -17016,7 +17017,7 @@ func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
 func TestSyncIssueUntrackedRepoReturnsForbidden(t *testing.T) {
 	require := require.New(t)
 
-	srv, database := setupTestServerWithMock(t, &mockGH{})
+	srv, database, _ := setupTestServerWithMock(t, &mockGH{})
 	seedIssue(t, database, "acme", "retired", 3, "open")
 	client := setupTestClient(t, srv)
 

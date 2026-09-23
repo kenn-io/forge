@@ -37,7 +37,7 @@ func TestMarkdownImageRouteServesRepositorySVG(t *testing.T) {
 		Notifications: upstream.Client(), Clock: time.Now, APIBase: upstream.URL + "/",
 	})
 	require.NoError(err)
-	srv, database := setupTestServerWithMock(t, &mockGH{getMarkdownImageFn: client.GetMarkdownImage})
+	srv, database, _ := setupTestServerWithMock(t, &mockGH{getMarkdownImageFn: client.GetMarkdownImage})
 	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
@@ -79,7 +79,7 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 		gotOwner, gotSource = owner, sourceURL
 		return platform.MarkdownImage{Content: []byte("png-bytes"), ContentType: "image/png"}, nil
 	}}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
@@ -168,7 +168,7 @@ func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
 	) (platform.MarkdownImage, error) {
 		return platform.MarkdownImage{}, context.DeadlineExceeded
 	}}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
@@ -316,7 +316,7 @@ func TestMarkdownImageCacheDoesNotFollowRouteReuse(t *testing.T) {
 			Content: []byte(fmt.Sprintf("bytes-%d", fetches)), ContentType: "image/png",
 		}, nil
 	}}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
@@ -355,7 +355,7 @@ func TestMarkdownImageRouteCachesMutableImagesBriefly(t *testing.T) {
 			Mutable:     sourceURL == mutableSource,
 		}, nil
 	}}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)

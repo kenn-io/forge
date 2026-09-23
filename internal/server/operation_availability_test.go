@@ -751,7 +751,7 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	// offering an action that would fail auth at request time.
 	t.Setenv("SPLIT_WRITE_CRED_PAT", "")
 	t.Setenv("SPLIT_WRITE_CRED_PAT_NEW", "user-pat")
-	srv, set := newSplitTestServer(t, tokenauth.Candidate{
+	srv, set, syncer := newSplitTestServer(t, tokenauth.Candidate{
 		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT",
 	})
 	router, err := ghclient.NewHostRouter(
@@ -764,7 +764,7 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 		},
 	)
 	require.NoError(err)
-	srv.syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
@@ -800,7 +800,7 @@ func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T)
 	// A resolver failure (unreadable token file, broken gh helper) is
 	// not a missing credential: the UI must not tell the user to
 	// configure a PAT when the real problem is a broken helper.
-	srv, _ := newSplitTestServer(t, tokenauth.Candidate{
+	srv, _, _ := newSplitTestServer(t, tokenauth.Candidate{
 		Kind:     tokenauth.SourceKindFile,
 		FilePath: filepath.Join(t.TempDir(), "does-not-exist.token"),
 	})
@@ -926,14 +926,14 @@ func splitTestDescriptor(writeCandidate tokenauth.Candidate) tokenauth.Descripto
 // can exercise mutation availability gating.
 func newSplitTestServer(
 	t *testing.T, writeCandidate tokenauth.Candidate,
-) (*Server, *tokenauth.SourceSet) {
+) (*Server, *tokenauth.SourceSet, *ghclient.Syncer) {
 	t.Helper()
 	return newSplitTestServerWithMock(t, writeCandidate, &mockGH{})
 }
 
 func newSplitTestServerWithMock(
 	t *testing.T, writeCandidate tokenauth.Candidate, mock *mockGH,
-) (*Server, *tokenauth.SourceSet) {
+) (*Server, *tokenauth.SourceSet, *ghclient.Syncer) {
 	t.Helper()
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(
@@ -955,14 +955,14 @@ func newSplitTestServerWithMock(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(t, err)
-	return srv, set
+	return srv, set, syncer
 }
 
 func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	repoID, err := database.UpsertRepo(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
@@ -996,7 +996,7 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 			return "marius", nil
 		},
 	}
-	srv, database := setupTestServerWithMock(t, mock)
+	srv, database, _ := setupTestServerWithMock(t, mock)
 	seedPR(t, database, "acme", "widget", 1, withSeedPRAuthor("marius"))
 	repo, err := database.GetRepoByIdentity(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
@@ -1031,7 +1031,7 @@ func TestAPIPullDetailOperationsSkipViewerLookupWhenSubmitReviewUnavailable(t *t
 
 	t.Setenv("SPLIT_WRITE_CRED_PAT", "")
 	mock := &mockGH{}
-	srv, _ := newSplitTestServerWithMock(t, tokenauth.Candidate{
+	srv, _, _ := newSplitTestServerWithMock(t, tokenauth.Candidate{
 		Kind: tokenauth.SourceKindEnv, EnvName: "SPLIT_WRITE_CRED_PAT",
 	}, mock)
 	seedPR(t, srv.db, "acme", "widget", 1, withSeedPRAuthor("marius"))

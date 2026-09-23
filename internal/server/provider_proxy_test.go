@@ -416,7 +416,7 @@ func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
 func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	unassignedID := seedPR(t, database, "acme", "widget", 1)
 	assignedID := seedPR(t, database, "acme", "widget", 2)
@@ -463,7 +463,7 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	hub, hubDatabase := setupTestServer(t)
+	hub, hubDatabase, _ := setupTestServer(t)
 	unassignedIssueID := seedIssue(t, hubDatabase, "acme", "widget", 7, "open")
 	assignedIssueID := seedIssue(t, hubDatabase, "acme", "widget", 8, "open")
 	hubRepo, err := hubDatabase.GetRepoByIdentity(
@@ -478,7 +478,7 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 		t.Context(), hubRepo.ID, assignedIssueID, []string{"reviewer"},
 	))
 
-	spoke, spokeDatabase := setupTestServer(t)
+	spoke, spokeDatabase, _ := setupTestServer(t)
 	spokeRepoID, err := spokeDatabase.UpsertRepo(
 		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
@@ -806,7 +806,7 @@ func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
 		ReviewDraftMutation:    true,
 		SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment},
 	}
-	hubServer, hubDB, provider := setupGitLabCapabilityServerWithProvider(t, &caps)
+	hubServer, hubDB, provider, _ := setupGitLabCapabilityServerWithProvider(t, &caps)
 	hub := httptest.NewTLSServer(hubServer)
 	t.Cleanup(hub.Close)
 

@@ -48,7 +48,6 @@ func TestInactiveFleetNodeKeepsLocalServicesWithoutProviderPlane(t *testing.T) {
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	assert.Nil(srv.syncer)
 	assert.Nil(srv.archive)
 	assert.Same(clones, srv.clones)
 	require.NotNil(srv.providerSource)

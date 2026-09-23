@@ -31,7 +31,7 @@
   `[api].require_auth`; direct loopback peer, exact loopback authority, absent
   forwarding headers, and optional same-origin HTTP Origin are required
   (`internal/mcpserver/server.go::Server.HTTPHandler`,
-  `internal/server/mcp_http.go::NewMCPHTTPGuard`).
+  `internal/server/mcpapi/mcp_http.go::NewMCPHTTPGuard`).
 - With `[api.tailscale_serve]` enabled, the main listener also serves `/mcp` to
   allowlisted Serve users without a bearer. The identity header is ambient, so
   a request whose Origin names another authority is rejected. Serve reaches the

@@ -7,10 +7,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"go.kenn.io/forge/internal/apiclient/generated"
-	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 )
 
 const maxWorkspaceProviderStateSubjects = 500
@@ -24,11 +23,11 @@ type federationWorkspaceProviderStateInput struct {
 }
 
 type federationWorkspaceProviderSubject struct {
-	ID                 string                               `json:"id"`
-	Repository         federationActivityRepositoryIdentity `json:"repository"`
-	ItemType           string                               `json:"item_type"`
-	ItemNumber         int                                  `json:"item_number"`
-	AssociatedPRNumber *int                                 `json:"associated_pr_number,omitempty"`
+	ID                 string                                        `json:"id"`
+	Repository         spokeapi.FederationActivityRepositoryIdentity `json:"repository"`
+	ItemType           string                                        `json:"item_type"`
+	ItemNumber         int                                           `json:"item_number"`
+	AssociatedPRNumber *int                                          `json:"associated_pr_number,omitempty"`
 }
 
 type federationWorkspaceProviderStateResponse struct {
@@ -102,61 +101,4 @@ func (s *Server) federationQueryWorkspaceProviderState(
 	return &federationWorkspaceProviderStateOutput{Body: federationWorkspaceProviderStateResponse{
 		Workspaces: states,
 	}}, nil
-}
-
-// WorkspaceProviderState returns a copy of workspaces with the hub's provider
-// state applied. Workspaces without a stable repository identity have no
-// provider item the hub can resolve, so they are returned unchanged.
-func (s *hubProviderSource) WorkspaceProviderState(
-	ctx context.Context, workspaces []fleet.RawWorkspace,
-) ([]fleet.RawWorkspace, error) {
-	out := append([]fleet.RawWorkspace(nil), workspaces...)
-	subjects := make([]generated.FederationWorkspaceProviderSubject, 0, len(workspaces))
-	for _, workspace := range workspaces {
-		if strings.TrimSpace(workspace.Repository.PlatformRepoID) == "" {
-			continue
-		}
-		subject := generated.FederationWorkspaceProviderSubject{
-			ID: workspace.ID,
-			Repository: generated.FederationActivityRepositoryIdentity{
-				Provider:       workspace.Repository.Provider,
-				PlatformHost:   workspace.Repository.PlatformHost,
-				PlatformRepoID: workspace.Repository.PlatformRepoID,
-			},
-			ItemType: workspace.ItemType, ItemNumber: int64(workspace.ItemNumber),
-		}
-		if workspace.AssociatedPRNumber != nil {
-			subject.AssociatedPrNumber = new(int64(*workspace.AssociatedPRNumber))
-		}
-		subjects = append(subjects, subject)
-	}
-	states := make(map[string]federationWorkspaceProviderState, len(subjects))
-	for start := 0; start < len(subjects); start += maxWorkspaceProviderStateSubjects {
-		end := min(start+maxWorkspaceProviderStateSubjects, len(subjects))
-		body := &generated.FederationWorkspaceProviderStateRequest{Workspaces: subjects[start:end]}
-		httpRequest, err := generated.NewFederationQueryWorkspaceProviderStateRequest(ctx, "/api/v1", &generated.FederationQueryWorkspaceProviderStateRequestOptions{Body: body})
-		if err != nil {
-			return nil, err
-		}
-		var response federationWorkspaceProviderStateResponse
-		if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
-			return nil, err
-		}
-		for _, state := range response.Workspaces {
-			states[state.ID] = state
-		}
-	}
-	for index := range out {
-		state, ok := states[out[index].ID]
-		if !ok {
-			continue
-		}
-		workspace := &out[index]
-		workspace.ItemLastActivityAt = state.ItemLastActivityAt
-		workspace.MRTitle, workspace.MRState = state.MRTitle, state.MRState
-		workspace.MRIsDraft, workspace.MRCIStatus = state.MRIsDraft, state.MRCIStatus
-		workspace.MRReviewDecision = state.MRReviewDecision
-		workspace.MRAdditions, workspace.MRDeletions = state.MRAdditions, state.MRDeletions
-	}
-	return out, nil
 }

@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/hostapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -30,7 +31,7 @@ type healthResponse struct {
 }
 
 func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
-	switcher := server.NewSwitchHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	switcher := hostapi.NewSwitchHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 
@@ -222,7 +223,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 		},
 	}
 
-	switcher := server.NewSwitchHandler(server.NewStartupHandler(
+	switcher := hostapi.NewSwitchHandler(server.NewStartupHandler(
 		frontend,
 		cfg,
 		server.ServerOptions{},

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/compression"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -67,8 +68,8 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 			srv.ServeHTTP(rr, req)
 			assert := assert.New(t)
 			assert.Equal(http.StatusOK, rr.Code)
-			assert.Equal(spaFrameAncestorsPolicy, rr.Header().Get("Content-Security-Policy"))
-			assert.Equal(spaXFrameOptions, rr.Header().Get("X-Frame-Options"))
+			assert.Equal(compression.SpaFrameAncestorsPolicy, rr.Header().Get("Content-Security-Policy"))
+			assert.Equal(compression.SpaXFrameOptions, rr.Header().Get("X-Frame-Options"))
 		})
 	}
 
@@ -91,7 +92,7 @@ func TestSPAAssetsCompressFullResponsesAndPreserveRanges(t *testing.T) {
 		"index.html":      &fstest.MapFile{Data: []byte("<!doctype html><html></html>")},
 		"assets/index.js": &fstest.MapFile{Data: asset},
 	}
-	handler := newSPAAssetHandler(fs.FS(frontend), "/", nil)
+	handler := compression.NewSPAAssetHandler(fs.FS(frontend), "/", nil)
 
 	compressedRequest := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/assets/index.js", nil)
 	compressedRequest.Header.Set("Accept-Encoding", "br")

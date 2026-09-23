@@ -31,6 +31,8 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server/routepolicy"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
@@ -690,8 +692,8 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(body)),
 		}, nil
 	})
-	srv.providerSource = &hubProviderSource{client: providerClient}
-	srv.providerProxy = newProviderProxy(providerClient)
+	srv.providerSource = &spokeapi.HubProviderSource{Client: providerClient}
+	srv.providerProxy = routepolicy.NewProviderProxy(providerClient)
 	srv.providerRouteSpoke = true
 
 	since := time.Now().UTC().Format(time.RFC3339Nano)

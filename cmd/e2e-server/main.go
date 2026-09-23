@@ -40,7 +40,9 @@ import (
 	"go.kenn.io/forge/internal/profiler"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
@@ -2144,7 +2146,7 @@ func buildAppState(
 		FederationSpokeID:             opts.nodeID,
 	}
 	if opts.federation != nil {
-		serverOptions.DaemonAccess = server.DaemonAccessOptions{
+		serverOptions.DaemonAccess = authapi.DaemonAccessOptions{
 			Token: opts.federation.localToken, RequireAPIAuth: true,
 		}
 		serverOptions.FederationCredentials = opts.federation.credentials
@@ -2164,21 +2166,21 @@ func buildAppState(
 	if serverSyncer != nil {
 		wasRunning := syncer.Status().Running
 		syncer.SetOnStatusChange(func(status *ghclient.SyncStatus) {
-			srv.Hub().Broadcast(server.Event{Type: "sync_status", Data: status})
+			srv.Hub().Broadcast(syncevents.Event{Type: "sync_status", Data: status})
 			if wasRunning && !status.Running {
-				srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+				srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 			}
 			wasRunning = status.Running
 		})
-		srv.Hub().Broadcast(server.Event{Type: "sync_status", Data: syncer.Status()})
+		srv.Hub().Broadcast(syncevents.Event{Type: "sync_status", Data: syncer.Status()})
 	}
 	// Mirror production wiring so notification syncs nudge an open activity
 	// feed to reload (the feed's incremental poll skips backfilled rows).
 	syncer.SetOnNotificationSyncComplete(func() {
-		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+		srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 	})
 	syncer.SetOnWatchedMRSyncCompleted(func() {
-		srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+		srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 	})
 	var failNextRepoBrowserTree atomic.Bool
 	var failNextNotificationRead atomic.Bool
@@ -2482,7 +2484,7 @@ func buildAppState(
 					return
 				}
 			}
-			eventID := srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			eventID := srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -2547,7 +2549,7 @@ func buildAppState(
 				return
 			}
 			w.Header().Set("X-Kenn-E2E-Parent-Activity-At", activityAt.Format(time.RFC3339Nano))
-			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -2577,7 +2579,7 @@ func buildAppState(
 				http.Error(w, "reconcile fixture pull request comments", http.StatusInternalServerError)
 				return
 			}
-			eventID := srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			eventID := srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -3256,7 +3258,7 @@ func buildAppState(
 				fc, "acme", "widgets", 1,
 				diffRepo.AltHeadSHA, diffRepo.BaseSHA,
 			)
-			eventID := srv.Hub().Broadcast(server.Event{
+			eventID := srv.Hub().Broadcast(syncevents.Event{
 				Type: "pr_detail_refreshed",
 				Data: workspaceapi.PRDetailRefreshedPayload{
 					Provider:     "github",
@@ -3356,7 +3358,7 @@ func buildAppState(
 			if headSHA == "" {
 				headSHA = fc.PullRequestHeadSHA("acme", "widgets", 1)
 			}
-			srv.Hub().Broadcast(server.Event{
+			srv.Hub().Broadcast(syncevents.Event{
 				Type: "pr_detail_refreshed",
 				Data: map[string]any{
 					"provider":      repo.Platform,

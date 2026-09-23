@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/authapi"
 )
 
 func bindLoopback8091() config.HostKey {
@@ -60,16 +61,16 @@ func TestDirectDaemonBearerClassification(t *testing.T) {
 			req := directDaemonRequest(t, tt.bearer, tt.headers)
 			req.Host, req.RemoteAddr = tt.host, tt.remoteAddr
 			if tt.cookie {
-				req.AddCookie(&http.Cookie{Name: authCookieName, Value: "secret"})
+				req.AddCookie(&http.Cookie{Name: authapi.AuthCookieName, Value: "secret"})
 			}
 			rr := httptest.NewRecorder()
 
-			admission := (daemonRequestPolicy{token: tt.token}).admit(
-				rr, req, HostCheckOptions{Bind: bind}, true,
+			admission := (authapi.DaemonRequestPolicy{Token: tt.token}).Admit(
+				rr, req, authapi.HostCheckOptions{Bind: bind}, true,
 			)
 
-			assert.False(t, admission.handled)
-			assert.Equal(t, tt.wantBypass, admission.bypassProxyHostCheck)
+			assert.False(t, admission.Handled)
+			assert.Equal(t, tt.wantBypass, admission.BypassProxyHostCheck)
 		})
 	}
 }
@@ -139,7 +140,7 @@ func TestParseForwardedHost(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				got, err := parseForwardedHost(tc.input)
+				got, err := authapi.ParseForwardedHost(tc.input)
 				if tc.wantOK {
 					require.NoError(t, err)
 					assert.Equal(t, tc.want, got)
@@ -188,7 +189,7 @@ func TestParseForwardedHost(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				got, err := parseXForwardedHost(tc.input)
+				got, err := authapi.ParseXForwardedHost(tc.input)
 				if tc.wantOK {
 					require.NoError(t, err)
 					assert.Equal(t, tc.want, got)

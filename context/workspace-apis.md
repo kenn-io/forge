@@ -41,7 +41,7 @@ embedder protocol for arbitrary host state.
   fenced current route
   (`internal/workspace/manager.go::Manager.workspaceSetupGitDir`,
   `internal/gitclone/clone.go::Manager.EnsureCloneValidated`,
-  `internal/server/settings_handlers.go::Server.worktreeBasePathForRepo`,
+  `internal/server/settingsapi/settings_handlers.go::Handlers.WorktreeBasePathForRepo`,
   `internal/workspace/manager.go::Manager.workspaceManagedCloneCandidates`).
 - A backfilled workspace may keep a route-keyed managed clone from any current
   or historical route that has one stable owner; route reuse excludes that path
@@ -168,7 +168,7 @@ embedder protocol for arbitrary host state.
   work fail with `hubUnavailable`; the spoke must not fall back to stale
   provider replicas. Existing local execution plus ad-hoc and Kata creation
   remain available because their authority is spoke-local
-  (`internal/server/provider_sources.go`, `internal/workspace/launch_spec.go`).
+  (`internal/server/spokeapi/provider_sources.go`, `internal/workspace/launch_spec.go`).
 - Workspace creation is event-confirmed rather than response-owned. After accepting a purpose payload, the backend emits
   `workspace_created` with the persisted ID and a `created` boolean that distinguishes a new workspace from task-scoped
   reuse; clients load that ID through the generated workspace API to recover canonical identity.
@@ -188,7 +188,7 @@ embedder protocol for arbitrary host state.
   (`internal/server/pullapi/services.go::Handler.overlayLocalPullWorkspaces`).
 - Assignment-dependent filters on spoke workspace overlays must use hub state;
   spoke provider rows are optional and cannot decide filter membership
-  (`internal/server/provider_activity_subjects.go::Server.federationFilterUnassignedActivitySubjects`).
+  (`internal/server/providerapi/provider_activity_subjects.go::Handlers.federationFilterUnassignedActivitySubjects`).
 - Workspace enrichment is best-effort on Issue/PR detail: snapshot failures log
   and omit optional workspace metadata rather than hiding a valid item; list and
   Activity reads stay fail-fast because the snapshot affects ordering and identity (`internal/server/pullapi/routes.go::Handler.buildPullDetailResponse`, `internal/server/issueapi/routes.go::Handler.BuildDetail`).
@@ -198,21 +198,21 @@ embedder protocol for arbitrary host state.
   (`frontend/src/lib/views/MobileActivityView.svelte::visibleWorkspaceActivity`).
 - In enabled mode, Activity number search uses the same `#number` shape for provider events,
   notifications, and eventless workspace subjects; matching provider events keep
-  workspace recency across incremental polls (`internal/server/huma_routes.go::Server.workspaceActivityResponse`).
+  workspace recency across incremental polls (`internal/server/itemapi/huma_routes.go::Handlers.WorkspaceActivityResponse`).
 - Enabled workspace recency lets Activity author filters and candidates match
   eventless workspace subjects in the same repository and time scope; disabled
   mode returns provider authors unchanged
-  (`internal/server/huma_routes.go::Server.activityAuthorsWithWorkspace`).
+  (`internal/server/activityapi/huma_routes.go::Handlers.ActivityAuthorsWithWorkspace`).
 - Activity events and parent summaries key that snapshot by stable repo ID and
   canonical item type; normalize wire `"pr"` to workspace `"pull_request"`
-  before lookup so route reuse stays fail-closed (`internal/server/helpers.go::workspaceItemTypeFromActivity`).
+  before lookup so route reuse stays fail-closed (`internal/server/itemapi/helpers.go::WorkspaceItemTypeFromActivity`).
 - The shared subject snapshot holds the repository-reconciliation read barrier
   across both its workspace-summary and subject-metadata reads, so a route move
   cannot split one response across repository identities
   (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
 - Hub and standalone Activity reads hold one reconciliation barrier
   across events and workspace subjects; spokes overlay a separate local snapshot
-  by stable identity (`internal/server/huma_routes.go::Server.listActivity`).
+  by stable identity (`internal/server/activityapi/huma_routes.go::Handlers.ListActivity`).
 - Subject metadata and opt-in Issue/PR activity ordering use JSON-backed SQLite
   relations, so retained workspaces cannot exhaust bind variables. Lists always
   expose `last_workspace_activity_at`; provider activity is authoritative by default
@@ -398,10 +398,10 @@ follows lock release
 
 Keep Git worktree and merge-request lifecycle semantics in
 `go.kenn.io/kit/git/managed`; kenn-forge supplies application policy instead of
-maintaining a local lifecycle fork (`internal/server/projects_handlers.go::createWorktreeOnDisk`).
+maintaining a local lifecycle fork (`internal/server/workspaceapi/projects_handlers.go::Handler.createWorktreeOnDisk`).
 Classify same-repository merge requests with the provider-hosted project
 identity, not the effective origin URL: the origin may be a local mirror
-(`internal/server/projects_handlers.go::createProjectWorktreeFromMergeRequest`).
+(`internal/server/workspaceapi/projects_handlers.go::Handler.createProjectWorktreeFromMergeRequest`).
 
 All workspace API timestamps are emitted as UTC RFC3339 strings. Keep timestamp
 normalization in the DB/server boundary; the Svelte UI can present local time
@@ -612,7 +612,7 @@ server check exactly.
   wrapper owns snapshot coherence, bounded validation, selection leases, and
   publication. Only selected workspaces
   receive proactive refresh leases; ordinary entries validate on demand
-  (`internal/server/server.go::streamEvents`).
+  (`internal/server/streamapi/server.go::Handlers.StreamEvents`).
 - A workspace response is user-visibly stale only when a bounded, coalesced
   head-only probe confirms cached/current Git HEAD mismatch and queues refresh;
   cache age, probe timeout, and resolution failure do not warn (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache.Get`).

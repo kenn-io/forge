@@ -18,6 +18,8 @@ import (
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
@@ -25,10 +27,10 @@ import (
 )
 
 func TestDaemonPingPublishesMCPURL(t *testing.T) {
-	srv := &Server{
+	srv := wiredServer(&Server{
 		options:   ServerOptions{MCPURL: "http://127.0.0.1:8092/mcp"},
 		buildInfo: BuildInfo{Version: "test"},
-	}
+	})
 
 	output, err := srv.daemonPing(t.Context(), &struct{}{})
 
@@ -50,7 +52,7 @@ func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
 		MergeRequestID: pullID, EventType: "issue_comment", Author: "reviewer",
 		Body: "review this", CreatedAt: base, DedupeKey: "mcp-item-filter-comment",
 	}}))
-	commits := make([]db.BranchCommit, activitySafetyCap+1)
+	commits := make([]db.BranchCommit, itemapi.ActivitySafetyCap+1)
 	for i := range commits {
 		at := base.Add(time.Duration(i+1) * time.Millisecond)
 		commits[i] = db.BranchCommit{
@@ -104,10 +106,10 @@ func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
 	t.Cleanup(runtime.Shutdown)
 	session, err := runtime.Launch(ctx, workspaceID, worktree, "codex")
 	require.NoError(err)
-	srv := &Server{workspaceAPI: workspaceapi.New(workspaceapi.Deps{
+	srv := wiredServer(&Server{workspaceAPI: workspaceapi.New(workspaceapi.Deps{
 		DB: database, Workspaces: workspace.NewManager(database, t.TempDir()),
 		Runtime: runtime,
-	})}
+	})})
 
 	_, err = srv.MCPBackend().SubmitInitialMessage(ctx, mcpserver.InitialMessageRequest{
 		WorkspaceID: workspaceID, RuntimeSessionKey: session.Key,
@@ -174,7 +176,7 @@ func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
 		DisableWorkspaceBackgroundMonitors: true,
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	srv.providerSource = &hubProviderSource{client: client, db: database}
+	srv.providerSource = &spokeapi.HubProviderSource{Client: client, Db: database}
 	backend := mcpBackend{server: srv}
 	identity := mcpserver.RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
@@ -184,9 +186,9 @@ func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
 	resolved, err := backend.resolveWorkspaceRepositoryFence(t.Context(), identity)
 
 	require.NoError(err)
-	require.NotNil(resolved.repo)
-	assert.Equal(t, "repo-new", resolved.repo.PlatformRepoID)
-	assert.False(t, resolved.hub)
+	require.NotNil(resolved.Repo)
+	assert.Equal(t, "repo-new", resolved.Repo.PlatformRepoID)
+	assert.False(t, resolved.Hub)
 	observed, err := database.GetRepositoryByProviderID(
 		t.Context(), "github", "github.com", "repo-new",
 	)

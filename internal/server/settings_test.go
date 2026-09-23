@@ -33,7 +33,11 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/configreload"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/repoapi"
+	"go.kenn.io/forge/internal/server/settingsapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -381,7 +385,7 @@ command = ["codex", "--full-auto"]
 	assert.NotContains(rr.Body.String(), `"default_agent"`)
 	assert.Contains(rr.Body.String(), `"launch_targets"`)
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("acme", resp.Repos[0].Owner)
@@ -433,7 +437,7 @@ diff_cache_mb = 256
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.MCP.Enabled)
 	assert.Equal(9092, resp.MCP.Port)
@@ -449,13 +453,13 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	mcp := config.MCP{Enabled: true, Port: 9092, DiffCacheMB: 256}
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcpSettingsUpdate{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{MCP: &spokeapi.McpSettingsUpdate{
 		Enabled: new(true), Port: new(9092), DiffCacheMB: new(256),
 	}})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Equal(config.MCP{
 		Enabled:     resp.MCP.Enabled,
@@ -489,7 +493,7 @@ diff_cache_mb = 256
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var response settingsResponse
+	var response spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
 	assert.True(response.MCP.Enabled)
 	assert.Equal(9092, response.MCP.Port)
@@ -500,7 +504,7 @@ diff_cache_mb = 256
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	response = settingsResponse{}
+	response = spokeapi.SettingsResponse{}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&response))
 	assert.True(response.MCP.Enabled)
 	assert.Zero(response.MCP.Port)
@@ -525,7 +529,7 @@ func TestAirplaneModeSettingsPersistAndReload(t *testing.T) {
 	require.True(reloaded.AirplaneMode)
 	reloaded.AirplaneMode = false
 	require.NoError(reloaded.Save(cfgPath))
-	srv.handleConfigFileChanged()
+	srv.configreload.HandleConfigFileChanged()
 	require.True(srv.syncer.AutomaticSyncEnabled())
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -538,13 +542,13 @@ func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
 	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		Roborev: &roborevSettingsUpdate{InitManagedClones: new(true)},
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		Roborev: &spokeapi.RoborevSettingsUpdate{InitManagedClones: new(true)},
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Roborev.InitManagedClones)
 	reloaded, err := config.Load(cfgPath)
@@ -557,7 +561,7 @@ func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
 	assert := assert.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{MCP: &mcpSettingsUpdate{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{MCP: &spokeapi.McpSettingsUpdate{
 		Enabled: new(true), Port: new(8091),
 	}})
 
@@ -597,7 +601,7 @@ func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 	rr = testutil.DoJSON(t, srv, http.MethodDelete, "/api/v1/settings/repo-presets/Review%20queue", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Equal([]config.RepoPreset{second}, resp.RepoPresets)
 
@@ -651,11 +655,11 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 
 	rr := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{Modes: &modes})
+		spokeapi.UpdateSettingsRequest{Modes: &modes})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(*resp.Modes.Actions)
 	assert.True(*resp.Modes.Docs)
@@ -677,7 +681,7 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 
 	activity := srv.cfg.Activity
 	activity.TimeRange = "30d"
-	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Activity: &activity,
 	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -696,7 +700,7 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	enabled := config.PullRequests{AllowMidStackMerges: true}
 	activityEnabled := srv.cfg.Activity
 	activityEnabled.UseWorkspaceActivityForRecency = true
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		PullRequests: &enabled,
 		Activity:     &activityEnabled,
 	})
@@ -714,7 +718,7 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	disabled := config.PullRequests{AllowMidStackMerges: false}
 	activityDisabled := activityEnabled
 	activityDisabled.UseWorkspaceActivityForRecency = false
-	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		PullRequests: &disabled,
 		Activity:     &activityDisabled,
 	})
@@ -737,8 +741,8 @@ func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {
 	started := make(chan struct{})
 	go func() {
 		close(started)
-		_, err := srv.updateSettings(t.Context(), &updateSettingsInput{
-			Body: updateSettingsRequest{
+		_, err := srv.updateSettings(t.Context(), &settingsapi.UpdateSettingsInput{
+			Body: spokeapi.UpdateSettingsRequest{
 				Activity: &config.Activity{TimeRange: "30d", ViewMode: "threaded"},
 			},
 		})
@@ -779,11 +783,11 @@ func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
 	}
 	rr := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{KataProjects: &mappings})
+		spokeapi.UpdateSettingsRequest{KataProjects: &mappings})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.KataProjects, 1)
 	assert.Equal(mappings[0], resp.KataProjects[0])
@@ -820,7 +824,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 	issues := config.Issues{HideBots: true}
 	autoAssign := true
 	defaultSidebarView := "item"
-	workspaces := workspaceSettingsUpdate{
+	workspaces := spokeapi.WorkspaceSettingsUpdate{
 		AutoAssignOnCreate:     &autoAssign,
 		ShowAgentStatusInLists: new(true),
 		DefaultSidebarView:     &defaultSidebarView,
@@ -837,7 +841,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 		TmuxMouse:        new(false),
 		RetainedSessions: new(4),
 	}
-	body := updateSettingsRequest{
+	body := spokeapi.UpdateSettingsRequest{
 		Activity:   &activity,
 		Issues:     &issues,
 		Workspaces: &workspaces,
@@ -880,8 +884,8 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	require.NoError(srv.cfg.Save(cfgPath))
 
 	defaultSidebarView := "item"
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		Workspaces: &workspaceSettingsUpdate{DefaultSidebarView: &defaultSidebarView},
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		Workspaces: &spokeapi.WorkspaceSettingsUpdate{DefaultSidebarView: &defaultSidebarView},
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -891,8 +895,8 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	assert.True(cfg2.Workspaces.AutoAssignOnCreate)
 	assert.True(cfg2.Workspaces.ShowAgentStatusInLists)
 	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
-	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		Workspaces: &workspaceSettingsUpdate{ShowAgentStatusInLists: new(false)},
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		Workspaces: &spokeapi.WorkspaceSettingsUpdate{ShowAgentStatusInLists: new(false)},
 	})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	cfg2, err = config.Load(cfgPath)
@@ -944,7 +948,7 @@ prefer_github_native_stacks = true
 	assert.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
 
 	disabled := config.PullRequests{}
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		PullRequests: &disabled,
 	})
 
@@ -988,7 +992,7 @@ docs = false
 		TmuxMouse:        new(true),
 		RetainedSessions: new(config.DefaultTerminalRetainedSessions),
 	}
-	body := updateSettingsRequest{
+	body := spokeapi.UpdateSettingsRequest{
 		Terminal: &terminal,
 	}
 	rr := testutil.DoJSON(
@@ -1031,7 +1035,7 @@ name = "widget"
 	terminal := srv.cfg.Terminal
 	srv.cfgMu.Unlock()
 	terminal.TmuxMouse = new(false)
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Terminal: &terminal,
 	})
 
@@ -1064,7 +1068,7 @@ name = "widget"
 	terminal := srv.cfg.Terminal
 	srv.cfgMu.Unlock()
 	terminal.Graphics = new(false)
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Terminal: &terminal,
 	})
 
@@ -1095,7 +1099,7 @@ func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 		Enabled: &disabled,
 	}}
 
-	body := updateSettingsRequest{Agents: &agents}
+	body := spokeapi.UpdateSettingsRequest{Agents: &agents}
 	rr := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings", body)
 
@@ -1147,7 +1151,7 @@ name = "widget"
 	}}
 	rr := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{Agents: &agents})
+		spokeapi.UpdateSettingsRequest{Agents: &agents})
 
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
@@ -1182,7 +1186,7 @@ func TestHandleUpdateSettingsInvalid(t *testing.T) {
 		ViewMode:  "kanban",
 		TimeRange: "7d",
 	}
-	body := updateSettingsRequest{
+	body := spokeapi.UpdateSettingsRequest{
 		Activity: &activity,
 	}
 	rr := testutil.DoJSON(
@@ -1489,7 +1493,7 @@ func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T)
 
 	// The same stable provider id resolves under a renamed route: the
 	// tracked set must reconcile to one entry, not sync both routes.
-	srv.mergeTrackedRepos([]ghclient.RepoRef{{
+	srv.settingsapi.MergeTrackedRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "new-name",
 		PlatformHost: "github.com", RepoPath: "acme/new-name",
 		PlatformExternalID: "repo-x", Archived: true,
@@ -1514,7 +1518,7 @@ func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 	// A settings-resolved duplicate (glob refresh, API add) carries no
 	// config-entry provenance; replacing the tracked ref must not erase
 	// the correlation the exact entry needs on the next failed reload.
-	srv.mergeTrackedRepos([]ghclient.RepoRef{{
+	srv.settingsapi.MergeTrackedRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
 		PlatformExternalID: "repo-x", Archived: true,
@@ -1541,7 +1545,7 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 	// stable identity; the route successor must not inherit it — two refs
 	// claiming the same config entry would make a later fallback pick
 	// whichever it sees first.
-	srv.mergeTrackedRepos([]ghclient.RepoRef{
+	srv.settingsapi.MergeTrackedRepos([]ghclient.RepoRef{
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 			PlatformHost: "github.com", RepoPath: "acme/tools-new",
@@ -1579,7 +1583,7 @@ func TestMergeTrackedReposTreatsCaseDifferingProviderIdsAsDistinct(t *testing.T)
 	// Provider ids are opaque, case-sensitive identities (identity keys
 	// compare them exactly); a case-only difference is a different
 	// repository and must not inherit route provenance.
-	srv.mergeTrackedRepos([]ghclient.RepoRef{{
+	srv.settingsapi.MergeTrackedRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
 		PlatformHost: "github.com", RepoPath: "acme/tools",
 		PlatformExternalID: "repo-x",
@@ -1601,7 +1605,7 @@ func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {
 	}})
 
 	glob := config.Repo{Owner: "acme", Name: "*"}
-	srv.replaceGlobRepos(glob, []ghclient.RepoRef{{
+	srv.settingsapi.ReplaceGlobRepos(glob, []ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
 		PlatformExternalID: "repo-x", Archived: true,
@@ -1656,7 +1660,7 @@ func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
 	}
 	updateRR := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{KataProjects: &mappings})
+		spokeapi.UpdateSettingsRequest{KataProjects: &mappings})
 
 	require.Equal(http.StatusOK, updateRR.Code, updateRR.Body.String())
 
@@ -1705,7 +1709,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("acme", resp.Repos[0].Owner)
@@ -1713,7 +1717,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 
 	// Mutations should be rejected (no cfgPath).
 	mutRR := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{Activity: &cfg.Activity})
+		spokeapi.UpdateSettingsRequest{Activity: &cfg.Activity})
 
 	assert.Equal(http.StatusNotFound, mutRR.Code)
 
@@ -1740,14 +1744,14 @@ func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var initial settingsResponse
+	var initial spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&initial))
 	assert.Equal(config.DefaultInitialTimelineEntryLimit, initial.Detail.InitialTimelineEntryLimit)
 
 	updated := config.Detail{InitialTimelineEntryLimit: 80}
-	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Detail: &updated})
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{Detail: &updated})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var saved settingsResponse
+	var saved spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&saved))
 	assert.Equal(80, saved.Detail.InitialTimelineEntryLimit)
 	persisted, err := config.Load(cfgPath)
@@ -1755,7 +1759,7 @@ func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 	assert.Equal(80, persisted.Detail.InitialTimelineEntryLimit)
 
 	invalid := config.Detail{InitialTimelineEntryLimit: 9}
-	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{Detail: &invalid})
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{Detail: &invalid})
 	require.Equal(http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
 	persisted, err = config.Load(cfgPath)
 	require.NoError(err)
@@ -1802,7 +1806,7 @@ name = "*"
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("roborev-dev", resp.Repos[0].Owner)
@@ -1855,7 +1859,7 @@ name = "*"
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Equal(3, resp.Repos[0].MatchedRepoCount)
 	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
@@ -1976,7 +1980,7 @@ name = "worker"
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 2)
 	assert.True(srv.syncer.IsTrackedRepo("roborev-dev", "kenn-forge"))
@@ -2286,7 +2290,7 @@ name = "widget"
 
 	settingsRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, settingsRR.Code, settingsRR.Body.String())
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(settingsRR.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal(t, "github", resp.Repos[0].Provider)
@@ -2391,7 +2395,7 @@ name = "widget"
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
@@ -2443,7 +2447,7 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 	// Change activity via the update handler.
 	rr := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{
+		spokeapi.UpdateSettingsRequest{
 			Activity: &config.Activity{
 				ViewMode:  "threaded",
 				TimeRange: "30d",
@@ -2577,7 +2581,7 @@ name = "widget"
 command = ["systemd-run", "--user", "--scope", "tmux"]
 `, &mockGH{})
 
-	body := updateSettingsRequest{
+	body := spokeapi.UpdateSettingsRequest{
 		Activity: &config.Activity{
 			ViewMode:  "threaded",
 			TimeRange: "30d",
@@ -2664,7 +2668,7 @@ name = "widget-*"
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp repoPreviewResponse
+	var resp repoapi.RepoPreviewResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 2)
 	assert.Equal("ACME", resp.Owner)
@@ -2726,14 +2730,14 @@ port = 8091
 	srv := NewWithConfig(database, syncer, nil, nil, cfg, cfgPath,
 		ServerOptions{HostCheckAllowLoopbackAnyPort: true})
 
-	preview := func(owner string) repoPreviewResponse {
+	preview := func(owner string) repoapi.RepoPreviewResponse {
 		rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/preview", map[string]string{
 			"provider": "github", "host": "github.com",
 			"owner": owner, "pattern": "*",
 		})
 
 		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-		var resp repoPreviewResponse
+		var resp repoapi.RepoPreviewResponse
 		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 		return resp
 	}
@@ -2796,7 +2800,7 @@ port = 8091
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp repoPreviewResponse
+	var resp repoapi.RepoPreviewResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal(int32(1), getCalls.Load())
@@ -2859,7 +2863,7 @@ port = 8091
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp repoPreviewResponse
+	var resp repoapi.RepoPreviewResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal(int32(1), getCalls.Load())
@@ -2937,7 +2941,7 @@ name = "Project"
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp repoPreviewResponse
+	var resp repoapi.RepoPreviewResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("gitlab", resp.Provider)
@@ -3016,7 +3020,7 @@ repo_path = "ForgeOrg/Widget"
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	body := rr.Body.String()
-	var resp repoPreviewResponse
+	var resp repoapi.RepoPreviewResponse
 	require.NoError(json.NewDecoder(strings.NewReader(body)).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("forgejo", resp.Provider)
@@ -3073,7 +3077,7 @@ name = "widget"
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 	assert.GreaterOrEqual(getCalls.Load(), callsAfterSetup+2)
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 3)
 	assert.Equal("acme", resp.Repos[1].Owner)
@@ -3135,7 +3139,7 @@ port = 8091
 
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("gitlab", resp.Repos[0].Provider)
@@ -3166,7 +3170,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv := &Server{cfg: &config.Config{Repos: []config.Repo{
+	srv := wiredServer(&Server{cfg: &config.Config{Repos: []config.Repo{
 		{
 			Platform:         "github",
 			PlatformHost:     "forge.example.com",
@@ -3183,9 +3187,9 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 			Name:             "widget",
 			WorktreeBasePath: "/tmp/gitlab-widget",
 		},
-	}}}
+	}}})
 
-	got, ok, err := srv.worktreeBasePathForRepo(
+	got, ok, err := srv.settingsapi.WorktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "gitlab", PlatformHost: "forge.example.com",
 			PlatformRepoID: "gitlab-widget", Owner: "acme", Name: "widget",
@@ -3196,7 +3200,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 	require.True(ok)
 	assert.Equal("/tmp/gitlab-widget", got)
 
-	_, ok, err = srv.worktreeBasePathForRepo(
+	_, ok, err = srv.settingsapi.WorktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "gitlab", PlatformHost: "forge.example.com",
 			PlatformRepoID: "replacement-widget", Owner: "acme", Name: "widget",
@@ -3220,9 +3224,9 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 		RepoID: sql.NullInt64{Int64: repoID, Valid: true},
 	})
 	require.NoError(err)
-	srv := &Server{db: database}
+	srv := wiredServer(&Server{db: database})
 
-	got, ok, err := srv.worktreeBasePathForRepo(
+	got, ok, err := srv.settingsapi.WorktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "github", PlatformHost: "github.com",
 			PlatformRepoID: "provider-widget", Owner: "acme", Name: "widget",
@@ -3232,7 +3236,7 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 	require.True(ok)
 	assert.Equal("/work/widget", got)
 
-	_, ok, err = srv.worktreeBasePathForRepo(
+	_, ok, err = srv.settingsapi.WorktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "github", PlatformHost: "github.com",
 			PlatformRepoID: "replacement-widget", Owner: "acme", Name: "widget",
@@ -3243,7 +3247,7 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 }
 
 func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) {
-	local := settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
+	local := spokeapi.SettingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
 		{
 			Provider: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
@@ -3255,7 +3259,7 @@ func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) 
 			WorktreeBasePath: "/work/old",
 		},
 	}}
-	provider := settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
+	provider := spokeapi.SettingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
 		{
 			Provider: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-widget", Owner: "acme-renamed", Name: "widget-renamed",
@@ -3266,7 +3270,7 @@ func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) 
 		},
 	}}
 
-	local.applyProviderSettings(provider)
+	local.ApplyProviderSettings(provider)
 
 	require.Len(t, local.Repos, 2)
 	assert.Equal(t, "/work/widget", local.Repos[0].WorktreeBasePath)
@@ -3277,31 +3281,31 @@ func TestProviderSettingsRepositoryObservationUsesHubTime(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	hubObservedAt := time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)
-	srv := &Server{
+	srv := wiredServer(&Server{
 		db:  database,
 		now: func() time.Time { return hubObservedAt.Add(24 * time.Hour) },
-	}
-	provider := providerSettingsProjection{
-		Settings: settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{{
+	})
+	provider := spokeapi.ProviderSettingsProjection{
+		Settings: spokeapi.SettingsResponse{Repos: []ghclient.ConfiguredRepoStatus{{
 			Provider: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
 			RepoPath: "acme/widget", TrackedRepoPath: "acme/widget",
 		}}},
-		RepositoryObservations: []providerRepositoryObservation{{
+		RepositoryObservations: []spokeapi.ProviderRepositoryObservation{{
 			Provider: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
 			RepoPath: "acme/widget", ObservedAt: hubObservedAt,
 		}},
 	}
 
-	changed, err := srv.observeProviderSettingsRepositories(
+	changed, err := srv.settingsapi.ObserveProviderSettingsRepositories(
 		t.Context(), provider.RepositoryObservations,
 	)
 	require.NoError(err)
 	require.True(changed)
 
-	source := hubProviderSource{db: database}
-	require.NoError(source.observeRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
+	source := spokeapi.HubProviderSource{Db: database}
+	require.NoError(source.ObserveRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
 		ProtocolVersion: federation.ProtocolVersion,
 		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
 		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
@@ -3323,8 +3327,8 @@ func TestRepositoryDescriptorAcceptsSupersededSameRouteObservation(t *testing.T)
 	require.NoError(err)
 	require.True(accepted)
 
-	source := hubProviderSource{db: database}
-	require.NoError(source.observeRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
+	source := spokeapi.HubProviderSource{Db: database}
+	require.NoError(source.ObserveRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
 		ProtocolVersion: federation.ProtocolVersion,
 		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
 		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
@@ -3337,7 +3341,7 @@ func TestRepositoryDescriptorAcceptsSupersededSameRouteObservation(t *testing.T)
 	)
 	require.NoError(err)
 	require.True(accepted)
-	require.Error(source.observeRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
+	require.Error(source.ObserveRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
 		ProtocolVersion: federation.ProtocolVersion,
 		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
 		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
@@ -3358,10 +3362,10 @@ func TestProviderSettingsProjectionCarriesCatalogObservationTime(t *testing.T) {
 	)
 	require.NoError(err)
 	require.True(accepted)
-	srv := &Server{db: database}
+	srv := wiredServer(&Server{db: database})
 
-	projection, err := srv.buildProviderSettingsProjection(
-		t.Context(), settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{{
+	projection, err := srv.syncevents.BuildProviderSettingsProjection(
+		t.Context(), spokeapi.SettingsResponse{Repos: []ghclient.ConfiguredRepoStatus{{
 			Provider: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
 			RepoPath: "acme/widget", TrackedRepoPath: "acme/widget",
@@ -3461,7 +3465,7 @@ port = 8091
 
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("gitea", resp.Repos[0].Provider)
@@ -3649,7 +3653,7 @@ name = "widget"
 		require.FailNow("bulk add did not finish")
 	}
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
-	var resp settingsResponse
+	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Equal([]string{"widget", "api", "worker"}, []string{resp.Repos[0].Name, resp.Repos[1].Name, resp.Repos[2].Name})
 }
@@ -3676,10 +3680,10 @@ base_url = "https://spoke.example"
 state = "active"
 	`, &mockGH{})
 
-	get := func() fleetSettingsResponse {
+	get := func() spokeapi.FleetSettingsResponse {
 		response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings/fleet", nil)
 		require.Equal(http.StatusOK, response.Code)
-		var result fleetSettingsResponse
+		var result spokeapi.FleetSettingsResponse
 		require.NoError(json.NewDecoder(response.Body).Decode(&result))
 		return result
 	}
@@ -3709,7 +3713,7 @@ state = "active"
 	}
 	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings/fleet", payload)
 	require.Equal(http.StatusOK, response.Code)
-	var updated fleetSettingsResponse
+	var updated spokeapi.FleetSettingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&updated))
 	assert.Equal(config.FleetRoleHub, updated.Role)
 	assert.Equal("Build Box", updated.Members[0].Name)
@@ -3807,9 +3811,9 @@ base_url = %q
 	t.Cleanup(func() { gracefulShutdown(t, spoke) })
 
 	autoAssign := true
-	response := testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	response := testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Detail:     &config.Detail{InitialTimelineEntryLimit: 75},
-		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+		Workspaces: &spokeapi.WorkspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
 
 	require.Equal(http.StatusBadRequest, response.Code, response.Body.String())
@@ -3826,18 +3830,18 @@ base_url = %q
 	assert.False(spoke.cfg.Workspaces.AutoAssignOnCreate)
 	spoke.cfgMu.Unlock()
 
-	response = testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	response = testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Detail: &config.Detail{InitialTimelineEntryLimit: 75},
 	})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	response = testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	response = testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		Workspaces: &spokeapi.WorkspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	response = testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		Roborev: &roborevSettingsUpdate{InitManagedClones: new(true)},
+	response = testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		Roborev: &spokeapi.RoborevSettingsUpdate{InitManagedClones: new(true)},
 	})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
@@ -3860,13 +3864,13 @@ base_url = %q
 	response = testutil.DoJSON(
 		t, spoke, http.MethodPut,
 		"/api/v1/repo/github/acme/widget/worktree-base",
-		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase})
+		settingsapi.RepoWorktreeBaseRequest{WorktreeBasePath: worktreeBase})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	assert.Equal(canonicalWorktreeBase, spoke.cfg.Repos[0].WorktreeBasePath)
 	assert.Empty(hub.cfg.Repos[0].WorktreeBasePath)
 
-	var settings settingsResponse
+	var settings spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
 	assert.Equal(canonicalWorktreeBase, settings.Repos[0].WorktreeBasePath)
@@ -3898,13 +3902,13 @@ port = 8091
 `, &mockGH{})
 	srv.syncer = nil
 	observedAt := time.Now().UTC().Truncate(time.Second)
-	projection := providerSettingsResponse{
+	projection := spokeapi.ProviderSettingsResponse{
 		Repos: []ghclient.ConfiguredRepoStatus{{
 			Provider: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-late", Owner: "acme", Name: "late",
 			RepoPath: "acme/late", TrackedRepoPath: "acme/late",
 		}},
-		RepositoryObservations: []providerRepositoryObservation{{
+		RepositoryObservations: []spokeapi.ProviderRepositoryObservation{{
 			Provider: "github", PlatformHost: "github.com",
 			PlatformRepoID: "repo-late", Owner: "acme", Name: "late",
 			RepoPath: "acme/late", ObservedAt: observedAt,
@@ -3912,9 +3916,9 @@ port = 8091
 		RepoPresets: []config.RepoPreset{},
 	}
 	var reads atomic.Int32
-	srv.providerSource = &hubProviderSource{
-		db: database,
-		client: providerPlaneClientFunc(func(
+	srv.providerSource = &spokeapi.HubProviderSource{
+		Db: database,
+		Client: providerPlaneClientFunc(func(
 			_ context.Context, scope federationauth.Scope, request *http.Request,
 		) (*http.Response, error) {
 			require.Equal(federationauth.ScopeProviderRead, scope)
@@ -3938,11 +3942,11 @@ port = 8091
 
 	response := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/repo/github/acme/late/worktree-base",
-		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase})
+		settingsapi.RepoWorktreeBaseRequest{WorktreeBasePath: worktreeBase})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	srv.cfgMu.Lock()
-	configuredRepos := cloneReloadedConfig(srv.cfg).Repos
+	configuredRepos := configreload.CloneReloadedConfig(srv.cfg).Repos
 	srv.cfgMu.Unlock()
 	require.Len(configuredRepos, 1)
 	assert.Equal(canonicalWorktreeBase, configuredRepos[0].WorktreeBasePath)
@@ -3958,12 +3962,12 @@ port = 8091
 	response = testutil.DoJSON(
 		t, srv, http.MethodPut,
 		"/api/v1/repo/github/renamed/late-renamed/worktree-base",
-		repoWorktreeBaseRequest{})
+		settingsapi.RepoWorktreeBaseRequest{})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	assert.Equal(int32(2), reads.Load(), "each mutation uses one pre-commit hub snapshot")
 	srv.cfgMu.Lock()
-	configuredRepos = cloneReloadedConfig(srv.cfg).Repos
+	configuredRepos = configreload.CloneReloadedConfig(srv.cfg).Repos
 	srv.cfgMu.Unlock()
 	require.Len(configuredRepos, 1)
 	assert.Equal("renamed", configuredRepos[0].Owner)
@@ -3972,7 +3976,7 @@ port = 8091
 	contents, err := os.ReadFile(configPath)
 	require.NoError(err)
 	assert.Contains(string(contents), `platform_repo_id = "repo-late"`)
-	var settings settingsResponse
+	var settings spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
 	assert.Equal("repo-late", settings.Repos[0].PlatformRepoID)
@@ -3990,8 +3994,8 @@ port = 8091
 [workspaces]
 auto_assign_on_create = false
 `, &mockGH{})
-	srv.providerSource = &hubProviderSource{
-		client: providerPlaneClientFunc(func(
+	srv.providerSource = &spokeapi.HubProviderSource{
+		Client: providerPlaneClientFunc(func(
 			context.Context, federationauth.Scope, *http.Request,
 		) (*http.Response, error) {
 			return nil, providerplane.ErrHubUnavailable
@@ -3999,8 +4003,8 @@ auto_assign_on_create = false
 	}
 	autoAssign := true
 
-	response := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	response := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		Workspaces: &spokeapi.WorkspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
@@ -4055,20 +4059,20 @@ func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
 	srv, _, _ := setupTestServerWithConfig(t)
 	srv.cfg.Fleet.Enabled = false
 	srv.cfg.Fleet.Role = config.FleetRoleSpoke
-	srv.providerSource = &hubProviderSource{
-		client: providerPlaneClientFunc(func(
+	srv.providerSource = &spokeapi.HubProviderSource{
+		Client: providerPlaneClientFunc(func(
 			context.Context, federationauth.Scope, *http.Request,
 		) (*http.Response, error) {
 			require.Fail("disabled federation must not request hub settings")
 			return nil, nil
 		}),
-		enabled: srv.federationEnabled,
+		Enabled: srv.streamapi.FederationEnabled,
 	}
 
 	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	var settings settingsResponse
+	var settings spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.False(settings.Fleet.Enabled)
 	require.False(settings.ProviderSettingsLoaded,
@@ -4101,14 +4105,14 @@ base_url = "https://hub.example"
 		FederationSpokeID:             proxyTestNodeID,
 	})
 	require.NotNil(srv.providerSource)
-	require.Nil(srv.providerSource.client)
+	require.Nil(srv.providerSource.Client)
 
 	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 
 	autoAssign := true
-	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		Workspaces: &spokeapi.WorkspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
@@ -4127,8 +4131,8 @@ func TestRoleAwareSettingsRejectFederationWriteToHubLocalPolicy(t *testing.T) {
 			federationauth.ScopeProviderWrite: {},
 		},
 	})
-	_, err := srv.updateSettings(ctx, &updateSettingsInput{Body: updateSettingsRequest{
-		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	_, err := srv.updateSettings(ctx, &settingsapi.UpdateSettingsInput{Body: spokeapi.UpdateSettingsRequest{
+		Workspaces: &spokeapi.WorkspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	}})
 	var statusErr huma.StatusError
 	require.ErrorAs(t, err, &statusErr)
@@ -4182,7 +4186,7 @@ prefer_github_native_stacks = true
 	require.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
 
 	var buf bytes.Buffer
-	require.NoError(json.NewEncoder(&buf).Encode(updateSettingsRequest{
+	require.NoError(json.NewEncoder(&buf).Encode(spokeapi.UpdateSettingsRequest{
 		PullRequests: &config.PullRequests{},
 	}))
 	reqCtx, cancel := context.WithCancel(ctx)
@@ -4244,7 +4248,7 @@ prefer_github_native_stacks = true
 
 	// A disable observed the enabled value, but by the time it reaches
 	// reconciliation a later enable has already won the swap.
-	srv.reconcileGitHubNativeStackProjection(true, false)
+	srv.syncevents.ReconcileGitHubNativeStackProjection(true, false)
 
 	after, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
 	require.NoError(err)
@@ -4303,7 +4307,7 @@ prefer_github_native_stacks = true
 	require.Equal([]int64{11, 10}, stackMemberNumbers(before.JSON200.Members))
 
 	disabled := config.PullRequests{}
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		PullRequests: &disabled,
 	})
 
@@ -4332,7 +4336,7 @@ func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
 	}}
 
 	rr := testutil.DoJSON(
-		t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{QuickActions: &actions})
+		t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{QuickActions: &actions})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
 	cfg2, err := config.Load(cfgPath)
@@ -4350,7 +4354,7 @@ func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
 	// An invalid entry rolls the whole write back.
 	invalid := []config.QuickAction{{Label: "", Agent: "codex", Prompt: "go"}}
 	rr = testutil.DoJSON(
-		t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{QuickActions: &invalid})
+		t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{QuickActions: &invalid})
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
 	cfg3, err := config.Load(cfgPath)
 	require.NoError(err)

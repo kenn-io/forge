@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
@@ -103,7 +104,7 @@ trust_reverse_proxy = true
 }
 
 func TestHostValidationTrustedProxyE2E(t *testing.T) {
-	srv, database := setupHostValidationServer(t, server.HostCheckOptions{
+	srv, database := setupHostValidationServer(t, authapi.HostCheckOptions{
 		Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 		Allowed: []config.HostKey{
 			{Host: "proxy.local", Port: "8091"},
@@ -141,12 +142,12 @@ func TestHostValidationTrustedProxyE2E(t *testing.T) {
 // setupHostValidationServer builds a Server with an explicit
 // HostCheckOptions so the production contract — strict bind match
 // plus no any-port relaxation — is what the test exercises.
-func setupHostValidationServer(t *testing.T, opts ...server.HostCheckOptions) (*server.Server, *db.DB) {
+func setupHostValidationServer(t *testing.T, opts ...authapi.HostCheckOptions) (*server.Server, *db.DB) {
 	t.Helper()
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, defaultTestRepos, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	hostCheck := server.HostCheckOptions{
+	hostCheck := authapi.HostCheckOptions{
 		Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 	}
 	if len(opts) > 0 {

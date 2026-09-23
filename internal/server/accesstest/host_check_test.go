@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -24,12 +25,12 @@ import (
 // override is passed via ServerOptions, which takes precedence in
 // resolveHostCheckOptions over both the cfg=nil fallback and the
 // test-friendly AllowLoopbackAnyPort relaxation.
-func setupHostCheckServer(t *testing.T, opts server.HostCheckOptions) *server.Server {
+func setupHostCheckServer(t *testing.T, opts authapi.HostCheckOptions) *server.Server {
 	return setupHostCheckServerWithToken(t, opts, "")
 }
 
 func setupHostCheckServerWithToken(
-	t *testing.T, opts server.HostCheckOptions, token string,
+	t *testing.T, opts authapi.HostCheckOptions, token string,
 ) *server.Server {
 	t.Helper()
 	database := dbtest.Open(t)
@@ -37,7 +38,7 @@ func setupHostCheckServerWithToken(
 	t.Cleanup(syncer.Stop)
 	return server.New(database, syncer, emptyFrontend(), "/", nil, server.ServerOptions{
 		HostCheck: opts,
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: token, RequireAPIAuth: token != "",
 		},
 	})
@@ -72,7 +73,7 @@ func serveDirectDaemonRequest(t *testing.T, srv *server.Server, bearer string, h
 // bearer requests bypass proxy Host interpretation, while any forwarded shape
 // remains subject to the existing proxy validation and rejection rules.
 func TestDirectDaemonBearerHostIntegration(t *testing.T) {
-	srv := setupHostCheckServerWithToken(t, server.HostCheckOptions{
+	srv := setupHostCheckServerWithToken(t, authapi.HostCheckOptions{
 		Bind:              bindLoopback8091(),
 		TrustReverseProxy: true,
 	}, "daemon-secret")
@@ -90,12 +91,12 @@ func TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth(t *testing.T) {
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, emptyFrontend(), "/", nil, server.ServerOptions{
-		HostCheck: server.HostCheckOptions{
+		HostCheck: authapi.HostCheckOptions{
 			Bind:              bindLoopback8091(),
 			Allowed:           []config.HostKey{{Host: "mm.example.com"}},
 			TrustReverseProxy: true,
 		},
-		DaemonAccess: server.DaemonAccessOptions{Token: "daemon-secret"},
+		DaemonAccess: authapi.DaemonAccessOptions{Token: "daemon-secret"},
 	})
 	assert.Equal(t, http.StatusOK, serveDirectDaemonRequest(t, srv, "daemon-secret", nil))
 	assert.Equal(t, http.StatusOK, serveDirectDaemonRequest(t, srv, "", http.Header{
@@ -164,7 +165,7 @@ func TestHostCheckBackendHost(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := setupHostCheckServer(t, server.HostCheckOptions{
+			srv := setupHostCheckServer(t, authapi.HostCheckOptions{
 				Bind:    bindLoopback8091(),
 				Allowed: tc.allowed,
 			})
@@ -327,7 +328,7 @@ func TestHostCheckForwardedHost(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := setupHostCheckServer(t, server.HostCheckOptions{
+			srv := setupHostCheckServer(t, authapi.HostCheckOptions{
 				Bind:              bindLoopback8091(),
 				Allowed:           tc.allowed,
 				TrustReverseProxy: tc.trustReverseProxy,
@@ -380,7 +381,7 @@ func TestCrossOriginProtectionUsesValidatedForwardedHost(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := setupHostCheckServer(t, server.HostCheckOptions{
+			srv := setupHostCheckServer(t, authapi.HostCheckOptions{
 				Bind: bindLoopback8091(),
 				Allowed: []config.HostKey{
 					{Host: "forge.example", Port: "8080"},
@@ -405,7 +406,7 @@ func TestCrossOriginProtectionUsesValidatedForwardedHost(t *testing.T) {
 // {"error":"..."} and the value must name both config knobs so an
 // operator can debug a rejected request from curl output alone.
 func TestHostCheck403BodyShape(t *testing.T) {
-	srv := setupHostCheckServer(t, server.HostCheckOptions{
+	srv := setupHostCheckServer(t, authapi.HostCheckOptions{
 		Bind: bindLoopback8091(),
 	})
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
@@ -433,7 +434,7 @@ func TestHostCheck403BodyShape(t *testing.T) {
 func TestHostCheckEphemeralPortFollowsListener(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv := setupHostCheckServer(t, server.HostCheckOptions{
+	srv := setupHostCheckServer(t, authapi.HostCheckOptions{
 		Bind: config.HostKey{Host: "127.0.0.1", Port: "0"},
 	})
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")

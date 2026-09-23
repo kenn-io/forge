@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/routepolicy"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -17,7 +19,7 @@ func TestHealthReportsRunningBuildWithoutBearer(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{Token: "private-test-token", RequireAPIAuth: true},
+		DaemonAccess: authapi.DaemonAccessOptions{Token: "private-test-token", RequireAPIAuth: true},
 	})
 	srv.SetBuildInfo(BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)})
 	response := httptest.NewRecorder()
@@ -53,7 +55,7 @@ func TestHealthResponseBuildIdentity(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, healthResponse{Status: "ok", Version: "v1.2.3", Revision: tc.revision, Modified: tc.modified}, healthResponseForBuild(info, tc.build))
+			assert.Equal(t, routepolicy.HealthResponse{Status: "ok", Version: "v1.2.3", Revision: tc.revision, Modified: tc.modified}, routepolicy.HealthResponseForBuild(info.Version, info.Commit, tc.build))
 		})
 	}
 }

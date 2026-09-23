@@ -15,12 +15,14 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server/activityapi"
+	"go.kenn.io/forge/internal/server/compression"
 )
 
 func TestHumaResponseCompressionNegotiatesZstdAndBrotli(t *testing.T) {
 	mux := http.NewServeMux()
-	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
-	api.UseMiddleware(newResponseCompressionMiddleware(128))
+	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
+	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))
 	registerCompressionTestRoutes(api)
 
 	cases := []struct {
@@ -74,8 +76,8 @@ func TestHumaResponseCompressionNegotiatesZstdAndBrotli(t *testing.T) {
 
 func TestHumaResponseCompressionSkipsSmallResponses(t *testing.T) {
 	mux := http.NewServeMux()
-	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
-	api.UseMiddleware(newResponseCompressionMiddleware(128))
+	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
+	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))
 	registerCompressionTestRoutes(api)
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/small", nil)
@@ -93,8 +95,8 @@ func TestHumaResponseCompressionSkipsSmallResponses(t *testing.T) {
 
 func TestHumaResponseCompressionPreservesHumagoUnwrap(t *testing.T) {
 	mux := http.NewServeMux()
-	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
-	api.UseMiddleware(newResponseCompressionMiddleware(128))
+	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
+	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		_, w := humago.Unwrap(ctx)
 		w.Header().Set("X-Unwrapped", "true")
@@ -114,8 +116,8 @@ func TestHumaResponseCompressionPreservesHumagoUnwrap(t *testing.T) {
 
 func TestHumaResponseCompressionStreamsWhenBodyExceedsCap(t *testing.T) {
 	mux := http.NewServeMux()
-	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
-	api.UseMiddleware(newResponseCompressionMiddleware(128))
+	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
+	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))
 	registerCompressionTestRoutes(api)
 
 	for _, tc := range []struct {
@@ -157,20 +159,20 @@ func TestResponseCompressionSpillsBufferedChunks(t *testing.T) {
 			rr := httptest.NewRecorder()
 			rr.Header().Set("Content-Type", "text/plain")
 			rr.Header().Set("Cache-Control", tc.cacheControl)
-			buffered := &bufferedHumaContext{w: rr, maxBuffer: 8, minSize: 1, encoding: "br"}
+			buffered := &compression.BufferedHumaContext{W: rr, MaxBuffer: 8, MinSize: 1, Encoding: "br"}
 			for _, chunk := range []string{"first ", "second ", "third"} {
 				_, err := buffered.Write([]byte(chunk))
 				require.NoError(err)
 			}
-			if buffered.compressor != nil {
-				require.NoError(buffered.compressor.Close())
+			if buffered.Compressor != nil {
+				require.NoError(buffered.Compressor.Close())
 			}
 			body := rr.Body.String()
 			if tc.wantEncoding != "" {
 				body = decodeBrotliBody(t, rr.Body)
 			}
 			assert.Equal(tc.wantEncoding, rr.Header().Get("Content-Encoding"))
-			assert.Zero(buffered.body.Len())
+			assert.Zero(buffered.Body.Len())
 			assert.Equal("first second third", body)
 		})
 	}
@@ -178,8 +180,8 @@ func TestResponseCompressionSpillsBufferedChunks(t *testing.T) {
 
 func TestHumaResponseCompressionIncludesMultiMiBPayloads(t *testing.T) {
 	mux := http.NewServeMux()
-	api := humago.NewWithPrefix(mux, "/api/v1", apiConfig("/"))
-	api.UseMiddleware(newResponseCompressionMiddleware(128))
+	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
+	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))
 	registerCompressionTestRoutes(api)
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/huge", nil)

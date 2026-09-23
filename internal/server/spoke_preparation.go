@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
@@ -20,39 +19,8 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 )
-
-const maxSpokePreparationResponseBytes = 1 << 20
-
-type SpokePreparationReport struct {
-	ReadyLaunchSpecs       int                        `json:"ready_launch_specs"`
-	Unprepared             []db.UnpreparedWorkspace   `json:"unprepared" nullable:"false"`
-	HandoffConflicts       []db.ProviderStateConflict `json:"handoff_conflicts" nullable:"false"`
-	HandoffErrors          []string                   `json:"handoff_errors" nullable:"false"`
-	InFlightProviderWrites int                        `json:"in_flight_provider_writes"`
-	ActiveDeferredMerges   int                        `json:"active_deferred_merges"`
-	UndrainedAcks          int                        `json:"undrained_acks"`
-	ReadyToActivate        bool                       `json:"ready_to_activate"`
-	PreparationSeal        string                     `json:"preparation_seal,omitempty"`
-	RestartRequired        bool                       `json:"restart_required"`
-}
-
-type prepareFederationSpokeOutput = httpapi.BodyOutput[SpokePreparationReport]
-
-type abortFederationSpokeInput struct {
-	Body struct {
-		Force bool `json:"force,omitempty"`
-	}
-}
-
-type SpokePreparationAbortReport struct {
-	EnrollmentID       string `json:"enrollment_id"`
-	HubRevoked         bool   `json:"hub_revoked"`
-	ProviderWritesOpen bool   `json:"provider_writes_open"`
-	RestartRequired    bool   `json:"restart_required"`
-}
-
-type abortFederationSpokeOutput = httpapi.BodyOutput[SpokePreparationAbortReport]
 
 func (s *Server) registerSpokePreparationAPI(api huma.API) {
 	huma.Register(api, huma.Operation{
@@ -72,8 +40,8 @@ func (s *Server) registerSpokePreparationAPI(api huma.API) {
 }
 
 func (s *Server) abortFederationSpokePreparation(
-	ctx context.Context, input *abortFederationSpokeInput,
-) (*abortFederationSpokeOutput, error) {
+	ctx context.Context, input *spokeapi.AbortFederationSpokeInput,
+) (*spokeapi.AbortFederationSpokeOutput, error) {
 	if s.options.FederationEnrollments == nil ||
 		s.options.FederationCredentials == nil {
 		return nil, httpapi.ServiceUnavailable("federation enrollment is unavailable")
@@ -91,12 +59,12 @@ func (s *Server) abortFederationSpokePreparation(
 			map[string]any{"reason": "providerWritesStillDraining"},
 		)
 	}
-	report := SpokePreparationAbortReport{EnrollmentID: local.EnrollmentID}
+	report := spokeapi.SpokePreparationAbortReport{EnrollmentID: local.EnrollmentID}
 	hubCleanupPending := false
 	if local.PreparationStarted || local.ExpiresAt.After(s.now().UTC()) {
 		if err := s.requestHubEnrollmentAbort(ctx, local); err != nil {
 			if !input.Body.Force {
-				return nil, spokePreparationHubProblem(err)
+				return nil, spokeapi.SpokePreparationHubProblem(err)
 			}
 			hubCleanupPending = true
 		} else {
@@ -111,7 +79,7 @@ func (s *Server) abortFederationSpokePreparation(
 	}
 	report.RestartRequired = s.providerRouteSpoke
 	report.ProviderWritesOpen = !report.RestartRequired
-	if err := s.resetPreparedSpokeBinding(ctx); err != nil {
+	if err := s.settingsapi.ResetPreparedSpokeBinding(ctx); err != nil {
 		return nil, httpapi.Internal("restore standalone fleet role: " + err.Error())
 	}
 	if err := s.options.FederationCredentials.RevokeOutbound(local.HubID); err != nil {
@@ -128,7 +96,7 @@ func (s *Server) abortFederationSpokePreparation(
 		); err != nil {
 			return nil, httpapi.Internal("retain federation revocation credential: " + err.Error())
 		}
-		return &abortFederationSpokeOutput{Body: report}, nil
+		return &spokeapi.AbortFederationSpokeOutput{Body: report}, nil
 	}
 	if err := s.options.FederationCredentials.RevokeInboundNode(local.HubID); err != nil {
 		return nil, httpapi.Internal("revoke inbound hub credential: " + err.Error())
@@ -136,13 +104,13 @@ func (s *Server) abortFederationSpokePreparation(
 	if err := s.options.FederationEnrollments.ClearLocal(ctx); err != nil {
 		return nil, httpapi.Internal("clear local enrollment: " + err.Error())
 	}
-	return &abortFederationSpokeOutput{Body: report}, nil
+	return &spokeapi.AbortFederationSpokeOutput{Body: report}, nil
 }
 
 func (s *Server) prepareFederationSpoke(
 	ctx context.Context,
 	_ *struct{},
-) (*prepareFederationSpokeOutput, error) {
+) (*spokeapi.PrepareFederationSpokeOutput, error) {
 	if s.options.FederationEnrollments == nil ||
 		s.options.FederationCredentials == nil ||
 		s.options.FederationSpokeID == "" {
@@ -158,7 +126,7 @@ func (s *Server) prepareFederationSpoke(
 		)
 	}
 	if err := s.pinHubEnrollment(ctx, local); err != nil {
-		return nil, spokePreparationHubProblem(err)
+		return nil, spokeapi.SpokePreparationHubProblem(err)
 	}
 	if _, err := s.providerWriteGate.BeginQuiesce(ctx, db.SpokePreparationBinding{
 		EnrollmentID:    local.EnrollmentID,
@@ -174,7 +142,7 @@ func (s *Server) prepareFederationSpoke(
 		return nil, httpapi.Internal("begin spoke preparation: " + err.Error())
 	}
 
-	report := SpokePreparationReport{
+	report := spokeapi.SpokePreparationReport{
 		Unprepared:       []db.UnpreparedWorkspace{},
 		HandoffConflicts: []db.ProviderStateConflict{},
 		HandoffErrors:    []string{},
@@ -188,15 +156,15 @@ func (s *Server) prepareFederationSpoke(
 	report.UndrainedAcks = status.UndrainedAcks
 	if status.InFlightProviderWrites != 0 || status.ActiveDeferredMerges != 0 ||
 		status.DrainAckGeneration == nil {
-		return &prepareFederationSpokeOutput{Body: report}, nil
+		return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
 	}
 	client, err := s.spokePreparationProviderClient(local)
 	if err != nil {
 		report.HandoffErrors = append(report.HandoffErrors, err.Error())
 	} else {
-		s.reconcileSpokePreparationProjects(ctx, client, &report)
-		s.refreshSpokePreparationLaunchSpecs(ctx, client, &report)
-		s.handoffSpokeProviderState(ctx, client, &report)
+		s.spokeapi.ReconcileSpokePreparationProjects(ctx, client, &report)
+		s.spokeapi.RefreshSpokePreparationLaunchSpecs(ctx, client, &report)
+		s.spokeapi.HandoffSpokeProviderState(ctx, client, &report)
 	}
 
 	report.Unprepared, err = s.db.ListUnpreparedProviderWorkspacesAt(ctx, s.now().UTC())
@@ -219,7 +187,7 @@ func (s *Server) prepareFederationSpoke(
 		len(report.HandoffErrors) != 0 || status.InFlightProviderWrites != 0 ||
 		status.ActiveDeferredMerges != 0 || status.UndrainedAcks != 0 ||
 		status.DrainAckGeneration == nil {
-		return &prepareFederationSpokeOutput{Body: report}, nil
+		return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
 	}
 	receipts, err := s.db.ListSpokePreparationReceipts(ctx)
 	if err != nil {
@@ -244,11 +212,11 @@ func (s *Server) prepareFederationSpoke(
 	seal, err := s.requestHubPreparationSeal(ctx, local, sealRequest)
 	if err != nil {
 		report.HandoffErrors = append(report.HandoffErrors, err.Error())
-		return &prepareFederationSpokeOutput{Body: report}, nil
+		return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
 	}
-	if err := validateHubPreparationSeal(sealRequest, seal); err != nil {
+	if err := spokeapi.ValidateHubPreparationSeal(sealRequest, seal); err != nil {
 		report.HandoffErrors = append(report.HandoffErrors, err.Error())
-		return &prepareFederationSpokeOutput{Body: report}, nil
+		return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
 	}
 	if err := s.db.StoreLocalSpokePreparationSeal(
 		ctx, sealRequest.PreparationDigest, seal.Seal,
@@ -272,7 +240,7 @@ func (s *Server) prepareFederationSpoke(
 	report.ReadyToActivate = true
 	report.PreparationSeal = seal.Seal
 	report.RestartRequired = true
-	return &prepareFederationSpokeOutput{Body: report}, nil
+	return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
 }
 
 func (s *Server) persistPreparedSpokeRole(
@@ -294,7 +262,7 @@ func (s *Server) persistPreparedSpokeRole(
 		prepared.Preparation.Seal != seal.Seal {
 		return federation.ErrPreparationSealMismatch
 	}
-	return s.mutatePersistedEnrollmentFleetChecked(ctx, func(fleet *config.Fleet) error {
+	return s.settingsapi.MutatePersistedEnrollmentFleetChecked(ctx, func(fleet *config.Fleet) error {
 		if !fleet.Enabled || fleet.Hub == nil ||
 			fleet.Hub.NodeID != prepared.HubID ||
 			fleet.Hub.BaseURL != prepared.HubURL {
@@ -309,19 +277,6 @@ func (s *Server) persistPreparedSpokeRole(
 	})
 }
 
-func validateHubPreparationSeal(
-	request db.SpokePreparationSealRequest,
-	seal db.SpokePreparationSeal,
-) error {
-	if seal.SpokePreparationSealRequest != request {
-		return errors.New("hub returned a preparation seal for a different binding")
-	}
-	if strings.TrimSpace(seal.Seal) == "" || seal.CreatedAt.IsZero() {
-		return errors.New("hub returned an incomplete preparation seal")
-	}
-	return nil
-}
-
 func (s *Server) spokePreparationProviderClient(
 	local federation.LocalEnrollment,
 ) (providerplane.Client, error) {
@@ -333,170 +288,6 @@ func (s *Server) spokePreparationProviderClient(
 		Credentials: s.options.FederationCredentials,
 		HTTPClient:  s.options.FederationHTTPClient,
 	})
-}
-
-func (s *Server) refreshSpokePreparationLaunchSpecs(
-	ctx context.Context,
-	client providerplane.Client,
-	report *SpokePreparationReport,
-) {
-	unprepared, err := s.db.ListUnpreparedProviderWorkspacesAt(ctx, s.now().UTC())
-	if err != nil {
-		report.HandoffErrors = append(report.HandoffErrors, "list launch specifications: "+err.Error())
-		return
-	}
-	for _, item := range unprepared {
-		workspace := item.Workspace
-		current, err := s.db.GetWorkspaceLaunchSpec(ctx, workspace.ID)
-		if err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("read workspace %s launch specification: %v", workspace.ID, err))
-			continue
-		}
-		body := providerplane.WorkspaceLaunchRequest{
-			Repository: providerplane.RepositoryRoute{
-				Provider: workspace.Platform, PlatformHost: workspace.PlatformHost,
-				Owner: workspace.RepoOwner, Name: workspace.RepoName,
-			},
-			ItemType: workspace.ItemType, ItemNumber: workspace.ItemNumber,
-			ItemKey: workspace.ItemKey, GitHeadRef: workspace.GitHeadRef,
-			PlatformRepoID: item.PlatformRepoID,
-		}
-		if current != nil {
-			body.PlatformRepoID = current.Repository.PlatformRepoID
-		}
-		var spec db.WorkspaceLaunchSpec
-		httpRequest, requestErr := generated.NewFederationResolveWorkspaceLaunchSpecRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationResolveWorkspaceLaunchSpecRequestOptions{Body: providerLaunchRequestBody(body)})
-		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderRead, httpRequest, requestErr, &spec); err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("refresh workspace %s: %v", workspace.ID, err))
-			continue
-		}
-		if err := providerplane.ValidateFederationWorkspaceLaunchSpecResponse(body, spec); err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("refresh workspace %s: invalid hub launch specification: %v", workspace.ID, err))
-			continue
-		}
-		_, credentialErr := requireWorkspaceLaunchSpecCredentials(ctx, s.clones, spec)
-		if credentialErr != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("refresh workspace %s: %v", workspace.ID, credentialErr))
-			continue
-		}
-		if _, err := s.db.PutRefreshedWorkspaceLaunchSpec(
-			ctx, workspace.ID, spec,
-		); err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("persist workspace %s launch specification: %v", workspace.ID, err))
-		}
-	}
-}
-
-func (s *Server) reconcileSpokePreparationProjects(
-	ctx context.Context,
-	client providerplane.Client,
-	report *SpokePreparationReport,
-) {
-	projects, err := s.db.ListProjects(ctx)
-	if err != nil {
-		report.HandoffErrors = append(report.HandoffErrors, "list registered projects: "+err.Error())
-		return
-	}
-	seen := make(map[providerplane.RepositoryRoute]struct{}, len(projects))
-	for _, project := range projects {
-		if project.PlatformIdentity == nil {
-			continue
-		}
-		route, err := providerplane.CanonicalRepositoryRoute(providerplane.RepositoryRoute{
-			Provider:     project.PlatformIdentity.Platform,
-			PlatformHost: project.PlatformIdentity.Host,
-			Owner:        project.PlatformIdentity.Owner,
-			Name:         project.PlatformIdentity.Name,
-		})
-		if err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("resolve project %s repository: %v", project.ID, err))
-			continue
-		}
-		if _, ok := seen[route]; ok {
-			continue
-		}
-		seen[route] = struct{}{}
-		var descriptor providerplane.RepositoryDescriptor
-		httpRequest, requestErr := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: new(generated.RepositoryRoute{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name})})
-		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderRead, httpRequest, requestErr, &descriptor); err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("resolve project %s repository: %v", project.ID, err))
-			continue
-		}
-		if err := descriptor.ValidateRoute(route); err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("resolve project %s repository: invalid hub descriptor: %v", project.ID, err))
-			continue
-		}
-		if err := observeRepositoryDescriptor(ctx, s.db, descriptor); err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("persist project %s repository: %v", project.ID, err))
-		}
-	}
-}
-
-func (s *Server) handoffSpokeProviderState(
-	ctx context.Context,
-	client providerplane.Client,
-	report *SpokePreparationReport,
-) {
-	records, err := s.db.ListProviderStateForHandoff(ctx)
-	if err != nil {
-		report.HandoffErrors = append(report.HandoffErrors, "inventory provider state: "+err.Error())
-		return
-	}
-	receipts, err := s.db.ListSpokePreparationReceipts(ctx)
-	if err != nil {
-		report.HandoffErrors = append(report.HandoffErrors, "read provider state receipts: "+err.Error())
-		return
-	}
-	received := make(map[string]db.SpokePreparationReceipt, len(receipts))
-	for _, receipt := range receipts {
-		received[receipt.StateKind+"\x00"+receipt.SourceKey] = receipt
-	}
-	for _, record := range records {
-		if receipt, ok := received[record.Kind+"\x00"+record.SourceKey]; ok &&
-			receipt.ContentDigest == record.ContentDigest {
-			continue
-		}
-		httpRequest, requestErr := providerStateImportRequest(ctx, record)
-		var result db.ProviderStateImportResult
-		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderHandoff, httpRequest, requestErr, &result); err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("handoff %s %s: %v", record.Kind, record.SourceKey, err))
-			continue
-		}
-		if result.Conflict != nil {
-			report.HandoffConflicts = append(report.HandoffConflicts, *result.Conflict)
-			continue
-		}
-		if strings.TrimSpace(result.Receipt) == "" {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("handoff %s %s returned no receipt", record.Kind, record.SourceKey))
-			continue
-		}
-		if err := s.db.RecordSpokePreparationReceipt(ctx, db.SpokePreparationReceipt{
-			StateKind: record.Kind, SourceKey: record.SourceKey,
-			ContentDigest: record.ContentDigest,
-			HubReceipt:    result.Receipt, ImportedAt: s.now().UTC(),
-		}); err != nil {
-			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("record %s %s receipt: %v", record.Kind, record.SourceKey, err))
-		}
-	}
-}
-
-func spokePreparationProviderJSON(ctx context.Context, client providerplane.Client, scope federationauth.Scope, request *http.Request, requestErr error, target any) error {
-	if requestErr != nil {
-		return requestErr
-	}
-	return providerplane.ReadJSON(ctx, client, scope, request, target)
 }
 
 func (s *Server) pinHubEnrollment(
@@ -584,12 +375,12 @@ func (s *Server) postHubEnrollmentJSON(
 	}
 	defer response.Body.Close()
 	encodedResponse, err := io.ReadAll(io.LimitReader(
-		response.Body, maxSpokePreparationResponseBytes+1,
+		response.Body, spokeapi.MaxSpokePreparationResponseBytes+1,
 	))
 	if err != nil {
 		return err
 	}
-	if len(encodedResponse) > maxSpokePreparationResponseBytes {
+	if len(encodedResponse) > spokeapi.MaxSpokePreparationResponseBytes {
 		return providerplane.ErrResponseBodyTooLarge
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -603,56 +394,4 @@ func (s *Server) postHubEnrollmentJSON(
 		return nil
 	}
 	return json.Unmarshal(encodedResponse, target)
-}
-
-func spokePreparationHubProblem(err error) error {
-	if errors.Is(err, providerplane.ErrHubUnavailable) ||
-		errors.Is(err, providerplane.ErrCredentialUnavailable) {
-		return httpapi.HubUnavailable(
-			"the hub must be reachable before provider writes can be sealed",
-		)
-	}
-	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok {
-		return problem
-	}
-	return httpapi.Internal("begin hub spoke preparation: " + err.Error())
-}
-
-func providerStateImportRequest(ctx context.Context, record db.ProviderStateRecord) (*http.Request, error) {
-	if record.Kind == db.ProviderStateReviewDraft {
-		var body *generated.FederationImportReviewDraftBody
-		if draft := record.ReviewDraft; draft != nil {
-			body = &generated.FederationImportReviewDraftBody{
-				Repository: generated.ProviderStateRepository{Provider: draft.Repository.Provider, PlatformHost: draft.Repository.PlatformHost, PlatformRepoID: draft.Repository.PlatformRepoID, Owner: draft.Repository.Owner, Name: draft.Repository.Name}, PullNumber: int64(draft.PullNumber), Body: draft.Body, Action: draft.Action,
-				Comments: make([]generated.ProviderStateReviewComment, 0, len(draft.Comments)),
-			}
-			for _, comment := range draft.Comments {
-				item := generated.ProviderStateReviewComment{
-					Body: comment.Body, Path: comment.Path, OldPath: optionalProviderQuery(comment.OldPath), Side: comment.Side,
-					StartSide: optionalProviderQuery(comment.StartSide), Line: int64(comment.Line), LineType: comment.LineType,
-					DiffHeadSha: comment.DiffHeadSHA, CommitSha: comment.CommitSHA,
-				}
-				if comment.StartLine != nil {
-					item.StartLine = new(int64(*comment.StartLine))
-				}
-				if comment.OldLine != nil {
-					item.OldLine = new(int64(*comment.OldLine))
-				}
-				if comment.NewLine != nil {
-					item.NewLine = new(int64(*comment.NewLine))
-				}
-				body.Comments = append(body.Comments, item)
-			}
-		}
-		return generated.NewFederationImportReviewDraftRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationImportReviewDraftRequestOptions{Body: body})
-	}
-	var body *generated.FederationImportWorkflowStateBody
-	if state := record.WorkflowState; state != nil {
-		body = &generated.FederationImportWorkflowStateBody{
-			Repository: generated.ProviderStateRepository{Provider: state.Repository.Provider, PlatformHost: state.Repository.PlatformHost, PlatformRepoID: state.Repository.PlatformRepoID, Owner: state.Repository.Owner, Name: state.Repository.Name}, ItemType: generated.ProviderStateWorkflowPayloadItemType(state.ItemType),
-			ItemNumber: int64(state.ItemNumber), Status: state.Status,
-			UpdatedSource: optionalProviderQuery(state.UpdatedSource), UpdatedActor: optionalProviderQuery(state.UpdatedActor), UpdatedReason: optionalProviderQuery(state.UpdatedReason),
-		}
-	}
-	return generated.NewFederationImportWorkflowStateRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationImportWorkflowStateRequestOptions{Body: body})
 }

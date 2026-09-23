@@ -9,14 +9,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/streamapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestNewRejectsUnvalidatedConfigWithNonLoopbackHost(t *testing.T) {
-	old := allowUnvalidatedConfigHostCheckFallbackForTests
-	allowUnvalidatedConfigHostCheckFallbackForTests = false
+	old := streamapi.AllowUnvalidatedConfigHostCheckFallbackForTests
+	streamapi.AllowUnvalidatedConfigHostCheckFallbackForTests = false
 	t.Cleanup(func() {
-		allowUnvalidatedConfigHostCheckFallbackForTests = old
+		streamapi.AllowUnvalidatedConfigHostCheckFallbackForTests = old
 	})
 
 	database := dbtest.Open(t)

@@ -193,7 +193,7 @@ and newer completed tokens survive stale responses.
 Roborev discovery retains definitive results until managed-clone initialization
 confirms a registration. Invalidation clears all inventory state and fences out
 older refreshes by generation; transient failures still retry after cooldown and
-each waiter can cancel independently (`internal/server/roborev_repositories.go::roborevRepositoryProbe`).
+each waiter can cancel independently (`internal/server/roborevapi/roborev_repositories.go::RoborevRepositoryProbe`).
 
 ## Tests
 

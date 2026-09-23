@@ -86,7 +86,7 @@ notice the regression:
 
 Provider container fixture image bumps must keep every launch default and baked
 image tag on one release, or local e2e and bake paths can test different
-provider versions (`internal/server/gitlab_container_e2e_test.go::TestGitLabContainerE2E`).
+provider versions (`internal/server/settingstest/gitlab_container_e2e_test.go::TestGitLabContainerE2E`).
 
 - Container fixtures must advertise the host-mapped port in canonical provider URLs while
   keeping the service listener on its internal container port (`scripts/e2e/gitlab/docker-compose.yml:10`).
@@ -157,7 +157,7 @@ owner:
 - PTY-owner quick-exit coverage must assert the exact nonzero status through the
   HTTP-launched runtime WebSocket and confirm SQLite session cleanup. Order process
   exit before PTY EOF in the fixture; accepting unknown `-1` does not cover the handoff
-  (`internal/server/api_test.go::TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E`).
+  (`internal/server/workspacetest/pty_owner_e2e_test.go::TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E`).
 - Retiring or shutting down e2e state must stop its private tmux server before slower
   asynchronous cleanup; interrupted runners otherwise leave test-owned daemons behind
   (`cmd/e2e-server/main.go::run`).
@@ -363,7 +363,7 @@ metadata at the route registration site:
 - stable kebab-case `OperationID`;
 - short imperative `Summary`;
 - exactly one tag from the API tag taxonomy enforced in
-  `internal/server/route_metadata_test.go`.
+  `internal/server/settingstest/route_metadata_test.go`.
 
 Use `httpapi.DocumentOperation(...)` for Huma convenience helpers such as `huma.Get`
 and `huma.Post`. Use inline `Summary`, `Tags`, and `OperationID` fields for
@@ -554,7 +554,7 @@ and await the fake's observation instead of reading its counter synchronously
 
 Workspace fixtures with background monitors must seed observer inputs before
 `server.New`; the pushed-head observer runs an immediate first pass and can
-capture transitional fixture state (`internal/server/server.go::runWorkspacePushedHeadObserverLoop`).
+capture transitional fixture state (`internal/server/workspaceapi/background.go::Handler.runWorkspacePushedHeadObserverLoop`).
 
 `testing/synctest` is appropriate only when all goroutines and timers under test
 are pure in-process work created inside the `synctest.Test` bubble. Good

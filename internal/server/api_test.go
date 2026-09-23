@@ -47,9 +47,16 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/server/activityapi"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
+	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/operationapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
+	"go.kenn.io/forge/internal/server/streamapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
@@ -1500,7 +1507,7 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 
 	activityRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?involves_me=true", nil)
 	require.Equal(http.StatusOK, activityRR.Code, activityRR.Body.String())
-	var activity activityResponse
+	var activity itemapi.ActivityResponse
 	require.NoError(json.Unmarshal(activityRR.Body.Bytes(), &activity))
 	require.Len(activity.Items, 2)
 	for _, item := range activity.Items {
@@ -1548,7 +1555,7 @@ func TestAPIUnassignedFiltersPullsIssuesAndActivity(t *testing.T) {
 
 	activityRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?unassigned=true", nil)
 	require.Equal(http.StatusOK, activityRR.Code, activityRR.Body.String())
-	var activity activityResponse
+	var activity itemapi.ActivityResponse
 	require.NoError(json.Unmarshal(activityRR.Body.Bytes(), &activity))
 	require.Len(activity.Items, 2)
 	assert.ElementsMatch([]int{1, 3}, []int{activity.Items[0].ItemNumber, activity.Items[1].ItemNumber})
@@ -1818,7 +1825,7 @@ func TestAPIRepoFilterAcceptsMultipleRepos(t *testing.T) {
 	since := url.QueryEscape(time.Now().UTC().Add(-time.Hour).Format(time.RFC3339))
 	rawActivity := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&repo="+filter, nil)
 	require.Equal(http.StatusOK, rawActivity.Code)
-	var activity activityResponse
+	var activity itemapi.ActivityResponse
 	require.NoError(json.Unmarshal(rawActivity.Body.Bytes(), &activity))
 	require.NotEmpty(activity.Items)
 	for _, item := range activity.Items {
@@ -1850,7 +1857,7 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 	key := "pr:github:github.com:acme/widget#1"
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
-	require.True(srv.enqueueDetailSyncOrRerun(
+	require.True(srv.syncevents.EnqueueDetailSyncOrRerun(
 		key, nil, func(context.Context) error {
 			close(firstStarted)
 			<-releaseFirst
@@ -2677,7 +2684,7 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	assert.Equal("v2.7.0", widgets.Releases[1].TagName)
 	assert.True(widgets.Releases[1].Prerelease)
 	assert.Equal(
-		formatUTCRFC3339(previousPublishedAt),
+		itemapi.FormatUTCRFC3339(previousPublishedAt),
 		*widgets.Releases[1].PublishedAt,
 	)
 	assert.Equal(int64(42), *widgets.CommitsSinceRelease)
@@ -2717,7 +2724,7 @@ platform_host = "ghe.example.com"
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repos/summary", nil)
 	require.Equal(http.StatusOK, rr.Code)
 
-	var summaries []repoSummaryResponse
+	var summaries []itemapi.RepoSummaryResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&summaries))
 	require.Len(summaries, 1)
 	assert.Equal("ghe.example.com", summaries[0].PlatformHost)
@@ -2775,7 +2782,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	srv.ServeHTTP(userRR, userReq)
 	require.Equal(http.StatusOK, userRR.Code, userRR.Body.String())
 
-	var userBody commentAutocompleteResponse
+	var userBody itemapi.CommentAutocompleteResponse
 	require.NoError(json.NewDecoder(userRR.Body).Decode(&userBody))
 	assert.Equal([]string{"albert", "alex", "alice"}, userBody.Users)
 	assert.Empty(userBody.References)
@@ -2786,7 +2793,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	itemRR := httptest.NewRecorder()
 	srv.ServeHTTP(itemRR, itemReq)
 	require.Equal(http.StatusOK, itemRR.Code, itemRR.Body.String())
-	var itemBody commentAutocompleteResponse
+	var itemBody itemapi.CommentAutocompleteResponse
 	require.NoError(json.NewDecoder(itemRR.Body).Decode(&itemBody))
 	assert.Equal([]string{"alex", "albert", "alice"}, itemBody.Users)
 
@@ -2800,7 +2807,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	srv.ServeHTTP(refRR, refReq)
 	require.Equal(http.StatusOK, refRR.Code, refRR.Body.String())
 
-	var refBody commentAutocompleteResponse
+	var refBody itemapi.CommentAutocompleteResponse
 	require.NoError(json.NewDecoder(refRR.Body).Decode(&refBody))
 	assert.Equal([]db.CommentAutocompleteReference{
 		{Kind: "issue", Number: 17, Title: "Mention bug", State: "open"},
@@ -2855,7 +2862,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	srv.ServeHTTP(gitlabIssueRR, gitlabIssueReq)
 	require.Equal(http.StatusOK, gitlabIssueRR.Code, gitlabIssueRR.Body.String())
 
-	var gitlabIssueBody commentAutocompleteResponse
+	var gitlabIssueBody itemapi.CommentAutocompleteResponse
 	require.NoError(json.NewDecoder(gitlabIssueRR.Body).Decode(&gitlabIssueBody))
 	assert.Equal([]db.CommentAutocompleteReference{
 		{Kind: "issue", Number: 17, Title: "Mention issue", State: "open"},
@@ -2866,7 +2873,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	srv.ServeHTTP(gitlabMRRR, gitlabMRReq)
 	require.Equal(http.StatusOK, gitlabMRRR.Code, gitlabMRRR.Body.String())
 
-	var gitlabMRBody commentAutocompleteResponse
+	var gitlabMRBody itemapi.CommentAutocompleteResponse
 	require.NoError(json.NewDecoder(gitlabMRRR.Body).Decode(&gitlabMRBody))
 	assert.Equal([]db.CommentAutocompleteReference{
 		{Kind: "pull", Number: 12, Title: "Polish merge request mentions", State: "open"},
@@ -2921,7 +2928,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var body commentAutocompleteResponse
+	var body itemapi.CommentAutocompleteResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	assert.Equal([]db.CommentAutocompleteReference{{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"}}, body.References)
 }
@@ -2985,7 +2992,7 @@ func TestAPICommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var body commentAutocompleteResponse
+	var body itemapi.CommentAutocompleteResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	assert.Equal([]db.CommentAutocompleteReference{
 		{Kind: "issue", Number: 901, Title: "Provider collision issue", State: "open"},
@@ -3056,7 +3063,7 @@ func TestAPICommentAutocompleteGitLabMergeRequestReferencesScopesByProvider(t *t
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
-	var body commentAutocompleteResponse
+	var body itemapi.CommentAutocompleteResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	assert.Equal([]db.CommentAutocompleteReference{
 		{Kind: "pull", Number: 901, Title: "Provider collision merge request", State: "open"},
@@ -3190,25 +3197,25 @@ func TestMatchPriorityRepoRequiresProviderQualifiedRepoPaths(t *testing.T) {
 		},
 	}
 
-	_, ok := matchPriorityRepo("group/subgroup/project", tracked)
+	_, ok := activityapi.MatchPriorityRepo("group/subgroup/project", tracked)
 	assert.False(ok)
 
-	_, ok = matchPriorityRepo("github.com/acme/widget", tracked)
+	_, ok = activityapi.MatchPriorityRepo("github.com/acme/widget", tracked)
 	assert.False(ok)
 
-	repo, ok := matchPriorityRepo("gitea|github.com/acme/widget", tracked)
+	repo, ok := activityapi.MatchPriorityRepo("gitea|github.com/acme/widget", tracked)
 	assert.True(ok)
 	assert.Equal(platform.KindGitea, repo.Platform)
 	assert.Equal("github.com", repo.PlatformHost)
 	assert.Equal("acme/widget", repo.RepoPath)
 
-	repo, ok = matchPriorityRepo("github|github.com/acme/widget", tracked)
+	repo, ok = activityapi.MatchPriorityRepo("github|github.com/acme/widget", tracked)
 	assert.True(ok)
 	assert.Equal(platform.KindGitHub, repo.Platform)
 	assert.Equal("github.com", repo.PlatformHost)
 	assert.Equal("acme/widget", repo.RepoPath)
 
-	repo, ok = matchPriorityRepo("gitlab|gitlab.com/group/subgroup/project", tracked)
+	repo, ok = activityapi.MatchPriorityRepo("gitlab|gitlab.com/group/subgroup/project", tracked)
 	assert.True(ok)
 	assert.Equal(platform.KindGitLab, repo.Platform)
 	assert.Equal("gitlab.com", repo.PlatformHost)
@@ -7458,7 +7465,7 @@ func TestAPIGitHubPublishReviewDraftRejectsSelfApprovalBeforeProvider(t *testing
 	require.NoError(json.NewDecoder(publishRR.Body).Decode(&problem))
 	assert.Equal("forbidden", problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal(availabilityCodeSelfApproval, problem.Details["reason"])
+	assert.Equal(operationapi.AvailabilityCodeSelfApproval, problem.Details["reason"])
 	assert.Zero(publishCalls)
 
 	storedDraft, err := database.GetMRReviewDraft(ctx, mr.ID)
@@ -7499,7 +7506,7 @@ func TestAPIGitHubApprovePullRejectsSelfApprovalBeforeProvider(t *testing.T) {
 	require.NoError(json.NewDecoder(approveRR.Body).Decode(&problem))
 	assert.Equal("forbidden", problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal(availabilityCodeSelfApproval, problem.Details["reason"])
+	assert.Equal(operationapi.AvailabilityCodeSelfApproval, problem.Details["reason"])
 	assert.False(providerCalled.Load(), "self-approval must be rejected before the provider call")
 }
 
@@ -7989,11 +7996,11 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 		case "/api/v4/projects/4242/merge_requests/7/draft_notes":
 			assert.Equal(http.MethodPost, r.Method)
 			order = append(order, "create-draft")
-			writeJSON(w, http.StatusOK, map[string]any{"id": 55, "note": "inline note"})
+			authapi.WriteJSON(w, http.StatusOK, map[string]any{"id": 55, "note": "inline note"})
 		case "/api/v4/projects/4242/merge_requests/7/draft_notes/55/publish":
 			assert.Equal(http.MethodPut, r.Method)
 			order = append(order, "publish-draft")
-			writeJSON(w, http.StatusOK, map[string]any{})
+			authapi.WriteJSON(w, http.StatusOK, map[string]any{})
 		case "/api/v4/projects/4242/merge_requests/7/notes":
 			assert.Equal(http.MethodPost, r.Method)
 			order = append(order, "summary-note")
@@ -8005,7 +8012,7 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 				return
 			}
 			assert.Equal("review summary from ui", body.Body)
-			writeJSON(w, http.StatusOK, map[string]any{"id": 77, "body": body.Body})
+			authapi.WriteJSON(w, http.StatusOK, map[string]any{"id": 77, "body": body.Body})
 		case "/api/v4/projects/4242/merge_requests/7/approve":
 			assert.Equal(http.MethodPost, r.Method)
 			order = append(order, "approve")
@@ -8039,7 +8046,7 @@ func TestAPIGitLabPublishReviewDraftSendsSummaryThroughServer(t *testing.T) {
 			]`)
 		case "/api/v4/projects/4242/merge_requests/7":
 			assert.Equal(http.MethodGet, r.Method)
-			writeJSON(w, http.StatusOK, map[string]any{
+			authapi.WriteJSON(w, http.StatusOK, map[string]any{
 				"id": 7001, "iid": 7,
 				"updated_at": providerUpdatedAt.Format(time.RFC3339),
 			})
@@ -9213,7 +9220,7 @@ func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
 		})
 
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
-	changed := readEventMatching(t, ch, func(ev Event) bool {
+	changed := readEventMatching(t, ch, func(ev syncevents.Event) bool {
 		return ev.Type == "data_changed"
 	})
 	assert.Equal("data_changed", changed.Type)
@@ -9261,7 +9268,7 @@ func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
 		})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	changed := readEventMatching(t, ch, func(ev Event) bool {
+	changed := readEventMatching(t, ch, func(ev syncevents.Event) bool {
 		return ev.Type == "data_changed"
 	})
 	require.Equal("data_changed", changed.Type)
@@ -9785,7 +9792,7 @@ func TestAPIRateLimits(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
 
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
@@ -9844,7 +9851,7 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
 
 	app, ok := body.ProviderPools["github:github.com:installation:42"]
@@ -9892,7 +9899,7 @@ func TestAPIRateLimitsMarksExpiredProviderQuotaUnknown(t *testing.T) {
 	New(database, syncer, nil, "/", nil, ServerOptions{}).ServeHTTP(recorder, request)
 	require.Equal(http.StatusOK, recorder.Code)
 
-	var response rateLimitsResponse
+	var response itemapi.RateLimitsResponse
 	require.NoError(json.NewDecoder(recorder.Body).Decode(&response))
 	status, ok := response.ProviderPools["github:github.com:user:7"]
 	require.True(ok)
@@ -9921,7 +9928,7 @@ func TestAPIRateLimitsRollsExpiredTrackerBeforeResponse(t *testing.T) {
 	New(database, syncer, nil, "/", nil, ServerOptions{}).ServeHTTP(recorder, request)
 	require.Equal(http.StatusOK, recorder.Code)
 
-	var response rateLimitsResponse
+	var response itemapi.RateLimitsResponse
 	require.NoError(json.NewDecoder(recorder.Body).Decode(&response))
 	status, ok := response.ProviderPools["github.com"]
 	require.True(ok)
@@ -9962,7 +9969,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
 
-	var before rateLimitsResponse
+	var before itemapi.RateLimitsResponse
 	err = json.NewDecoder(resp.Body).Decode(&before)
 	require.NoError(err)
 
@@ -9981,7 +9988,7 @@ func TestAPISyncPRIncrementsRequestCount(t *testing.T) {
 	defer resp2.Body.Close()
 	assert.Equal(200, resp2.StatusCode)
 
-	var after rateLimitsResponse
+	var after itemapi.RateLimitsResponse
 	err = json.NewDecoder(resp2.Body).Decode(&after)
 	require.NoError(err)
 
@@ -10024,7 +10031,7 @@ func TestAPIRateLimitsWithBudget(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
 
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
@@ -10074,7 +10081,7 @@ func TestAPIRateLimitsResetExpiredBudgetWindow(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
 
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
@@ -10119,7 +10126,7 @@ func TestAPIRateLimitsUsesSafeIdentityKeyAndResolvedPrincipalLabel(t *testing.T)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
 	require.Len(body.ProviderPools, 1)
 	for key, status := range body.ProviderPools {
@@ -10152,7 +10159,7 @@ func TestAPIRateLimitsIncludesWriteOnlyGraphQLState(t *testing.T) {
 	resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
 	require.NoError(err)
 	defer resp.Body.Close()
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
 	status := body.ProviderPools["github:github.com:user:123"]
 	assert.True(status.GraphQL.Known)
@@ -10201,7 +10208,7 @@ func TestAPIRateLimitsWithGQL(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
 
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
@@ -10276,13 +10283,13 @@ func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	fetch := func() rateLimitsResponse {
+	fetch := func() itemapi.RateLimitsResponse {
 		resp, err := http.Get(ts.URL + "/api/v1/rate-limits")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 		assert.Equal(200, resp.StatusCode)
 
-		var body rateLimitsResponse
+		var body itemapi.RateLimitsResponse
 		err = json.NewDecoder(resp.Body).Decode(&body)
 		require.NoError(t, err)
 		return body
@@ -10295,11 +10302,11 @@ func TestAPIRateLimitsReadsLocalStateWithoutRefreshingGitHubRateLimit(t *testing
 	assert.Equal(0, user.REST.Requests)
 	assert.Equal(3000, user.REST.Remaining)
 	assert.Equal(5000, user.REST.Limit)
-	assert.Equal(formatUTCRFC3339(localRestReset), user.REST.ResetAt)
+	assert.Equal(itemapi.FormatUTCRFC3339(localRestReset), user.REST.ResetAt)
 	assert.True(user.REST.Known)
 	assert.Equal(4000, user.GraphQL.Remaining)
 	assert.Equal(5000, user.GraphQL.Limit)
-	assert.Equal(formatUTCRFC3339(localGQLReset), user.GraphQL.ResetAt)
+	assert.Equal(itemapi.FormatUTCRFC3339(localGQLReset), user.GraphQL.ResetAt)
 	assert.True(user.GraphQL.Known)
 
 	_ = fetch()
@@ -10335,7 +10342,7 @@ func TestAPIRateLimitsGQLDefaultsUnknown(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
 
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
@@ -10394,7 +10401,7 @@ func TestAPIRateLimitsMultiHostMixed(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
 
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
@@ -10452,7 +10459,7 @@ func TestAPIRateLimitsScopesSameHostByProvider(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
 
-	var body rateLimitsResponse
+	var body itemapi.RateLimitsResponse
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	require.NoError(t, err)
 
@@ -10680,7 +10687,7 @@ func TestAPIGetRepoCommitDiff(t *testing.T) {
 	defer resp.Body.Close()
 
 	require.Equal(http.StatusOK, resp.StatusCode)
-	var body diffResponse
+	var body itemapi.DiffResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
 	require.Len(body.Files, 1)
 	assert.False(body.Stale)
@@ -10763,9 +10770,9 @@ func TestAPIListActivity(t *testing.T) {
 	)
 	require.Equal(http.StatusOK, collapsed.Code)
 	var collapsedBody struct {
-		Items        []activityItemResponse    `json:"items"`
-		ItemActivity []activitySubjectResponse `json:"item_activity"`
-		EventCursor  string                    `json:"event_cursor"`
+		Items        []itemapi.ActivityItemResponse    `json:"items"`
+		ItemActivity []itemapi.ActivitySubjectResponse `json:"item_activity"`
+		EventCursor  string                            `json:"event_cursor"`
 	}
 	require.NoError(json.NewDecoder(collapsed.Body).Decode(&collapsedBody))
 	assert.Empty(collapsedBody.Items, "collapsed projection must omit pull request child events")
@@ -10784,9 +10791,9 @@ func TestAPIListActivity(t *testing.T) {
 
 	require.Equal(http.StatusOK, delta.Code)
 	var deltaBody struct {
-		Items        []activityItemResponse    `json:"items"`
-		ItemActivity []activitySubjectResponse `json:"item_activity"`
-		EventCursor  string                    `json:"event_cursor"`
+		Items        []itemapi.ActivityItemResponse    `json:"items"`
+		ItemActivity []itemapi.ActivitySubjectResponse `json:"item_activity"`
+		EventCursor  string                            `json:"event_cursor"`
 	}
 	require.NoError(json.NewDecoder(delta.Body).Decode(&deltaBody))
 	assert.Empty(deltaBody.Items)
@@ -10803,7 +10810,7 @@ func TestAPIListActivity(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusOK, thread.Code)
-	var threadBody activityResponse
+	var threadBody itemapi.ActivityResponse
 	require.NoError(json.NewDecoder(thread.Body).Decode(&threadBody))
 	require.Len(threadBody.Items, 2)
 	assert.Empty(threadBody.ItemActivity)
@@ -10819,7 +10826,7 @@ func TestAPIListActivity(t *testing.T) {
 		nil,
 	)
 	require.Equal(http.StatusOK, assignedThread.Code)
-	var assignedThreadBody activityResponse
+	var assignedThreadBody itemapi.ActivityResponse
 	require.NoError(json.NewDecoder(assignedThread.Body).Decode(&assignedThreadBody))
 	assert.Empty(assignedThreadBody.Items)
 
@@ -10833,7 +10840,7 @@ func TestAPIListActivity(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusOK, filteredThread.Code)
-	var filteredThreadBody activityResponse
+	var filteredThreadBody itemapi.ActivityResponse
 	require.NoError(json.NewDecoder(filteredThread.Body).Decode(&filteredThreadBody))
 	require.Len(filteredThreadBody.Items, 1)
 	assert.Equal("comment", filteredThreadBody.Items[0].ActivityType)
@@ -10891,7 +10898,7 @@ func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusOK, rr.Code)
-	var body activityResponse
+	var body itemapi.ActivityResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.Len(body.ItemActivity, 10)
 	assert.True(body.ItemActivityCapped)
@@ -10946,7 +10953,7 @@ func TestAPIListCollapsedActivitySearchLimitCountsDistinctParents(t *testing.T) 
 		nil)
 
 	require.Equal(http.StatusOK, rr.Code)
-	var body activityResponse
+	var body itemapi.ActivityResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.Len(body.ItemActivity, 2)
 	assert.Equal([]int{2, 1}, []int{body.ItemActivity[0].ItemNumber, body.ItemActivity[1].ItemNumber})
@@ -10989,14 +10996,14 @@ func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testi
 
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
-		Items        []activityItemResponse    `json:"items"`
-		ItemActivity []activitySubjectResponse `json:"item_activity"`
+		Items        []itemapi.ActivityItemResponse    `json:"items"`
+		ItemActivity []itemapi.ActivitySubjectResponse `json:"item_activity"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	assert.Empty(body.Items)
 	require.Len(body.ItemActivity, 1)
 	assert.Equal(71, body.ItemActivity[0].ItemNumber)
-	assert.Equal(formatUTCRFC3339(notificationAt), body.ItemActivity[0].ActivityAt)
+	assert.Equal(itemapi.FormatUTCRFC3339(notificationAt), body.ItemActivity[0].ActivityAt)
 
 	filtered := testutil.DoJSON(
 		t,
@@ -11007,8 +11014,8 @@ func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testi
 
 	require.Equal(http.StatusOK, filtered.Code)
 	var filteredBody struct {
-		Items        []activityItemResponse    `json:"items"`
-		ItemActivity []activitySubjectResponse `json:"item_activity"`
+		Items        []itemapi.ActivityItemResponse    `json:"items"`
+		ItemActivity []itemapi.ActivitySubjectResponse `json:"item_activity"`
 	}
 	require.NoError(json.NewDecoder(filtered.Body).Decode(&filteredBody))
 	assert.Empty(filteredBody.Items)
@@ -11048,8 +11055,8 @@ func TestAPIListCollapsedActivityRetainsVisibleEventsForBotParents(t *testing.T)
 
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
-		Items        []activityItemResponse    `json:"items"`
-		ItemActivity []activitySubjectResponse `json:"item_activity"`
+		Items        []itemapi.ActivityItemResponse    `json:"items"`
+		ItemActivity []itemapi.ActivitySubjectResponse `json:"item_activity"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.Len(body.Items, 1)
@@ -11097,8 +11104,8 @@ func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *te
 
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
-		Items        []activityItemResponse    `json:"items"`
-		ItemActivity []activitySubjectResponse `json:"item_activity"`
+		Items        []itemapi.ActivityItemResponse    `json:"items"`
+		ItemActivity []itemapi.ActivitySubjectResponse `json:"item_activity"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	assert.Empty(body.Items, "the comment must remain hidden by the event filter")
@@ -11106,7 +11113,7 @@ func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *te
 	assert.Equal(77, body.ItemActivity[0].ItemNumber)
 	assert.Equal("pr", body.ItemActivity[0].ItemType)
 	assert.Equal("Old pull with recent hidden activity", body.ItemActivity[0].ItemTitle)
-	assert.Equal(formatUTCRFC3339(activityAt), body.ItemActivity[0].ActivityAt)
+	assert.Equal(itemapi.FormatUTCRFC3339(activityAt), body.ItemActivity[0].ActivityAt)
 	require.NotNil(body.ItemActivity[0].Workspace)
 	assert.Equal("ws-hidden-parent", body.ItemActivity[0].Workspace.ID)
 }
@@ -11169,8 +11176,8 @@ func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t
 
 			require.Equal(http.StatusOK, rr.Code)
 			var body struct {
-				Items        []activityItemResponse    `json:"items"`
-				ItemActivity []activitySubjectResponse `json:"item_activity"`
+				Items        []itemapi.ActivityItemResponse    `json:"items"`
+				ItemActivity []itemapi.ActivitySubjectResponse `json:"item_activity"`
 			}
 			require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 			require.Empty(body.Items, "the matching event is behind the incremental cursor")
@@ -11209,7 +11216,7 @@ func TestAPIListActivitySeparatesEventAndParentSnapshotCaps(t *testing.T) {
 		       'Parent ' || n, 'testuser', 'open', ?, ?, ?
 		FROM numbers
 		WHERE n <= ?`,
-		repoID, now, now, now, activitySafetyCap+1,
+		repoID, now, now, now, itemapi.ActivitySafetyCap+1,
 	)
 	require.NoError(err)
 
@@ -11223,14 +11230,14 @@ func TestAPIListActivitySeparatesEventAndParentSnapshotCaps(t *testing.T) {
 
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
-		Items              []activityItemResponse    `json:"items"`
-		ItemActivity       []activitySubjectResponse `json:"item_activity"`
-		Capped             bool                      `json:"capped"`
-		ItemActivityCapped bool                      `json:"item_activity_capped"`
+		Items              []itemapi.ActivityItemResponse    `json:"items"`
+		ItemActivity       []itemapi.ActivitySubjectResponse `json:"item_activity"`
+		Capped             bool                              `json:"capped"`
+		ItemActivityCapped bool                              `json:"item_activity_capped"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	assert.Empty(body.Items)
-	require.Len(body.ItemActivity, activitySafetyCap)
+	require.Len(body.ItemActivity, itemapi.ActivitySafetyCap)
 	assert.False(body.Capped, "parent snapshot overflow must not report event overflow")
 	assert.True(body.ItemActivityCapped)
 }
@@ -11266,15 +11273,15 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 			eventlessKey: subject(eventlessKey, "Another unrelated title"),
 		},
 	}
-	srv := &Server{
+	srv := wiredServer(&Server{
 		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
 		cfg: &config.Config{Activity: config.Activity{
 			UseWorkspaceActivityForRecency: true,
 		}},
-	}
+	})
 
-	got := srv.workspaceActivityResponse(
-		&listActivityInput{},
+	got := srv.itemapi.WorkspaceActivityResponse(
+		&itemapi.ListActivityInput{},
 		db.ListActivityOpts{Search: "reviewer", Since: &since},
 		snapshot,
 		[]db.ActivityItem{{
@@ -11321,15 +11328,15 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			eventlessKey: subject(eventlessKey),
 		},
 	}
-	srv := &Server{
+	srv := wiredServer(&Server{
 		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
 		cfg: &config.Config{Activity: config.Activity{
 			UseWorkspaceActivityForRecency: true,
 		}},
-	}
+	})
 
-	byAuthor := srv.workspaceActivityResponse(
-		&listActivityInput{},
+	byAuthor := srv.itemapi.WorkspaceActivityResponse(
+		&itemapi.ListActivityInput{},
 		db.ListActivityOpts{Author: "ALICE", Since: &since},
 		snapshot,
 		[]db.ActivityItem{{
@@ -11345,8 +11352,8 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 		byAuthor[1].ItemNumber,
 	})
 
-	byCommenter := srv.workspaceActivityResponse(
-		&listActivityInput{},
+	byCommenter := srv.itemapi.WorkspaceActivityResponse(
+		&itemapi.ListActivityInput{},
 		db.ListActivityOpts{Author: "reviewer", Since: &since},
 		snapshot,
 		[]db.ActivityItem{{
@@ -11392,7 +11399,7 @@ func TestMergeWorkspaceActivityAuthorsDeduplicatesCaseInsensitively(t *testing.T
 		snapshot.Subjects[item.Subject.Key] = item
 	}
 
-	got := mergeWorkspaceActivityAuthors(
+	got := itemapi.MergeWorkspaceActivityAuthors(
 		[]string{"Provider Owner", "Workspace Owner"},
 		snapshot,
 		db.ListActivityAuthorsOpts{
@@ -11427,24 +11434,24 @@ func TestWorkspaceActivityProjectionUsesHubPolicy(t *testing.T) {
 			},
 		},
 	}
-	srv := &Server{
+	srv := wiredServer(&Server{
 		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
 		cfg: &config.Config{Activity: config.Activity{
 			UseWorkspaceActivityForRecency: true,
 		}},
-	}
+	})
 
-	require.Empty(srv.workspaceActivityResponse(
-		&listActivityInput{}, db.ListActivityOpts{}, snapshot, nil, false,
+	require.Empty(srv.itemapi.WorkspaceActivityResponse(
+		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, false,
 	))
-	require.Equal([]string{"provider author"}, srv.activityAuthorsWithWorkspace(
+	require.Equal([]string{"provider author"}, srv.activityapi.ActivityAuthorsWithWorkspace(
 		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, false,
 	))
 
-	require.Len(srv.workspaceActivityResponse(
-		&listActivityInput{}, db.ListActivityOpts{}, snapshot, nil, true,
+	require.Len(srv.itemapi.WorkspaceActivityResponse(
+		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, true,
 	), 1)
-	require.ElementsMatch([]string{"provider author", "workspace owner"}, srv.activityAuthorsWithWorkspace(
+	require.ElementsMatch([]string{"provider author", "workspace owner"}, srv.activityapi.ActivityAuthorsWithWorkspace(
 		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, true,
 	))
 }
@@ -11493,7 +11500,7 @@ func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusOK, feed.Code)
-	var feedBody activityResponse
+	var feedBody itemapi.ActivityResponse
 	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
 	require.Len(feedBody.Items, 3)
 	for _, item := range feedBody.Items {
@@ -11508,7 +11515,7 @@ func TestAPIListActivityFiltersByAuthorAndListsScopedCandidates(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusOK, commenterFeed.Code)
-	var commenterFeedBody activityResponse
+	var commenterFeedBody itemapi.ActivityResponse
 	require.NoError(json.Unmarshal(commenterFeed.Body.Bytes(), &commenterFeedBody))
 	assert.Empty(commenterFeedBody.Items)
 
@@ -11568,7 +11575,7 @@ func TestAPIListActivityReturnsParentRecencyWhenCommitEventsAreFiltered(t *testi
 		nil)
 
 	require.Equal(http.StatusOK, rr.Code)
-	var body activityResponse
+	var body itemapi.ActivityResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
 	require.Len(body.Items, 1)
 	require.Equal("comment", body.Items[0].ActivityType)
@@ -11615,7 +11622,7 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 		"/api/v1/activity?since="+url.QueryEscape(since), nil)
 
 	require.Equal(http.StatusOK, feed.Code)
-	var feedBody activityResponse
+	var feedBody itemapi.ActivityResponse
 	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
 	require.Len(feedBody.Items, 1)
 	assert.Equal("gadget", feedBody.Items[0].RepoName)
@@ -11661,7 +11668,7 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 		withSeedPRAuthor("Item Owner"),
 		withSeedPRTimes(base, base, base),
 	)
-	untrackedEvents := make([]db.MREvent, activitySafetyCap+1)
+	untrackedEvents := make([]db.MREvent, itemapi.ActivitySafetyCap+1)
 	for i := range untrackedEvents {
 		untrackedEvents[i] = db.MREvent{
 			MergeRequestID: untrackedPRID,
@@ -11682,7 +11689,7 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusOK, feed.Code)
-	var feedBody activityResponse
+	var feedBody itemapi.ActivityResponse
 	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
 	require.Len(feedBody.Items, 2)
 	for _, item := range feedBody.Items {
@@ -11722,7 +11729,7 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 		withSeedPRTitle("Unrelated noisy parent"),
 		withSeedPRTimes(base, base, base),
 	)
-	noisyEvents := make([]db.MREvent, activitySafetyCap+1)
+	noisyEvents := make([]db.MREvent, itemapi.ActivitySafetyCap+1)
 	for i := range noisyEvents {
 		noisyEvents[i] = db.MREvent{
 			MergeRequestID: noisyPRID,
@@ -11739,13 +11746,13 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle", nil)
 	require.Equal(http.StatusOK, rr.Code)
 	var body struct {
-		Items              []activityItemResponse    `json:"items"`
-		ItemActivity       []activitySubjectResponse `json:"item_activity"`
-		Capped             bool                      `json:"capped"`
-		ItemActivityCapped bool                      `json:"item_activity_capped"`
+		Items              []itemapi.ActivityItemResponse    `json:"items"`
+		ItemActivity       []itemapi.ActivitySubjectResponse `json:"item_activity"`
+		Capped             bool                              `json:"capped"`
+		ItemActivityCapped bool                              `json:"item_activity_capped"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
-	require.Len(body.Items, activitySafetyCap)
+	require.Len(body.Items, itemapi.ActivitySafetyCap)
 	assert.True(body.Capped)
 	assert.True(body.ItemActivityCapped,
 		"parents matched only through truncated events must be reported as truncated")
@@ -11919,7 +11926,7 @@ func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 	assert.Equal("after1234567890", forcePush["after_sha"])
 	assert.Empty(forcePush["item_type"])
 	assert.Zero(forcePush["item_number"])
-	assert.Equal(formatUTCRFC3339(detectedAt), forcePush["created_at"])
+	assert.Equal(itemapi.FormatUTCRFC3339(detectedAt), forcePush["created_at"])
 
 	commit := body.Items[1]
 	assert.Equal("default_branch_commit", commit["activity_type"])
@@ -11929,7 +11936,7 @@ func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {
 	assert.Equal("author@example.com", commit["author_email"])
 	assert.Equal("Committer Person", commit["committer_name"])
 	assert.Equal("committer@example.com", commit["committer_email"])
-	assert.Equal(formatUTCRFC3339(committedAt), commit["committed_at"])
+	assert.Equal(itemapi.FormatUTCRFC3339(committedAt), commit["committed_at"])
 	assert.Equal("https://github.com/acme/widget/commit/abc123def456abc123def456abc123def456abcd", commit["activity_url"])
 	assert.Empty(commit["item_type"])
 	assert.Zero(commit["item_number"])
@@ -11947,7 +11954,7 @@ func TestAPIListActivityFiltersConfiguredReposByHost(t *testing.T) {
 	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since, nil)
 	require.Equal(http.StatusOK, rr.Code)
-	var body activityResponse
+	var body itemapi.ActivityResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.NotEmpty(body.Items)
 	for _, item := range body.Items {
@@ -12557,7 +12564,7 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	options.DisableWorkspaceEnrichment = len(enableEnrichment) == 0 || !enableEnrichment[0]
 	options.HostCheckAllowLoopbackAnyPort = true
 	if !options.HostCheck.Valid() {
-		options.HostCheck = HostCheckOptions{
+		options.HostCheck = authapi.HostCheckOptions{
 			Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			Allowed: []config.HostKey{{Host: "forge.test", Port: ""}},
 		}
@@ -13008,7 +13015,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 
 	manager := workspace.NewManager(database, filepath.Join(dir, "worktrees"))
 	manager.SetTmuxCommand([]string{script})
-	srv := &Server{workspaces: manager}
+	srv := wiredServer(&Server{workspaces: manager})
 	ctx := context.Background()
 	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
 		ID:              "ws-succeeds",
@@ -13104,7 +13111,7 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 	}}
 	updateResp := testutil.DoJSON(
 		t, srv, http.MethodPut, "/api/v1/settings",
-		updateSettingsRequest{Agents: &agents})
+		spokeapi.UpdateSettingsRequest{Agents: &agents})
 
 	require.Equal(http.StatusOK, updateResp.Code, updateResp.Body.String())
 
@@ -13857,9 +13864,9 @@ func TestServerStartupReapsUnrecordedRuntimeTmuxSessionE2E(t *testing.T) {
 
 	require := require.New(t)
 	assert := assert.New(t)
-	previousStartupCleanupTimeout := startupTmuxCleanupTimeout
-	startupTmuxCleanupTimeout = 10 * time.Second
-	t.Cleanup(func() { startupTmuxCleanupTimeout = previousStartupCleanupTimeout })
+	previousStartupCleanupTimeout := streamapi.StartupTmuxCleanupTimeout
+	streamapi.StartupTmuxCleanupTimeout = 10 * time.Second
+	t.Cleanup(func() { streamapi.StartupTmuxCleanupTimeout = previousStartupCleanupTimeout })
 
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
@@ -16257,9 +16264,9 @@ func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
 
 func readEventMatching(
 	t *testing.T,
-	ch <-chan RecordedEvent,
-	matches func(Event) bool,
-) Event {
+	ch <-chan syncevents.RecordedEvent,
+	matches func(syncevents.Event) bool,
+) syncevents.Event {
 	t.Helper()
 	timeout := time.After(2 * time.Second)
 	for {

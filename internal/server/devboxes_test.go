@@ -62,7 +62,7 @@ func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {
 			connections, err := devbox.OpenConnections(directory)
 			require.NoError(err)
 			t.Cleanup(connections.Close)
-			controller := &Server{options: ServerOptions{Devboxes: connections}}
+			controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}})
 			mux := http.NewServeMux()
 			controller.registerDevboxAPI(humago.New(mux, huma.DefaultConfig("test", "1")))
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/devboxes/compute-a/workspaces/work-a/runtime/sessions", strings.NewReader(body))
@@ -104,7 +104,7 @@ func TestDevboxSnapshotMaintenanceBlocksCreation(t *testing.T) {
 			connections, err := devbox.OpenConnections(directory)
 			require.NoError(err)
 			t.Cleanup(connections.Close)
-			controller := &Server{options: ServerOptions{Devboxes: connections}}
+			controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}})
 			local := fleet.RawSnapshot{NodeID: "controller"}
 			aggregate := fleet.BuildNeutralAggregate(local, controller.devboxSnapshots(t.Context(), time.Second))
 			snapshot := fleet.ProjectForObserver(aggregate, local, fleet.Observer{NodeID: local.NodeID, Role: fleet.RoleHub})
@@ -159,7 +159,7 @@ func TestDevboxTerminalsBypassDefaultHTTPProxy(t *testing.T) {
 	connections, err := devbox.OpenConnections(directory)
 	require.NoError(err)
 	t.Cleanup(connections.Close)
-	controller := &Server{options: ServerOptions{Devboxes: connections}}
+	controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}})
 	mux := http.NewServeMux()
 	controller.registerDevboxTerminalAPI(humago.NewWithPrefix(mux, "/ws/v1", huma.DefaultConfig("test", "1")))
 	server := httptest.NewServer(mux)

@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/syncevents"
 )
 
 // TestSSEContractPinDeliversCachedSyncStatusFrame is a paving wire-level test:
@@ -34,7 +34,7 @@ func TestSSEContractPinDeliversCachedSyncStatusFrame(t *testing.T) {
 	require := require.New(t)
 
 	srv, _ := setupTestServer(t)
-	srv.Hub().Broadcast(server.Event{
+	srv.Hub().Broadcast(syncevents.Event{
 		Type: "sync_status",
 		Data: map[string]bool{"running": false},
 	})

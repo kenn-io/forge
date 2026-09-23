@@ -14,6 +14,8 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/ratelimit"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/operationapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -46,35 +48,35 @@ func TestDeriveOperationAvailability(t *testing.T) {
 		MutationHeadBinding:         true,
 		ReadReviewThreads:           true,
 	}
-	mergePR := operationDescriptor{
-		name:                 operationMergePR,
-		requiredCapabilities: []string{capabilityMergeMutation},
+	mergePR := operationapi.OperationDescriptor{
+		Name:                 operationapi.OperationMergePR,
+		RequiredCapabilities: []string{itemapi.CapabilityMergeMutation},
 	}
-	submitReview := operationDescriptor{
-		name:                 operationSubmitReview,
-		requiredCapabilities: []string{capabilityReviewMutation},
+	submitReview := operationapi.OperationDescriptor{
+		Name:                 operationapi.OperationSubmitReview,
+		RequiredCapabilities: []string{itemapi.CapabilityReviewMutation},
 	}
-	addLabel := operationDescriptor{
-		name:                 operationAddLabel,
-		requiredCapabilities: []string{capabilityReadLabels, capabilityLabelMutation},
+	addLabel := operationapi.OperationDescriptor{
+		Name:                 operationapi.OperationAddLabel,
+		RequiredCapabilities: []string{itemapi.CapabilityReadLabels, itemapi.CapabilityLabelMutation},
 	}
 	resetAt := time.Date(2026, 5, 19, 14, 35, 0, 0, time.UTC)
-	limitedRate := rateLimitAvailability{
-		limited: true,
-		reason:  "github.com rate-limited",
-		retryAt: resetAt.UTC().Format(time.RFC3339),
+	limitedRate := operationapi.RateLimitAvailability{
+		Limited: true,
+		Reason:  "github.com rate-limited",
+		RetryAt: resetAt.UTC().Format(time.RFC3339),
 	}
 	repoCanMerge := db.Repo{ViewerCanMerge: true}
 	repoCannotMerge := db.Repo{ViewerCanMerge: false}
 
 	tests := []struct {
 		name      string
-		op        operationDescriptor
+		op        operationapi.OperationDescriptor
 		caps      httpapi.ProviderCapabilitiesResponse
 		repo      db.Repo
-		rate      rateLimitAvailability
-		writeCred writeCredentialGate
-		opContext operationAvailabilityContext
+		rate      operationapi.RateLimitAvailability
+		writeCred operationapi.WriteCredentialGate
+		opContext operationapi.OperationAvailabilityContext
 		expected  httpapi.OperationAvailability
 	}{
 		{
@@ -86,7 +88,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 		},
 		{
 			name: "dispatch_workflow is unavailable without workflow_dispatch",
-			op:   descDispatchWorkflow,
+			op:   operationapi.DescDispatchWorkflow,
 			caps: func() httpapi.ProviderCapabilitiesResponse {
 				c := allCaps
 				c.WorkflowDispatch = false
@@ -94,14 +96,14 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			}(),
 			repo: repoCanMerge,
 			expected: httpapi.OperationAvailability{
-				Code:               availabilityCodeUnsupportedCapability,
+				Code:               operationapi.AvailabilityCodeUnsupportedCapability,
 				UnavailableReason:  "Provider does not support workflow_dispatch",
-				RequiredCapability: capabilityWorkflowDispatch,
+				RequiredCapability: itemapi.CapabilityWorkflowDispatch,
 			},
 		},
 		{
 			name: "dispatch_workflow is unavailable without read_workflows",
-			op:   descDispatchWorkflow,
+			op:   operationapi.DescDispatchWorkflow,
 			caps: func() httpapi.ProviderCapabilitiesResponse {
 				c := allCaps
 				c.ReadWorkflows = false
@@ -109,43 +111,43 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			}(),
 			repo: repoCanMerge,
 			expected: httpapi.OperationAvailability{
-				Code:               availabilityCodeUnsupportedCapability,
+				Code:               operationapi.AvailabilityCodeUnsupportedCapability,
 				UnavailableReason:  "Provider does not support read_workflows",
 				RequiredCapability: "read_workflows",
 			},
 		},
 		{
 			name: "dispatch_workflow is unavailable without a write credential",
-			op:   descDispatchWorkflow,
+			op:   operationapi.DescDispatchWorkflow,
 			caps: allCaps,
 			repo: repoCanMerge,
-			writeCred: writeCredentialGate{
-				code:   availabilityCodeMissingWriteCredential,
-				reason: "No user credential for writes on github.com",
+			writeCred: operationapi.WriteCredentialGate{
+				Code:   operationapi.AvailabilityCodeMissingWriteCredential,
+				Reason: "No user credential for writes on github.com",
 			},
 			expected: httpapi.OperationAvailability{
-				Code:              availabilityCodeMissingWriteCredential,
+				Code:              operationapi.AvailabilityCodeMissingWriteCredential,
 				UnavailableReason: "No user credential for writes on github.com",
 			},
 		},
 		{
 			name: "dispatch_workflow is unavailable during a REST rate-limit window",
-			op:   descDispatchWorkflow,
+			op:   operationapi.DescDispatchWorkflow,
 			caps: allCaps,
 			repo: repoCanMerge,
-			rate: operationRateLimitForBuckets(
-				descDispatchWorkflow.rateLimitBuckets(),
-				map[apiBucket]rateLimitAvailability{apiBucketREST: limitedRate},
+			rate: operationapi.OperationRateLimitForBuckets(
+				operationapi.DescDispatchWorkflow.RateLimitBuckets(),
+				map[operationapi.ApiBucket]operationapi.RateLimitAvailability{operationapi.ApiBucketREST: limitedRate},
 			),
 			expected: httpapi.OperationAvailability{
-				Code:              availabilityCodeRateLimited,
+				Code:              operationapi.AvailabilityCodeRateLimited,
 				UnavailableReason: "github.com rate-limited",
 				RetryAt:           resetAt.UTC().Format(time.RFC3339),
 			},
 		},
 		{
 			name:     "dispatch_workflow is available when all gates pass",
-			op:       descDispatchWorkflow,
+			op:       operationapi.DescDispatchWorkflow,
 			caps:     allCaps,
 			repo:     repoCanMerge,
 			expected: httpapi.OperationAvailability{Available: true},
@@ -160,9 +162,9 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			}(),
 			repo: repoCanMerge,
 			expected: httpapi.OperationAvailability{
-				Code:               availabilityCodeUnsupportedCapability,
+				Code:               operationapi.AvailabilityCodeUnsupportedCapability,
 				UnavailableReason:  "Provider does not support merge_mutation",
-				RequiredCapability: capabilityMergeMutation,
+				RequiredCapability: itemapi.CapabilityMergeMutation,
 			},
 		},
 		{
@@ -176,9 +178,9 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			}(),
 			repo: repoCanMerge,
 			expected: httpapi.OperationAvailability{
-				Code:               availabilityCodeUnsupportedCapability,
+				Code:               operationapi.AvailabilityCodeUnsupportedCapability,
 				UnavailableReason:  "Provider does not support read_labels",
-				RequiredCapability: capabilityReadLabels,
+				RequiredCapability: itemapi.CapabilityReadLabels,
 			},
 		},
 		{
@@ -187,13 +189,13 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			caps: allCaps,
 			repo: repoCannotMerge,
 			expected: httpapi.OperationAvailability{
-				Code:              availabilityCodeViewerCannotMerge,
+				Code:              operationapi.AvailabilityCodeViewerCannotMerge,
 				UnavailableReason: "You do not have permission to merge in this repository",
 			},
 		},
 		{
 			name:     "viewer_can_merge gate is scoped to merge_pr only",
-			op:       operationDescriptor{name: operationClosePR, requiredCapabilities: []string{capabilityStateMutation}},
+			op:       operationapi.OperationDescriptor{Name: operationapi.OperationClosePR, RequiredCapabilities: []string{itemapi.CapabilityStateMutation}},
 			caps:     allCaps,
 			repo:     repoCannotMerge,
 			expected: httpapi.OperationAvailability{Available: true},
@@ -203,15 +205,15 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			op:        submitReview,
 			caps:      allCaps,
 			repo:      repoCanMerge,
-			opContext: operationAvailabilityContext{selfApproval: true},
+			opContext: operationapi.OperationAvailabilityContext{SelfApproval: true},
 			expected: httpapi.OperationAvailability{
-				Code:              availabilityCodeSelfApproval,
+				Code:              operationapi.AvailabilityCodeSelfApproval,
 				UnavailableReason: "You cannot approve your own pull request",
 			},
 		},
 		{
 			name: "review draft operation uses draft capability without requiring submitted reviews",
-			op:   descReviewDraft,
+			op:   operationapi.DescReviewDraft,
 			caps: func() httpapi.ProviderCapabilitiesResponse {
 				c := allCaps
 				c.ReviewMutation = false
@@ -223,14 +225,14 @@ func TestDeriveOperationAvailability(t *testing.T) {
 		},
 		{
 			name:     "review suggestion operation requires stored thread and head binding prerequisites",
-			op:       descApplyReviewSuggestion,
+			op:       operationapi.DescApplyReviewSuggestion,
 			caps:     allCaps,
 			repo:     repoCanMerge,
 			expected: httpapi.OperationAvailability{Available: true},
 		},
 		{
 			name: "first missing review suggestion prerequisite wins",
-			op:   descApplyReviewSuggestion,
+			op:   operationapi.DescApplyReviewSuggestion,
 			caps: func() httpapi.ProviderCapabilitiesResponse {
 				c := allCaps
 				c.MutationHeadBinding = false
@@ -239,9 +241,9 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			}(),
 			repo: repoCanMerge,
 			expected: httpapi.OperationAvailability{
-				Code:               availabilityCodeUnsupportedCapability,
+				Code:               operationapi.AvailabilityCodeUnsupportedCapability,
 				UnavailableReason:  "Provider does not support mutation_head_binding",
-				RequiredCapability: capabilityMutationHeadBinding,
+				RequiredCapability: itemapi.CapabilityMutationHeadBinding,
 			},
 		},
 		{
@@ -251,7 +253,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			repo: repoCanMerge,
 			rate: limitedRate,
 			expected: httpapi.OperationAvailability{
-				Code:              availabilityCodeRateLimited,
+				Code:              operationapi.AvailabilityCodeRateLimited,
 				UnavailableReason: "github.com rate-limited",
 				RetryAt:           resetAt.UTC().Format(time.RFC3339),
 			},
@@ -267,9 +269,9 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			repo: repoCanMerge,
 			rate: limitedRate,
 			expected: httpapi.OperationAvailability{
-				Code:               availabilityCodeUnsupportedCapability,
+				Code:               operationapi.AvailabilityCodeUnsupportedCapability,
 				UnavailableReason:  "Provider does not support merge_mutation",
-				RequiredCapability: capabilityMergeMutation,
+				RequiredCapability: itemapi.CapabilityMergeMutation,
 			},
 		},
 		{
@@ -277,12 +279,12 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			op:   mergePR,
 			caps: allCaps,
 			repo: repoCanMerge,
-			writeCred: writeCredentialGate{
-				code:   availabilityCodeMissingWriteCredential,
-				reason: "No user credential for writes on github.com",
+			writeCred: operationapi.WriteCredentialGate{
+				Code:   operationapi.AvailabilityCodeMissingWriteCredential,
+				Reason: "No user credential for writes on github.com",
 			},
 			expected: httpapi.OperationAvailability{
-				Code:              availabilityCodeMissingWriteCredential,
+				Code:              operationapi.AvailabilityCodeMissingWriteCredential,
 				UnavailableReason: "No user credential for writes on github.com",
 			},
 		},
@@ -292,12 +294,12 @@ func TestDeriveOperationAvailability(t *testing.T) {
 			caps: allCaps,
 			repo: repoCannotMerge,
 			rate: limitedRate,
-			writeCred: writeCredentialGate{
-				code:   availabilityCodeWriteCredentialError,
-				reason: "Resolving the write credential for github.com failed",
+			writeCred: operationapi.WriteCredentialGate{
+				Code:   operationapi.AvailabilityCodeWriteCredentialError,
+				Reason: "Resolving the write credential for github.com failed",
 			},
 			expected: httpapi.OperationAvailability{
-				Code:              availabilityCodeWriteCredentialError,
+				Code:              operationapi.AvailabilityCodeWriteCredentialError,
 				UnavailableReason: "Resolving the write credential for github.com failed",
 			},
 		},
@@ -305,7 +307,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := deriveOperationAvailabilityWithContext(
+			got := operationapi.DeriveOperationAvailabilityWithContext(
 				tc.op, tc.caps, tc.repo, tc.rate, tc.writeCred, tc.opContext,
 			)
 			require.Equal(t, tc.expected, got)
@@ -315,44 +317,44 @@ func TestDeriveOperationAvailability(t *testing.T) {
 
 func TestOperationRateLimitChecksAllBuckets(t *testing.T) {
 	resetAt := time.Date(2026, 5, 19, 14, 35, 0, 0, time.UTC)
-	restRate := rateLimitAvailability{
-		limited: true,
-		reason:  "github.com REST rate-limited",
-		retryAt: resetAt.UTC().Format(time.RFC3339),
+	restRate := operationapi.RateLimitAvailability{
+		Limited: true,
+		Reason:  "github.com REST rate-limited",
+		RetryAt: resetAt.UTC().Format(time.RFC3339),
 	}
-	graphQLRate := rateLimitAvailability{
-		limited: true,
-		reason:  "github.com GraphQL rate-limited",
-		retryAt: resetAt.Add(time.Minute).UTC().Format(time.RFC3339),
+	graphQLRate := operationapi.RateLimitAvailability{
+		Limited: true,
+		Reason:  "github.com GraphQL rate-limited",
+		RetryAt: resetAt.Add(time.Minute).UTC().Format(time.RFC3339),
 	}
-	multiBucketOp := operationDescriptor{
-		bucket:       apiBucketREST,
-		extraBuckets: []apiBucket{apiBucketGraphQL},
+	multiBucketOp := operationapi.OperationDescriptor{
+		Bucket:       operationapi.ApiBucketREST,
+		ExtraBuckets: []operationapi.ApiBucket{operationapi.ApiBucketGraphQL},
 	}
 
-	assert.Equal(t, restRate, operationRateLimitForBuckets(multiBucketOp.rateLimitBuckets(), map[apiBucket]rateLimitAvailability{
-		apiBucketREST:    restRate,
-		apiBucketGraphQL: graphQLRate,
+	assert.Equal(t, restRate, operationapi.OperationRateLimitForBuckets(multiBucketOp.RateLimitBuckets(), map[operationapi.ApiBucket]operationapi.RateLimitAvailability{
+		operationapi.ApiBucketREST:    restRate,
+		operationapi.ApiBucketGraphQL: graphQLRate,
 	}))
-	assert.Equal(t, graphQLRate, operationRateLimitForBuckets(multiBucketOp.rateLimitBuckets(), map[apiBucket]rateLimitAvailability{
-		apiBucketGraphQL: graphQLRate,
+	assert.Equal(t, graphQLRate, operationapi.OperationRateLimitForBuckets(multiBucketOp.RateLimitBuckets(), map[operationapi.ApiBucket]operationapi.RateLimitAvailability{
+		operationapi.ApiBucketGraphQL: graphQLRate,
 	}))
-	assert.Equal(t, []apiBucket{apiBucketREST}, descApplyReviewSuggestion.rateLimitBuckets())
+	assert.Equal(t, []operationapi.ApiBucket{operationapi.ApiBucketREST}, operationapi.DescApplyReviewSuggestion.RateLimitBuckets())
 }
 
 func TestFormatRateLimit(t *testing.T) {
 	assert := assert.New(t)
 
 	resetAt := time.Date(2026, 5, 19, 14, 35, 0, 0, time.UTC)
-	got := formatRateLimit("github.com", &resetAt)
-	assert.True(got.limited)
-	assert.Equal("github.com rate-limited", got.reason)
-	assert.Equal(resetAt.UTC().Format(time.RFC3339), got.retryAt)
+	got := operationapi.FormatRateLimit("github.com", &resetAt)
+	assert.True(got.Limited)
+	assert.Equal("github.com rate-limited", got.Reason)
+	assert.Equal(resetAt.UTC().Format(time.RFC3339), got.RetryAt)
 
-	unknown := formatRateLimit("ghe.example.com", nil)
-	assert.True(unknown.limited)
-	assert.Equal("ghe.example.com rate-limited", unknown.reason)
-	assert.Empty(unknown.retryAt)
+	unknown := operationapi.FormatRateLimit("ghe.example.com", nil)
+	assert.True(unknown.Limited)
+	assert.Equal("ghe.example.com rate-limited", unknown.Reason)
+	assert.Empty(unknown.RetryAt)
 }
 
 // newServerWithRateTracker builds a Server whose syncer is wired
@@ -391,7 +393,7 @@ func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
 
-	var resp repoResponse
+	var resp itemapi.RepoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
 	merge := resp.Operations.MergePR
@@ -418,12 +420,12 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
 
-	var resp repoResponse
+	var resp itemapi.RepoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
 	merge := resp.Operations.MergePR
 	assert.False(merge.Available)
-	assert.Equal(availabilityCodeRateLimited, merge.Code)
+	assert.Equal(operationapi.AvailabilityCodeRateLimited, merge.Code)
 	assert.Contains(merge.UnavailableReason, "rate-limited")
 	assert.NotEmpty(merge.RetryAt)
 }
@@ -471,7 +473,7 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
 
-	var resp repoResponse
+	var resp itemapi.RepoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
 	merge := resp.Operations.MergePR
@@ -513,12 +515,12 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 
 		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 		require.Equal(http.StatusOK, rr.Code)
-		var resp repoResponse
+		var resp itemapi.RepoResponse
 		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
 		suggestion := resp.Operations.ApplyReviewSuggestion
 		assert.False(suggestion.Available)
-		assert.Equal(availabilityCodeRateLimited, suggestion.Code)
+		assert.Equal(operationapi.AvailabilityCodeRateLimited, suggestion.Code)
 	})
 
 	t.Run("provider without bucket hook keeps descriptor default", func(t *testing.T) {
@@ -578,7 +580,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 			"/api/v1/host/gitlab.example.com/repo/gitlab/group/project", nil)
 
 		require.Equal(http.StatusOK, rr.Code)
-		var resp repoResponse
+		var resp itemapi.RepoResponse
 		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
 		suggestion := resp.Operations.ApplyReviewSuggestion
@@ -642,12 +644,12 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 			"/api/v1/host/gitlab.example.com/repo/gitlab/group/project", nil)
 
 		require.Equal(http.StatusOK, rr.Code)
-		var resp repoResponse
+		var resp itemapi.RepoResponse
 		require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
 		suggestion := resp.Operations.ApplyReviewSuggestion
 		assert.False(suggestion.Available)
-		assert.Equal(availabilityCodeRateLimited, suggestion.Code)
+		assert.Equal(operationapi.AvailabilityCodeRateLimited, suggestion.Code)
 		assert.Contains(suggestion.UnavailableReason, "invalid rate-limit buckets")
 	}
 
@@ -700,7 +702,7 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
-	var resp repoResponse
+	var resp itemapi.RepoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Operations.MergePR.Available,
 		"app budget exhaustion must not disable PAT-backed writes")
@@ -711,11 +713,11 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
-	resp = repoResponse{}
+	resp = itemapi.RepoResponse{}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	merge := resp.Operations.MergePR
 	assert.False(merge.Available, "PAT exhaustion must disable writes")
-	assert.Equal(availabilityCodeRateLimited, merge.Code)
+	assert.Equal(operationapi.AvailabilityCodeRateLimited, merge.Code)
 	assert.True(resp.Operations.MarkReadyForReview.Available,
 		"REST write exhaustion must not gate the GraphQL-backed mutation")
 	assert.True(resp.Operations.MarkDraft.Available,
@@ -727,15 +729,15 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
-	resp = repoResponse{}
+	resp = itemapi.RepoResponse{}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Operations.MergePR.Available)
 	rfr := resp.Operations.MarkReadyForReview
 	assert.False(rfr.Available, "write GraphQL exhaustion must gate ready-for-review")
-	assert.Equal(availabilityCodeRateLimited, rfr.Code)
+	assert.Equal(operationapi.AvailabilityCodeRateLimited, rfr.Code)
 	draft := resp.Operations.MarkDraft
 	assert.False(draft.Available, "write GraphQL exhaustion must gate draft conversion")
-	assert.Equal(availabilityCodeRateLimited, draft.Code)
+	assert.Equal(operationapi.AvailabilityCodeRateLimited, draft.Code)
 }
 
 func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) {
@@ -766,15 +768,15 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
-	var resp repoResponse
+	var resp itemapi.RepoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	merge := resp.Operations.MergePR
 	assert.False(merge.Available, "app-only host has no credential for mutations")
-	assert.Equal(availabilityCodeMissingWriteCredential, merge.Code)
+	assert.Equal(operationapi.AvailabilityCodeMissingWriteCredential, merge.Code)
 	assert.Contains(merge.UnavailableReason, "github.com")
 	comment := resp.Operations.AddComment
 	assert.False(comment.Available, "every operation is a mutation; all must gate")
-	assert.Equal(availabilityCodeMissingWriteCredential, comment.Code)
+	assert.Equal(operationapi.AvailabilityCodeMissingWriteCredential, comment.Code)
 
 	// Identity assignment is restart-bound. A token appearing behind an
 	// App-only route cannot silently move writes onto a new user principal in
@@ -784,10 +786,10 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 	}))
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
-	resp = repoResponse{}
+	resp = itemapi.RepoResponse{}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Operations.MergePR.Available)
-	assert.Equal(availabilityCodeMissingWriteCredential, resp.Operations.MergePR.Code)
+	assert.Equal(operationapi.AvailabilityCodeMissingWriteCredential, resp.Operations.MergePR.Code)
 	assert.False(resp.Operations.AddComment.Available)
 }
 
@@ -805,11 +807,11 @@ func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T)
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
-	var resp repoResponse
+	var resp itemapi.RepoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	merge := resp.Operations.MergePR
 	assert.False(merge.Available)
-	assert.Equal(availabilityCodeWriteCredentialError, merge.Code,
+	assert.Equal(operationapi.AvailabilityCodeWriteCredentialError, merge.Code,
 		"a resolver failure must not masquerade as a missing credential")
 	assert.Contains(merge.UnavailableReason, "github.com")
 	assert.NotContains(merge.UnavailableReason, "does-not-exist.token",
@@ -854,11 +856,11 @@ func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
-	var resp repoResponse
+	var resp itemapi.RepoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	merge := resp.Operations.MergePR
 	assert.False(merge.Available)
-	assert.Equal(availabilityCodeWriteCredentialError, merge.Code)
+	assert.Equal(operationapi.AvailabilityCodeWriteCredentialError, merge.Code)
 	assert.Contains(merge.UnavailableReason, "restart")
 
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
@@ -893,11 +895,11 @@ func TestAPIRepoResponseDisablesWritesWhenConfiguredRouterHasNoRoute(t *testing.
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/other/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
-	var resp repoResponse
+	var resp itemapi.RepoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
 	assert.False(resp.Operations.MergePR.Available)
-	assert.Equal(availabilityCodeMissingWriteCredential, resp.Operations.MergePR.Code)
+	assert.Equal(operationapi.AvailabilityCodeMissingWriteCredential, resp.Operations.MergePR.Code)
 }
 
 // splitTestDescriptor builds the github.com chain of a split host:
@@ -972,12 +974,12 @@ func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
 	require.Equal(http.StatusOK, rr.Code)
 
-	var resp repoResponse
+	var resp itemapi.RepoResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 
 	merge := resp.Operations.MergePR
 	assert.False(merge.Available)
-	assert.Equal(availabilityCodeViewerCannotMerge, merge.Code)
+	assert.Equal(operationapi.AvailabilityCodeViewerCannotMerge, merge.Code)
 	assert.Empty(merge.RequiredCapability)
 
 	// Other operations remain available because viewer_can_merge only
@@ -1013,7 +1015,7 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 
 	submitReview := resp.Repo.Operations.SubmitReview
 	assert.False(submitReview.Available)
-	assert.Equal(availabilityCodeSelfApproval, submitReview.Code)
+	assert.Equal(operationapi.AvailabilityCodeSelfApproval, submitReview.Code)
 	assert.Equal("You cannot approve your own pull request", submitReview.UnavailableReason)
 	assert.True(resp.Repo.Operations.MergePR.Available)
 
@@ -1040,7 +1042,7 @@ func TestAPIPullDetailOperationsSkipViewerLookupWhenSubmitReviewUnavailable(t *t
 	var resp pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.NotNil(resp.Repo.Operations)
-	assert.Equal(availabilityCodeMissingWriteCredential, resp.Repo.Operations.SubmitReview.Code)
+	assert.Equal(operationapi.AvailabilityCodeMissingWriteCredential, resp.Repo.Operations.SubmitReview.Code)
 	assert.Zero(mock.authenticatedViewerCalls,
 		"viewer lookup must not run when the write credential already blocks review submission")
 }

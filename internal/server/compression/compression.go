@@ -1,0 +1,369 @@
+package compression
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/andybalholm/brotli"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"github.com/klauspost/compress/zstd"
+)
+
+const (
+	ResponseCompressionMinSize  = 1024
+	responseCompressionMaxBytes = 4 << 20
+)
+
+type BufferedHumaContext struct {
+	inner      huma.Context
+	W          http.ResponseWriter
+	Body       bytes.Buffer
+	status     int
+	MaxBuffer  int
+	MinSize    int
+	Encoding   string
+	stream     io.Writer
+	Compressor io.WriteCloser
+	writeErr   error
+}
+
+func (c *BufferedHumaContext) Operation() *huma.Operation {
+	return c.inner.Operation()
+}
+
+func (c *BufferedHumaContext) Context() context.Context {
+	return c.inner.Context()
+}
+
+func (c *BufferedHumaContext) TLS() *tls.ConnectionState {
+	return c.inner.TLS()
+}
+
+func (c *BufferedHumaContext) Version() huma.ProtoVersion {
+	return c.inner.Version()
+}
+
+func (c *BufferedHumaContext) Method() string {
+	return c.inner.Method()
+}
+
+func (c *BufferedHumaContext) Host() string {
+	return c.inner.Host()
+}
+
+func (c *BufferedHumaContext) RemoteAddr() string {
+	return c.inner.RemoteAddr()
+}
+
+func (c *BufferedHumaContext) URL() url.URL {
+	return c.inner.URL()
+}
+
+func (c *BufferedHumaContext) Param(name string) string {
+	return c.inner.Param(name)
+}
+
+func (c *BufferedHumaContext) Query(name string) string {
+	return c.inner.Query(name)
+}
+
+func (c *BufferedHumaContext) Header(name string) string {
+	return c.inner.Header(name)
+}
+
+func (c *BufferedHumaContext) EachHeader(cb func(name string, value string)) {
+	c.inner.EachHeader(cb)
+}
+
+func (c *BufferedHumaContext) BodyReader() io.Reader {
+	return c.inner.BodyReader()
+}
+
+func (c *BufferedHumaContext) GetMultipartForm() (*multipart.Form, error) {
+	return c.inner.GetMultipartForm()
+}
+
+func (c *BufferedHumaContext) SetReadDeadline(deadline time.Time) error {
+	return c.inner.SetReadDeadline(deadline)
+}
+
+func (c *BufferedHumaContext) SetStatus(code int) {
+	c.status = code
+}
+
+func (c *BufferedHumaContext) Status() int {
+	return c.status
+}
+
+func (c *BufferedHumaContext) SetHeader(name string, value string) {
+	c.inner.SetHeader(name, value)
+}
+
+func (c *BufferedHumaContext) AppendHeader(name string, value string) {
+	c.inner.AppendHeader(name, value)
+}
+
+func (c *BufferedHumaContext) BodyWriter() io.Writer {
+	return c
+}
+
+func (c *BufferedHumaContext) Unwrap() huma.Context {
+	return c.inner
+}
+
+func (c *BufferedHumaContext) Write(p []byte) (int, error) {
+	if c.stream != nil {
+		return c.stream.Write(p)
+	}
+	if c.Body.Len()+len(p) <= c.MaxBuffer {
+		return c.Body.Write(p)
+	}
+	status := c.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	c.stream = c.W
+	if shouldCompressResponse(c.W.Header(), status, c.Body.Len()+len(p), c.MinSize, c.Encoding) {
+		c.Compressor, c.writeErr = newCompressedWriter(c.W, c.Encoding)
+		if c.writeErr != nil {
+			return 0, c.writeErr
+		}
+		c.stream = c.Compressor
+		c.W.Header().Set("Content-Encoding", c.Encoding)
+		c.W.Header().Del("Content-Length")
+	}
+	c.W.WriteHeader(status)
+	if c.Body.Len() > 0 {
+		if _, err := c.stream.Write(c.Body.Bytes()); err != nil {
+			c.writeErr = err
+			return 0, err
+		}
+		c.Body.Reset()
+	}
+	n, err := c.stream.Write(p)
+	if err != nil {
+		c.writeErr = err
+	}
+	return n, err
+}
+
+func NewResponseCompressionMiddleware(
+	minSize int,
+) func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		r, w := humago.Unwrap(ctx)
+		addVaryHeader(w.Header(), "Accept-Encoding")
+		encoding := selectResponseEncoding(r.Header.Get("Accept-Encoding"))
+
+		if encoding == "" || shouldBypassCompression(ctx, r) {
+			next(ctx)
+			return
+		}
+
+		buffered := &BufferedHumaContext{
+			inner:     ctx,
+			W:         w,
+			MaxBuffer: responseCompressionMaxBytes,
+			MinSize:   minSize,
+			Encoding:  encoding,
+		}
+		next(buffered)
+		if buffered.Compressor != nil {
+			if err := buffered.Compressor.Close(); err != nil {
+				return
+			}
+		}
+		if buffered.stream != nil || buffered.writeErr != nil {
+			return
+		}
+
+		status := buffered.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+
+		if shouldCompressResponse(w.Header(), status, buffered.Body.Len(), minSize, encoding) {
+			w.Header().Set("Content-Encoding", encoding)
+			w.Header().Del("Content-Length")
+			w.WriteHeader(status)
+			if err := writeCompressedBody(w, encoding, buffered.Body.Bytes()); err != nil {
+				return
+			}
+			return
+		}
+
+		w.WriteHeader(status)
+		_, _ = w.Write(buffered.Body.Bytes())
+	}
+}
+
+func shouldBypassCompression(ctx huma.Context, r *http.Request) bool {
+	if r.Method == http.MethodHead {
+		return true
+	}
+	if strings.EqualFold(r.Header.Get("Connection"), "upgrade") ||
+		r.Header.Get("Upgrade") != "" {
+		return true
+	}
+	if ctx.Operation() != nil && (ctx.Operation().Path == "/events" ||
+		ctx.Operation().Path == "/federation/events") {
+		return true
+	}
+	return false
+}
+
+func shouldCompressResponse(
+	header http.Header,
+	status int,
+	bodyLen int,
+	minSize int,
+	encoding string,
+) bool {
+	if encoding == "" || bodyLen < minSize {
+		return false
+	}
+	if status == http.StatusNoContent || status == http.StatusNotModified {
+		return false
+	}
+	if header.Get("Content-Encoding") != "" || header.Get("Content-Range") != "" {
+		return false
+	}
+	if hasNoTransform(header.Get("Cache-Control")) {
+		return false
+	}
+	return isCompressibleContentType(header.Get("Content-Type"))
+}
+
+func selectResponseEncoding(header string) string {
+	const (
+		zstdEncoding   = "zstd"
+		brotliEncoding = "br"
+	)
+
+	best := ""
+	bestQ := 0.0
+	preferred := map[string]int{
+		brotliEncoding: 0,
+		zstdEncoding:   1,
+	}
+
+	for part := range strings.SplitSeq(header, ",") {
+		name, q := parseAcceptEncodingPart(part)
+		if q <= 0 {
+			continue
+		}
+		if name == "*" {
+			name = zstdEncoding
+		}
+		rank, ok := preferred[name]
+		if !ok {
+			continue
+		}
+		if best == "" || q > bestQ || (q == bestQ && rank < preferred[best]) {
+			best = name
+			bestQ = q
+		}
+	}
+
+	return best
+}
+
+func parseAcceptEncodingPart(part string) (string, float64) {
+	pieces := strings.Split(part, ";")
+	name := strings.ToLower(strings.TrimSpace(pieces[0]))
+	if name == "" {
+		return "", 0
+	}
+
+	q := 1.0
+	for _, param := range pieces[1:] {
+		param = strings.TrimSpace(param)
+		rawQ, ok := strings.CutPrefix(param, "q=")
+		if !ok {
+			continue
+		}
+		parsed, err := strconv.ParseFloat(rawQ, 64)
+		if err != nil {
+			return name, 0
+		}
+		q = parsed
+	}
+	return name, q
+}
+
+func hasNoTransform(cacheControl string) bool {
+	for directive := range strings.SplitSeq(cacheControl, ",") {
+		if strings.EqualFold(strings.TrimSpace(directive), "no-transform") {
+			return true
+		}
+	}
+	return false
+}
+
+func isCompressibleContentType(contentType string) bool {
+	if contentType == "" {
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		mediaType = strings.ToLower(strings.TrimSpace(contentType))
+	}
+	if strings.HasPrefix(mediaType, "text/") {
+		return mediaType != "text/event-stream"
+	}
+	switch mediaType {
+	case "application/json",
+		"application/javascript",
+		"application/x-javascript",
+		"application/xml",
+		"application/xhtml+xml",
+		"application/x-ndjson",
+		"image/svg+xml":
+		return true
+	default:
+		return false
+	}
+}
+
+func writeCompressedBody(w io.Writer, encoding string, body []byte) error {
+	writer, err := newCompressedWriter(w, encoding)
+	if err != nil {
+		return err
+	}
+	_, err = writer.Write(body)
+	return errors.Join(err, writer.Close())
+}
+
+func newCompressedWriter(w io.Writer, encoding string) (io.WriteCloser, error) {
+	switch encoding {
+	case "zstd":
+		return zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedFastest))
+	case "br":
+		return brotli.NewWriterLevel(w, brotli.BestSpeed), nil
+	default:
+		return nil, fmt.Errorf("unsupported response encoding %q", encoding)
+	}
+}
+
+func addVaryHeader(header http.Header, value string) {
+	for _, existing := range header.Values("Vary") {
+		for part := range strings.SplitSeq(existing, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), value) {
+				return
+			}
+		}
+	}
+	header.Add("Vary", value)
+}

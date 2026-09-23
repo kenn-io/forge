@@ -118,11 +118,10 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 		CreatedAt: issuedAt, UpdatedAt: issuedAt, LastActivityAt: issuedAt,
 	})
 	require.NoError(err)
-	controller := &Server{
-		options: ServerOptions{Devboxes: connections}, db: controllerDB,
+	controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}, db: controllerDB,
 		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: controllerDB}),
 		now:          func() time.Time { return issuedAt.Add(time.Duration(elapsed.Load())) },
-	}
+	})
 	mux := http.NewServeMux()
 	controller.registerDevboxAPI(humago.New(mux, huma.DefaultConfig("controller", "1")))
 	request := func(path string) *httptest.ResponseRecorder {

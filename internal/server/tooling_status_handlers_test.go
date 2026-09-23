@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/repoapi"
 )
 
 // recordingToolingRunner simulates probe subprocesses. Each call is
@@ -37,12 +38,12 @@ func (r *recordingToolingRunner) run(
 
 func decodeToolingStatus(
 	t *testing.T, ts *httptest.Server,
-) toolingStatusBody {
+) repoapi.ToolingStatusBody {
 	t.Helper()
 	resp := httpDo(t, ts, http.MethodGet, "/api/v1/tooling-status", nil)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	var body toolingStatusBody
+	var body repoapi.ToolingStatusBody
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	return body
 }

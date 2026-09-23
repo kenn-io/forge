@@ -5,19 +5,17 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/server/devboxapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
-
-type workerIdentity = devbox.WorkerIdentity
 
 func (s *Server) registerWorkerAPI(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-execution-worker", Method: http.MethodGet, Path: "/worker",
 		Tags: []string{"Devboxes"}, Summary: "Get authenticated execution worker identity",
-	}, func(context.Context, *struct{}) (*httpapi.BodyOutput[workerIdentity], error) {
-		return &httpapi.BodyOutput[workerIdentity]{Body: workerIdentity{
+	}, func(context.Context, *struct{}) (*httpapi.BodyOutput[devboxapi.WorkerIdentity], error) {
+		return &httpapi.BodyOutput[devboxapi.WorkerIdentity]{Body: devboxapi.WorkerIdentity{
 			NodeID: s.options.FederationSpokeID, UID: s.cfg.ExecutionWorker.UID,
 			GitHubUserID: s.cfg.ExecutionWorker.GitHubUserID, Role: "execution", Protocol: 1,
 		}}, nil

@@ -1,0 +1,223 @@
+package kataclient
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
+	katacatalog "go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/kata"
+	katagenerated "go.kenn.io/kata/pkg/client/generated"
+)
+
+const (
+	// Generated responses are decoded from a complete byte slice by the
+	// generated runtime. Keep a generous default ceiling while still bounding
+	// the memory a configured daemon can make Kenn Forge retain per request.
+	kataGeneratedResponseMaxBytes = int64(32 << 20)
+
+	// Authority and graph endpoints legitimately return substantially more
+	// data than detail and paginated endpoints. This is intentionally far above
+	// the former 8 MiB raw-read limit so complete federated authorities are not
+	// mistaken for oversized responses.
+	kataGeneratedAuthorityResponseMaxBytes = int64(128 << 20)
+)
+
+type KataAPIClient interface {
+	InstanceWithResponse(
+		ctx context.Context,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.InstanceResp, error)
+	ListAllIssuesWithResponse(
+		ctx context.Context,
+		options *katagenerated.ListAllIssuesRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ListAllIssuesResp, error)
+	ListProjectsWithResponse(
+		ctx context.Context,
+		options *katagenerated.ListProjectsRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ListProjectsResp, error)
+	PollEventsWithResponse(
+		ctx context.Context,
+		options *katagenerated.PollEventsRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.PollEventsResp, error)
+	PollProjectEventsWithResponse(
+		ctx context.Context,
+		options *katagenerated.PollProjectEventsRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.PollProjectEventsResp, error)
+	ReadyIssuesWithResponse(
+		ctx context.Context,
+		options *katagenerated.ReadyIssuesRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ReadyIssuesResp, error)
+	ReadyIssuesGlobalWithResponse(
+		ctx context.Context,
+		options *katagenerated.ReadyIssuesGlobalRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ReadyIssuesGlobalResp, error)
+	ReachableIssueGraphWithResponse(
+		ctx context.Context,
+		options *katagenerated.ReachableIssueGraphRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ReachableIssueGraphResp, error)
+	ShowIssueByUIDWithResponse(
+		ctx context.Context,
+		options *katagenerated.ShowIssueByUIDRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*katagenerated.ShowIssueByUIDResp, error)
+	StreamEventsRaw(
+		ctx context.Context,
+		options *katagenerated.StreamEventsRequestOptions,
+		reqEditors ...runtime.RequestEditorFn,
+	) (*http.Response, error)
+}
+
+func NewKataAPIClient(ctx context.Context, daemon katacatalog.Daemon) (KataAPIClient, error) {
+	httpClient, baseURL, err := kata.DefaultDaemonHTTPClient(daemon)
+	if err != nil {
+		return nil, err
+	}
+	options := []runtime.APIClientOption{
+		runtime.WithHTTPClient(KataGeneratedHTTPDoer{Client: httpClient}),
+	}
+	if token := kata.DaemonForwardToken(daemon); token != "" {
+		options = append(options, runtime.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Authorization", "Bearer "+token)
+			return nil
+		}))
+	}
+	apiClient, err := runtime.NewAPIClient(baseURL, options...)
+	if err != nil {
+		return nil, err
+	}
+	return &kataGeneratedClient{
+		Client:     katagenerated.NewClient(apiClient),
+		apiClient:  apiClient,
+		httpClient: httpClient,
+	}, nil
+}
+
+type kataGeneratedClient struct {
+	*katagenerated.Client
+
+	apiClient  runtime.APIClient
+	httpClient *http.Client
+}
+
+func (c *kataGeneratedClient) StreamEventsRaw(
+	ctx context.Context,
+	options *katagenerated.StreamEventsRequestOptions,
+	reqEditors ...runtime.RequestEditorFn,
+) (*http.Response, error) {
+	if options == nil {
+		options = &katagenerated.StreamEventsRequestOptions{}
+	}
+	req, err := c.apiClient.CreateRequest(ctx, runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/events/stream",
+		Method:     http.MethodGet,
+		Options:    options,
+	}, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("create Kata event stream request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	response, err := c.httpClient.Do(req.WithContext(ctx)) //nolint:gosec // generated client builds the URL from the selected daemon base
+	if err != nil {
+		return nil, fmt.Errorf("open Kata event stream: %w", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		_ = response.Body.Close()
+		return nil, runtime.NewClientAPIError(
+			fmt.Errorf("kata event stream returned status %d", response.StatusCode),
+			runtime.WithStatusCode(response.StatusCode),
+		)
+	}
+	return response, nil
+}
+
+type KataGeneratedHTTPDoer struct {
+	Client          *http.Client
+	LimitForRequest func(*http.Request) int64
+}
+
+func (d KataGeneratedHTTPDoer) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
+	response, err := d.Client.Do(req.WithContext(ctx)) //nolint:gosec // generated client builds the URL from the selected daemon base
+	if err != nil {
+		return nil, err
+	}
+	limitForRequest := d.LimitForRequest
+	if limitForRequest == nil {
+		limitForRequest = func(request *http.Request) int64 {
+			return KataGeneratedResponseLimit(request.URL.Path)
+		}
+	}
+	limit := limitForRequest(req)
+	response.Body = &kataLimitedDaemonResponseBody{
+		body:      response.Body,
+		remaining: limit,
+		limit:     limit,
+		path:      req.URL.Path,
+	}
+	return response, nil
+}
+
+func KataGeneratedResponseLimit(path string) int64 {
+	// Daemon base URLs may carry a path prefix (for example a daemon behind a
+	// reverse proxy), so authority endpoints are identified by suffix rather
+	// than exact match. The issue-detail path /api/v1/issues/{uid} does not
+	// end in /api/v1/issues and keeps the default limit.
+	if strings.HasSuffix(path, "/api/v1/issues") ||
+		strings.HasSuffix(path, "/ready") || strings.HasSuffix(path, "/graph") {
+		return kataGeneratedAuthorityResponseMaxBytes
+	}
+	return kataGeneratedResponseMaxBytes
+}
+
+type KataDaemonResponseTooLargeError struct {
+	Path  string
+	Limit int64
+}
+
+func (e *KataDaemonResponseTooLargeError) Error() string {
+	return fmt.Sprintf("Kata daemon response for %s exceeded %d bytes", e.Path, e.Limit)
+}
+
+type kataLimitedDaemonResponseBody struct {
+	body      io.ReadCloser
+	remaining int64
+	limit     int64
+	path      string
+	tooLarge  bool
+}
+
+func (b *kataLimitedDaemonResponseBody) Read(buffer []byte) (int, error) {
+	if b.tooLarge {
+		return 0, &KataDaemonResponseTooLargeError{Path: b.path, Limit: b.limit}
+	}
+	if len(buffer) == 0 {
+		return b.body.Read(buffer)
+	}
+	if int64(len(buffer)) > b.remaining+1 {
+		buffer = buffer[:b.remaining+1]
+	}
+	read, err := b.body.Read(buffer)
+	if int64(read) <= b.remaining {
+		b.remaining -= int64(read)
+		return read, err
+	}
+	read = int(b.remaining)
+	b.remaining = 0
+	b.tooLarge = true
+	return read, &KataDaemonResponseTooLargeError{Path: b.path, Limit: b.limit}
+}
+
+func (b *kataLimitedDaemonResponseBody) Close() error {
+	return b.body.Close()
+}

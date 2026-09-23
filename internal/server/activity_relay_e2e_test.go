@@ -172,7 +172,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	refreshed := make(chan int, 16)
 	syncer.SetOnRelayRefresh(func(ctx context.Context, repoID int64, target string, number int) {
-		srv.broadcastRelayRefresh(ctx, repoID, target, number)
+		srv.syncevents.BroadcastRelayRefresh(ctx, repoID, target, number)
 		refreshed <- number
 	})
 	statuses := make(chan *ghclient.RelayStatus, 64)

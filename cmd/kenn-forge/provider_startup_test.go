@@ -16,7 +16,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -29,7 +29,7 @@ func TestWireSyncStatusDoesNotReloadDataForRelayConnectionChanges(t *testing.T) 
 	ctx, cancel := context.WithCancel(t.Context())
 	syncer := github.NewSyncer(nil, dbtest.Open(t), nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	hub := server.NewEventHub()
+	hub := syncevents.NewEventHub()
 	t.Cleanup(hub.Close)
 	events, _ := hub.Subscribe(ctx, false)
 	wireSyncStatus(syncer, hub)
@@ -43,14 +43,14 @@ func TestWireSyncStatusDoesNotReloadDataForRelayConnectionChanges(t *testing.T) 
 		syncer.RunRelay(ctx, github.RelayOptions{URL: relay.URL, Client: relay.Client()})
 	}()
 	t.Cleanup(func() { cancel(); <-stopped })
-	nextEvent := func() server.RecordedEvent {
+	nextEvent := func() syncevents.RecordedEvent {
 		t.Helper()
 		select {
 		case event := <-events:
 			return event
 		case <-time.After(10 * time.Second):
 			require.FailNow("hub event did not arrive")
-			return server.RecordedEvent{}
+			return syncevents.RecordedEvent{}
 		}
 	}
 	initial := nextEvent()

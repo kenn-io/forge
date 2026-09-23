@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -27,7 +28,7 @@ import (
 func newAuthTestServer(t *testing.T, token string) *httptest.Server {
 	t.Helper()
 	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: token, RequireAPIAuth: token != "",
 		},
 	})
@@ -39,7 +40,7 @@ func newAuthTestServer(t *testing.T, token string) *httptest.Server {
 func newTailscaleAuthTestServer(t *testing.T) (*httptest.Server, *Server) {
 	t.Helper()
 	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 			TailscaleServeEnabled: true,
 			TailscaleServeUsers:   []string{"user@example.com"},
@@ -63,7 +64,7 @@ func newFederationAuthTestServer(
 	)
 	require.NoError(t, err)
 	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 		},
 		FederationCredentials: store,
@@ -221,7 +222,7 @@ func TestRemovedFleetMemberCredentialFailsOnNextRequest(t *testing.T) {
 		}},
 	}}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 		},
 		FederationCredentials: credentials,
@@ -286,7 +287,7 @@ func TestPendingHubCredentialExpiresUntilPreparationIsPinned(t *testing.T) {
 		},
 	}}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: nodeID,
 	})
@@ -338,7 +339,7 @@ func TestPendingHubCredentialCanRevokeLocalEnrollmentBeforeRoleTransition(t *tes
 	require.NoError(err)
 	cfg := &config.Config{Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleHub}}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: nodeID,
 	})
@@ -400,7 +401,7 @@ func TestPendingSpokeCredentialCannotRevokeSiblingEnrollment(t *testing.T) {
 	require.NoError(err)
 	cfg := &config.Config{Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleHub}}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: hubID,
 	})
@@ -464,7 +465,7 @@ func TestLeaseUnawareHubEnrollmentCredentialIsInactive(t *testing.T) {
 		}},
 	}}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: hubID,
 	})
@@ -581,7 +582,7 @@ func TestActiveHubCredentialRequiresActiveSpokeStartup(t *testing.T) {
 				},
 			}}
 			srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-				DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+				DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 				FederationCredentials: credentials, FederationEnrollments: enrollments,
 				FederationSpokeID: nodeID, FederationSpokeActive: test.nodeActive,
 			})
@@ -639,7 +640,7 @@ func TestFederationAuthenticationKeepsBootTopologyUntilRestart(t *testing.T) {
 		Hub: &config.FleetHub{NodeID: hubID, BaseURL: "https://hub.example"},
 	}}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: nodeID, FederationSpokeActive: true,
 	})
@@ -693,7 +694,7 @@ func TestRevokedSpokeCredentialOnlyRetriesRevocation(t *testing.T) {
 		Hub: &config.FleetHub{NodeID: hubID, BaseURL: "https://hub.example"},
 	}}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: nodeID,
 	})
@@ -758,7 +759,7 @@ func TestPendingSpokeCredentialExpiresUntilPreparationIsPinned(t *testing.T) {
 		Enabled: true, Role: config.FleetRoleHub,
 	}}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: hubID,
 	})
@@ -820,7 +821,7 @@ func TestPendingSpokeCredentialOnlyAccessesPreparationProviderRoutes(t *testing.
 	srv := New(dbtest.Open(t), nil, nil, "/", &config.Config{Fleet: config.Fleet{
 		Enabled: true, Role: config.FleetRoleHub,
 	}}, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: hubID,
 	})
@@ -885,7 +886,7 @@ func TestFederationProviderSettingsUseDedicatedProjection(t *testing.T) {
 	)
 	require.NoError(err)
 	srv := New(dbtest.Open(t), nil, nil, "/", &config.Config{}, ServerOptions{
-		DaemonAccess:                       DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:                       authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials:              credentials,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
@@ -933,6 +934,6 @@ func TestRedactedQueryMasksBootstrapToken(t *testing.T) {
 	} {
 		u, err := url.Parse("/?" + test.raw)
 		require.NoError(t, err)
-		assert.Equal(t, test.expected, redactedQuery(u), test.raw)
+		assert.Equal(t, test.expected, authapi.RedactedQuery(u), test.raw)
 	}
 }

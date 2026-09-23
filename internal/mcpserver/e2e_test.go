@@ -21,6 +21,8 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	mcpserver "go.kenn.io/forge/internal/mcpserver"
 	forgeserver "go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/mcpapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	gitcmd "go.kenn.io/kit/git/cmd"
@@ -99,12 +101,12 @@ esac
 	t.Cleanup(syncer.Stop)
 	const token = "mcp-e2e-token"
 	forge := forgeserver.New(database, syncer, nil, "/", cfg, forgeserver.ServerOptions{
-		DaemonAccess: forgeserver.DaemonAccessOptions{Token: token, RequireAPIAuth: true},
+		DaemonAccess: authapi.DaemonAccessOptions{Token: token, RequireAPIAuth: true},
 		Clones:       diffRepo.Manager, WorktreeDir: t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
 		DisableWorkspaceEnrichment:         true,
 		PtyOwnerInProcess:                  true,
-		HostCheck: forgeserver.HostCheckOptions{
+		HostCheck: authapi.HostCheckOptions{
 			Bind: config.HostKey{Host: "127.0.0.1", Port: "8080"},
 		},
 		HostCheckAllowLoopbackAnyPort: true,
@@ -123,9 +125,9 @@ esac
 	mcpHTTP := httptest.NewUnstartedServer(nil)
 	bind, err := config.ParseHostKey(mcpHTTP.Listener.Addr().String())
 	require.NoError(err)
-	mcpHTTP.Config.Handler = forgeserver.NewMCPHTTPGuard(
+	mcpHTTP.Config.Handler = mcpapi.NewMCPHTTPGuard(
 		companion.HTTPHandler(),
-		forgeserver.MCPHTTPGuardOptions{Bind: bind, Token: token, RequireAuth: true},
+		mcpapi.MCPHTTPGuardOptions{Bind: bind, Token: token, RequireAuth: true},
 	)
 	mcpHTTP.Start()
 	t.Cleanup(mcpHTTP.Close)

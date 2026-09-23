@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/devboxapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -22,7 +24,7 @@ func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
 	cfg.ExecutionWorker = config.ExecutionWorker{Enabled: true, UID: 1001, GitHubUserID: 1234, BrokerSocket: "/run/example/broker.sock"}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
 		ExecutionWorker:               true,
-		DaemonAccess:                  DaemonAccessOptions{Token: "worker-test-secret", RequireAPIAuth: true},
+		DaemonAccess:                  authapi.DaemonAccessOptions{Token: "worker-test-secret", RequireAPIAuth: true},
 		FederationSpokeID:             "0123456789abcdef0123456789abcdef",
 		HostCheckAllowLoopbackAnyPort: true,
 	})
@@ -63,7 +65,7 @@ func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
 			defer response.Body.Close()
 			assert.Equal(test.status, response.StatusCode)
 			if test.name == "identity" {
-				var identity workerIdentity
+				var identity devboxapi.WorkerIdentity
 				require.NoError(t, json.UnmarshalRead(response.Body, &identity))
 				assert.Equal(int64(1234), identity.GitHubUserID)
 				assert.Equal(uint32(1001), identity.UID)

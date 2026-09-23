@@ -15,6 +15,7 @@ import (
 
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/streamapi"
 )
 
 type blockingHubEventTransport struct {
@@ -78,7 +79,7 @@ func TestServerShutdownWaitsForBackgroundTask(t *testing.T) {
 
 	release := make(chan struct{})
 	var finished atomic.Bool
-	srv.runBackground(func(_ context.Context) {
+	srv.streamapi.RunBackground(func(_ context.Context) {
 		<-release
 		finished.Store(true)
 	})
@@ -107,7 +108,7 @@ func TestServerShutdownTimesOut(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	stuck := make(chan struct{})
-	srv.runBackground(func(_ context.Context) {
+	srv.streamapi.RunBackground(func(_ context.Context) {
 		<-stuck
 	})
 	defer close(stuck)
@@ -129,7 +130,7 @@ func TestServerShutdownPreventsNewBackgroundTasks(t *testing.T) {
 	require.NoError(t, srv.Shutdown(ctx))
 
 	var ran atomic.Bool
-	started := srv.runBackground(func(_ context.Context) {
+	started := srv.streamapi.RunBackground(func(_ context.Context) {
 		ran.Store(true)
 	})
 
@@ -145,7 +146,7 @@ func TestServerShutdownRaceNoPanic(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		for range 200 {
-			srv.runBackground(func(_ context.Context) {})
+			srv.streamapi.RunBackground(func(_ context.Context) {})
 		}
 		close(done)
 	}()
@@ -163,7 +164,7 @@ func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	release := make(chan struct{})
-	srv.runBackground(func(_ context.Context) {
+	srv.streamapi.RunBackground(func(_ context.Context) {
 		<-release
 	})
 
@@ -196,19 +197,19 @@ func TestServerShutdownDoesNotAdvancePastActiveWorkspaceConsumers(t *testing.T) 
 	})
 	var workspaceStops atomic.Int32
 	var runtimeStops atomic.Int32
-	srv.runWorkspaceDependent(func(ctx context.Context) {
+	srv.streamapi.RunWorkspaceDependent(func(ctx context.Context) {
 		<-ctx.Done()
 		<-releaseConsumer
 	})
-	srv.runBackground(func(ctx context.Context) {
+	srv.streamapi.RunBackground(func(ctx context.Context) {
 		<-ctx.Done()
 		<-releaseRootWork
 	})
-	srv.workspaceDependencyStop.shutdownWorkspace = func(context.Context) error {
+	srv.workspaceDependencyStop.ShutdownWorkspace = func(context.Context) error {
 		workspaceStops.Add(1)
 		return nil
 	}
-	srv.workspaceDependencyStop.shutdownDependents = func() {
+	srv.workspaceDependencyStop.ShutdownDependents = func() {
 		runtimeStops.Add(1)
 	}
 
@@ -245,7 +246,7 @@ func TestServerShutdownWaitsForHubEventClient(t *testing.T) {
 		Client: transport,
 	})
 	require.NoError(err)
-	srv.runWorkspaceDependent(events.Run)
+	srv.streamapi.RunWorkspaceDependent(events.Run)
 	select {
 	case <-transport.started:
 	case <-time.After(time.Second):
@@ -279,7 +280,7 @@ func TestWorkspaceDependencyShutdownPreservesOrderAcrossTimeoutRetry(t *testing.
 		releaseWorkspace := make(chan struct{})
 		var runtimeStops atomic.Int32
 
-		shutdown := newWorkspaceDependencyShutdown(
+		shutdown := streamapi.NewWorkspaceDependencyShutdown(
 			nil,
 			func(ctx context.Context) error {
 				select {
@@ -395,14 +396,14 @@ func TestServerShutdownStopsPullBeforeHTTPDrainAndRetriesDependencyWait(t *testi
 	srv.pullLifecycle = pull
 
 	var dependencyOrder []string
-	srv.workspaceDependencyStop.shutdownWorkspace = func(ctx context.Context) error {
+	srv.workspaceDependencyStop.ShutdownWorkspace = func(ctx context.Context) error {
 		if err := srv.pullLifecycle.Shutdown(ctx); err != nil {
 			return err
 		}
 		dependencyOrder = append(dependencyOrder, "pull", "fleet", "workspace")
 		return nil
 	}
-	srv.workspaceDependencyStop.shutdownDependents = func() {
+	srv.workspaceDependencyStop.ShutdownDependents = func() {
 		dependencyOrder = append(dependencyOrder, "runtime")
 	}
 

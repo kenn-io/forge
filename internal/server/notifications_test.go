@@ -16,6 +16,8 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/notificationapi"
 )
 
 func seedServerNotification(t *testing.T, database *db.DB) int64 {
@@ -70,7 +72,7 @@ func TestNotificationsAPIListsAndQueuesReadWithoutDone(t *testing.T) {
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
-	var listed notificationsResponse
+	var listed itemapi.NotificationsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
 	require.Len(listed.Items, 1)
 	assert := assert.New(t)
@@ -88,7 +90,7 @@ func TestNotificationsAPIListsAndQueuesReadWithoutDone(t *testing.T) {
 	require.NoError(err)
 	defer markResp.Body.Close()
 	require.Equal(http.StatusOK, markResp.StatusCode)
-	var bulk notificationBulkResponse
+	var bulk itemapi.NotificationBulkResponse
 	require.NoError(json.NewDecoder(markResp.Body).Decode(&bulk))
 	assert.Equal([]int64{id}, bulk.Succeeded)
 	assert.Equal([]int64{id}, bulk.Queued)
@@ -103,7 +105,7 @@ func TestNotificationsAPIListsAndQueuesReadWithoutDone(t *testing.T) {
 func TestNotificationRepoFiltersRejectBlankProvider(t *testing.T) {
 	require := require.New(t)
 
-	_, err := notificationRepoFilters([]ghclient.RepoRef{{
+	_, err := notificationapi.NotificationRepoFilters([]ghclient.RepoRef{{
 		PlatformHost: "github.com",
 		Owner:        "acme",
 		Name:         "widget",
@@ -113,8 +115,8 @@ func TestNotificationRepoFiltersRejectBlankProvider(t *testing.T) {
 
 func TestToNotificationResponseRejectsBlankProvider(t *testing.T) {
 	require := require.New(t)
-	s := &Server{}
-	_, err := s.toNotificationResponse(t.Context(), db.Notification{
+	s := wiredServer(&Server{})
+	_, err := s.notificationapi.ToNotificationResponse(t.Context(), db.Notification{
 		PlatformHost:           "github.com",
 		PlatformNotificationID: "thread-42",
 		RepoOwner:              "acme",
@@ -180,7 +182,7 @@ func TestNotificationsAPIMapsNeutralFieldsToExistingGitHubJSON(t *testing.T) {
 	assert.Equal(2, item.GitHubReadAttempts)
 }
 
-func getNotificationsForTest(t *testing.T, baseURL string, state string) notificationsResponse {
+func getNotificationsForTest(t *testing.T, baseURL string, state string) itemapi.NotificationsResponse {
 	t.Helper()
 	require := require.New(t)
 	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/api/v1/notifications?state="+state, nil)
@@ -189,7 +191,7 @@ func getNotificationsForTest(t *testing.T, baseURL string, state string) notific
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
-	var listed notificationsResponse
+	var listed itemapi.NotificationsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
 	return listed
 }
@@ -284,7 +286,7 @@ func TestNotificationsAPIReclosesLinkedItemsAfterUndone(t *testing.T) {
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
 
-	var bulk notificationBulkResponse
+	var bulk itemapi.NotificationBulkResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&bulk))
 	assert.Equal([]int64{id}, bulk.Succeeded)
 	assert.Empty(bulk.Failed)
@@ -384,7 +386,7 @@ func TestNotificationsAPIAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T)
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
-	var listed notificationsResponse
+	var listed itemapi.NotificationsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
 	require.Len(listed.Items, 1)
 	assert.Equal("thread-ghe", listed.Items[0].PlatformThreadID)
@@ -597,16 +599,16 @@ func TestNotificationsAPIBulkMutationsScopeToTrackedRepos(t *testing.T) {
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
 
-	var bulk notificationBulkResponse
+	var bulk itemapi.NotificationBulkResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&bulk))
-	assert := assert.New(t)
-	assert.Equal([]int64{trackedID}, bulk.Succeeded)
-	assert.Equal([]int64{trackedID}, bulk.Queued)
-	assert.Equal([]notificationBulkFailure{{ID: removedID, Error: "notification not found"}}, bulk.Failed)
+	check := assert.New(t)
+	check.Equal([]int64{trackedID}, bulk.Succeeded)
+	check.Equal([]int64{trackedID}, bulk.Queued)
+	check.Equal([]itemapi.NotificationBulkFailure{{ID: removedID, Error: "notification not found"}}, bulk.Failed)
 	removedItems, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "removed"})
 	require.NoError(err)
 	require.Len(removedItems, 1)
-	assert.Nil(removedItems[0].SourceAckQueuedAt)
+	check.Nil(removedItems[0].SourceAckQueuedAt)
 }
 
 func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
@@ -709,7 +711,7 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 			defer resp.Body.Close()
 			require.Equal(http.StatusOK, resp.StatusCode)
 
-			var bulk notificationBulkResponse
+			var bulk itemapi.NotificationBulkResponse
 			require.NoError(json.NewDecoder(resp.Body).Decode(&bulk))
 			assert := assert.New(t)
 			assert.Equal([]int64{id}, bulk.Succeeded)
@@ -718,7 +720,7 @@ func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {
 			} else {
 				assert.Empty(bulk.Queued)
 			}
-			assert.Equal([]notificationBulkFailure{{ID: missingID, Error: "notification not found"}}, bulk.Failed)
+			assert.Equal([]itemapi.NotificationBulkFailure{{ID: missingID, Error: "notification not found"}}, bulk.Failed)
 			tt.verify(t.Context(), assert, database, id)
 		})
 	}
@@ -769,7 +771,7 @@ func TestNotificationsAPIRouteFieldsFollowRepositoryRename(t *testing.T) {
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
-	var listed notificationsResponse
+	var listed itemapi.NotificationsResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&listed))
 	require.Len(listed.Items, 1)
 	assert.Equal("acme", listed.Items[0].RepoOwner)

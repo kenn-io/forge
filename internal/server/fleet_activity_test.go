@@ -7,11 +7,12 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
 func TestFleetActivityWorkspaceMatching(t *testing.T) {
-	repo := activityRepoRefResponse{
+	repo := itemapi.ActivityRepoRefResponse{
 		Provider: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: "42",
 		Owner: "acme", Name: "renamed",
 	}
@@ -28,7 +29,7 @@ func TestFleetActivityWorkspaceMatching(t *testing.T) {
 	local := &workspaceapi.WorkspaceRef{ID: "local", Status: "creating"}
 	for _, tc := range []struct {
 		name     string
-		repo     activityRepoRefResponse
+		repo     itemapi.ActivityRepoRefResponse
 		itemType string
 		number   int
 		local    *workspaceapi.WorkspaceRef
@@ -39,16 +40,16 @@ func TestFleetActivityWorkspaceMatching(t *testing.T) {
 		{"different item type", repo, "pr", 7, nil, nil},
 		{"different number", repo, "issue", 9, nil, nil},
 		{"local takes precedence", repo, "issue", 7, local, local},
-		{"reused route", activityRepoRefResponse{Provider: repo.Provider, PlatformHost: repo.PlatformHost, PlatformRepoID: "43", Owner: repo.Owner, Name: repo.Name}, "issue", 7, nil, nil},
-		{"different provider", activityRepoRefResponse{Provider: "gitea", PlatformHost: repo.PlatformHost, PlatformRepoID: "42"}, "issue", 7, nil, nil},
-		{"different host", activityRepoRefResponse{Provider: repo.Provider, PlatformHost: "other.example.test", PlatformRepoID: "42"}, "issue", 7, nil, nil},
+		{"reused route", itemapi.ActivityRepoRefResponse{Provider: repo.Provider, PlatformHost: repo.PlatformHost, PlatformRepoID: "43", Owner: repo.Owner, Name: repo.Name}, "issue", 7, nil, nil},
+		{"different provider", itemapi.ActivityRepoRefResponse{Provider: "gitea", PlatformHost: repo.PlatformHost, PlatformRepoID: "42"}, "issue", 7, nil, nil},
+		{"different host", itemapi.ActivityRepoRefResponse{Provider: repo.Provider, PlatformHost: "other.example.test", PlatformRepoID: "42"}, "issue", 7, nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			response := activityResponse{
-				Items:        []activityItemResponse{{Repo: tc.repo, ItemType: tc.itemType, ItemNumber: tc.number, Workspace: tc.local}},
-				ItemActivity: []activitySubjectResponse{{Repo: tc.repo, ItemType: tc.itemType, ItemNumber: tc.number, Workspace: tc.local}},
+			response := itemapi.ActivityResponse{
+				Items:        []itemapi.ActivityItemResponse{{Repo: tc.repo, ItemType: tc.itemType, ItemNumber: tc.number, Workspace: tc.local}},
+				ItemActivity: []itemapi.ActivitySubjectResponse{{Repo: tc.repo, ItemType: tc.itemType, ItemNumber: tc.number, Workspace: tc.local}},
 			}
-			overlayFleetActivityWorkspaces(&response, []fleet.WorkspaceSummary{workspace})
+			itemapi.OverlayFleetActivityWorkspaces(&response, []fleet.WorkspaceSummary{workspace})
 			assert.Equal(t, tc.want, response.Items[0].Workspace)
 			assert.Equal(t, tc.want, response.ItemActivity[0].Workspace)
 		})

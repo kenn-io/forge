@@ -23,11 +23,13 @@ import (
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/devboxapi"
 	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/routepolicy"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/terminalwebsocket"
-	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -88,7 +90,7 @@ func (s *Server) registerDevboxAPI(api huma.API) {
 		if err != nil {
 			return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 		}
-		s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		return &httpapi.BodyOutput[devbox.Connection]{Body: connection}, nil
 	}, httpapi.DocumentOperation("connect-devbox", "Connect your assigned devbox account", "Devboxes"))
 	huma.Delete(api, "/devboxes/{connection_id}", func(ctx context.Context, input *struct {
@@ -119,26 +121,12 @@ func (s *Server) registerDevboxAPI(api huma.API) {
 	}, httpapi.DocumentOperation("reconnect-devbox", "Refresh an assigned worker credential and verify identity", "Devboxes"))
 	huma.Post(api, "/devboxes/{connection_id}/workspaces", s.createDevboxWorkspace,
 		httpapi.DocumentOperation("create-devbox-workspace", "Create a workspace on a connected devbox", "Devboxes"))
-	for _, route := range devboxProxyRoutes {
+	for _, route := range devboxapi.DevboxProxyRoutes {
 		s.registerDevboxProxy(api, route)
 	}
 }
 
-type createDevboxWorkspaceInput struct {
-	ConnectionID string `path:"connection_id"`
-	Body         struct {
-		Provider            string `json:"provider"`
-		PlatformHost        string `json:"platform_host"`
-		Owner               string `json:"owner"`
-		Name                string `json:"name"`
-		MRNumber            int    `json:"mr_number,omitempty"`
-		IssueNumber         int    `json:"issue_number,omitempty"`
-		Branch              string `json:"branch,omitempty"`
-		ReuseExistingBranch bool   `json:"reuse_existing_branch,omitempty"`
-	}
-}
-
-func (s *Server) createDevboxWorkspace(ctx context.Context, input *createDevboxWorkspaceInput) (*httpapi.BodyOutput[workspaceapi.WorkspaceResponse], error) {
+func (s *Server) createDevboxWorkspace(ctx context.Context, input *devboxapi.CreateDevboxWorkspaceInput) (*httpapi.BodyOutput[workspaceapi.WorkspaceResponse], error) {
 	connections, err := s.devboxController()
 	if err != nil {
 		return nil, err
@@ -202,57 +190,20 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *createDevboxW
 	}
 	defer response.Body.Close()
 	if response.StatusCode >= 300 {
-		return nil, devboxResponseProblem(response)
+		return nil, devboxapi.DevboxResponseProblem(response)
 	}
 	var workspace workspaceapi.WorkspaceResponse
 	if err := json.UnmarshalRead(io.LimitReader(response.Body, 1<<20), &workspace); err != nil {
 		return nil, httpapi.Internal(err.Error())
 	}
-	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 	return &httpapi.BodyOutput[workspaceapi.WorkspaceResponse]{Body: workspace}, nil
 }
 
-func devboxResponseProblem(response *http.Response) error {
-	var problem struct {
-		Detail string `json:"detail"`
-	}
-	_ = json.UnmarshalRead(io.LimitReader(response.Body, 64<<10), &problem)
-	if problem.Detail == "" {
-		problem.Detail = http.StatusText(response.StatusCode)
-	}
-	return httpapi.NewProblem(response.StatusCode, httpapi.CodeUpstreamError, problem.Detail, nil)
-}
-
-type devboxProxyRoute struct{ method, path, operation string }
-
-var devboxProxyRoutes = []devboxProxyRoute{
-	{"GET", "/workspaces", "list-devbox-workspaces"},
-	{"GET", "/workspaces/{id}", "get-devbox-workspace"},
-	{"GET", "/workspaces/{id}/agent-sessions", "list-devbox-agent-sessions"},
-	{"GET", "/workspaces/{id}/commits", "get-devbox-commits"},
-	{"GET", "/workspaces/{id}/diff", "get-devbox-diff"},
-	{"GET", "/workspaces/{id}/diff/watch", "watch-devbox-diff"},
-	{"GET", "/workspaces/{id}/file-preview", "get-devbox-file-preview"},
-	{"GET", "/workspaces/{id}/files", "get-devbox-files"},
-	{"POST", "/workspaces/{id}/retry", "retry-devbox-workspace"},
-	{"POST", "/workspaces/{id}/refresh", "refresh-devbox-workspace"},
-	{"POST", "/workspaces/{id}/push", "push-devbox-workspace"},
-	{"POST", "/workspaces/{id}/pull", "pull-devbox-workspace"},
-	{"DELETE", "/workspaces/{id}", "delete-devbox-workspace"},
-	{"GET", "/workspaces/{id}/runtime", "get-devbox-runtime"},
-	{"POST", "/workspaces/{id}/runtime/sessions", "launch-devbox-session"},
-	{"DELETE", "/workspaces/{id}/runtime/sessions/{session_key}", "stop-devbox-session"},
-	{"PATCH", "/workspaces/{id}/runtime/sessions/{session_key}", "rename-devbox-session"},
-	{"GET", "/workspaces/{id}/runtime/sessions/{session_key}/attach-spec", "get-devbox-attach-spec"},
-	{"POST", "/workspaces/{id}/runtime/sessions/{session_key}/initial-message", "send-devbox-initial-message"},
-	{"POST", "/workspaces/{id}/runtime/agent-handoffs", "launch-devbox-handoff"},
-	{"POST", "/terminal/paste-image", "store-devbox-paste-image"},
-}
-
-func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
-	op := &huma.Operation{OperationID: route.operation, Method: route.method, Path: "/devboxes/{connection_id}" + route.path, Tags: []string{"Devboxes"}, Summary: "Forward an execution operation to its owning devbox"}
-	if item := api.OpenAPI().Paths[route.path]; item != nil {
-		source := map[string]*huma.Operation{"GET": item.Get, "POST": item.Post, "DELETE": item.Delete, "PATCH": item.Patch}[route.method]
+func (s *Server) registerDevboxProxy(api huma.API, route devboxapi.DevboxProxyRoute) {
+	op := &huma.Operation{OperationID: route.Operation, Method: route.Method, Path: "/devboxes/{connection_id}" + route.Path, Tags: []string{"Devboxes"}, Summary: "Forward an execution operation to its owning devbox"}
+	if item := api.OpenAPI().Paths[route.Path]; item != nil {
+		source := map[string]*huma.Operation{"GET": item.Get, "POST": item.Post, "DELETE": item.Delete, "PATCH": item.Patch}[route.Method]
 		if source != nil {
 			op.Parameters = slices.Clone(source.Parameters)
 			op.RequestBody, op.Responses, op.Metadata = source.RequestBody, source.Responses, source.Metadata
@@ -265,28 +216,28 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
 		r, w := humago.Unwrap(ctx)
 		connections, err := s.devboxController()
 		if err != nil {
-			writeProblemResponse(w, httpapi.NewProblem(503, httpapi.CodeServiceUnavailable, err.Error(), nil))
+			routepolicy.WriteProblemResponse(w, httpapi.NewProblem(503, httpapi.CodeServiceUnavailable, err.Error(), nil))
 			return
 		}
 		if !fleetapi.BufferProxyRequestBody(w, r, 20<<20) {
 			return
 		}
-		path := route.path
+		path := route.Path
 		for _, name := range []string{"id", "session_key"} {
 			path = strings.ReplaceAll(path, "{"+name+"}", url.PathEscape(r.PathValue(name)))
 		}
 		if r.URL.RawQuery != "" {
 			path += "?" + r.URL.RawQuery
 		}
-		refreshContext := r.Method == "POST" && (strings.HasSuffix(route.path, "/retry") || strings.HasSuffix(route.path, "/refresh") || strings.HasSuffix(route.path, "/runtime/agent-handoffs"))
-		if r.Method == "POST" && strings.HasSuffix(route.path, "/runtime/sessions") {
+		refreshContext := r.Method == "POST" && (strings.HasSuffix(route.Path, "/retry") || strings.HasSuffix(route.Path, "/refresh") || strings.HasSuffix(route.Path, "/runtime/agent-handoffs"))
+		if r.Method == "POST" && strings.HasSuffix(route.Path, "/runtime/sessions") {
 			var input workspaceapi.LaunchWorkspaceRuntimeSessionInput
 			body, err := io.ReadAll(r.Body)
 			if err == nil {
 				err = json.Unmarshal(body, &input.Body)
 			}
 			if err != nil {
-				writeProblemResponse(w, httpapi.NewProblem(http.StatusBadRequest, httpapi.CodeBadRequest, "invalid session launch request", nil))
+				routepolicy.WriteProblemResponse(w, httpapi.NewProblem(http.StatusBadRequest, httpapi.CodeBadRequest, "invalid session launch request", nil))
 				return
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
@@ -296,7 +247,7 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
 		}
 		if refreshContext {
 			if err := s.refreshDevboxContext(r.Context(), connections, r.PathValue("connection_id"), r.PathValue("id")); err != nil {
-				writeProblemResponse(w, httpapi.NewProblem(409, httpapi.CodeConflict, "Workspace context needs refresh: "+err.Error(), nil))
+				routepolicy.WriteProblemResponse(w, httpapi.NewProblem(409, httpapi.CodeConflict, "Workspace context needs refresh: "+err.Error(), nil))
 				return
 			}
 		}
@@ -308,7 +259,7 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
 			if decodeErr == nil && problem.Code == httpapi.CodeConflict && problem.Details["reason"] == workspaceapi.WorkspaceContextExpiredReason {
 				_ = response.Body.Close()
 				if err := s.refreshDevboxContext(r.Context(), connections, r.PathValue("connection_id"), r.PathValue("id")); err != nil {
-					writeProblemResponse(w, httpapi.NewProblem(http.StatusConflict, httpapi.CodeConflict, "Workspace context needs refresh: "+err.Error(), nil))
+					routepolicy.WriteProblemResponse(w, httpapi.NewProblem(http.StatusConflict, httpapi.CodeConflict, "Workspace context needs refresh: "+err.Error(), nil))
 					return
 				}
 				// Retry only this read, once. Ordinary reads do not renew context.
@@ -322,19 +273,19 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
 			}
 		}
 		if err != nil {
-			writeProblemResponse(w, httpapi.NewProblem(502, httpapi.CodeUpstreamError, "devbox request failed; reconnect and check operation status: "+err.Error(), nil))
+			routepolicy.WriteProblemResponse(w, httpapi.NewProblem(502, httpapi.CodeUpstreamError, "devbox request failed; reconnect and check operation status: "+err.Error(), nil))
 			return
 		}
 		defer response.Body.Close()
-		if response.StatusCode == http.StatusOK && (route.path == "/workspaces/{id}" || route.path == "/workspaces/{id}/push" || route.path == "/workspaces/{id}/refresh") {
+		if response.StatusCode == http.StatusOK && (route.Path == "/workspaces/{id}" || route.Path == "/workspaces/{id}/push" || route.Path == "/workspaces/{id}/refresh") {
 			var workspace workspaceapi.WorkspaceResponse
 			if err := json.UnmarshalRead(io.LimitReader(response.Body, 1<<20), &workspace); err != nil {
-				writeProblemResponse(w, httpapi.NewProblem(502, httpapi.CodeUpstreamError, "devbox returned an invalid workspace response", nil))
+				routepolicy.WriteProblemResponse(w, httpapi.NewProblem(502, httpapi.CodeUpstreamError, "devbox returned an invalid workspace response", nil))
 				return
 			}
 			workspace.CommitAttribution = nil
 			if state := workspace.PushState; state != nil && state.Pushed && state.Repository == workspace.RepoOwner+"/"+workspace.RepoName {
-				workspace.CommitAttribution = new(connections.CheckAttribution(r.Context(), r.PathValue("connection_id"), *state, s.devboxAttributionSource(workspace)))
+				workspace.CommitAttribution = new(connections.CheckAttribution(r.Context(), r.PathValue("connection_id"), *state, s.devboxapi.DevboxAttributionSource(workspace)))
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
@@ -345,44 +296,11 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
 		fleetapi.CopyProxyResponseHeaders(w.Header(), response.Header)
 		w.WriteHeader(response.StatusCode)
 		if strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
-			copyDevboxEvents(w, response.Body)
+			devboxapi.CopyDevboxEvents(w, response.Body)
 		} else {
 			_, _ = io.Copy(w, response.Body)
 		}
 	})
-}
-
-func (s *Server) devboxAttributionSource(workspace workspaceapi.WorkspaceResponse) tokenauth.Source {
-	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-	if s.cfg == nil || s.tokenSources == nil || workspace.Repo.Provider != "github" || workspace.PlatformHost != "github.com" {
-		return nil
-	}
-	repo := config.Repo{Platform: "github", PlatformHost: "github.com", Owner: workspace.RepoOwner, Name: workspace.RepoName}
-	for _, candidate := range s.cfg.Repos {
-		if candidate.PlatformOrDefault() == "github" && candidate.PlatformHostOrDefault() == "github.com" && strings.EqualFold(candidate.Owner, repo.Owner) && strings.EqualFold(candidate.Name, repo.Name) {
-			repo = candidate
-			break
-		}
-	}
-	return s.tokenSources.Upsert(s.cfg.ResolveGitHubRepoTokenSource(repo))
-}
-
-func copyDevboxEvents(w http.ResponseWriter, body io.Reader) {
-	buffer := make([]byte, 4096)
-	controller := http.NewResponseController(w)
-	for {
-		n, err := body.Read(buffer)
-		if n > 0 {
-			if _, writeErr := w.Write(buffer[:n]); writeErr != nil {
-				return
-			}
-			_ = controller.Flush()
-		}
-		if err != nil {
-			return
-		}
-	}
 }
 
 func (s *Server) refreshDevboxContext(ctx context.Context, connections *devbox.Connections, connectionID, workspaceID string) error {
@@ -396,7 +314,7 @@ func (s *Server) refreshDevboxContext(ctx context.Context, connections *devbox.C
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return devboxResponseProblem(response)
+		return devboxapi.DevboxResponseProblem(response)
 	}
 	var current workspaceapi.WorkspaceResponse
 	if err := json.UnmarshalRead(io.LimitReader(response.Body, 1<<20), &current); err != nil {
@@ -426,17 +344,17 @@ func (s *Server) refreshDevboxContext(ctx context.Context, connections *devbox.C
 	}
 	defer refreshed.Body.Close()
 	if refreshed.StatusCode >= 300 {
-		return devboxResponseProblem(refreshed)
+		return devboxapi.DevboxResponseProblem(refreshed)
 	}
 	return nil
 }
 
 func (s *Server) registerDevboxTerminalAPI(api huma.API) {
-	for _, route := range []devboxProxyRoute{
-		{"GET", "/workspaces/{id}/terminal", "connect-devbox-terminal"},
-		{"GET", "/workspaces/{id}/runtime/sessions/{session_key}/terminal", "connect-devbox-session-terminal"},
+	for _, route := range []devboxapi.DevboxProxyRoute{
+		{Method: "GET", Path: "/workspaces/{id}/terminal", Operation: "connect-devbox-terminal"},
+		{Method: "GET", Path: "/workspaces/{id}/runtime/sessions/{session_key}/terminal", Operation: "connect-devbox-session-terminal"},
 	} {
-		op := &huma.Operation{OperationID: route.operation, Method: "GET", Path: "/devboxes/{connection_id}" + route.path, Hidden: true}
+		op := &huma.Operation{OperationID: route.Operation, Method: "GET", Path: "/devboxes/{connection_id}" + route.Path, Hidden: true}
 		api.Adapter().Handle(op, func(ctx huma.Context) {
 			r, w := humago.Unwrap(ctx)
 			connections, err := s.devboxController()
@@ -449,7 +367,7 @@ func (s *Server) registerDevboxTerminalAPI(api huma.API) {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
-			path := route.path
+			path := route.Path
 			for _, name := range []string{"id", "session_key"} {
 				path = strings.ReplaceAll(path, "{"+name+"}", url.PathEscape(r.PathValue(name)))
 			}

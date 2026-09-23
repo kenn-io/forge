@@ -15,6 +15,8 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -29,7 +31,7 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 	)
 	require.NoError(err)
 	hub := New(database, nil, nil, "/", nil, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials,
 	})
 	t.Cleanup(func() { gracefulShutdown(t, hub) })
@@ -42,7 +44,7 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 	seedPR(t, database, "acme", "widget", 2, func(pull *db.MergeRequest) {
 		pull.Title = "Linked change"
 	})
-	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)

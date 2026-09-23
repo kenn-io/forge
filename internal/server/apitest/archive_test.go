@@ -3,6 +3,7 @@ package apitest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
@@ -398,7 +400,7 @@ func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	authServer := server.New(database, syncer, nil, "/", nil, server.ServerOptions{
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "archive-test-token", RequireAPIAuth: true,
 		},
 		Archive: archiveStatusController{},

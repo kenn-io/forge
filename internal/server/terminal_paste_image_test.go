@@ -18,6 +18,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/terminalpaste"
 )
 
@@ -28,7 +29,7 @@ func TestTerminalPasteImageStoresBrowserImageForRemoteTerminal(t *testing.T) {
 	srv := New(
 		openTestDB(t), nil, nil, "/",
 		&config.Config{DataDir: dataDir},
-		ServerOptions{HostCheck: HostCheckOptions{
+		ServerOptions{HostCheck: authapi.HostCheckOptions{
 			Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 		}},
 	)
@@ -84,10 +85,9 @@ func TestTerminalPasteImageAcceptsFleetPeerRelay(t *testing.T) {
 	srv := New(
 		openTestDB(t), nil, nil, "/",
 		&config.Config{DataDir: dataDir},
-		ServerOptions{
-			FederationCredentials: store,
-			DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
-			HostCheck: HostCheckOptions{
+		ServerOptions{FederationCredentials: store,
+			DaemonAccess: authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+			HostCheck: authapi.HostCheckOptions{
 				Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			},
 		},
@@ -114,7 +114,7 @@ func TestTerminalPasteImageRejectsUnsupportedAndOversizedPayloads(t *testing.T) 
 	srv := New(
 		openTestDB(t), nil, nil, "/",
 		&config.Config{DataDir: t.TempDir()},
-		ServerOptions{HostCheck: HostCheckOptions{
+		ServerOptions{HostCheck: authapi.HostCheckOptions{
 			Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 		}},
 	)
@@ -171,7 +171,7 @@ func TestTerminalPasteImageAcceptsAuthenticatedCLIRelay(t *testing.T) {
 	srv := New(
 		openTestDB(t), nil, nil, "/",
 		&config.Config{DataDir: t.TempDir()},
-		ServerOptions{HostCheck: HostCheckOptions{
+		ServerOptions{HostCheck: authapi.HostCheckOptions{
 			Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 		}},
 	)

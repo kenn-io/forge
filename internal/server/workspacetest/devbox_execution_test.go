@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
@@ -77,9 +78,8 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 		Tmux:            config.Tmux{Command: workspaceTestTmuxCommand},
 		Agents:          []config.Agent{{Key: "fixture", Label: "Fixture shell", Command: []string{"/bin/bash", "--noprofile", "--norc"}}},
 	}
-	opts := server.ServerOptions{
-		ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef", Clones: clones, WorktreeDir: filepath.Join(directory, "worktrees"), HostCheckAllowLoopbackAnyPort: true,
-		DaemonAccess: server.DaemonAccessOptions{Token: "worker-bearer", RequireAPIAuth: true}, DisableWorkspaceBackgroundMonitors: true, DetachRuntimeSessionsForRestart: true, PtyOwnerInProcess: true,
+	opts := server.ServerOptions{ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef", Clones: clones, WorktreeDir: filepath.Join(directory, "worktrees"), HostCheckAllowLoopbackAnyPort: true,
+		DaemonAccess: authapi.DaemonAccessOptions{Token: "worker-bearer", RequireAPIAuth: true}, DisableWorkspaceBackgroundMonitors: true, DetachRuntimeSessionsForRestart: true, PtyOwnerInProcess: true,
 	}
 	srv := server.New(database, nil, nil, "/", cfg, opts)
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { srv.ServeHTTP(w, r) }))
@@ -103,7 +103,7 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	require.NoError(err)
 	controller := server.New(controllerDB, nil, nil, "/", &config.Config{DataDir: controllerDir, Host: "127.0.0.1", Port: 8092, BasePath: "/", Tmux: config.Tmux{Command: workspaceTestTmuxCommand}}, server.ServerOptions{
 		Devboxes: connections, HostCheckAllowLoopbackAnyPort: true, DisableWorkspaceBackgroundMonitors: true,
-		DaemonAccess: server.DaemonAccessOptions{Token: "controller-bearer", RequireAPIAuth: true},
+		DaemonAccess: authapi.DaemonAccessOptions{Token: "controller-bearer", RequireAPIAuth: true},
 	})
 	controllerHTTP := httptest.NewServer(controller)
 	t.Cleanup(func() { controllerHTTP.Close(); assert.NoError(controller.Shutdown(context.Background())) })

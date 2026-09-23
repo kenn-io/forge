@@ -2,152 +2,46 @@ package server
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
-	"path"
 	"slices"
 	"strings"
 
-	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/configreload"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/repoapi"
+	"go.kenn.io/forge/internal/server/settingsapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
 )
-
-type settingsResponse struct {
-	AirplaneMode  bool                            `json:"airplane_mode"`
-	Repos         []ghclient.ConfiguredRepoStatus `json:"repos" nullable:"false"`
-	RepoPresets   []config.RepoPreset             `json:"repo_presets" nullable:"false"`
-	Activity      config.Activity                 `json:"activity"`
-	Detail        config.Detail                   `json:"detail"`
-	Sync          syncSettingsResponse            `json:"sync"`
-	PullRequests  config.PullRequests             `json:"pull_requests"`
-	Workspaces    config.Workspaces               `json:"workspaces"`
-	Issues        config.Issues                   `json:"issues"`
-	Notifications notificationsSettingsResponse   `json:"notifications"`
-	Terminal      config.Terminal                 `json:"terminal"`
-	Modes         config.ModeVisibility           `json:"modes,omitzero"`
-	Agents        []config.Agent                  `json:"agents" nullable:"false"`
-	QuickActions  []config.QuickAction            `json:"quick_actions" nullable:"false"`
-	KataProjects  []config.KataProjectRepoMapping `json:"kata_projects" nullable:"false"`
-	LaunchTargets []localruntime.LaunchTarget     `json:"launch_targets,omitempty"`
-	Fleet         fleetSettingsResponse           `json:"fleet"`
-	MCP           mcpSettingsResponse             `json:"mcp"`
-	Roborev       roborevSettingsResponse         `json:"roborev"`
-	// ProviderSettingsLoaded is false on a spoke whose response lacks the hub's
-	// settings; its hub-owned fields then hold spoke-local values.
-	ProviderSettingsLoaded bool `json:"provider_settings_loaded" doc:"Whether hub-owned fields (repositories, presets, activity, detail, sync, pull requests, issues, notifications) hold the effective values. False on a spoke when the hub's settings were not loaded; those fields cannot be edited until they are."`
-}
-
-// syncSettingsResponse reports the effective hourly sync ceiling. The schema
-// bounds mirror config.MinSyncBudgetPerHour and config.MaxSyncBudgetPerHour so
-// the UI can reject an out-of-range value before sending it.
-type syncSettingsResponse struct {
-	BudgetPerHour int `json:"budget_per_hour" minimum:"50" maximum:"15000"`
-}
-
-type notificationsSettingsResponse struct {
-	Enabled bool `json:"enabled"`
-}
-
-type mcpSettingsResponse struct {
-	Enabled            bool   `json:"enabled"`
-	Port               int    `json:"port,omitempty"`
-	DiffCacheMB        int    `json:"diff_cache_mb,omitempty"`
-	RestartRequired    bool   `json:"restart_required"`
-	ActiveURL          string `json:"active_url,omitempty"`
-	ActiveRequiresAuth bool   `json:"active_requires_auth"`
-}
-
-type roborevSettingsResponse struct {
-	InitManagedClones bool `json:"init_managed_clones"`
-}
-
-type updateSettingsRequest struct {
-	AirplaneMode *bool                            `json:"airplane_mode,omitempty"`
-	Activity     *config.Activity                 `json:"activity,omitempty"`
-	Detail       *config.Detail                   `json:"detail,omitempty"`
-	Sync         *syncSettingsUpdate              `json:"sync,omitempty"`
-	PullRequests *config.PullRequests             `json:"pull_requests,omitempty"`
-	Workspaces   *workspaceSettingsUpdate         `json:"workspaces,omitempty"`
-	Issues       *config.Issues                   `json:"issues,omitempty"`
-	Terminal     *config.Terminal                 `json:"terminal,omitempty"`
-	Modes        *config.ModeVisibility           `json:"modes,omitempty"`
-	Agents       *[]config.Agent                  `json:"agents,omitempty"`
-	QuickActions *[]config.QuickAction            `json:"quick_actions,omitempty"`
-	KataProjects *[]config.KataProjectRepoMapping `json:"kata_projects,omitempty"`
-	MCP          *mcpSettingsUpdate               `json:"mcp,omitempty"`
-	Roborev      *roborevSettingsUpdate           `json:"roborev,omitempty"`
-}
-
-type workspaceSettingsUpdate struct {
-	DefaultExecutionTarget *string `json:"default_execution_target,omitempty"`
-	ShowAgentStatusInLists *bool   `json:"show_agent_status_in_lists,omitempty"`
-	AutoAssignOnCreate     *bool   `json:"auto_assign_on_create,omitempty"`
-	DefaultSidebarView     *string `json:"default_sidebar_view,omitempty" enum:"diff,item"`
-}
-
-type syncSettingsUpdate struct {
-	BudgetPerHour *int `json:"budget_per_hour,omitempty" minimum:"50" maximum:"15000"`
-}
-
-type mcpSettingsUpdate struct {
-	Enabled     *bool `json:"enabled,omitempty"`
-	Port        *int  `json:"port,omitempty"`
-	DiffCacheMB *int  `json:"diff_cache_mb,omitempty"`
-}
-
-type roborevSettingsUpdate struct {
-	InitManagedClones *bool `json:"init_managed_clones,omitempty"`
-}
-
-func (s *Server) configuredClients(
-	repos []config.Repo,
-) map[string]ghclient.Client {
-	clients := make(map[string]ghclient.Client)
-	for _, repo := range repos {
-		host := repo.PlatformHostOrDefault()
-		if _, ok := clients[host]; ok {
-			continue
-		}
-		client, err := s.syncer.DirectClientForHost(host)
-		if err != nil {
-			continue
-		}
-		clients[host] = client
-	}
-	return clients
-}
 
 // buildLocalSettingsResponse builds the settings response from in-memory
 // state (syncer tracked repos) plus the hidden-from-UI preferences persisted
 // in SQLite, without calling the provider.
 func (s *Server) buildLocalSettingsResponse(
 	ctx context.Context,
-) (settingsResponse, error) {
+) (spokeapi.SettingsResponse, error) {
 	s.cfgMu.Lock()
 	airplaneMode := s.cfg.AirplaneMode
 	repos := slices.Clone(s.cfg.Repos)
-	repoPresets := cloneRepoPresets(s.cfg.RepoPresets)
+	repoPresets := spokeapi.CloneRepoPresets(s.cfg.RepoPresets)
 	if repoPresets == nil {
 		repoPresets = []config.RepoPreset{}
 	}
 	activity := s.cfg.Activity
 	detail := s.cfg.Detail
-	syncSettings := syncSettingsResponse{BudgetPerHour: s.cfg.BudgetPerHour()}
+	syncSettings := spokeapi.SyncSettingsResponse{BudgetPerHour: s.cfg.BudgetPerHour()}
 	pullRequests := s.cfg.PullRequests
 	workspaces := s.cfg.Workspaces
 	issues := s.cfg.Issues
 	terminal := s.cfg.Terminal
-	modes := cloneModeVisibility(s.cfg.Modes).WithDefaults()
-	agents := cloneConfigAgents(s.cfg.Agents)
-	quickActions := cloneQuickActions(s.cfg.QuickActions)
+	modes := spokeapi.CloneModeVisibility(s.cfg.Modes).WithDefaults()
+	agents := spokeapi.CloneConfigAgents(s.cfg.Agents)
+	quickActions := settingsapi.CloneQuickActions(s.cfg.QuickActions)
 	kataProjects := slices.Clone(s.cfg.KataProjects)
 	mcp := s.cfg.MCP
 	roborev := s.cfg.Roborev
@@ -158,16 +52,16 @@ func (s *Server) buildLocalSettingsResponse(
 		kataProjects = []config.KataProjectRepoMapping{}
 	}
 	tmuxCommand := s.cfg.TmuxCommand()
-	fleetSettings := s.buildFleetSettingsResponseLocked()
+	fleetSettings := s.settingsapi.BuildFleetSettingsResponseLocked()
 	s.cfgMu.Unlock()
 	launchTargets := localruntime.ResolveLaunchTargets(agents, tmuxCommand, nil)
 	if launchTargets == nil {
 		launchTargets = []localruntime.LaunchTarget{}
 	}
 
-	hiddenSet, err := s.hiddenRepoCorrelationSet(ctx)
+	hiddenSet, err := s.settingsapi.HiddenRepoCorrelationSet(ctx)
 	if err != nil {
-		return settingsResponse{}, err
+		return spokeapi.SettingsResponse{}, err
 	}
 	var tracked []ghclient.RepoRef
 	if s.syncer != nil {
@@ -177,15 +71,15 @@ func (s *Server) buildLocalSettingsResponse(
 		[]ghclient.ConfiguredRepoStatus, len(repos),
 	)
 	for i, raw := range repos {
-		platformRepoID, trackedRepoPath, err := s.configuredRepoProjection(
+		platformRepoID, trackedRepoPath, err := s.settingsapi.ConfiguredRepoProjection(
 			ctx, raw, tracked,
 		)
 		if err != nil {
-			return settingsResponse{}, err
+			return spokeapi.SettingsResponse{}, err
 		}
-		hiddenFromUI, err := s.configEntryHidden(ctx, raw, tracked, hiddenSet)
+		hiddenFromUI, err := s.settingsapi.ConfigEntryHidden(ctx, raw, tracked, hiddenSet)
 		if err != nil {
-			return settingsResponse{}, err
+			return spokeapi.SettingsResponse{}, err
 		}
 		caps := s.repoResolver.Capabilities(
 			platform.Kind(raw.PlatformOrDefault()), raw.PlatformHostOrDefault(),
@@ -196,16 +90,16 @@ func (s *Server) buildLocalSettingsResponse(
 			PlatformRepoID:    platformRepoID,
 			Owner:             raw.Owner,
 			Name:              raw.Name,
-			RepoPath:          configRepoPath(raw),
+			RepoPath:          settingsapi.ConfigRepoPath(raw),
 			TrackedRepoPath:   trackedRepoPath,
 			WorktreeBasePath:  raw.WorktreeBasePath,
 			IsGlob:            raw.HasNameGlob(),
-			MatchedRepoCount:  matchedRepoCount(raw, tracked),
+			MatchedRepoCount:  settingsapi.MatchedRepoCount(raw, tracked),
 			HiddenFromUI:      hiddenFromUI,
 			IssuePRReferences: caps.ReadIssuePRReferences,
 		}
 	}
-	return settingsResponse{
+	return spokeapi.SettingsResponse{
 		AirplaneMode: airplaneMode,
 		Repos:        configured,
 		RepoPresets:  repoPresets,
@@ -217,7 +111,7 @@ func (s *Server) buildLocalSettingsResponse(
 		Issues:       issues,
 		// Notifications are a built-in capability with no enable/disable
 		// setting; report them as always available.
-		Notifications: notificationsSettingsResponse{Enabled: true},
+		Notifications: spokeapi.NotificationsSettingsResponse{Enabled: true},
 		Terminal:      terminal,
 		Modes:         modes,
 		Agents:        agents,
@@ -225,7 +119,7 @@ func (s *Server) buildLocalSettingsResponse(
 		KataProjects:  kataProjects,
 		LaunchTargets: launchTargets,
 		Fleet:         fleetSettings,
-		MCP: mcpSettingsResponse{
+		MCP: spokeapi.McpSettingsResponse{
 			Enabled:            mcp.Enabled,
 			Port:               mcp.Port,
 			DiffCacheMB:        mcp.DiffCacheMB,
@@ -233,644 +127,19 @@ func (s *Server) buildLocalSettingsResponse(
 			ActiveURL:          s.options.MCPURL,
 			ActiveRequiresAuth: s.bootCfgSnapshot.RequireAuth,
 		},
-		Roborev: roborevSettingsResponse{
+		Roborev: spokeapi.RoborevSettingsResponse{
 			InitManagedClones: roborev.InitManagedClones,
 		},
 	}, nil
 }
 
-func (s *Server) configuredRepoProjection(
-	ctx context.Context,
-	raw config.Repo,
-	tracked []ghclient.RepoRef,
-) (string, string, error) {
-	if raw.HasNameGlob() {
-		return "", "", nil
-	}
-	platformRepoID := strings.TrimSpace(raw.PlatformRepoID)
-	if platformRepoID != "" {
-		if s.db != nil {
-			entry, err := s.db.GetRepositoryByProviderID(
-				ctx, raw.PlatformOrDefault(), raw.PlatformHostOrDefault(), platformRepoID,
-			)
-			if err != nil {
-				return "", "", fmt.Errorf(
-					"resolve configured repo %s: %w", configRepoPath(raw), err,
-				)
-			}
-			if entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive {
-				return platformRepoID, entry.Repository.RepoPath, nil
-			}
-		}
-		return platformRepoID, configRepoPath(raw), nil
-	}
-	if s.db != nil {
-		entries, err := s.db.ListRepositoryCatalog(ctx, db.RepositoryCatalogFilter{
-			Platform: raw.PlatformOrDefault(), PlatformHost: raw.PlatformHostOrDefault(),
-			RepoPath: configRepoPath(raw),
-		})
-		if err != nil {
-			return "", "", fmt.Errorf(
-				"resolve configured repo %s: %w", configRepoPath(raw), err,
-			)
-		}
-		if len(entries) == 1 &&
-			strings.TrimSpace(entries[0].Repository.PlatformRepoID) != "" {
-			return entries[0].Repository.PlatformRepoID,
-				entries[0].Repository.RepoPath, nil
-		}
-		if len(entries) > 1 {
-			return "", "", nil
-		}
-	}
-	return trackedPlatformRepoIDForConfig(raw, tracked),
-		trackedPathForConfig(raw, tracked), nil
-}
-
-// hiddenRepoCorrelation carries the two addresses of every catalog row with a
-// hidden-from-UI preference: stable provider identity keys for correlating
-// tracked refs, and catalog row ids for entries whose tracked stable identity
-// is unavailable.
-type hiddenRepoCorrelation struct {
-	keys map[string]struct{}
-	ids  map[int64]struct{}
-}
-
-// hiddenRepoCorrelationSet returns the identity keys and catalog row ids of
-// repositories with a hidden-from-UI preference, for correlating configured
-// entries with their tracked repositories. Routes are mutable and reusable, so
-// correlation must never key on them: a displaced row keeps its old display
-// route, and a replacement repository at that route is a different repository.
-func (s *Server) hiddenRepoCorrelationSet(
-	ctx context.Context,
-) (hiddenRepoCorrelation, error) {
-	if s.db == nil {
-		return hiddenRepoCorrelation{}, nil
-	}
-	hidden, err := s.db.HiddenRepos(ctx)
-	if err != nil {
-		return hiddenRepoCorrelation{}, fmt.Errorf("list hidden repos: %w", err)
-	}
-	set := hiddenRepoCorrelation{
-		keys: make(map[string]struct{}, len(hidden)),
-		ids:  make(map[int64]struct{}, len(hidden)),
-	}
-	for _, repo := range hidden {
-		set.ids[repo.ID] = struct{}{}
-		key := trackedRepoIdentityKey(ghclient.RepoRef{
-			Platform:           httpapi.ProviderKind(repo),
-			PlatformHost:       httpapi.ProviderHost(repo),
-			PlatformExternalID: repo.PlatformRepoID,
-		})
-		if key == "" {
-			continue
-		}
-		set.keys[key] = struct{}{}
-	}
-	return set, nil
-}
-
-// configEntryHidden reports whether the exact configured entry's repository
-// carries a hidden-from-UI preference. Glob entries have no visibility of
-// their own: the preference belongs to exact repositories. Tracked refs with
-// a stable provider identity answer directly; without one (a route-only ref
-// or a server without a syncer), the entry resolves to its catalog row the
-// same way the mutation path does.
-func (s *Server) configEntryHidden(
-	ctx context.Context,
-	raw config.Repo,
-	tracked []ghclient.RepoRef,
-	hidden hiddenRepoCorrelation,
-) (bool, error) {
-	if raw.HasNameGlob() || len(hidden.ids) == 0 {
-		return false, nil
-	}
-	for _, repo := range tracked {
-		if !repoMatchesConfig(repo, raw) {
-			continue
-		}
-		key := trackedRepoIdentityKey(repo)
-		if key == "" {
-			continue
-		}
-		_, ok := hidden.keys[key]
-		return ok, nil
-	}
-	repo, err := s.lookupRepoForVisibilityRelease(
-		ctx, s.visibilityLookupIdentity(raw),
-	)
-	if err != nil {
-		return false, fmt.Errorf(
-			"resolve configured repo %s for hidden state: %w",
-			configRepoPath(raw), err,
-		)
-	}
-	if repo == nil {
-		return false, nil
-	}
-	_, ok := hidden.ids[repo.ID]
-	return ok, nil
-}
-
-// trackedPathForConfig returns the provider-verified current route of the
-// tracked repository backing an exact configured entry, or empty for globs
-// and untracked entries. Renames move the route while the entry keeps its
-// configured address, and clients release route-keyed state through this
-// value.
-func trackedPathForConfig(
-	raw config.Repo, tracked []ghclient.RepoRef,
-) string {
-	if raw.HasNameGlob() {
-		return ""
-	}
-	for _, repo := range tracked {
-		if repoMatchesConfig(repo, raw) {
-			return trackedRepoPath(repo)
-		}
-	}
-	return ""
-}
-
-func trackedPlatformRepoIDForConfig(
-	raw config.Repo, tracked []ghclient.RepoRef,
-) string {
-	if raw.HasNameGlob() {
-		return ""
-	}
-	for _, repo := range tracked {
-		if repoMatchesConfig(repo, raw) {
-			return strings.TrimSpace(repo.PlatformExternalID)
-		}
-	}
-	return ""
-}
-
-func matchedRepoCount(
-	raw config.Repo, tracked []ghclient.RepoRef,
-) int {
-	host := raw.PlatformHostOrDefault()
-	provider := raw.PlatformOrDefault()
-	count := 0
-	for _, repo := range tracked {
-		if !strings.EqualFold(repoProvider(repo), provider) ||
-			!samePlatformHost(repo.PlatformHost, host) ||
-			!strings.EqualFold(repo.Owner, raw.Owner) {
-			continue
-		}
-		if raw.HasNameGlob() {
-			matched, _ := path.Match(
-				strings.ToLower(raw.Name),
-				strings.ToLower(repo.Name),
-			)
-			if matched {
-				count++
-			}
-		} else if strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
-			strings.EqualFold(repo.Name, raw.Name) {
-			count++
-		}
-	}
-	return count
-}
-
-// mergeTrackedRepos adds repos to the syncer's tracked set, deduplicating by
-// stable provider id when present and host/owner/name otherwise. An
-// already-tracked repo takes the freshly resolved metadata so provider state
-// transitions (renames, archived flips) apply without a daemon restart.
-func (s *Server) mergeTrackedRepos(add []ghclient.RepoRef) {
-	current := s.syncer.TrackedRepos()
-	provenance := trackedRepoProvenance(current)
-	byRoute := make(map[string]int, len(current))
-	byIdentity := make(map[string]int, len(current))
-	for i, r := range current {
-		indexTrackedRepo(byRoute, byIdentity, r, i)
-	}
-	for _, r := range add {
-		r = withTrackedProvenance(provenance, r)
-		if i, ok := trackedRepoIndex(byRoute, byIdentity, r); ok {
-			unindexTrackedRepo(byRoute, byIdentity, current[i])
-			current[i] = r
-			indexTrackedRepo(byRoute, byIdentity, r, i)
-			continue
-		}
-		indexTrackedRepo(byRoute, byIdentity, r, len(current))
-		current = append(current, r)
-	}
-	s.syncer.SetRepos(current)
-}
-
-// replaceGlobRepos removes repos that only match the refreshed
-// glob entry, preserves repos still matched by other config
-// entries, then adds the newly resolved matches.
-func (s *Server) replaceGlobRepos(
-	raw config.Repo,
-	expanded []ghclient.RepoRef,
-	configured []config.Repo,
-) {
-	current := s.syncer.TrackedRepos()
-	provenance := trackedRepoProvenance(current)
-	kept := make([]ghclient.RepoRef, 0, len(current))
-	byRoute := make(map[string]int, len(current)+len(expanded))
-	byIdentity := make(map[string]int, len(current)+len(expanded))
-	for _, repo := range current {
-		if repoMatchesConfig(repo, raw) &&
-			!repoMatchesOtherConfig(repo, raw, configured) {
-			continue
-		}
-		if _, ok := trackedRepoIndex(byRoute, byIdentity, repo); ok {
-			continue
-		}
-		indexTrackedRepo(byRoute, byIdentity, repo, len(kept))
-		kept = append(kept, repo)
-	}
-	// Freshly resolved matches overwrite refs kept for overlapping config
-	// entries so provider state transitions (renames, archived flips) apply.
-	for _, repo := range expanded {
-		repo = withTrackedProvenance(provenance, repo)
-		if i, ok := trackedRepoIndex(byRoute, byIdentity, repo); ok {
-			unindexTrackedRepo(byRoute, byIdentity, kept[i])
-			kept[i] = repo
-			indexTrackedRepo(byRoute, byIdentity, repo, i)
-			continue
-		}
-		indexTrackedRepo(byRoute, byIdentity, repo, len(kept))
-		kept = append(kept, repo)
-	}
-	s.syncer.SetRepos(kept)
-}
-
-// removeConfigRepos keeps only tracked repos that match at
-// least one of the remaining config entries. A kept repo whose exact-entry
-// provenance no longer names a remaining entry loses it: a stale claim
-// would bind a future entry with the same path to the wrong repository.
-func (s *Server) removeConfigRepos(
-	remaining []config.Repo,
-) {
-	current := s.syncer.TrackedRepos()
-	kept := make([]ghclient.RepoRef, 0, len(current))
-	for _, repo := range current {
-		matched, provenanceRemains := false, false
-		for _, raw := range remaining {
-			if repoMatchesConfig(repo, raw) {
-				matched = true
-			}
-			if repoMatchesConfigProvenance(repo, raw) {
-				provenanceRemains = true
-			}
-		}
-		if !matched {
-			continue
-		}
-		if !provenanceRemains {
-			repo.ConfiguredRepoPath = ""
-		}
-		kept = append(kept, repo)
-	}
-	s.syncer.SetRepos(kept)
-}
-
-func repoMatchesOtherConfig(
-	repo ghclient.RepoRef,
-	target config.Repo,
-	configured []config.Repo,
-) bool {
-	for _, raw := range configured {
-		if sameConfiguredRepo(raw, target) {
-			continue
-		}
-		if repoMatchesConfig(repo, raw) {
-			return true
-		}
-	}
-	return false
-}
-
-func sameConfiguredRepo(left, right config.Repo) bool {
-	return strings.EqualFold(left.PlatformOrDefault(), right.PlatformOrDefault()) &&
-		samePlatformHost(
-			left.PlatformHostOrDefault(),
-			right.PlatformHostOrDefault(),
-		) &&
-		strings.EqualFold(configRepoPath(left), configRepoPath(right))
-}
-
-func (s *Server) worktreeBasePathForRepo(
-	ctx context.Context, repo workspace.WorktreeBaseRepository,
-) (string, bool, error) {
-	target := config.Repo{
-		Platform: repo.Platform, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
-		Owner:          repo.Owner, Name: repo.Name,
-	}
-	if s.cfg != nil {
-		s.cfgMu.Lock()
-		configuredRepos := slices.Clone(s.cfg.Repos)
-		s.cfgMu.Unlock()
-		targetID, _, err := s.configuredRepoProjection(ctx, target, nil)
-		if err != nil {
-			return "", false, err
-		}
-		for _, repo := range configuredRepos {
-			if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
-				continue
-			}
-			repoID, _, err := s.configuredRepoProjection(ctx, repo, nil)
-			if err != nil {
-				return "", false, err
-			}
-			stableMatch := targetID != "" && repoID == targetID &&
-				strings.EqualFold(repo.PlatformOrDefault(), target.PlatformOrDefault()) &&
-				samePlatformHost(repo.PlatformHostOrDefault(), target.PlatformHostOrDefault())
-			routeMatch := targetID == "" && sameConfiguredRepo(repo, target)
-			if stableMatch || routeMatch {
-				return repo.WorktreeBasePath, true, nil
-			}
-		}
-	}
-	if s.db == nil {
-		return "", false, nil
-	}
-	projects, err := s.db.ListProjects(ctx)
-	if err != nil {
-		return "", false, fmt.Errorf("list registered projects: %w", err)
-	}
-	var matchedPath string
-	for _, project := range projects {
-		identity := project.PlatformIdentity
-		if project.IsStale || identity == nil {
-			continue
-		}
-		stableMatch := strings.TrimSpace(repo.PlatformRepoID) != "" &&
-			strings.TrimSpace(identity.PlatformRepoID) == strings.TrimSpace(repo.PlatformRepoID)
-		routeMatch := strings.TrimSpace(repo.PlatformRepoID) == "" &&
-			strings.EqualFold(identity.Owner, repo.Owner) &&
-			strings.EqualFold(identity.Name, repo.Name)
-		if !strings.EqualFold(identity.Platform, repo.Platform) ||
-			!samePlatformHost(identity.Host, repo.PlatformHost) ||
-			(!stableMatch && !routeMatch) {
-			continue
-		}
-		if matchedPath != "" && matchedPath != project.LocalPath {
-			return "", false, nil
-		}
-		matchedPath = project.LocalPath
-	}
-	if matchedPath != "" {
-		return matchedPath, true, nil
-	}
-	return "", false, nil
-}
-
-func repoMatchesConfig(
-	repo ghclient.RepoRef, raw config.Repo,
-) bool {
-	host := raw.PlatformHostOrDefault()
-	if !strings.EqualFold(repoProvider(repo), raw.PlatformOrDefault()) ||
-		!samePlatformHost(repo.PlatformHost, host) {
-		return false
-	}
-	// A provider-side rename moves the tracked route (possibly across
-	// owners) away from the configured path; provenance still ties the
-	// repo to its exact entry.
-	if repoConfiguredPathMatches(repo, raw) {
-		return true
-	}
-	if !strings.EqualFold(repo.Owner, raw.Owner) {
-		return false
-	}
-	if raw.HasNameGlob() {
-		matched, _ := path.Match(
-			strings.ToLower(raw.Name),
-			strings.ToLower(repo.Name),
-		)
-		return matched
-	}
-	return strings.EqualFold(trackedRepoPath(repo), configRepoPath(raw)) ||
-		strings.EqualFold(repo.Name, raw.Name)
-}
-
-// repoMatchesConfigProvenance reports whether raw is the exact entry the
-// tracked repo's provenance names — provider- and host-scoped, since the
-// same path can be configured on multiple providers or hosts.
-func repoMatchesConfigProvenance(
-	repo ghclient.RepoRef, raw config.Repo,
-) bool {
-	return strings.EqualFold(repoProvider(repo), raw.PlatformOrDefault()) &&
-		samePlatformHost(repo.PlatformHost, raw.PlatformHostOrDefault()) &&
-		repoConfiguredPathMatches(repo, raw)
-}
-
-func repoConfiguredPathMatches(
-	repo ghclient.RepoRef, raw config.Repo,
-) bool {
-	return !raw.HasNameGlob() && repo.ConfiguredRepoPath != "" &&
-		strings.EqualFold(repo.ConfiguredRepoPath, configRepoPath(raw))
-}
-
-func configRepoPath(raw config.Repo) string {
-	if strings.TrimSpace(raw.RepoPath) != "" {
-		return strings.TrimSpace(raw.RepoPath)
-	}
-	return raw.Owner + "/" + raw.Name
-}
-
-func trackedRepoPath(repo ghclient.RepoRef) string {
-	if strings.TrimSpace(repo.RepoPath) != "" {
-		return strings.TrimSpace(repo.RepoPath)
-	}
-	return repo.Owner + "/" + repo.Name
-}
-
-func repoProvider(repo ghclient.RepoRef) string {
-	provider := string(repo.Platform)
-	if provider == "" {
-		return "github"
-	}
-	return strings.ToLower(provider)
-}
-
-func trackedRepoHost(repo ghclient.RepoRef) string {
-	host := strings.TrimSpace(repo.PlatformHost)
-	if host != "" {
-		return strings.ToLower(host)
-	}
-	if defaultHost, ok := platform.DefaultHost(platform.Kind(repoProvider(repo))); ok {
-		return defaultHost
-	}
-	return ""
-}
-
-func trackedRepoKey(repo ghclient.RepoRef) string {
-	return repoProvider(repo) + "\x00" +
-		trackedRepoHost(repo) + "\x00" +
-		strings.ToLower(strings.Trim(trackedRepoPath(repo), "/ "))
-}
-
-// trackedRepoIdentityKey keys a tracked repo by its stable provider id, so a
-// renamed route reconciles onto the same entry instead of tracking the
-// repository twice. Empty when the ref carries no provider id.
-// trackedProvenanceEntry records where a tracked ref's config-entry
-// provenance came from, so route-keyed recovery can refuse to hand it to a
-// different repository that merely reuses the route.
-type trackedProvenanceEntry struct {
-	path       string
-	providerID string
-}
-
-// trackedRepoProvenance captures config-entry provenance from the tracked
-// set before a settings merge rebuilds it. Settings-resolved refs never
-// author provenance — only config resolution does — so a merge or glob
-// refresh must not erase the correlation an exact entry needs to reclaim
-// its repository on the next failed reload.
-func trackedRepoProvenance(refs []ghclient.RepoRef) map[string]trackedProvenanceEntry {
-	provenance := make(map[string]trackedProvenanceEntry)
-	for _, repo := range refs {
-		if repo.ConfiguredRepoPath == "" {
-			continue
-		}
-		entry := trackedProvenanceEntry{
-			path:       repo.ConfiguredRepoPath,
-			providerID: strings.TrimSpace(repo.PlatformExternalID),
-		}
-		if key := trackedRepoIdentityKey(repo); key != "" {
-			provenance["id\x00"+key] = entry
-		}
-		provenance["route\x00"+trackedRepoKey(repo)] = entry
-	}
-	return provenance
-}
-
-func withTrackedProvenance(
-	provenance map[string]trackedProvenanceEntry, repo ghclient.RepoRef,
-) ghclient.RepoRef {
-	if repo.ConfiguredRepoPath != "" {
-		return repo
-	}
-	if key := trackedRepoIdentityKey(repo); key != "" {
-		if entry, ok := provenance["id\x00"+key]; ok {
-			repo.ConfiguredRepoPath = entry.path
-			return repo
-		}
-	}
-	entry, ok := provenance["route\x00"+trackedRepoKey(repo)]
-	if !ok {
-		return repo
-	}
-	// A route match with two different stable provider ids is route reuse
-	// by another repository, not a rename of the same one: provenance stays
-	// with the identity it was resolved for. Provider ids are opaque and
-	// case-sensitive — compared exactly, like identity keys.
-	incomingID := strings.TrimSpace(repo.PlatformExternalID)
-	if entry.providerID != "" && incomingID != "" &&
-		entry.providerID != incomingID {
-		return repo
-	}
-	repo.ConfiguredRepoPath = entry.path
-	return repo
-}
-
-func trackedRepoIdentityKey(repo ghclient.RepoRef) string {
-	if strings.TrimSpace(repo.PlatformExternalID) == "" {
-		return ""
-	}
-	return repoProvider(repo) + "\x00" +
-		trackedRepoHost(repo) + "\x00" + repo.PlatformExternalID
-}
-
-// trackedRepoIndex locates repo in current, matching by stable provider id
-// first and falling back to the route key.
-func trackedRepoIndex(
-	byRoute, byIdentity map[string]int, repo ghclient.RepoRef,
-) (int, bool) {
-	if key := trackedRepoIdentityKey(repo); key != "" {
-		if i, ok := byIdentity[key]; ok {
-			return i, true
-		}
-	}
-	i, ok := byRoute[trackedRepoKey(repo)]
-	return i, ok
-}
-
-func indexTrackedRepo(
-	byRoute, byIdentity map[string]int, repo ghclient.RepoRef, slot int,
-) {
-	byRoute[trackedRepoKey(repo)] = slot
-	if key := trackedRepoIdentityKey(repo); key != "" {
-		byIdentity[key] = slot
-	}
-}
-
-func unindexTrackedRepo(
-	byRoute, byIdentity map[string]int, repo ghclient.RepoRef,
-) {
-	delete(byRoute, trackedRepoKey(repo))
-	if key := trackedRepoIdentityKey(repo); key != "" {
-		delete(byIdentity, key)
-	}
-}
-
-func (s *Server) persistResolvedRepos(
-	ctx context.Context,
-	repos []ghclient.RepoRef,
-) error {
-	for _, repo := range repos {
-		if _, err := s.db.UpsertRepo(
-			ctx, db.RepoIdentity{
-				Platform:       repoProvider(repo),
-				PlatformHost:   repo.PlatformHost,
-				PlatformRepoID: repo.PlatformExternalID,
-				Owner:          repo.Owner,
-				Name:           repo.Name,
-				RepoPath:       repo.RepoPath,
-			},
-		); err != nil {
-			return fmt.Errorf(
-				"upsert resolved repo %s/%s: %w",
-				repo.Owner, repo.Name, err,
-			)
-		}
-	}
-	return nil
-}
-
-func samePlatformHost(left, right string) bool {
-	if left == "" {
-		left = "github.com"
-	}
-	if right == "" {
-		right = "github.com"
-	}
-	return strings.EqualFold(left, right)
-}
-
-func (s *Server) defaultPlatformHost() string {
-	if s.cfg == nil {
-		return "github.com"
-	}
-	s.cfgMu.Lock()
-	host := s.cfg.DefaultPlatformHost
-	s.cfgMu.Unlock()
-	if strings.TrimSpace(host) == "" {
-		return "github.com"
-	}
-	return strings.ToLower(strings.TrimSpace(host))
-}
-
-// classifyResolveProblem maps a configured-repo resolve error to its wire
-// problem through the shared provider mapping so a missing token during
-// token-file rotation surfaces as 400 badRequest like the sync and runtime
-// paths, not a 502 upstream error.
-func classifyResolveProblem(err error) huma.StatusError {
-	return httpapi.ProviderCallProblem(err, "github", "")
-}
-
 func (s *Server) getSettings(
 	ctx context.Context, _ *struct{},
-) (*getSettingsOutput, error) {
+) (*settingsapi.GetSettingsOutput, error) {
 	if s.cfg == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
-	if s.providerSource != nil && !s.federationEnabled() {
+	if s.providerSource != nil && !s.streamapi.FederationEnabled() {
 		return s.settingsOutputResponseWithProvider(ctx, nil)
 	}
 
@@ -879,7 +148,7 @@ func (s *Server) getSettings(
 
 func (s *Server) getLocalSettings(
 	ctx context.Context, _ *struct{},
-) (*getSettingsOutput, error) {
+) (*settingsapi.SettingsOutput, error) {
 	if s.cfg == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
@@ -889,15 +158,15 @@ func (s *Server) getLocalSettings(
 func (s *Server) mutateRepoPresets(
 	ctx context.Context,
 	mutate func([]config.RepoPreset) ([]config.RepoPreset, error),
-) (*settingsOutput, error) {
+) (*settingsapi.SettingsOutput, error) {
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	s.configReloadMu.Lock()
 	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
-	candidate := cloneReloadedConfig(s.cfg)
-	next, err := mutate(cloneRepoPresets(candidate.RepoPresets))
+	candidate := configreload.CloneReloadedConfig(s.cfg)
+	next, err := mutate(spokeapi.CloneRepoPresets(candidate.RepoPresets))
 	if err != nil {
 		s.cfgMu.Unlock()
 		return nil, err
@@ -911,14 +180,14 @@ func (s *Server) mutateRepoPresets(
 		s.cfgMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
-	s.cfg.RepoPresets = cloneRepoPresets(candidate.RepoPresets)
+	s.cfg.RepoPresets = spokeapi.CloneRepoPresets(candidate.RepoPresets)
 	s.cfgMu.Unlock()
 	return s.settingsOutputResponse(ctx)
 }
 
 func (s *Server) createRepoPreset(
-	ctx context.Context, input *createRepoPresetInput,
-) (*settingsOutput, error) {
+	ctx context.Context, input *settingsapi.CreateRepoPresetInput,
+) (*settingsapi.SettingsOutput, error) {
 	return s.mutateRepoPresets(ctx, func(presets []config.RepoPreset) ([]config.RepoPreset, error) {
 		for _, preset := range presets {
 			if strings.EqualFold(preset.Name, input.Body.Name) {
@@ -930,8 +199,8 @@ func (s *Server) createRepoPreset(
 }
 
 func (s *Server) updateRepoPreset(
-	ctx context.Context, input *updateRepoPresetInput,
-) (*settingsOutput, error) {
+	ctx context.Context, input *settingsapi.UpdateRepoPresetInput,
+) (*settingsapi.SettingsOutput, error) {
 	return s.mutateRepoPresets(ctx, func(presets []config.RepoPreset) ([]config.RepoPreset, error) {
 		for i := range presets {
 			if strings.EqualFold(presets[i].Name, input.Name) {
@@ -944,8 +213,8 @@ func (s *Server) updateRepoPreset(
 }
 
 func (s *Server) deleteRepoPreset(
-	ctx context.Context, input *deleteRepoPresetInput,
-) (*settingsOutput, error) {
+	ctx context.Context, input *settingsapi.DeleteRepoPresetInput,
+) (*settingsapi.SettingsOutput, error) {
 	return s.mutateRepoPresets(ctx, func(presets []config.RepoPreset) ([]config.RepoPreset, error) {
 		for i := range presets {
 			if strings.EqualFold(presets[i].Name, input.Name) {
@@ -960,103 +229,47 @@ func (s *Server) deleteRepoPreset(
 // answer with the full settings payload.
 func (s *Server) settingsOutputResponse(
 	ctx context.Context,
-) (*settingsOutput, error) {
-	provider, err := s.fetchProviderSettings(ctx)
+) (*settingsapi.SettingsOutput, error) {
+	provider, err := s.settingsapi.FetchProviderSettings(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return s.settingsOutputResponseWithProvider(ctx, provider)
 }
 
-func (s *Server) fetchProviderSettings(
-	ctx context.Context,
-) (*providerSettingsProjection, error) {
-	if s.providerSource == nil || s.providerSource.client == nil ||
-		(s.providerSource.enabled != nil && !s.providerSource.enabled()) {
-		return nil, nil
-	}
-	provider, err := s.providerSource.GetSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := s.observeProviderSettingsRepositories(
-		ctx, provider.RepositoryObservations,
-	); err != nil {
-		return nil, httpapi.Internal(err.Error())
-	}
-	return &provider, nil
-}
-
 func (s *Server) settingsOutputResponseWithProvider(
-	ctx context.Context, provider *providerSettingsProjection,
-) (*settingsOutput, error) {
+	ctx context.Context, provider *spokeapi.ProviderSettingsProjection,
+) (*settingsapi.SettingsOutput, error) {
 	body, err := s.buildLocalSettingsResponse(ctx)
 	if err != nil {
 		return nil, httpapi.Internal(err.Error())
 	}
 	if provider != nil {
-		body.applyProviderSettings(provider.Settings)
+		body.ApplyProviderSettings(provider.Settings)
 	}
 	body.ProviderSettingsLoaded = s.providerSource == nil || provider != nil
-	return &settingsOutput{Body: body}, nil
-}
-
-func (s *Server) observeProviderSettingsRepositories(
-	ctx context.Context,
-	observations []providerRepositoryObservation,
-) (bool, error) {
-	if s.db == nil {
-		return false, nil
-	}
-	changed := false
-	for _, observation := range observations {
-		platformRepoID := strings.TrimSpace(observation.PlatformRepoID)
-		if platformRepoID == "" || observation.ObservedAt.IsZero() {
-			continue
-		}
-		repoPath := strings.Trim(strings.TrimSpace(observation.RepoPath), "/")
-		owner, name := strings.TrimSpace(observation.Owner), strings.TrimSpace(observation.Name)
-		current, err := s.db.GetRepositoryByProviderID(
-			ctx, observation.Provider, observation.PlatformHost, platformRepoID,
-		)
-		if err != nil {
-			return false, fmt.Errorf("read provider settings repository: %w", err)
-		}
-		unchanged := current != nil && current.Lifecycle == db.RepositoryLifecycleActive &&
-			strings.EqualFold(current.Repository.Owner, owner) &&
-			strings.EqualFold(current.Repository.Name, name)
-		_, accepted, err := s.db.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-			Platform: observation.Provider, PlatformHost: observation.PlatformHost,
-			PlatformRepoID: platformRepoID, Owner: owner, Name: name,
-			RepoPath: repoPath,
-		}, observation.ObservedAt)
-		if err != nil {
-			return false, fmt.Errorf("observe provider settings repository: %w", err)
-		}
-		changed = changed || (accepted && !unchanged)
-	}
-	return changed, nil
+	return &settingsapi.SettingsOutput{Body: body}, nil
 }
 
 func (s *Server) updateSettings(
-	ctx context.Context, input *updateSettingsInput,
-) (*settingsOutput, error) {
+	ctx context.Context, input *settingsapi.UpdateSettingsInput,
+) (*settingsapi.SettingsOutput, error) {
 	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
-		providerUpdate, localUpdate := splitSettingsUpdate(input.Body)
-		if hasSettingsUpdate(localUpdate) {
+		providerUpdate, localUpdate := settingsapi.SplitSettingsUpdate(input.Body)
+		if settingsapi.HasSettingsUpdate(localUpdate) {
 			return nil, httpapi.Forbidden(
 				"federation credentials cannot change hub-local settings",
 				map[string]any{"reason": "nodeLocalSettings"},
 			)
 		}
-		return s.updateLocalSettings(ctx, &updateSettingsInput{Body: providerUpdate})
+		return s.updateLocalSettings(ctx, &settingsapi.UpdateSettingsInput{Body: providerUpdate})
 	}
 	if s.providerSource == nil {
 		return s.updateLocalSettings(ctx, input)
 	}
-	providerUpdate, localUpdate := splitSettingsUpdate(input.Body)
-	providerChanged := hasSettingsUpdate(providerUpdate)
-	localChanged := hasSettingsUpdate(localUpdate)
+	providerUpdate, localUpdate := settingsapi.SplitSettingsUpdate(input.Body)
+	providerChanged := settingsapi.HasSettingsUpdate(providerUpdate)
+	localChanged := settingsapi.HasSettingsUpdate(localUpdate)
 	if providerChanged && localChanged {
 		return nil, httpapi.BadRequest(
 			httpapi.CodeValidationError,
@@ -1070,14 +283,14 @@ func (s *Server) updateSettings(
 		}
 	}
 	if localChanged {
-		return s.updateLocalSettings(ctx, &updateSettingsInput{Body: localUpdate})
+		return s.updateLocalSettings(ctx, &settingsapi.UpdateSettingsInput{Body: localUpdate})
 	}
 	return s.settingsOutputResponse(ctx)
 }
 
 func (s *Server) updateLocalSettings(
-	ctx context.Context, input *updateSettingsInput,
-) (*settingsOutput, error) {
+	ctx context.Context, input *settingsapi.UpdateSettingsInput,
+) (*settingsapi.SettingsOutput, error) {
 	if err := s.commitLocalSettings(ctx, input); err != nil {
 		return nil, err
 	}
@@ -1088,7 +301,7 @@ func (s *Server) updateLocalSettings(
 	s.cfgMu.Unlock()
 	providerContext, cancel := context.WithTimeout(ctx, fleet.PeerTimeoutOrDefault())
 	defer cancel()
-	provider, err := s.fetchProviderSettings(providerContext)
+	provider, err := s.settingsapi.FetchProviderSettings(providerContext)
 	if err != nil {
 		slog.Warn("load hub settings after spoke-local settings save", "err", err)
 		provider = nil
@@ -1097,7 +310,7 @@ func (s *Server) updateLocalSettings(
 }
 
 func (s *Server) commitLocalSettings(
-	ctx context.Context, input *updateSettingsInput,
+	ctx context.Context, input *settingsapi.UpdateSettingsInput,
 ) error {
 	if s.cfgPath == "" {
 		return httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
@@ -1107,6 +320,7 @@ func (s *Server) commitLocalSettings(
 			return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 		}
 	}
+
 	s.configReloadMu.Lock()
 	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
@@ -1118,9 +332,9 @@ func (s *Server) commitLocalSettings(
 	prevWorkspaces := s.cfg.Workspaces
 	prevIssues := s.cfg.Issues
 	prevTerminal := s.cfg.Terminal
-	prevModes := cloneModeVisibility(s.cfg.Modes)
-	prevAgents := cloneConfigAgents(s.cfg.Agents)
-	prevQuickActions := cloneQuickActions(s.cfg.QuickActions)
+	prevModes := spokeapi.CloneModeVisibility(s.cfg.Modes)
+	prevAgents := spokeapi.CloneConfigAgents(s.cfg.Agents)
+	prevQuickActions := settingsapi.CloneQuickActions(s.cfg.QuickActions)
 	prevKataProjects := slices.Clone(s.cfg.KataProjects)
 	prevMCP := s.cfg.MCP
 	prevRoborev := s.cfg.Roborev
@@ -1167,13 +381,13 @@ func (s *Server) commitLocalSettings(
 		s.cfg.Terminal = *input.Body.Terminal
 	}
 	if input.Body.Modes != nil {
-		s.cfg.Modes = cloneModeVisibility(*input.Body.Modes).WithDefaults()
+		s.cfg.Modes = spokeapi.CloneModeVisibility(*input.Body.Modes).WithDefaults()
 	}
 	if input.Body.Agents != nil {
-		s.cfg.Agents = cloneConfigAgents(*input.Body.Agents)
+		s.cfg.Agents = spokeapi.CloneConfigAgents(*input.Body.Agents)
 	}
 	if input.Body.QuickActions != nil {
-		s.cfg.QuickActions = cloneQuickActions(*input.Body.QuickActions)
+		s.cfg.QuickActions = settingsapi.CloneQuickActions(*input.Body.QuickActions)
 	}
 	if input.Body.KataProjects != nil {
 		s.cfg.KataProjects = slices.Clone(*input.Body.KataProjects)
@@ -1238,213 +452,31 @@ func (s *Server) commitLocalSettings(
 		)
 	}
 	nativeStacksEnabled := s.cfg.PullRequests.PreferGitHubNativeStacks
-	nativeStacksPrevious := s.swapGitHubNativeStackPreferenceLocked(nativeStacksEnabled)
-	s.refreshRuntimeTargetsLocked()
-	s.applyWorkspaceConfigLocked()
-	s.applyPullConfigLocked()
-	s.applyIssueConfigLocked()
+	nativeStacksPrevious := s.syncevents.SwapGitHubNativeStackPreferenceLocked(nativeStacksEnabled)
+	s.settingsapi.RefreshRuntimeTargetsLocked()
+	s.streamapi.ApplyWorkspaceConfigLocked()
+	s.streamapi.ApplyPullConfigLocked()
+	s.streamapi.ApplyIssueConfigLocked()
 	tmuxGraphicsChanged := (prevTerminal.Graphics == nil || *prevTerminal.Graphics) !=
 		s.cfg.TerminalGraphicsEnabled()
 	s.cfgMu.Unlock()
 	if tmuxGraphicsChanged {
-		s.applyTmuxGraphics(ctx)
+		s.settingsapi.ApplyTmuxGraphics(ctx)
 	}
-	s.applyTmuxMouse(ctx)
-	s.reconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
+	s.settingsapi.ApplyTmuxMouse(ctx)
+	s.syncevents.ReconcileGitHubNativeStackProjection(nativeStacksPrevious, nativeStacksEnabled)
 	if budgetRaised && s.syncer != nil {
 		// A sync paused at the old ceiling reports that failure until its
 		// next pass; run one now so the raised ceiling takes visible effect.
 		s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	}
+
 	return nil
 }
 
-func (s *settingsResponse) applyProviderSettings(provider settingsResponse) {
-	localRepos := s.Repos
-	s.Repos = provider.Repos
-	for i := range s.Repos {
-		for _, local := range localRepos {
-			if s.Repos[i].PlatformRepoID != "" &&
-				local.PlatformRepoID != "" &&
-				s.Repos[i].PlatformRepoID == local.PlatformRepoID &&
-				strings.EqualFold(s.Repos[i].Provider, local.Provider) &&
-				samePlatformHost(s.Repos[i].PlatformHost, local.PlatformHost) {
-				s.Repos[i].WorktreeBasePath = local.WorktreeBasePath
-				break
-			}
-		}
-	}
-	s.RepoPresets = provider.RepoPresets
-	s.Activity = provider.Activity
-	s.Detail = provider.Detail
-	s.Sync = provider.Sync
-	s.PullRequests = provider.PullRequests
-	s.Issues = provider.Issues
-	s.Notifications = provider.Notifications
-}
-
-func splitSettingsUpdate(
-	update updateSettingsRequest,
-) (provider updateSettingsRequest, local updateSettingsRequest) {
-	provider.Activity = update.Activity
-	provider.Detail = update.Detail
-	provider.Sync = update.Sync
-	provider.PullRequests = update.PullRequests
-	provider.Issues = update.Issues
-	local.AirplaneMode = update.AirplaneMode
-	local.Workspaces = update.Workspaces
-	local.Terminal = update.Terminal
-	local.Modes = update.Modes
-	local.Agents = update.Agents
-	local.QuickActions = update.QuickActions
-	local.KataProjects = update.KataProjects
-	local.MCP = update.MCP
-	local.Roborev = update.Roborev
-	return provider, local
-}
-
-func hasSettingsUpdate(update updateSettingsRequest) bool {
-	return update.AirplaneMode != nil || update.Activity != nil || update.Detail != nil ||
-		update.Sync != nil ||
-		update.PullRequests != nil || update.Workspaces != nil ||
-		update.Issues != nil || update.Terminal != nil ||
-		update.Modes != nil || update.Agents != nil ||
-		update.QuickActions != nil ||
-		update.KataProjects != nil || update.MCP != nil ||
-		update.Roborev != nil
-}
-
-func cloneRepoPresets(presets []config.RepoPreset) []config.RepoPreset {
-	if presets == nil {
-		return nil
-	}
-	out := slices.Clone(presets)
-	for i := range out {
-		out[i].Repos = slices.Clone(out[i].Repos)
-	}
-	return out
-}
-
-func cloneModeVisibility(modes config.ModeVisibility) config.ModeVisibility {
-	out := modes
-	if modes.Activity != nil {
-		v := *modes.Activity
-		out.Activity = &v
-	}
-	if modes.Repos != nil {
-		v := *modes.Repos
-		out.Repos = &v
-	}
-	if modes.Docs != nil {
-		v := *modes.Docs
-		out.Docs = &v
-	}
-	if modes.Actions != nil {
-		v := *modes.Actions
-		out.Actions = &v
-	}
-	if modes.Pulls != nil {
-		v := *modes.Pulls
-		out.Pulls = &v
-	}
-	if modes.Issues != nil {
-		v := *modes.Issues
-		out.Issues = &v
-	}
-	if modes.Workspaces != nil {
-		v := *modes.Workspaces
-		out.Workspaces = &v
-	}
-	return out
-}
-
-func cloneQuickActions(actions []config.QuickAction) []config.QuickAction {
-	if actions == nil {
-		return []config.QuickAction{}
-	}
-	return slices.Clone(actions)
-}
-
-func cloneConfigAgents(agents []config.Agent) []config.Agent {
-	if agents == nil {
-		return []config.Agent{}
-	}
-	cloned := make([]config.Agent, len(agents))
-	for i, agent := range agents {
-		cloned[i] = agent
-		cloned[i].Command = slices.Clone(agent.Command)
-	}
-	return cloned
-}
-
-func (s *Server) refreshRuntimeTargetsLocked() {
-	if s.cfg == nil {
-		return
-	}
-	if s.workspaces != nil {
-		s.workspaces.SetHideTmuxStatus(s.cfg.Terminal.HideTmuxStatus)
-		s.workspaces.SetTmuxGraphics(s.cfg.TerminalGraphicsEnabled())
-		s.workspaces.SetTmuxMouse(s.cfg.TerminalTmuxMouseEnabled())
-	}
-	if s.runtime == nil {
-		return
-	}
-	tmuxCmd := s.bootTmuxCommand()
-	targets := localruntime.ResolveLaunchTargets(s.cfg.Agents, tmuxCmd, nil)
-	s.runtime.UpdateTargetsAndStripEnvVars(targets, s.cfg.TokenEnvNames())
-	s.runtime.UpdateHideTmuxStatus(s.cfg.Terminal.HideTmuxStatus)
-	s.runtime.UpdateTmuxGraphics(s.cfg.TerminalGraphicsEnabled())
-	s.runtime.UpdateTmuxMouse(s.cfg.TerminalTmuxMouseEnabled())
-}
-
-func (s *Server) applyTmuxGraphics(ctx context.Context) {
-	if s.workspaces == nil {
-		return
-	}
-	if err := s.workspaces.ApplyTmuxGraphics(ctx); err != nil {
-		slog.Warn("apply tmux graphics setting", "err", err)
-		return
-	}
-	if s.runtime != nil {
-		if err := s.runtime.ReattachTmuxClients(ctx); err != nil {
-			slog.Warn("reattach tmux runtime clients", "err", err)
-		}
-	}
-}
-
-func (s *Server) applyTmuxMouse(ctx context.Context) {
-	if s.workspaces == nil {
-		return
-	}
-	if err := s.workspaces.ApplyTmuxMouse(ctx); err != nil {
-		slog.Warn("apply tmux mouse setting", "err", err)
-	}
-}
-
-func (s *Server) bootTmuxCommand() []string {
-	cfg := &config.Config{Tmux: s.bootCfgSnapshot.Tmux}
-	return cfg.TmuxCommand()
-}
-
-func (s *Server) updateRuntimeStripEnvVars(cfg *config.Config) {
-	if cfg == nil {
-		return
-	}
-	if s.workspaces != nil {
-		s.workspaces.UpdateTmuxStripEnvVars(cfg.TokenEnvNames())
-	}
-	if s.ptyOwnerClient != nil {
-		s.ptyOwnerClient.UpdateStripEnvVars(cfg.TokenEnvNames())
-	}
-	if s.runtime == nil {
-		return
-	}
-	s.runtime.UpdateStripEnvVars(cfg.TokenEnvNames())
-}
-
 func (s *Server) addConfiguredRepo(
-	ctx context.Context, input *addRepoInput,
-) (*settingsOutput, error) {
+	ctx context.Context, input *settingsapi.AddRepoInput,
+) (*settingsapi.SettingsOutput, error) {
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
@@ -1452,13 +484,13 @@ func (s *Server) addConfiguredRepo(
 		return nil, httpapi.Validation("body", "owner and name are required")
 	}
 
-	provider, err := normalizeRouteProvider(input.Body.Provider)
+	provider, err := settingsapi.NormalizeRouteProvider(input.Body.Provider)
 	if err != nil {
 		return nil, httpapi.Validation("body.provider", err.Error())
 	}
 	newRepo := config.Repo{
 		Platform:     provider,
-		PlatformHost: importRequestHost(input.Body.Host, input.Body.PlatformHost),
+		PlatformHost: repoapi.ImportRequestHost(input.Body.Host, input.Body.PlatformHost),
 		Owner:        input.Body.Owner,
 		Name:         input.Body.Name,
 	}
@@ -1466,7 +498,7 @@ func (s *Server) addConfiguredRepo(
 	// Pre-check (racy but gives a fast 400 before the GitHub call).
 	s.cfgMu.Lock()
 	for _, rp := range s.cfg.Repos {
-		if sameConfiguredRepo(rp, newRepo) {
+		if settingsapi.SameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
 			return nil, httpapi.BadRequest(httpapi.CodeBadRequest,
 				input.Body.Owner+"/"+input.Body.Name+
@@ -1477,10 +509,10 @@ func (s *Server) addConfiguredRepo(
 	s.cfgMu.Unlock()
 
 	_, expanded, err := ghclient.ResolveConfiguredRepo(
-		ctx, s.configuredClients(allRepos), newRepo,
+		ctx, s.settingsapi.ConfiguredClients(allRepos), newRepo,
 	)
 	if err != nil {
-		return nil, classifyResolveProblem(err)
+		return nil, settingsapi.ClassifyResolveProblem(err)
 	}
 
 	// Re-acquire lock and apply the addition to current state
@@ -1488,7 +520,7 @@ func (s *Server) addConfiguredRepo(
 	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	for _, rp := range s.cfg.Repos {
-		if sameConfiguredRepo(rp, newRepo) {
+		if settingsapi.SameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
 			s.configReloadMu.Unlock()
 			return nil, httpapi.BadRequest(httpapi.CodeBadRequest,
@@ -1509,8 +541,8 @@ func (s *Server) addConfiguredRepo(
 		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
-	s.mergeTrackedRepos(expanded)
-	s.applyWorkspaceConfigLocked()
+	s.settingsapi.MergeTrackedRepos(expanded)
+	s.streamapi.ApplyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
 	s.configReloadMu.Unlock()
 
@@ -1519,15 +551,15 @@ func (s *Server) addConfiguredRepo(
 }
 
 func (s *Server) refreshConfiguredRepo(
-	ctx context.Context, input *repoConfigInput,
-) (*settingsOutput, error) {
+	ctx context.Context, input *settingsapi.RepoConfigInput,
+) (*settingsapi.SettingsOutput, error) {
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
 	owner := input.Owner
 	name := input.Name
-	provider, err := normalizeRouteProvider(input.Provider)
+	provider, err := settingsapi.NormalizeRouteProvider(input.Provider)
 	if err != nil {
 		return nil, httpapi.Validation("path.provider", err.Error())
 	}
@@ -1544,7 +576,7 @@ func (s *Server) refreshConfiguredRepo(
 
 	var target *config.Repo
 	for i := range repos {
-		if sameConfiguredRepo(
+		if settingsapi.SameConfiguredRepo(
 			repos[i],
 			targetRef,
 		) {
@@ -1563,7 +595,7 @@ func (s *Server) refreshConfiguredRepo(
 
 	_, expanded, err := s.syncer.ResolveConfiguredRepoForSync(ctx, *target)
 	if err != nil {
-		return nil, classifyResolveProblem(err)
+		return nil, settingsapi.ClassifyResolveProblem(err)
 	}
 
 	// Re-acquire cfgMu and verify the target glob still exists
@@ -1576,7 +608,7 @@ func (s *Server) refreshConfiguredRepo(
 	stillExists := false
 	currentRepos := slices.Clone(s.cfg.Repos)
 	for _, rp := range currentRepos {
-		if sameConfiguredRepo(
+		if settingsapi.SameConfiguredRepo(
 			rp,
 			targetRef,
 		) {
@@ -1590,12 +622,12 @@ func (s *Server) refreshConfiguredRepo(
 		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is no longer configured", nil)
 	}
-	if err := s.persistResolvedRepos(ctx, expanded); err != nil {
+	if err := s.settingsapi.PersistResolvedRepos(ctx, expanded); err != nil {
 		s.cfgMu.Unlock()
 		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("persist resolved repos: " + err.Error())
 	}
-	s.replaceGlobRepos(*target, expanded, currentRepos)
+	s.settingsapi.ReplaceGlobRepos(*target, expanded, currentRepos)
 	s.cfgMu.Unlock()
 	s.configReloadMu.Unlock()
 
@@ -1604,9 +636,9 @@ func (s *Server) refreshConfiguredRepo(
 }
 
 func (s *Server) refreshConfiguredRepoOnHost(
-	ctx context.Context, input *repoConfigHostInput,
-) (*settingsOutput, error) {
-	return s.refreshConfiguredRepo(ctx, &repoConfigInput{
+	ctx context.Context, input *settingsapi.RepoConfigHostInput,
+) (*settingsapi.SettingsOutput, error) {
+	return s.refreshConfiguredRepo(ctx, &settingsapi.RepoConfigInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        input.Owner,
@@ -1615,9 +647,9 @@ func (s *Server) refreshConfiguredRepoOnHost(
 }
 
 func (s *Server) updateConfiguredRepoWorktreeBase(
-	ctx context.Context, input *repoWorktreeBaseInput,
-) (*settingsOutput, error) {
-	return s.updateConfiguredRepoWorktreeBasePath(ctx, repoConfigInput{
+	ctx context.Context, input *settingsapi.RepoWorktreeBaseInput,
+) (*settingsapi.SettingsOutput, error) {
+	return s.updateConfiguredRepoWorktreeBasePath(ctx, settingsapi.RepoConfigInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        input.Owner,
@@ -1626,9 +658,9 @@ func (s *Server) updateConfiguredRepoWorktreeBase(
 }
 
 func (s *Server) updateConfiguredRepoWorktreeBaseOnHost(
-	ctx context.Context, input *repoWorktreeBaseHostInput,
-) (*settingsOutput, error) {
-	return s.updateConfiguredRepoWorktreeBasePath(ctx, repoConfigInput{
+	ctx context.Context, input *settingsapi.RepoWorktreeBaseHostInput,
+) (*settingsapi.SettingsOutput, error) {
+	return s.updateConfiguredRepoWorktreeBasePath(ctx, settingsapi.RepoConfigInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        input.Owner,
@@ -1637,13 +669,13 @@ func (s *Server) updateConfiguredRepoWorktreeBaseOnHost(
 }
 
 func (s *Server) updateConfiguredRepoWorktreeBasePath(
-	ctx context.Context, ref repoConfigInput, rawPath string,
-) (*settingsOutput, error) {
+	ctx context.Context, ref settingsapi.RepoConfigInput, rawPath string,
+) (*settingsapi.SettingsOutput, error) {
 	if s.cfgPath == "" {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
-	provider, err := normalizeRouteProvider(ref.Provider)
+	provider, err := settingsapi.NormalizeRouteProvider(ref.Provider)
 	if err != nil {
 		return nil, httpapi.Validation("path.provider", err.Error())
 	}
@@ -1653,11 +685,11 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 		Owner:        ref.Owner,
 		Name:         ref.Name,
 	}
-	providerSettings, err := s.fetchProviderSettings(ctx)
+	providerSettings, err := s.settingsapi.FetchProviderSettings(ctx)
 	if err != nil {
 		return nil, err
 	}
-	targetRef, err = worktreeBaseMutationTarget(targetRef, providerSettings)
+	targetRef, err = settingsapi.WorktreeBaseMutationTarget(targetRef, providerSettings)
 	if err != nil {
 		return nil, err
 	}
@@ -1680,7 +712,7 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 	s.configReloadMu.Lock()
 	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
-	idx, err := s.worktreeBaseRepoIndexLocked(ctx, targetRef)
+	idx, err := s.settingsapi.WorktreeBaseRepoIndexLocked(ctx, targetRef)
 	if err != nil {
 		s.cfgMu.Unlock()
 		return nil, httpapi.Internal(err.Error())
@@ -1735,67 +767,10 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 	return s.settingsOutputResponseWithProvider(ctx, providerSettings)
 }
 
-func worktreeBaseMutationTarget(
-	target config.Repo, provider *providerSettingsProjection,
-) (config.Repo, error) {
-	if provider == nil {
-		return target, nil
-	}
-	for _, candidate := range provider.Settings.Repos {
-		if candidate.IsGlob ||
-			!strings.EqualFold(candidate.Provider, target.PlatformOrDefault()) ||
-			!samePlatformHost(candidate.PlatformHost, target.PlatformHostOrDefault()) ||
-			!strings.EqualFold(candidate.Owner, target.Owner) ||
-			!strings.EqualFold(candidate.Name, target.Name) {
-			continue
-		}
-		if strings.TrimSpace(candidate.PlatformRepoID) == "" {
-			return config.Repo{}, invalidHubDescriptor(
-				errors.New("hub repository settings omitted stable identity"),
-			)
-		}
-		return config.Repo{
-			Platform: candidate.Provider, PlatformHost: candidate.PlatformHost,
-			PlatformRepoID: candidate.PlatformRepoID,
-			Owner:          candidate.Owner, Name: candidate.Name, RepoPath: candidate.RepoPath,
-		}, nil
-	}
-	return config.Repo{}, httpapi.NotFound(
-		httpapi.CodeRepoNotFound, target.Owner+"/"+target.Name+" is not configured", nil,
-	)
-}
-
-func (s *Server) worktreeBaseRepoIndexLocked(
-	ctx context.Context, target config.Repo,
-) (int, error) {
-	for i, repo := range s.cfg.Repos {
-		if target.PlatformRepoID == "" {
-			if sameConfiguredRepo(repo, target) {
-				return i, nil
-			}
-			continue
-		}
-		platformRepoID := strings.TrimSpace(repo.PlatformRepoID)
-		if platformRepoID == "" && !repo.HasNameGlob() {
-			var err error
-			platformRepoID, _, err = s.configuredRepoProjection(ctx, repo, nil)
-			if err != nil {
-				return -1, err
-			}
-		}
-		if platformRepoID == target.PlatformRepoID &&
-			strings.EqualFold(repo.PlatformOrDefault(), target.PlatformOrDefault()) &&
-			samePlatformHost(repo.PlatformHostOrDefault(), target.PlatformHostOrDefault()) {
-			return i, nil
-		}
-	}
-	return -1, nil
-}
-
 func (s *Server) updateConfiguredRepoUIVisibility(
-	ctx context.Context, input *repoUIVisibilityInput,
-) (*settingsOutput, error) {
-	return s.updateConfiguredRepoUIVisibilityState(ctx, repoConfigInput{
+	ctx context.Context, input *settingsapi.RepoUIVisibilityInput,
+) (*settingsapi.SettingsOutput, error) {
+	return s.updateConfiguredRepoUIVisibilityState(ctx, settingsapi.RepoConfigInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        input.Owner,
@@ -1804,9 +779,9 @@ func (s *Server) updateConfiguredRepoUIVisibility(
 }
 
 func (s *Server) updateConfiguredRepoUIVisibilityOnHost(
-	ctx context.Context, input *repoUIVisibilityHostInput,
-) (*settingsOutput, error) {
-	return s.updateConfiguredRepoUIVisibilityState(ctx, repoConfigInput{
+	ctx context.Context, input *settingsapi.RepoUIVisibilityHostInput,
+) (*settingsapi.SettingsOutput, error) {
+	return s.updateConfiguredRepoUIVisibilityState(ctx, settingsapi.RepoConfigInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        input.Owner,
@@ -1819,13 +794,13 @@ func (s *Server) updateConfiguredRepoUIVisibilityOnHost(
 // attaches to the catalog row's stable identity, so the entry must resolve to
 // a provider-verified repository before it can be hidden.
 func (s *Server) updateConfiguredRepoUIVisibilityState(
-	ctx context.Context, ref repoConfigInput, hidden bool,
-) (*settingsOutput, error) {
+	ctx context.Context, ref settingsapi.RepoConfigInput, hidden bool,
+) (*settingsapi.SettingsOutput, error) {
 	if s.cfg == nil || s.db == nil {
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
-	provider, err := normalizeRouteProvider(ref.Provider)
+	provider, err := settingsapi.NormalizeRouteProvider(ref.Provider)
 	if err != nil {
 		return nil, httpapi.Validation("path.provider", err.Error())
 	}
@@ -1847,7 +822,7 @@ func (s *Server) updateConfiguredRepoUIVisibilityState(
 	s.cfgMu.Lock()
 	var target *config.Repo
 	for i := range s.cfg.Repos {
-		if sameConfiguredRepo(s.cfg.Repos[i], targetRef) {
+		if settingsapi.SameConfiguredRepo(s.cfg.Repos[i], targetRef) {
 			raw := s.cfg.Repos[i]
 			target = &raw
 			break
@@ -1866,8 +841,8 @@ func (s *Server) updateConfiguredRepoUIVisibilityState(
 		)
 	}
 
-	repo, err := s.applyVisibilityUnderReconciliationRead(
-		ctx, s.visibilityLookupIdentity(*target), hidden,
+	repo, err := s.settingsapi.ApplyVisibilityUnderReconciliationRead(
+		ctx, s.settingsapi.VisibilityLookupIdentity(*target), hidden,
 	)
 	if err != nil {
 		return nil, httpapi.Internal("save visibility: " + err.Error())
@@ -1880,257 +855,4 @@ func (s *Server) updateConfiguredRepoUIVisibilityState(
 	}
 
 	return s.settingsOutputResponse(ctx)
-}
-
-// applyVisibilityUnderReconciliationRead resolves the target catalog row and
-// writes the preference in one critical section under the
-// repository-reconciliation read lock, so reconciliation cannot displace the
-// row between lifecycle validation and the write. Returns nil without error
-// when no active provider-verified row resolves.
-func (s *Server) applyVisibilityUnderReconciliationRead(
-	ctx context.Context, identity db.RepoIdentity, hidden bool,
-) (*db.Repo, error) {
-	release, err := s.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	repo, err := s.resolveVisibilityRepoLocked(ctx, identity)
-	if err != nil || repo == nil {
-		return repo, err
-	}
-	if err := s.db.SetRepoHiddenFromUI(ctx, repo.ID, hidden); err != nil {
-		return nil, err
-	}
-	return repo, nil
-}
-
-// resolveVisibilityRepoLocked resolves the catalog row a visibility mutation
-// targets; the caller must hold the repository-reconciliation read lock. The
-// stable provider id wins when the tracked ref carries one: route resolution
-// would hand the mutation to whichever repository currently occupies the
-// route, which after route reuse is a different repository. Inactive rows are
-// rejected the same as unresolved ones — a tracked snapshot that lags
-// reconciliation still names a displaced repository, and hiding it would
-// leave the active replacement visible while consuming the request.
-func (s *Server) resolveVisibilityRepoLocked(
-	ctx context.Context, identity db.RepoIdentity,
-) (*db.Repo, error) {
-	if strings.TrimSpace(identity.PlatformRepoID) == "" {
-		return s.db.GetRepoByIdentityUnderRepositoryReconciliationRead(ctx, identity)
-	}
-	entry, err := s.db.GetRepositoryByProviderIDUnderRepositoryReconciliationRead(
-		ctx, identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if entry == nil || entry.Lifecycle != db.RepositoryLifecycleActive {
-		return nil, nil
-	}
-	repo := entry.Repository
-	return &repo, nil
-}
-
-// visibilityLookupIdentity names the catalog repository an exact configured
-// entry currently resolves to. A tracked ref carries the provider-verified
-// stable id and the current route after renames; without one (including on
-// servers constructed without a syncer), the configured route itself is the
-// only address.
-func (s *Server) visibilityLookupIdentity(raw config.Repo) db.RepoIdentity {
-	var tracked []ghclient.RepoRef
-	if s.syncer != nil {
-		tracked = s.syncer.TrackedRepos()
-	}
-	for _, repo := range tracked {
-		if !repoMatchesConfig(repo, raw) {
-			continue
-		}
-		return db.RepoIdentity{
-			Platform:       repoProvider(repo),
-			PlatformHost:   trackedRepoHost(repo),
-			PlatformRepoID: repo.PlatformExternalID,
-			Owner:          repo.Owner,
-			Name:           repo.Name,
-			RepoPath:       repo.RepoPath,
-		}
-	}
-	return db.RepoIdentity{
-		Platform:     raw.PlatformOrDefault(),
-		PlatformHost: raw.PlatformHostOrDefault(),
-		Owner:        raw.Owner,
-		Name:         raw.Name,
-		RepoPath:     raw.RepoPath,
-	}
-}
-
-func (s *Server) deleteConfiguredRepo(
-	ctx context.Context, input *repoConfigInput,
-) (*struct{}, error) {
-	if s.cfgPath == "" {
-		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
-	}
-
-	owner := input.Owner
-	name := input.Name
-	provider, err := normalizeRouteProvider(input.Provider)
-	if err != nil {
-		return nil, httpapi.Validation("path.provider", err.Error())
-	}
-	targetRef := config.Repo{
-		Platform:     provider,
-		PlatformHost: input.PlatformHost,
-		Owner:        owner,
-		Name:         name,
-	}
-
-	s.configReloadMu.Lock()
-	s.cfgMu.Lock()
-	idx := -1
-	for i, rp := range s.cfg.Repos {
-		if sameConfiguredRepo(
-			rp,
-			targetRef,
-		) {
-			idx = i
-			break
-		}
-	}
-	if idx == -1 {
-		s.cfgMu.Unlock()
-		s.configReloadMu.Unlock()
-		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
-			owner+"/"+name+" is not configured", nil)
-	}
-
-	prevRepos := slices.Clone(s.cfg.Repos)
-	removed := prevRepos[idx]
-	s.cfg.Repos = append(
-		s.cfg.Repos[:idx], s.cfg.Repos[idx+1:]...,
-	)
-	if err := s.cfg.Save(s.cfgPath); err != nil {
-		s.cfg.Repos = prevRepos
-		s.cfgMu.Unlock()
-		s.configReloadMu.Unlock()
-		return nil, httpapi.Internal("save config: " + err.Error())
-	}
-	s.removeConfigRepos(s.cfg.Repos)
-	s.applyWorkspaceConfigLocked()
-	s.cfgMu.Unlock()
-	s.configReloadMu.Unlock()
-
-	// The hidden-from-UI preference belongs to an exact entry. Without one, a
-	// glob can keep the repository tracked and filtered while glob rows expose
-	// no visibility controls, so the preference would be unreachable. The
-	// config change already committed and clients may abandon the request, so
-	// the sweep runs detached from request cancellation; a failed sweep is
-	// reported without failing the delete and heals on the next reload or
-	// startup.
-	if err := s.reconcileOrphanedRepoVisibility(
-		context.WithoutCancel(ctx),
-	); err != nil {
-		slog.Warn("release hidden-from-UI preference on repo removal",
-			"repo", configRepoPath(removed), "err", err)
-	}
-
-	return nil, nil
-}
-
-// reconcileOrphanedRepoVisibility clears every hidden-from-UI preference whose
-// repository no longer resolves from an exact configured entry. It runs
-// whenever the effective repository configuration changes: server startup,
-// config hot reload, and exact-entry deletion. Inactive rows are accepted on
-// the keep side and cleared like any other orphan: clearing a preference on a
-// displaced row is safe and keeps it from lingering unreachable. Resolution
-// errors abort the sweep without clearing anything.
-func (s *Server) reconcileOrphanedRepoVisibility(ctx context.Context) error {
-	if s.db == nil {
-		return nil
-	}
-	s.repoVisibilityMu.Lock()
-	defer s.repoVisibilityMu.Unlock()
-	hidden, err := s.db.HiddenRepos(ctx)
-	if err != nil {
-		return err
-	}
-	if len(hidden) == 0 {
-		return nil
-	}
-	var exact []config.Repo
-	s.cfgMu.Lock()
-	hasConfig := s.cfg != nil
-	if hasConfig {
-		for _, raw := range s.cfg.Repos {
-			if raw.HasNameGlob() {
-				continue
-			}
-			exact = append(exact, raw)
-		}
-	}
-	s.cfgMu.Unlock()
-	if !hasConfig {
-		return nil
-	}
-	keep := make(map[int64]struct{}, len(exact))
-	for _, raw := range exact {
-		repo, err := s.lookupRepoForVisibilityRelease(
-			ctx, s.visibilityLookupIdentity(raw),
-		)
-		if err != nil {
-			return err
-		}
-		if repo != nil {
-			keep[repo.ID] = struct{}{}
-		}
-	}
-	for _, repo := range hidden {
-		if _, kept := keep[repo.ID]; kept {
-			continue
-		}
-		if err := s.db.SetRepoHiddenFromUI(ctx, repo.ID, false); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Server) lookupRepoForVisibilityRelease(
-	ctx context.Context, identity db.RepoIdentity,
-) (*db.Repo, error) {
-	if strings.TrimSpace(identity.PlatformRepoID) == "" {
-		return s.db.GetRepoByIdentity(ctx, identity)
-	}
-	entry, err := s.db.GetRepositoryByProviderID(
-		ctx, identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if entry == nil {
-		return nil, nil
-	}
-	repo := entry.Repository
-	return &repo, nil
-}
-
-func normalizeRouteProvider(raw string) (string, error) {
-	if strings.TrimSpace(raw) == "" {
-		return "", errors.New("provider is required")
-	}
-	kind, err := platform.NormalizeKind(raw)
-	if err != nil {
-		return "", err
-	}
-	return string(kind), nil
-}
-
-func (s *Server) deleteConfiguredRepoOnHost(
-	ctx context.Context, input *repoConfigHostInput,
-) (*struct{}, error) {
-	return s.deleteConfiguredRepo(ctx, &repoConfigInput{
-		Provider:     input.Provider,
-		PlatformHost: input.PlatformHost,
-		Owner:        input.Owner,
-		Name:         input.Name,
-	})
 }

@@ -197,7 +197,7 @@ Pull admission and cancels its workers before HTTP drain, then waits for Pull be
 Fleet in the post-drain dependency stage (`internal/server/server.go::Server.Shutdown`,
 `internal/server/pullapi/handler.go::Handler.Stop`).
 If any stage times out, shutdown must not advance; a later call resumes at the
-blocked stage (`internal/server/workspace_dependency_shutdown.go::workspaceDependencyShutdown`).
+blocked stage (`internal/server/streamapi/workspace_dependency_shutdown.go::WorkspaceDependencyShutdown`).
 
 Federated terminal sessions stay spoke-owned. The hub bridges the
 browser WebSocket directly to the enrolled spoke's HTTPS origin and does not
@@ -245,7 +245,7 @@ create a local process, PTY, or durable transport session
 - A runtime can exit while its metadata write is still in flight, so every
   launch path must reconcile after persistence: live means both key and
   `CreatedAt` match, and a replacement must not suppress deletion of the exited
-  generation's row (`internal/server/host_runtime_handlers.go::Server.forgetHostRuntimeCommandSessionIfExited`, `internal/server/workspaceapi/projects_handlers.go::Handler.forgetProjectWorktreeRuntimeSessionIfExited`).
+  generation's row (`internal/server/hostapi/host_runtime_handlers.go::Handlers.ForgetHostRuntimeCommandSessionIfExited`, `internal/server/workspaceapi/projects_handlers.go::Handler.forgetProjectWorktreeRuntimeSessionIfExited`).
 - During kenn-forge shutdown, detach/restart behavior is different: do not treat
   normal server shutdown as a natural user exit that should erase recoverable
   base runtime state.
@@ -292,7 +292,7 @@ create a local process, PTY, or durable transport session
   (`internal/config/config.go::Config.validateTokenEnvNamesNotTerminalVars`).
 - Kata catalog `token_env` names feed every credential strip set on catalog
   load and at boot; catalogs load lazily per request, so the boot feed keeps
-  earlier terminals covered (`internal/server/server.go::Server.updateCatalogStripEnvVars`).
+  earlier terminals covered (`internal/server/streamapi/server.go::Handlers.UpdateCatalogStripEnvVars`).
 - Every attach command passes `-E`: a pane can widen the server's
   update-environment, and without `-E` the next attach copies the attach
   client's variables into the session environment; external attach specs
@@ -314,7 +314,7 @@ create a local process, PTY, or durable transport session
 - Live graphics or mouse changes are best-effort; graphics updates try every
   managed pane before reporting combined failures, and setup reapplies the
   pane state
-  (`internal/server/settings_handlers.go::Server.applyTmuxGraphics`).
+  (`internal/server/settingsapi/settings_handlers.go::Handlers.ApplyTmuxGraphics`).
 - Enabling graphics installs each replacement retained client before detaching
   the old one; browser reconnects must always find an attachment while panes
   stay running
@@ -406,7 +406,7 @@ stale tabs.
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::hasPointerSelectionIntent`).
 - Host clipboard writes require a local browser; trusted loopback proxies must report exactly one client IP assigned
   to the host, because the proxy's loopback `RemoteAddr` alone does not establish browser locality
-  (`internal/server/terminal_clipboard_access.go::isLocalTerminalClipboardRequest`).
+  (`internal/server/authapi/terminal_clipboard_access.go::IsLocalTerminalClipboardRequest`).
 - During active tmux SGR drags outside xterm bounds, add only clamped edge wheel, drag, and release reports; forward
   all other mouse reports unchanged, and never retain unsent drag state across a WebSocket boundary
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::connect`).
@@ -502,7 +502,7 @@ via `OTEL_TRACES_EXPORTER`.
   when code bypasses the generated client (`frontend/src/lib/api/runtime.ts::tracedFetch`).
 - Base-path routing must preserve the inner Huma route pattern for outer OTel
   middleware; otherwise prefixed API spans collapse to the base-path pattern
-  (`internal/server/otel_middleware.go::stripPrefixPreservingPattern`).
+  (`internal/server/otelmiddleware/otel_middleware.go::StripPrefixPreservingPattern`).
 - A workspace-switch trace ends at terminal first paint or after 30 seconds;
   cancellation and supersession must clear the matching fallback timer
   (`frontend/src/lib/instrumentation/workspaceSwitchTiming.ts::endSwitchTrace`).

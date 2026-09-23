@@ -48,7 +48,7 @@ filesystem operations, search, and git pull/publish behavior.
   kernel no-replace primitives and never overwrite a destination
   (`internal/docs/folder.go::Registry.RenameFile`).
 - Docs mutations retain origin/CSRF; file writes stay JSON-wrapped, not raw markdown
-  (`internal/server/server.go::Server.isMutatingDocsAPIRequest`, `internal/server/docsapi/routes.go::docsWriteFileInput`).
+  (`internal/server/streamapi/server.go::Handlers.IsMutatingDocsAPIRequest`, `internal/server/docsapi/routes.go::docsWriteFileInput`).
 - Public operations use Huma and generated clients; blob responses remain binary
   rather than being modeled as JSON
   (`internal/server/docsapi/routes.go::docsBlobOutput`).

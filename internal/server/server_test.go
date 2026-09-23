@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/streamapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -139,7 +141,7 @@ func (l staticListener) Addr() net.Addr            { return l.addr }
 func TestAllowedHostsForListenerIncludesBoundLoopbackHost(t *testing.T) {
 	assert := assert.New(t)
 
-	allowed := allowedHostsForListener(staticListener{addr: staticListenerAddr("127.0.0.2:8123")})
+	allowed := streamapi.AllowedHostsForListener(staticListener{addr: staticListenerAddr("127.0.0.2:8123")})
 
 	assert.Contains(allowed, "127.0.0.2:8123")
 	assert.Contains(allowed, "127.0.0.1:8123")
@@ -169,12 +171,12 @@ func TestSSEEndpointE2EFlushesEventsAndCleansUpOnCancel(t *testing.T) {
 	assert.Equal("text/event-stream", resp.Header.Get("Content-Type"))
 	assert.Equal("no-cache", resp.Header.Get("Cache-Control"))
 	require.Eventually(func() bool {
-		s.hub.mu.Lock()
-		defer s.hub.mu.Unlock()
-		return len(s.hub.subscribers) == 1
+		s.hub.Mu.Lock()
+		defer s.hub.Mu.Unlock()
+		return len(s.hub.Subscribers) == 1
 	}, 2*time.Second, 10*time.Millisecond)
 
-	s.hub.Broadcast(Event{
+	s.hub.Broadcast(syncevents.Event{
 		Type: "data_changed",
 		Data: map[string]string{"source": "e2e"},
 	})
@@ -199,9 +201,9 @@ func TestSSEEndpointE2EFlushesEventsAndCleansUpOnCancel(t *testing.T) {
 	cancel()
 	resp.Body.Close()
 	require.Eventually(func() bool {
-		s.hub.mu.Lock()
-		defer s.hub.mu.Unlock()
-		return len(s.hub.subscribers) == 0
+		s.hub.Mu.Lock()
+		defer s.hub.Mu.Unlock()
+		return len(s.hub.Subscribers) == 0
 	}, 2*time.Second, 10*time.Millisecond)
 }
 
@@ -216,7 +218,7 @@ func TestSSE_ReceivesBroadcastEvent(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 
 	scanner := bufio.NewScanner(resp.Body)
 	var eventType string
@@ -234,7 +236,7 @@ func TestSSE_ReceivesBroadcastEvent(t *testing.T) {
 
 func TestSSE_InitialSyncStatusFromCache(t *testing.T) {
 	s := newTestServer(t)
-	s.hub.Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": false}})
+	s.hub.Broadcast(syncevents.Event{Type: "sync_status", Data: map[string]bool{"running": false}})
 
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -288,7 +290,7 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 	s := newTestServer(t)
 	// Prime hub so first subscribe gets a sync_status — we read it
 	// as proof the handler has subscribed before we broadcast test events.
-	s.hub.Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": false}})
+	s.hub.Broadcast(syncevents.Event{Type: "sync_status", Data: map[string]bool{"running": false}})
 
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -332,8 +334,8 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 	}
 
 	// Now safe to broadcast — handler is subscribed
-	s.hub.Broadcast(Event{Type: "bad", Data: make(chan int)})
-	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	s.hub.Broadcast(syncevents.Event{Type: "bad", Data: make(chan int)})
+	s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 
 	select {
 	case ev := <-events:
@@ -364,7 +366,7 @@ func TestSSE_SlowConsumerDisconnect(t *testing.T) {
 
 	// Overrun the buffer without reading — 17 broadcasts (buffer=16)
 	for i := range 17 {
-		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
 	}
 
 	// The handler should close the connection
@@ -408,7 +410,7 @@ func TestSSE_TerminatesOnInitialDeadlineFailure(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		s.handleSSE(w, r)
+		s.streamapi.HandleSSE(w, r)
 	}()
 
 	select {
@@ -421,7 +423,7 @@ func TestSSE_TerminatesOnInitialDeadlineFailure(t *testing.T) {
 func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 	s := newTestServer(t)
 	// Cached sync_status delivered on subscribe triggers mid-stream write
-	s.hub.Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": false}})
+	s.hub.Broadcast(syncevents.Event{Type: "sync_status", Data: map[string]bool{"running": false}})
 
 	rec := httptest.NewRecorder()
 	// First call (initial clear) succeeds; second (pre-write deadline) fails
@@ -433,7 +435,7 @@ func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		s.handleSSE(w, r)
+		s.streamapi.HandleSSE(w, r)
 	}()
 
 	select {
@@ -445,9 +447,9 @@ func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
 	// Cancel context so Subscribe's cleanup goroutine unsubscribes
 	cancel()
 	require.Eventually(t, func() bool {
-		s.hub.mu.Lock()
-		defer s.hub.mu.Unlock()
-		return len(s.hub.subscribers) == 0
+		s.hub.Mu.Lock()
+		defer s.hub.Mu.Unlock()
+		return len(s.hub.Subscribers) == 0
 	}, 2*time.Second, 10*time.Millisecond, "subscriber should be cleaned up after context cancel")
 
 	// Deadline failed before event write — body must be empty
@@ -552,12 +554,12 @@ func TestSSE_FrameIncludesID(t *testing.T) {
 	defer resp.Body.Close()
 
 	require.Eventually(func() bool {
-		s.hub.mu.Lock()
-		defer s.hub.mu.Unlock()
-		return len(s.hub.subscribers) == 1
+		s.hub.Mu.Lock()
+		defer s.hub.Mu.Unlock()
+		return len(s.hub.Subscribers) == 1
 	}, 2*time.Second, 10*time.Millisecond)
 
-	gotID := s.hub.Broadcast(Event{Type: "data_changed", Data: map[string]string{"k": "v"}})
+	gotID := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: map[string]string{"k": "v"}})
 
 	scanner := bufio.NewScanner(resp.Body)
 	f := readSSEFrame(t, scanner)
@@ -574,7 +576,7 @@ func TestSSE_LastEventIDHeaderReplaysMissedEvents(t *testing.T) {
 	s := newTestServer(t)
 	// Prime the ring with three events the client supposedly saw.
 	for i := 1; i <= 3; i++ {
-		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
 	}
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -603,7 +605,7 @@ func TestSSE_SinceQueryReplaysMissedEvents(t *testing.T) {
 
 	s := newTestServer(t)
 	for i := 1; i <= 3; i++ {
-		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
 	}
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -626,7 +628,7 @@ func TestSSE_LastEventIDHeaderOverridesSinceQuery(t *testing.T) {
 
 	s := newTestServer(t)
 	for i := 1; i <= 5; i++ {
-		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
 	}
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -652,7 +654,7 @@ func TestSSE_InvalidCursorTreatedAsNoCursor(t *testing.T) {
 
 	s := newTestServer(t)
 	// Cache a sync_status the no-cursor path delivers on subscribe.
-	s.hub.Broadcast(Event{Type: "sync_status", Data: map[string]bool{"running": false}})
+	s.hub.Broadcast(syncevents.Event{Type: "sync_status", Data: map[string]bool{"running": false}})
 
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -678,7 +680,7 @@ func TestSSE_CursorAtHeadReplaysNothing(t *testing.T) {
 
 	s := newTestServer(t)
 	for i := 1; i <= 3; i++ {
-		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
 	}
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -694,12 +696,12 @@ func TestSSE_CursorAtHeadReplaysNothing(t *testing.T) {
 
 	// Wait for subscribe so the broadcast below isn't dropped.
 	require.Eventually(func() bool {
-		s.hub.mu.Lock()
-		defer s.hub.mu.Unlock()
-		return len(s.hub.subscribers) == 1
+		s.hub.Mu.Lock()
+		defer s.hub.Mu.Unlock()
+		return len(s.hub.Subscribers) == 1
 	}, 2*time.Second, 10*time.Millisecond)
 
-	id := s.hub.Broadcast(Event{Type: "data_changed", Data: "future"})
+	id := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: "future"})
 
 	scanner := bufio.NewScanner(resp.Body)
 	f := readSSEFrame(t, scanner)
@@ -746,7 +748,7 @@ func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
 
 	s := newTestServer(t)
 	for i := 1; i <= 2; i++ {
-		s.hub.Broadcast(Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -759,7 +761,7 @@ func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
 	go func() {
 		defer close(done)
 		defer writer.Close()
-		s.serveSSE(ctx, writer, rc, 2, true)
+		s.streamapi.ServeSSE(ctx, writer, rc, 2, true)
 	}()
 
 	select {
@@ -770,7 +772,7 @@ func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
 
 	// This event is queued on the live subscriber and recorded in the
 	// replay ring before RingSnapshotSince runs.
-	id3 := s.hub.Broadcast(Event{Type: "data_changed", Data: 3})
+	id3 := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: 3})
 	assert.Equal(uint64(3), id3)
 	close(rc.releaseFirst)
 
@@ -781,7 +783,7 @@ func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
 	})
 	assert.Equal("3", f3.ID)
 
-	id4 := s.hub.Broadcast(Event{Type: "data_changed", Data: 4})
+	id4 := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: 4})
 	assert.Equal(uint64(4), id4)
 	f4 := readSSEFrameWithin(t, scanner, 2*time.Second, func() {
 		cancel()
@@ -823,11 +825,11 @@ func TestSSE_FutureCursorEmitsReconnectStaleThenLiveEvents(t *testing.T) {
 	assert.Equal("1", stale.ID)
 
 	require.Eventually(func() bool {
-		s.hub.mu.Lock()
-		defer s.hub.mu.Unlock()
-		return len(s.hub.subscribers) == 1
+		s.hub.Mu.Lock()
+		defer s.hub.Mu.Unlock()
+		return len(s.hub.Subscribers) == 1
 	}, 2*time.Second, 10*time.Millisecond)
-	id := s.hub.Broadcast(Event{Type: "data_changed", Data: "after-stale"})
+	id := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: "after-stale"})
 	assert.Equal(uint64(2), id)
 	live := readSSEFrameWithin(t, scanner, 2*time.Second, func() {
 		resp.Body.Close()
@@ -838,28 +840,28 @@ func TestSSE_FutureCursorEmitsReconnectStaleThenLiveEvents(t *testing.T) {
 func TestParseLastEventID_HeaderWins(t *testing.T) {
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=42", nil)
 	r.Header.Set("Last-Event-ID", "99")
-	got, ok := parseLastEventID(r)
+	got, ok := streamapi.ParseLastEventID(r)
 	assert.True(t, ok)
 	assert.Equal(t, uint64(99), got)
 }
 
 func TestParseLastEventID_FallsBackToQuery(t *testing.T) {
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=42", nil)
-	got, ok := parseLastEventID(r)
+	got, ok := streamapi.ParseLastEventID(r)
 	assert.True(t, ok)
 	assert.Equal(t, uint64(42), got)
 }
 
 func TestParseLastEventID_AbsentMeansNoCursor(t *testing.T) {
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events", nil)
-	_, ok := parseLastEventID(r)
+	_, ok := streamapi.ParseLastEventID(r)
 	assert.False(t, ok)
 }
 
 func TestParseLastEventID_InvalidHeaderFallsBackToQuery(t *testing.T) {
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=7", nil)
 	r.Header.Set("Last-Event-ID", "garbage")
-	got, ok := parseLastEventID(r)
+	got, ok := streamapi.ParseLastEventID(r)
 	assert.True(t, ok)
 	assert.Equal(t, uint64(7), got)
 }
@@ -867,6 +869,6 @@ func TestParseLastEventID_InvalidHeaderFallsBackToQuery(t *testing.T) {
 func TestParseLastEventID_AllUnparsableMeansNoCursor(t *testing.T) {
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=abc", nil)
 	r.Header.Set("Last-Event-ID", "xyz")
-	_, ok := parseLastEventID(r)
+	_, ok := streamapi.ParseLastEventID(r)
 	assert.False(t, ok)
 }

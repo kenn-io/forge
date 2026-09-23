@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 )
 
 type recordingTerminalClipboard struct {
@@ -80,7 +81,7 @@ func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
 				openTestDB(t), nil, nil, "/", nil,
 				server.ServerOptions{
 					TerminalClipboard: clipboard,
-					HostCheck: server.HostCheckOptions{
+					HostCheck: authapi.HostCheckOptions{
 						Bind: config.HostKey{
 							Host: "127.0.0.1",
 							Port: "8091",

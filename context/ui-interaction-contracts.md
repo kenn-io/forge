@@ -1081,7 +1081,7 @@ Not every visibility control means "remove this entity entirely."
 - Empty Activity deltas must not rebuild or replace parent/workspace summaries
   (`frontend/src/lib/stores/activity.svelte.ts::pollNewItems`).
 - Single-thread Activity expansion uses stable repository identity, a frozen upper bound,
-  and the active event, search, and visibility filters (`internal/server/huma_routes.go::listActivityThreadEvents`).
+  and the active event, search, and visibility filters (`internal/server/activityapi/huma_routes.go::Handlers.ListActivityThreadEvents`).
 - Globally expanded threaded Activity fences older foreground snapshots, then pages the
   bulk event read instead of fanning out per thread, including when settings or URL state
   initializes it expanded (`frontend/src/lib/stores/activity.svelte.ts::loadBulkActivity`).
@@ -1113,7 +1113,7 @@ Not every visibility control means "remove this entity entirely."
   event warning. `item_activity_capped` drives only the independent parent-truncation
   notice; a search whose event matches overflow the event page also reports it, because
   event-matched parents are derived from that bounded page
-  (`frontend/src/lib/stores/activity.svelte.ts::createActivityStore`, `internal/server/huma_routes.go::Server.listActivity`).
+  (`frontend/src/lib/stores/activity.svelte.ts::createActivityStore`, `internal/server/activityapi/huma_routes.go::Handlers.ListActivity`).
 - Activity status totals deduplicate open subjects across event, parent, and workspace
   snapshots; authoritative parent lifecycle state overrides event state
   (`frontend/src/lib/components/layout/StatusBar.svelte::activityCounts`).
@@ -1146,7 +1146,7 @@ Not every visibility control means "remove this entity entirely."
 - Projection is part of Activity snapshot scope, so collapsed and full responses cannot
   replace each other (`frontend/src/lib/stores/activity.svelte.ts::activityProjectionScope`).
   The `events` projection is delta-only; searched polling must not reconstruct full
-  parent or workspace inputs that its response discards (`internal/server/huma_routes.go::Server.listActivity`).
+  parent or workspace inputs that its response discards (`internal/server/activityapi/huma_routes.go::Handlers.ListActivity`).
   Every fourth scheduled Activity poll is an authoritative collapsed-snapshot
   replacement in collapsed threaded mode, so events hidden behind the forward
   cursor self-heal even without detail navigation or SSE without reloading the
@@ -1182,12 +1182,12 @@ context.
 
 Inline diff review draft comments are local staged review state until publish.
 Direct detail-form review actions must leave that staged state untouched; do not
-load or publish saved draft comments (`internal/server/huma_routes.go::requestChangesPR`).
+load or publish saved draft comments (`internal/server/pullapi/routes.go::Handler.requestChangesPR`).
 Direct approve and request-changes share one submission contract end to end —
 the same head pin, the same provider-side binding, the same post-success refresh
 handling. Do not give either action stronger client-side verification, staleness
 checks, or revocation behavior than the other
-(`internal/server/huma_routes.go::approvalReviewHeadSHA`).
+(`internal/server/pullapi/routes.go::approvalReviewHeadSHA`).
 PR head mutations must not share an in-flight lock. Approve, request-changes,
 merge, and suggestion application keep local submission guards; only durable
 head-conflict state blocks the other actions (`frontend/src/lib/components/detail/PullDetail.svelte::headActionsBlocked`).

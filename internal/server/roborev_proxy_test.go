@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/roborevapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -88,7 +89,7 @@ func TestRoborevHealthProbeAvailable(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp roborevStatusResponse
+	var resp roborevapi.RoborevStatusResponse
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	assert.True(resp.Available)
 	assert.Equal("1.2.3", resp.Version)
@@ -106,7 +107,7 @@ func TestRoborevHealthProbeUnavailable(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
-	var resp roborevStatusResponse
+	var resp roborevapi.RoborevStatusResponse
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
 	assert.False(resp.Available)
 	assert.Empty(resp.Version)

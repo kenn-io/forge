@@ -21,6 +21,8 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
 )
@@ -47,7 +49,7 @@ func openFederationPreparationStores(
 
 func prepareSpokeRequest(
 	t *testing.T, server *httptest.Server,
-) (SpokePreparationReport, int) {
+) (spokeapi.SpokePreparationReport, int) {
 	t.Helper()
 	request, err := http.NewRequestWithContext(
 		t.Context(), http.MethodPost, server.URL+"/api/v1/fleet/prepare-spoke",
@@ -59,7 +61,7 @@ func prepareSpokeRequest(
 	response, err := server.Client().Do(request)
 	require.NoError(t, err)
 	defer response.Body.Close()
-	var report SpokePreparationReport
+	var report spokeapi.SpokePreparationReport
 	if response.StatusCode == http.StatusOK {
 		require.NoError(t, json.NewDecoder(response.Body).Decode(&report))
 	}
@@ -75,7 +77,7 @@ func TestPrepareFederationSpokeSealsAndPersistsRoleThroughDaemon(t *testing.T) {
 		Enabled: true, Role: config.FleetRoleHub,
 	}}
 	hub := New(hubDB, nil, nil, "/", hubConfig, ServerOptions{
-		DaemonAccess:                  DaemonAccessOptions{Token: "hub-local", RequireAPIAuth: true},
+		DaemonAccess:                  authapi.DaemonAccessOptions{Token: "hub-local", RequireAPIAuth: true},
 		FederationCredentials:         hubCredentials,
 		FederationEnrollments:         hubEnrollments,
 		FederationSpokeID:             preparationHubNodeID,
@@ -165,7 +167,7 @@ base_url = %q
 	spokeConfig, err := config.Load(spokeConfigPath)
 	require.NoError(err)
 	spoke := NewWithConfig(spokeDB, nil, nil, nil, spokeConfig, spokeConfigPath, ServerOptions{
-		DaemonAccess:                  DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:                  authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials:         spokeCredentials,
 		FederationEnrollments:         spokeEnrollments,
 		FederationSpokeID:             preparationLocalNodeID,
@@ -351,7 +353,7 @@ base_url = "https://spoke.example"
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	hub := config.FleetHub{NodeID: local.HubID, Name: "Hub", BaseURL: local.HubURL}
-	require.NoError(srv.persistHubBinding(t.Context(), hub))
+	require.NoError(srv.settingsapi.PersistHubBinding(t.Context(), hub))
 	seal := db.SpokePreparationSeal{
 		EnrollmentID: local.EnrollmentID, NodeID: local.NodeID,
 		HubNodeID: local.HubID, ProtocolVersion: local.ProtocolVersion,
@@ -399,10 +401,10 @@ func TestSpokePreparationRejectsFilesystemLaunchSpecBeforePersistence(t *testing
 			Body:       io.NopCloser(bytes.NewReader(encoded)),
 		}, nil
 	})
-	report := SpokePreparationReport{HandoffErrors: []string{}}
-	server := &Server{db: database, now: time.Now}
+	report := spokeapi.SpokePreparationReport{HandoffErrors: []string{}}
+	server := wiredServer(&Server{db: database, now: time.Now})
 
-	server.refreshSpokePreparationLaunchSpecs(t.Context(), client, &report)
+	server.spokeapi.RefreshSpokePreparationLaunchSpecs(t.Context(), client, &report)
 
 	require.Len(report.HandoffErrors, 1)
 	assert.Contains(report.HandoffErrors[0], "invalid hub launch specification")
@@ -442,12 +444,12 @@ func TestSpokePreparationRequiresCredentialBeforePersistingLaunchSpec(t *testing
 			StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(encoded)),
 		}, nil
 	})
-	report := SpokePreparationReport{HandoffErrors: []string{}}
-	server := &Server{
+	report := spokeapi.SpokePreparationReport{HandoffErrors: []string{}}
+	server := wiredServer(&Server{
 		db: database, now: time.Now, clones: gitclone.New(t.TempDir(), nil),
-	}
+	})
 
-	server.refreshSpokePreparationLaunchSpecs(t.Context(), client, &report)
+	server.spokeapi.RefreshSpokePreparationLaunchSpecs(t.Context(), client, &report)
 
 	require.Len(report.HandoffErrors, 1)
 	assert.Contains(report.HandoffErrors[0], "git credential unavailable")
@@ -489,15 +491,15 @@ func TestSpokePreparationRequiresForkCredentialBeforePersistingLaunchSpec(t *tes
 			Body:       io.NopCloser(bytes.NewReader(encoded)),
 		}, nil
 	})
-	report := SpokePreparationReport{HandoffErrors: []string{}}
-	server := &Server{
+	report := spokeapi.SpokePreparationReport{HandoffErrors: []string{}}
+	server := wiredServer(&Server{
 		db: database, now: time.Now,
 		clones: gitclone.New(t.TempDir(), descriptorCloneRoutes{
 			source: testTokenSource("spoke-git-token"),
 		}),
-	}
+	})
 
-	server.refreshSpokePreparationLaunchSpecs(t.Context(), client, &report)
+	server.spokeapi.RefreshSpokePreparationLaunchSpecs(t.Context(), client, &report)
 
 	require.Len(report.HandoffErrors, 1)
 	assert.Contains(report.HandoffErrors[0], "git credential unavailable")
@@ -561,7 +563,7 @@ func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewReader(encoded)),
 		}, nil
 	})
-	report := SpokePreparationReport{HandoffErrors: []string{}}
+	report := spokeapi.SpokePreparationReport{HandoffErrors: []string{}}
 	const tokenEnv = "KENN_FORGE_TEST_PREPARATION_GIT_TOKEN"
 	t.Setenv(tokenEnv, "token")
 	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
@@ -570,12 +572,12 @@ func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) {
 			Kind: tokenauth.SourceKindEnv, EnvName: tokenEnv,
 		}},
 	}, tokenauth.Options{})
-	server := &Server{
+	server := wiredServer(&Server{
 		db: database, now: func() time.Time { return now },
 		clones: gitclone.New(t.TempDir(), gitclone.HostSources{"github.com": source}),
-	}
+	})
 
-	server.refreshSpokePreparationLaunchSpecs(t.Context(), client, &report)
+	server.spokeapi.RefreshSpokePreparationLaunchSpecs(t.Context(), client, &report)
 
 	assert.Empty(report.HandoffErrors)
 	workspace, err := database.GetWorkspace(t.Context(), workspaceID)
@@ -601,12 +603,12 @@ func TestHubPreparationSealMustMatchRequestedBinding(t *testing.T) {
 		SpokePreparationSealRequest: request,
 		Seal:                        "opaque-seal", CreatedAt: time.Now().UTC(),
 	}
-	require.NoError(validateHubPreparationSeal(request, valid))
+	require.NoError(spokeapi.ValidateHubPreparationSeal(request, valid))
 
 	different := valid
 	different.ReceiptsDigest = "different"
-	require.Error(validateHubPreparationSeal(request, different))
+	require.Error(spokeapi.ValidateHubPreparationSeal(request, different))
 	incomplete := valid
 	incomplete.Seal = ""
-	require.Error(validateHubPreparationSeal(request, incomplete))
+	require.Error(spokeapi.ValidateHubPreparationSeal(request, incomplete))
 }

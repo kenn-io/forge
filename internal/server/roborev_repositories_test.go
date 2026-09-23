@@ -21,6 +21,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/projects"
+	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/roborevapi"
 	"go.kenn.io/forge/internal/testutil"
 )
 
@@ -30,35 +32,35 @@ func TestRoborevRepositoryProbeCachesDefinitiveResultsAndDeduplicatesIdentity(t 
 	var inventoryCalls atomic.Int32
 	var hookPathCalls atomic.Int32
 	var inspectCalls atomic.Int32
-	probe := newRoborevRepositoryProbeWithDeps(
+	probe := roborevapi.NewRoborevRepositoryProbeWithDeps(
 		[]projects.KnownPlatformHost{{Platform: "github", Host: "github.com"}},
-		roborevRepositoryProbeDeps{
-			now: time.Now,
-			loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
+		roborevapi.RoborevRepositoryProbeDeps{
+			Now: time.Now,
+			LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
 				inventoryCalls.Add(1)
-				return []roborevTrackedRepository{
+				return []roborevapi.RoborevTrackedRepository{
 					{RootPath: "/checkout/main", Identity: "https://github.com/acme/widgets.git"},
 					{RootPath: "/checkout/worktree", Identity: "git@github.com:acme/widgets.git"},
 				}, nil
 			},
-			resolveHookPath: func(_ context.Context, root string) (string, error) {
+			ResolveHookPath: func(_ context.Context, root string) (string, error) {
 				hookPathCalls.Add(1)
 				return "/shared/hooks/post-commit", nil
 			},
-			inspectHook: func(string) (bool, error) {
+			InspectHook: func(string) (bool, error) {
 				inspectCalls.Add(1)
 				return true, nil
 			},
 		},
 	)
 
-	first, err := probe.configuredRepositories(t.Context())
+	first, err := probe.ConfiguredRepositories(t.Context())
 	require.NoError(err)
-	second, err := probe.configuredRepositories(t.Context())
+	second, err := probe.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 
 	require.Len(first, 1)
-	assert.Equal(roborevConfiguredRepositoryResponse{
+	assert.Equal(itemapi.RoborevConfiguredRepositoryResponse{
 		Provider:     "github",
 		PlatformHost: "github.com",
 		RepoPath:     "acme/widgets",
@@ -75,34 +77,34 @@ func TestRoborevRepositoryProbeInvalidateReloadsInventoryAndDefinitiveResults(t 
 	require := require.New(t)
 	assert := assert.New(t)
 	var calls atomic.Int32
-	probe := newRoborevRepositoryProbeWithDeps(
+	probe := roborevapi.NewRoborevRepositoryProbeWithDeps(
 		[]projects.KnownPlatformHost{{Platform: "github", Host: "github.com"}},
-		roborevRepositoryProbeDeps{
-			now: time.Now,
-			loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
+		roborevapi.RoborevRepositoryProbeDeps{
+			Now: time.Now,
+			LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
 				if calls.Add(1) == 1 {
-					return []roborevTrackedRepository{{
+					return []roborevapi.RoborevTrackedRepository{{
 						RootPath: "/first", Identity: "https://github.com/acme/first.git",
 					}}, nil
 				}
-				return []roborevTrackedRepository{{
+				return []roborevapi.RoborevTrackedRepository{{
 					RootPath: "/second", Identity: "https://github.com/acme/second.git",
 				}}, nil
 			},
-			resolveHookPath: func(_ context.Context, root string) (string, error) {
+			ResolveHookPath: func(_ context.Context, root string) (string, error) {
 				return root + "/post-commit", nil
 			},
-			inspectHook: func(string) (bool, error) { return true, nil },
+			InspectHook: func(string) (bool, error) { return true, nil },
 		},
 	)
 
-	first, err := probe.configuredRepositories(t.Context())
+	first, err := probe.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 	require.Len(first, 1)
 	assert.Equal("acme/first", first[0].RepoPath)
 
 	probe.Invalidate()
-	second, err := probe.configuredRepositories(t.Context())
+	second, err := probe.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 	require.Len(second, 1)
 	assert.Equal("acme/second", second[0].RepoPath)
@@ -117,33 +119,33 @@ func TestRoborevRepositoryProbeInvalidateFencesInFlightRefresh(t *testing.T) {
 	var releaseOnce sync.Once
 	defer releaseOnce.Do(func() { close(release) })
 	var calls atomic.Int32
-	probe := newRoborevRepositoryProbeWithDeps(
+	probe := roborevapi.NewRoborevRepositoryProbeWithDeps(
 		[]projects.KnownPlatformHost{{Platform: "github", Host: "github.com"}},
-		roborevRepositoryProbeDeps{
-			now: time.Now,
-			loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
+		roborevapi.RoborevRepositoryProbeDeps{
+			Now: time.Now,
+			LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
 				if calls.Add(1) == 1 {
 					close(started)
 					<-release
-					return []roborevTrackedRepository{{
+					return []roborevapi.RoborevTrackedRepository{{
 						RootPath: "/stale", Identity: "https://github.com/acme/stale.git",
 					}}, nil
 				}
 				close(freshStarted)
-				return []roborevTrackedRepository{{
+				return []roborevapi.RoborevTrackedRepository{{
 					RootPath: "/fresh", Identity: "https://github.com/acme/fresh.git",
 				}}, nil
 			},
-			resolveHookPath: func(_ context.Context, root string) (string, error) {
+			ResolveHookPath: func(_ context.Context, root string) (string, error) {
 				return root + "/post-commit", nil
 			},
-			inspectHook: func(string) (bool, error) { return true, nil },
+			InspectHook: func(string) (bool, error) { return true, nil },
 		},
 	)
 
-	result := make(chan []roborevConfiguredRepositoryResponse, 1)
+	result := make(chan []itemapi.RoborevConfiguredRepositoryResponse, 1)
 	go func() {
-		configured, _ := probe.configuredRepositories(t.Context())
+		configured, _ := probe.ConfiguredRepositories(t.Context())
 		result <- configured
 	}()
 	<-started
@@ -169,30 +171,30 @@ func TestRoborevRepositoryProbeCoalescesConcurrentRequests(t *testing.T) {
 	var calls atomic.Int32
 	var releaseOnce sync.Once
 	defer releaseOnce.Do(func() { close(release) })
-	probe := newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
-		now: time.Now,
-		onWaitForInFlight: func() {
+	probe := roborevapi.NewRoborevRepositoryProbeWithDeps(nil, roborevapi.RoborevRepositoryProbeDeps{
+		Now: time.Now,
+		OnWaitForInFlight: func() {
 			close(waiterJoined)
 		},
-		loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
+		LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
 			if calls.Add(1) == 1 {
 				close(started)
 			}
 			<-release
-			return []roborevTrackedRepository{}, nil
+			return []roborevapi.RoborevTrackedRepository{}, nil
 		},
-		resolveHookPath: func(context.Context, string) (string, error) { return "", nil },
-		inspectHook:     func(string) (bool, error) { return false, nil },
+		ResolveHookPath: func(context.Context, string) (string, error) { return "", nil },
+		InspectHook:     func(string) (bool, error) { return false, nil },
 	})
 
 	results := make(chan error, 2)
 	go func() {
-		_, err := probe.configuredRepositories(t.Context())
+		_, err := probe.ConfiguredRepositories(t.Context())
 		results <- err
 	}()
 	<-started
 	go func() {
-		_, err := probe.configuredRepositories(t.Context())
+		_, err := probe.ConfiguredRepositories(t.Context())
 		results <- err
 	}()
 	select {
@@ -211,32 +213,32 @@ func TestRoborevRepositoryProbeCallerCancellationDoesNotPoisonWaiters(t *testing
 	started := make(chan struct{})
 	release := make(chan struct{})
 	waiterJoined := make(chan struct{})
-	probe := newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
-		now:               time.Now,
-		onWaitForInFlight: func() { close(waiterJoined) },
-		loadInventory: func(ctx context.Context) ([]roborevTrackedRepository, error) {
+	probe := roborevapi.NewRoborevRepositoryProbeWithDeps(nil, roborevapi.RoborevRepositoryProbeDeps{
+		Now:               time.Now,
+		OnWaitForInFlight: func() { close(waiterJoined) },
+		LoadInventory: func(ctx context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
 			close(started)
 			select {
 			case <-release:
-				return []roborevTrackedRepository{}, nil
+				return []roborevapi.RoborevTrackedRepository{}, nil
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
 		},
-		resolveHookPath: func(context.Context, string) (string, error) { return "", nil },
-		inspectHook:     func(string) (bool, error) { return false, nil },
+		ResolveHookPath: func(context.Context, string) (string, error) { return "", nil },
+		InspectHook:     func(string) (bool, error) { return false, nil },
 	})
 
 	leaderCtx, cancelLeader := context.WithCancel(t.Context())
 	leader := make(chan error, 1)
 	go func() {
-		_, err := probe.configuredRepositories(leaderCtx)
+		_, err := probe.ConfiguredRepositories(leaderCtx)
 		leader <- err
 	}()
 	<-started
 	waiter := make(chan error, 1)
 	go func() {
-		_, err := probe.configuredRepositories(t.Context())
+		_, err := probe.ConfiguredRepositories(t.Context())
 		waiter <- err
 	}()
 	<-waiterJoined
@@ -252,17 +254,17 @@ func TestRoborevRepositoryProbeBoundsHookResolution(t *testing.T) {
 		require := require.New(t)
 		var active atomic.Int32
 		var maximum atomic.Int32
-		repositories := make([]roborevTrackedRepository, 12)
+		repositories := make([]roborevapi.RoborevTrackedRepository, 12)
 		for i := range repositories {
-			repositories[i] = roborevTrackedRepository{
+			repositories[i] = roborevapi.RoborevTrackedRepository{
 				RootPath: fmt.Sprintf("/checkout/%d", i),
 				Identity: fmt.Sprintf("https://github.com/acme/repo-%d.git", i),
 			}
 		}
-		probe := newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
-			now:           time.Now,
-			loadInventory: func(context.Context) ([]roborevTrackedRepository, error) { return repositories, nil },
-			resolveHookPath: func(_ context.Context, root string) (string, error) {
+		probe := roborevapi.NewRoborevRepositoryProbeWithDeps(nil, roborevapi.RoborevRepositoryProbeDeps{
+			Now:           time.Now,
+			LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) { return repositories, nil },
+			ResolveHookPath: func(_ context.Context, root string) (string, error) {
 				current := active.Add(1)
 				for {
 					previous := maximum.Load()
@@ -274,13 +276,13 @@ func TestRoborevRepositoryProbeBoundsHookResolution(t *testing.T) {
 				active.Add(-1)
 				return root + "/post-commit", nil
 			},
-			inspectHook: func(string) (bool, error) { return true, nil },
+			InspectHook: func(string) (bool, error) { return true, nil },
 		})
 
-		configured, err := probe.configuredRepositories(t.Context())
+		configured, err := probe.ConfiguredRepositories(t.Context())
 		require.NoError(err)
 		assert.Len(configured, 12)
-		assert.Equal(int32(roborevHookProbeWorkers), maximum.Load())
+		assert.Equal(int32(roborevapi.RoborevHookProbeWorkers), maximum.Load())
 	})
 }
 
@@ -289,34 +291,34 @@ func TestRoborevRepositoryProbeRetriesTransientCheckoutFailureAfterCooldown(t *t
 	require := require.New(t)
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
 	var failingCalls atomic.Int32
-	probe := newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
-		now: func() time.Time { return now },
-		loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
-			return []roborevTrackedRepository{
+	probe := roborevapi.NewRoborevRepositoryProbeWithDeps(nil, roborevapi.RoborevRepositoryProbeDeps{
+		Now: func() time.Time { return now },
+		LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
+			return []roborevapi.RoborevTrackedRepository{
 				{RootPath: "/positive", Identity: "https://github.com/acme/widgets.git"},
 				{RootPath: "/transient", Identity: "https://github.com/acme/tools.git"},
 			}, nil
 		},
-		resolveHookPath: func(_ context.Context, root string) (string, error) {
+		ResolveHookPath: func(_ context.Context, root string) (string, error) {
 			if root == "/transient" && failingCalls.Add(1) == 1 {
 				return "", errors.New("temporary git failure")
 			}
 			return root + "/post-commit", nil
 		},
-		inspectHook: func(string) (bool, error) { return true, nil },
+		InspectHook: func(string) (bool, error) { return true, nil },
 	})
 
-	first, err := probe.configuredRepositories(t.Context())
+	first, err := probe.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 	require.Len(first, 1)
 	assert.Equal("acme/widgets", first[0].RepoPath)
 	now = now.Add(29 * time.Second)
-	second, err := probe.configuredRepositories(t.Context())
+	second, err := probe.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 	assert.Len(second, 1)
 	assert.Equal(int32(1), failingCalls.Load())
 	now = now.Add(time.Second)
-	third, err := probe.configuredRepositories(t.Context())
+	third, err := probe.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 	assert.Len(third, 2)
 	assert.Equal(int32(2), failingCalls.Load())
@@ -329,30 +331,30 @@ func TestRoborevRepositoryProbeStartsCheckoutCooldownWhenFailureCompletes(t *tes
 	var nowNanos atomic.Int64
 	nowNanos.Store(start.UnixNano())
 	var calls atomic.Int32
-	probe := newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
-		now: func() time.Time { return time.Unix(0, nowNanos.Load()).UTC() },
-		loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
-			return []roborevTrackedRepository{
+	probe := roborevapi.NewRoborevRepositoryProbeWithDeps(nil, roborevapi.RoborevRepositoryProbeDeps{
+		Now: func() time.Time { return time.Unix(0, nowNanos.Load()).UTC() },
+		LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
+			return []roborevapi.RoborevTrackedRepository{
 				{RootPath: "/slow", Identity: "https://github.com/acme/widgets.git"},
 			}, nil
 		},
-		resolveHookPath: func(context.Context, string) (string, error) {
+		ResolveHookPath: func(context.Context, string) (string, error) {
 			if calls.Add(1) == 1 {
-				nowNanos.Store(start.Add(roborevProbeRetryCooldown + time.Second).UnixNano())
+				nowNanos.Store(start.Add(roborevapi.RoborevProbeRetryCooldown + time.Second).UnixNano())
 				return "", errors.New("slow git failure")
 			}
 			return "/hooks/post-commit", nil
 		},
-		inspectHook: func(string) (bool, error) { return true, nil },
+		InspectHook: func(string) (bool, error) { return true, nil },
 	})
 
-	first, err := probe.configuredRepositories(t.Context())
+	first, err := probe.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 	assert.Empty(first)
 	assert.Equal(int32(1), calls.Load())
 
-	nowNanos.Store(start.Add(2*roborevProbeRetryCooldown + time.Second).UnixNano())
-	second, err := probe.configuredRepositories(t.Context())
+	nowNanos.Store(start.Add(2*roborevapi.RoborevProbeRetryCooldown + time.Second).UnixNano())
+	second, err := probe.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 	assert.Len(second, 1)
 	assert.Equal(int32(2), calls.Load())
@@ -383,7 +385,7 @@ func TestInspectRoborevPostCommitHook(t *testing.T) {
 			require := require.New(t)
 			path := filepath.Join(t.TempDir(), "post-commit")
 			require.NoError(os.WriteFile(path, []byte(tt.content), tt.mode))
-			got, err := inspectRoborevPostCommitHook(path)
+			got, err := roborevapi.InspectRoborevPostCommitHook(path)
 			require.NoError(err)
 			assert.Equal(tt.want, got)
 		})
@@ -391,10 +393,10 @@ func TestInspectRoborevPostCommitHook(t *testing.T) {
 
 	assert := assert.New(t)
 	require := require.New(t)
-	missing, err := inspectRoborevPostCommitHook(filepath.Join(t.TempDir(), "missing"))
+	missing, err := roborevapi.InspectRoborevPostCommitHook(filepath.Join(t.TempDir(), "missing"))
 	require.NoError(err)
 	assert.False(missing)
-	directory, err := inspectRoborevPostCommitHook(t.TempDir())
+	directory, err := roborevapi.InspectRoborevPostCommitHook(t.TempDir())
 	require.NoError(err)
 	assert.False(directory)
 }
@@ -403,22 +405,22 @@ func TestLoadRoborevRepositoryInventoryValidatesCompleteEnvelope(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
-		want []roborevTrackedRepository
+		want []roborevapi.RoborevTrackedRepository
 	}{
 		{
 			name: "valid repo without review jobs",
 			body: `{"repos":[{"root_path":"/repo","identity":"https://github.com/acme/widgets.git"}],"total_count":0}`,
-			want: []roborevTrackedRepository{{RootPath: "/repo", Identity: "https://github.com/acme/widgets.git"}},
+			want: []roborevapi.RoborevTrackedRepository{{RootPath: "/repo", Identity: "https://github.com/acme/widgets.git"}},
 		},
 		{
 			name: "valid mixed identity availability",
 			body: `{"repos":[{"root_path":"/repo","identity":"https://github.com/acme/widgets.git"},{"root_path":"/local"}],"total_count":3}`,
-			want: []roborevTrackedRepository{
+			want: []roborevapi.RoborevTrackedRepository{
 				{RootPath: "/repo", Identity: "https://github.com/acme/widgets.git"},
 				{RootPath: "/local"},
 			},
 		},
-		{name: "valid null repos", body: `{"repos":null,"total_count":0}`, want: []roborevTrackedRepository{}},
+		{name: "valid null repos", body: `{"repos":null,"total_count":0}`, want: []roborevapi.RoborevTrackedRepository{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -426,7 +428,7 @@ func TestLoadRoborevRepositoryInventoryValidatesCompleteEnvelope(t *testing.T) {
 				_, _ = io.WriteString(w, tt.body)
 			}))
 			defer server.Close()
-			got, err := loadRoborevRepositoryInventory(server.Client(), server.URL)(t.Context())
+			got, err := roborevapi.LoadRoborevRepositoryInventory(server.Client(), server.URL)(t.Context())
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})
@@ -441,16 +443,16 @@ func TestLoadRoborevRepositoryInventoryValidatesCompleteEnvelope(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = io.WriteString(w, body)
 		}))
-		_, err := loadRoborevRepositoryInventory(server.Client(), server.URL)(t.Context())
+		_, err := roborevapi.LoadRoborevRepositoryInventory(server.Client(), server.URL)(t.Context())
 		server.Close()
 		require.Error(t, err, body)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, strings.Repeat(" ", roborevInventoryMaxBytes+1))
+		_, _ = io.WriteString(w, strings.Repeat(" ", roborevapi.RoborevInventoryMaxBytes+1))
 	}))
 	defer server.Close()
-	_, err := loadRoborevRepositoryInventory(server.Client(), server.URL)(t.Context())
+	_, err := roborevapi.LoadRoborevRepositoryInventory(server.Client(), server.URL)(t.Context())
 	assert.Error(t, err, "oversized inventory must be rejected")
 }
 
@@ -458,22 +460,22 @@ func TestListRoborevConfiguredRepositories(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupTestServerWithRoborev(t, "http://127.0.0.1:1")
-	srv.roborevRepositories = newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
-		now: time.Now,
-		loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
-			return []roborevTrackedRepository{
+	srv.roborevRepositories = roborevapi.NewRoborevRepositoryProbeWithDeps(nil, roborevapi.RoborevRepositoryProbeDeps{
+		Now: time.Now,
+		LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
+			return []roborevapi.RoborevTrackedRepository{
 				{RootPath: "/checkout/widgets", Identity: "https://github.com/acme/widgets.git"},
 			}, nil
 		},
-		resolveHookPath: func(context.Context, string) (string, error) { return "/hooks/post-commit", nil },
-		inspectHook:     func(string) (bool, error) { return true, nil },
+		ResolveHookPath: func(context.Context, string) (string, error) { return "/hooks/post-commit", nil },
+		InspectHook:     func(string) (bool, error) { return true, nil },
 	})
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/roborev/configured-repositories", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var body struct {
-		Repositories []roborevConfiguredRepositoryResponse `json:"repositories"`
-		Complete     bool                                  `json:"complete"`
+		Repositories []itemapi.RoborevConfiguredRepositoryResponse `json:"repositories"`
+		Complete     bool                                          `json:"complete"`
 	}
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.Len(body.Repositories, 1)
@@ -488,26 +490,26 @@ func TestListRoborevConfiguredRepositoriesMarksPartialResultsIncomplete(t *testi
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupTestServerWithRoborev(t, "http://127.0.0.1:1")
-	srv.roborevRepositories = newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
-		now: time.Now,
-		loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
-			return []roborevTrackedRepository{
+	srv.roborevRepositories = roborevapi.NewRoborevRepositoryProbeWithDeps(nil, roborevapi.RoborevRepositoryProbeDeps{
+		Now: time.Now,
+		LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
+			return []roborevapi.RoborevTrackedRepository{
 				{RootPath: "/configured", Identity: "https://github.com/acme/widgets.git"},
 				{RootPath: "/unresolved", Identity: "https://github.com/acme/tools.git"},
 			}, nil
 		},
-		resolveHookPath: func(_ context.Context, root string) (string, error) {
+		ResolveHookPath: func(_ context.Context, root string) (string, error) {
 			if root == "/unresolved" {
 				return "", errors.New("temporary git failure")
 			}
 			return "/hooks/post-commit", nil
 		},
-		inspectHook: func(string) (bool, error) { return true, nil },
+		InspectHook: func(string) (bool, error) { return true, nil },
 	})
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/roborev/configured-repositories", nil)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	var body roborevConfiguredRepositoriesResponse
+	var body itemapi.RoborevConfiguredRepositoriesResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 	require.Len(body.Repositories, 1)
 	assert.Equal("acme/widgets", body.Repositories[0].RepoPath)
@@ -518,9 +520,9 @@ func TestListRoborevConfiguredRepositoriesReturnsTypedUnavailableWithoutBlocking
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupTestServerWithRoborev(t, "http://private.invalid:7373")
-	srv.roborevRepositories = newRoborevRepositoryProbeWithDeps(nil, roborevRepositoryProbeDeps{
-		now: time.Now,
-		loadInventory: func(context.Context) ([]roborevTrackedRepository, error) {
+	srv.roborevRepositories = roborevapi.NewRoborevRepositoryProbeWithDeps(nil, roborevapi.RoborevRepositoryProbeDeps{
+		Now: time.Now,
+		LoadInventory: func(context.Context) ([]roborevapi.RoborevTrackedRepository, error) {
 			return nil, errors.New("private daemon /private/checkout")
 		},
 	})

@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server/authapi"
 )
 
 type recordingTerminalClipboard struct {
@@ -128,7 +129,7 @@ func TestLocalTerminalClipboardRequestRecognizesNonLoopbackInterface(
 		}, nil
 	}
 
-	assert.True(t, isLocalTerminalClipboardRequestWithAddrs(
+	assert.True(t, authapi.IsLocalTerminalClipboardRequestWithAddrs(
 		req,
 		true,
 		interfaceAddrs,

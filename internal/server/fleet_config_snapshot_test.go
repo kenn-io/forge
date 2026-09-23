@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/streamapi"
 )
 
 // The Fleet auth snapshot copies only the fields the resolver reads. Owner PATs
@@ -31,7 +32,7 @@ func TestFleetConfigSnapshotCarriesGitHubCredentialRoutes(t *testing.T) {
 		}},
 	}
 
-	snapshot := fleetConfigSnapshot(cfg, nil)
+	snapshot := streamapi.FleetConfigSnapshot(cfg, nil)
 
 	assert.Equal(cfg.GitHubOwnerTokens, snapshot.PlatformAuthConfig.GitHubOwnerTokens)
 	assert.Equal(cfg.GitHubApps, snapshot.PlatformAuthConfig.GitHubApps)

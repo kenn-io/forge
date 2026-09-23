@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/providerplane"
 	forgeserver "go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -72,7 +73,7 @@ func TestLocalEnrollmentRestoresSpokePreparationBarrier(t *testing.T) {
 	}))
 
 	srv := forgeserver.New(database, nil, nil, "/", nil, forgeserver.ServerOptions{
-		DaemonAccess:          forgeserver.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationEnrollments: enrollments,
 	})
 	daemon := httptest.NewServer(srv)
@@ -106,7 +107,7 @@ func TestSpokePreparationBarrierGatesAuthenticatedProviderWritesAndSurvivesResta
 
 	newDaemon := func(writeGate *providerplane.ProviderWriteGate) *httptest.Server {
 		srv := forgeserver.New(database, nil, nil, "/", nil, forgeserver.ServerOptions{
-			DaemonAccess:      forgeserver.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+			DaemonAccess:      authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 			ProviderWriteGate: writeGate,
 		})
 		ts := httptest.NewServer(srv)

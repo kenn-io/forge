@@ -71,7 +71,7 @@ local = true
 
 	writeConfigToml(t, cfgPath, updatedConfig)
 
-	ev := srv.applyConfigChange(t.Context())
+	ev := srv.configreload.ApplyConfigChange(t.Context())
 	require.True(ev.Valid)
 	assert.False(ev.RestartRequired)
 

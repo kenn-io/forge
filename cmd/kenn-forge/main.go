@@ -36,7 +36,11 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/fleetapi"
+	"go.kenn.io/forge/internal/server/hostapi"
+	"go.kenn.io/forge/internal/server/mcpapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/shutdownbudget"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/telemetry"
@@ -456,7 +460,7 @@ func run(opts serve.Options) error {
 		closeListeners()
 		return fmt.Errorf("initialize daemon ping: %w", err)
 	}
-	daemonAccess := server.DaemonAccessOptions{
+	daemonAccess := authapi.DaemonAccessOptions{
 		Token: authToken, RequireAPIAuth: cfg.API.RequireAuth,
 		ProofHandler:          daemonProofHandler,
 		TailscaleServeEnabled: cfg.API.TailscaleServe.Enabled,
@@ -471,7 +475,7 @@ func run(opts serve.Options) error {
 		Name: "kenn-forge", Version: version, Commit: commit, BuildDate: buildDate,
 	}
 	startupHandler := server.NewStartupHandler(assets, cfg, startupOptions, ln, buildInfo)
-	switcher := server.NewSwitchHandler(startupHandler)
+	switcher := hostapi.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{
 		Handler:     switcher,
 		ReadTimeout: 15 * time.Second,
@@ -481,7 +485,7 @@ func run(opts serve.Options) error {
 	}
 
 	var mcpHTTPSrv *http.Server
-	var mcpSwitcher *server.SwitchHandler
+	var mcpSwitcher *hostapi.SwitchHandler
 	mcpRequestsCtx, cancelMCPRequests := context.WithCancel(context.Background())
 	defer cancelMCPRequests()
 	if mcpLn != nil {
@@ -490,9 +494,9 @@ func run(opts serve.Options) error {
 			closeListeners()
 			return fmt.Errorf("parse MCP listener address %s: %w", mcpListenAddr, parseErr)
 		}
-		mcpSwitcher = server.NewSwitchHandler(newMCPStartupHandler())
+		mcpSwitcher = hostapi.NewSwitchHandler(newMCPStartupHandler())
 		mcpHTTPSrv = &http.Server{
-			Handler: server.NewMCPHTTPGuard(mcpSwitcher, server.MCPHTTPGuardOptions{
+			Handler: mcpapi.NewMCPHTTPGuard(mcpSwitcher, mcpapi.MCPHTTPGuardOptions{
 				Bind: bind, Token: authToken, RequireAuth: cfg.API.RequireAuth,
 			}),
 			ReadHeaderTimeout: 5 * time.Second,
@@ -816,10 +820,10 @@ func run(opts serve.Options) error {
 		// Wire status callbacks only when this process owns a provider plane.
 		wireSyncStatus(syncer, srv.Hub())
 		syncer.SetOnNotificationSyncComplete(func() {
-			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		})
 		syncer.SetOnWatchedMRSyncCompleted(func() {
-			srv.Hub().Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		})
 		syncer.SetOnSyncCompleted(
 			fleetapi.WorktreeLinksSyncHook(

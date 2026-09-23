@@ -46,6 +46,7 @@ type startupHandler struct {
 	daemonRequests daemonRequestPolicy
 	basePath       string
 	spa            http.Handler
+	health         healthResponse
 }
 
 // NewStartupHandler returns a minimal handler for the window between listener
@@ -57,6 +58,7 @@ func NewStartupHandler(
 	cfg *config.Config,
 	options ServerOptions,
 	ln net.Listener,
+	buildInfo BuildInfo,
 ) http.Handler {
 	basePath := "/"
 	if cfg != nil && cfg.BasePath != "" {
@@ -85,6 +87,7 @@ func NewStartupHandler(
 		daemonRequests: newDaemonRequestPolicy(options.DaemonAccess),
 		basePath:       basePath,
 		spa:            spa,
+		health:         healthyResponse(buildInfo),
 	}
 }
 
@@ -144,7 +147,7 @@ func (h *startupHandler) serve(w http.ResponseWriter, r *http.Request) {
 func (h *startupHandler) serveInner(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/livez":
-		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
+		writeJSON(w, http.StatusOK, h.health)
 	case r.URL.Path == "/healthz",
 		r.URL.Path == "/api",
 		strings.HasPrefix(r.URL.Path, "/api/"),

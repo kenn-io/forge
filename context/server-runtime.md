@@ -1,5 +1,9 @@
 # Server Runtime
 
+- Startup liveness and ready health probes expose the same running build identity
+  without a workspace bearer. Builds without VCS metadata must stamp the full
+  commit (`internal/server/health_routes.go::healthyResponse`).
+
 ## Frontend assets
 
 - Vite routes live at root even when the backend has a base path; login redirects

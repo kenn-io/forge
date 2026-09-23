@@ -286,8 +286,11 @@ type ErrorDetail struct {
 
 type HealthResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Status string  `json:"status"`
+	Schema   *string `json:"$schema,omitempty"`
+	Modified bool    `json:"modified"`
+	Revision string  `json:"revision"`
+	Status   string  `json:"status"`
+	Version  string  `json:"version"`
 }
 
 type ProblemError struct {

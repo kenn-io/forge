@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# Source archive builds supply COMMIT=<full source revision> on the command line.
+COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 LDFLAGS := -X main.version=$(VERSION) \
@@ -76,6 +77,8 @@ build-relay:
 
 # Build with optimizations (release)
 build-release: frontend githubapp-frontend
+	@printf '%s\n' "$(COMMIT)" | grep -Eq '^[0-9a-f]{40}$$' || \
+		{ echo 'Release builds require COMMIT=<full source revision>.' >&2; exit 1; }
 	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(BINARY) ./cmd/kenn-forge
 	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(GHAPP_BINARY) ./cmd/kenn-forge-github-app
 

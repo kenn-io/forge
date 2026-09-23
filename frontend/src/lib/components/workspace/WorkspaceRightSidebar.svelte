@@ -1,6 +1,6 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
-  import WorkspacePRPanel from "./WorkspacePRPanel.svelte";
+  import PullDetail from "../detail/PullDetail.svelte";
   import IssueDetail from "../detail/IssueDetail.svelte";
   import WorkspaceDiffPanel from "./WorkspaceDiffPanel.svelte";
   import WorkspaceReviewsPanel from "./WorkspaceReviewsPanel.svelte";
@@ -20,8 +20,7 @@
     ownerItemType: "pull_request" | "issue" | "kata_task" | "adhoc";
     ownerItemNumber: number;
     associatedPRNumber: number | null;
-    prSearchAnchor?: HTMLElement | null;
-    onPRSearchClose?: () => void;
+    viewedPRNumber?: number | null;
     branch: string;
     roborevBaseUrl: string;
     refreshToken?: number;
@@ -44,8 +43,7 @@
     ownerItemType,
     ownerItemNumber,
     associatedPRNumber,
-    prSearchAnchor = null,
-    onPRSearchClose = () => {},
+    viewedPRNumber = null,
     branch,
     roborevBaseUrl,
     refreshToken = 0,
@@ -55,6 +53,7 @@
   }: Props = $props();
 
   // Determine if we have valid context
+  const displayedPRNumber = $derived(viewedPRNumber ?? associatedPRNumber);
   const hasRepo = $derived(
     repoOwner !== "" && repoName !== "",
   );
@@ -96,18 +95,21 @@
       />
     {/key}
   {:else if activeTab === "pr"}
-    {#if hasRepo}
-      {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${provider}:${platformHost ?? ""}:${platformRepoId ?? repoPath}`}
-        <WorkspacePRPanel
-          {workspaceID}
-          {workspaceHostKey}
-          repo={{ provider, platformHost, platformRepoId, owner: repoOwner, name: repoName, repoPath }}
-          linkedPRNumber={associatedPRNumber}
-          searchAnchor={prSearchAnchor}
-          onSearchClose={onPRSearchClose}
-          {refreshToken}
-          {disabled}
-        />
+    {#if hasRepo && displayedPRNumber !== null}
+      {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${provider}:${platformHost ?? ""}:${repoPath}:${displayedPRNumber}:${refreshToken}`}
+        <div class="pr-scroll" inert={disabled}>
+          <PullDetail
+            {provider}
+            {platformHost}
+            {platformRepoId}
+            owner={repoOwner}
+            name={repoName}
+            {repoPath}
+            number={displayedPRNumber}
+            hideTabs={true}
+            hideWorkspaceAction={true}
+          />
+        </div>
       {/key}
     {:else}
       <EmptyState title="No linked PR" />

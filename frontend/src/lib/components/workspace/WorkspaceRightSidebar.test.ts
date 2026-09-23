@@ -144,16 +144,8 @@ describe("WorkspaceRightSidebar", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  it("remembers a viewed PR per workspace and host without changing the linked PR", async () => {
-    localStorage.clear();
-    const api = createMockApiFetch([
-      ({ url }) =>
-        url.pathname === "/api/v1/pulls"
-          ? Response.json([
-              { Number: 55, Title: "Refactor theme system", State: "merged", MergedAt: null, IsDraft: false },
-            ])
-          : undefined,
-    ]);
+  it("displays a selected PR without changing the workspace's linked PR", async () => {
+    const api = createMockApiFetch();
     vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);
     const { stores } = createAppStores({ runtime });
     const sidebarProps = {
@@ -168,43 +160,18 @@ describe("WorkspaceRightSidebar", () => {
       ownerItemType: "pull_request" as const,
       ownerItemNumber: 42,
       associatedPRNumber: 42,
+      viewedPRNumber: 55 as number | null,
       branch: "feature/widgets",
       roborevBaseUrl: "/api/roborev",
-      workspaceHostKey: undefined as string | undefined,
     };
     const view = render(WorkspaceRightSidebarTestHarness, {
       props: { runtime, sidebarProps },
       context: new Map([[STORES_KEY, stores]]),
     });
-    await screen.findByRole("heading", { name: "Add browser regression coverage" });
-    await fireEvent.click(screen.getByRole("button", { name: "Search pull requests", exact: true }));
-    await fireEvent.input(screen.getByRole("combobox", { name: "Search PRs" }), { target: { value: "#55" } });
-    await fireEvent.click(await screen.findByRole("option", { name: /#55.*Refactor theme system.*Merged/ }));
     await screen.findByRole("heading", { name: "Refactor theme system" });
-    expect(
-      api.requests.some(
-        ({ url }) =>
-          url.pathname === "/api/v1/pulls" &&
-          url.searchParams.get("q") === "#55" &&
-          url.searchParams.get("state") === "all" &&
-          url.searchParams.get("repo") === "github|github.com/acme/widgets",
-      ),
-    ).toBe(true);
-
-    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, workspaceID: "ws-2" } });
-    await screen.findByRole("heading", { name: "Add browser regression coverage" });
-    await view.rerender({ runtime, sidebarProps });
-    await screen.findByRole("heading", { name: "Refactor theme system" });
-    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, workspaceHostKey: "peer" } });
-    await screen.findByRole("heading", { name: "Add browser regression coverage" });
-    await view.rerender({ runtime, sidebarProps });
-    await screen.findByRole("heading", { name: "Refactor theme system" });
-
-    await fireEvent.click(screen.getByRole("button", { name: "Search pull requests", exact: true }));
-    await fireEvent.click(await screen.findByRole("option", { name: "Use linked PR" }));
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, viewedPRNumber: null } });
     await screen.findByRole("heading", { name: "Add browser regression coverage" });
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
-    localStorage.clear();
   });
 
   it.each(["pull_request", "issue", "kata_task", "adhoc"] as const)(

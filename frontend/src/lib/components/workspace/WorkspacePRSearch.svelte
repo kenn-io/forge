@@ -1,29 +1,25 @@
 <script lang="ts">
-  import { autoReposition, dismissable, EmptyState, floatingPopoverStyle, SearchInput, type TypeaheadOption } from "@kenn-io/kit-ui";
-  import { Effect, Option, Schema } from "effect";
-  import { onDestroy, untrack } from "svelte";
+  import { autoReposition, dismissable, floatingPopoverStyle, SearchInput, type TypeaheadOption } from "@kenn-io/kit-ui";
+  import { Effect } from "effect";
+  import { onDestroy } from "svelte";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { canonicalProvider, resolvedPlatformHost, type ProviderRouteRef } from "../../api/provider-routes.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
-  import PullDetail from "../detail/PullDetail.svelte";
 
-  const { workspaceID, workspaceHostKey, repo, linkedPRNumber, refreshToken, disabled, searchAnchor, onSearchClose }:
+  const { workspaceID, repo, linkedPRNumber, viewedPRNumber, disabled, searchAnchor, onSearchClose, onselect }:
     {
       workspaceID: string;
-      workspaceHostKey?: string | undefined;
       repo: ProviderRouteRef;
       linkedPRNumber: number | null;
-      refreshToken: number;
+      viewedPRNumber: number | null;
       disabled: boolean;
-      searchAnchor: HTMLElement | null;
+      searchAnchor: HTMLElement;
       onSearchClose: () => void;
+      onselect: (number: number | null) => void;
     } = $props();
 
   const runtime = getAppRuntime();
-  const storageKey = $derived(`kenn-forge-workspace-viewed-pr:${JSON.stringify([workspaceHostKey ?? "self", workspaceID])}`);
-  const PRNumber = Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0));
-  let viewedPRNumber = $state<number | null>(untrack(readSelection));
   const displayedPRNumber = $derived(viewedPRNumber ?? linkedPRNumber);
   let options = $state.raw<TypeaheadOption[]>([]);
   let loading = $state(false);
@@ -32,29 +28,15 @@
   let highlightIndex = $state(0);
   const listID = $props.id();
   const rows = $derived<TypeaheadOption[]>([
-    ...(viewedPRNumber !== null ? [{ name: "", label: "Use linked PR" }] : []),
+    ...(viewedPRNumber !== null ? [{ name: "", label: linkedPRNumber !== null ? "Use linked PR" : "Clear selection" }] : []),
     ...options,
   ]);
   const activeIndex = $derived(Math.min(highlightIndex, Math.max(0, rows.length - 1)));
   let searchExecution: AppExecution<unknown, unknown> | undefined;
 
-  function readSelection(): number | null {
-    try {
-      return Option.getOrNull(Schema.decodeUnknownOption(PRNumber)(localStorage.getItem(storageKey)));
-    } catch {
-      return null;
-    }
-  }
-
   function selectPR(value: string): void {
-    viewedPRNumber = value === "" ? null : Number(value);
-    try {
-      if (viewedPRNumber === null) localStorage.removeItem(storageKey);
-      else localStorage.setItem(storageKey, String(viewedPRNumber));
-    } catch {
-      // Best-effort UI preference persistence; keep the in-memory selection.
-    }
-    searchAnchor?.focus();
+    onselect(value === "" ? null : Number(value));
+    searchAnchor.focus();
     onSearchClose();
   }
 
@@ -88,7 +70,7 @@
   }
 
   function mountSearchPopover(node: HTMLDivElement): () => void {
-    const anchor = searchAnchor!;
+    const anchor = searchAnchor;
     query = "";
     searchPRs("");
     const position = () => {
@@ -138,7 +120,7 @@
   });
 </script>
 
-{#if searchAnchor && !disabled}
+{#if !disabled}
   <div class="pr-search-popover kit-popover-card" role="dialog" aria-label="Search pull requests" {@attach mountSearchPopover}>
     <!-- kit-ui-check-ignore: this toolbar popover needs an icon trigger and an immediately focused search input, which Typeahead does not expose -->
     <SearchInput role="combobox"
@@ -181,21 +163,6 @@
     </div>
   </div>
 {/if}
-{#if displayedPRNumber && displayedPRNumber > 0}
-  {#key `${displayedPRNumber}:${refreshToken}`}
-    <div class="pr-scroll" inert={disabled}>
-      <PullDetail
-        {...repo}
-        number={displayedPRNumber}
-        hideTabs={true}
-        hideWorkspaceAction={true}
-      />
-    </div>
-  {/key}
-{:else}
-  <EmptyState title="No linked PR" description="Search by number or title to choose a PR." />
-{/if}
-
 <style>
   .pr-search-popover {
     position: fixed;
@@ -247,11 +214,4 @@
     padding: var(--space-2);
   }
 
-  .pr-scroll {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
 </style>

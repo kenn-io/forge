@@ -266,7 +266,18 @@ describe("WorkspaceTerminalView pane props", () => {
     expect(screen.getByRole("button", { name: "Reviews" })).toBeTruthy();
   });
 
-  it("keeps PR browsing available while refreshing an issue workspace association", async () => {
+  it.each(["self", "peer"])("scopes the remembered PR tab to its %s host", async (host) => {
+    const key = `kenn-forge-workspace-viewed-pr:["${host}","ws-1"]`;
+    localStorage.setItem(key, "55");
+    mocks.runtimeClient.getWorkspace.mockResolvedValue(readyIssueWorkspaceData);
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
+    if (host === "self") expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
+    else expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
+    localStorage.removeItem(key);
+  });
+
+  it("offers search before a refresh discovers a linked PR", async () => {
     mocks.runtimeClient.getWorkspace.mockResolvedValue(readyIssueWorkspaceData);
     mocks.runtimeClient.refreshWorkspace.mockResolvedValue({
       ...readyIssueWorkspaceData,
@@ -282,7 +293,8 @@ describe("WorkspaceTerminalView pane props", () => {
     });
 
     await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
-    expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Search pull requests" })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh workspace details" }));
 

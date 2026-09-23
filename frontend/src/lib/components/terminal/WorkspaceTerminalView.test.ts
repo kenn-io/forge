@@ -2507,7 +2507,7 @@ describe("WorkspaceTerminalView", () => {
 
     await view.rerender({ workspaceId: "ws-2" });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "PR" }).classList.contains("active")).toBe(false);
+      expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
       expect(screen.getByRole("button", { name: "Diff" }).classList.contains("active")).toBe(true);
     });
 

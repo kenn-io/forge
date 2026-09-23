@@ -1,7 +1,7 @@
 <script lang="ts">
   import { quickActionWorkspaces } from "../../stores/workspace-quick-actions.js";
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
-  import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Stream } from "effect";
+  import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
   import SearchIcon from "@lucide/svelte/icons/search";
   import { onDestroy, tick, untrack } from "svelte";
@@ -110,6 +110,7 @@
   import { getStores } from "../../context.js";
   import { parseSessionPaneKey, sessionPaneKey, sessionPaneKeyMatchesWorkspace } from "../../stores/session-pane-key.js";
   import WorkspaceRightSidebar from "../workspace/WorkspaceRightSidebar.svelte";
+  import WorkspacePRSearch from "../workspace/WorkspacePRSearch.svelte";
   import type { InlineDockMode, WorkspaceItemIdentity } from "../../workspace-inline.js";
   import { defaultWorkspaceSidebarTab, type WorkspaceSidebarTab } from "./workspace-sidebar-default.js";
   import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -606,6 +607,11 @@
   });
   let sidebarOpen = $state(loadSidebarOpen());
   let prSearchAnchor = $state<HTMLElement | null>(null);
+  const prSelectionStorageKey = $derived(`kenn-forge-workspace-viewed-pr:${JSON.stringify([workspaceHostKey ?? "self", workspaceId])}`);
+  const PRNumber = Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0));
+  let viewedPRNumber = $derived(
+    Option.getOrNull(Schema.decodeUnknownOption(PRNumber)(readLocalStorage(prSelectionStorageKey))),
+  );
   let preferredRightSidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
   const currentWorkspaceListWidth = $derived(
@@ -2107,12 +2113,29 @@
     if (tab === "reviews") {
       return ws.item_type === "pull_request";
     }
-    return ws.repo.owner !== "" && ws.repo.name !== "";
+    return getWorkspacePRNumber(ws) !== null || viewedPRNumber !== null;
   }
 
   function syncSidebarTabForWorkspace(ws: Workspace): void {
     if (!isSidebarTabSupported(ws, sidebarTab)) {
       setSidebarTab(defaultSidebarTab(ws));
+    }
+  }
+
+  function selectWorkspacePR(number: number | null): void {
+    if (!workspace || actionsBlocked) return;
+    viewedPRNumber = number;
+    try {
+      if (number === null) localStorage.removeItem(prSelectionStorageKey);
+      else localStorage.setItem(prSelectionStorageKey, String(number));
+    } catch {
+      // Best-effort UI preference persistence; keep the in-memory selection.
+    }
+    if (number !== null || getWorkspacePRNumber(workspace) !== null) {
+      setSidebarTab("pr");
+      sidebarOpen = true;
+    } else if (sidebarTab === "pr") {
+      setSidebarTab(defaultSidebarTab(workspace));
     }
   }
 
@@ -4309,7 +4332,7 @@
                       Kata
                     </button>
                   {/if}
-                  {#if workspace.repo.owner !== "" && workspace.repo.name !== ""}
+                  {#if isSidebarTabSupported(workspace, "pr")}
                     <button
                       class="panel-toggle-btn"
                       class:active={sidebarOpen && sidebarTab === "pr"}
@@ -4338,13 +4361,30 @@
                     ariaHaspopup="dialog"
                     ariaExpanded={prSearchAnchor !== null}
                     onclick={(event) => {
-                      setSidebarTab("pr");
-                      sidebarOpen = true;
                       prSearchAnchor = prSearchAnchor ? null : event.currentTarget as HTMLElement;
                     }}
                   >
                     <SearchIcon size={14} strokeWidth={2.2} aria-hidden="true" />
                   </IconButton>
+                  {#if prSearchAnchor}
+                    <WorkspacePRSearch
+                      workspaceID={workspace.id}
+                      repo={{
+                        provider: workspace.repo.provider,
+                        platformHost: workspace.repo.platform_host,
+                        platformRepoId: workspace.repo.platform_repo_id,
+                        owner: workspace.repo.owner,
+                        name: workspace.repo.name,
+                        repoPath: workspace.repo.repo_path,
+                      }}
+                      linkedPRNumber={getWorkspacePRNumber(workspace)}
+                      {viewedPRNumber}
+                      searchAnchor={prSearchAnchor}
+                      disabled={actionsBlocked}
+                      onselect={selectWorkspacePR}
+                      onSearchClose={() => { prSearchAnchor = null; }}
+                    />
+                  {/if}
                 {/if}
                 <IconButton
                   class="workspace-refresh-button"
@@ -4618,8 +4658,7 @@
                   ownerItemType={workspace.item_type}
                   ownerItemNumber={workspace.item_number}
                   associatedPRNumber={getWorkspacePRNumber(workspace)}
-                  {prSearchAnchor}
-                  onPRSearchClose={() => { prSearchAnchor = null; }}
+                  {viewedPRNumber}
                   branch={workspace.git_head_ref}
                   roborevBaseUrl={basePath + "/api/roborev"}
                   refreshToken={sidebarRefreshToken}

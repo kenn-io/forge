@@ -349,6 +349,7 @@ func (s *Server) registerAPI(api huma.API) {
 	s.registerSettingsAPI(api)
 	s.registerProviderFederationAPI(api)
 	s.registerFederationEventAPI(api)
+	s.registerBrowserLoginAPI(api)
 	huma.Register(api, huma.Operation{
 		OperationID:   "trigger-sync",
 		Method:        http.MethodPost,

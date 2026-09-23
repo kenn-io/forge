@@ -108,7 +108,7 @@ func TestDirectionalGrantsAreClosedAndNonOverlapping(t *testing.T) {
 	hubToSpoke := scopeSet(HubToSpokeScopes())
 	assert.Equal(map[Scope]struct{}{
 		ScopeSnapshotRead: {}, ScopeWorkspaceRead: {}, ScopeWorkspaceWrite: {},
-		ScopeTerminalAttach: {}, ScopeEnrollmentActivate: {},
+		ScopeTerminalAttach: {}, ScopeEnrollmentActivate: {}, ScopeBrowserLogin: {},
 	}, hubToSpoke)
 	assert.NotContains(hubToSpoke, ScopeProviderRead)
 	assert.NotContains(hubToSpoke, ScopeProviderWrite)
@@ -117,11 +117,16 @@ func TestDirectionalGrantsAreClosedAndNonOverlapping(t *testing.T) {
 	spokeToHub := scopeSet(SpokeToHubScopes())
 	assert.Equal(map[Scope]struct{}{
 		ScopeSnapshotRead: {}, ScopeProviderRead: {}, ScopeProviderWrite: {},
-		ScopeEventsRead: {}, ScopeEnrollmentActivate: {},
+		ScopeEventsRead: {}, ScopeEnrollmentActivate: {}, ScopeBrowserLogin: {},
 	}, spokeToHub)
 	assert.NotContains(spokeToHub, ScopeWorkspaceRead)
 	assert.NotContains(spokeToHub, ScopeWorkspaceWrite)
 	assert.NotContains(spokeToHub, ScopeTerminalAttach)
+
+	assert.NotContains(scopeSet(PendingHubToSpokeScopes()), ScopeBrowserLogin,
+		"pending peers cannot sign browsers in")
+	assert.NotContains(scopeSet(PendingSpokeToHubScopes()), ScopeBrowserLogin,
+		"pending peers cannot sign browsers in")
 }
 
 func TestStoreRejectsInvalidSubjectsAndUnknownScopes(t *testing.T) {

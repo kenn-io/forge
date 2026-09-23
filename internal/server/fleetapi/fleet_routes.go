@@ -48,6 +48,7 @@ func (s *Handler) Register(api huma.API) {
 			"Refresh all worktree git stats", "Fleet"))
 	s.registerFleetOperationRoutes(api)
 	s.registerFleetProjectRoutes(api)
+	s.registerBrowserLoginRoute(api)
 }
 
 func (s *Handler) getSnapshotAggregate(

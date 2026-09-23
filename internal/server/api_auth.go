@@ -32,6 +32,15 @@ const authCookieName = "forge_auth"
 // the first load.
 const authBootstrapParam = "auth_token"
 
+// browserSessionCookieName carries a session established by a fleet peer's
+// one-time login ticket. It grants the same access as the local browser
+// cookie only while the issuing peer's enrollment remains active.
+const browserSessionCookieName = "forge_session"
+
+// loginTicketParam is the query parameter a fleet peer's login link uses to
+// deliver a single-use ticket; it is stripped by redirect once consumed.
+const loginTicketParam = "login_ticket"
+
 func tokenEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
@@ -87,6 +96,93 @@ func (s *Server) handleAuthBootstrap(
 	return true
 }
 
+// handleLoginTicketBootstrap converts a valid ?login_ticket= on a page load
+// into a browser session cookie and redirects to the same URL without the
+// parameter. The ticket is consumed even when the request is then rejected.
+// Returns true when it wrote a response (redirect or rejection).
+func (s *Server) handleLoginTicketBootstrap(
+	w http.ResponseWriter, r *http.Request,
+) bool {
+	query := r.URL.Query()
+	if !query.Has(loginTicketParam) || r.Method != http.MethodGet ||
+		s.isGatedAPIRequest(r) {
+		return false
+	}
+	grant, ok := s.browserLoginTickets.Consume(query.Get(loginTicketParam))
+	if !ok || !s.browserLoginPeerActive(grant.NodeID) {
+		http.Error(w, "invalid or expired login ticket", http.StatusForbidden)
+		return true
+	}
+	session, sessionGrant, err := s.browserSessions.Issue(grant.NodeID)
+	if err != nil {
+		http.Error(w, "browser session unavailable", http.StatusInternalServerError)
+		return true
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserSessionCookieName,
+		Value:    session,
+		Path:     "/",
+		Expires:  sessionGrant.ExpiresAt,
+		HttpOnly: true,
+		Secure:   s.requestArrivedOverHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+	query.Del(loginTicketParam)
+	// Collapse leading slashes so the relative Location can never become a
+	// scheme-relative redirect to another origin.
+	target := "/" + strings.TrimLeft(r.URL.EscapedPath(), "/")
+	if encoded := query.Encode(); encoded != "" {
+		target += "?" + encoded
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+	return true
+}
+
+// browserLoginPeerActive reports whether the fleet peer that issued a login
+// ticket or session still holds an active enrollment. Revocation, disabled
+// federation, and an expired activation lease all end its browser sessions.
+func (s *Server) browserLoginPeerActive(nodeID string) bool {
+	state, ok := s.federationPrincipalEnrollmentState(
+		federationauth.Principal{NodeID: nodeID},
+	)
+	return ok && state == federation.EnrollmentActive
+}
+
+func (s *Server) hasValidBrowserSession(r *http.Request) bool {
+	cookie, err := r.Cookie(browserSessionCookieName)
+	if err != nil {
+		return false
+	}
+	grant, ok := s.browserSessions.Lookup(cookie.Value)
+	return ok && s.browserLoginPeerActive(grant.NodeID)
+}
+
+// requestArrivedOverHTTPS reports whether the browser reached this daemon
+// over TLS, either directly or through a trusted reverse proxy that records
+// the original scheme.
+func (s *Server) requestArrivedOverHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if hostOpts := s.hostOpts.Load(); hostOpts == nil || !hostOpts.TrustReverseProxy {
+		return false
+	}
+	if values := r.Header.Values("X-Forwarded-Proto"); len(values) > 0 {
+		return len(values) == 1 && strings.EqualFold(strings.TrimSpace(values[0]), "https")
+	}
+	values := r.Header.Values("Forwarded")
+	if len(values) != 1 || strings.Contains(values[0], ",") {
+		return false
+	}
+	for part := range strings.SplitSeq(values[0], ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "proto") {
+			return strings.EqualFold(strings.Trim(strings.TrimSpace(value), `"`), "https")
+		}
+	}
+	return false
+}
+
 // authorizeAPIRequest reports whether the request carries a valid
 // credential for a gated API route, writing the 401 when it does not.
 func (s *Server) authorizeAPIRequest(
@@ -119,8 +215,10 @@ func (s *Server) authorizeAPIRequest(
 			return s.authorizeFederationRequest(w, r, principal)
 		}
 	}
-	if s.daemonRequests.acceptsTailscaleServeUser(r) {
-		if !tailscaleWebSocketOriginAllowed(r) {
+	// Tailscale Serve identity and peer-issued browser sessions are network
+	// browser credentials, so both reject cross-origin WebSocket upgrades.
+	if s.daemonRequests.acceptsTailscaleServeUser(r) || s.hasValidBrowserSession(r) {
+		if !browserWebSocketOriginAllowed(r) {
 			writeProblemResponse(w, httpapi.NewProblem(
 				http.StatusForbidden,
 				httpapi.CodeForbidden,
@@ -141,7 +239,7 @@ func (s *Server) authorizeAPIRequest(
 	return false
 }
 
-func tailscaleWebSocketOriginAllowed(r *http.Request) bool {
+func browserWebSocketOriginAllowed(r *http.Request) bool {
 	if !strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket") {
 		return true
 	}
@@ -419,13 +517,25 @@ func (s *Server) isGatedAPIRequest(r *http.Request) bool {
 }
 
 // redactedQuery renders a URL's query for logging with credential
-// parameters masked, so the auth bootstrap token never lands in
+// parameters masked, so bootstrap tokens and login tickets never land in
 // debug logs.
 func redactedQuery(u *url.URL) string {
 	query := u.Query()
-	if _, ok := query[authBootstrapParam]; !ok {
-		return u.RawQuery
+	redacted := false
+	for _, param := range []string{authBootstrapParam, loginTicketParam} {
+		if _, ok := query[param]; ok {
+			query.Set(param, "REDACTED")
+			redacted = true
+		}
 	}
-	query.Set(authBootstrapParam, "REDACTED")
-	return query.Encode()
+	if redacted {
+		return query.Encode()
+	}
+	// Pairs Go refuses to parse (for example with ';') are kept verbatim by
+	// RawQuery, so mask the whole query rather than risk logging a secret.
+	if strings.Contains(u.RawQuery, authBootstrapParam) ||
+		strings.Contains(u.RawQuery, loginTicketParam) {
+		return "REDACTED"
+	}
+	return u.RawQuery
 }

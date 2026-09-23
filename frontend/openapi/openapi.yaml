@@ -1095,6 +1095,63 @@ components:
         - text
         - matches
       type: object
+    BrowserLoginOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/BrowserLoginOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        expires_at:
+          description: UTC instant after which the link no longer signs in.
+          format: date-time
+          type: string
+        url:
+          description: One-time login link on the destination Forge.
+          type: string
+      required:
+        - url
+        - expires_at
+      type: object
+    BrowserLoginRequestBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/BrowserLoginRequestBody.json
+          format: uri
+          readOnly: true
+          type: string
+        path:
+          description: Same-origin page to open on the destination, such as /pulls?state=open. Defaults to /.
+          maxLength: 8192
+          type: string
+      type: object
+    BrowserLoginTicketBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/BrowserLoginTicketBody.json
+          format: uri
+          readOnly: true
+          type: string
+        expires_at:
+          description: UTC instant after which the ticket is rejected.
+          format: date-time
+          type: string
+        ticket:
+          description: Opaque single-use secret; append it to a page URL as login_ticket.
+          type: string
+      required:
+        - ticket
+        - expires_at
+      type: object
     BulkAddRepoRequest:
       additionalProperties: false
       properties:
@@ -12785,6 +12842,25 @@ paths:
       summary: Stream server events
       tags:
         - System
+  /federation/browser-login-tickets:
+    post:
+      operationId: issue-federation-browser-login-ticket
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserLoginTicketBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Issue a one-time browser login ticket for a fleet peer
+      tags:
+        - Fleet
   /federation/enrollments:
     post:
       operationId: begin-federation-enrollment
@@ -15040,6 +15116,38 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: Get workspace session attach spec on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{node_id}/browser-login:
+    post:
+      operationId: create-fleet-browser-login
+      parameters:
+        - description: Stable node ID of the destination fleet host.
+          in: path
+          name: node_id
+          required: true
+          schema:
+            description: Stable node ID of the destination fleet host.
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrowserLoginRequestBody"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserLoginOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create a one-time link that signs this browser into another Forge
       tags:
         - Fleet
   /fleet/join:

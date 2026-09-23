@@ -4,11 +4,49 @@ import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
 import type { HostSummary } from "../../api/fleet-snapshot.js";
+import { dismissFlash, getFlashes } from "../../stores/flash.svelte.js";
+import { navigateToURL } from "../../utils/pageNavigation.js";
 import ForgeSelectorRuntimeHarness from "./ForgeSelectorRuntimeHarness.svelte";
 
+// Leaving the SPA would unload the test page, so record the destination.
+vi.mock("../../utils/pageNavigation.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/pageNavigation.js")>();
+  return { ...actual, navigateToURL: vi.fn() };
+});
+
 let snapshotHosts: HostSummary[] = [];
+let browserLoginResponse: () => Response = () => new Response(null, { status: 500 });
+let browserLoginRequests: { url: string; body: unknown }[] = [];
 let originalFetch: typeof globalThis.fetch;
 let unmount: (() => void) | undefined;
+
+function requestURL(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  return input instanceof URL ? input.href : input.url;
+}
+
+async function requestJSON(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
+  const body = input instanceof Request ? await input.clone().text() : String(init?.body ?? "");
+  return body ? JSON.parse(body) : null;
+}
+
+function problemResponse(status: number, code: string, detail: string, reason?: string): Response {
+  return new Response(JSON.stringify({ status, code, detail, details: reason ? { reason } : undefined }), {
+    status,
+    headers: { "Content-Type": "application/problem+json" },
+  });
+}
+
+async function openHubRow(): Promise<HTMLAnchorElement> {
+  await renderSelector();
+  await waitForDirectory();
+  await page.getByLabelText("Current Forge: Current spoke").click();
+  const hub = Array.from(document.querySelectorAll<HTMLAnchorElement>(".forge-selector li a")).find(
+    (link) => link.querySelector("strong")?.textContent === "Hub",
+  );
+  expect(hub).toBeDefined();
+  return hub!;
+}
 
 function host(nodeID: string, name: string, options: Partial<HostSummary> = {}): HostSummary {
   return {
@@ -44,8 +82,16 @@ describe("ForgeSelector (browser)", () => {
   beforeEach(async () => {
     originalFetch = globalThis.fetch;
     snapshotHosts = [];
-    globalThis.fetch = vi.fn(async () =>
-      Response.json({
+    browserLoginRequests = [];
+    browserLoginResponse = () => new Response(null, { status: 500 });
+    vi.mocked(navigateToURL).mockClear();
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestURL(input);
+      if (url.includes("/browser-login")) {
+        browserLoginRequests.push({ url, body: await requestJSON(input, init) });
+        return browserLoginResponse();
+      }
+      return Response.json({
         protocolVersion: 3,
         generation: 1,
         hosts: snapshotHosts,
@@ -53,8 +99,8 @@ describe("ForgeSelector (browser)", () => {
         worktrees: [],
         sessions: [],
         workspaces: [],
-      }),
-    );
+      });
+    });
     await page.viewport(1280, 900);
   });
 
@@ -62,6 +108,127 @@ describe("ForgeSelector (browser)", () => {
     unmount?.();
     unmount = undefined;
     globalThis.fetch = originalFetch;
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+  });
+
+  describe("switching Forge", () => {
+    beforeEach(() => {
+      snapshotHosts = [
+        host("spoke-a", "Current spoke", { kind: "self" }),
+        host("hub", "Hub", { federationRole: "hub", baseURL: "https://hub.example:8443" }),
+      ];
+    });
+
+    it("signs in to the other Forge and opens the same page there", async () => {
+      browserLoginResponse = () =>
+        Response.json({
+          url: "https://hub.example:8443/pulls?login_ticket=ticket-1",
+          expires_at: "2026-09-22T12:01:00Z",
+        });
+      const hub = await openHubRow();
+      hub.click();
+
+      await vi.waitFor(() => {
+        expect(navigateToURL).toHaveBeenCalledWith("https://hub.example:8443/pulls?login_ticket=ticket-1");
+      });
+      expect(browserLoginRequests).toHaveLength(1);
+      expect(browserLoginRequests[0]?.url).toContain("/fleet/hosts/hub/browser-login");
+      expect(browserLoginRequests[0]?.body).toEqual({ path: window.location.pathname + window.location.search });
+    });
+
+    it("ignores repeat clicks while a sign-in is in progress", async () => {
+      let release: (response: Response) => void = () => {};
+      const pending = new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+      globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = requestURL(input);
+        if (url.includes("/browser-login")) {
+          browserLoginRequests.push({ url, body: await requestJSON(input, init) });
+          return pending;
+        }
+        return Response.json({
+          protocolVersion: 3,
+          generation: 1,
+          hosts: snapshotHosts,
+          projects: [],
+          worktrees: [],
+          sessions: [],
+          workspaces: [],
+        });
+      });
+      const hub = await openHubRow();
+      hub.click();
+      hub.click();
+      await vi.waitFor(() => {
+        expect(hub.getAttribute("aria-busy")).toBe("true");
+      });
+      release(
+        Response.json({ url: "https://hub.example:8443/?login_ticket=ticket-2", expires_at: "2026-09-22T12:01:00Z" }),
+      );
+
+      await vi.waitFor(() => {
+        expect(navigateToURL).toHaveBeenCalledTimes(1);
+      });
+      expect(browserLoginRequests).toHaveLength(1);
+    });
+
+    it("opens the plain address when this Forge has no direct credential", async () => {
+      browserLoginResponse = () =>
+        problemResponse(409, "conflict", "no active federation credential", "noDirectFederationCredential");
+      const hub = await openHubRow();
+      hub.click();
+
+      await vi.waitFor(() => {
+        expect(navigateToURL).toHaveBeenCalledWith("https://hub.example:8443");
+      });
+      expect(getFlashes()).toHaveLength(0);
+    });
+
+    it("reports other failures and stays on this Forge", async () => {
+      browserLoginResponse = () =>
+        problemResponse(502, "upstreamError", "fleet peer browser login failed: peer returned HTTP 503");
+      const hub = await openHubRow();
+      hub.click();
+
+      await vi.waitFor(() => {
+        expect(getFlashes().map((flash) => flash.message)).toContain(
+          "fleet peer browser login failed: peer returned HTTP 503",
+        );
+      });
+      expect(navigateToURL).not.toHaveBeenCalled();
+      await vi.waitFor(() => {
+        expect(hub.getAttribute("aria-busy")).toBeNull();
+      });
+      hub.click();
+      await vi.waitFor(() => {
+        expect(browserLoginRequests).toHaveLength(2);
+      });
+    });
+
+    it.each([
+      ["ctrl-click", { ctrlKey: true, button: 0 }],
+      ["cmd-click", { metaKey: true, button: 0 }],
+      ["shift-click", { shiftKey: true, button: 0 }],
+      ["middle-click", { button: 1 }],
+    ] as const)("keeps %s as an ordinary link", async (_label, modifiers) => {
+      const hub = await openHubRow();
+      let componentPrevented: boolean | undefined;
+      const stopNavigation = (event: Event) => {
+        componentPrevented = event.defaultPrevented;
+        event.preventDefault();
+      };
+      window.addEventListener("click", stopNavigation);
+      try {
+        hub.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...modifiers }));
+      } finally {
+        window.removeEventListener("click", stopNavigation);
+      }
+
+      expect(componentPrevented).toBe(false);
+      expect(browserLoginRequests).toHaveLength(0);
+      expect(navigateToURL).not.toHaveBeenCalled();
+    });
   });
 
   it("stays hidden for a one-host snapshot", async () => {

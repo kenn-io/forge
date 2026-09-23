@@ -197,6 +197,16 @@ change-driven and idle-cheap:
 - A valid federation bearer takes precedence over optional ingress user
   identity so proxied peer requests retain their scoped spoke principal
   (`internal/server/api_auth.go::Server.authorizeAPIRequest`).
+- Cross-node browser sign-in uses peer federation bearers, not Tailscale (approved
+  2026-09-22: an active fleet is one trust domain). Only active grants carry
+  `browser.login` (`internal/federationauth/scope.go::ScopeBrowserLogin`).
+- Login tickets are single-use, short-lived, peer-bound, never logged, and consumed
+  only by a non-API page load (`internal/server/api_auth.go::Server.handleLoginTicketBootstrap`).
+- A `forge_session` equals the local browser cookie only while its issuing peer's
+  enrollment stays active, rechecked per request (`internal/server/api_auth.go::Server.hasValidBrowserSession`).
+- Browser-login links are minted only with local or session credentials, never peer
+  bearers; `409` means no direct credential and the selector falls back to a plain
+  link (`internal/server/fleetapi/fleet_browser_login.go::Handler.resolveBrowserLoginTarget`).
 - Credentials require the current enrollment and configured binding.
   Activation upgrades both directions
   (`internal/federationauth/scope.go::HubToSpokeScopes`,

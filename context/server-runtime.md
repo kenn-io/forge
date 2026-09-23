@@ -183,10 +183,10 @@ and the root event stream.
   (`cmd/kenn-forge/start_background.go::validateBackgroundConfig`).
 - `[api.tailscale_serve]` requires API authentication and one allowlisted identity
   header; browser WebSocket origins must use HTTPS and match the requested Forge
-  authority.
+  authority. Peer-issued `forge_session` cookies get the same origin check.
   The startup-bound mode trusts local processes and suits only trusted hosts;
   policy edits require restart and never change federation credentials
-  (`internal/server/api_auth.go::tailscaleWebSocketOriginAllowed`,
+  (`internal/server/api_auth.go::browserWebSocketOriginAllowed`,
   `internal/config/config.go::Config.validate`,
   `internal/server/daemon_access.go::daemonRequestPolicy.acceptsTailscaleServeUser`).
 - `fleet setup` keeps Forge on loopback with API auth; `--tailscale` owns one

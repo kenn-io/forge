@@ -1343,18 +1343,20 @@ func TestPreEnrollmentEndpointUsesOneTimeTokenInsteadOfLocalAPIAuth(t *testing.T
 }
 
 // TestRedactedQueryMasksBootstrapToken pins the log-redaction
-// contract: the bootstrap token never appears in the logged query.
+// contract: bootstrap tokens and login tickets never appear in the
+// logged query.
 func TestRedactedQueryMasksBootstrapToken(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	u, err := url.Parse("/?auth_token=secret&tab=pulls")
-	require.NoError(err)
-	redacted := redactedQuery(u)
-	assert.NotContains(redacted, "secret")
-	assert.Contains(redacted, "auth_token=REDACTED")
-	assert.Contains(redacted, "tab=pulls")
-
-	plain, err := url.Parse("/?tab=pulls")
-	require.NoError(err)
-	assert.Equal("tab=pulls", redactedQuery(plain))
+	for _, test := range []struct {
+		raw      string
+		expected string
+	}{
+		{raw: "auth_token=secret&tab=pulls", expected: "auth_token=REDACTED&tab=pulls"},
+		{raw: "login_ticket=secret&tab=pulls", expected: "login_ticket=REDACTED&tab=pulls"},
+		{raw: "login_ticket=secret;tab=pulls", expected: "REDACTED"},
+		{raw: "tab=pulls", expected: "tab=pulls"},
+	} {
+		u, err := url.Parse("/?" + test.raw)
+		require.NoError(t, err)
+		assert.Equal(t, test.expected, redactedQuery(u), test.raw)
+	}
 }

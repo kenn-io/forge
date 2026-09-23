@@ -25,6 +25,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/archive"
+	"go.kenn.io/forge/internal/browserlogin"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/configwatch"
 	"go.kenn.io/forge/internal/db"
@@ -266,6 +267,10 @@ type Server struct {
 
 	daemonRequests daemonRequestPolicy
 	federationAuth *federationauth.Authenticator
+	// browserLoginTickets and browserSessions hold digest-only secrets for
+	// peer-issued browser logins; both are in memory only.
+	browserLoginTickets *browserlogin.Store
+	browserSessions     *browserlogin.Store
 
 	// bg tracks short-lived goroutines that HTTP handlers spawn
 	// outside of the Syncer's own wait group (e.g. mergePR's
@@ -907,6 +912,8 @@ func newServer(
 		bgDeadline:              bgDeadline,
 		workspaceDependentsDone: make(chan struct{}),
 	}
+	s.browserLoginTickets = browserlogin.NewTicketStore(func() time.Time { return s.now() })
+	s.browserSessions = browserlogin.NewSessionStore(func() time.Time { return s.now() })
 	s.providerWriteGate = options.ProviderWriteGate
 	if s.providerWriteGate == nil {
 		restoreDurableState := false
@@ -1637,7 +1644,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.daemonRequests.requireAPIAuth {
-		if !s.options.ExecutionWorker && s.handleAuthBootstrap(w, r) {
+		if !s.options.ExecutionWorker &&
+			(s.handleAuthBootstrap(w, r) || s.handleLoginTicketBootstrap(w, r)) {
 			return
 		}
 		if s.isGatedAPIRequest(r) && !s.authorizeAPIRequest(w, r) {

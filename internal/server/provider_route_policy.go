@@ -60,6 +60,8 @@ var providerRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "store-terminal-paste-image", Owner: NodeLocal},
 	{OperationID: "store-fleet-terminal-paste-image", Owner: NodeLocal},
 	{OperationID: "activate-federation-enrollment", Owner: NodeLocal},
+	{OperationID: "create-fleet-browser-login", Owner: NodeLocal},
+	{OperationID: "issue-federation-browser-login-ticket", Owner: NodeLocal},
 	{OperationID: "add-repo", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "abort-federation-enrollment", Owner: NodeLocal},
 	{OperationID: "abort-federation-spoke-preparation", Owner: NodeLocal},

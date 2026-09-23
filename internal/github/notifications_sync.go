@@ -369,7 +369,7 @@ func (s *Syncer) syncNotificationsForIdentity(
 				repo.Owner, repo.Name, host, err,
 			)
 		}
-		if shouldFullSyncNotifications(startedAt, watermark) {
+		if watermark == nil || shouldFullSyncNotifications(startedAt, watermark) {
 			fullSync = true
 			continue
 		}
@@ -380,6 +380,9 @@ func (s *Syncer) syncNotificationsForIdentity(
 	}
 	if fullSync {
 		since = nil
+	}
+	if len(repos) == 0 {
+		return nil
 	}
 	lead := repos[0]
 	lister := notificationPageListerFor(client, lead)
@@ -563,7 +566,10 @@ func (s *Syncer) persistNotificationPage(
 		byRepo[key] = append(byRepo[key], notification)
 	}
 	for key, notifications := range byRepo {
-		target := targets[key]
+		target, ok := targets[key]
+		if !ok || target == nil {
+			continue
+		}
 		committed, err := s.db.UpsertNotificationsIfRouteFence(
 			ctx, notifications, target.identity, target.routeFence,
 		)

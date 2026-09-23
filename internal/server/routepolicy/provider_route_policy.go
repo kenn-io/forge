@@ -35,6 +35,7 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "update-devbox-workspace-view-state", Owner: NodeLocal},
 	{OperationID: "get-devbox-workspace-view-state", Owner: NodeLocal},
 	{OperationID: "run-pull-external-context-action-on-host", Owner: NodeLocal},
+	{OperationID: "query-gh", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "run-pull-external-context-action", Owner: NodeLocal},
 	{OperationID: "get-pull-external-context-on-host", Owner: NodeLocal},
 	{OperationID: "get-pull-external-context", Owner: NodeLocal},

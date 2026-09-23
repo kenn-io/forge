@@ -41,7 +41,7 @@ func TestPassThroughPreservesArgumentsStreamsAndExit(t *testing.T) {
 	require.NoError(err)
 	assert.Contains(string(usage), `"command":"pr view"`)
 	assert.Contains(string(usage), `"reason":"unsupported"`)
-	assert.NotContains(string(usage), "two words")
+	assert.Contains(string(usage), `"argv":["pr","view","two words","--unknown=value"]`)
 }
 
 func TestRealGHSkipsShimSymlinkAndNonExecutable(t *testing.T) {

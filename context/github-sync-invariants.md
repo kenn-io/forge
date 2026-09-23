@@ -869,3 +869,5 @@ Also see [`context/testing.md`](./testing.md):
 - The shim reads persisted Forge data only; normal sync owns freshness. Missing
   data delegates to the real `gh` with its own authentication, never a shim-owned
   provider fetch or TTL cache (`internal/ghshim/storage.go::Read`).
+- Keep full shim argument arrays in local usage logs; command-only counts cannot
+  identify which flags and fields need interception support.

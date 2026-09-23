@@ -37,7 +37,7 @@ func run(args []string) int {
 			output, handled, why := queryDaemon(q)
 			reason = why
 			if handled {
-				recordUsage("pr "+q.Command, reason)
+				recordUsage(args, reason)
 				if _, err := os.Stdout.WriteString(output); err != nil {
 					return 1
 				}
@@ -47,7 +47,7 @@ func run(args []string) int {
 			reason = "repository_unresolved"
 		}
 	}
-	recordUsage(commandName(args), reason)
+	recordUsage(args, reason)
 	return passthrough(real, args)
 }
 
@@ -189,9 +189,8 @@ func queryDaemon(q ghshim.Query) (string, bool, string) {
 	return result.Output, result.Handled, result.Reason
 }
 
-// Store only recognized command names and outcome categories, never arguments,
-// repositories, branches, tokens, or returned data. Appends are process-safe.
-func recordUsage(command, reason string) {
+// Record the full invocation and outcome so coverage gaps can be reproduced.
+func recordUsage(args []string, reason string) {
 	path := filepath.Join(filepath.Dir(config.DefaultConfigPath()), "forge-gh-usage.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return
@@ -202,10 +201,11 @@ func recordUsage(command, reason string) {
 	}
 	defer file.Close()
 	data, err := json.Marshal(struct {
-		Time    string `json:"time"`
-		Command string `json:"command"`
-		Reason  string `json:"reason"`
-	}{time.Now().UTC().Format(time.RFC3339), command, reason})
+		Time    string   `json:"time"`
+		Command string   `json:"command"`
+		Reason  string   `json:"reason"`
+		Argv    []string `json:"argv"`
+	}{time.Now().UTC().Format(time.RFC3339), commandName(args), reason, args})
 	if err == nil {
 		_, _ = file.Write(append(data, '\n'))
 	}

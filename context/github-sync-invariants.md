@@ -861,8 +861,11 @@ Also see [`context/testing.md`](./testing.md):
 
 ## GitHub CLI shim
 
-- A partial sync/archive is not a complete `gh pr list` result. Hydrate complete
-  lists or delegate the original invocation; never silently omit unsupported
-  fields or filters (`internal/ghshim/cache.go::Cache.Query`).
+- A partial sync/archive is not a complete `gh pr list` result. Obtain complete
+  lists through normal sync or delegate the original invocation; never silently
+  omit unsupported fields or filters (`internal/ghshim/storage.go::Read`).
 - Preserve upstream `gh` output bytes for intercepted commands; keep real-CLI
   differential tests when growing coverage (`internal/ghshim/query_test.go::TestJSONMatchesRealGH`).
+- The shim reads persisted Forge data only; normal sync owns freshness. Missing
+  data delegates to the real `gh` with its own authentication, never a shim-owned
+  provider fetch or TTL cache (`internal/ghshim/storage.go::Read`).

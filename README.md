@@ -90,23 +90,25 @@ Local workspaces require Git and tmux on a Unix-like host. The Windows release
 supports the dashboard and provider actions. Use WSL or a remote Unix-like
 kenn-forge host when you need workspace sessions.
 
-## GitHub CLI cache shim
+## GitHub CLI shim
 
 Build `forge-gh` with `go build -o tmp/forge-gh ./cmd/forge-gh`. Keep the real
-`gh` installed. To opt a tool into the cache, put a symlink named `gh` to this
+`gh` installed. To opt a tool into the shim, put a symlink named `gh` to this
 binary in a separate directory ahead of the real `gh` on that tool's `PATH`.
 `FORGE_GH_REAL` can select the real executable explicitly.
 
 The shim serves piped `pr list` and `pr view <number>` JSON queries for watched
-GitHub repositories through the local daemon. It hydrates complete provider
-responses with Forge's credentials and shares them for up to one minute. List
-filters include `--head`, `--base`, `--state`, and `--limit`. Supported JSON fields
+GitHub repositories from Forge's SQLite data through the local daemon. Normal
+Forge sync owns freshness; the shim neither fetches provider data nor keeps an
+extra cache. List queries require a completed repository sync, and historical
+lists also require a complete archived PR inventory. List filters include
+`--head`, `--base`, `--state`, and `--limit`. Supported JSON fields
 are `number,title,state,url,body,isDraft,headRefName,headRefOid,baseRefName,createdAt,updatedAt,closedAt,mergedAt`.
 
 Everything else delegates unchanged to `gh`, including untracked repositories,
 branch-based views, checks, terminal output, `--jq`, `--template`, unsupported
-fields, and unavailable daemons. Use `--repo` or `GH_REPO` when the checkout has
-multiple remotes. `FORGE_GH_CONFIG` selects a non-default Forge config file.
+fields, missing or incomplete stored data, and unavailable daemons. Use `--repo`
+or `GH_REPO` when the checkout has multiple remotes. `FORGE_GH_CONFIG` selects a non-default Forge config file.
 
 Command names and outcomes are appended to `forge-gh-usage.jsonl` in Forge's
 config directory. Argument values and result data are not recorded. To count

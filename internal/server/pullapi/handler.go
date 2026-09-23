@@ -10,7 +10,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/ghshim"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
@@ -56,7 +55,6 @@ type Deps struct {
 }
 
 type Handler struct {
-	ghCache                ghshim.Cache
 	db                     *db.DB
 	resolver               *httpapi.RepositoryResolver
 	syncer                 *ghclient.Syncer

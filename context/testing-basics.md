@@ -25,6 +25,9 @@ fixtures, or changing shell-script coverage.
 - Frontend API client and schema-constraint generation have one generator shared
   by the Vite plugin and `make api-generate`; hooks must not run a full `vp build`
   to trigger it (`frontend/scripts/generate-api-client.mjs::generateClient`).
+- `make api-generate` skips a client generator only when its inputs and its
+  generated output both match the last successful run; list every generator
+  input and output path (`scripts/cached-generate.sh`).
 - Go static-analysis targets run with `-trimpath` so fresh worktrees reuse cached
   export data; tests keep real paths for `runtime.Caller` fixtures
   (`Makefile::GO_ANALYSIS_ENV`). Run standalone analyzers such as NilAway as

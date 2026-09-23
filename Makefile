@@ -264,13 +264,21 @@ guardrail-check: check-vite-plus-bin
 	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests docs-branding-check timing-budget-check
 
 
-# Regenerate the checked-in OpenAPI document and generated clients
+# Regenerate the checked-in OpenAPI document and generated clients. Client
+# generators are skipped when their inputs and outputs are unchanged.
 api-generate: frontend-deps
 	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; $(GO_ANALYSIS_ENV) go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
-	node frontend/scripts/generate-api-client.mjs
+	./scripts/cached-generate.sh frontend-api-client \
+		frontend/openapi/openapi.yaml frontend/scripts/generate-api-client.mjs \
+		scripts/generate-schema-constraints.mjs package.json frontend/package.json bun.lock \
+		frontend/src/lib/api/generated \
+		-- node frontend/scripts/generate-api-client.mjs
 	$(GO_ANALYSIS_ENV) go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
 	$(GO_ANALYSIS_ENV) go run ./cmd/kenn-forge-openapi -api devbox -out internal/apiclient/devbox/openapi.yaml
-	$(GO_ANALYSIS_ENV) go generate ./internal/apiclient/...
+	$(GO_ANALYSIS_ENV) ./scripts/cached-generate.sh go-api-clients \
+		go.mod go.sum frontend/openapi/openapi.yaml frontend/src/lib/api/roborev/openapi.yaml \
+		internal/apiclient \
+		-- go generate ./internal/apiclient/...
 
 # Regenerate the roborev TypeScript client from the checked-in OpenAPI spec
 roborev-api-generate: frontend-deps

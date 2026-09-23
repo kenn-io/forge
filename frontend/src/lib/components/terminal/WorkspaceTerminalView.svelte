@@ -1,8 +1,9 @@
 <script lang="ts">
   import { quickActionWorkspaces } from "../../stores/workspace-quick-actions.js";
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
-  import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Stream } from "effect";
+  import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
+  import SearchIcon from "@lucide/svelte/icons/search";
   import { onDestroy, tick, untrack } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import { isNarrow } from "../../stores/container.svelte.js";
@@ -109,6 +110,8 @@
   import { getStores } from "../../context.js";
   import { parseSessionPaneKey, sessionPaneKey, sessionPaneKeyMatchesWorkspace } from "../../stores/session-pane-key.js";
   import WorkspaceRightSidebar from "../workspace/WorkspaceRightSidebar.svelte";
+  import WorkspaceItemSearch from "../workspace/WorkspaceItemSearch.svelte";
+  import type { NumberedRouteItemRef } from "../../routes.js";
   import type { InlineDockMode, WorkspaceItemIdentity } from "../../workspace-inline.js";
   import { defaultWorkspaceSidebarTab, type WorkspaceSidebarTab } from "./workspace-sidebar-default.js";
   import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -604,6 +607,24 @@
       : "diff";
   });
   let sidebarOpen = $state(loadSidebarOpen());
+  let itemSearchAnchor = $state<HTMLElement | null>(null);
+  const itemSelectionStorageKey = $derived(`kenn-forge-workspace-viewed-items:${JSON.stringify([workspaceHostKey ?? "self", workspaceId])}`);
+  const ViewedItem = Schema.Struct({
+    provider: Schema.NonEmptyString,
+    platformHost: Schema.NonEmptyString,
+    platformRepoId: Schema.optional(Schema.NonEmptyString),
+    owner: Schema.NonEmptyString,
+    name: Schema.NonEmptyString,
+    repoPath: Schema.NonEmptyString,
+    number: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+  });
+  const ViewedItems = Schema.fromJsonString(Schema.Struct({
+    pr: Schema.NullOr(ViewedItem),
+    issue: Schema.NullOr(ViewedItem),
+  }));
+  let viewedItems: { pr: NumberedRouteItemRef | null; issue: NumberedRouteItemRef | null } = $derived(
+    Option.getOrElse(Schema.decodeUnknownOption(ViewedItems)(readLocalStorage(itemSelectionStorageKey)), () => ({ pr: null, issue: null })),
+  );
   let preferredRightSidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
   const currentWorkspaceListWidth = $derived(
@@ -1453,6 +1474,9 @@
       workspaceDeletionLifecycleActive ||
       forceDeleting,
   );
+  $effect(() => {
+    if (!hostVisible || actionsBlocked) itemSearchAnchor = null;
+  });
   const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
   const inlineDockExpandBlocked = $derived(getStackDepth() > 0);
   const modalOpen = $derived(
@@ -1496,6 +1520,7 @@
 
   function handleSidebarToggleClick(tab: SidebarTab): void {
     if (actionsBlocked) return;
+    itemSearchAnchor = null;
     if (sidebarOpen && sidebarTab === tab) {
       sidebarOpen = false;
     } else {
@@ -2095,18 +2120,30 @@
   ): boolean {
     if (tab === "diff") return true;
     if (tab === "issue") {
-      return ws.item_type === "issue";
+      return ws.item_type === "issue" || viewedItems.issue !== null;
     }
     if (tab === "kata") return workspaceHostKey === undefined;
     if (tab === "reviews") {
       return ws.item_type === "pull_request";
     }
-    return getWorkspacePRNumber(ws) !== null;
+    return getWorkspacePRNumber(ws) !== null || viewedItems.pr !== null;
   }
 
   function syncSidebarTabForWorkspace(ws: Workspace): void {
     if (!isSidebarTabSupported(ws, sidebarTab)) {
       setSidebarTab(defaultSidebarTab(ws));
+    }
+  }
+
+  function selectWorkspaceItem(itemType: "pr" | "issue", item: NumberedRouteItemRef | null): void {
+    if (!workspace || actionsBlocked) return;
+    viewedItems = { ...viewedItems, [itemType]: item };
+    writeLocalStorage(itemSelectionStorageKey, JSON.stringify(viewedItems));
+    if (isSidebarTabSupported(workspace, itemType)) {
+      setSidebarTab(itemType);
+      sidebarOpen = true;
+    } else if (sidebarTab === itemType) {
+      setSidebarTab(defaultSidebarTab(workspace));
     }
   }
 
@@ -4283,7 +4320,7 @@
                   >
                     Diff
                   </button>
-                  {#if workspace.item_type === "issue"}
+                  {#if isSidebarTabSupported(workspace, "issue")}
                     <button
                       class="panel-toggle-btn"
                       class:active={sidebarOpen && sidebarTab === "issue"}
@@ -4303,7 +4340,7 @@
                       Kata
                     </button>
                   {/if}
-                  {#if getWorkspacePRNumber(workspace) !== null}
+                  {#if isSidebarTabSupported(workspace, "pr")}
                     <button
                       class="panel-toggle-btn"
                       class:active={sidebarOpen && sidebarTab === "pr"}
@@ -4324,6 +4361,31 @@
                     </button>
                   {/if}
                 </div>
+                <IconButton
+                  size="sm"
+                  disabled={actionsBlocked}
+                  ariaLabel="Search PRs and issues"
+                  ariaHaspopup="dialog"
+                  ariaExpanded={itemSearchAnchor !== null}
+                  onclick={(event) => {
+                    itemSearchAnchor = itemSearchAnchor ? null : event.currentTarget as HTMLElement;
+                  }}
+                >
+                  <SearchIcon size={14} strokeWidth={2.2} aria-hidden="true" />
+                </IconButton>
+                {#if itemSearchAnchor}
+                  <WorkspaceItemSearch
+                    workspaceID={workspace.id}
+                    hasLinkedPR={getWorkspacePRNumber(workspace) !== null}
+                    hasLinkedIssue={workspace.item_type === "issue"}
+                    viewedPR={viewedItems.pr}
+                    viewedIssue={viewedItems.issue}
+                    searchAnchor={itemSearchAnchor}
+                    disabled={actionsBlocked}
+                    onselect={selectWorkspaceItem}
+                    onSearchClose={() => { itemSearchAnchor = null; }}
+                  />
+                {/if}
                 <IconButton
                   class="workspace-refresh-button"
                   size="sm"
@@ -4596,6 +4658,8 @@
                   ownerItemType={workspace.item_type}
                   ownerItemNumber={workspace.item_number}
                   associatedPRNumber={getWorkspacePRNumber(workspace)}
+                  viewedPR={viewedItems.pr}
+                  viewedIssue={viewedItems.issue}
                   branch={workspace.git_head_ref}
                   roborevBaseUrl={basePath + "/api/roborev"}
                   refreshToken={sidebarRefreshToken}

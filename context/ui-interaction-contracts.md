@@ -253,6 +253,22 @@ Persisted controls must state their scope clearly.
 - The workspace details tab is keyed by host-aware workspace identity; an unsupported
   tab may fall back only for the current live workspace, never rewrite another
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
+- Workspace item search remembers separate browser-local PR and issue choices per
+  workspace and host, preserving the selected item's full repository reference;
+  it must never change workspace associations or the diff merge target
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
+- PR and Issue tabs require a linked item or a remembered choice of that type;
+  search remains available without either
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::isSidebarTabSupported`).
+- Workspace item search spans all repositories and defaults to open PRs and issues;
+  Include closed is opt-in for each search popover
+  (`frontend/src/lib/components/workspace/WorkspaceItemSearch.svelte::searchItems`).
+- Workspace item search opens on demand from the toolbar; occasional navigation
+  must not reserve a permanent row above the details
+  (`frontend/src/lib/components/workspace/WorkspaceItemSearch.svelte::mountSearchPopover`).
+- Zero-padded PR searches such as `0001` opt into exact number matching before
+  pagination, so newer substring matches cannot hide old PRs
+  (`internal/db/queries.go::ListMergeRequests`).
 - URL query state belongs in the route only when deep-linking or back/forward
   navigation is part of the feature contract.
 - Activity detail selection uses one URL-backed slot for pull requests, issues,

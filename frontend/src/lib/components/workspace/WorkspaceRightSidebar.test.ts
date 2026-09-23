@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
+import { createAppStores } from "../../app-stores.svelte.js";
+import { createMockApiFetch } from "../../../test/mockApiFetch.js";
 import type { StoreInstances } from "../../types.js";
 import WorkspaceRightSidebarTestHarness from "./WorkspaceRightSidebarTestHarness.svelte";
 
@@ -140,6 +142,43 @@ describe("WorkspaceRightSidebar", () => {
     cleanup();
     vi.restoreAllMocks();
     await Effect.runPromise(runtime.disposeEffect);
+  });
+
+  it("displays a selected PR without changing the workspace's linked PR", async () => {
+    const api = createMockApiFetch();
+    vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);
+    const { stores } = createAppStores({ runtime });
+    const sidebarProps = {
+      activeTab: "pr" as const,
+      workspaceID: "ws-1",
+      worktreePath: "/tmp/worktrees/ws-1",
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widgets",
+      repoPath: "acme/widgets",
+      ownerItemType: "pull_request" as const,
+      ownerItemNumber: 42,
+      associatedPRNumber: 42,
+      viewedPR: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+        number: 55,
+      },
+      branch: "feature/widgets",
+      roborevBaseUrl: "/api/roborev",
+    };
+    const view = render(WorkspaceRightSidebarTestHarness, {
+      props: { runtime, sidebarProps },
+      context: new Map([[STORES_KEY, stores]]),
+    });
+    await screen.findByRole("heading", { name: "Refactor theme system" });
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, viewedPR: null } });
+    await screen.findByRole("heading", { name: "Add browser regression coverage" });
+    expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
   });
 
   it.each(["pull_request", "issue", "kata_task", "adhoc"] as const)(

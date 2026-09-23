@@ -1,0 +1,31 @@
+{
+  "source": "./internal/server",
+  "plan": "tools/splitpkg/server-plan.json",
+  "hub": "Server",
+  "names": {
+    "huma2": "activityapi",
+    "settings": "settingsapi",
+    "huma": "itemapi",
+    "repo": "repoapi",
+    "provider2": "routepolicy",
+    "provider": "providerapi",
+    "config": "configreload",
+    "misc2": "streamapi",
+    "provider3": "spokeapi",
+    "auth": "authapi",
+    "operation": "operationapi",
+    "event": "syncevents",
+    "archive": "archiveapi",
+    "host": "hostapi",
+    "notification": "notificationapi",
+    "roborev": "roborevapi",
+    "compression": "compression",
+    "mcp": "mcpapi",
+    "kata": "kataclient",
+    "devbox": "devboxapi",
+    "telemetry": "telemetryapi",
+    "browser": "browserloginapi",
+    "otel": "otelmiddleware",
+    "misc": "statuslog"
+  }
+}

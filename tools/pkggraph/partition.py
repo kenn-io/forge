@@ -103,11 +103,30 @@ class Model:
                 w = self.dg.get_edge_data(a, b, {"w": 0})["w"]
                 self.dg.add_edge(a, b, w=w + e["weight"])
 
-    def root_units(self):
-        root = set(self.direct_hub & set(self.dg))
-        for u in list(root):
-            root |= nx.ancestors(self.dg, u)
-        return root
+    def root_units(self, pins=()):
+        """Units that must stay in the root package: direct users of the hub
+        type, pinned units (exported hub methods, root-owned API types), hub
+        methods reading a hub field whose type lives in root, and everything
+        that depends on any of those."""
+        field_types = collections.defaultdict(set)
+        for e in self.edges:
+            if e["from"].startswith("field:" + self.hub + ".") and e["to"] != "type:" + self.hub:
+                field_types[e["from"].split(".", 1)[1]].add(self.owner.get(e["to"], e["to"]))
+        root = set(self.direct_hub & set(self.dg)) | {p for p in pins if p in self.dg}
+        for u in self.dg:
+            n = self.nodes[u]
+            if n["kind"] == "method" and n["recv"] == self.hub and n["exported"]:
+                root.add(u)
+        while True:
+            closure = set(root)
+            for u in root:
+                closure |= nx.ancestors(self.dg, u)
+            for u, fs in self.hub_field_refs.items():
+                if u in self.dg and any(field_types[f] & closure for f in fs):
+                    closure.add(u)
+            if closure == root:
+                return root
+            root = closure
 
     def affinity_graph(self, units, w_file, w_topic):
         g = nx.Graph()
@@ -291,10 +310,12 @@ def main():
     ap.add_argument("--min-lines", type=int, default=400)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--max-layers", type=int, default=4)
+    ap.add_argument("--pins", help="file of unit ids that must stay in the root package")
     ap.add_argument("--out")
     args = ap.parse_args()
     m = Model(args.graph, args.hub)
-    root = m.root_units()
+    pins = [p.strip() for p in open(args.pins)] if args.pins else []
+    root = m.root_units([p for p in pins if p])
     rest = [u for u in m.dg if u not in root]
     member = {u: ROOT for u in root}
     member.update(leiden(m.affinity_graph(rest, args.w_file, args.w_topic), args.resolution, args.seed))
@@ -320,6 +341,8 @@ def main():
             "injected_fields": {names[p]: sorted(f) for p, f in fields.items()},
             "exports": {names[p]: sorted(e) for p, e in exports.items()},
         }, open(args.out, "w"), indent=1)
+        with open(args.out, "a") as f:
+            f.write("\n")
 
 
 if __name__ == "__main__":

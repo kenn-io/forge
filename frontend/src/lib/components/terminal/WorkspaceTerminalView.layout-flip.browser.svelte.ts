@@ -111,9 +111,9 @@ describe("WorkspaceTerminalView layout flip", () => {
       const presets = screen.getByRole("button", { name: "Workflow presets", exact: true });
       await expect.element(home).toBeVisible();
       for (const control of [launch, presets]) {
-        const tab = home.element().getBoundingClientRect();
+        const titleRow = screen.getByRole("button", { name: "Delete", exact: true }).element().getBoundingClientRect();
         const button = control.element().getBoundingClientRect();
-        expect(Math.abs(button.y + button.height / 2 - tab.y - tab.height / 2)).toBeLessThan(2);
+        expect(Math.abs(button.y + button.height / 2 - titleRow.y - titleRow.height / 2)).toBeLessThan(2);
         expect(button.width).toBeLessThan(50);
       }
       await presets.click();
@@ -147,6 +147,14 @@ describe("WorkspaceTerminalView layout flip", () => {
             document.elementFromPoint(launchRect.x + launchRect.width / 2, launchRect.y + launchRect.height / 2),
           ),
       ).toBe(true);
+
+      await presets.click();
+      const narrowMenu = screen
+        .getByRole("dialog", { name: "Workflow presets", exact: true })
+        .element()
+        .getBoundingClientRect();
+      expect(narrowMenu.left).toBeGreaterThanOrEqual(0);
+      expect(narrowMenu.right).toBeLessThanOrEqual(480);
 
       await page.viewport(1200, 800);
 

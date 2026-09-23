@@ -4310,6 +4310,7 @@
               </code>
             </div>
             <div class="header-end">
+              <div class="workspace-actions">{@render workspaceControls()}</div>
               {#if !hideRightSidebar}
                 <div class="panel-toggle-group">
                   <button
@@ -4456,11 +4457,6 @@
         >
           <div class="terminal-area">
             <div class="workspace-surface">
-              {#if !controlsInPane && (paneFlattened || !runtimeLive || renderedWorkflowTree?.type !== "leaf")}
-                <div class="workspace-toolbar">
-                  <div class="workspace-actions">{@render workspaceControls()}</div>
-                </div>
-              {/if}
               {#if workspace?.commit_attribution}
                 {@const attribution = workspace.commit_attribution}
                 <details class="commit-attribution" class:attribution-warning={attribution.status === "mismatch" || attribution.status === "unverified"}>
@@ -4505,7 +4501,6 @@
                       dragScope={surfaceLayout?.dragScope}
                       promotion={workflowPromotion}
                       node={renderedWorkflowTree}
-                      toolbar={!controlsInPane && !paneFlattened && renderedWorkflowTree.type === "leaf" ? workspaceToolbar : undefined}
                       tabs={workflowTabDescriptors}
                       {activeTabKey}
                       inputActive={workspaceContainerInputActive && renderedWorkspaceInputRegion === "workflow"}
@@ -4892,10 +4887,6 @@
 <!-- The workspace's own controls, defined here because every one of them is wired
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
-{#snippet workspaceToolbar()}
-  <div class="workspace-actions">{@render workspaceControls()}</div>
-{/snippet}
-
 {#snippet workspaceControls()}
   {#if controlsInPane && inlineDock && inlineDockMode !== null && workspaceLive && workspace?.status === "ready"}
     <!-- The dock's own modes, which the header bar carries everywhere it still
@@ -5242,8 +5233,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 34px;
-    padding: 0 10px;
+    flex-wrap: wrap;
+    min-height: 34px;
+    padding: 4px 10px;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-default);
     border-left: 1px solid var(--border-default);
@@ -5253,6 +5245,8 @@
 
   .header-start {
     display: flex;
+    min-width: 0;
+    flex: 1 1 160px;
     align-items: center;
     gap: 8px;
     overflow: hidden;
@@ -5283,8 +5277,10 @@
   .header-end {
     display: flex;
     align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
   }
 
   .header-btn {
@@ -5345,26 +5341,11 @@
   .commit-attribution { padding: 8px 12px; font-size: var(--font-size-sm); }
   .attribution-warning { color: var(--color-danger); }
 
-  .workspace-toolbar {
-    display: flex;
-    align-items: stretch;
-    justify-content: flex-end;
-    gap: var(--space-4);
-    height: 30px;
-    padding: 0 6px 0 0;
-    border-bottom: 1px solid var(--border-default);
-    border-left: 1px solid var(--border-default);
-    background: var(--bg-inset);
-    flex-shrink: 0;
-  }
-
   .workspace-actions {
     display: flex;
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
-    padding-left: 6px;
-    border-left: 1px solid var(--border-muted);
   }
 
   .runtime-error {

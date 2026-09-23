@@ -4295,16 +4295,24 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(workspaceControlsBusy()).toBe(false));
   });
 
-  it("keeps workspace controls in the standalone tab strip", async () => {
+  it.each([false, true])("keeps workspace controls in the title row (split: %s)", async (split) => {
+    if (split) {
+      localStorage.setItem(
+        "kenn-forge-workspace-terminal-layout:ws-1",
+        persistedSplitWorkflowLayout(runningSession.key),
+      );
+    }
     render(WorkspaceTerminalView, {
       props: {
         workspaceId: "ws-1",
       },
     });
 
-    const tabs = await screen.findByRole("tablist", { name: "Workflow group tabs" });
-    expect(within(tabs).getByRole("button", { name: "Launch", exact: true })).toBeTruthy();
-    expect(within(tabs).getByRole("button", { name: "Workflow presets" })).toBeTruthy();
+    await screen.findByRole("tab", { name: /Helper/ });
+    const header = screen.getByRole("button", { name: "Delete", exact: true }).closest(".header-bar")!;
+    expect(within(header as HTMLElement).getByRole("button", { name: "Launch", exact: true })).toBeTruthy();
+    expect(within(header as HTMLElement).getByRole("button", { name: "Workflow presets" })).toBeTruthy();
+    expect(screen.getAllByRole("tablist", { name: "Workflow group tabs" })).toHaveLength(split ? 2 : 1);
     expect(hostedWorkspaceControls()).toBeNull();
   });
 
@@ -4936,7 +4944,7 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
-  it("keeps its toolbar when the detail surface is flattened", async () => {
+  it("keeps its controls in the title row when the detail surface is flattened", async () => {
     claimForPrs();
     // What a narrow detail surface reports: one strip for every pane, per-leaf
     // chrome suppressed, so the pane has nowhere to hang a controls button and no
@@ -4957,8 +4965,9 @@ describe("WorkspaceTerminalView", () => {
 
     // Even with a single session, dropping the chrome here would strip the only
     // route to presets, zoom, terminal options, launch and delete.
-    await waitFor(() => expect(document.querySelector(".workspace-toolbar")).not.toBeNull());
-    expect(document.querySelector(".header-bar")).not.toBeNull();
+    await screen.findByRole("button", { name: "Terminal options" });
+    const header = screen.getByRole("button", { name: "Delete", exact: true }).closest(".header-bar")!;
+    expect(within(header as HTMLElement).getByRole("button", { name: "Terminal options" })).toBeTruthy();
   });
 
   it("publishes the dock's session while the dock is open", async () => {

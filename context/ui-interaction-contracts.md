@@ -669,8 +669,8 @@ Keyboard handlers must have one clear owner for each key press.
   (supplied through `InlineWorkspaceController`, since only the frontend knows the
   sessions), and its reopen strip follows. Two sessions, none, or a promoted sole
   session bring the chrome and the "Workspace" label back. A flattened surface keeps
-  the chrome: it suppresses per-leaf strips, so the toolbar is the only thing left to
-  carry the controls
+  the chrome: it suppresses per-leaf strips, so the title row remains to carry
+  the controls
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSession`).
   The bare render also requires the surface's strip to actually name the session:
   in a solo-chrome leaf that strip is gone, so a sole WORKFLOW session keeps its
@@ -702,9 +702,9 @@ Keyboard handlers must have one clear owner for each key press.
 - An empty workflow container retires behind its surface-hosted bottom dock instead
   of resizing the recursive tree. Promoted panes then fill the stored branch, and
   demotion restores the untouched arrangement (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneRowOnlyFor`).
-- Standalone workspaces with one workflow group share one row for tabs and controls;
-  keep Presets and Launch icon-only, with accessible names and tooltips
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceToolbar`).
+- Workspace controls belong beside the workspace title so splitting panes never adds
+  a toolbar row; keep Presets and Launch icon-only, with accessible names and tooltips
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceControls`).
 - A detail pane NEVER shows the workspace's own header bar (name, branch, Expand and
   Collapse Terminal, Delete). The pane's tab strip already names the workspace and
   carries its controls. A flattened surface keeps the chrome, since it has no

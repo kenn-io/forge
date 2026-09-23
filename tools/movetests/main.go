@@ -67,6 +67,7 @@ type piece struct {
 	group   *ast.GenDecl // set when node is a spec inside a parenthesized group
 	keyword string       // "var" or "type" for split specs
 	file    string
+	syntax  *ast.File
 }
 
 func (pc *piece) start() token.Pos {
@@ -232,19 +233,25 @@ func splittable(d *ast.GenDecl) bool {
 func (p *planner) index() {
 	typeUnits := map[string]*unit{}
 	type method struct {
-		decl *ast.FuncDecl
-		file string
+		decl     *ast.FuncDecl
+		file     string
+		syntax   *ast.File
+		platform bool
 	}
 	var methods []method
-	paths := make([]string, 0, len(p.fileSyntax))
-	for path := range p.fileSyntax {
-		if strings.HasSuffix(path, "_test.go") {
-			paths = append(paths, path)
+	type testFile struct {
+		path   string
+		syntax *ast.File
+	}
+	var files []testFile
+	for path, f := range p.fileSyntax {
+		if strings.HasSuffix(path, "_test.go") && f != nil {
+			files = append(files, testFile{path, f})
 		}
 	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		f := p.fileSyntax[path]
+	sort.Slice(files, func(i, j int) bool { return files[i].path < files[j].path })
+	for _, tf := range files {
+		path, f := tf.path, tf.syntax
 		platform := hasPlatformConstraint(path, f)
 		for _, d := range f.Decls {
 			switch d := d.(type) {
@@ -255,14 +262,14 @@ func (p *planner) index() {
 				if splittable(d) {
 					for _, s := range d.Specs {
 						u := p.newUnit(specName(s))
-						u.pieces = append(u.pieces, &piece{node: s, group: d, keyword: d.Tok.String(), file: path})
+						u.pieces = append(u.pieces, &piece{node: s, group: d, keyword: d.Tok.String(), file: path, syntax: f})
 						u.platform = platform
 						p.registerSpec(u, s, typeUnits)
 					}
 					continue
 				}
 				u := p.newUnit("")
-				u.pieces = append(u.pieces, &piece{node: d, file: path})
+				u.pieces = append(u.pieces, &piece{node: d, file: path, syntax: f})
 				u.platform = platform
 				for _, s := range d.Specs {
 					if u.name == "" {
@@ -272,11 +279,11 @@ func (p *planner) index() {
 				}
 			case *ast.FuncDecl:
 				if d.Recv != nil {
-					methods = append(methods, method{d, path})
+					methods = append(methods, method{d, path, f, platform})
 					continue
 				}
 				u := p.newUnit(d.Name.Name)
-				u.pieces = append(u.pieces, &piece{node: d, file: path})
+				u.pieces = append(u.pieces, &piece{node: d, file: path, syntax: f})
 				u.platform = platform
 				switch name := d.Name.Name; {
 				case name == "TestMain" || name == "init":
@@ -297,8 +304,8 @@ func (p *planner) index() {
 			u = p.newUnit(recv + "." + m.decl.Name.Name)
 			u.blockers["method on production type "+recv] = true
 		}
-		u.pieces = append(u.pieces, &piece{node: m.decl, file: m.file})
-		u.platform = u.platform || hasPlatformConstraint(m.file, p.fileSyntax[m.file])
+		u.pieces = append(u.pieces, &piece{node: m.decl, file: m.file, syntax: m.syntax})
+		u.platform = u.platform || m.platform
 	}
 	for _, u := range p.units {
 		for _, pc := range u.pieces {
@@ -656,7 +663,7 @@ func (p *planner) renderFile(src string, pieces []*piece, destPkg string) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	f := p.fileSyntax[src]
+	f := pieces[0].syntax
 	tf := p.fset.File(f.Pos())
 	sort.Slice(pieces, func(i, j int) bool { return pieces[i].node.Pos() < pieces[j].node.Pos() })
 
@@ -694,6 +701,9 @@ func (p *planner) renderFile(src string, pieces []*piece, destPkg string) ([]byt
 	b.WriteString(")\n")
 	for _, pc := range pieces {
 		u := p.unitAt(pc.start())
+		if u == nil {
+			return nil, fmt.Errorf("%s: no unit owns the declaration at %s", src, p.fset.Position(pc.start()))
+		}
 		start, end := tf.Offset(pc.start()), tf.Offset(pc.node.End())
 		var inserts []int
 		for _, q := range u.qualify {
@@ -744,7 +754,15 @@ func (p *planner) pruneSources(pl plan) error {
 		if err != nil {
 			return err
 		}
-		tf := p.fset.File(p.fileSyntax[src].Pos())
+		var syntax *ast.File
+		for pc := range set {
+			syntax = pc.syntax
+			break
+		}
+		if syntax == nil {
+			continue
+		}
+		tf := p.fset.File(syntax.Pos())
 		// Remove a whole group once all of its specs are gone.
 		groupLeft := map[*ast.GenDecl]int{}
 		for pc := range set {

@@ -160,7 +160,14 @@ describe("WorkspaceRightSidebar", () => {
       ownerItemType: "pull_request" as const,
       ownerItemNumber: 42,
       associatedPRNumber: 42,
-      viewedPRNumber: 55 as number | null,
+      viewedPR: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+        number: 55,
+      },
       branch: "feature/widgets",
       roborevBaseUrl: "/api/roborev",
     };
@@ -169,7 +176,7 @@ describe("WorkspaceRightSidebar", () => {
       context: new Map([[STORES_KEY, stores]]),
     });
     await screen.findByRole("heading", { name: "Refactor theme system" });
-    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, viewedPRNumber: null } });
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, viewedPR: null } });
     await screen.findByRole("heading", { name: "Add browser regression coverage" });
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
   });

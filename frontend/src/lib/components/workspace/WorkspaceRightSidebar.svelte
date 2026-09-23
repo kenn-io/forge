@@ -1,5 +1,6 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
+  import type { NumberedRouteItemRef } from "../../routes.js";
   import PullDetail from "../detail/PullDetail.svelte";
   import IssueDetail from "../detail/IssueDetail.svelte";
   import WorkspaceDiffPanel from "./WorkspaceDiffPanel.svelte";
@@ -20,7 +21,8 @@
     ownerItemType: "pull_request" | "issue" | "kata_task" | "adhoc";
     ownerItemNumber: number;
     associatedPRNumber: number | null;
-    viewedPRNumber?: number | null;
+    viewedPR?: NumberedRouteItemRef | null;
+    viewedIssue?: NumberedRouteItemRef | null;
     branch: string;
     roborevBaseUrl: string;
     refreshToken?: number;
@@ -43,7 +45,8 @@
     ownerItemType,
     ownerItemNumber,
     associatedPRNumber,
-    viewedPRNumber = null,
+    viewedPR = null,
+    viewedIssue = null,
     branch,
     roborevBaseUrl,
     refreshToken = 0,
@@ -53,7 +56,6 @@
   }: Props = $props();
 
   // Determine if we have valid context
-  const displayedPRNumber = $derived(viewedPRNumber ?? associatedPRNumber);
   const hasRepo = $derived(
     repoOwner !== "" && repoName !== "",
   );
@@ -67,6 +69,9 @@
     ownerItemNumber > 0 &&
     hasRepo
   );
+  const workspaceRepo = $derived({ provider, platformHost, platformRepoId, owner: repoOwner, name: repoName, repoPath });
+  const displayedPR = $derived(viewedPR ?? (hasPR && associatedPRNumber !== null ? { ...workspaceRepo, number: associatedPRNumber } : null));
+  const displayedIssue = $derived(viewedIssue ?? (hasIssue ? { ...workspaceRepo, number: ownerItemNumber } : null));
   const hasMergeTarget = $derived(
     ownerItemType === "pull_request"
       ? ownerItemNumber > 0 && hasRepo
@@ -95,17 +100,11 @@
       />
     {/key}
   {:else if activeTab === "pr"}
-    {#if hasRepo && displayedPRNumber !== null}
-      {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${provider}:${platformHost ?? ""}:${repoPath}:${displayedPRNumber}:${refreshToken}`}
+    {#if displayedPR}
+      {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${JSON.stringify(displayedPR)}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
           <PullDetail
-            {provider}
-            {platformHost}
-            {platformRepoId}
-            owner={repoOwner}
-            name={repoName}
-            {repoPath}
-            number={displayedPRNumber}
+            {...displayedPR}
             hideTabs={true}
             hideWorkspaceAction={true}
           />
@@ -115,18 +114,10 @@
       <EmptyState title="No linked PR" />
     {/if}
   {:else if activeTab === "issue"}
-    {#if hasIssue}
-      {#key `issue:${provider}:${platformHost ?? ""}:${repoPath}:${ownerItemNumber}:${refreshToken}`}
+    {#if displayedIssue}
+      {#key `issue:${workspaceHostKey ?? "self"}:${workspaceID}:${JSON.stringify(displayedIssue)}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
-          <IssueDetail
-            {provider}
-            {platformHost}
-            {platformRepoId}
-            owner={repoOwner}
-            name={repoName}
-            {repoPath}
-            number={ownerItemNumber}
-          />
+          <IssueDetail {...displayedIssue} />
         </div>
       {/key}
     {:else}

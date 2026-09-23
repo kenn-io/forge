@@ -272,8 +272,22 @@ describe("WorkspaceTerminalView pane props", () => {
   });
 
   it.each(["self", "peer"])("scopes the remembered PR tab to its %s host", async (host) => {
-    const key = `kenn-forge-workspace-viewed-pr:["${host}","ws-1"]`;
-    localStorage.setItem(key, "55");
+    const key = `kenn-forge-workspace-viewed-items:["${host}","ws-1"]`;
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        pr: {
+          provider: "github",
+          platformHost: "example.com",
+          platformRepoId: "repo-55",
+          owner: "other",
+          name: "gadgets",
+          repoPath: "other/gadgets",
+          number: 55,
+        },
+        issue: null,
+      }),
+    );
     mocks.runtimeClient.getWorkspace.mockResolvedValue(readyIssueWorkspaceData);
     mocks.runtimeClient.getFleetWorkspace.mockResolvedValue({
       ...readyIssueWorkspaceData,
@@ -313,7 +327,7 @@ describe("WorkspaceTerminalView pane props", () => {
 
     await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
     expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Search pull requests" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Search PRs and issues" })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh workspace details" }));
 

@@ -4334,19 +4334,19 @@ test.describe("sidebar PR tab", () => {
     await expect(page.locator(".right-sidebar .detail-title")).toContainText("Add browser regression coverage");
   });
 
-  test("searches PRs by title and number and remembers the viewed PR after reload", async ({ page }) => {
+  test("searches PRs by title and zero-padded number and remembers the viewed PR after reload", async ({ page }) => {
     const searches: URL[] = [];
     const api = createMockApiHandler();
     await page.route("**/api/v1/pulls?**", async (route) => {
       const url = new URL(route.request().url());
-      if (url.searchParams.get("state") !== "all") return route.fallback();
+      if (url.searchParams.get("limit") !== "30") return route.fallback();
       searches.push(url);
-      expect(url.searchParams.get("repo")).toBe("github|github.com/acme/widgets");
+      expect(url.searchParams.has("repo")).toBe(false);
       const response = api.handle({ method: "GET", url, bodyText: "" });
       const pulls = await response.json();
       await route.fulfill({
         json: pulls
-          .filter((pull: { Number: number }) => pull.Number === 55)
+          .filter((pull: { Number: number }) => pull.Number === 55 && url.searchParams.get("state") === "all")
           .map((pull: object) => ({
             ...pull,
             State: "merged",
@@ -4357,21 +4357,29 @@ test.describe("sidebar PR tab", () => {
     await page.goto("/terminal/ws-123");
     await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
     const sidebar = page.locator(".right-sidebar");
-    const searchButton = page.getByRole("button", { name: "Search pull requests", exact: true });
+    const searchButton = page.getByRole("button", { name: "Search PRs and issues", exact: true });
     await expect(searchButton).toBeVisible();
     await expect(sidebar.locator(".detail-title")).toHaveText("Add browser regression coverage");
     await page.screenshot({ path: test.info().outputPath("workspace-pr-search-button.png") });
     await searchButton.click();
-    const search = page.getByRole("combobox", { name: "Search PRs", exact: true });
+    const search = page.getByRole("combobox", { name: "Search PRs and issues", exact: true });
     await expect(search).toBeFocused();
     await search.fill("theme");
+    await expect
+      .poll(() =>
+        searches.some((url) => url.searchParams.get("q") === "theme" && url.searchParams.get("state") === "open"),
+      )
+      .toBe(true);
+    await expect(page.getByRole("option", { name: /#55.*Refactor theme system/ })).toHaveCount(0);
+    await page.getByRole("checkbox", { name: "Include closed" }).check();
     await expect(page.getByRole("option", { name: /#55.*Refactor theme system.*Merged/ })).toBeVisible();
     await expect.poll(() => searches.some((url) => url.searchParams.get("q") === "theme")).toBe(true);
-    await search.fill("#55");
-    await expect.poll(() => searches.some((url) => url.searchParams.get("q") === "#55")).toBe(true);
+    await search.fill("#0055");
+    await expect.poll(() => searches.some((url) => url.searchParams.get("q") === "#0055")).toBe(true);
     await expect(page.getByRole("option", { name: /#55.*Refactor theme system/ })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath("workspace-pr-picker.png") });
     await search.press("ArrowDown");
+    await search.press("ArrowUp");
     await search.press("Enter");
     await expect(sidebar.locator(".detail-title")).toHaveText("Refactor theme system");
     await expect(search).toBeHidden();
@@ -4387,11 +4395,98 @@ test.describe("sidebar PR tab", () => {
     await page.getByRole("button", { name: "Refresh workspace details" }).click();
     await expect(sidebar.locator(".detail-title")).toHaveText("Refactor theme system");
     await searchButton.click();
-    await search.fill("#55");
+    await page.getByRole("checkbox", { name: "Include closed" }).check();
+    await search.fill("#0055");
     await expect(page.getByRole("option", { name: /#55.*Refactor theme system/ })).toBeVisible();
     await search.press("Enter");
     await expect(search).toBeHidden();
     await expect(sidebar.locator(".detail-title")).toHaveText("Refactor theme system");
+    await searchButton.click();
+    await page.getByRole("option", { name: "Use linked PR", exact: true }).click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Add browser regression coverage");
+  });
+
+  test("searches open PRs and issues across repositories and remembers each selection", async ({ page }) => {
+    const api = createMockApiHandler();
+    const pullDetail = await api
+      .handle({ method: "GET", url: new URL("http://localhost/api/v1/pulls/github/acme/widgets/55"), bodyText: "" })
+      .json();
+    const issueDetail = await api
+      .handle({ method: "GET", url: new URL("http://localhost/api/v1/issues/github/acme/widgets/7"), bodyText: "" })
+      .json();
+    const repo = {
+      ...pullDetail.repo,
+      ...workspaceRepoRef("other", "gadgets", "example.com"),
+      platform_repo_id: "repo-900",
+    };
+    const identity = { repo, repo_owner: "other", repo_name: "gadgets", platform_host: "example.com" };
+    const foreignPR = {
+      ...pullDetail.merge_request,
+      ...identity,
+      Number: 55,
+      Title: "Cross-repository PR",
+      URL: "https://example.com/other/gadgets/pull/55",
+    };
+    const foreignIssue = {
+      ...issueDetail.issue,
+      ...identity,
+      Number: 55,
+      Title: "Cross-repository issue",
+      URL: "https://example.com/other/gadgets/issues/55",
+    };
+    const searches: URL[] = [];
+    await page.route(/\/api\/v1\/(pulls|issues)\?/, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("limit") !== "30") return route.fallback();
+      searches.push(url);
+      expect(url.searchParams.has("repo")).toBe(false);
+      expect(url.searchParams.get("state")).toBe("open");
+      await route.fulfill({
+        json: url.pathname.endsWith("/pulls") ? [pullDetail.merge_request, foreignPR] : [foreignIssue],
+      });
+    });
+    await page.route(
+      /\/api\/v1\/host\/example\.com\/(pulls|issues)\/github\/other\/gadgets\/55(?:\/sync(?:\/async)?)?$/,
+      async (route) => {
+        const isPR = new URL(route.request().url()).pathname.includes("/pulls/");
+        await route.fulfill({
+          json: isPR
+            ? { ...pullDetail, ...identity, merge_request: foreignPR }
+            : { ...issueDetail, ...identity, issue: foreignIssue },
+        });
+      },
+    );
+    await page.goto("/terminal/ws-123");
+    const searchButton = page.getByRole("button", { name: "Search PRs and issues", exact: true });
+    const sidebar = page.locator(".right-sidebar");
+    await searchButton.click();
+    const search = page.getByRole("combobox", { name: "Search PRs and issues", exact: true });
+    await search.fill("#55");
+    await expect.poll(() => searches.filter((url) => url.searchParams.get("q") === "#55").length).toBe(2);
+    const externalPR = page.getByRole("option", { name: /#55.*Cross-repository PR/ });
+    const externalIssue = page.getByRole("option", { name: /#55.*Cross-repository issue/ });
+    await expect(externalPR).toContainText("other/gadgets");
+    await expect(externalIssue).toContainText("other/gadgets");
+    await expect(page.getByRole("option", { name: /#55.*Refactor theme system/ })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("workspace-item-search.png") });
+    await externalPR.click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Cross-repository PR");
+
+    await searchButton.click();
+    await externalIssue.click();
+    const issueTab = page.getByRole("button", { name: "Issue", exact: true });
+    await expect(issueTab).toHaveClass(/active/);
+    await expect(sidebar.locator(".detail-title")).toHaveText("Cross-repository issue");
+    await page.screenshot({ path: test.info().outputPath("workspace-selected-issue.png") });
+    await page.reload();
+    await issueTab.click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Cross-repository issue");
+    await page.getByRole("button", { name: "PR", exact: true }).click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Cross-repository PR");
+    await searchButton.click();
+    await page.getByRole("option", { name: "Clear issue selection", exact: true }).click();
+    await expect(issueTab).toHaveCount(0);
+    await expect(sidebar.locator(".detail-title")).toHaveText("Cross-repository PR");
     await searchButton.click();
     await page.getByRole("option", { name: "Use linked PR", exact: true }).click();
     await expect(sidebar.locator(".detail-title")).toHaveText("Add browser regression coverage");
@@ -4477,7 +4572,7 @@ test.describe("sidebar PR tab", () => {
       await page.goto("/terminal/ws-issue-7");
 
       const prTab = page.getByRole("button", { name: "PR", exact: true });
-      const searchButton = page.getByRole("button", { name: "Search pull requests", exact: true });
+      const searchButton = page.getByRole("button", { name: "Search PRs and issues", exact: true });
       const originalTab = page.getByRole("button", { name: itemType === "issue" ? "Issue" : "Diff", exact: true });
       await expect(prTab).toHaveCount(0);
       await originalTab.click();
@@ -4486,7 +4581,7 @@ test.describe("sidebar PR tab", () => {
       await searchButton.click();
       await expect(originalTab).toHaveClass(/active/);
       await expect(prTab).toHaveCount(0);
-      await page.getByRole("combobox", { name: "Search PRs", exact: true }).press("Escape");
+      await page.getByRole("combobox", { name: "Search PRs and issues", exact: true }).press("Escape");
       await expect(prTab).toHaveCount(0);
       await expect(originalTab).toHaveClass(/active/);
 
@@ -4502,7 +4597,7 @@ test.describe("sidebar PR tab", () => {
       await page.getByRole("button", { name: "Diff", exact: true }).click();
       await expect(sidebar.getByRole("button", { name: "Compare with merge target" })).toHaveCount(0);
       await searchButton.click();
-      await page.getByRole("option", { name: "Clear selection", exact: true }).click();
+      await page.getByRole("option", { name: "Clear PR selection", exact: true }).click();
       await expect(prTab).toHaveCount(0);
       await expect(searchButton).toBeVisible();
     });
@@ -5855,7 +5950,7 @@ test.describe("issue workspace sidebar", () => {
 
     await expect(page.locator(".panel-toggle-btn", { hasText: "Issue" })).toBeVisible();
     await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Search pull requests" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Search PRs and issues" })).toBeVisible();
     await expect(page.locator(".panel-toggle-btn", { hasText: "Reviews" })).toHaveCount(0);
   });
 
@@ -5877,7 +5972,7 @@ test.describe("issue workspace sidebar", () => {
 
     await expect(page.locator(".panel-toggle-btn", { hasText: "Issue" })).toBeVisible();
     await expect(page.locator(".panel-toggle-btn", { hasText: "PR" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Search pull requests" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Search PRs and issues" })).toBeVisible();
 
     const refreshButton = page.getByRole("button", { name: "Refresh workspace details" });
     await expect(refreshButton).toHaveAttribute("aria-label", "Refresh workspace details");

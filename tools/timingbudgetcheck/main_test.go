@@ -249,7 +249,7 @@ func TestRunAllowedBudgets(t *testing.T) {
 		{path: "internal/github/sync_test.go", function: "TestTerminalStatusPublicationKeepsRunSlotUntilOrdered", assertion: "github.com/stretchr/testify/require.Never", budget: 100 * time.Millisecond}: {
 			count: 1, reason: "Real syncer over an openTestDB SQLite fixture. The test holds syncer.statusMu across terminal publication, and mutex waits are not durably blocking in a synctest bubble.",
 		},
-		{path: "internal/server/api_test.go", function: "TestAPIEnqueuePRSyncQueuesOneRerun", assertion: "github.com/stretchr/testify/assert.Never", budget: 100 * time.Millisecond}: {
+		{path: "internal/server/pulltest/api_test.go", function: "TestAPIEnqueuePRSyncQueuesOneRerun", assertion: "github.com/stretchr/testify/assert.Never", budget: 100 * time.Millisecond}: {
 			count: 1, reason: "Rerun enqueued through the generated HTTP client against a SQLite-backed server. Retained by #1110.",
 		},
 		{path: "internal/server/federation_events_test.go", function: "TestNodeStreamsHubEventsWithNodeLocalCursorIDs", assertion: "github.com/stretchr/testify/assert.Never", budget: 50 * time.Millisecond}: {

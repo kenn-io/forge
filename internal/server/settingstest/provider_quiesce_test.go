@@ -1,4 +1,4 @@
-package server
+package settingstest
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/providerplane"
+	forgeserver "go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -39,7 +40,7 @@ func TestStandaloneProviderWritesDoNotRequireSpokePreparationState(t *testing.T)
 	_, err := database.WriteDB().ExecContext(t.Context(), "DROP TABLE forge_spoke_preparation")
 	require.NoError(t, err)
 
-	srv := New(database, nil, nil, "/", nil, ServerOptions{})
+	srv := forgeserver.New(database, nil, nil, "/", nil, forgeserver.ServerOptions{})
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/1/comments",
@@ -71,8 +72,8 @@ func TestLocalEnrollmentRestoresSpokePreparationBarrier(t *testing.T) {
 		State: federation.EnrollmentPending, ExpiresAt: time.Now().Add(time.Hour),
 	}))
 
-	srv := New(database, nil, nil, "/", nil, ServerOptions{
-		DaemonAccess:          DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+	srv := forgeserver.New(database, nil, nil, "/", nil, forgeserver.ServerOptions{
+		DaemonAccess:          forgeserver.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationEnrollments: enrollments,
 	})
 	daemon := httptest.NewServer(srv)
@@ -105,8 +106,8 @@ func TestSpokePreparationBarrierGatesAuthenticatedProviderWritesAndSurvivesResta
 	require.NoError(err)
 
 	newDaemon := func(writeGate *providerplane.ProviderWriteGate) *httptest.Server {
-		srv := New(database, nil, nil, "/", nil, ServerOptions{
-			DaemonAccess:      DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		srv := forgeserver.New(database, nil, nil, "/", nil, forgeserver.ServerOptions{
+			DaemonAccess:      forgeserver.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 			ProviderWriteGate: writeGate,
 		})
 		ts := httptest.NewServer(srv)

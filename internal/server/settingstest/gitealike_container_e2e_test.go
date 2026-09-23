@@ -1,4 +1,4 @@
-package server
+package settingstest
 
 import (
 	"context"

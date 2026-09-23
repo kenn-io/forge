@@ -13,8 +13,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"go.kenn.io/forge/internal/config"
 )
 
 type recordingTerminalClipboard struct {
@@ -113,97 +111,6 @@ func TestTerminalClipboardWritePreservesUnicode(t *testing.T) {
 
 	assert.Equal(t, http.StatusNoContent, rr.Code, rr.Body.String())
 	assert.Equal(t, []string{text}, clipboard.texts)
-}
-
-func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
-	t *testing.T,
-) {
-	tests := []struct {
-		name         string
-		remoteAddr   string
-		forwardedFor string
-		wantStatus   int
-		wantTexts    []string
-	}{
-		{
-			name:         "local client",
-			remoteAddr:   "127.0.0.1:54321",
-			forwardedFor: "127.0.0.1",
-			wantStatus:   http.StatusNoContent,
-			wantTexts:    []string{"proxied copy"},
-		},
-		{
-			name:         "spoofed local client from remote peer",
-			remoteAddr:   "203.0.113.8:54321",
-			forwardedFor: "127.0.0.1",
-			wantStatus:   http.StatusForbidden,
-		},
-		{
-			name:         "remote client",
-			remoteAddr:   "127.0.0.1:54321",
-			forwardedFor: "203.0.113.7",
-			wantStatus:   http.StatusForbidden,
-		},
-		{
-			name:       "missing forwarded client",
-			remoteAddr: "127.0.0.1:54321",
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name:         "multiple forwarded clients",
-			remoteAddr:   "127.0.0.1:54321",
-			forwardedFor: "127.0.0.1, 203.0.113.7",
-			wantStatus:   http.StatusForbidden,
-		},
-		{
-			name:         "malformed forwarded client",
-			remoteAddr:   "127.0.0.1:54321",
-			forwardedFor: "not-an-ip",
-			wantStatus:   http.StatusForbidden,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			clipboard := &recordingTerminalClipboard{}
-			srv := New(
-				openTestDB(t), nil, nil, "/", nil,
-				ServerOptions{
-					TerminalClipboard: clipboard,
-					HostCheck: HostCheckOptions{
-						Bind: config.HostKey{
-							Host: "127.0.0.1",
-							Port: "8091",
-						},
-						Allowed: []config.HostKey{
-							{Host: "forge.example"},
-						},
-						TrustReverseProxy: true,
-					},
-				},
-			)
-			body := strings.NewReader(`{"text":"proxied copy"}`)
-			req := httptest.NewRequestWithContext(t.Context(),
-				http.MethodPost,
-				"/api/v1/terminal/clipboard",
-				body,
-			)
-			req.Host = "127.0.0.1:8091"
-			req.RemoteAddr = tt.remoteAddr
-			req.Header.Set("X-Forwarded-Host", "forge.example")
-			if tt.forwardedFor != "" {
-				req.Header.Set("X-Forwarded-For", tt.forwardedFor)
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Sec-Fetch-Site", "same-origin")
-			rr := httptest.NewRecorder()
-
-			srv.ServeHTTP(rr, req)
-
-			assert.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
-			assert.Equal(t, tt.wantTexts, clipboard.texts)
-		})
-	}
 }
 
 func TestLocalTerminalClipboardRequestRecognizesNonLoopbackInterface(

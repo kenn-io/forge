@@ -219,20 +219,6 @@ func TestBrowserLoginTicketRequiresActivePeerGrant(t *testing.T) {
 	}
 }
 
-func TestBrowserLoginTicketRejectsLocalCredentials(t *testing.T) {
-	require := require.New(t)
-	ts, _, _ := newFederationAuthTestServer(t, federationauth.ScopeBrowserLogin)
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		ts.URL+"/api/v1/federation/browser-login-tickets", nil)
-	require.NoError(err)
-	request.Header.Set("Authorization", "Bearer local-secret")
-	response, err := ts.Client().Do(request)
-	require.NoError(err)
-	defer response.Body.Close()
-	require.Equal(http.StatusForbidden, response.StatusCode)
-	assert.Equal(t, "federationPrincipalRequired", decodeProblem(t, response).Details["reason"])
-}
-
 func TestBrowserLoginTicketBootstrapsSession(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

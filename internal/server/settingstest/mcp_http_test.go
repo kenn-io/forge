@@ -1,4 +1,4 @@
-package server
+package settingstest
 
 import (
 	"net/http"
@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server"
 )
 
 func TestMCPHTTPGuardEnforcesLoopbackAuthorityOriginAndAuthentication(t *testing.T) {
@@ -87,7 +88,7 @@ func TestMCPHTTPGuardEnforcesLoopbackAuthorityOriginAndAuthentication(t *testing
 			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNoContent)
 			})
-			handler := NewMCPHTTPGuard(next, MCPHTTPGuardOptions{
+			handler := server.NewMCPHTTPGuard(next, server.MCPHTTPGuardOptions{
 				Bind: bind, Token: token, RequireAuth: tt.requireAuth,
 			})
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://127.0.0.1:8092/mcp", nil)

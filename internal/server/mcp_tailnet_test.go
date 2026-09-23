@@ -12,6 +12,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/mcpserver"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -49,7 +50,7 @@ func newTailnetMCPTestServer(t *testing.T) (*httptest.Server, string) {
 	srv := New(dbtest.Open(t), nil, nil, "/", &config.Config{
 		Host: "127.0.0.1", Port: port, AllowedHosts: []string{publicHost},
 	}, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 			TailscaleServeEnabled: true,
 			TailscaleServeUsers:   []string{"user@example.com"},

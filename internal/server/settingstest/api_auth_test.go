@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -24,7 +25,7 @@ func newFederationAuthTestServer(
 	)
 	require.NoError(t, err)
 	srv := server.New(dbtest.Open(t), nil, nil, "/", nil, server.ServerOptions{
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 		},
 		FederationCredentials: store,

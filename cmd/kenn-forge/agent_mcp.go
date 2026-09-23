@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/hostapi"
+	"go.kenn.io/forge/internal/server/mcpapi"
 )
 
 // Agents run on this host even when the browser-facing listener is bound to a
 // LAN address or behind a reverse proxy. Their MCP transport stays on loopback.
-func newAgentMCPHTTP(ctx context.Context, token string) (net.Listener, *http.Server, *server.SwitchHandler, error) {
+func newAgentMCPHTTP(ctx context.Context, token string) (net.Listener, *http.Server, *hostapi.SwitchHandler, error) {
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, nil, nil, err
@@ -22,9 +23,9 @@ func newAgentMCPHTTP(ctx context.Context, token string) (net.Listener, *http.Ser
 		_ = listener.Close()
 		return nil, nil, nil, err
 	}
-	switcher := server.NewSwitchHandler(newMCPStartupHandler())
+	switcher := hostapi.NewSwitchHandler(newMCPStartupHandler())
 	httpServer := &http.Server{
-		Handler: server.NewMCPHTTPGuard(switcher, server.MCPHTTPGuardOptions{
+		Handler: mcpapi.NewMCPHTTPGuard(switcher, mcpapi.MCPHTTPGuardOptions{
 			Bind: bind, Token: token, RequireAuth: true,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,

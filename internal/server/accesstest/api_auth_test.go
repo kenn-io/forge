@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/kit/daemon"
@@ -27,7 +28,7 @@ import (
 func newAuthTestServer(t *testing.T, token string) *httptest.Server {
 	t.Helper()
 	srv := server.New(dbtest.Open(t), nil, nil, "/", nil, server.ServerOptions{
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: token, RequireAPIAuth: token != "",
 		},
 	})
@@ -39,7 +40,7 @@ func newAuthTestServer(t *testing.T, token string) *httptest.Server {
 func newTailscaleAuthTestServer(t *testing.T) (*httptest.Server, *server.Server) {
 	t.Helper()
 	srv := server.New(dbtest.Open(t), nil, nil, "/", nil, server.ServerOptions{
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 			TailscaleServeEnabled: true,
 			TailscaleServeUsers:   []string{"user@example.com"},
@@ -63,7 +64,7 @@ func newFederationAuthTestServer(
 	)
 	require.NoError(t, err)
 	srv := server.New(dbtest.Open(t), nil, nil, "/", nil, server.ServerOptions{
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 		},
 		FederationCredentials: store,
@@ -93,11 +94,11 @@ func TestDaemonPingContract(t *testing.T) {
 	proofHandler, err := proof.NewPingHandler(identity.Record)
 	require.NoError(err)
 	srv := server.New(dbtest.Open(t), nil, nil, "/", nil, server.ServerOptions{
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "secret-token", RequireAPIAuth: true,
 			ProofHandler: proofHandler,
 		},
-		HostCheck: server.HostCheckOptions{
+		HostCheck: authapi.HostCheckOptions{
 			Bind: bind, Allowed: []config.HostKey{{Host: "forge.example.test"}},
 			TrustReverseProxy: true,
 		},
@@ -278,7 +279,7 @@ func TestFederationCredentialTakesPrecedenceOverTailscaleServeIdentity(t *testin
 	)
 	require.NoError(err)
 	srv := server.New(dbtest.Open(t), nil, nil, "/", nil, server.ServerOptions{
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 			TailscaleServeEnabled: true,
 			TailscaleServeUsers:   []string{"user@example.com"},
@@ -632,7 +633,7 @@ func TestPreEnrollmentEndpointUsesOneTimeTokenInsteadOfLocalAPIAuth(t *testing.T
 		Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleHub},
 	}
 	srv := server.New(dbtest.Open(t), nil, nil, "/", cfg, server.ServerOptions{
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 		},
 		FederationCredentials:         credentials,

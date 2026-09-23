@@ -18,6 +18,8 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
 	forgeserver "go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -38,14 +40,14 @@ func TestFederationEventEndpointFiltersNodeLocalEvents(t *testing.T) {
 	server, httpServer, token := newFederationEventServer(t)
 	// A fresh spoke refreshes sync status at the replay barrier, so the
 	// hub must not inject an older cached value after that barrier.
-	server.Hub().Broadcast(forgeserver.Event{Type: "sync_status", Data: map[string]bool{"running": true}})
+	server.Hub().Broadcast(syncevents.Event{Type: "sync_status", Data: map[string]bool{"running": true}})
 	stream := openFederationEventStream(t, httpServer, token, "")
 	defer stream.response.Body.Close()
 
-	server.Hub().Broadcast(forgeserver.Event{Type: "workspace_created", Data: map[string]string{"id": "ws-1"}})
-	server.Hub().Broadcast(forgeserver.Event{Type: "workspace_status", Data: map[string]string{"id": "ws-1"}})
-	server.Hub().Broadcast(forgeserver.Event{Type: "config.changed", Data: map[string]bool{"valid": true}})
-	providerID := server.Hub().Broadcast(forgeserver.Event{Type: "data_changed", Data: struct{}{}})
+	server.Hub().Broadcast(syncevents.Event{Type: "workspace_created", Data: map[string]string{"id": "ws-1"}})
+	server.Hub().Broadcast(syncevents.Event{Type: "workspace_status", Data: map[string]string{"id": "ws-1"}})
+	server.Hub().Broadcast(syncevents.Event{Type: "config.changed", Data: map[string]bool{"valid": true}})
+	providerID := server.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 
 	frame := nextTestSSEFrame(t, stream.frames)
 	assert.Equal(t, providerID, mustEventID(t, frame.ID))
@@ -59,7 +61,7 @@ func TestFederationEventEndpointTreatsMalformedCursorAsFresh(t *testing.T) {
 	stream := openFederationEventStream(t, httpServer, token, "not-a-number")
 	defer stream.response.Body.Close()
 
-	server.Hub().Broadcast(forgeserver.Event{Type: "pr_ci_refresh_queued", Data: struct{}{}})
+	server.Hub().Broadcast(syncevents.Event{Type: "pr_ci_refresh_queued", Data: struct{}{}})
 
 	assert.Equal(t, "pr_ci_refresh_queued", nextTestSSEFrame(t, stream.frames).Type)
 }
@@ -121,7 +123,7 @@ func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(cfg.Save(cfgPath))
 	server := forgeserver.NewWithConfig(dbtest.Open(t), nil, nil, nil, cfg, cfgPath, forgeserver.ServerOptions{
-		DaemonAccess: forgeserver.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-daemon-secret", RequireAPIAuth: true,
 		},
 		FederationCredentials:              credentials,
@@ -150,7 +152,7 @@ func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
 	response.Body.Close()
 	require.Equal(http.StatusNoContent, response.StatusCode)
 
-	server.Hub().Broadcast(forgeserver.Event{Type: "data_changed", Data: struct{}{}})
+	server.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 	select {
 	case _, open := <-stream.frames:
 		require.False(open, "revoked spoke event stream remained open")
@@ -170,7 +172,7 @@ func newFederationEventServer(
 	)
 	require.NoError(t, err)
 	server := forgeserver.New(dbtest.Open(t), nil, nil, "/", nil, forgeserver.ServerOptions{
-		DaemonAccess: forgeserver.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-daemon-secret", RequireAPIAuth: true,
 		},
 		FederationCredentials:              credentials,

@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
@@ -14,12 +15,12 @@ func TestParseRepoFiltersAcceptsProviderQualifiedRepoPath(t *testing.T) {
 		Platform:     "gitea",
 		PlatformHost: "github.com",
 		RepoPath:     "acme/widgets",
-	}}, parseRepoFilters("Gitea|github.com/acme/widgets"))
+	}}, itemapi.ParseRepoFilters("Gitea|github.com/acme/widgets"))
 }
 
 func TestParseRepoFiltersRejectsUnqualifiedRepoPath(t *testing.T) {
-	assert.Empty(t, parseRepoFilters("gitea/acme/team/widgets"))
-	assert.Empty(t, parseRepoFilters("acme/widgets"))
+	assert.Empty(t, itemapi.ParseRepoFilters("gitea/acme/team/widgets"))
+	assert.Empty(t, itemapi.ParseRepoFilters("acme/widgets"))
 }
 
 func TestWorkspaceRefForActivityItemUsesStableRepositoryIdentity(t *testing.T) {
@@ -44,7 +45,7 @@ func TestWorkspaceRefForActivityItemUsesStableRepositoryIdentity(t *testing.T) {
 	}
 	assert.Equal(t,
 		&workspaceapi.WorkspaceRef{ID: "ws-issue", Status: "ready"},
-		workspaceRefForActivityItem(snapshot, renamedIssue),
+		itemapi.WorkspaceRefForActivityItem(snapshot, renamedIssue),
 	)
 
 	associatedPull := db.ActivityItem{
@@ -53,11 +54,11 @@ func TestWorkspaceRefForActivityItemUsesStableRepositoryIdentity(t *testing.T) {
 	}
 	assert.Equal(t,
 		&workspaceapi.WorkspaceRef{ID: "ws-associated", Status: "ready"},
-		workspaceRefForActivityItem(snapshot, associatedPull),
+		itemapi.WorkspaceRefForActivityItem(snapshot, associatedPull),
 	)
 
 	reusedRoute := renamedIssue
 	reusedRoute.RepoID = 42
-	assert.Nil(t, workspaceRefForActivityItem(snapshot, reusedRoute),
+	assert.Nil(t, itemapi.WorkspaceRefForActivityItem(snapshot, reusedRoute),
 		"a replacement repository at the same route must not inherit the old workspace")
 }

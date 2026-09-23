@@ -71,7 +71,7 @@ branch. Keep the OpenAPI enum stable and regenerate API artifacts with
 - After dispatching a non-idempotent provider write, preserve only typed errors that prove rejection;
   unverified provider failures, unreadable or oversized hub responses, and local persistence
   failures after provider success return `mutationOutcomeUnknown`
-  (`internal/server/httpapi/problems.go::ProviderMutationProblem`, `internal/server/provider_proxy.go::providerProxy.ServeHTTP`).
+  (`internal/server/httpapi/problems.go::ProviderMutationProblem`, `internal/server/routepolicy/provider_proxy.go::ProviderProxy.ServeHTTP`).
 - A stale manual-workflow definition is `conflict` with
   `details.reason = "workflow_definition_changed"` and expected/live SHAs, so
   clients can require a catalog reload (`internal/server/workflowapi/routes.go::Handler.dispatch`).
@@ -104,7 +104,7 @@ Rules for handler code:
 - Branch-conflict payloads put branch names in top-level `details`; do not rely
   on nested `errors[].value` payloads.
 - Mid-stack merges fail closed for immediate and deferred paths unless explicitly
-  enabled; return `conflict` with reason `mid_stack_merge_disallowed` and `blocking_number` (`internal/server/huma_routes.go::requireMidStackMergeAllowed`).
+  enabled; return `conflict` with reason `mid_stack_merge_disallowed` and `blocking_number` (`internal/server/pullapi/routes.go::Handler.requireMidStackMergeAllowed`).
 - Huma's `errors[]` field is reserved for Huma validation compatibility. Do not
   add new machine-readable contracts there.
 - Map domain failures to statuses from typed or sentinel errors with
@@ -128,7 +128,7 @@ Translate `platform` typed errors at the server boundary:
 
 Cancellation and deadline errors pass through only when the request context is
 done; a provider child-context deadline while the request remains active is a
-`502 upstreamError` (`internal/server/markdown_images.go::markdownImageError`).
+`502 upstreamError` (`internal/server/providerapi/markdown_images.go::markdownImageError`).
 
 ## Frontend Handling
 

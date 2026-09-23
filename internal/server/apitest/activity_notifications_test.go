@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
@@ -32,7 +33,7 @@ func setupNotificationsAPIServer(t *testing.T) (*server.Server, *db.DB) {
 	// (which short-circuits config-derived host options) keeps the apitest
 	// "forge.test" base URL accepted.
 	srv := servertest.New(t, database, syncer, nil, "/", &config.Config{}, server.ServerOptions{
-		HostCheck: server.HostCheckOptions{
+		HostCheck: authapi.HostCheckOptions{
 			Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			Allowed: []config.HostKey{
 				{Host: "forge.test", Port: ""},

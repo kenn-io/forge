@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/server/routepolicy"
 )
 
 func TestProviderRouteCoverage(t *testing.T) {
@@ -27,7 +28,7 @@ func TestProviderRouteCoverage(t *testing.T) {
 		require.Falsef(duplicate, "operation %s is registered twice", operation.ID)
 		seen[operation.ID] = struct{}{}
 
-		if rule.Owner != NodeLocal {
+		if rule.Owner != routepolicy.NodeLocal {
 			assert.Contains([]federationauth.Scope{
 				federationauth.ScopeProviderRead,
 				federationauth.ScopeProviderWrite,
@@ -45,19 +46,19 @@ func TestProviderRouteCoverage(t *testing.T) {
 func TestProviderRouteCoverageRejectsUnknownAndDuplicateOperations(t *testing.T) {
 	runParallelServerTest(t)
 
-	registered := []RegisteredTransportOperation{{ID: "known"}}
-	_, err := buildProviderRouteRules(registered, []ProviderRouteRule{{
-		OperationID: "known", Owner: NodeLocal,
+	registered := []routepolicy.RegisteredTransportOperation{{ID: "known"}}
+	_, err := routepolicy.BuildProviderRouteRules(registered, []routepolicy.ProviderRouteRule{{
+		OperationID: "known", Owner: routepolicy.NodeLocal,
 	}, {
-		OperationID: "known", Owner: NodeLocal,
+		OperationID: "known", Owner: routepolicy.NodeLocal,
 	}})
 	require.ErrorContains(t, err, "duplicate")
 
-	_, err = buildProviderRouteRules(registered, nil)
+	_, err = routepolicy.BuildProviderRouteRules(registered, nil)
 	require.ErrorContains(t, err, "has no ownership")
 
-	_, err = buildProviderRouteRules(registered, []ProviderRouteRule{{
-		OperationID: "unknown", Owner: NodeLocal,
+	_, err = routepolicy.BuildProviderRouteRules(registered, []routepolicy.ProviderRouteRule{{
+		OperationID: "unknown", Owner: routepolicy.NodeLocal,
 	}})
 	require.ErrorContains(t, err, "unknown operation")
 }
@@ -68,15 +69,15 @@ func TestProviderRouteOwnershipExamples(t *testing.T) {
 
 	rules, err := providerRouteRules()
 	require.NoError(t, err)
-	assert.Equal(ProviderWithLocalOverlay, rules["list-pulls"].Owner)
-	assert.Equal(NodeLocal, rules["get-settings"].Owner)
-	assert.Equal(NodeLocal, rules["get-local-settings"].Owner)
-	assert.Equal(ProviderHubOnly, rules["federation-get-provider-settings"].Owner)
-	assert.Equal(ProviderHubOnly, rules["merge-pull"].Owner)
-	assert.Equal(NodeLocal, rules["get-pull-diff"].Owner)
-	assert.Equal(NodeLocal, rules["get-workspace"].Owner)
-	assert.Equal(ProviderHubOnly, rules["list-workflows"].Owner)
+	assert.Equal(routepolicy.ProviderWithLocalOverlay, rules["list-pulls"].Owner)
+	assert.Equal(routepolicy.NodeLocal, rules["get-settings"].Owner)
+	assert.Equal(routepolicy.NodeLocal, rules["get-local-settings"].Owner)
+	assert.Equal(routepolicy.ProviderHubOnly, rules["federation-get-provider-settings"].Owner)
+	assert.Equal(routepolicy.ProviderHubOnly, rules["merge-pull"].Owner)
+	assert.Equal(routepolicy.NodeLocal, rules["get-pull-diff"].Owner)
+	assert.Equal(routepolicy.NodeLocal, rules["get-workspace"].Owner)
+	assert.Equal(routepolicy.ProviderHubOnly, rules["list-workflows"].Owner)
 	assert.Equal(federationauth.ScopeProviderRead, rules["list-workflows"].PeerScope)
-	assert.Equal(ProviderHubOnly, rules["dispatch-workflow"].Owner)
+	assert.Equal(routepolicy.ProviderHubOnly, rules["dispatch-workflow"].Owner)
 	assert.Equal(federationauth.ScopeProviderWrite, rules["dispatch-workflow"].PeerScope)
 }

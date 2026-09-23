@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 )
@@ -40,7 +41,7 @@ func providerHandoffServerFixture(
 	require.NoError(t, err)
 	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{
 		FederationCredentials: credentials,
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 		},
 	})

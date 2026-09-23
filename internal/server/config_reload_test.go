@@ -27,6 +27,10 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/ptysize"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/configreload"
+	"go.kenn.io/forge/internal/server/settingsapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -83,7 +87,7 @@ func atomicRenameConfigToml(t *testing.T, path string, content string) {
 type configEventStream struct {
 	resp   *http.Response
 	cancel context.CancelFunc
-	events chan configChangedEvent
+	events chan configreload.ConfigChangedEvent
 }
 
 func (s *configEventStream) Close() {
@@ -120,15 +124,15 @@ func streamConfigEvents(t *testing.T, srv *Server) *configEventStream {
 	stream := &configEventStream{
 		resp:   resp,
 		cancel: cancel,
-		events: make(chan configChangedEvent, 8),
+		events: make(chan configreload.ConfigChangedEvent, 8),
 	}
 
 	// Wait for the handler to register before returning, so the test
 	// does not race the watcher's first event against subscriber setup.
 	require.Eventually(t, func() bool {
-		srv.hub.mu.Lock()
-		defer srv.hub.mu.Unlock()
-		return len(srv.hub.subscribers) >= 1
+		srv.hub.Mu.Lock()
+		defer srv.hub.Mu.Unlock()
+		return len(srv.hub.Subscribers) >= 1
 	}, 2*time.Second, 10*time.Millisecond)
 
 	go func() {
@@ -154,7 +158,7 @@ func streamConfigEvents(t *testing.T, srv *Server) *configEventStream {
 				continue
 			}
 			if eventType == "config.changed" && dataLine != "" {
-				var ev configChangedEvent
+				var ev configreload.ConfigChangedEvent
 				if err := json.Unmarshal([]byte(dataLine), &ev); err == nil {
 					select {
 					case stream.events <- ev:
@@ -174,7 +178,7 @@ func waitForConfigEvent(
 	t *testing.T,
 	stream *configEventStream,
 	timeout time.Duration,
-) configChangedEvent {
+) configreload.ConfigChangedEvent {
 	t.Helper()
 	select {
 	case ev, ok := <-stream.events:
@@ -182,7 +186,7 @@ func waitForConfigEvent(
 		return ev
 	case <-time.After(timeout):
 		require.FailNow(t, "timed out waiting for config.changed event")
-		return configChangedEvent{}
+		return configreload.ConfigChangedEvent{}
 	}
 }
 
@@ -496,14 +500,14 @@ allow_mid_stack_merges = true
 [activity]
 use_workspace_activity_for_recency = true
 `)
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.True(event.Valid, event.Error)
 	require.True(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
 	require.True(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 	require.True(srv.issueAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 
 	writeConfigToml(t, reloadPath, malformedTomlConfig)
-	event = srv.applyConfigChange(t.Context())
+	event = srv.configreload.ApplyConfigChange(t.Context())
 	require.False(event.Valid)
 	require.True(
 		srv.pullAPI.ConfigSnapshot().AllowMidStackMerges,
@@ -564,7 +568,7 @@ func TestConfigReloadPreservesCanonicalDataDirIdentity(t *testing.T) {
 	require.NoError(err)
 
 	writeConfigToml(t, cfgPath, content)
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 
 	require.True(event.Valid, event.Error)
 	assert.False(event.RestartRequired)
@@ -613,7 +617,7 @@ func TestConfigReload_UpdatesModes(t *testing.T) {
 	assert.False(ev.RestartRequired)
 
 	srv.cfgMu.Lock()
-	gotModes := cloneModeVisibility(srv.cfg.Modes)
+	gotModes := spokeapi.CloneModeVisibility(srv.cfg.Modes)
 	originalActions := srv.cfg.Modes.Actions
 	srv.cfgMu.Unlock()
 	assert.True(*gotModes.Docs)
@@ -729,7 +733,7 @@ func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		<-start
-		srv.handleConfigFileChanged()
+		srv.configreload.HandleConfigFileChanged()
 	}()
 	go func() {
 		defer wg.Done()
@@ -912,7 +916,7 @@ port = 8091
 key = "after"
 command = ["sh"]
 `), 0o644))
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.True(event.Valid, event.Error)
 
 	rr := testutil.DoJSON(
@@ -1026,7 +1030,7 @@ platform_repo_id = 1002
 	previous[0].ConfiguredRepoPath = "acme/widget"
 	assert.Equal(t, previous, srv.syncer.TrackedRepos(),
 		"keep the verified repository without adopting the unresolved pinned route")
-	_, err := srv.deleteConfiguredRepo(t.Context(), &repoConfigInput{
+	_, err := srv.settingsapi.DeleteConfiguredRepo(t.Context(), &settingsapi.RepoConfigInput{
 		Provider: "github", PlatformHost: "github.com",
 		Owner: "acme", Name: "replacement",
 	})
@@ -1092,7 +1096,7 @@ name = "service-*"
 	assert.ElementsMatch([]string{"backend", "service-api"}, listRepoNames(t, srv))
 
 	writeConfigToml(t, cfgPath, validReloadConfigChangedActivity+failedProvider)
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.True(event.Valid, "unrelated reload failed: %s", event.Error)
 	assert.True(event.RestartRequired)
 	tracked := srv.syncer.TrackedRepos()
@@ -1123,7 +1127,7 @@ token_env = "REPO_TOKEN"
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 
-	require.NoError(t, validateReloadCloneTokenSources(cfg))
+	require.NoError(t, configreload.ValidateReloadCloneTokenSources(cfg))
 }
 
 func TestValidateReloadCloneTokenSourcesAllowsDifferentProviderFallbacksOnSharedHost(t *testing.T) {
@@ -1135,7 +1139,7 @@ func TestValidateReloadCloneTokenSourcesAllowsDifferentProviderFallbacksOnShared
 		{Type: "forgejo", Host: "code.example.com", TokenEnv: "FORGEJO_PAT"},
 	}}
 
-	require.NoError(t, validateReloadCloneTokenSources(cfg))
+	require.NoError(t, configreload.ValidateReloadCloneTokenSources(cfg))
 }
 
 func TestValidateReloadCloneTokenSourcesRejectsConflictingRepoOverrides(t *testing.T) {
@@ -1144,7 +1148,7 @@ func TestValidateReloadCloneTokenSourcesRejectsConflictingRepoOverrides(t *testi
 		{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "group", Name: "two", TokenEnv: "TOKEN_B"},
 	}}
 
-	err := validateReloadCloneTokenSources(cfg)
+	err := configreload.ValidateReloadCloneTokenSources(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "conflicting token source")
 }
@@ -1177,7 +1181,7 @@ token_env = "SHARED"
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 
-	require.NoError(t, validateReloadCloneTokenSources(cfg))
+	require.NoError(t, configreload.ValidateReloadCloneTokenSources(cfg))
 }
 
 func TestValidateReloadCloneTokenSourcesIgnoresCredentiallessPlatformHosts(t *testing.T) {
@@ -1198,7 +1202,7 @@ token_env = "SHARED"
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 
-	require.NoError(t, validateReloadCloneTokenSources(cfg))
+	require.NoError(t, configreload.ValidateReloadCloneTokenSources(cfg))
 }
 
 // reloadTestTokenSources registers every provider token plan of the config
@@ -1259,7 +1263,7 @@ port = 8091
 	srv.tokenSources = sourceSet
 	bootCfg, err := config.Load(cfgPath)
 	require.NoError(err)
-	srv.bootCfgSnapshot = snapshotStartupConfig(bootCfg)
+	srv.bootCfgSnapshot = configreload.SnapshotStartupConfig(bootCfg)
 	token, err := src.Token(t.Context())
 	require.NoError(err)
 	require.Equal("owner-token", token)
@@ -1301,7 +1305,7 @@ token_env = "OWNER_PAT"
 	srv.tokenSources = sourceSet
 	bootCfg, err := config.Load(cfgPath)
 	require.NoError(err)
-	srv.bootCfgSnapshot = snapshotStartupConfig(bootCfg)
+	srv.bootCfgSnapshot = configreload.SnapshotStartupConfig(bootCfg)
 
 	waitForConfigWatcher(t, srv, 2*time.Second)
 	stream := streamConfigEvents(t, srv)
@@ -1497,8 +1501,8 @@ selected_repos = ["acme/widget-one", "acme/widget-two"]
 		set.Upsert(plan.Descriptor)
 	}
 
-	srv := &Server{tokenSources: set}
-	require.NoError(srv.validateReloadProviderTokenSources(t.Context(), cfg))
+	srv := wiredServer(&Server{tokenSources: set})
+	require.NoError(srv.configreload.ValidateReloadProviderTokenSources(t.Context(), cfg))
 	require.Len(minted, 1)
 	assert.Equal(t, int64(4242), minted[0].AppID)
 	assert.Equal(t, "acme", minted[0].InstallationAccount)
@@ -1533,8 +1537,8 @@ func TestValidateReloadProviderSourcesUsesArchiveDescriptorForArchiveOnlyRoute(t
 			set.Upsert(plan.ArchiveDescriptor)
 		}
 	}
-	srv := &Server{tokenSources: set}
-	require.NoError(srv.validateReloadProviderTokenSources(t.Context(), cfg))
+	srv := wiredServer(&Server{tokenSources: set})
+	require.NoError(srv.configreload.ValidateReloadProviderTokenSources(t.Context(), cfg))
 }
 
 // newReloadServerWithTokenSources mirrors startup: one source per
@@ -1600,8 +1604,8 @@ repository_selection = "all"
 
 		// RestartRequired must fire, and the live chain must not flip
 		// reads onto the app token while write trackers are missing.
-		assert.True(srv.bootCfgSnapshot.restartRequiredFor(newCfg))
-		srv.updateTokenSourcesForReload(newCfg)
+		assert.True(srv.bootCfgSnapshot.RestartRequiredFor(newCfg))
+		srv.configreload.UpdateTokenSourcesForReload(newCfg)
 		src, ok := set.Get(githubKey)
 		require.True(t, ok)
 		assert.False(src.Descriptor().HasActiveGitHubApp(),
@@ -1620,9 +1624,9 @@ repository_selection = "all"
 		srv, set := newReloadServerWithTokenSources(t, bootCfg, bootPath)
 		newCfg, _ := loadCfg(t, "new-no-app.toml", validReloadConfig)
 
-		assert.True(srv.bootCfgSnapshot.restartRequiredFor(newCfg),
+		assert.True(srv.bootCfgSnapshot.RestartRequiredFor(newCfg),
 			"removing an app changes split topology and must flag a restart")
-		srv.updateTokenSourcesForReload(newCfg)
+		srv.configreload.UpdateTokenSourcesForReload(newCfg)
 		src, ok := set.Get(ownerKey)
 		require.True(t, ok)
 		assert.True(src.Descriptor().HasActiveGitHubApp(),
@@ -1643,7 +1647,7 @@ repository_selection = "all"
 		srv, set := newReloadServerWithTokenSources(t, bootCfg, bootPath)
 		newCfg, _ := loadCfg(t, "new-env.toml", validReloadConfigChangedGitHubTokenEnv)
 
-		srv.updateTokenSourcesForReload(newCfg)
+		srv.configreload.UpdateTokenSourcesForReload(newCfg)
 		src, ok := set.Get(githubKey)
 		require.True(t, ok)
 		assert.Contains(t, src.Descriptor().SafeString(), "KENN_FORGE_NEW_GITHUB_TOKEN",
@@ -1942,7 +1946,7 @@ func TestConfigReload_MalformedTomlDoesNotCrash(t *testing.T) {
 func TestSanitizeConfigErrorRedactsTokenMaterial(t *testing.T) {
 	assert := assert.New(t)
 
-	got := sanitizeConfigError(
+	got := configreload.SanitizeConfigError(
 		errors.New("open /home/me/.kenn/forge/config.toml: https://x-access-token:ghp_config_secret@github.com/acme/widgets.git failed"),
 		"/home/me/.kenn/forge/config.toml",
 	)
@@ -2288,68 +2292,68 @@ func TestRestartRequiredForAuthFleetRoleAndSessions(t *testing.T) {
 		}
 		return cfg
 	}
-	snap := snapshotStartupConfig(base())
+	snap := configreload.SnapshotStartupConfig(base())
 
-	require.False(snap.restartRequiredFor(base()),
+	require.False(snap.RestartRequiredFor(base()),
 		"identical config must not demand a restart")
 
 	enabledFlipped := base()
 	enabledFlipped.Fleet.Enabled = true
-	require.False(snap.restartRequiredFor(enabledFlipped),
+	require.False(snap.RestartRequiredFor(enabledFlipped),
 		"fleet.enabled changes apply without restart")
 
 	timeoutChanged := base()
 	timeoutChanged.Fleet.PeerTimeout = "4s"
-	require.False(snap.restartRequiredFor(timeoutChanged),
+	require.False(snap.RestartRequiredFor(timeoutChanged),
 		"fleet.peer_timeout changes apply without restart")
 
 	memberAdded := base()
 	memberAdded.Fleet.Members = append(memberAdded.Fleet.Members, config.FleetMember{
 		NodeID: "0123456789abcdef0123456789abcdef", BaseURL: "https://mini.example", State: "active",
 	})
-	require.False(snap.restartRequiredFor(memberAdded),
+	require.False(snap.RestartRequiredFor(memberAdded),
 		"federation member changes apply without restart")
 
 	authFlipped := base()
 	authFlipped.API.RequireAuth = false
-	require.True(snap.restartRequiredFor(authFlipped))
+	require.True(snap.RestartRequiredFor(authFlipped))
 
 	fleetSessionsFlipped := base()
 	fleetSessionsFlipped.Fleet.Sessions.IncludeUnmanagedDetails = true
-	require.True(snap.restartRequiredFor(fleetSessionsFlipped))
+	require.True(snap.RestartRequiredFor(fleetSessionsFlipped))
 
 	originChanged := base()
 	originChanged.Fleet.BaseURL = "https://new-hub.example"
-	require.True(snap.restartRequiredFor(originChanged))
+	require.True(snap.RestartRequiredFor(originChanged))
 
 	tailscaleServeChanged := base()
 	tailscaleServeChanged.API.TailscaleServe = config.TailscaleServeAPI{
 		Enabled: true, AllowedUsers: []string{"user@example.com"},
 	}
-	require.True(snap.restartRequiredFor(tailscaleServeChanged))
+	require.True(snap.RestartRequiredFor(tailscaleServeChanged))
 }
 
 func TestActiveFleetConfigSnapshotDefersHotEnableUntilRuntimeAuth(t *testing.T) {
 	assert := assert.New(t)
 	boot := &config.Config{}
-	srv := &Server{
+	srv := wiredServer(&Server{
 		cfg: &config.Config{
 			API:   config.API{RequireAuth: true},
 			Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleHub},
 		},
-		bootCfgSnapshot: snapshotStartupConfig(boot),
-	}
+		bootCfgSnapshot: configreload.SnapshotStartupConfig(boot),
+	})
 
-	assert.False(srv.activeFleetConfigSnapshotLocked().Fleet.Enabled)
-	assert.False(srv.federationEnabled())
+	assert.False(srv.streamapi.ActiveFleetConfigSnapshotLocked().Fleet.Enabled)
+	assert.False(srv.streamapi.FederationEnabled())
 
 	// A restart installs the requested API authentication policy before
 	// federation becomes active.
-	srv.daemonRequests = newDaemonRequestPolicy(DaemonAccessOptions{
+	srv.daemonRequests = authapi.NewDaemonRequestPolicy(authapi.DaemonAccessOptions{
 		Token: "local-secret", RequireAPIAuth: true,
 	})
-	assert.True(srv.activeFleetConfigSnapshotLocked().Fleet.Enabled)
-	assert.True(srv.federationEnabled())
+	assert.True(srv.streamapi.ActiveFleetConfigSnapshotLocked().Fleet.Enabled)
+	assert.True(srv.streamapi.FederationEnabled())
 }
 
 func TestActiveFleetConfigSnapshotKeepsBootIdentity(t *testing.T) {
@@ -2361,7 +2365,7 @@ func TestActiveFleetConfigSnapshotKeepsBootIdentity(t *testing.T) {
 			Name:   "Hub", BaseURL: "https://hub.example",
 		},
 	}}
-	srv := &Server{
+	srv := wiredServer(&Server{
 		cfg: &config.Config{Fleet: config.Fleet{
 			Role: config.FleetRoleHub, BaseURL: "https://new-spoke.example",
 			Hub: &config.FleetHub{
@@ -2374,10 +2378,10 @@ func TestActiveFleetConfigSnapshotKeepsBootIdentity(t *testing.T) {
 			}},
 			PeerTimeout: "4s",
 		}},
-		bootCfgSnapshot: snapshotStartupConfig(boot),
-	}
+		bootCfgSnapshot: configreload.SnapshotStartupConfig(boot),
+	})
 
-	snapshot := srv.activeFleetConfigSnapshotLocked()
+	snapshot := srv.streamapi.ActiveFleetConfigSnapshotLocked()
 
 	assert.Equal(config.FleetRoleSpoke, snapshot.Fleet.Role)
 	assert.Equal(boot.Fleet.BaseURL, snapshot.Fleet.BaseURL)
@@ -2420,10 +2424,10 @@ base_url = "https://spoke.example"
 node_id = "11111111111111111111111111111111"
 base_url = "https://replacement-hub.example"
 `)
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.True(event.Valid, event.Error)
 	require.True(event.RestartRequired)
-	fleetCfg := srv.activeFleetConfigSnapshotLocked().Fleet
+	fleetCfg := srv.streamapi.ActiveFleetConfigSnapshotLocked().Fleet
 	require.Equal(config.FleetRoleHub, fleetCfg.RoleOrDefault())
 
 	member := config.FleetMember{
@@ -2431,7 +2435,7 @@ base_url = "https://replacement-hub.example"
 		BaseURL: "https://spoke-a.example",
 		State:   "active",
 	}
-	require.NoError(srv.persistFleetMember(t.Context(), member))
+	require.NoError(srv.settingsapi.PersistFleetMember(t.Context(), member))
 
 	persisted, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -2442,9 +2446,9 @@ base_url = "https://replacement-hub.example"
 
 	persisted.Fleet.Members[0].OutboundDisabled = true
 	require.NoError(persisted.Save(cfgPath))
-	require.True(srv.applyConfigChange(t.Context()).Valid)
+	require.True(srv.configreload.ApplyConfigChange(t.Context()).Valid)
 	member.Name = "Renamed spoke"
-	require.NoError(srv.persistFleetMember(t.Context(), member))
+	require.NoError(srv.settingsapi.PersistFleetMember(t.Context(), member))
 	persisted, err = config.Load(cfgPath)
 	require.NoError(err)
 	require.True(persisted.Fleet.Members[0].OutboundDisabled)
@@ -2461,7 +2465,7 @@ func TestRestartRequiredForFleetRoleAndHubBinding(t *testing.T) {
 			}},
 		},
 	}
-	snap := snapshotStartupConfig(base)
+	snap := configreload.SnapshotStartupConfig(base)
 
 	roleChanged := *base
 	roleChanged.Fleet = base.Fleet
@@ -2470,17 +2474,17 @@ func TestRestartRequiredForFleetRoleAndHubBinding(t *testing.T) {
 		NodeID:  "0123456789abcdef0123456789abcdef",
 		BaseURL: "https://hub.test",
 	}
-	require.True(snap.restartRequiredFor(&roleChanged))
+	require.True(snap.RestartRequiredFor(&roleChanged))
 
 	bound := roleChanged
-	boundSnap := snapshotStartupConfig(&bound)
+	boundSnap := configreload.SnapshotStartupConfig(&bound)
 	bindingChanged := bound
 	bindingChanged.Fleet = bound.Fleet
 	bindingChanged.Fleet.Hub = &config.FleetHub{
 		NodeID:  bound.Fleet.Hub.NodeID,
 		BaseURL: "https://new-hub.test",
 	}
-	require.True(boundSnap.restartRequiredFor(&bindingChanged))
+	require.True(boundSnap.RestartRequiredFor(&bindingChanged))
 
 	hubNameChanged := bound
 	hubNameChanged.Fleet = bound.Fleet
@@ -2489,30 +2493,30 @@ func TestRestartRequiredForFleetRoleAndHubBinding(t *testing.T) {
 		Name:    "Renamed hub",
 		BaseURL: bound.Fleet.Hub.BaseURL,
 	}
-	require.False(boundSnap.restartRequiredFor(&hubNameChanged))
+	require.False(boundSnap.RestartRequiredFor(&hubNameChanged))
 
 	displayChanged := *base
 	displayChanged.Fleet = base.Fleet
 	displayChanged.Fleet.Members = slices.Clone(base.Fleet.Members)
 	displayChanged.Fleet.Members[0].Name = "Renamed spoke"
-	require.False(snap.restartRequiredFor(&displayChanged))
+	require.False(snap.RestartRequiredFor(&displayChanged))
 }
 
 func TestRestartRequiredForMCPConfig(t *testing.T) {
 	assert := assert.New(t)
 	base := &config.Config{MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 128}}
-	snap := snapshotStartupConfig(base)
+	snap := configreload.SnapshotStartupConfig(base)
 
-	assert.False(snap.restartRequiredFor(&config.Config{
+	assert.False(snap.RestartRequiredFor(&config.Config{
 		MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 128},
 	}))
-	assert.True(snap.restartRequiredFor(&config.Config{
+	assert.True(snap.RestartRequiredFor(&config.Config{
 		MCP: config.MCP{Enabled: false, Port: 8092, DiffCacheMB: 128},
 	}))
-	assert.True(snap.restartRequiredFor(&config.Config{
+	assert.True(snap.RestartRequiredFor(&config.Config{
 		MCP: config.MCP{Enabled: true, Port: 9192, DiffCacheMB: 128},
 	}))
-	assert.True(snap.restartRequiredFor(&config.Config{
+	assert.True(snap.RestartRequiredFor(&config.Config{
 		MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 256},
 	}))
 }
@@ -2527,13 +2531,13 @@ func TestRestartRequiredForGitHubArchiveRoutes(t *testing.T) {
 			InstallationAccount: "acme", RepositorySelection: "all",
 		}},
 	}
-	snap := snapshotStartupConfig(base)
-	assert.False(snap.restartRequiredFor(base))
+	snap := configreload.SnapshotStartupConfig(base)
+	assert.False(snap.RestartRequiredFor(base))
 
 	changed := *base
 	changed.GitHubApps = slices.Clone(base.GitHubApps)
 	changed.GitHubApps[0].InstallationID = 3
-	assert.True(snap.restartRequiredFor(&changed))
+	assert.True(snap.RestartRequiredFor(&changed))
 }
 
 func TestRestartRequiredForPlatformTransportChange(t *testing.T) {
@@ -2548,17 +2552,17 @@ func TestRestartRequiredForPlatformTransportChange(t *testing.T) {
 			},
 		}}
 	}
-	snapshot := snapshotStartupConfig(base())
+	snapshot := configreload.SnapshotStartupConfig(base())
 
-	require.False(snapshot.restartRequiredFor(base()))
+	require.False(snapshot.RestartRequiredFor(base()))
 
 	baseURLChanged := base()
 	baseURLChanged.Platforms[0].BaseURL = "https://gitea.example.test:3000"
-	require.True(snapshot.restartRequiredFor(baseURLChanged))
+	require.True(snapshot.RestartRequiredFor(baseURLChanged))
 
 	allowInsecureChanged := base()
 	allowInsecureChanged.Platforms[0].AllowInsecure = false
-	require.True(snapshot.restartRequiredFor(allowInsecureChanged))
+	require.True(snapshot.RestartRequiredFor(allowInsecureChanged))
 }
 
 func TestRestartRequiredForRoborevEndpointButNotManagedCloneInit(t *testing.T) {
@@ -2566,15 +2570,15 @@ func TestRestartRequiredForRoborevEndpointButNotManagedCloneInit(t *testing.T) {
 	base := &config.Config{Roborev: config.Roborev{
 		Endpoint: "http://127.0.0.1:7373",
 	}}
-	snap := snapshotStartupConfig(base)
+	snap := configreload.SnapshotStartupConfig(base)
 
 	toggleChanged := *base
 	toggleChanged.Roborev.InitManagedClones = true
-	assert.False(snap.restartRequiredFor(&toggleChanged))
+	assert.False(snap.RestartRequiredFor(&toggleChanged))
 
 	endpointChanged := *base
 	endpointChanged.Roborev.Endpoint = "http://localhost:7474"
-	assert.True(snap.restartRequiredFor(&endpointChanged))
+	assert.True(snap.RestartRequiredFor(&endpointChanged))
 }
 
 func TestRestartRequiredForNotificationIntervals(t *testing.T) {
@@ -2589,42 +2593,42 @@ func TestRestartRequiredForNotificationIntervals(t *testing.T) {
 		cfg.Notifications.BatchSize = 25
 		return cfg
 	}
-	snap := snapshotStartupConfig(base())
+	snap := configreload.SnapshotStartupConfig(base())
 
-	require.False(snap.restartRequiredFor(base()),
+	require.False(snap.RestartRequiredFor(base()),
 		"identical notification loop config must not demand a restart")
 
 	syncIntervalChanged := base()
 	syncIntervalChanged.Notifications.SyncInterval = "2m"
-	require.True(snap.restartRequiredFor(syncIntervalChanged),
+	require.True(snap.RestartRequiredFor(syncIntervalChanged),
 		"notification sync_interval is bound to the startup ticker")
 
 	propagationIntervalChanged := base()
 	propagationIntervalChanged.Notifications.PropagationInterval = "5m"
-	require.True(snap.restartRequiredFor(propagationIntervalChanged),
+	require.True(snap.RestartRequiredFor(propagationIntervalChanged),
 		"notification propagation_interval is bound to the startup ticker")
 
 	batchSizeChanged := base()
 	batchSizeChanged.Notifications.BatchSize = 50
-	require.True(snap.restartRequiredFor(batchSizeChanged),
+	require.True(snap.RestartRequiredFor(batchSizeChanged),
 		"notification batch_size is snapped by the loop")
 
 	activeRefreshChanged := base()
 	activeRefreshChanged.ActivePRRefreshInterval = "30s"
-	require.False(snap.restartRequiredFor(activeRefreshChanged),
+	require.False(snap.RestartRequiredFor(activeRefreshChanged),
 		"active PR refresh interval is hot-reloadable by the syncer")
 
 	activeHotWindowChanged := base()
 	activeHotWindowChanged.ActivePRHotWindow = "30m"
-	require.False(snap.restartRequiredFor(activeHotWindowChanged))
+	require.False(snap.RestartRequiredFor(activeHotWindowChanged))
 
 	activeWarmRefreshChanged := base()
 	activeWarmRefreshChanged.ActivePRWarmRefreshInterval = "5m"
-	require.False(snap.restartRequiredFor(activeWarmRefreshChanged))
+	require.False(snap.RestartRequiredFor(activeWarmRefreshChanged))
 
 	activeWindowChanged := base()
 	activeWindowChanged.ActivePRWindow = "8h"
-	require.False(snap.restartRequiredFor(activeWindowChanged),
+	require.False(snap.RestartRequiredFor(activeWindowChanged),
 		"active PR window is hot-reloadable by the syncer")
 }
 
@@ -2710,7 +2714,7 @@ func TestConfigReload_RestartRequiredOnAuthGateChange(t *testing.T) {
 	assert.True(ev.Valid)
 	assert.True(ev.RestartRequired,
 		"[api].require_auth change should mark restart_required")
-	assert.False(srv.federationEnabled(),
+	assert.False(srv.streamapi.FederationEnabled(),
 		"fleet activation must wait for the requested auth policy to install")
 
 	srv.cfgMu.Lock()
@@ -2770,7 +2774,7 @@ func TestConfigReload_SettingsSavePreservesRestartRequiredFields(t *testing.T) {
 	require.True(ev.Valid, "reload error: %s", ev.Error)
 	require.True(ev.RestartRequired)
 
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Activity: &config.Activity{
 			ViewMode:  "flat",
 			TimeRange: "30d",
@@ -2837,7 +2841,7 @@ owner = "acme"
 name = "widget"
 token_env = "WKSP_CANDIDATE_ONLY_TOKEN"
 `)
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.False(event.Valid, "reload with an unset token env must be rejected")
 	assert.Contains(srv.workspaces.TmuxStripEnvVars(),
 		"WKSP_CANDIDATE_ONLY_TOKEN",
@@ -2870,7 +2874,7 @@ port = 8091
 owner = "acme"
 name = "widget"
 `)
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.False(event.Valid, "structurally invalid candidate must be rejected")
 	assert.Contains(srv.workspaces.TmuxStripEnvVars(),
 		"WKSP_INVALID_CANDIDATE_TOKEN",
@@ -2902,7 +2906,7 @@ port = 8091
 id = "notes"
 path = "/tmp/notes"
 `)
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.False(event.Valid, "deprecated keys must reject the reload")
 	assert.Contains(srv.workspaces.TmuxStripEnvVars(),
 		"WKSP_DEPRECATED_CANDIDATE_TOKEN",
@@ -2935,7 +2939,7 @@ port = 8091
 owner = "acme"
 name = "widget"
 `)
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.False(event.Valid, "terminal-variable token names must be rejected")
 	assert.NotContains(srv.workspaces.TmuxStripEnvVars(), "TMUX_TMPDIR",
 		"rejected collisions must never enter the strip sets")

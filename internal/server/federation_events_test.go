@@ -19,6 +19,8 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -36,17 +38,17 @@ type testFederationEventStream struct {
 }
 
 func TestReconnectStaleEventCarriesHubConnection(t *testing.T) {
-	hub := NewEventHubWithCapacity(4)
+	hub := syncevents.NewEventHubWithCapacity(4)
 	t.Cleanup(hub.Close)
-	server := &Server{hub: hub}
+	server := wiredServer(&Server{hub: hub})
 
 	for i := 1; i <= 10; i++ {
-		hub.Broadcast(Event{Type: "data_changed", Data: i})
+		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
 	}
-	server.broadcastHubConnection(false)
+	server.syncevents.BroadcastHubConnection(false)
 
-	event := server.reconnectStaleEvent()
-	state, ok := event.Data.(reconnectStaleState)
+	event := server.syncevents.ReconnectStaleEvent()
+	state, ok := event.Data.(syncevents.ReconnectStaleState)
 	require.True(t, ok)
 	require.NotNil(t, state.HubConnected)
 	assert.False(t, *state.HubConnected)
@@ -55,9 +57,9 @@ func TestReconnectStaleEventCarriesHubConnection(t *testing.T) {
 func TestFederationEventEndpointReplaysFilteredEventsAndSignalsStale(t *testing.T) {
 	assert := assert.New(t)
 	server, httpServer, token := newFederationEventServer(t)
-	server.Hub().Broadcast(Event{Type: "workspace_created", Data: struct{}{}})
-	firstProviderID := server.Hub().Broadcast(Event{Type: "data_changed", Data: struct{}{}})
-	secondProviderID := server.Hub().Broadcast(Event{
+	server.Hub().Broadcast(syncevents.Event{Type: "workspace_created", Data: struct{}{}})
+	firstProviderID := server.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+	secondProviderID := server.Hub().Broadcast(syncevents.Event{
 		Type: "sync_status", Data: map[string]bool{"running": true},
 	})
 
@@ -69,10 +71,10 @@ func TestFederationEventEndpointReplaysFilteredEventsAndSignalsStale(t *testing.
 	replay.response.Body.Close()
 
 	server.hub.Close()
-	server.hub = NewEventHubWithCapacity(2)
-	server.Hub().Broadcast(Event{Type: "data_changed", Data: struct{}{}})
-	server.Hub().Broadcast(Event{Type: "sync_status", Data: struct{}{}})
-	server.Hub().Broadcast(Event{Type: "pr_ci_refreshed", Data: struct{}{}})
+	server.hub = syncevents.NewEventHubWithCapacity(2)
+	server.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+	server.Hub().Broadcast(syncevents.Event{Type: "sync_status", Data: struct{}{}})
+	server.Hub().Broadcast(syncevents.Event{Type: "pr_ci_refreshed", Data: struct{}{}})
 	stale := openFederationEventStream(t, httpServer, token, "0")
 	defer stale.response.Body.Close()
 	frame := nextTestSSEFrame(t, stale.frames)
@@ -100,7 +102,7 @@ func TestFederationEventEndpointEnforcesCredentialProtocolAndRequestBounds(t *te
 		{name: "missing credential", protocol: providerplane.ProtocolVersionHeaderValue(), wantStatus: http.StatusUnauthorized},
 		{name: "wrong scope", token: wrongScopeToken, nodeID: wrongScopeNodeID, protocol: providerplane.ProtocolVersionHeaderValue(), wantStatus: http.StatusForbidden},
 		{name: "wrong protocol", token: token, protocol: "999", wantStatus: http.StatusConflict},
-		{name: "oversized cursor", token: token, protocol: providerplane.ProtocolVersionHeaderValue(), cursor: strings.Repeat("9", maxFederationCursorLength+1), wantStatus: http.StatusBadRequest},
+		{name: "oversized cursor", token: token, protocol: providerplane.ProtocolVersionHeaderValue(), cursor: strings.Repeat("9", syncevents.MaxFederationCursorLength+1), wantStatus: http.StatusBadRequest},
 		{name: "request body", token: token, protocol: providerplane.ProtocolVersionHeaderValue(), body: strings.NewReader("not allowed"), wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
@@ -150,14 +152,14 @@ func TestHubEventReceiveAssignsFreshLocalIDs(t *testing.T) {
 	require := require.New(t)
 	server := newTestServer(t)
 	for range 7 {
-		server.Hub().Broadcast(Event{Type: "workspace_status", Data: struct{}{}})
+		server.Hub().Broadcast(syncevents.Event{Type: "workspace_status", Data: struct{}{}})
 	}
 	stream, _ := server.Hub().Subscribe(t.Context(), false)
 
-	require.NoError(server.receiveHubEvent(t.Context(), providerplane.Event{
+	require.NoError(server.syncevents.ReceiveHubEvent(t.Context(), providerplane.Event{
 		ID: 40, Type: "data_changed", Data: []byte(`{}`),
 	}))
-	require.NoError(server.receiveHubEvent(t.Context(), providerplane.Event{
+	require.NoError(server.syncevents.ReceiveHubEvent(t.Context(), providerplane.Event{
 		ID: 900, Type: "pr_detail_refreshed", Data: []byte(`{"number":1}`),
 	}))
 
@@ -174,7 +176,7 @@ func TestHubEventsStopWhileFleetIsDisabled(t *testing.T) {
 	server.cfg = &config.Config{Fleet: config.Fleet{Enabled: false}}
 	before := server.Hub().Generation()
 
-	err := server.receiveHubEvent(t.Context(), providerplane.Event{
+	err := server.syncevents.ReceiveHubEvent(t.Context(), providerplane.Event{
 		ID: 40, Type: "data_changed", Data: []byte(`{}`),
 	})
 	require.ErrorIs(t, err, providerplane.ErrHubUnavailable)
@@ -187,7 +189,7 @@ func TestHubEventLifecyclePausesUntilFleetIsEnabled(t *testing.T) {
 		require := require.New(t)
 		started := make(chan struct{}, 2)
 		stopped := make(chan struct{}, 2)
-		lifecycle := newHubEventLifecycle(true, func(ctx context.Context) {
+		lifecycle := syncevents.NewHubEventLifecycle(true, func(ctx context.Context) {
 			started <- struct{}{}
 			<-ctx.Done()
 			stopped <- struct{}{}
@@ -220,7 +222,7 @@ func TestHubEventLifecyclePausesUntilFleetIsEnabled(t *testing.T) {
 
 func TestHubEventLifecycleCanStopAfterCleanReturn(t *testing.T) {
 	runs := 0
-	lifecycle := newHubEventLifecycleStoppingOnCleanReturn(true, func(context.Context) {
+	lifecycle := syncevents.NewHubEventLifecycleStoppingOnCleanReturn(true, func(context.Context) {
 		runs++
 	})
 
@@ -253,7 +255,7 @@ func TestDisabledFederationSpokeSeedsDisconnectedStateForFreshSubscriber(t *test
 	select {
 	case record := <-events:
 		require.Equal("hub_connection_changed", record.Event.Type)
-		state, ok := record.Event.Data.(hubConnectionState)
+		state, ok := record.Event.Data.(syncevents.HubConnectionState)
 		require.True(ok)
 		assert.False(t, state.Connected)
 	case <-time.After(time.Second):
@@ -270,7 +272,7 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 	token, err := hubCredentials.MintInbound(nodeID, federationauth.SpokeToHubScopes())
 	require.NoError(err)
 	hub := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
-		DaemonAccess:      DaemonAccessOptions{Token: "hub-secret", RequireAPIAuth: true},
+		DaemonAccess:      authapi.DaemonAccessOptions{Token: "hub-secret", RequireAPIAuth: true},
 		FederationSpokeID: hubID, FederationCredentials: hubCredentials,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
@@ -278,7 +280,7 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 	hubHTTP := httptest.NewTLSServer(hub)
 	t.Cleanup(hubHTTP.Close)
 	for range 40 {
-		hub.Hub().Broadcast(Event{Type: "workspace_status", Data: struct{}{}})
+		hub.Hub().Broadcast(syncevents.Event{Type: "workspace_status", Data: struct{}{}})
 	}
 
 	spokeCredentials, err := federationauth.Open(t.TempDir() + "/spoke-credentials.json")
@@ -302,7 +304,7 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 			if record.Event.Type != "hub_connection_changed" {
 				continue
 			}
-			state, ok := record.Event.Data.(hubConnectionState)
+			state, ok := record.Event.Data.(syncevents.HubConnectionState)
 			if ok && state.Connected {
 				return true
 			}
@@ -310,7 +312,7 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 		return false
 	}, 2*time.Second, 5*time.Millisecond)
 	localFloor := spoke.Hub().Generation()
-	remoteID := hub.Hub().Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+	remoteID := hub.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 	require.Greater(remoteID, localFloor+1)
 
 	require.Eventually(func() bool {
@@ -324,29 +326,29 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 
 	spoke.cfgMu.Lock()
 	spoke.cfg.Fleet.Enabled = false
-	spoke.applyFleetConfigLocked()
+	spoke.streamapi.ApplyFleetConfigLocked()
 	spoke.cfgMu.Unlock()
 	require.Eventually(func() bool {
 		return hub.SubscriberCount() == 0
 	}, time.Second, 5*time.Millisecond)
 	disabledFloor := spoke.Hub().Generation()
-	hub.Hub().Broadcast(Event{
+	hub.Hub().Broadcast(syncevents.Event{
 		Type: "pr_detail_refreshed", Data: map[string]int{"number": 7},
 	})
 	assert.Never(t, func() bool {
 		records, _ := spoke.Hub().RingSnapshotSince(disabledFloor)
-		return slices.ContainsFunc(records, func(record RecordedEvent) bool {
+		return slices.ContainsFunc(records, func(record syncevents.RecordedEvent) bool {
 			return record.Event.Type == "pr_detail_refreshed"
 		})
 	}, 50*time.Millisecond, 5*time.Millisecond)
 
 	spoke.cfgMu.Lock()
 	spoke.cfg.Fleet.Enabled = true
-	spoke.applyFleetConfigLocked()
+	spoke.streamapi.ApplyFleetConfigLocked()
 	spoke.cfgMu.Unlock()
 	require.Eventually(func() bool {
 		records, _ := spoke.Hub().RingSnapshotSince(disabledFloor)
-		return slices.ContainsFunc(records, func(record RecordedEvent) bool {
+		return slices.ContainsFunc(records, func(record syncevents.RecordedEvent) bool {
 			return record.Event.Type == "data_changed"
 		})
 	}, 2*time.Second, 5*time.Millisecond)
@@ -363,7 +365,7 @@ func newFederationEventServer(
 	)
 	require.NoError(t, err)
 	server := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-daemon-secret", RequireAPIAuth: true,
 		},
 		FederationCredentials:              credentials,

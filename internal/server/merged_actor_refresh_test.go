@@ -21,7 +21,7 @@ func TestRelayWorkflowActivitySignalsOnlyActions(t *testing.T) {
 		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "team", Name: "project",
 	})
 	require.NoError(err)
-	srv.broadcastRelayRefresh(t.Context(), repoID, "workflow_runs", 0)
+	srv.syncevents.BroadcastRelayRefresh(t.Context(), repoID, "workflow_runs", 0)
 	events, _, stale := srv.Hub().ReplaySnapshotSince(0)
 	require.False(stale)
 	require.Len(events, 1)

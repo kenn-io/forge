@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -26,8 +27,8 @@ func TestAgentMCPWithoutCompanionListener(t *testing.T) {
 	bind, err := config.ParseHostKey("192.0.2.10:8091")
 	require.NoError(t, err)
 	srv := server.New(dbtest.Open(t), nil, nil, "/forge", nil, server.ServerOptions{
-		HostCheck:    server.HostCheckOptions{Bind: bind, TrustReverseProxy: true},
-		DaemonAccess: server.DaemonAccessOptions{Token: "test-agent-token"},
+		HostCheck:    authapi.HostCheckOptions{Bind: bind, TrustReverseProxy: true},
+		DaemonAccess: authapi.DaemonAccessOptions{Token: "test-agent-token"},
 	})
 	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
 	require.NoError(t, err)

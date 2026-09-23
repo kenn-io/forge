@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
@@ -148,7 +149,7 @@ func TestFleetMigrateProtocolRestoresAuthenticatedActivation(t *testing.T) {
 			spokeEnrollments, err := federation.Open(federation.DefaultStorePath(spokeDir), federation.StoreOptions{})
 			require.NoError(err)
 			hub.Config.Handler = servertest.NewWithConfig(t, hubDB, nil, nil, nil, hubConfig, hubPath, server.ServerOptions{
-				DaemonAccess:          server.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+				DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 				FederationCredentials: hubCredentials, FederationEnrollments: hubEnrollments, FederationSpokeID: startupHubID,
 				WorktreeDir: t.TempDir(), DisableWorkspaceBackgroundMonitors: true, HostCheckAllowLoopbackAnyPort: true,
 			})

@@ -246,7 +246,7 @@ func TestProjectWorktreeRuntimeExitForgetsStoredTmuxSession(t *testing.T) {
 		},
 	))
 
-	srv.handleRuntimeSessionExit(localruntime.SessionInfo{
+	srv.streamapi.HandleRuntimeSessionExit(localruntime.SessionInfo{
 		Key:         sessionKey,
 		WorkspaceID: scope,
 		TargetKey:   targetKey,

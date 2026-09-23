@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -287,7 +288,7 @@ func TestCommandSameKeyPersistenceOwnership(t *testing.T) {
 				return "/api/v1/runtime/sessions"
 			},
 			scope: func(runtimeLaunchRollbackFixture) string {
-				return hostRuntimeScope
+				return authapi.HostRuntimeScope
 			},
 			persistenceError: "record host runtime tmux session",
 			assertDurable: func(
@@ -515,14 +516,14 @@ func TestHostRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 		return err == nil
 	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	require.Eventually(func() bool {
-		return len(fixture.server.runtime.ListSessions(hostRuntimeScope)) == 1
+		return len(fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)) == 1
 	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	waitForRuntimeWriterWait(t, fixture.server.db, baseline)
-	launched := fixture.server.runtime.ListSessions(hostRuntimeScope)[0]
+	launched := fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)[0]
 
 	require.NoError(os.WriteFile(fixture.tmux.exitAttachPath, nil, 0o600))
 	require.Eventually(func() bool {
-		return len(fixture.server.runtime.ListSessions(hostRuntimeScope)) == 0
+		return len(fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)) == 0
 	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	cancel()
 	recorder := awaitRuntimeResponse(t, responses)
@@ -533,7 +534,7 @@ func TestHostRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 	assert.Contains(recorder.Body.String(), "context canceled")
 	assert.NoFileExists(fixture.tmux.statePath)
 	assertFakeTmuxKilledSession(t, fixture.tmux.recordPath, launched.TmuxSession)
-	assert.Empty(fixture.server.runtime.ListSessions(hostRuntimeScope))
+	assert.Empty(fixture.server.runtime.ListSessions(authapi.HostRuntimeScope))
 	rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(t.Context())
 	require.NoError(err)
 	assert.Empty(rows)
@@ -551,7 +552,7 @@ func TestHostRuntimeLaunchPersistenceFailurePreservesReusedTmuxSession(
 		fixture.server, t.Context(), http.MethodPost, "/api/v1/runtime/sessions", body,
 	)
 	require.Equal(http.StatusOK, awaitRuntimeResponse(t, initial).Code)
-	sessions := fixture.server.runtime.ListSessions(hostRuntimeScope)
+	sessions := fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)
 	require.Len(sessions, 1)
 	original := sessions[0]
 
@@ -568,7 +569,7 @@ func TestHostRuntimeLaunchPersistenceFailurePreservesReusedTmuxSession(
 
 	assert.Equal(http.StatusInternalServerError, recorder.Code)
 	assert.FileExists(fixture.tmux.statePath)
-	sessions = fixture.server.runtime.ListSessions(hostRuntimeScope)
+	sessions = fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)
 	require.Len(sessions, 1)
 	assert.Equal(original.Key, sessions[0].Key)
 	assert.Equal(original.TmuxSession, sessions[0].TmuxSession)
@@ -596,11 +597,11 @@ func TestHostRuntimeLaunchPersistenceFailurePreservesReattachedTmuxBackend(
 		fixture.server, t.Context(), http.MethodPost, "/api/v1/runtime/sessions", body,
 	)
 	require.Equal(http.StatusOK, awaitRuntimeResponse(t, initial).Code)
-	sessions := fixture.server.runtime.ListSessions(hostRuntimeScope)
+	sessions := fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)
 	require.Len(sessions, 1)
 	original := sessions[0]
-	require.NoError(fixture.server.runtime.Detach(hostRuntimeScope, original.Key))
-	require.Empty(fixture.server.runtime.ListSessions(hostRuntimeScope))
+	require.NoError(fixture.server.runtime.Detach(authapi.HostRuntimeScope, original.Key))
+	require.Empty(fixture.server.runtime.ListSessions(authapi.HostRuntimeScope))
 
 	transaction := occupyRuntimeWriter(t, fixture.server.db)
 	baseline := fixture.server.db.WriteDB().Stats().WaitCount
@@ -617,7 +618,7 @@ func TestHostRuntimeLaunchPersistenceFailurePreservesReattachedTmuxBackend(
 	assert.Contains(recorder.Body.String(), "record host runtime tmux session")
 	assert.Contains(recorder.Body.String(), "context canceled")
 	assert.FileExists(fixture.tmux.statePath)
-	sessions = fixture.server.runtime.ListSessions(hostRuntimeScope)
+	sessions = fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)
 	require.Len(sessions, 1)
 	assert.Equal(original.Key, sessions[0].Key)
 	assert.Equal(original.TmuxSession, sessions[0].TmuxSession)
@@ -658,10 +659,10 @@ func TestHostRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPreservesPersi
 		return err == nil
 	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	waitForRuntimeWriterWait(t, fixture.server.db, baseline)
-	launched := fixture.server.runtime.ListSessions(hostRuntimeScope)[0]
+	launched := fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)[0]
 	require.NoError(os.WriteFile(fixture.tmux.exitAttachPath, nil, 0o600))
 	require.Eventually(func() bool {
-		return len(fixture.server.runtime.ListSessions(hostRuntimeScope)) == 0
+		return len(fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)) == 0
 	}, runtimeRollbackEventuallyTimeout, 10*time.Millisecond)
 	cancel()
 	recorder := awaitRuntimeResponse(t, responses)
@@ -995,7 +996,7 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 				})
 			},
 			scope: func(runtimeLaunchRollbackFixture) string {
-				return hostRuntimeScope
+				return authapi.HostRuntimeScope
 			},
 			countRows: func(t *testing.T, fixture runtimeLaunchRollbackFixture) int {
 				t.Helper()
@@ -1128,10 +1129,10 @@ func TestForgetHostRuntimeCommandSessionIfExitedKeepsLiveAndNewerRows(
 	)
 	recorder := awaitRuntimeResponse(t, responses)
 	require.Equal(http.StatusOK, recorder.Code)
-	live := fixture.server.runtime.ListSessions(hostRuntimeScope)[0]
+	live := fixture.server.runtime.ListSessions(authapi.HostRuntimeScope)[0]
 
 	// A live session must keep its durable row.
-	fixture.server.forgetHostRuntimeCommandSessionIfExited(ctx, live)
+	fixture.server.hostapi.ForgetHostRuntimeCommandSessionIfExited(ctx, live)
 	rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(ctx)
 	require.NoError(err)
 	require.Len(rows, 1)
@@ -1150,14 +1151,14 @@ func TestForgetHostRuntimeCommandSessionIfExitedKeepsLiveAndNewerRows(
 			CreatedAt:   live.CreatedAt,
 		},
 	))
-	fixture.server.forgetHostRuntimeCommandSessionIfExited(ctx, stale)
+	fixture.server.hostapi.ForgetHostRuntimeCommandSessionIfExited(ctx, stale)
 	rows, err = fixture.server.db.ListHostRuntimeTmuxSessions(ctx)
 	require.NoError(err)
 	assert.Len(rows, 2, "an older dead generation must not delete a newer row")
 
 	// The exact dead generation is deleted once no newer row replaced it.
 	stale.CreatedAt = live.CreatedAt
-	fixture.server.forgetHostRuntimeCommandSessionIfExited(ctx, stale)
+	fixture.server.hostapi.ForgetHostRuntimeCommandSessionIfExited(ctx, stale)
 	rows, err = fixture.server.db.ListHostRuntimeTmuxSessions(ctx)
 	require.NoError(err)
 	assert.Len(rows, 1)
@@ -1166,10 +1167,10 @@ func TestForgetHostRuntimeCommandSessionIfExitedKeepsLiveAndNewerRows(
 	// A live replacement with the same reusable key must not be mistaken for
 	// the exited generation. If its persistence later fails and rolls back,
 	// the exited generation's durable row must already be gone.
-	require.NoError(fixture.server.runtime.Detach(hostRuntimeScope, live.Key))
+	require.NoError(fixture.server.runtime.Detach(authapi.HostRuntimeScope, live.Key))
 	replacement, err := fixture.server.runtime.EnsureCommandSessionAndPersist(
 		ctx,
-		hostRuntimeScope,
+		authapi.HostRuntimeScope,
 		localruntime.CommandLaunchSpec{
 			SessionKey: live.Key,
 			Command:    []string{"/bin/sh", "-lc", "exec sleep 60"},
@@ -1190,7 +1191,7 @@ func TestForgetHostRuntimeCommandSessionIfExitedKeepsLiveAndNewerRows(
 		},
 	))
 
-	fixture.server.forgetHostRuntimeCommandSessionIfExited(ctx, live)
+	fixture.server.hostapi.ForgetHostRuntimeCommandSessionIfExited(ctx, live)
 	rows, err = fixture.server.db.ListHostRuntimeTmuxSessions(ctx)
 	require.NoError(err)
 	assert.Empty(rows)

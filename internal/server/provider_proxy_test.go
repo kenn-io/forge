@@ -21,9 +21,14 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
+	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/providerapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/routepolicy"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -221,7 +226,7 @@ func TestProviderWriteTransportFailureReportsUnknownMutationOutcome(t *testing.T
 	assert := assert.New(t)
 	require := require.New(t)
 	var dispatched atomic.Int64
-	proxy := newProviderProxy(providerPlaneClientFunc(func(
+	proxy := routepolicy.NewProviderProxy(providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		dispatched.Add(1)
@@ -231,8 +236,8 @@ func TestProviderWriteTransportFailureReportsUnknownMutationOutcome(t *testing.T
 	}))
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/v1/settings", nil)
-	proxy.ServeHTTP(recorder, request, ProviderRouteRule{
-		Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite,
+	proxy.ServeHTTP(recorder, request, routepolicy.ProviderRouteRule{
+		Owner: routepolicy.ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite,
 	})
 
 	var problem httpapi.ProblemError
@@ -254,7 +259,7 @@ func TestHubWorkflowMutationTransportFailureIsAmbiguous(t *testing.T) {
 		assert.Equal(http.MethodPut, request.Method)
 		return nil, providerplane.ErrHubUnavailable
 	})
-	server := &Server{providerSource: &hubProviderSource{client: client}}
+	server := wiredServer(&Server{providerSource: &spokeapi.HubProviderSource{Client: client}})
 
 	_, err := server.MCPBackend().SetWorkflowState(
 		t.Context(), mcpserver.ItemIdentity{
@@ -274,7 +279,7 @@ func TestHubWorkflowMutationTransportFailureIsAmbiguous(t *testing.T) {
 func TestHubWorkspaceRefreshUsesProviderMutationBoundary(t *testing.T) {
 	var gotScope federationauth.Scope
 	var gotPath string
-	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		gotScope = scope
@@ -298,7 +303,7 @@ func TestHubWorkspaceRefreshUsesProviderMutationBoundary(t *testing.T) {
 func TestHubWorkspaceAutoAssignmentPreservesRepositoryIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderWrite, scope)
@@ -334,7 +339,7 @@ func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 	encoded, err := json.Marshal([]pullapi.MergeRequestResponse{row})
 	require.NoError(err)
 	var gotRepo string
-	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
@@ -362,7 +367,7 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) 
 	assert := assert.New(t)
 	require := require.New(t)
 	seen := make(map[string]bool)
-	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
@@ -387,7 +392,7 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) 
 	require.NoError(err)
 	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Unassigned: true})
 	require.NoError(err)
-	_, err = source.ListActivity(t.Context(), &listActivityInput{Unassigned: true})
+	_, err = source.ListActivity(t.Context(), &itemapi.ListActivityInput{Unassigned: true})
 	require.NoError(err)
 
 	assert.Equal(map[string]bool{
@@ -400,16 +405,16 @@ func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
 	require := require.New(t)
 	const subjectCount = 11_000
 	var requestCount int
-	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
 		assert.Equal("/api/v1/federation/provider/activity/unassigned-subjects/query", request.URL.Path)
-		var body federationUnassignedActivitySubjectsRequest
+		var body providerapi.FederationUnassignedActivitySubjectsRequest
 		require.NoError(json.NewDecoder(request.Body).Decode(&body))
 		assert.LessOrEqual(len(body.Subjects), 500)
 		requestCount++
-		encoded, err := json.Marshal(federationUnassignedActivitySubjectsResponse(body))
+		encoded, err := json.Marshal(spokeapi.FederationUnassignedActivitySubjectsResponse(body))
 		require.NoError(err)
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -470,20 +475,10 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 		}
 	}
 
-	combined, err := srv.overlayLocalActivityWorkspaceSnapshot(
+	response, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
-		&listActivityInput{Unassigned: true, InvolvesMe: true},
-		activityResponse{UseWorkspaceActivityForRecency: true},
-		snapshot,
-	)
-	require.NoError(err)
-	require.Len(combined.WorkspaceActivity, 1)
-	assert.Equal(1, combined.WorkspaceActivity[0].ItemNumber)
-
-	response, err := srv.overlayLocalActivityWorkspaceSnapshot(
-		t.Context(),
-		&listActivityInput{Unassigned: true},
-		activityResponse{UseWorkspaceActivityForRecency: true},
+		&itemapi.ListActivityInput{Unassigned: true},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
 		snapshot,
 	)
 	require.NoError(err)
@@ -515,7 +510,7 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 		t.Context(), spokeDatabase, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
-	spoke.providerSource = &hubProviderSource{client: providerPlaneClientFunc(func(
+	spoke.providerSource = &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
@@ -539,20 +534,20 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
 	}
 
-	response, err := spoke.overlayLocalActivityWorkspaceSnapshot(
+	response, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
-		&listActivityInput{Unassigned: true},
-		activityResponse{
-			Items: []activityItemResponse{
+		&itemapi.ListActivityInput{Unassigned: true},
+		itemapi.ActivityResponse{
+			Items: []itemapi.ActivityItemResponse{
 				{
-					Repo: activityRepoRefResponse{
+					Repo: itemapi.ActivityRepoRefResponse{
 						Provider: "github", PlatformHost: "github.com",
 						PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 					},
 					ItemType: "issue", ItemNumber: 7,
 				},
 				{
-					Repo: activityRepoRefResponse{
+					Repo: itemapi.ActivityRepoRefResponse{
 						Provider: "github", PlatformHost: "github.com",
 						PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 					},
@@ -731,7 +726,7 @@ func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
 	hubServer := New(
 		hubDB, nil, nil, "/", nil,
 		ServerOptions{
-			DaemonAccess: DaemonAccessOptions{
+			DaemonAccess: authapi.DaemonAccessOptions{
 				Token: "hub-local-secret", RequireAPIAuth: true,
 			},
 			FederationSpokeID:                  proxyTestHubID,
@@ -800,7 +795,7 @@ func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
 	require.NoError(err)
 	defer activityHTTPResponse.Body.Close()
 	require.Equal(http.StatusOK, activityHTTPResponse.StatusCode)
-	var activity activityResponse
+	var activity itemapi.ActivityResponse
 	require.NoError(json.NewDecoder(activityHTTPResponse.Body).Decode(&activity))
 	require.NotEmpty(activity.Items)
 	for _, item := range activity.Items {
@@ -1041,9 +1036,9 @@ func (h *providerDispatchTestHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	proxy := newProviderProxy(client)
+	proxy := routepolicy.NewProviderProxy(client)
 	rule, ok := providerRouteRuleForRequest(r.Method, r.URL.Path)
-	if ok && rule.Owner != NodeLocal {
+	if ok && rule.Owner != routepolicy.NodeLocal {
 		proxy.ServeHTTP(w, r, rule)
 		return
 	}
@@ -1132,8 +1127,8 @@ func TestProviderProxyRejectsOversizedHubResponse(t *testing.T) {
 		HTTPClient:  hub.Client(),
 	})
 	require.NoError(err)
-	proxy := newProviderProxy(client)
-	proxy.responseBodyLimit = 3
+	proxy := routepolicy.NewProviderProxy(client)
+	proxy.ResponseBodyLimit = 3
 	rule, ok := providerRouteRuleForRequest(http.MethodGet, "/api/v1/pulls")
 	require.True(ok)
 	spoke := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1181,12 +1176,12 @@ func TestProviderProxyReportsUnknownWriteOutcomeWhenResponseBufferingFails(t *te
 					StatusCode: http.StatusOK, Body: test.body,
 				}, nil
 			})
-			proxy := newProviderProxy(client)
-			proxy.responseBodyLimit = test.limit
+			proxy := routepolicy.NewProviderProxy(client)
+			proxy.ResponseBodyLimit = test.limit
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/provider-write", nil)
 
-			proxy.ServeHTTP(recorder, request, ProviderRouteRule{
+			proxy.ServeHTTP(recorder, request, routepolicy.ProviderRouteRule{
 				PeerScope: federationauth.ScopeProviderWrite,
 			})
 

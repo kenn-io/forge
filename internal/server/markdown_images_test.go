@@ -16,6 +16,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/providerapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
@@ -39,7 +40,7 @@ func TestMarkdownImageRouteServesRepositorySVG(t *testing.T) {
 	})
 	require.NoError(err)
 	srv, database := setupTestServerWithMock(t, &mockGH{getMarkdownImageFn: client.GetMarkdownImage})
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err = reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	const source = "https://github.com/acme/widgets/raw/main/diagram.svg"
@@ -81,7 +82,7 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 		return platform.MarkdownImage{Content: []byte("png-bytes"), ContentType: "image/png"}, nil
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
@@ -103,7 +104,7 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 	require.Equal(http.StatusOK, cached.Code)
 	assert.Equal("png-bytes", cached.Body.String())
 	assert.Equal(1, fetches)
-	entries, err := os.ReadDir(srv.markdownImages.root)
+	entries, err := os.ReadDir(srv.markdownImages.Root)
 	require.NoError(err)
 	assert.Len(entries, 1)
 }
@@ -143,10 +144,8 @@ func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err = reposeed.Seed(
-		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
-	)
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
+	_, err = reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	rr := repoBrowserRequest(t, srv, http.MethodGet,
@@ -170,7 +169,7 @@ func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
 		return platform.MarkdownImage{}, context.DeadlineExceeded
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 
@@ -218,7 +217,7 @@ func TestMarkdownImageRouteMapsGitLabServerErrorToUpstreamError(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 
 	rr := repoBrowserRequest(
 		t,
@@ -247,7 +246,7 @@ func TestMarkdownImageCacheDoesNotFollowRouteReuse(t *testing.T) {
 		}, nil
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	target := "/api/v1/repo/github/acme/widget/markdown-image?source=" + url.QueryEscape(source)
@@ -286,7 +285,7 @@ func TestMarkdownImageRouteCachesMutableImagesBriefly(t *testing.T) {
 		}, nil
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	request := func(source string) *httptest.ResponseRecorder {
@@ -301,12 +300,12 @@ func TestMarkdownImageRouteCachesMutableImagesBriefly(t *testing.T) {
 	require.Equal(http.StatusOK, immutable.Code, immutable.Body.String())
 	assert.Equal("private, max-age=31536000, immutable", immutable.Header().Get("Cache-Control"))
 
-	entries, err := os.ReadDir(srv.markdownImages.root)
+	entries, err := os.ReadDir(srv.markdownImages.Root)
 	require.NoError(err)
 	require.Len(entries, 2)
-	aged := time.Now().Add(-markdownImageMutableTTL - time.Minute)
+	aged := time.Now().Add(-providerapi.MarkdownImageMutableTTL - time.Minute)
 	for _, entry := range entries {
-		require.NoError(os.Chtimes(filepath.Join(srv.markdownImages.root, entry.Name()), aged, aged))
+		require.NoError(os.Chtimes(filepath.Join(srv.markdownImages.Root, entry.Name()), aged, aged))
 	}
 
 	require.Equal(http.StatusOK, request(mutableSource).Code)

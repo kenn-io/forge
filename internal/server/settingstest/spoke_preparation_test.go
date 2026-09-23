@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	forgeserver "go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 )
 
 const (
@@ -66,7 +67,7 @@ base_url = "https://spoke.example"
 node_id = "0123456789abcdef0123456789abcdef"
 base_url = "https://hub.example"
 `, &mockGH{}, forgeserver.ServerOptions{
-		DaemonAccess:          forgeserver.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: preparationLocalNodeID, HostCheckAllowLoopbackAnyPort: true,
 	})
@@ -128,7 +129,7 @@ base_url = "https://spoke.example"
 node_id = "0123456789abcdef0123456789abcdef"
 base_url = "https://hub.example"
 `, &mockGH{}, forgeserver.ServerOptions{
-		DaemonAccess:          forgeserver.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 		FederationCredentials: credentials, FederationEnrollments: enrollments,
 		FederationSpokeID: preparationLocalNodeID,
 		FederationHTTPClient: &http.Client{Transport: roundTripFunc(func(

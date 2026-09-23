@@ -1,0 +1,26 @@
+package itemapi
+
+const (
+	CapabilityCommentMutation             = "comment_mutation"
+	CapabilityStateMutation               = "state_mutation"
+	CapabilityMergeMutation               = "merge_mutation"
+	CapabilityReviewMutation              = "review_mutation"
+	CapabilityWorkflowApproval            = "workflow_approval"
+	CapabilityWorkflowDispatch            = "workflow_dispatch"
+	CapabilityReadWorkflows               = "read_workflows"
+	CapabilityReadyForReview              = "ready_for_review"
+	CapabilityDraftMutation               = "draft_mutation"
+	CapabilityIssueMutation               = "issue_mutation"
+	CapabilityReadLabels                  = "read_labels"
+	CapabilityReadMarkdownImages          = "read_markdown_images"
+	CapabilityLabelMutation               = "label_mutation"
+	CapabilityAssigneeMutation            = "assignee_mutation"
+	CapabilityReviewerMutation            = "reviewer_mutation"
+	CapabilityThreadReply                 = "thread_reply"
+	capabilityThreadResolve               = "thread_resolve"
+	CapabilityReviewDraftMutation         = "review_draft_mutation"
+	CapabilityReviewThreadResolution      = "review_thread_resolution"
+	CapabilityReviewSuggestionApplication = "review_suggestion_application"
+	CapabilityReadReviewThreads           = "read_review_threads"
+	CapabilityMutationHeadBinding         = "mutation_head_binding"
+)

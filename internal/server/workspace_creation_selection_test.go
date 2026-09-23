@@ -70,7 +70,7 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 				t.Cleanup(func() { gracefulShutdown(t, server) })
 				// Only launch admission needs credentials. The workspace manager has
 				// no clone manager, so background setup cannot run external Git.
-				server.providerSource.clones = gitclone.New(t.TempDir(), descriptorCloneRoutes{
+				server.providerSource.Clones = gitclone.New(t.TempDir(), descriptorCloneRoutes{
 					source: testTokenSource("spoke-git-token"),
 				})
 				prefix += "/fleet/hosts/self"

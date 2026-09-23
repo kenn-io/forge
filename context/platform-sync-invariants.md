@@ -65,7 +65,7 @@ identity. Owner, name, and `repo_path` are the repository's current route.
 - Hub descriptors are provider observations recorded through the same
   `ObserveRepository` path as sync; spokes never create a catalog row from
   owner/name alone
-  (`internal/server/provider_sources.go::observeRepositoryDescriptor`).
+  (`internal/server/spokeapi/provider_sources.go::HubProviderSource.ObserveRepositoryDescriptor`).
 - Repository metadata and merge settings are written from the provider snapshot
   the identity read returned. Omitted fields keep stored values (clone URLs
   seeded outside the provider resolve clones), and merge settings are written
@@ -84,19 +84,19 @@ identity. Owner, name, and `repo_path` are the repository's current route.
   hidden rows with configured entries and resolving visibility mutations must
   also use the stable provider id, not route keys: a displaced row keeps its
   old display route. Mutations reject non-active rows
-  (`internal/server/settings_handlers.go::applyVisibilityUnderReconciliationRead`).
+  (`internal/server/settingsapi/settings_handlers.go::Handlers.ApplyVisibilityUnderReconciliationRead`).
   Removing the last exact entry for a repository releases its hidden
   preference on every configuration-change path — startup, TOML hot reload,
   and the DELETE handler (detached from request cancellation): globs can keep
   the repository tracked but expose no visibility controls
-  (`internal/server/settings_handlers.go::reconcileOrphanedRepoVisibility`).
+  (`internal/server/settingsapi/settings_handlers.go::Handlers.ReconcileOrphanedRepoVisibility`).
   Visibility mutations serialize with that sweep on a shared lock and
   revalidate exact-entry membership inside it, so a mutation racing an
   exact-entry removal cannot recreate an orphaned preference
   (`internal/server/settings_handlers.go::updateConfiguredRepoUIVisibilityState`). Filtering is
   server-owned and scoped to interactive repository catalogs; item feeds, direct
   routes, and the settings surface stay unfiltered
-  (`internal/server/helpers.go::filterHiddenRepos`).
+  (`internal/server/repoapi/helpers.go::Handlers.FilterHiddenRepos`).
 
 GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
 `group/subgroup/project` has owner `group/subgroup` and name `project`.
@@ -141,10 +141,10 @@ GitHub may additionally define exact-repository and owner authorization routes.
 - A missing token should fail only the provider host that needs it.
 - Reload credential probes cover only provider hosts registered at startup, so
   a degraded host cannot block unrelated config changes
-  (`internal/server/config_reload.go::Server.validateReloadProviderTokenSources`).
+  (`internal/server/configreload/config_reload.go::Handlers.ValidateReloadProviderTokenSources`).
 - Reloads retain boot-tracked exact and glob matches for degraded hosts; new
   unavailable hosts remain untracked until restart
-  (`internal/server/config_reload.go::Server.resolveReposForReload`).
+  (`internal/server/configreload/config_reload.go::Handlers.resolveReposForReload`).
 - Disabled startup registers credential descriptors without resolving them, so
   provider tokens stay lazy (`cmd/kenn-forge/provider_startup.go::registerProviderTokenSources`).
 - Refresh access uses the gated registry; only explicit foreground provider
@@ -165,7 +165,7 @@ implementation; it should not masquerade as another provider.
 - Authenticated-viewer lookups run only for repositories selected by the request.
   Include only repositories with a resolved identity, cache successes for one hour by
   effective credential with stale-while-refresh, retry failures, and keep unkeyed GitHub routes repository-scoped
-  (`internal/server/viewer_identity.go::Server.resolveAuthenticatedViewerLogins`).
+  (`internal/server/authapi/viewer_identity.go::Handlers.ResolveAuthenticatedViewerLogins`).
 
 Fallback token lookup is scoped by `(provider, platform_host)`. GitHub
 authorization routes may be exact-repository, owner, or host fallback. Lookup
@@ -326,7 +326,7 @@ registry helpers return typed errors for missing providers or capabilities.
   (`internal/server/pullapi/diff_review_handlers.go::Handler.applyReviewSuggestions`, `platform/github/client.go::Client.ensureReviewSuggestionPullMutable`).
 - Post-apply refresh goes through the detail-sync broadcaster and must rerun
   after any in-flight sync for the same PR — that sync may predate the commit
-  (`internal/server/detail_sync.go::enqueueDetailSyncOrRerun`).
+  (`internal/server/syncevents/detail_sync.go::Handlers.EnqueueDetailSyncOrRerun`).
 - Unexpected or ambiguous mutation outcomes trigger an immediate best-effort
   authoritative detail refresh; ordinary periodic sync is the eventual recovery
   path if that refresh fails or still observes stale provider state. kenn-forge
@@ -458,12 +458,12 @@ never proxy arbitrary provider URLs. (`platform/gitlab/markdown_images.go::GetMa
 
 SVGs fetched for Markdown can also be opened as documents. Serve them with a
 sandboxed origin and scripts disabled on every response, including cache hits.
-(`internal/server/markdown_images.go::getMarkdownImageFor`)
+(`internal/server/providerapi/markdown_images.go::Handlers.getMarkdownImageFor`)
 
 The markdown image cache is keyed by stable repository identity, never the owner/name
 route, so a replacement occupant of a reused route cannot receive the previous
 repository's bytes; providers mark ref-addressed sources `Mutable` and the server then
-caches them for minutes instead of a year (`internal/server/markdown_images.go::markdownImageCacheKey`).
+caches them for minutes instead of a year (`internal/server/providerapi/markdown_images.go::markdownImageCacheKey`).
 
 GitLab merge request and issue `iid` values are repo-scoped numbers. Persist
 provider object ids separately from user-visible numbers, and scope events by

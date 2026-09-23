@@ -24,8 +24,10 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -126,7 +128,7 @@ func TestRepositorySelectionRejectsDifferentHubIdentity(t *testing.T) {
 	raw, err := json.Marshal(descriptor)
 	require.NoError(err)
 	database := dbtest.Open(t)
-	source := &hubProviderSource{db: database, client: providerPlaneClientFunc(func(
+	source := &spokeapi.HubProviderSource{Db: database, Client: providerPlaneClientFunc(func(
 		_ context.Context, _ federationauth.Scope, request *http.Request,
 	) (*http.Response, error) {
 		body, err := io.ReadAll(request.Body)
@@ -246,7 +248,7 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 	hubServer := New(
 		hubDB, nil, nil, "/", nil,
 		ServerOptions{
-			DaemonAccess: DaemonAccessOptions{
+			DaemonAccess: authapi.DaemonAccessOptions{
 				Token: "hub-local-secret", RequireAPIAuth: true,
 			},
 			FederationSpokeID:                  proxyTestHubID,
@@ -322,7 +324,7 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	hubServer := New(
 		hubDB, nil, nil, "/", nil,
 		ServerOptions{
-			DaemonAccess: DaemonAccessOptions{
+			DaemonAccess: authapi.DaemonAccessOptions{
 				Token: "hub-local-secret", RequireAPIAuth: true,
 			},
 			FederationSpokeID:                  proxyTestHubID,
@@ -410,7 +412,7 @@ func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
 	)
 	require.NoError(err)
 	hubServer := New(hubDB, nil, nil, "/", nil, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "hub-local-secret", RequireAPIAuth: true,
 		},
 		FederationSpokeID:                  proxyTestHubID,
@@ -477,7 +479,7 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	hubServer := New(
 		hubDB, nil, nil, "/", nil,
 		ServerOptions{
-			DaemonAccess: DaemonAccessOptions{
+			DaemonAccess: authapi.DaemonAccessOptions{
 				Token: "hub-local-secret", RequireAPIAuth: true,
 			},
 			FederationSpokeID:                  proxyTestHubID,
@@ -545,10 +547,10 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	require.NoError(err)
 	assert.Nil(nodePull, "launch facts must not become a spoke-side provider item cache")
 
-	credentialless := &hubProviderSource{
-		client: nodeServer.providerSource.client,
-		db:     dbtest.Open(t),
-		clones: gitclone.New(t.TempDir(), nil),
+	credentialless := &spokeapi.HubProviderSource{
+		Client: nodeServer.providerSource.Client,
+		Db:     dbtest.Open(t),
+		Clones: gitclone.New(t.TempDir(), nil),
 	}
 	_, err = credentialless.ResolveWorkspaceLaunchSpec(
 		t.Context(), providerplane.WorkspaceLaunchRequest{
@@ -588,8 +590,8 @@ func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
 	}
 	encoded, err := json.Marshal(spec)
 	require.NoError(err)
-	source := &hubProviderSource{
-		client: providerPlaneClientFunc(func(
+	source := &spokeapi.HubProviderSource{
+		Client: providerPlaneClientFunc(func(
 			_ context.Context, _ federationauth.Scope, _ *http.Request,
 		) (*http.Response, error) {
 			return &http.Response{
@@ -597,7 +599,7 @@ func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
 				Body:       io.NopCloser(bytes.NewReader(encoded)),
 			}, nil
 		}),
-		clones: gitclone.New(t.TempDir(), descriptorCloneRoutes{
+		Clones: gitclone.New(t.TempDir(), descriptorCloneRoutes{
 			source: testTokenSource("spoke-git-token"),
 		}),
 	}
@@ -656,7 +658,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	hubServer := New(
 		hubDB, nil, nil, "/", nil,
 		ServerOptions{
-			DaemonAccess: DaemonAccessOptions{
+			DaemonAccess: authapi.DaemonAccessOptions{
 				Token: "hub-local-secret", RequireAPIAuth: true,
 			},
 			FederationSpokeID:                  proxyTestHubID,

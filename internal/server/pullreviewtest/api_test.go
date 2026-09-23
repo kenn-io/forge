@@ -34,6 +34,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -4631,7 +4632,7 @@ func TestAPIApplyReviewSuggestionMapsProviderStaleStateAndRefreshesDetail(t *tes
 	require.NotNil(problem.Details)
 	assert.Equal("stale_state", problem.Details["reason"])
 	assert.Empty(provider.appliedSuggestions)
-	changed := readEventMatching(t, ch, func(ev server.Event) bool {
+	changed := readEventMatching(t, ch, func(ev syncevents.Event) bool {
 		return ev.Type == "data_changed"
 	})
 	assert.Equal("data_changed", changed.Type)
@@ -5875,9 +5876,9 @@ type rawProblemDetail struct {
 
 func readEventMatching(
 	t *testing.T,
-	ch <-chan server.RecordedEvent,
-	matches func(server.Event) bool,
-) server.Event {
+	ch <-chan syncevents.RecordedEvent,
+	matches func(syncevents.Event) bool,
+) syncevents.Event {
 	t.Helper()
 	timeout := time.After(2 * time.Second)
 	for {

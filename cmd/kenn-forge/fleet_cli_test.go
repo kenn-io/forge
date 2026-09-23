@@ -19,6 +19,8 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -27,8 +29,8 @@ type fakeFleetCommandRunner struct {
 	joinRequest   fleetJoinOptions
 	tokenResult   federation.EnrollmentToken
 	joinResult    federation.LocalEnrollment
-	prepareResult server.SpokePreparationReport
-	abortResult   server.SpokePreparationAbortReport
+	prepareResult spokeapi.SpokePreparationReport
+	abortResult   spokeapi.SpokePreparationAbortReport
 	abortRequest  fleetAbortPreparationOptions
 	revokeRequest fleetRevokeOptions
 	err           error
@@ -36,7 +38,7 @@ type fakeFleetCommandRunner struct {
 
 func (r *fakeFleetCommandRunner) AbortPreparation(
 	_ context.Context, options fleetAbortPreparationOptions,
-) (server.SpokePreparationAbortReport, error) {
+) (spokeapi.SpokePreparationAbortReport, error) {
 	r.abortRequest = options
 	return r.abortResult, r.err
 }
@@ -50,7 +52,7 @@ func (r *fakeFleetCommandRunner) Revoke(
 
 func (r *fakeFleetCommandRunner) PrepareSpoke(
 	_ context.Context, options fleetPrepareOptions,
-) (server.SpokePreparationReport, error) {
+) (spokeapi.SpokePreparationReport, error) {
 	return r.prepareResult, r.err
 }
 
@@ -71,7 +73,7 @@ func (r *fakeFleetCommandRunner) Join(
 func TestFleetAbortPreparationSupportsExplicitLocalRecovery(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	runner := &fakeFleetCommandRunner{abortResult: server.SpokePreparationAbortReport{
+	runner := &fakeFleetCommandRunner{abortResult: spokeapi.SpokePreparationAbortReport{
 		EnrollmentID: "11111111111111111111111111111111", ProviderWritesOpen: true,
 	}}
 	var stdout bytes.Buffer
@@ -91,7 +93,7 @@ func TestFleetAbortPreparationSupportsExplicitLocalRecovery(t *testing.T) {
 func TestFleetAbortPreparationReportsRequiredRestart(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	runner := &fakeFleetCommandRunner{abortResult: server.SpokePreparationAbortReport{
+	runner := &fakeFleetCommandRunner{abortResult: spokeapi.SpokePreparationAbortReport{
 		EnrollmentID: "11111111111111111111111111111111", HubRevoked: true,
 		RestartRequired: true,
 	}}
@@ -194,7 +196,7 @@ func TestFleetRevokePassesTheDaemonMutationGuard(t *testing.T) {
 	srv := server.NewWithConfig(
 		dbtest.Open(t), nil, nil, nil, serverConfig, serverConfigPath,
 		server.ServerOptions{
-			DaemonAccess: server.DaemonAccessOptions{
+			DaemonAccess: authapi.DaemonAccessOptions{
 				Token: "local-secret", RequireAPIAuth: true,
 			},
 			FederationSpokeID: hubID, FederationEnrollments: enrollments,

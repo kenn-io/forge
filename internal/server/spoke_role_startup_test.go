@@ -52,7 +52,7 @@ func TestInactiveFleetNodeKeepsLocalServicesWithoutProviderPlane(t *testing.T) {
 	assert.Nil(srv.archive)
 	assert.Same(clones, srv.clones)
 	require.NotNil(srv.providerSource)
-	assert.Nil(srv.providerSource.client)
+	assert.Nil(srv.providerSource.Client)
 	assert.Nil(srv.providerProxy)
 	assert.Nil(srv.hubEvents)
 	assert.Equal(httpapi.ProviderCapabilitiesResponse{}, srv.repoResolver.Capabilities(

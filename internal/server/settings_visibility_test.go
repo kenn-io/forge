@@ -15,6 +15,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/settingsapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 )
@@ -321,7 +322,7 @@ name = "wid*"
 	// commits; cleanup must still run rather than orphan the preference.
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := srv.deleteConfiguredRepo(ctx, &repoConfigInput{
+	_, err := srv.settingsapi.DeleteConfiguredRepo(ctx, &settingsapi.RepoConfigInput{
 		Provider: "github",
 		Owner:    "acme",
 		Name:     "widget",
@@ -401,7 +402,7 @@ port = 8091
 owner = "acme"
 name = "wid*"
 `)
-	event := srv.applyConfigChange(t.Context())
+	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.True(event.Valid, event.Error)
 
 	hidden, err := database.HiddenRepos(t.Context())

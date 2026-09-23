@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server/telemetryapi"
 )
 
 type fakeTelemetry struct {
@@ -64,7 +65,7 @@ func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 	assert.NotContains(telemetry.properties, "distinct_id")
 	assert.True(telemetry.properties["$geoip_disable"].(bool))
 
-	var body telemetryEventResponse
+	var body telemetryapi.TelemetryEventResponse
 	err := json.NewDecoder(rr.Body).Decode(&body)
 	require.NoError(err)
 	assert.Equal("queued", body.Status)
@@ -87,7 +88,7 @@ func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testin
 
 	assert.Equal(http.StatusAccepted, rr.Code)
 
-	var body telemetryEventResponse
+	var body telemetryapi.TelemetryEventResponse
 	err := json.NewDecoder(rr.Body).Decode(&body)
 	require.NoError(err)
 	assert.Equal("disabled", body.Status)

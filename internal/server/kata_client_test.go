@@ -13,14 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/server/kataclient"
 )
 
 func TestKataAPIClientExposesSnapshotEnrichmentMethods(t *testing.T) {
 	runParallelServerTest(t)
 
-	_ = kataAPIClient.ShowIssueByUIDWithResponse
-	_ = kataAPIClient.PollEventsWithResponse
-	_ = kataAPIClient.ReachableIssueGraphWithResponse
+	_ = kataclient.KataAPIClient.ShowIssueByUIDWithResponse
+	_ = kataclient.KataAPIClient.PollEventsWithResponse
+	_ = kataclient.KataAPIClient.ReachableIssueGraphWithResponse
 }
 
 func TestNewKataAPIClientUsesResolvedTargetAuth(t *testing.T) {
@@ -36,7 +37,7 @@ func TestNewKataAPIClientUsesResolvedTargetAuth(t *testing.T) {
 	}))
 	t.Cleanup(daemon.Close)
 
-	api, err := newKataAPIClient(t.Context(), kata.Daemon{
+	api, err := kataclient.NewKataAPIClient(t.Context(), kata.Daemon{
 		ID:    "work",
 		URL:   daemon.URL,
 		Token: "secret-token",
@@ -66,7 +67,7 @@ func TestKataAPIClientStreamEventsRawDoesNotBuffer(t *testing.T) {
 	}))
 	t.Cleanup(daemon.Close)
 
-	api, err := newKataAPIClient(t.Context(), kata.Daemon{ID: "work", URL: daemon.URL, Token: "secret-token"})
+	api, err := kataclient.NewKataAPIClient(t.Context(), kata.Daemon{ID: "work", URL: daemon.URL, Token: "secret-token"})
 	require.NoError(err)
 
 	type streamResult struct {
@@ -111,9 +112,9 @@ func TestKataGeneratedHTTPDoerRejectsResponseBeyondEndpointBudget(t *testing.T) 
 
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, daemon.URL+"/api/v1/issues", nil)
 	require.NoError(err)
-	doer := kataGeneratedHTTPDoer{
-		client: daemon.Client(),
-		limitForRequest: func(*http.Request) int64 {
+	doer := kataclient.KataGeneratedHTTPDoer{
+		Client: daemon.Client(),
+		LimitForRequest: func(*http.Request) int64 {
 			return 8
 		},
 	}
@@ -122,7 +123,7 @@ func TestKataGeneratedHTTPDoerRejectsResponseBeyondEndpointBudget(t *testing.T) 
 	t.Cleanup(func() { require.NoError(response.Body.Close()) })
 
 	_, err = io.ReadAll(response.Body)
-	var tooLarge *kataDaemonResponseTooLargeError
+	var tooLarge *kataclient.KataDaemonResponseTooLargeError
 	require.ErrorAs(err, &tooLarge)
 	require.Equal(int64(8), tooLarge.Limit)
 	require.Equal("/api/v1/issues", tooLarge.Path)
@@ -132,17 +133,17 @@ func TestKataGeneratedResponseLimitLeavesRoomForCompleteAuthorities(t *testing.T
 	runParallelServerTest(t)
 	require := require.New(t)
 
-	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/api/v1/issues"))
-	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/api/v1/ready"))
-	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/api/v1/projects/7/ready"))
-	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/api/v1/projects"))
-	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/api/v1/projects/7/events"))
+	require.Equal(int64(128<<20), kataclient.KataGeneratedResponseLimit("/api/v1/issues"))
+	require.Equal(int64(128<<20), kataclient.KataGeneratedResponseLimit("/api/v1/ready"))
+	require.Equal(int64(128<<20), kataclient.KataGeneratedResponseLimit("/api/v1/projects/7/ready"))
+	require.Equal(int64(32<<20), kataclient.KataGeneratedResponseLimit("/api/v1/projects"))
+	require.Equal(int64(32<<20), kataclient.KataGeneratedResponseLimit("/api/v1/projects/7/events"))
 
 	// Daemons served under a base-path prefix must keep the enlarged
 	// authority budgets; detail reads must not inherit them.
-	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/kata/api/v1/issues"))
-	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/kata/api/v1/ready"))
-	require.Equal(int64(128<<20), kataGeneratedResponseLimit("/kata/api/v1/projects/7/ready"))
-	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/api/v1/issues/issue-a"))
-	require.Equal(int64(32<<20), kataGeneratedResponseLimit("/kata/api/v1/projects/7/events"))
+	require.Equal(int64(128<<20), kataclient.KataGeneratedResponseLimit("/kata/api/v1/issues"))
+	require.Equal(int64(128<<20), kataclient.KataGeneratedResponseLimit("/kata/api/v1/ready"))
+	require.Equal(int64(128<<20), kataclient.KataGeneratedResponseLimit("/kata/api/v1/projects/7/ready"))
+	require.Equal(int64(32<<20), kataclient.KataGeneratedResponseLimit("/api/v1/issues/issue-a"))
+	require.Equal(int64(32<<20), kataclient.KataGeneratedResponseLimit("/kata/api/v1/projects/7/events"))
 }

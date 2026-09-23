@@ -7,7 +7,7 @@ published review-thread ingestion, or review controls in shared diff UI.
   draft reads, writes, and publication so one fleet has one draft and conflict
   domain; do not depend on provider-native pending drafts
   (`internal/db/queries_review.go::DB.GetOrCreateMRReviewDraft`,
-  `internal/server/provider_route_policy.go::providerRouteDeclarations`).
+  `internal/server/routepolicy/provider_route_policy.go::ProviderRouteDeclarations`).
 - Before a standalone daemon becomes a spoke, its draft body, review action, and
   ordered inline anchors are handed to the hub by stable repository ID
   and pull number. Local row IDs and timestamps are excluded from the canonical

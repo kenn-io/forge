@@ -779,14 +779,17 @@ func combinedStatuses(combined *gh.CombinedStatus) []*gh.RepoStatus {
 	return combined.Statuses
 }
 
+// checkRunRecency orders same-named check runs by when each attempt began.
+// Completion time cannot lead: a cancelled run often completes after its
+// replacement is queued, which would let the stale failure hide the rerun.
 func checkRunRecency(r *gh.CheckRun) time.Time {
-	completedAt := timestampTime(r.CompletedAt)
-	if !completedAt.IsZero() {
-		return completedAt
-	}
 	startedAt := timestampTime(r.StartedAt)
 	if !startedAt.IsZero() {
 		return startedAt
+	}
+	completedAt := timestampTime(r.CompletedAt)
+	if !completedAt.IsZero() {
+		return completedAt
 	}
 	if suite := r.GetCheckSuite(); suite != nil {
 		return timestampTime(suite.CreatedAt)

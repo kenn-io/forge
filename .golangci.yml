@@ -185,7 +185,7 @@ linters:
         text: Direct go-github client construction belongs in internal/github or provider startup.
       - linters:
           - forbidigo
-        path: internal/server/api_test\.go
+        path: internal/server/([a-z]+servertest/)?api_test\.go
         text: Direct GitHub GraphQL client construction belongs in internal/github or provider startup.
       # Path dispatchers and non-API muxes that tools/nohttpmux already
       # exempts: GitHub App manifest loopback, its test fake, pprof, and

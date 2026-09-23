@@ -1,10 +1,9 @@
-package server
+package settingsservertest
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/itemapi"

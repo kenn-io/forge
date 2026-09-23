@@ -5,7 +5,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -49,29 +48,6 @@ func newTailscaleAuthTestServer(t *testing.T) (*httptest.Server, *Server) {
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	return ts, srv
-}
-
-func newFederationAuthTestServer(
-	t *testing.T, scopes ...federationauth.Scope,
-) (*httptest.Server, *federationauth.Store, string) {
-	t.Helper()
-	store, err := federationauth.Open(
-		filepath.Join(t.TempDir(), "federation-credentials.json"),
-	)
-	require.NoError(t, err)
-	token, err := store.MintInbound(
-		"fedcba9876543210fedcba9876543210", scopes,
-	)
-	require.NoError(t, err)
-	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
-		DaemonAccess: authapi.DaemonAccessOptions{
-			Token: "local-secret", RequireAPIAuth: true,
-		},
-		FederationCredentials: store,
-	})
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	return ts, store, token
 }
 
 func authGet(
@@ -917,23 +893,4 @@ func TestFederationProviderSettingsUseDedicatedProjection(t *testing.T) {
 		"activity", "detail", "issues", "notifications",
 		"pull_requests", "repo_presets", "repos", "repository_observations", "sync",
 	}, slices.Collect(maps.Keys(body)))
-}
-
-// TestRedactedQueryMasksBootstrapToken pins the log-redaction
-// contract: bootstrap tokens and login tickets never appear in the
-// logged query.
-func TestRedactedQueryMasksBootstrapToken(t *testing.T) {
-	for _, test := range []struct {
-		raw      string
-		expected string
-	}{
-		{raw: "auth_token=secret&tab=pulls", expected: "auth_token=REDACTED&tab=pulls"},
-		{raw: "login_ticket=secret&tab=pulls", expected: "login_ticket=REDACTED&tab=pulls"},
-		{raw: "login_ticket=secret;tab=pulls", expected: "REDACTED"},
-		{raw: "tab=pulls", expected: "tab=pulls"},
-	} {
-		u, err := url.Parse("/?" + test.raw)
-		require.NoError(t, err)
-		assert.Equal(t, test.expected, authapi.RedactedQuery(u), test.raw)
-	}
 }

@@ -1,2 +1,0 @@
-type:ServerOptions
-type:BuildInfo

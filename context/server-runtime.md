@@ -14,8 +14,6 @@
   locks stay global (`internal/server/handler_wiring.go::Server.wireHandlers`).
 - A `Server` literal outside `newServer` must go through `wiredServer`, or its
   handler fields stay nil (`internal/server/handler_wiring.go::wiredServer`).
-- Re-plan the split from the reference graph instead of by hand
-  (`tools/pkggraph`, `tools/splitpkg/server.json`).
 
 ## Frontend assets
 

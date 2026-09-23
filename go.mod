@@ -39,7 +39,7 @@ require (
 	github.com/yuin/goldmark/v2 v2.0.1
 	gitlab.com/gitlab-org/api/client-go/v2 v2.64.0
 	go.kenn.io/kata v0.16.0
-	go.kenn.io/kit v0.25.1-0.20260918202731-04a175847323
+	go.kenn.io/kit v0.26.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
@@ -212,6 +212,7 @@ require (
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
+	github.com/spf13/pathologize v1.1.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tilt-dev/fsnotify v1.4.8-0.20220602155310-fff9c274a375 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect

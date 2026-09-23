@@ -564,6 +564,10 @@ must share one runtime; App reads use their installation identity.
   read and write, so a shared-PAT archive is preempted
   (`internal/github/client.go::NewClient`, `internal/github/sync.go::syncRepo`,
   `internal/github/notifications_sync.go::ProcessQueuedNotificationReads`).
+- Every sync and notification pass reads each repository, so background reads
+  reuse a cached viewer overlay (one hour per repository and credential) instead of
+  spending the PAT each time; foreground reads always refetch and refresh it
+  (`platform/github/client.go::Client.viewerRepoOverlay`).
 - Reload probes share one fresh installation-token cache per validation batch:
   per-route caches would multiply minting, while reusing the live cache lets a
   revoked installation or replaced private key pass validation until the cached

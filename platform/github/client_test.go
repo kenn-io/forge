@@ -1,6 +1,7 @@
 package github_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -115,4 +116,68 @@ func TestRateLimitSnapshotPrefersCoreResponseHeaders(t *testing.T) {
 			assert.Equal(4321, snapshot.GraphQL.Remaining)
 		})
 	}
+}
+
+type backgroundContextKey struct{}
+
+func TestViewerPermissionOverlayIsCachedForBackgroundReads(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	viewerCalls := 0
+	viewerPush := true
+	read := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(
+			`{"id":17,"name":"project-a","owner":{"login":"team-a"},"permissions":{"push":false}}`,
+		)), Request: req}, nil
+	})}
+	write := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		viewerCalls++
+		body := `{"id":17,"permissions":{"push":false},"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false}`
+		if viewerPush {
+			body = `{"id":17,"permissions":{"push":true},"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false}`
+		}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+	})}
+	client, err := github.NewClient(github.ClientConfig{
+		Host: "github.com", Read: read, Write: write, Notifications: write,
+		Clock:          func() time.Time { return now },
+		Authentication: github.Authentication{InstallationActive: func(string) bool { return true }},
+		BackgroundContext: func(ctx context.Context) bool {
+			background, _ := ctx.Value(backgroundContextKey{}).(bool)
+			return background
+		},
+	})
+	require.NoError(err)
+	background := context.WithValue(t.Context(), backgroundContextKey{}, true)
+
+	repo, err := client.GetRepository(background, "team-a", "project-a")
+	require.NoError(err)
+	assert.True(repo.GetPermissions().GetPush())
+	assert.Equal(1, viewerCalls)
+
+	viewerPush = false
+	repo, err = client.GetRepository(background, "Team-A", "Project-A")
+	require.NoError(err)
+	assert.True(repo.GetPermissions().GetPush(), "background reads reuse the cached viewer overlay")
+	assert.True(repo.GetAllowSquashMerge())
+	assert.False(repo.GetAllowMergeCommit())
+	assert.Equal(1, viewerCalls, "background reads must not refetch the viewer overlay within the TTL")
+
+	repo, err = client.GetRepository(t.Context(), "team-a", "project-a")
+	require.NoError(err)
+	assert.False(repo.GetPermissions().GetPush(), "foreground reads fetch fresh viewer permissions")
+	assert.Equal(2, viewerCalls)
+
+	repo, err = client.GetRepository(background, "team-a", "project-a")
+	require.NoError(err)
+	assert.False(repo.GetPermissions().GetPush(), "foreground reads refresh the cached overlay")
+	assert.Equal(2, viewerCalls)
+
+	viewerPush = true
+	now = now.Add(time.Hour)
+	repo, err = client.GetRepository(background, "team-a", "project-a")
+	require.NoError(err)
+	assert.True(repo.GetPermissions().GetPush(), "an expired overlay is refetched")
+	assert.Equal(3, viewerCalls)
 }

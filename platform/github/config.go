@@ -51,10 +51,14 @@ type ClientConfig struct {
 	GraphQLRate, WriteGraphQLRate         platform.RateObserver
 	ViewerCacheTTL                        time.Duration
 	ReadOnlyContext                       func(context.Context) bool
-	GraphQLContext                        func(context.Context) context.Context
-	InvalidateETags                       func(string, string, ...string)
-	Progress                              func(owner, repository, kind string) Progress
-	Warning                               func(string, ...any)
+	// BackgroundContext reports whether ctx belongs to background sync. Those
+	// reads reuse cached viewer permissions instead of spending the user's
+	// credential on every repository read; foreground reads always refresh.
+	BackgroundContext func(context.Context) bool
+	GraphQLContext    func(context.Context) context.Context
+	InvalidateETags   func(string, string, ...string)
+	Progress          func(owner, repository, kind string) Progress
+	Warning           func(string, ...any)
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -115,7 +119,8 @@ func NewClient(config ClientConfig) (*Client, error) {
 		rateTracker: config.ReadRate, writeRateTracker: config.WriteRate, notificationRateTracker: config.NotificationRate,
 		graphQLRateTracker: config.GraphQLRate, writeGraphQLRateTracker: config.WriteGraphQLRate,
 		viewerCacheTTL: config.ViewerCacheTTL, readOnlyContext: config.ReadOnlyContext,
-		graphQLContext: graphQLContext, invalidateETags: config.InvalidateETags,
+		backgroundContext: config.BackgroundContext,
+		graphQLContext:    graphQLContext, invalidateETags: config.InvalidateETags,
 		progressFactory: config.Progress, warning: config.Warning,
 	}, nil
 }

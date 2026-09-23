@@ -98,6 +98,7 @@ type Client struct {
 	now                     func() time.Time
 	viewerCacheTTL          time.Duration
 	readOnlyContext         func(context.Context) bool
+	backgroundContext       func(context.Context) bool
 	graphQLContext          func(context.Context) context.Context
 	progressFactory         func(string, string, string) Progress
 	warning                 func(string, ...any)
@@ -105,6 +106,22 @@ type Client struct {
 	viewerLogin             string
 	viewerLoginAt           time.Time
 	viewerLoginCacheKey     string
+	viewerRepoMu            sync.Mutex
+	viewerRepos             map[string]viewerRepoOverlay
+}
+
+// viewerRepoOverlayTTL bounds how long background sync reuses the user's
+// repository permissions and merge settings. Both change rarely, and
+// foreground reads always refresh them.
+const viewerRepoOverlayTTL = time.Hour
+
+type viewerRepoOverlay struct {
+	permissions   *gh.RepositoryPermissions
+	mergeSettings bool
+	allowSquash   bool
+	allowMerge    bool
+	allowRebase   bool
+	fetchedAt     time.Time
 }
 
 func (c *Client) writeGH() *gh.Client {
@@ -2036,23 +2053,68 @@ func (c *Client) GetRepository(
 		r.Permissions = nil
 		return r, nil
 	}
-	viewerRepo, viewerResp, viewerErr := c.writeGH().Repositories.Get(ctx, owner, repo)
-	c.trackWriteRate(viewerResp)
-	if viewerErr != nil {
+	overlay, err := c.viewerRepoOverlay(ctx, owner, repo)
+	if err != nil {
 		c.warn(
 			"viewer permission refresh failed; merge permission unknown until it succeeds",
-			"repo", owner+"/"+repo, "err", viewerErr,
+			"repo", owner+"/"+repo, "err", err,
 		)
 		r.Permissions = nil
 		return r, nil
 	}
-	r.Permissions = viewerRepo.Permissions
-	if MergeSettingsComplete(viewerRepo) {
-		r.AllowSquashMerge = viewerRepo.AllowSquashMerge
-		r.AllowMergeCommit = viewerRepo.AllowMergeCommit
-		r.AllowRebaseMerge = viewerRepo.AllowRebaseMerge
+	if overlay.permissions != nil {
+		permissions := *overlay.permissions
+		r.Permissions = &permissions
+	} else {
+		r.Permissions = nil
+	}
+	if overlay.mergeSettings {
+		r.AllowSquashMerge = new(overlay.allowSquash)
+		r.AllowMergeCommit = new(overlay.allowMerge)
+		r.AllowRebaseMerge = new(overlay.allowRebase)
 	}
 	return r, nil
+}
+
+// viewerRepoOverlay returns the user's view of a repository. Background sync
+// reads every tracked repository each pass, so it reuses a recent overlay
+// rather than spending the user's credential on every read; foreground reads
+// always fetch and refresh the cache.
+func (c *Client) viewerRepoOverlay(
+	ctx context.Context, owner, repo string,
+) (viewerRepoOverlay, error) {
+	key := strings.ToLower(owner) + "/" + strings.ToLower(repo)
+	if c.auth.CredentialKey != nil {
+		key = c.auth.CredentialKey() + "\x00" + key
+	}
+	if c.backgroundContext != nil && c.backgroundContext(ctx) {
+		c.viewerRepoMu.Lock()
+		cached, ok := c.viewerRepos[key]
+		c.viewerRepoMu.Unlock()
+		if ok && c.now().Sub(cached.fetchedAt) < viewerRepoOverlayTTL {
+			return cached, nil
+		}
+	}
+	viewerRepo, viewerResp, err := c.writeGH().Repositories.Get(ctx, owner, repo)
+	c.trackWriteRate(viewerResp)
+	if err != nil {
+		return viewerRepoOverlay{}, err
+	}
+	overlay := viewerRepoOverlay{
+		permissions:   viewerRepo.Permissions,
+		mergeSettings: MergeSettingsComplete(viewerRepo),
+		allowSquash:   viewerRepo.GetAllowSquashMerge(),
+		allowMerge:    viewerRepo.GetAllowMergeCommit(),
+		allowRebase:   viewerRepo.GetAllowRebaseMerge(),
+		fetchedAt:     c.now(),
+	}
+	c.viewerRepoMu.Lock()
+	if c.viewerRepos == nil {
+		c.viewerRepos = map[string]viewerRepoOverlay{}
+	}
+	c.viewerRepos[key] = overlay
+	c.viewerRepoMu.Unlock()
+	return overlay, nil
 }
 
 func MergeSettingsComplete(repo *gh.Repository) bool {

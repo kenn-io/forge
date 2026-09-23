@@ -177,9 +177,9 @@ describe("WorkspaceRightSidebar", () => {
       context: new Map([[STORES_KEY, stores]]),
     });
     await screen.findByRole("heading", { name: "Add browser regression coverage" });
-    await fireEvent.click(screen.getByRole("button", { name: /^Search PRs: / }));
+    await fireEvent.click(screen.getByRole("button", { name: "Search pull requests", exact: true }));
     await fireEvent.input(screen.getByRole("combobox", { name: "Search PRs" }), { target: { value: "#55" } });
-    await fireEvent.mouseDown(await screen.findByRole("option", { name: /#55.*Refactor theme system.*Merged/ }));
+    await fireEvent.click(await screen.findByRole("option", { name: /#55.*Refactor theme system.*Merged/ }));
     await screen.findByRole("heading", { name: "Refactor theme system" });
     expect(
       api.requests.some(
@@ -200,8 +200,8 @@ describe("WorkspaceRightSidebar", () => {
     await view.rerender({ runtime, sidebarProps });
     await screen.findByRole("heading", { name: "Refactor theme system" });
 
-    await fireEvent.click(screen.getByRole("button", { name: /^Search PRs: / }));
-    await fireEvent.mouseDown(await screen.findByRole("option", { name: "Use linked PR" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Search pull requests", exact: true }));
+    await fireEvent.click(await screen.findByRole("option", { name: "Use linked PR" }));
     await screen.findByRole("heading", { name: "Add browser regression coverage" });
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
     localStorage.clear();

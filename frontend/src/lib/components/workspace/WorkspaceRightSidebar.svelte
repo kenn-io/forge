@@ -20,6 +20,8 @@
     ownerItemType: "pull_request" | "issue" | "kata_task" | "adhoc";
     ownerItemNumber: number;
     associatedPRNumber: number | null;
+    prSearchAnchor?: HTMLElement | null;
+    onPRSearchClose?: () => void;
     branch: string;
     roborevBaseUrl: string;
     refreshToken?: number;
@@ -42,6 +44,8 @@
     ownerItemType,
     ownerItemNumber,
     associatedPRNumber,
+    prSearchAnchor = null,
+    onPRSearchClose = () => {},
     branch,
     roborevBaseUrl,
     refreshToken = 0,
@@ -99,6 +103,8 @@
           {workspaceHostKey}
           repo={{ provider, platformHost, platformRepoId, owner: repoOwner, name: repoName, repoPath }}
           linkedPRNumber={associatedPRNumber}
+          searchAnchor={prSearchAnchor}
+          onSearchClose={onPRSearchClose}
           {refreshToken}
           {disabled}
         />

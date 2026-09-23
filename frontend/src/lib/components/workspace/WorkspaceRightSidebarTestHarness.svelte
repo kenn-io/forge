@@ -10,6 +10,10 @@
   } = $props();
 
   setAppRuntime(untrack(() => runtime));
+  let prSearchAnchor = $state<HTMLElement | null>(null);
 </script>
 
-<WorkspaceRightSidebar {...sidebarProps} />
+{#if sidebarProps.activeTab === "pr"}
+  <button onclick={(event) => { prSearchAnchor = event.currentTarget; }}>Search pull requests</button>
+{/if}
+<WorkspaceRightSidebar {...sidebarProps} {prSearchAnchor} onPRSearchClose={() => { prSearchAnchor = null; }} />

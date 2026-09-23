@@ -256,6 +256,9 @@ Persisted controls must state their scope clearly.
 - The PR picker remembers a browser-local viewing choice per workspace and host;
   it must never change the workspace association or diff merge target
   (`frontend/src/lib/components/workspace/WorkspacePRPanel.svelte::selectPR`).
+- Workspace PR search opens on demand from the toolbar; occasional PR navigation
+  must not reserve a permanent row above the details
+  (`frontend/src/lib/components/workspace/WorkspacePRPanel.svelte::mountSearchPopover`).
 - URL query state belongs in the route only when deep-linking or back/forward
   navigation is part of the feature contract.
 - Activity detail selection uses one URL-backed slot for pull requests, issues,

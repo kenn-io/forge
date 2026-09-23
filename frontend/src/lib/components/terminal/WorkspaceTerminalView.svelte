@@ -3,6 +3,7 @@
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
+  import SearchIcon from "@lucide/svelte/icons/search";
   import { onDestroy, tick, untrack } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import { isNarrow } from "../../stores/container.svelte.js";
@@ -604,6 +605,7 @@
       : "diff";
   });
   let sidebarOpen = $state(loadSidebarOpen());
+  let prSearchAnchor = $state<HTMLElement | null>(null);
   let preferredRightSidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
   const currentWorkspaceListWidth = $derived(
@@ -1453,6 +1455,9 @@
       workspaceDeletionLifecycleActive ||
       forceDeleting,
   );
+  $effect(() => {
+    if (!hostVisible || actionsBlocked) prSearchAnchor = null;
+  });
   const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
   const inlineDockExpandBlocked = $derived(getStackDepth() > 0);
   const modalOpen = $derived(
@@ -1496,6 +1501,7 @@
 
   function handleSidebarToggleClick(tab: SidebarTab): void {
     if (actionsBlocked) return;
+    prSearchAnchor = null;
     if (sidebarOpen && sidebarTab === tab) {
       sidebarOpen = false;
     } else {
@@ -4324,6 +4330,22 @@
                     </button>
                   {/if}
                 </div>
+                {#if workspace.repo.owner !== "" && workspace.repo.name !== ""}
+                  <IconButton
+                    size="sm"
+                    disabled={actionsBlocked}
+                    ariaLabel="Search pull requests"
+                    ariaHaspopup="dialog"
+                    ariaExpanded={prSearchAnchor !== null}
+                    onclick={(event) => {
+                      setSidebarTab("pr");
+                      sidebarOpen = true;
+                      prSearchAnchor = prSearchAnchor ? null : event.currentTarget as HTMLElement;
+                    }}
+                  >
+                    <SearchIcon size={14} strokeWidth={2.2} aria-hidden="true" />
+                  </IconButton>
+                {/if}
                 <IconButton
                   class="workspace-refresh-button"
                   size="sm"
@@ -4596,6 +4618,8 @@
                   ownerItemType={workspace.item_type}
                   ownerItemNumber={workspace.item_number}
                   associatedPRNumber={getWorkspacePRNumber(workspace)}
+                  {prSearchAnchor}
+                  onPRSearchClose={() => { prSearchAnchor = null; }}
                   branch={workspace.git_head_ref}
                   roborevBaseUrl={basePath + "/api/roborev"}
                   refreshToken={sidebarRefreshToken}

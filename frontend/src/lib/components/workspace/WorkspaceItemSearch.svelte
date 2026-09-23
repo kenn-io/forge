@@ -7,6 +7,7 @@
   import type { Issue, PullRequest } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
+  import { getStores } from "../../context.js";
   import type { NumberedRouteItemRef } from "../../routes.js";
   import { repoIdentityKey } from "../../utils/repo-label.js";
 
@@ -33,11 +34,19 @@
     } = $props();
 
   const runtime = getAppRuntime();
-  let options = $state.raw<SearchOption[]>([]);
-  let loading = $state(false);
-  let error = $state("");
+  const searchStore = getStores().workspaceItemSearch;
+  let remoteOptions = $state.raw<SearchOption[]>([]);
+  let remoteLoading = $state(false);
+  let remoteError = $state("");
   let query = $state("");
   let includeClosed = $state(false);
+  const loading = $derived(includeClosed ? remoteLoading : searchStore.isLoading());
+  const error = $derived(includeClosed ? remoteError : searchStore.getError());
+  const options = $derived.by(() => {
+    if (includeClosed) return remoteOptions;
+    const { pulls, issues } = searchStore.search(query);
+    return [...pulls.map((pull) => searchOption("pr", pull)), ...issues.map((issue) => searchOption("issue", issue))];
+  });
   let highlightIndex = $state(0);
   const listID = $props.id();
   const resetRows = $derived<SearchOption[]>([
@@ -87,10 +96,14 @@
   function searchItems(query: string): void {
     searchExecution?.interrupt();
     highlightIndex = resetRows.length;
-    loading = true;
-    error = "";
-    options = [];
-    const params = { state: includeClosed ? "all" : "open", q: query.trim(), limit: 30 };
+    if (!includeClosed) {
+      searchStore.ensureLoaded();
+      return;
+    }
+    remoteLoading = true;
+    remoteError = "";
+    remoteOptions = [];
+    const params = { state: "all", q: query.trim(), limit: 30 };
     searchExecution = runtime.runCommand(
       Effect.sleep("150 millis").pipe(
         Effect.andThen(Effect.all({
@@ -102,17 +115,17 @@
           ),
         }, { concurrency: "unbounded" })),
         Effect.tap(({ pulls, issues }) => Effect.sync(() => {
-          options = [
+          remoteOptions = [
             ...pulls.map((pull) => searchOption("pr", pull)),
             ...issues.map((issue) => searchOption("issue", issue)),
           ];
         })),
-        Effect.ensuring(Effect.sync(() => { loading = false; })),
+        Effect.ensuring(Effect.sync(() => { remoteLoading = false; })),
       ),
       {
         operation: "search workspace PRs and issues",
         safeContext: { workspaceID },
-        onFailure: () => { error = "Could not load PRs and issues. Type to retry."; },
+        onFailure: () => { remoteError = "Could not load PRs and issues. Type to retry."; },
       },
     );
   }

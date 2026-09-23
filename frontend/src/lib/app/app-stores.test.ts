@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "./runtime.js";
 import { createAppStores } from "../app-stores.svelte.js";
-import type { IssueDetail } from "../api/types.js";
+import type { Issue, IssueDetail, PullRequest } from "../api/types.js";
 import { createMockApiFetch } from "../../test/mockApiFetch.js";
 
 let runtime: OwnedAppRuntime;
@@ -46,6 +46,38 @@ afterEach(async () => {
 });
 
 describe("app store composition", () => {
+  it.each([
+    ["data_changed", {}],
+    ["reconnect.stale", { hub_connected: true }],
+    ["hub_connection_changed", { connected: true }],
+  ])("refreshes the search cache on %s while the picker is closed", async (event, payload) => {
+    const fixture = createMockApiFetch();
+    let pulls: PullRequest[] = await (await fixture.fetch("/api/v1/pulls?state=open")).json();
+    let issues: Issue[] = await (await fixture.fetch("/api/v1/issues?state=open")).json();
+    const api = createMockApiFetch([
+      ({ url }) => (url.pathname === "/api/v1/pulls" ? Response.json(pulls) : undefined),
+      ({ url }) => (url.pathname === "/api/v1/issues" ? Response.json(issues) : undefined),
+    ]);
+    vi.stubGlobal("fetch", api.fetch);
+    const { stores } = createAppStores({ runtime, getPage: () => "terminal" });
+    stores.workspaceItemSearch.ensureLoaded();
+    await vi.waitFor(() => expect(stores.workspaceItemSearch.isLoading()).toBe(false));
+    expect(stores.workspaceItemSearch.search("#55").pulls[0]?.Title).toBe("Refactor theme system");
+    runtime.runCommand(stores.events.streamEffect, {
+      operation: "test search refresh events",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(eventSources).toHaveLength(1));
+    pulls = pulls.filter((pull) => pull.Number !== 55);
+    issues = [{ ...issues[0]!, Title: "Updated issue title" }];
+    emit(eventSources[0]!, event, payload);
+    await vi.waitFor(() => expect(stores.workspaceItemSearch.search("Updated issue").issues[0]?.Number).toBe(7));
+    expect(stores.workspaceItemSearch.search("#55").pulls).toEqual([]);
+    expect(stores.pulls.getPulls()).toEqual([]);
+    expect(stores.issues.getIssues()).toEqual([]);
+  });
+
   it.each(["issues", "activity", "focus", "workspaces"])(
     "refreshes an open issue after data_changed on %s without waiting for the detail poll",
     async (page) => {
@@ -157,7 +189,7 @@ describe("app store composition", () => {
     ).toEqual([]);
   });
 
-  it("reconciles the visible list without fetching hidden lists after reconnect", async () => {
+  it("reconciles the visible list and search cache without populating hidden views after reconnect", async () => {
     const api = createMockApiFetch();
     vi.stubGlobal("fetch", api.fetch);
     const { stores } = createAppStores({ runtime, getPage: () => "pulls" });
@@ -170,24 +202,27 @@ describe("app store composition", () => {
     emit(eventSources[0]!, "reconnect.stale", { hub_connected: true });
     await vi.waitFor(() => expect(api.requests.some(({ url }) => url.pathname === "/api/v1/pulls")).toBe(true));
     await vi.waitFor(() => expect(stores.sync.getProviderAvailable()).toBe(true));
-    expect(api.requests.some(({ url }) => ["/api/v1/issues", "/api/v1/activity"].includes(url.pathname))).toBe(false);
+    expect(stores.issues.getIssues()).toEqual([]);
+    expect(stores.workspaceItemSearch.search("").issues[0]?.Number).toBe(7);
+    expect(api.requests.some(({ url }) => url.pathname === "/api/v1/activity")).toBe(false);
   });
 
   it("keeps provider data unavailable when reconnect reconciliation fails", async () => {
     const failures: string[] = [];
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            type: "about:blank",
-            title: "Not Found",
-            status: 404,
-            detail: "provider snapshot unavailable",
-            code: "notFound",
-          }),
-          { status: 404, headers: { "content-type": "application/problem+json" } },
-        ),
+      vi.fn().mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              type: "about:blank",
+              title: "Not Found",
+              status: 404,
+              detail: "provider snapshot unavailable",
+              code: "notFound",
+            }),
+            { status: 404, headers: { "content-type": "application/problem+json" } },
+          ),
       ),
     );
     const composition = createAppStores({
@@ -257,17 +292,18 @@ describe("app store composition", () => {
   it("marks provider data unavailable when a live refresh cannot reach the hub", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            type: "about:blank",
-            title: "Hub unavailable",
-            status: 503,
-            detail: "provider data is unavailable because the federation hub cannot be reached",
-            code: "hubUnavailable",
-          }),
-          { status: 503, headers: { "content-type": "application/problem+json" } },
-        ),
+      vi.fn().mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              type: "about:blank",
+              title: "Hub unavailable",
+              status: 503,
+              detail: "provider data is unavailable because the federation hub cannot be reached",
+              code: "hubUnavailable",
+            }),
+            { status: 503, headers: { "content-type": "application/problem+json" } },
+          ),
       ),
     );
     const composition = createAppStores({ runtime, getPage: () => "pulls" });

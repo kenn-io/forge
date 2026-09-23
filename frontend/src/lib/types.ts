@@ -1,4 +1,5 @@
 import type { WorkspaceItemIdentity } from "./workspace-inline.js";
+import type { WorkspaceItemSearchStore } from "./stores/workspace-item-search.svelte.js";
 
 export interface NavigateEvent {
   path: string;
@@ -88,6 +89,7 @@ import type { ReviewStore } from "./stores/roborev/review.svelte.js";
 import type { LogStore } from "./stores/roborev/log.svelte.js";
 
 export interface StoreInstances {
+  workspaceItemSearch: WorkspaceItemSearchStore;
   pulls: PullsStore;
   issues: IssuesStore;
   detail: DetailStore;

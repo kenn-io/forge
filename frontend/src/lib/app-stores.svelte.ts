@@ -28,6 +28,7 @@ import { createDetailActivityViewStore } from "./stores/detail-activity-view.sve
 import { createCollapsedReposStore } from "./stores/collapsedRepos.svelte.js";
 import { createSettingsStore } from "./stores/settings.svelte.js";
 import { createWorkflowActionsStore } from "./stores/workflow-actions.svelte.js";
+import { createWorkspaceItemSearchStore } from "./stores/workspace-item-search.svelte.js";
 import { beginTerminalSettingsHydration } from "./stores/terminal-settings-persistence.js";
 import { beginWorkspaceSettingsHydration } from "./stores/workspace-settings-persistence.js";
 import { beginRoborevSettingsHydration } from "./stores/roborev-settings-persistence.js";
@@ -80,6 +81,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const collapsedRepos = createCollapsedReposStore();
   const settingsStore = createSettingsStore();
   const workflowActions = createWorkflowActionsStore({ runtime: appRuntime });
+  const workspaceItemSearch = createWorkspaceItemSearchStore(appRuntime);
   const detailStarProjection: {
     current?: (ref: ProviderRouteRef, number: number, starred: boolean, envelopeTick: number) => void;
   } = {};
@@ -190,6 +192,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
         );
       });
       yield* refreshVisibleData();
+      yield* workspaceItemSearch.refreshEffect;
     });
   }
 
@@ -247,7 +250,12 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
 
   function reconcileProviderState() {
     return Effect.all(
-      [refreshVisibleData(), issuesStore.refreshActiveIssueDetailEffect(), syncStore.reconcileSyncStatusEffect],
+      [
+        refreshVisibleData(),
+        issuesStore.refreshActiveIssueDetailEffect(),
+        syncStore.reconcileSyncStatusEffect,
+        workspaceItemSearch.refreshEffect,
+      ],
       { concurrency: "unbounded", discard: true },
     );
   }
@@ -273,10 +281,13 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     }),
     onDataChanged: () =>
       observeHubFailure(
-        Effect.all([refreshVisibleData(), issuesStore.refreshActiveIssueDetailEffect()], {
-          concurrency: "unbounded",
-          discard: true,
-        }),
+        Effect.all(
+          [refreshVisibleData(), issuesStore.refreshActiveIssueDetailEffect(), workspaceItemSearch.refreshEffect],
+          {
+            concurrency: "unbounded",
+            discard: true,
+          },
+        ),
       ),
     onWorkspaceStatus: () =>
       settingsStore.getWorkspaceSettings().show_agent_status_in_lists ? refreshVisibleData(false) : Effect.void,
@@ -399,6 +410,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   });
 
   const si: StoreInstances = {
+    workspaceItemSearch,
     pulls: pullsStore,
     issues: issuesStore,
     detail: detailStore,

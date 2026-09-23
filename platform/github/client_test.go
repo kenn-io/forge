@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -175,9 +176,68 @@ func TestViewerPermissionOverlayIsCachedForBackgroundReads(t *testing.T) {
 	assert.Equal(2, viewerCalls)
 
 	viewerPush = true
+	repo, err = client.GetRepository(github.WithFreshViewerPermissions(background), "team-a", "project-a")
+	require.NoError(err)
+	assert.True(repo.GetPermissions().GetPush(), "user-triggered runs refetch viewer permissions")
+	assert.Equal(3, viewerCalls)
+
+	viewerPush = false
 	now = now.Add(time.Hour)
 	repo, err = client.GetRepository(background, "team-a", "project-a")
 	require.NoError(err)
-	assert.True(repo.GetPermissions().GetPush(), "an expired overlay is refetched")
-	assert.Equal(3, viewerCalls)
+	assert.False(repo.GetPermissions().GetPush(), "an expired overlay is refetched")
+	assert.Equal(4, viewerCalls)
+}
+
+func TestListNotificationPageUsesUserScopedConditionalRequest(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	const lastModified = "Wed, 01 May 2026 10:00:00 GMT"
+	var requests []*http.Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r)
+		if r.Header.Get("If-Modified-Since") == lastModified {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Last-Modified", lastModified)
+		_, _ = w.Write([]byte(`[{"id":"1","unread":true,"reason":"mention",
+			"repository":{"name":"project-a","owner":{"login":"team-a"}},
+			"subject":{"title":"Review","type":"PullRequest",
+			"url":"https://api.github.com/repos/team-a/project-a/pulls/7"}}]`))
+	}))
+	defer server.Close()
+	httpClient := server.Client()
+	client, err := github.NewClient(github.ClientConfig{
+		Read: httpClient, Write: httpClient, Notifications: httpClient, Clock: time.Now,
+		APIBase: server.URL + "/api/v3/", UploadBase: server.URL + "/api/uploads/",
+	})
+	require.NoError(err)
+	since := time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)
+
+	page, err := client.ListNotificationPage(t.Context(), platform.NotificationListOptions{
+		All: true, Participating: true, Since: &since, Page: 1,
+		RepoOwner: "team-a", RepoName: "project-a",
+	}, "")
+	require.NoError(err)
+	assert.False(page.NotModified)
+	assert.Equal(lastModified, page.LastModified)
+	require.Len(page.Threads, 1)
+	assert.Equal("project-a", page.Threads[0].RepoName)
+
+	page, err = client.ListNotificationPage(t.Context(), platform.NotificationListOptions{
+		All: true, Page: 1,
+	}, lastModified)
+	require.NoError(err)
+	assert.True(page.NotModified)
+	assert.Empty(page.Threads)
+
+	require.Len(requests, 2)
+	assert.Equal("/api/v3/notifications", requests[0].URL.Path,
+		"the listing is host-wide even when a repository is supplied")
+	assert.Equal("true", requests[0].URL.Query().Get("participating"))
+	assert.Equal("2026-05-01T09:00:00Z", requests[0].URL.Query().Get("since"))
+	assert.Empty(requests[0].Header.Get("If-Modified-Since"))
+	assert.Equal(lastModified, requests[1].Header.Get("If-Modified-Since"))
 }

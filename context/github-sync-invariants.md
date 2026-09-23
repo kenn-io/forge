@@ -566,8 +566,8 @@ must share one runtime; App reads use their installation identity.
   `internal/github/notifications_sync.go::ProcessQueuedNotificationReads`).
 - Every sync and notification pass reads each repository, so background reads
   reuse a cached viewer overlay (one hour per repository and credential) instead of
-  spending the PAT each time; foreground reads always refetch and refresh it
-  (`platform/github/client.go::Client.viewerRepoOverlay`).
+  spending the PAT each time; foreground reads and user-triggered runs always
+  refetch and refresh it (`platform/github/client.go::Client.viewerRepoOverlay`).
 - Reload probes share one fresh installation-token cache per validation batch:
   per-route caches would multiply minting, while reusing the live cache lets a
   revoked installation or replaced private key pass validation until the cached
@@ -586,7 +586,8 @@ disabled until restart establishes a stable user identity.
 Notification sync watermarks are per repository identity, never host-wide: a
 repository whose credential route is unavailable or exhausted reports its error
 without holding back watermark advancement for healthy repositories on the same
-host (`internal/github/notifications_sync.go::Syncer.syncNotificationsForRepo`).
+host, even though one host-wide listing serves every repository of a user
+identity (`internal/github/notifications_sync.go::Syncer.syncNotificationsForIdentity`).
 
 Queued read-acknowledgement backoff is scoped the same way. A rate limit belongs
 to the credential that hit it — on either refetch leg or the mark-read — so

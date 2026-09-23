@@ -318,6 +318,40 @@ func (p *Provider) ListNotifications(
 	return p.client.ListNotifications(ctx, opts)
 }
 
+// ListNotificationPageForRepo lists the user's notifications across every
+// repository, authenticating with the credential route of owner/name.
+func (p *Provider) ListNotificationPageForRepo(
+	ctx context.Context, owner, name string,
+	opts platform.NotificationListOptions, ifModifiedSince string,
+) (NotificationPage, error) {
+	if routed, ok := p.client.(interface {
+		ListNotificationPageForRepo(
+			context.Context, string, string, platform.NotificationListOptions, string,
+		) (NotificationPage, error)
+	}); ok {
+		return routed.ListNotificationPageForRepo(ctx, owner, name, opts, ifModifiedSince)
+	}
+	return ListNotificationPage(ctx, p.client, opts, ifModifiedSince)
+}
+
+// ListNotificationPage lists the user's notifications across every
+// repository, falling back to an unconditional listing for clients without
+// conditional support.
+func ListNotificationPage(
+	ctx context.Context, client API,
+	opts platform.NotificationListOptions, ifModifiedSince string,
+) (NotificationPage, error) {
+	opts.RepoOwner, opts.RepoName = "", ""
+	if lister, ok := client.(NotificationPageAPI); ok {
+		return lister.ListNotificationPage(ctx, opts, ifModifiedSince)
+	}
+	threads, hasNext, err := client.ListNotifications(ctx, opts)
+	if err != nil {
+		return NotificationPage{}, err
+	}
+	return NotificationPage{Threads: threads, HasNext: hasNext}, nil
+}
+
 func (p *Provider) MarkNotificationThreadRead(
 	ctx context.Context,
 	threadID string,

@@ -836,8 +836,12 @@ type Syncer struct {
 	stopCh                  chan struct{}
 	notificationSyncMu      sync.RWMutex
 	notificationSync        NotificationSyncStatus
-	stopOnce                sync.Once
-	wg                      sync.WaitGroup
+	// notificationValidators holds the Last-Modified validator of the last
+	// complete notification pass per user identity; guarded by
+	// notificationSyncMu.
+	notificationValidators map[string]string
+	stopOnce               sync.Once
+	wg                     sync.WaitGroup
 	// lifecycleMu serializes TriggerRun registration with Stop so
 	// no wg.Add can happen after Stop begins wg.Wait.
 	lifecycleMu        sync.Mutex
@@ -4688,6 +4692,7 @@ func (s *Syncer) runOnceWithSlot(
 		ctx = withRepositoryFeatureCooldownBypass(
 			ctx, s.featureCooldowns.currentGeneration(),
 		)
+		ctx = platformgithub.WithFreshViewerPermissions(ctx)
 	} else if len(bypassRepos) > 0 {
 		ctx = withRepositoryFeatureCooldownBypassForRepos(
 			ctx, s.featureCooldowns.currentGeneration(), bypassRepos,

@@ -144,6 +144,19 @@ func (c *Client) warn(message string, args ...any) {
 }
 
 type unconditionalReadKey struct{}
+type freshViewerPermissionsKey struct{}
+
+// WithFreshViewerPermissions makes background repository reads refetch the
+// user's permissions instead of reusing the cached overlay. User-triggered
+// sync runs use it so a manual refresh observes permission changes at once.
+func WithFreshViewerPermissions(ctx context.Context) context.Context {
+	return context.WithValue(ctx, freshViewerPermissionsKey{}, true)
+}
+
+func freshViewerPermissions(ctx context.Context) bool {
+	value, _ := ctx.Value(freshViewerPermissionsKey{}).(bool)
+	return value
+}
 
 // WithUnconditionalRead requests a complete body even if the caller's transport
 // normally adds validators. Inventory and explicit detail refreshes use it.

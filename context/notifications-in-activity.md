@@ -155,17 +155,20 @@ Rules:
 - These two filters are enforced at sync (new rows) and in the Activity union (existing rows). The notification list/summary APIs (`GET /notifications`, summaries) are not UI-surfaced today and intentionally still return any rows already in `forge_notification_items`; the Activity feed is the only filtered surface. If those APIs gain a UI, apply the same `item_type IN ('pr','issue') AND item_number IS NOT NULL AND reason != 'author'` filter there.
 - Notification sync should process each configured provider host independently; one provider-host failure must not block others.
 - Notification sync failures should update notification sync status so UI can surface them.
-- Every notification listing attempt must provider-verify the stable repository ID and persist
-  its metadata/settings only while that observation remains current; an occupied route is not
-  identity proof. Rejected observations and route- or observation-fenced commits retry before listing
-  (`internal/github/notifications_sync.go::Syncer.syncNotificationsForRepoAttempt`).
+- Every notification listing that can write a repository's rows must first provider-verify its
+  stable repository ID and persist metadata/settings only while that observation remains current;
+  an occupied route is not identity proof. Rejected observations and fenced settings commits retry
+  before listing; a repository whose fence moves during listing keeps its watermark for the next
+  pass. A 304 probe writes nothing and skips verification
+  (`internal/github/notifications_sync.go::Syncer.prepareNotificationRepoAttempt`).
 - Quota admission precedes identity verification against its read identity and any distinct
   write-permission overlay; a shared identity is checked once (`internal/github/notifications_sync.go::Syncer.ensureNotificationIdentityBudget`).
 - Top-level manual sync also triggers notification sync.
 - `/notifications/sync` triggers only notification sync and returns `202` once accepted.
 - Sync watermark identity is per repository: `(platform, platform_host, repo_owner, repo_name)`, with owner/name lowercased to match `notificationRepoKey`. One repository's failing or unroutable credential route must not hold back watermark advancement for healthy repositories on the same host.
-- A repository with no watermark yet full-syncs (GitHub `All: true`) without resetting siblings; later syncs use its persisted watermark/overlap to avoid full backlog scans.
-- GitHub notification pagination must run until the provider reports no next page; do not use a fixed page cap for either the primary repo notification list or the participating-only annotation scan. A fixed cap can pin the watermark forever on large backlogs. The guardrail is the shared sync budget/rate reserve (`internal/github/notifications_sync.go::Syncer.ensureNotificationBudget`), which should stop sync explicitly when upstream budget is exhausted (`internal/github/sync_test.go::TestSyncNotificationsReadsAllRepositoryNotificationPages`, `internal/github/sync_test.go::TestSyncNotificationsReadsAllParticipatingNotificationPages`).
+- GitHub notifications are listed host-wide once per user identity per pass, through a member repository's credential route (owner-scoped routes have no host fallback), never once per repository; threads for untracked or other-identity repositories are ignored. A group full-syncs when any member lacks a watermark or is due; otherwise it lists from the oldest member watermark minus overlap (`internal/github/notifications_sync.go::Syncer.syncNotificationsForIdentity`).
+- GitHub scopes notification `Last-Modified` to the user, not the URL, and a 304 costs no rate limit. Incremental passes send the validator from the last pass that advanced every member; a 304 skips identity checks and listing. Full syncs stay unconditional because read-state changes may not move the validator. GraphQL has no notification API.
+- GitHub notification pagination must run until the provider reports no next page; do not use a fixed page cap for either the primary notification list or the participating-only annotation scan. A fixed cap can pin the watermark forever on large backlogs. The guardrail is the shared sync budget/rate reserve (`internal/github/notifications_sync.go::Syncer.ensureNotificationBudget`), which should stop sync explicitly when upstream budget is exhausted (`internal/github/sync_test.go::TestSyncNotificationsReadsAllRepositoryNotificationPages`, `internal/github/sync_test.go::TestSyncNotificationsReadsAllParticipatingNotificationPages`).
 - Notification sync and read propagation should stop with server lifecycle before shared services are torn down.
 - Closed/merged linked notification completion must run after repo/detail/list paths that persist closed PR or issue state, not only after notification sync.
 - Per-item PR/issue sync paths close out only the item they just persisted; the full sweep is reserved for the repository sync pass, notification sync, and request handlers. Both sweep branches must stay on the item tables' `UNIQUE(repo_id, number)` index: legacy null-`repo_id` rows resolve the repository first, because one OR across linked and route-matched rows makes SQLite scan every merge request per active notification (`internal/db/queries_notifications.go::closedLinkedNotificationSubject.sweepStatements`).

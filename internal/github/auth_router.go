@@ -400,6 +400,7 @@ var (
 	_ platformgithub.ViewerAPI            = (*RoutedClient)(nil)
 	_ platformgithub.ViewerCacheKeyAPI    = (*RoutedClient)(nil)
 	_ notificationThreadGetter            = (*RoutedClient)(nil)
+	_ routedNotificationPageLister        = (*RoutedClient)(nil)
 	_ notificationReadRateReserveBypasser = (*RoutedClient)(nil)
 	_ rateLimitSnapshotter                = (*RoutedClient)(nil)
 	_ platformgithub.LabelAPI             = (*RoutedClient)(nil)
@@ -820,6 +821,20 @@ func (c *RoutedClient) ListNotifications(ctx context.Context, opts NotificationL
 		return nil, false, err
 	}
 	return client.ListNotifications(ctx, opts)
+}
+
+// ListNotificationPageForRepo lists the user's notifications across every
+// repository through owner/name's credential route. Owner-scoped routes have
+// no host fallback, so a host-wide listing must still pick a repository route.
+func (c *RoutedClient) ListNotificationPageForRepo(
+	ctx context.Context, owner, repo string,
+	opts NotificationListOptions, ifModifiedSince string,
+) (platformgithub.NotificationPage, error) {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return platformgithub.NotificationPage{}, err
+	}
+	return platformgithub.ListNotificationPage(ctx, client, opts, ifModifiedSince)
 }
 
 func (c *RoutedClient) MarkNotificationThreadReadForRepo(

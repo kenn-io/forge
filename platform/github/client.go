@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -239,6 +240,70 @@ func (c *Client) ListNotifications(ctx context.Context, opts platform.Notificati
 		threads = append(threads, c.normalizeNotification(notification))
 	}
 	return threads, resp != nil && resp.NextPage != 0, nil
+}
+
+// NotificationPage is one page of the authenticated user's notifications
+// across every repository. NotModified reports a 304 for a conditional
+// request; LastModified is the validator GitHub returned.
+type NotificationPage struct {
+	Threads      []platform.NotificationThread
+	HasNext      bool
+	LastModified string
+	NotModified  bool
+}
+
+// NotificationPageAPI lists the authenticated user's notifications across
+// every repository. GitHub scopes Last-Modified to the user's whole
+// notification set rather than to the URL, and a 304 costs no rate limit, so
+// one conditional request proves nothing changed anywhere.
+type NotificationPageAPI interface {
+	ListNotificationPage(
+		ctx context.Context, opts platform.NotificationListOptions, ifModifiedSince string,
+	) (NotificationPage, error)
+}
+
+var _ NotificationPageAPI = (*Client)(nil)
+
+func (c *Client) ListNotificationPage(
+	ctx context.Context, opts platform.NotificationListOptions, ifModifiedSince string,
+) (NotificationPage, error) {
+	query := url.Values{}
+	query.Set("all", strconv.FormatBool(opts.All))
+	query.Set("participating", strconv.FormatBool(opts.Participating))
+	if opts.Since != nil {
+		query.Set("since", opts.Since.UTC().Format(time.RFC3339))
+	}
+	query.Set("page", strconv.Itoa(max(opts.Page, 1)))
+	query.Set("per_page", "100")
+	req, err := c.notificationGH().NewRequest(
+		ctx, http.MethodGet, "notifications?"+query.Encode(), nil,
+	)
+	if err != nil {
+		return NotificationPage{}, err
+	}
+	if ifModifiedSince != "" {
+		req.Header.Set("If-Modified-Since", ifModifiedSince)
+	}
+	var notifications []*gh.Notification
+	resp, err := c.notificationGH().Do(req, &notifications)
+	c.trackNotificationRate(resp)
+	if err != nil {
+		if IsNotModified(err) {
+			return NotificationPage{NotModified: true, LastModified: ifModifiedSince}, nil
+		}
+		return NotificationPage{}, err
+	}
+	page := NotificationPage{
+		Threads: make([]platform.NotificationThread, 0, len(notifications)),
+		HasNext: resp.NextPage != 0,
+	}
+	if resp.Response != nil {
+		page.LastModified = resp.Header.Get("Last-Modified")
+	}
+	for _, notification := range notifications {
+		page.Threads = append(page.Threads, c.normalizeNotification(notification))
+	}
+	return page, nil
 }
 
 func (c *Client) GetNotificationThread(ctx context.Context, threadID string) (platform.NotificationThread, error) {
@@ -2079,7 +2144,7 @@ func (c *Client) GetRepository(
 // viewerRepoOverlay returns the user's view of a repository. Background sync
 // reads every tracked repository each pass, so it reuses a recent overlay
 // rather than spending the user's credential on every read; foreground reads
-// always fetch and refresh the cache.
+// and user-triggered runs always fetch and refresh the cache.
 func (c *Client) viewerRepoOverlay(
 	ctx context.Context, owner, repo string,
 ) (viewerRepoOverlay, error) {
@@ -2087,7 +2152,7 @@ func (c *Client) viewerRepoOverlay(
 	if c.auth.CredentialKey != nil {
 		key = c.auth.CredentialKey() + "\x00" + key
 	}
-	if c.backgroundContext != nil && c.backgroundContext(ctx) {
+	if c.backgroundContext != nil && c.backgroundContext(ctx) && !freshViewerPermissions(ctx) {
 		c.viewerRepoMu.Lock()
 		cached, ok := c.viewerRepos[key]
 		c.viewerRepoMu.Unlock()

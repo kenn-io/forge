@@ -263,6 +263,9 @@ Persisted controls must state their scope clearly.
 - Workspace item search spans all repositories and defaults to open PRs and issues;
   Include closed is opt-in for each search popover
   (`frontend/src/lib/components/workspace/WorkspaceItemSearch.svelte::searchItems`).
+- Opening and typing in the open-item picker must use the shared, preloaded list;
+  sync refreshes queue behind pending loads and retain usable results; closed history loads on demand
+  (`frontend/src/lib/stores/workspace-item-search.svelte.ts::createWorkspaceItemSearchStore`).
 - Workspace item search opens on demand from the toolbar; occasional navigation
   must not reserve a permanent row above the details
   (`frontend/src/lib/components/workspace/WorkspaceItemSearch.svelte::mountSearchPopover`).

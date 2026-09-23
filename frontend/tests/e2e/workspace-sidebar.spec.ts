@@ -4339,7 +4339,7 @@ test.describe("sidebar PR tab", () => {
     const api = createMockApiHandler();
     await page.route("**/api/v1/pulls?**", async (route) => {
       const url = new URL(route.request().url());
-      if (url.searchParams.get("limit") !== "30") return route.fallback();
+      if (url.searchParams.has("limit") && url.searchParams.get("limit") !== "30") return route.fallback();
       searches.push(url);
       expect(url.searchParams.has("repo")).toBe(false);
       const response = api.handle({ method: "GET", url, bodyText: "" });
@@ -4365,11 +4365,6 @@ test.describe("sidebar PR tab", () => {
     const search = page.getByRole("combobox", { name: "Search PRs and issues", exact: true });
     await expect(search).toBeFocused();
     await search.fill("theme");
-    await expect
-      .poll(() =>
-        searches.some((url) => url.searchParams.get("q") === "theme" && url.searchParams.get("state") === "open"),
-      )
-      .toBe(true);
     await expect(page.getByRole("option", { name: /#55.*Refactor theme system/ })).toHaveCount(0);
     await page.getByRole("checkbox", { name: "Include closed" }).check();
     await expect(page.getByRole("option", { name: /#55.*Refactor theme system.*Merged/ })).toBeVisible();
@@ -4437,7 +4432,7 @@ test.describe("sidebar PR tab", () => {
     const searches: URL[] = [];
     await page.route(/\/api\/v1\/(pulls|issues)\?/, async (route) => {
       const url = new URL(route.request().url());
-      if (url.searchParams.get("limit") !== "30") return route.fallback();
+      if (url.searchParams.has("limit")) return route.fallback();
       searches.push(url);
       expect(url.searchParams.has("repo")).toBe(false);
       expect(url.searchParams.get("state")).toBe("open");
@@ -4459,15 +4454,19 @@ test.describe("sidebar PR tab", () => {
     await page.goto("/terminal/ws-123");
     const searchButton = page.getByRole("button", { name: "Search PRs and issues", exact: true });
     const sidebar = page.locator(".right-sidebar");
+    await expect(searchButton).toBeVisible();
+    const initialRequests = searches.length;
+    expect(initialRequests).toBeGreaterThan(0);
     await searchButton.click();
     const search = page.getByRole("combobox", { name: "Search PRs and issues", exact: true });
     await search.fill("#55");
-    await expect.poll(() => searches.filter((url) => url.searchParams.get("q") === "#55").length).toBe(2);
     const externalPR = page.getByRole("option", { name: /#55.*Cross-repository PR/ });
     const externalIssue = page.getByRole("option", { name: /#55.*Cross-repository issue/ });
     await expect(externalPR).toContainText("other/gadgets");
     await expect(externalIssue).toContainText("other/gadgets");
     await expect(page.getByRole("option", { name: /#55.*Refactor theme system/ })).toBeVisible();
+    expect(searches).toHaveLength(initialRequests);
+    expect(searches.every((url) => !url.searchParams.has("q"))).toBe(true);
     await page.screenshot({ path: test.info().outputPath("workspace-item-search.png") });
     await externalPR.click();
     await expect(sidebar.locator(".detail-title")).toHaveText("Cross-repository PR");

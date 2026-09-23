@@ -238,7 +238,13 @@ const getSettings = vi.fn();
 let runtime: OwnedAppRuntime;
 
 beforeEach(() => {
-  runtime = makeTestAppRuntime(makeGeneratedClient({ SettingsService: { getSettings: getSettings as never } }));
+  runtime = makeTestAppRuntime(
+    makeGeneratedClient({
+      SettingsService: { getSettings: getSettings as never },
+      PullRequestsService: { listPulls: async () => [] },
+      IssuesService: { listIssues: async () => [] },
+    }),
+  );
   captured.store = null;
   captured.settings = null;
   captured.detailOptions = null;
@@ -308,7 +314,7 @@ describe("app store event wiring", () => {
     const event = captured.store?.options.onDataChanged?.();
     expect(event).toBeDefined();
     let acknowledged = false;
-    const completion = Effect.runPromise(event ?? Effect.void).then(() => {
+    const completion = acceptEvent(event).then(() => {
       acknowledged = true;
     });
     await vi.waitFor(() => expect(loadPulls).toHaveBeenCalledOnce());

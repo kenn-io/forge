@@ -54,7 +54,7 @@ DEV_CLONE_PORT ?= 8092
 DEV_CLONE_FRONTEND_PORT ?= 5175
 
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
-        rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps frontend-check-core-no-deps frontend-effect-diagnostics api-generate roborev-api-generate \
+        rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps frontend-check-core-no-deps frontend-typecheck-no-deps frontend-effect-diagnostics api-generate roborev-api-generate \
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway \
         profile-workspace-switch otel-lgtm \
@@ -184,16 +184,20 @@ frontend-check: frontend-deps
 # Same checks without the bun install prerequisite. CI and explicit local
 # checks retain the full-project Effect diagnostics.
 frontend-check-no-deps: frontend-check-core-no-deps
+	$(MAKE) frontend-typecheck-no-deps
 	$(MAKE) frontend-effect-diagnostics
 
 # The pre-commit hook uses this core target because frontend-deps already
-# installed dependencies and full-project Effect diagnostics are retained in
-# CI instead of blocking every local commit.
+# installed dependencies. Full-project checks (svelte-check, Effect
+# diagnostics) take 10s+ each, so they run at pre-push and in CI instead of
+# blocking every local commit.
 frontend-check-core-no-deps: check-vite-plus-bin
 	node scripts/check-dev-auth-proxy.mjs
 	$(VITE_PLUS_BIN) fmt --check frontend packages/github-app-ui --no-error-on-unmatched-pattern --threads=1
 	$(VITE_PLUS_BIN) lint frontend packages/github-app-ui '!frontend/dist/**' '!packages/github-app-ui/dist/**' '!frontend/test-results/**' '!packages/github-app-ui/test-results/**' '!frontend/src/lib/api/generated/**' '!frontend/src/lib/api/roborev/generated/**' --no-error-on-unmatched-pattern --threads=1
 	cd frontend && node node_modules/@kenn-io/kit-ui/bin/kit-ui-check.mjs src
+
+frontend-typecheck-no-deps: check-vite-plus-bin
 	$(VITE_PLUS_BIN) run svelte-check
 
 frontend-effect-diagnostics: check-vite-plus-bin

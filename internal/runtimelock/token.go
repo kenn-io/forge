@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gofrs/flock"
+	"go.kenn.io/kit/atomicfile"
 )
 
 // authTokenFileName is the well-known name of the API auth token under
@@ -62,46 +63,19 @@ func ensureAuthTokenLocked(dataDir string) (string, error) {
 		return "", fmt.Errorf("generate auth token: %w", err)
 	}
 	token := hex.EncodeToString(raw)
-	if err := writeAuthToken(dataDir, path, token); err != nil {
+	if err := writeAuthToken(path, token); err != nil {
 		return "", err
 	}
 	return token, nil
 }
 
-func writeAuthToken(dataDir, path, token string) error {
-	tmp, err := os.CreateTemp(dataDir, ".auth_token.*.tmp")
-	if err != nil {
-		return fmt.Errorf("create auth token temp file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("restrict auth token temp file: %w", err)
-	}
-	if _, err := tmp.WriteString(token + "\n"); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write auth token temp file: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync auth token temp file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close auth token temp file: %w", err)
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("replace empty auth token: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
+func writeAuthToken(path, token string) error {
+	// atomicfile writes 0600 by default. ErrPublished means the token is
+	// already in place and only a later directory fsync failed.
+	err := atomicfile.WriteFile(path, []byte(token+"\n"))
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("publish auth token: %w", err)
 	}
-	committed = true
 	return nil
 }
 

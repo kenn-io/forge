@@ -6,7 +6,6 @@ import "path/filepath"
 const (
 	lockFileName     = "kenn-forge.lock"
 	metadataFileName = "kenn-forge.run.json"
-	metadataTmpFile  = ".kenn-forge.run.json.tmp"
 	authTokenLock    = ".auth_token.lock"
 )
 
@@ -25,8 +24,4 @@ func authTokenLockPath(dataDir string) string {
 // under dataDir. The file exists only while a daemon is running.
 func MetadataPath(dataDir string) string {
 	return filepath.Join(dataDir, metadataFileName)
-}
-
-func metadataTmpPath(dataDir string) string {
-	return filepath.Join(dataDir, metadataTmpFile)
 }

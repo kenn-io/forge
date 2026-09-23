@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"go.kenn.io/kit/atomicfile"
 )
 
 const credentialStoreVersion = 1
@@ -531,39 +533,21 @@ func validatePersistedStore(state *persistedStore) error {
 	return nil
 }
 
-func writePersistedStore(path string, state persistedStore) error {
-	parent := filepath.Dir(path)
-	tmp, err := os.CreateTemp(parent, ".federation-credentials.*.tmp")
+func writePersistedStore(path string, state persistedStore) (err error) {
+	file, err := atomicfile.Create(path)
 	if err != nil {
 		return fmt.Errorf("create federation credential store temp file: %w", err)
 	}
-	tmpPath := tmp.Name()
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("restrict federation credential store temp file: %w", err)
-	}
-	encoder := jsontext.NewEncoder(tmp, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+	defer func() { err = errors.Join(err, file.Abort()) }()
+	encoder := jsontext.NewEncoder(file, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
 	if err := json.MarshalEncode(encoder, state); err != nil {
-		_ = tmp.Close()
 		return fmt.Errorf("encode federation credential store: %w", err)
 	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync federation credential store: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close federation credential store: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	// ErrPublished means the store is already in place and only a later
+	// directory fsync failed.
+	if err := file.Commit(); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("publish federation credential store: %w", err)
 	}
-	committed = true
 	return nil
 }
 

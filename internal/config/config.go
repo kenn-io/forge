@@ -3666,25 +3666,19 @@ func (c *Config) Save(path string) error {
 		}
 	}
 
-	tmp, err := os.CreateTemp(dir, ".kenn-forge-config-*.toml")
+	// savePath is already resolved, so a symlinked config is written
+	// through to its target.
+	file, err := atomicfile.Create(savePath)
 	if err != nil {
 		return fmt.Errorf("creating temp config: %w", err)
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chmod temp config: %w", err)
-	}
-	enc := toml.NewEncoder(tmp)
-	if err := enc.Encode(f); err != nil {
-		_ = tmp.Close()
+	defer func() { _ = file.Abort() }()
+	if err := toml.NewEncoder(file).Encode(f); err != nil {
 		return fmt.Errorf("encoding config: %w", err)
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temp config: %w", err)
-	}
-	if err := os.Rename(tmpPath, savePath); err != nil {
+	// ErrPublished means the new config is already in place and only a
+	// later directory fsync failed; callers must not roll back.
+	if err := file.Commit(); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("renaming temp config: %w", err)
 	}
 	return nil

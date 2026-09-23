@@ -759,7 +759,13 @@ func deriveCIStatusFromChecks(checks []platform.CICheck) string {
 	return "success"
 }
 
+// ciCheckCandidateIsNewer prefers the higher provider ID because GitHub assigns
+// check run and commit status IDs in creation order. Timestamps order
+// candidates only when an ID is missing, as for GraphQL status contexts.
 func ciCheckCandidateIsNewer(existing, candidate ciCheckCandidate) bool {
+	if existing.id != 0 && candidate.id != 0 && existing.id != candidate.id {
+		return candidate.id > existing.id
+	}
 	if existing.at.IsZero() != candidate.at.IsZero() {
 		return existing.at.IsZero()
 	}
@@ -779,19 +785,20 @@ func combinedStatuses(combined *gh.CombinedStatus) []*gh.RepoStatus {
 	return combined.Statuses
 }
 
+// checkRunRecency orders same-named check runs by when each attempt began.
+// Completion time is the last resort: a cancelled run often completes after
+// its replacement is queued, which would let the stale failure hide the rerun.
 func checkRunRecency(r *gh.CheckRun) time.Time {
-	completedAt := timestampTime(r.CompletedAt)
-	if !completedAt.IsZero() {
-		return completedAt
-	}
 	startedAt := timestampTime(r.StartedAt)
 	if !startedAt.IsZero() {
 		return startedAt
 	}
 	if suite := r.GetCheckSuite(); suite != nil {
-		return timestampTime(suite.CreatedAt)
+		if createdAt := timestampTime(suite.CreatedAt); !createdAt.IsZero() {
+			return createdAt
+		}
 	}
-	return time.Time{}
+	return timestampTime(r.CompletedAt)
 }
 
 func checkRunDedupeKey(r *gh.CheckRun) string {

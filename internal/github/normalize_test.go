@@ -961,7 +961,6 @@ func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *tes
 
 	raw := NormalizeCIChecks([]*gh.CheckRun{
 		{
-			ID:          new(int64(100)),
 			Name:        &name,
 			Status:      &statusCompleted,
 			Conclusion:  &conclusionFailure,
@@ -969,7 +968,6 @@ func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *tes
 			StartedAt:   ghTimestamp(older.Add(-2 * time.Minute)),
 		},
 		{
-			ID:        new(int64(101)),
 			Name:      &name,
 			Status:    &statusInProgress,
 			StartedAt: ghTimestamp(newer),
@@ -986,6 +984,131 @@ func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *tes
 	assert.Empty(checks[0].Conclusion)
 }
 
+func TestNormalizeCIChecks_QueuedRerunReplacesCancelledRunThatCompletedLater(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// A cancelled run finishes a moment after its replacement is queued, so
+	// the stale run has the latest timestamp of any kind until the rerun
+	// starts executing.
+	cancelledStart := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	rerunQueued := cancelledStart.Add(2 * time.Second)
+	cancelledEnd := cancelledStart.Add(3 * time.Second)
+	name := "build"
+	statusCompleted := "completed"
+	statusQueued := "queued"
+	conclusionCancelled := "cancelled"
+
+	runs := []*gh.CheckRun{
+		{
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionCancelled,
+			StartedAt:   ghTimestamp(cancelledStart),
+			CompletedAt: ghTimestamp(cancelledEnd),
+		},
+		{
+			Name:      &name,
+			Status:    &statusQueued,
+			StartedAt: ghTimestamp(rerunQueued),
+		},
+	}
+
+	raw := NormalizeCIChecks(runs, nil)
+	require.NotEmpty(raw)
+
+	var checks []db.CICheck
+	require.NoError(json.Unmarshal([]byte(raw), &checks))
+	require.Len(checks, 1)
+
+	assert.Equal("queued", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
+	assert.Equal("pending", DeriveOverallCIStatus(runs, nil))
+}
+
+func TestNormalizeCIChecks_QueuedRerunWithoutStartTimesUsesSuiteCreation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	cancelledSuiteCreated := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	rerunSuiteCreated := cancelledSuiteCreated.Add(2 * time.Second)
+	cancelledEnd := cancelledSuiteCreated.Add(3 * time.Second)
+	name := "build"
+	statusCompleted := "completed"
+	statusQueued := "queued"
+	conclusionCancelled := "cancelled"
+
+	runs := []*gh.CheckRun{
+		{
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionCancelled,
+			CompletedAt: ghTimestamp(cancelledEnd),
+			CheckSuite:  &gh.CheckSuite{CreatedAt: ghTimestamp(cancelledSuiteCreated)},
+		},
+		{
+			Name:       &name,
+			Status:     &statusQueued,
+			CheckSuite: &gh.CheckSuite{CreatedAt: ghTimestamp(rerunSuiteCreated)},
+		},
+	}
+
+	raw := NormalizeCIChecks(runs, nil)
+	require.NotEmpty(raw)
+
+	var checks []db.CICheck
+	require.NoError(json.Unmarshal([]byte(raw), &checks))
+	require.Len(checks, 1)
+
+	assert.Equal("queued", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
+	assert.Equal("pending", DeriveOverallCIStatus(runs, nil))
+}
+
+func TestNormalizeCIChecks_RunIDOrdersAttemptsBeforeTimestamps(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// A start time is never earlier than its suite's creation, so comparing
+	// one run's start with another run's suite creation favors the run that
+	// has a start time. The run ID follows creation order on both sides.
+	suiteCreated := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
+	cancelledStart := suiteCreated.Add(time.Second)
+	name := "build"
+	statusCompleted := "completed"
+	statusQueued := "queued"
+	conclusionCancelled := "cancelled"
+
+	runs := []*gh.CheckRun{
+		{
+			ID:          new(int64(100)),
+			Name:        &name,
+			Status:      &statusCompleted,
+			Conclusion:  &conclusionCancelled,
+			StartedAt:   ghTimestamp(cancelledStart),
+			CompletedAt: ghTimestamp(cancelledStart.Add(time.Second)),
+			CheckSuite:  &gh.CheckSuite{CreatedAt: ghTimestamp(suiteCreated)},
+		},
+		{
+			ID:         new(int64(101)),
+			Name:       &name,
+			Status:     &statusQueued,
+			CheckSuite: &gh.CheckSuite{CreatedAt: ghTimestamp(suiteCreated)},
+		},
+	}
+
+	raw := NormalizeCIChecks(runs, nil)
+	require.NotEmpty(raw)
+
+	var checks []db.CICheck
+	require.NoError(json.Unmarshal([]byte(raw), &checks))
+	require.Len(checks, 1)
+
+	assert.Equal("queued", checks[0].Status)
+	assert.Empty(checks[0].Conclusion)
+	assert.Equal("pending", DeriveOverallCIStatus(runs, nil))
+}
+
 func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testing.T) {
 	assert := assert.New(t)
 
@@ -998,7 +1121,6 @@ func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testi
 
 	raw := NormalizeCIChecks([]*gh.CheckRun{
 		{
-			ID:          new(int64(100)),
 			Name:        &name,
 			Status:      &statusCompleted,
 			Conclusion:  &conclusionSuccess,
@@ -1006,7 +1128,6 @@ func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testi
 			CheckSuite:  &gh.CheckSuite{CreatedAt: ghTimestamp(older.Add(-2 * time.Minute))},
 		},
 		{
-			ID:         new(int64(101)),
 			Name:       &name,
 			Status:     &statusQueued,
 			CheckSuite: &gh.CheckSuite{CreatedAt: ghTimestamp(newer)},
@@ -1095,14 +1216,12 @@ func TestNormalizeCIChecks_StatusMissingUpdatedAtFallsBackToCreatedAt(t *testing
 		State:      &newState,
 		Statuses: []*gh.RepoStatus{
 			{
-				ID:        new(int64(100)),
 				Context:   &context,
 				State:     &oldState,
 				UpdatedAt: ghTimestamp(older),
 				CreatedAt: ghTimestamp(older.Add(-2 * time.Minute)),
 			},
 			{
-				ID:        new(int64(101)),
 				Context:   &context,
 				State:     &newState,
 				CreatedAt: ghTimestamp(newer),

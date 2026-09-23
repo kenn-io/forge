@@ -42,9 +42,11 @@ fixtures, or changing shell-script coverage.
   can reject path bytes that Git preserves (`landedwork/range_test.go::TestRebaseFileChanges`).
 - Publish fixture output atomically when file existence signals readiness; creation precedes
   completed writes (`internal/server/workspaceapi/agent_resume_test.go::TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss`).
-- Pre-commit runs only per-file frontend checks; full-project `svelte-check`
-  runs at pre-push and Effect diagnostics in explicit checks and CI
-  (`Makefile::frontend-check-no-deps`).
+- Pre-commit runs frontend core checks without full-project Effect diagnostics;
+  explicit frontend checks and CI retain Effect coverage (`Makefile::frontend-check-no-deps`).
+- `svelte-check` runs with `--tsgo`, which only sees Svelte types that ship
+  declarations; source-consumed Svelte dependencies must publish `.d.ts` files
+  (`vite.config.ts::svelte-check`).
 - Hook `files` patterns mirror what each checker reads (e.g. huma-route-check
   skips test files); do not use `always_run` for whole-module checks (`prek.toml`).
 - Package-local `svelte-check` tasks must pass that package's Vite config explicitly;

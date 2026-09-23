@@ -58,6 +58,10 @@ type config struct {
 	// they only use exported identifiers, for example because they rely on
 	// in-package test setup that a destination cannot reproduce.
 	Keep []string `json:"keep"`
+	// Assume lists unexported identifiers to treat as available when
+	// planning, to size the payoff of exposing them. Plans that use it
+	// cannot be applied.
+	Assume []string `json:"assume"`
 }
 
 // piece is one movable chunk of source text: a whole declaration, or a
@@ -150,6 +154,12 @@ func run(cfgPath string, apply, list bool) error {
 		if cfg.Rules[i].fileRe, err = regexp.Compile(cfg.Rules[i].File); err != nil {
 			return fmt.Errorf("rule %d file: %w", i, err)
 		}
+	}
+	for _, a := range cfg.Assume {
+		assumed[a] = true
+	}
+	if apply && len(cfg.Assume) > 0 {
+		return errors.New("a plan with assume entries cannot be applied")
 	}
 	p, err := load(cfg)
 	if err != nil {
@@ -446,10 +456,15 @@ func closure(roots []*unit) map[*unit]bool {
 	return seen
 }
 
+var assumed = map[string]bool{}
+
 func blockersOf(set map[*unit]bool) []string {
 	var out []string
 	for u := range set {
 		for b := range u.blockers {
+			if assumed[b] {
+				continue
+			}
 			out = append(out, b)
 		}
 		if u.platform {

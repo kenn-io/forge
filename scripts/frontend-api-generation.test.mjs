@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +12,7 @@ import { frontendApiClient } from "../frontend/scripts/generate-api-client.mjs";
 const require = createRequire(new URL("../frontend/package.json", import.meta.url));
 const { build, createServer } = await import(pathToFileURL(require.resolve("vite")));
 
-test("Vite builds and serves a missing API client, then regenerates changed constraints", async (t) => {
+async function createExampleFrontend(t) {
   const root = await mkdtemp(join(tmpdir(), "forge-vite-api-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(
@@ -50,6 +51,11 @@ test("Vite builds and serves a missing API client, then regenerates changed cons
     join(root, "src/main.ts"),
     'import { schemaConstraints } from "./lib/api/generated/schema-constraints.ts"; import { SettingsService } from "./lib/api/generated/index.ts"; console.log(schemaConstraints.Settings.limit.minimum, SettingsService.getSettings);',
   );
+  return { root, spec, specPath };
+}
+
+test("Vite builds and serves a missing API client, then regenerates changed constraints", async (t) => {
+  const { root, spec, specPath } = await createExampleFrontend(t);
   await build({ root, configFile: false, plugins: [frontendApiClient()], logLevel: "silent" });
   const constraintsPath = join(root, "src/lib/api/generated/schema-constraints.ts");
   const built = await import(pathToFileURL(constraintsPath));
@@ -61,7 +67,9 @@ test("Vite builds and serves a missing API client, then regenerates changed cons
     configFile: false,
     plugins: [frontendApiClient()],
     logLevel: "silent",
-    server: { host: "127.0.0.1", port: 0 },
+    // macOS FSEvents can miss changes under the system temp directory, which
+    // left this test waiting for a regeneration that never started.
+    server: { host: "127.0.0.1", port: 0, watch: { useFsEvents: false } },
   });
   t.after(() => server.close());
   await server.listen();
@@ -76,4 +84,32 @@ test("Vite builds and serves a missing API client, then regenerates changed cons
   await t.waitFor(async () => assert.match(await readFile(constraintsPath, "utf8"), /minimum: 20/), { timeout: 10000 });
   const changed = await import(`${pathToFileURL(constraintsPath)}?changed`);
   assert.equal(changed.schemaConstraints.Settings.limit.minimum, 20);
+});
+
+test("concurrent Vite builds in one frontend each install the API client", async (t) => {
+  const { root } = await createExampleFrontend(t);
+  const script = `
+    const [{ build }, { frontendApiClient }] = await Promise.all([
+      import(${JSON.stringify(pathToFileURL(require.resolve("vite")).href)}),
+      import(${JSON.stringify(new URL("../frontend/scripts/generate-api-client.mjs", import.meta.url).href)}),
+    ]);
+    await build({ root: ${JSON.stringify(root)}, configFile: false, plugins: [frontendApiClient()], logLevel: "silent" });
+  `;
+  const builds = Array.from(
+    { length: 4 },
+    () =>
+      new Promise((resolve) => {
+        const child = spawn(process.execPath, ["--input-type=module", "-e", script], {
+          stdio: ["ignore", "ignore", "pipe"],
+        });
+        let stderr = "";
+        child.stderr.on("data", (chunk) => (stderr += chunk));
+        child.on("close", (code) => resolve({ code, stderr }));
+      }),
+  );
+
+  for (const result of await Promise.all(builds)) assert.equal(result.code, 0, result.stderr);
+  const constraints = await import(pathToFileURL(join(root, "src/lib/api/generated/schema-constraints.ts")));
+  assert.equal(constraints.schemaConstraints.Settings.limit.minimum, 10);
+  assert.deepEqual(await readdir(join(root, "src/lib/api")), ["generated", "runtime.ts"]);
 });

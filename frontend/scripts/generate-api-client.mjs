@@ -9,7 +9,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { normalizePath } from "vite";
@@ -80,10 +80,36 @@ async function generateClient(frontendDir) {
     const document = parse(readFileSync(specPath, "utf8"));
     writeFileSync(join(stagingDir, "schema-constraints.ts"), renderModule(schemaConstraints(document)));
     run(process.execPath, [vpPath, "fmt", stagingDir, "--write"], frontendDir);
-    rmSync(generatedDir, { recursive: true, force: true });
-    renameSync(stagingDir, generatedDir);
+    installGeneratedDir(stagingDir, generatedDir);
   } finally {
     rmSync(stagingDir, { recursive: true, force: true });
+  }
+}
+
+function listFiles(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(dir, join(entry.parentPath, entry.name)));
+}
+
+// The dev stack runs the frontend dev server and the backend's frontend build
+// at the same time, and both generate this client. Replace files one at a time
+// with atomic renames and never remove the directory, so a concurrent build
+// always reads complete files. Unchanged files stay untouched and do not
+// trigger dev-server reloads.
+function installGeneratedDir(stagingDir, generatedDir) {
+  const staged = listFiles(stagingDir);
+  for (const file of staged) {
+    const source = join(stagingDir, file);
+    const target = join(generatedDir, file);
+    if (existsSync(target) && readFileSync(target).equals(readFileSync(source))) continue;
+    mkdirSync(dirname(target), { recursive: true });
+    renameSync(source, target);
+  }
+  const current = new Set(staged);
+  for (const file of listFiles(generatedDir)) {
+    if (!current.has(file)) rmSync(join(generatedDir, file), { force: true });
   }
 }
 

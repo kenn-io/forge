@@ -13,6 +13,30 @@ import (
 	"go.kenn.io/forge/internal/db"
 )
 
+func TestAPIListPullsSearchZeroPaddedNumber(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1, withSeedPRState(db.MergeRequestStateMerged))
+	seedPR(t, database, "acme", "widget", 4001)
+	seedPR(t, database, "acme", "widget", 10001)
+	seedPR(t, database, "other", "widget", 1)
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{
+		Query: &generated.ListPullsQuery{
+			Repo: new("github|github.com/acme/widget"), State: new("all"),
+			Q: new("0001"), Limit: new(int64(1)),
+		},
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 1)
+	assert.EqualValues(t, 1, (*resp.JSON200)[0].Number)
+	assert.Equal(t, "acme", (*resp.JSON200)[0].RepoOwner)
+}
+
 func TestAPIListPullsIncludesLabels(t *testing.T) {
 	require := require.New(t)
 	srv, database := setupTestServer(t)

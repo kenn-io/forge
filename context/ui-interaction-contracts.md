@@ -261,6 +261,9 @@ Persisted controls must state their scope clearly.
 - Workspace PR search opens on demand from the toolbar; occasional PR navigation
   must not reserve a permanent row above the details
   (`frontend/src/lib/components/workspace/WorkspacePRSearch.svelte::mountSearchPopover`).
+- Zero-padded PR searches such as `0001` opt into exact number matching before
+  pagination, so newer substring matches cannot hide old PRs
+  (`internal/db/queries.go::ListMergeRequests`).
 - URL query state belongs in the route only when deep-linking or back/forward
   navigation is part of the feature contract.
 - Activity detail selection uses one URL-backed slot for pull requests, issues,

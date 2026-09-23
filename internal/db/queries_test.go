@@ -2185,6 +2185,39 @@ func TestListPullRequestsFilterBySearchNumber(t *testing.T) {
 	require.Len(prs, 3)
 }
 
+func TestListPullRequestsSearchZeroPaddedNumber(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	insertTestMR(t, d, repoID, 1, "original change", base)
+	insertTestMR(t, d, repoID, 4001, "newer change", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 10001, "latest change", base.Add(2*time.Hour))
+	insertTestMR(t, d, repoID, 2, "release 0001", base.Add(3*time.Hour))
+
+	for _, tt := range []struct {
+		query string
+		want  []int
+	}{
+		{query: "0001", want: []int{1}},
+		{query: "01", want: []int{1}},
+		{query: " #0001 ", want: []int{1}},
+		{query: "0009", want: []int{}},
+		{query: "1", want: []int{2}},
+		{query: "release 0001", want: []int{2}},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: tt.query, Limit: 1})
+			require.NoError(t, err)
+			numbers := make([]int, 0, len(prs))
+			for _, pr := range prs {
+				numbers = append(numbers, pr.Number)
+			}
+			assert.Equal(t, tt.want, numbers)
+		})
+	}
+}
+
 func TestListPullRequestsFilterBySearchLabel(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

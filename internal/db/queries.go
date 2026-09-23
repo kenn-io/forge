@@ -2089,8 +2089,14 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		conds = append(conds, unassignedCondition("p"))
 	}
 	if opts.Search != "" {
-		cond, condArgs := listSearchCondition("p", opts.Search)
-		if cond != "" {
+		// Zero padding opts into an exact PR number before pagination, so old
+		// PRs remain reachable without changing ordinary substring searches.
+		numberText := strings.TrimPrefix(strings.TrimSpace(opts.Search), "#")
+		number, err := strconv.ParseUint(numberText, 10, 63)
+		if err == nil && len(numberText) > 1 && numberText[0] == '0' {
+			conds = append(conds, "p.number = ?")
+			args = append(args, number)
+		} else if cond, condArgs := listSearchCondition("p", opts.Search); cond != "" {
 			conds = append(conds, cond)
 			args = append(args, condArgs...)
 		}

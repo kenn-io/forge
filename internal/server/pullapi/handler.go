@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -23,6 +24,7 @@ type Event struct {
 }
 
 type ConfigSnapshot struct {
+	Repositories                   []config.Repo
 	AllowMidStackMerges            bool
 	UseWorkspaceActivityForRecency bool
 }

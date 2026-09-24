@@ -30,7 +30,7 @@ type ProviderRouteRule struct {
 // This table is intentionally exhaustive. A newly registered operation must
 // make an explicit ownership decision before the coverage gate passes.
 var providerRouteDeclarations = []ProviderRouteRule{
-	{OperationID: "query-gh", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "query-gh", Owner: NodeLocal},
 	{OperationID: "watch-devbox-diff", Owner: NodeLocal},
 	{OperationID: "store-devbox-paste-image", Owner: NodeLocal},
 	{OperationID: "stop-devbox-session", Owner: NodeLocal},

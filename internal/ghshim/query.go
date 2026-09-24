@@ -4,6 +4,7 @@ package ghshim
 import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
 	"io"
 	"slices"
 	"strconv"
@@ -94,6 +95,14 @@ func (q Query) Valid() bool {
 // sorted keys, literal HTML characters, null optional dates, and one newline.
 // Explicit options retain gh's byte format with the repository's v2 encoder.
 func Encode(q Query, pulls []db.MergeRequest) ([]byte, error) {
+	for _, pr := range pulls {
+		for _, field := range q.Fields {
+			if (field == "headRefOid" && pr.PlatformHeadSHA == "") || (field == "createdAt" && pr.CreatedAt.IsZero()) || (field == "updatedAt" && pr.UpdatedAt.IsZero()) || (field == "url" && pr.URL == "") || (field == "title" && strings.TrimSpace(pr.Title) == "") {
+				return nil, fmt.Errorf("requested field is not stored")
+			}
+		}
+	}
+
 	rows := make([]map[string]any, 0, len(pulls))
 	for _, pr := range pulls {
 		state := strings.ToUpper(string(pr.State))

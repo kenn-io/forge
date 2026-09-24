@@ -866,8 +866,8 @@ Also see [`context/testing.md`](./testing.md):
   omit unsupported fields or filters (`internal/ghshim/storage.go::Read`).
 - Preserve upstream `gh` output bytes for intercepted commands; keep real-CLI
   differential tests when growing coverage (`internal/ghshim/query_test.go::TestJSONMatchesRealGH`).
-- The shim reads persisted Forge data only; normal sync owns freshness. Missing
-  data delegates to the real `gh` with its own authentication, never a shim-owned
-  provider fetch or TTL cache (`internal/ghshim/storage.go::Read`).
+- Shim reads use local stored data on hubs and spokes without requiring a syncer.
+  Missing numeric views may use the existing hub read API; otherwise delegate to
+  `gh`. Never add provider fetches or a TTL cache (`internal/server/pullapi/gh_shim.go`).
 - Keep full shim argument arrays in local usage logs; command-only counts cannot
   identify which flags and fields need interception support.

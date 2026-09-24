@@ -103,6 +103,7 @@
   import { watchFleetWorkspaceDiff } from "./fleet-diff-watch.js";
   import { workspaceEventStream } from "./workspace-event-stream.js";
   import { decodeWorkspaceDetail, type WorkspaceDetail } from "./workspace-detail.js";
+  import { createRecentDetails } from "../../stores/recent-details.js";
   import { reconnectSchedule } from "../../api/retry-policy.js";
   import { Button, CollapsibleSidebar, SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
@@ -380,6 +381,8 @@
   let runtimeForId = $state<string>("");
   let runtimeForHostKey = $state<string | undefined>(undefined);
   let runtimeSnapshotAuthoritative = $state(false);
+  let restoredSessionKeys = $state.raw<Set<SessionHostKey> | null>(null);
+  const recentWorkspaces = createRecentDetails<{ workspace: Workspace; runtime: WorkspaceRuntimeState }>();
   let loadError = $state<string | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
@@ -599,14 +602,16 @@
     const selected = selectedSidebarTabs[storageId];
     if (selected !== undefined) return selected;
     const saved = readLocalStorage(sidebarTabStorageKey(storageId));
+    if (saved === "none") return null;
     if (saved === "diff" || saved === "pr" || saved === "issue" || saved === "reviews" || saved === "kata") {
       return saved;
     }
     return workspace?.id === workspaceId && selectedWorkspaceHostKey(workspace) === workspaceHostKey
-      ? defaultWorkspaceSidebarTab(settingsStore.getWorkspaceSettings().default_sidebar_view, workspace.item_type)
-      : "diff";
+      ? defaultSidebarTab(workspace)
+      : null;
   });
-  let sidebarOpen = $state(loadSidebarOpen());
+  let sidebarExpanded = $state(loadSidebarOpen());
+  const sidebarOpen = $derived(sidebarExpanded && sidebarTab !== null);
   let itemSearchAnchor = $state<HTMLElement | null>(null);
   const itemSelectionStorageKey = $derived(`kenn-forge-workspace-viewed-items:${JSON.stringify([workspaceHostKey ?? "self", workspaceId])}`);
   const ViewedItem = Schema.Struct({
@@ -633,8 +638,8 @@
     ),
   );
 
-  // Runtime is only "live" when both the runtime fetch and the
-  // workspace fetch resolve for the current route. Without the
+  // Runtime is only "live" when both runtime and workspace data belong
+  // to the current route, including a restored presentation. Without the
   // workspace.id check, a runtime that lands first for the new
   // workspace can render its sessions/launch targets next to the
   // previous workspace's still-cached header/home data.
@@ -684,6 +689,17 @@
         )
       : [],
   );
+  // Keep the last coherent presentation for repeat visits. Reads still run on
+  // every visit; a restored snapshot never establishes session authority.
+  $effect(() => {
+    if (!workspaceLive || !workspace) return;
+    const key = workspaceStorageId(workspaceId, workspaceHostKey);
+    if (workspace.status !== "ready") {
+      recentWorkspaces.delete(key);
+    } else if (runtimeLive && runtimeSnapshotAuthoritative && runtime) {
+      recentWorkspaces.remember(key, { workspace, runtime: { ...runtime, sessions: runtimeSessions } });
+    }
+  });
   const launchTargets = $derived(
     runtimeLive ? (runtime?.launch_targets ?? []) : [],
   );
@@ -1202,6 +1218,11 @@
   );
 
   function upsertRuntimeSession(session: RuntimeSession): RuntimeSession[] {
+    // A successful launch is authority for this new session even while the
+    // rest of the restored workspace still awaits its background runtime read.
+    if (restoredSessionKeys !== null) {
+      restoredSessionKeys = new Set([...restoredSessionKeys, sessionHostKeyFor(session)]);
+    }
     const currentRuntime =
       runtime !== null &&
       runtimeForId === workspaceId &&
@@ -1489,7 +1510,7 @@
   $effect(() => {
     writeLocalStorage(
       SIDEBAR_OPEN_KEY,
-      String(sidebarOpen),
+      String(sidebarExpanded),
     );
   });
   $effect(() => {
@@ -1522,10 +1543,10 @@
     if (actionsBlocked) return;
     itemSearchAnchor = null;
     if (sidebarOpen && sidebarTab === tab) {
-      sidebarOpen = false;
+      sidebarExpanded = false;
     } else {
       setSidebarTab(tab);
-      sidebarOpen = true;
+      sidebarExpanded = true;
     }
   }
 
@@ -1539,7 +1560,7 @@
       targetId === undefined ? workspaceHostKey : targetHostKey,
     );
     selectedSidebarTabs = { ...selectedSidebarTabs, [storageId]: tab };
-    writeLocalStorage(sidebarTabStorageKey(storageId), tab);
+    writeLocalStorage(sidebarTabStorageKey(storageId), tab ?? "none");
   }
 
   function openItemSidebar(
@@ -1554,7 +1575,7 @@
       (targetHostKey ?? undefined) !== workspaceHostKey
     ) {
       setSidebarTab(tab, targetId, targetHostKey);
-      sidebarOpen = true;
+      sidebarExpanded = true;
       if (targetHostKey) {
         navigate(
           `/terminal/fleet/${encodeURIComponent(targetHostKey)}/${encodeURIComponent(targetId)}`,
@@ -1569,7 +1590,8 @@
   }
 
   function toggleRightSidebar(): void {
-    sidebarOpen = !sidebarOpen;
+    sidebarExpanded = !sidebarOpen;
+    if (sidebarTab === null) setSidebarTab("diff");
   }
 
   function handleWorkspaceListResize(width: number): void {
@@ -1740,6 +1762,7 @@
           : dockedSessionKeys.has(session.key));
       if (!onScreen) continue;
       const hostKey = sessionHostKeyFor(session);
+      if (restoredSessionKeys !== null && !restoredSessionKeys.has(hostKey)) continue;
       desired.set(hostKey, {
         hostKey,
         ...(workspaceHostKey === undefined ? {} : { fleetHostKey: workspaceHostKey }),
@@ -2111,14 +2134,14 @@
   }
 
   function defaultSidebarTab(ws: Workspace): SidebarTab {
-    return defaultWorkspaceSidebarTab(settingsStore.getWorkspaceSettings().default_sidebar_view, ws.item_type);
+    return defaultWorkspaceSidebarTab(settingsStore.getWorkspaceSettings().default_sidebar_view, ws.item_type, getWorkspacePRNumber(ws) !== null);
   }
 
   function isSidebarTabSupported(
     ws: Workspace,
     tab: SidebarTab,
   ): boolean {
-    if (tab === "diff") return true;
+    if (tab === null || tab === "diff") return true;
     if (tab === "issue") {
       return ws.item_type === "issue" || viewedItems.issue !== null;
     }
@@ -2141,7 +2164,7 @@
     writeLocalStorage(itemSelectionStorageKey, JSON.stringify(viewedItems));
     if (isSidebarTabSupported(workspace, itemType)) {
       setSidebarTab(itemType);
-      sidebarOpen = true;
+      sidebarExpanded = true;
     } else if (sidebarTab === itemType) {
       setSidebarTab(defaultSidebarTab(workspace));
     }
@@ -2172,6 +2195,7 @@
   // envelope so liveness rendering shows the error state instead of
   // continuing to display the deleted workspace.
   function handleWorkspaceGone(id: string, hostKey: string | undefined): void {
+    recentWorkspaces.delete(workspaceStorageId(id, hostKey));
     onWorkspaceDeleted?.(id, hostKey, workspaceIdentitySnapshot(id));
     if (workspace?.id === id) {
       workspace = null;
@@ -2288,6 +2312,7 @@
           completeAcceptedWorkspaceLaunch(id, hostKey, acceptedLaunch.sessionKey);
         }
         runtimeSnapshotAuthoritative = true;
+        restoredSessionKeys = null;
         if (
           hasAppliedRuntimeFor(id, hostKey) &&
           appliedRuntimeState?.fingerprint === fingerprint
@@ -2632,6 +2657,8 @@
             return true;
           }
           if (!responseFailed) {
+            recentWorkspaces.delete(workspaceStorageId(id, hostKey));
+            if (isCurrentWorkspace(id, hostKey)) workspace = null;
             onWorkspaceDeleted?.(id, hostKey, state.request.options.identity);
           }
           if (!isCurrentWorkspace(id, hostKey)) {
@@ -3812,15 +3839,15 @@
   // App.svelte means the lifecycle is now driven entirely by this
   // effect.
   //
-  // Keep the previous workspace and runtime available to the workflow
-  // stage until their replacements arrive. The right sidebar gates on
-  // runtimeLive separately, so it cannot mix those retained values with
-  // the newly selected route.
+  // Restore repeat visits before starting the background reads. Both metadata
+  // and runtime are scoped to the workspace and host, so the sidebar cannot
+  // mix a previous workspace's data with the newly selected route.
   $effect(() => {
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     workspacePresentationGeneration += 1;
     runtimeSnapshotAuthoritative = false;
+    restoredSessionKeys = null;
     if (
       appliedRuntimeState?.workspaceId !== id ||
       appliedRuntimeState.hostKey !== hostKey
@@ -3839,6 +3866,17 @@
       cancelWorkspaceSwitch();
     }
     const storageId = id ? workspaceStorageId(id, hostKey) : "";
+    const recent = untrack(() => recentWorkspaces.get(storageId));
+    if (recent) {
+      workspace = recent.workspace;
+      // Only reclaim sockets still held by the pool. Evicted or exited sessions
+      // must wait for a fresh runtime read before attaching again.
+      restoredSessionKeys = new Set(untrack(() => mountedSessions().map((session) => session.hostKey)));
+      runtime = recent.runtime;
+      runtimeForId = id;
+      runtimeForHostKey = hostKey;
+      untrack(() => syncSidebarTabForWorkspace(recent.workspace));
+    }
     const restoredLayout = id ? loadTerminalLayout(storageId) : defaultTerminalLayout();
     const restoredTab = restoreWorkspaceTab(storageId);
     const restoredActiveTab =
@@ -3925,30 +3963,12 @@
       },
     );
 
-    const fleetDiffWatch = hostKey
-      ? appRuntime.runCommand(
-          watchFleetWorkspaceDiff(id, hostKey, (version) =>
-            Effect.sync(() => {
-              if (!isCurrentWorkspace(id, hostKey) || version === lastDiffSnapshotVersion) return;
-              lastDiffSnapshotVersion = version;
-              diffRefreshToken += 1;
-            }),
-          ),
-          {
-            operation: "workspace.fleet-diff.watch",
-            safeContext: { surface: "workspace" },
-            onFailure: () => undefined,
-          },
-        )
-      : null;
-
     const workspaceLifecycle = appRuntime.runCommand(
       Effect.gen(function* () {
         const initialWorkspace = yield* Deferred.make<Workspace | null>();
         const events = Stream.runForEach(
           workspaceEventStream(
             eventsStore.subscribeWorkspaceEvents,
-            hostKey ? undefined : () => eventsStore.selectWorkspace(id),
           ),
           (signal) => {
             switch (signal._tag) {
@@ -4032,7 +4052,6 @@
       stopRuntimePolling();
       releaseRuntimeRead();
       mutationPresenter.interrupt();
-      fleetDiffWatch?.interrupt();
       workspaceLifecycle.interrupt();
       // Leaving the workspace surface (view unmount) must end the
       // switch so late responses and pane callbacks cannot append
@@ -4047,6 +4066,32 @@
     };
   });
 
+  // Watching a diff owns server work and can reconnect SSE. Keep that lease
+  // tied to the visible pane, independently of workspace and PR updates. The
+  // route already names the workspace, so a saved Diff tab prewarms before
+  // metadata arrives.
+  $effect(() => {
+    if (!hostVisible || hideRightSidebar || !sidebarOpen || sidebarTab !== "diff") return;
+    const id = workspaceId;
+    const hostKey = workspaceHostKey;
+    if (!hostKey) return eventsStore.selectWorkspace(id);
+    const watch = appRuntime.runCommand(
+      watchFleetWorkspaceDiff(id, hostKey, (version) =>
+        Effect.sync(() => {
+          if (!isCurrentWorkspace(id, hostKey) || version === lastDiffSnapshotVersion) return;
+          lastDiffSnapshotVersion = version;
+          diffRefreshToken += 1;
+        }),
+      ),
+      {
+        operation: "workspace.fleet-diff.watch",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
+      },
+    );
+    return watch.interrupt;
+  });
+
   $effect(() => {
     if (
       workspaceId ||
@@ -4059,7 +4104,7 @@
   });
 
   $effect(() => {
-    if (!workspaceId || !runtimeLive || workspace?.status !== "ready") return;
+    if (!workspaceId || !runtimeLive || !runtimeSnapshotAuthoritative || workspace?.status !== "ready") return;
     if (actionsBlocked || launchingKey !== null) return;
     const pendingLaunch = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
     const targetKey = pendingLaunch?.targetKey ?? null;
@@ -4617,7 +4662,7 @@
               {/if}
             </div>
           </div>
-          {#if sidebarOpen && !hideRightSidebar}
+          {#if sidebarOpen && sidebarTab !== null && !hideRightSidebar}
             <SplitResizeHandle
               class="sidebar-resize-handle"
               ariaLabel="Resize workspace details"

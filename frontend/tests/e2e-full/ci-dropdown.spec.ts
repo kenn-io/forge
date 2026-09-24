@@ -293,8 +293,9 @@ test.describe("CI dropdown", () => {
       await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
       await backgroundSync;
       await expect(page.locator(".pull-detail")).toBeVisible();
-      // The initial detail refresh can replace the chip during the click.
-      await expect(page.locator(".pull-detail .sync-indicator")).toHaveCount(0);
+      // Same-second sync timestamps use the full 10.5s refresh window.
+      // Wait for it to settle so a refresh cannot replace the chip during the click.
+      await expect(page.locator(".pull-detail .sync-indicator")).toHaveCount(0, { timeout: 15_000 });
 
       const chip = page.locator(".pull-detail [data-testid='ci-chip']");
       await chip.click();

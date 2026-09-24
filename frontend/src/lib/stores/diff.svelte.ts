@@ -31,6 +31,7 @@ import {
 import { DiffWorkflow, type DiffReadError, type ProviderDiffRead } from "./diff-workflow.js";
 import { FilePreviewUnavailable, FilePreviewWorkflow, type FilePreviewReadError } from "./diff-preview-workflow.js";
 import { providerItemKey } from "./provider-key.js";
+import { createRecentDetails } from "./recent-details.js";
 
 export type DiffScope =
   | { kind: "head" }
@@ -163,6 +164,15 @@ function invokeLoadFailure(callback: ((message: string) => void) | undefined, me
 
 function isSnapshotChanged(error: unknown): boolean {
   return isProblem(error) && error.code === ProblemCodes.conflict && error.details?.["reason"] === "snapshot_changed";
+}
+
+function invalidatesWorkspaceDiff(failure: ApiProblemError | TransientTransportError): boolean {
+  return (
+    failure._tag === "ApiProblemError" &&
+    (failure.problem.code === ProblemCodes.notFound ||
+      failure.problem.code === ProblemCodes.workspaceNotFound ||
+      failure.problem.code === ProblemCodes.validationError)
+  );
 }
 
 type DiffResponse = GeneratedDiffResponse;
@@ -299,6 +309,7 @@ function saveCollapsedFiles(cf: Record<string, string[]>): void {
 
 export function createDiffStore(opts: DiffStoreOptions) {
   const runtime = opts.runtime;
+  const recentWorkspaceDiffs = createRecentDetails<{ files: FilesResult; diff: DiffResult }>();
 
   let diff = $state<DiffResult | null>(null);
   let loading = $state(false);
@@ -1151,19 +1162,38 @@ export function createDiffStore(opts: DiffStoreOptions) {
     let acknowledged = false;
     const program = Effect.gen(function* () {
       if (shouldRefreshCommits) {
-        yield* loadCommitsEffect({ force: true });
+        const commitsResult = yield* Effect.result(loadCommitsEffect({ force: true }));
         if (!isCurrent()) return;
-        resetScopeIfMissingFromLoadedCommits();
+        if (Result.isFailure(commitsResult)) {
+          if (
+            commitsResult.failure._tag === "ApiProblemError" &&
+            commitsResult.failure.problem.code === ProblemCodes.workspaceNotFound
+          ) {
+            return yield* Effect.fail(commitsResult.failure);
+          }
+          commitsError = requestErrorMessage(commitsResult.failure, "failed to load commits");
+        } else {
+          resetScopeIfMissingFromLoadedCommits();
+        }
       }
 
       if (!isCurrent()) return;
       clearFilePreviewCache();
+      const workspaceQuery = workspaceDiffQuery(base);
+      const cacheKey = JSON.stringify([workspaceHostKey, workspaceID, stacked, workspaceQuery]);
+      const retained = recentWorkspaceDiffs.get(cacheKey);
+      if (retained) {
+        fileList = retained.files;
+        diff = retained.diff;
+        setActiveIfNeeded(getVisibleDiffFiles());
+      }
       const visibleSnapshotVersion = diff?.snapshot_version;
       const preserveVisible =
-        options.preserveVisible === true &&
-        !workspaceScopeChanged &&
-        visibleSnapshotVersion !== undefined &&
-        fileList?.snapshot_version === visibleSnapshotVersion;
+        retained !== undefined ||
+        (options.preserveVisible === true &&
+          !workspaceScopeChanged &&
+          visibleSnapshotVersion !== undefined &&
+          fileList?.snapshot_version === visibleSnapshotVersion);
       let retryDelay = workspaceDiffRetryInitialDelay;
       while (isCurrent()) {
         let retry = false;
@@ -1185,24 +1215,26 @@ export function createDiffStore(opts: DiffStoreOptions) {
                   workspaceHostKey.startsWith("devbox:")
                     ? client.DevboxesService.getDevboxFiles(
                         { connectionId: workspaceHostKey.slice(7), id: workspaceID },
-                        workspaceDiffQuery(base),
+                        workspaceQuery,
                         { signal },
                       )
                     : client.FleetService.getFleetWorkspaceFiles(
                         { hostKey: workspaceHostKey, id: workspaceID },
-                        workspaceDiffQuery(base),
+                        workspaceQuery,
                         { signal },
                       ),
                 (value): value is FilesResponse =>
                   typeof value === "object" && value !== null && "files" in value && !isProblem(value),
               )
             : executeGeneratedApiRequest<FilesResponse>("GET workspace diff files", (client, signal) =>
-                client.WorkspacesService.getWorkspaceFiles({ id: workspaceID }, workspaceDiffQuery(base), { signal }),
+                client.WorkspacesService.getWorkspaceFiles({ id: workspaceID }, workspaceQuery, { signal }),
               );
           const filesResult = yield* Effect.result(retryIdempotentRead(filesRequest));
           if (!isCurrent()) return;
           if (Result.isFailure(filesResult)) {
-            if (!preserveVisible) return yield* Effect.fail(filesResult.failure);
+            if (!preserveVisible || invalidatesWorkspaceDiff(filesResult.failure)) {
+              return yield* Effect.fail(filesResult.failure);
+            }
             retry = true;
             break;
           }
@@ -1211,7 +1243,7 @@ export function createDiffStore(opts: DiffStoreOptions) {
           fileListLoading = false;
 
           const query = {
-            ...workspaceDiffQuery(base),
+            ...workspaceQuery,
             ...(pendingFiles.snapshot_version && { revision: pendingFiles.snapshot_version }),
           };
           const diffRequest = workspaceHostKey
@@ -1238,14 +1270,14 @@ export function createDiffStore(opts: DiffStoreOptions) {
           const diffResult = yield* Effect.result(retryIdempotentRead(diffRequest));
           if (!isCurrent()) return;
           if (Result.isFailure(diffResult)) {
-            if (
-              diffResult.failure._tag === "ApiProblemError" &&
-              isSnapshotChanged(diffResult.failure.problem) &&
-              attempt === 0
-            ) {
+            const snapshotChanged =
+              diffResult.failure._tag === "ApiProblemError" && isSnapshotChanged(diffResult.failure.problem);
+            if (snapshotChanged && attempt === 0) {
               continue;
             }
-            if (!preserveVisible) return yield* Effect.fail(diffResult.failure);
+            if (!preserveVisible || invalidatesWorkspaceDiff(diffResult.failure)) {
+              return yield* Effect.fail(diffResult.failure);
+            }
             retry = true;
             break;
           }
@@ -1259,6 +1291,9 @@ export function createDiffStore(opts: DiffStoreOptions) {
             setActiveIfNeeded(getVisibleDiffFiles());
           } else {
             applyDiffResult(diffResult.success);
+          }
+          if (diff && fileList?.snapshot_version && fileList.snapshot_version === diff.snapshot_version) {
+            recentWorkspaceDiffs.remember(cacheKey, { files: fileList, diff });
           }
           acknowledged = true;
           yield* invokeLoadCallback(callbacks.onSuccess);
@@ -1291,12 +1326,11 @@ export function createDiffStore(opts: DiffStoreOptions) {
       },
       onFailure: (failure) => {
         if (!isCurrent()) return;
+        recentWorkspaceDiffs.delete(JSON.stringify([workspaceHostKey, workspaceID, stacked, workspaceDiffQuery(base)]));
         const message = requestErrorMessage(failure, "failed to load workspace diff");
         storeError = message;
-        if (!options.preserveVisible) {
-          diff = null;
-          fileList = null;
-        }
+        diff = null;
+        fileList = null;
         invokeLoadFailure(callbacks.onFailure, message);
       },
     });

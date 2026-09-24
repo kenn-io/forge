@@ -9,8 +9,9 @@ describe("defaultWorkspaceSidebarTab", () => {
     expect(defaultWorkspaceSidebarTab("item", itemType)).toBe(expected);
   });
 
-  it.each(["adhoc", "kata_task"] as const)("keeps %s workspaces on Diff", (itemType) => {
-    expect(defaultWorkspaceSidebarTab("item", itemType)).toBe("diff");
+  it.each(["adhoc", "kata_task"] as const)("keeps unlinked %s workspace details closed", (itemType) => {
+    expect(defaultWorkspaceSidebarTab("item", itemType)).toBeNull();
+    expect(defaultWorkspaceSidebarTab("item", itemType, true)).toBe("pr");
   });
 
   it("uses Diff when configured", () => {

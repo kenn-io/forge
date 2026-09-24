@@ -222,7 +222,7 @@ import DevboxSettings from "./DevboxSettings.svelte";
   <div class="setting-row">
     <div class="setting-copy">
       <span class="setting-label">Default sidebar view</span>
-      <span class="setting-description">Choose the initial details view for workspaces created from a pull request or issue.</span>
+      <span class="setting-description">PR / Issue keeps unlinked workspace details closed. Diffs load only while the Diff pane is open. Each workspace remembers your selected view.</span>
     </div>
     <SelectDropdown
       class="sidebar-view-select"

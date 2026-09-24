@@ -348,6 +348,234 @@ describe("createDiffStore loadDiff", () => {
     });
   });
 
+  it("restores a recent workspace diff immediately and refreshes its files and patches together", async () => {
+    const filesGate = Promise.withResolvers<Response>();
+    const diffGate = Promise.withResolvers<Response>();
+    const diffStarted = Promise.withResolvers<void>();
+    let revisiting = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      switch (url) {
+        case "/api/v1/workspaces/ws-a/files?base=head":
+          return revisiting ? filesGate.promise : Response.json(makeFilesResult(["a.ts"], { snapshot_version: "a:1" }));
+        case "/api/v1/workspaces/ws-a/diff?base=head&revision=a%3A1":
+          return Response.json({ ...makeDiffResult(["a.ts"]), snapshot_version: "a:1" });
+        case "/api/v1/workspaces/ws-b/files?base=head":
+          return Response.json(makeFilesResult(["b.ts"], { snapshot_version: "b:1" }));
+        case "/api/v1/workspaces/ws-b/diff?base=head&revision=b%3A1":
+          return Response.json({ ...makeDiffResult(["b.ts"]), snapshot_version: "b:1" });
+        case "/api/v1/workspaces/ws-a/diff?base=head&revision=a%3A2":
+          diffStarted.resolve();
+          return diffGate.promise;
+        default:
+          return Response.json({}, { status: 404 });
+      }
+    });
+    const store = createDiffStore({ client: testClient() });
+    await loadWorkspaceDiff(store, "ws-a", "head");
+    await loadWorkspaceDiff(store, "ws-b", "head");
+
+    revisiting = true;
+    const refresh = loadWorkspaceDiff(store, "ws-a", "head");
+    expect(store.getFileList()?.files[0]?.path).toBe("a.ts");
+    expect(store.getDiff()?.snapshot_version).toBe("a:1");
+    expect(store.isFileListLoading()).toBe(false);
+
+    filesGate.resolve(Response.json(makeFilesResult(["updated.ts"], { snapshot_version: "a:2" })));
+    await diffStarted.promise;
+    expect(store.getFileList()?.snapshot_version).toBe("a:1");
+    expect(store.getDiff()?.files[0]?.path).toBe("a.ts");
+
+    diffGate.resolve(Response.json({ ...makeDiffResult(["updated.ts"]), snapshot_version: "a:2" }));
+    await refresh;
+    expect(store.getFileList()?.files[0]?.path).toBe("updated.ts");
+    expect(store.getFileList()?.snapshot_version).toBe("a:2");
+    expect(store.getDiff()?.snapshot_version).toBe("a:2");
+    expect(store.getDiff()?.files[0]?.path).toBe("updated.ts");
+  });
+
+  it.each(["files", "diff", "commits"])(
+    "keeps a cached workspace diff readable through %s connection failures",
+    async (endpoint) => {
+      vi.useFakeTimers();
+      try {
+        let disconnected = false;
+        let recovered = false;
+        let failures = 0;
+        vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+          const url = new URL(
+            typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+            "http://localhost",
+          );
+          if (disconnected && url.pathname.endsWith(`/${endpoint}`)) {
+            failures += 1;
+            throw new TypeError("Failed to fetch");
+          }
+          if (url.pathname.endsWith("/commits")) return Response.json({ commits: [] });
+          const file = url.pathname.includes("/ws-a/") ? (recovered ? "updated.ts" : "a.ts") : "b.ts";
+          const snapshot_version = file;
+          return Response.json(
+            url.pathname.endsWith("/files")
+              ? makeFilesResult([file], { snapshot_version })
+              : { ...makeDiffResult([file]), snapshot_version },
+          );
+        });
+        const store = createDiffStore({ client: testClient() });
+        await loadWorkspaceDiff(store, "ws-a", "head");
+        if (endpoint === "commits") await loadCommits(store);
+        else await loadWorkspaceDiff(store, "ws-b", "head");
+
+        disconnected = true;
+        const refresh = loadWorkspaceDiff(store, "ws-a", "head", false, { refreshCommits: endpoint === "commits" });
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(failures).toBeGreaterThan(2);
+        expect(store.getDiff()?.files[0]?.path).toBe("a.ts");
+        expect(store.getFileList()?.files[0]?.path).toBe("a.ts");
+        expect(store.getDiffError()).toBeNull();
+        if (endpoint === "commits") expect(store.getCommitsError()).toBe("Could not reach Kenn Forge");
+
+        disconnected = false;
+        recovered = true;
+        if (endpoint === "commits") {
+          await loadWorkspaceDiff(store, "ws-a", "head", false, { refreshCommits: true });
+        }
+        await vi.advanceTimersByTimeAsync(30_000);
+        await refresh;
+        expect(store.getDiff()?.files[0]?.path).toBe("updated.ts");
+        expect(store.getFileList()?.snapshot_version).toBe("updated.ts");
+        expect(store.getCommitsError()).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("refreshes a cached HEAD diff when the workspace commit list is unavailable", async () => {
+    let refreshed = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith("/commits")) {
+        return Response.json({ code: "notFound", detail: "commits not available for this workspace" }, { status: 404 });
+      }
+      const file = refreshed ? "updated.ts" : "a.ts";
+      return Response.json(
+        url.includes("/files?")
+          ? makeFilesResult([file], { snapshot_version: file })
+          : { ...makeDiffResult([file]), snapshot_version: file },
+      );
+    });
+    const store = createDiffStore({ client: testClient() });
+    await loadWorkspaceDiff(store, "ws-a", "head");
+    await loadCommits(store);
+
+    refreshed = true;
+    await loadWorkspaceDiff(store, "ws-a", "head", false, { refreshCommits: true });
+    expect(store.getDiffError()).toBeNull();
+    expect(store.getCommitsError()).toBe("commits not available for this workspace");
+    expect(store.getDiff()?.files[0]?.path).toBe("updated.ts");
+    expect(store.getFileList()?.files[0]?.path).toBe("updated.ts");
+  });
+
+  it("discards a cached diff when commit refresh reports a deleted workspace", async () => {
+    let deleted = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (deleted) return Response.json({ code: "workspaceNotFound", detail: "workspace not found" }, { status: 404 });
+      if (url.endsWith("/commits")) return Response.json({ commits: [] });
+      return Response.json(
+        url.includes("/files?")
+          ? makeFilesResult(["a.ts"], { snapshot_version: "a:1" })
+          : { ...makeDiffResult(["a.ts"]), snapshot_version: "a:1" },
+      );
+    });
+    const store = createDiffStore({ client: testClient() });
+    await loadWorkspaceDiff(store, "ws-a", "head");
+    await loadCommits(store);
+
+    deleted = true;
+    await loadWorkspaceDiff(store, "ws-a", "head", false, { refreshCommits: true });
+    expect(store.getDiffError()).toBe("workspace not found");
+    expect(store.getDiff()).toBeNull();
+    expect(store.getFileList()).toBeNull();
+
+    const revisit = loadWorkspaceDiff(store, "ws-a", "head");
+    expect(store.getDiff()).toBeNull();
+    expect(store.getFileList()).toBeNull();
+    await revisit;
+  });
+
+  it("reports a validation error when a retained commit is no longer in the workspace", async () => {
+    let commitRemoved = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("commit=old-sha") && commitRemoved) {
+        return Response.json(
+          { code: "validationError", detail: "invalid scope: commit is not in this workspace branch" },
+          { status: 400 },
+        );
+      }
+      if (url.includes("/workspaces/ws-1/files?")) {
+        return Response.json(makeFilesResult(["a.ts"], { snapshot_version: "a:1" }));
+      }
+      if (url.includes("/workspaces/ws-1/diff?") && url.includes("revision=a%3A1")) {
+        return Response.json({ ...makeDiffResult(["a.ts"]), snapshot_version: "a:1" });
+      }
+      return Response.json({}, { status: 404 });
+    });
+    const store = createDiffStore({ client: testClient() });
+    await loadWorkspaceDiff(store, "ws-1", "head");
+    store.selectCommit("old-sha");
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+    store.resetToHead();
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+
+    commitRemoved = true;
+    store.selectCommit("old-sha");
+    expect(store.getDiff()?.files[0]?.path).toBe("a.ts");
+    await vi.waitFor(() => expect(store.getDiffError()).toBe("invalid scope: commit is not in this workspace branch"));
+    expect(store.isDiffLoading()).toBe(false);
+    expect(store.getDiff()).toBeNull();
+
+    store.resetToHead();
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+    store.selectCommit("old-sha");
+    expect(store.getDiff()).toBeNull();
+    await vi.waitFor(() => expect(store.isDiffLoading()).toBe(false));
+  });
+
+  it.each(["host", "base", "stacked", "whitespace", "commit"])(
+    "does not restore a recent workspace diff for a different %s",
+    async (changed) => {
+      const blocked = Promise.withResolvers<Response>();
+      let refreshing = false;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+        if (refreshing) return blocked.promise;
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url === "/api/v1/workspaces/ws-1/files?base=head") {
+          return Response.json(makeFilesResult(["a.ts"], { snapshot_version: "a:1" }));
+        }
+        if (url === "/api/v1/workspaces/ws-1/diff?base=head&revision=a%3A1") {
+          return Response.json({ ...makeDiffResult(["a.ts"]), snapshot_version: "a:1" });
+        }
+        return Response.json({}, { status: 404 });
+      });
+      const store = createDiffStore({ client: testClient() });
+      await loadWorkspaceDiff(store, "ws-1", "head");
+
+      refreshing = true;
+      if (changed === "whitespace") store.setHideWhitespace(true);
+      else if (changed === "commit") store.selectCommit("sha2");
+      else {
+        store.loadWorkspaceDiff("ws-1", changed === "base" ? "pushed" : "head", changed === "stacked", {
+          workspaceHostKey: changed === "host" ? "member" : undefined,
+        });
+      }
+
+      expect(store.getFileList()).toBeNull();
+      expect(store.getDiff()).toBeNull();
+    },
+  );
+
   it("keeps a coherent workspace diff visible during a preserving refresh", async () => {
     const filesA = makeFilesResult(["a.ts"], { snapshot_version: "generation:1" });
     const diffA = { ...makeDiffResult(["a.ts"]), snapshot_version: "generation:1" };

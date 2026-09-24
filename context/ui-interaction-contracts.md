@@ -253,6 +253,10 @@ Persisted controls must state their scope clearly.
 - The workspace details tab is keyed by host-aware workspace identity; an unsupported
   tab may fall back only for the current live workspace, never rewrite another
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
+- The PR / Issue default leaves unlinked workspace details closed; only an explicit
+  Diff selection opens them (`frontend/src/lib/components/terminal/workspace-sidebar-default.ts::defaultWorkspaceSidebarTab`).
+- Visible workspace PR details consume provider updates independently of diff watching
+  and airplane-mode polling (`frontend/src/lib/app-stores.svelte.ts::refreshVisibleData`).
 - Workspace item search remembers separate browser-local PR and issue choices per
   workspace and host, preserving the selected item's full repository reference;
   it must never change workspace associations or the diff merge target

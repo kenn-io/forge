@@ -74,7 +74,8 @@ func newFleetSetupRoleCommand(options fleetCLIOptions, role fleetsetup.Role) *co
 	cmd.Flags().StringVar(&flags.DataDir, "data-dir", "", "Forge data directory (defaults to the existing config or standard path)")
 	cmd.Flags().StringVar(&flags.BinaryPath, "binary", "", "kenn-forge binary installed in the service")
 	cmd.Flags().StringVar(&flags.User, "user", "", "operating-system user that runs Forge")
-	cmd.Flags().StringVar(&flags.TailscaleLogin, "tailscale-login", "", "allowed Tailscale user login")
+	cmd.Flags().StringArrayVar(&flags.TailscaleLogins, "tailscale-login", nil, "Tailscale user login allowed to open the UI and MCP without a token (repeatable; defaults to this device's login)")
+	cmd.Flags().IntVar(&flags.TailscaleHTTPSPort, "tailscale-https-port", 0, "Tailscale Serve HTTPS port (defaults to the existing origin's port or 443)")
 	cmd.Flags().StringVar(&flags.TailscaleDNS, "tailscale-dns-name", "", "canonical Tailscale device DNS name")
 	cmd.Flags().IntVar(&flags.Port, "port", 0, "loopback Forge port (defaults to existing config or 8091)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "apply the displayed plan without an interactive prompt")
@@ -94,10 +95,10 @@ func writeFleetSetupPlan(writer io.Writer, plan fleetsetup.Plan) error {
 		{"Publication", plan.Publication},
 	}
 	if plan.TailscaleDNS != "" {
-		lines = append(lines,
-			[2]string{"Tailscale DNS", plan.TailscaleDNS},
-			[2]string{"Allowed login", plan.TailscaleLogin},
-		)
+		lines = append(lines, [2]string{"Tailscale DNS", plan.TailscaleDNS})
+	}
+	if len(plan.TailscaleLogins) > 0 {
+		lines = append(lines, [2]string{"Allowed logins", strings.Join(plan.TailscaleLogins, ", ")})
 	}
 	if _, err := fmt.Fprintln(writer, "Forge fleet setup plan:"); err != nil {
 		return err

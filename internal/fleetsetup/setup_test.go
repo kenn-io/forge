@@ -95,7 +95,7 @@ func TestPlanDiscoversTailscaleIdentityWithoutMutatingTarget(t *testing.T) {
 	assert.Equal(RoleHub, plan.Role)
 	assert.Equal("operator", plan.User)
 	assert.Equal("forge-spoke.example.ts.net", plan.TailscaleDNS)
-	assert.Equal("operator@example.com", plan.TailscaleLogin)
+	assert.Equal([]string{"operator@example.com"}, plan.TailscaleLogins)
 	assert.Equal("https://forge-spoke.example.ts.net", plan.Origin)
 	assert.Equal(8091, plan.Port)
 	assert.Equal(filepath.Join(root, ".config/systemd/user/kenn-forge.service"), plan.ServicePath)
@@ -192,7 +192,7 @@ func TestConfigureSpokePreservesEnrollmentOwnedRole(t *testing.T) {
 	plan := Plan{
 		Role: RoleSpoke, Host: "127.0.0.1", Port: 8091,
 		DataDir: "/tmp/data", TailscaleDNS: "old.example.ts.net",
-		TailscaleLogin: "operator@example.com", Origin: "https://old.example.ts.net",
+		TailscaleLogins: []string{"operator@example.com"}, Origin: "https://old.example.ts.net",
 		AllowedHost: "old.example.ts.net", Publication: publicationTailscale,
 	}
 
@@ -257,7 +257,7 @@ func TestApplyRollsBackOwnedStateWhenReadinessFails(t *testing.T) {
 		ConfigPath: filepath.Join(root, "forge", "config.toml"),
 		DataDir:    filepath.Join(root, "forge"), BinaryPath: filepath.Join(root, "kenn-forge"),
 		User: "operator", UID: 1000, HomeDir: root, PathEnv: "/usr/bin",
-		TailscaleLogin: "operator@example.com", TailscaleDNS: "forge-spoke.example.ts.net",
+		TailscaleLogins: []string{"operator@example.com"}, TailscaleDNS: "forge-spoke.example.ts.net", TailscaleHTTPSPort: 443,
 		Origin: "https://forge-spoke.example.ts.net", AllowedHost: "forge-spoke.example.ts.net",
 		Publication: publicationTailscale, Host: "127.0.0.1", Port: 8091,
 		ServicePath: filepath.Join(root, ".config/systemd/user/kenn-forge.service"),
@@ -354,7 +354,7 @@ func TestApplyPublishesConfigServiceAndCanonicalIdentity(t *testing.T) {
 		ConfigPath: filepath.Join(root, "forge", "config.toml"),
 		DataDir:    dataDir, BinaryPath: filepath.Join(root, "kenn-forge"),
 		User: "operator", UID: 1000, HomeDir: root, PathEnv: "/usr/bin",
-		TailscaleLogin: "operator@example.com", TailscaleDNS: "forge-spoke.example.ts.net",
+		TailscaleLogins: []string{"operator@example.com"}, TailscaleDNS: "forge-spoke.example.ts.net", TailscaleHTTPSPort: 443,
 		Origin: "https://forge-spoke.example.ts.net", AllowedHost: "forge-spoke.example.ts.net",
 		Publication: publicationTailscale, Host: "127.0.0.1", Port: 8091,
 		ServicePath: filepath.Join(root, ".config/systemd/user/kenn-forge.service"),
@@ -591,4 +591,108 @@ func TestApplyReturnsRollbackFailure(t *testing.T) {
 	transaction := transaction{}
 	transaction.record(func(context.Context) error { return errors.New("undo failed") })
 	assert.ErrorContains(t, transaction.rollback(t.Context()), "undo failed")
+}
+
+func writeTailscaleIdentityConfig(t *testing.T, root string, logins ...string) (string, string) {
+	t.Helper()
+	dataDir, err := config.CanonicalDataDir(filepath.Join(root, "forge"))
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(dataDir, 0o700))
+	configPath := filepath.Join(dataDir, "config.toml")
+	cfg := &config.Config{DataDir: dataDir, Host: "127.0.0.1", Port: 8091}
+	cfg.API.RequireAuth = true
+	cfg.API.TailscaleServe = config.TailscaleServeAPI{Enabled: true, AllowedUsers: logins}
+	require.NoError(t, cfg.Save(configPath))
+	return configPath, dataDir
+}
+
+func TestTailscaleSetupKeepsPreviouslyAllowedLogins(t *testing.T) {
+	runner, root, _ := testRunner(t, "linux")
+	configPath, dataDir := writeTailscaleIdentityConfig(t, root, "phone@example.net")
+
+	plan, err := runner.Plan(t.Context(), Options{
+		Role: RoleHub, ConfigPath: configPath, DataDir: dataDir, Tailscale: true,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"phone@example.net", "operator@example.com"}, plan.TailscaleLogins)
+}
+
+func TestTailscaleSetupAllowsExplicitLoginsWithoutDeviceUser(t *testing.T) {
+	runner, root, _ := testRunner(t, "linux")
+	run := runner.deps.run
+	runner.deps.run = func(ctx context.Context, name string, args ...string) (commandResult, error) {
+		if name == "tailscale" && slices.Equal(args, []string{"status", "--json"}) {
+			return commandResult{stdout: []byte(`{
+  "BackendState":"Running",
+  "Self":{"DNSName":"forge-spoke.example.ts.net.","UserID":7},
+  "User":{},
+  "CertDomains":["forge-spoke.example.ts.net"]
+}`)}, nil
+		}
+		return run(ctx, name, args...)
+	}
+
+	plan, err := runner.Plan(t.Context(), Options{
+		Role: RoleHub, ConfigPath: filepath.Join(root, "config.toml"), Tailscale: true,
+		TailscaleLogins: []string{"Laptop@Example.com", "phone@example.net", "laptop@example.com"},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"laptop@example.com", "phone@example.net"}, plan.TailscaleLogins)
+}
+
+func TestTailscaleIdentityFlagsRequireTailscalePublication(t *testing.T) {
+	runner, root, _ := testRunner(t, "linux")
+	options := Options{
+		Role: RoleHub, ConfigPath: filepath.Join(root, "config.toml"),
+		Origin: "https://forge.internal.example",
+	}
+
+	withLogin := options
+	withLogin.TailscaleLogins = []string{"operator@example.com"}
+	_, loginErr := runner.Plan(t.Context(), withLogin)
+	withPort := options
+	withPort.TailscaleHTTPSPort = 8091
+	_, portErr := runner.Plan(t.Context(), withPort)
+
+	require.ErrorContains(t, loginErr, "--tailscale-login requires --tailscale")
+	require.ErrorContains(t, portErr, "--tailscale-https-port requires --tailscale")
+}
+
+func TestExternalSetupDisablesPreviousTailscaleIdentity(t *testing.T) {
+	runner, root, _ := testRunner(t, "linux")
+	configPath, dataDir := writeTailscaleIdentityConfig(t, root, "stale@example.net")
+
+	plan, err := runner.Plan(t.Context(), Options{
+		Role: RoleHub, ConfigPath: configPath, DataDir: dataDir,
+		Origin: "https://forge.internal.example",
+	})
+
+	require.NoError(t, err)
+	assert.Empty(t, plan.TailscaleLogins)
+}
+
+func TestTailscaleSetupPublishesOnTheChosenHTTPSPort(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	runner, root, _ := testRunner(t, "linux")
+	configPath, dataDir := writeTailscaleIdentityConfig(t, root, "operator@example.com")
+	cfg, err := config.Load(configPath)
+	require.NoError(err)
+	cfg.Fleet = config.Fleet{Enabled: true, BaseURL: "https://forge-spoke.example.ts.net:8091"}
+	require.NoError(cfg.Save(configPath))
+	options := Options{Role: RoleHub, ConfigPath: configPath, DataDir: dataDir, Tailscale: true}
+
+	kept, err := runner.Plan(t.Context(), options)
+	require.NoError(err)
+	options.TailscaleHTTPSPort = 8443
+	explicit, err := runner.Plan(t.Context(), options)
+	require.NoError(err)
+
+	assert.Equal(8091, kept.TailscaleHTTPSPort)
+	assert.Equal("https://forge-spoke.example.ts.net:8091", kept.Origin)
+	assert.Equal("forge-spoke.example.ts.net:8091", kept.AllowedHost)
+	assert.Equal(8443, explicit.TailscaleHTTPSPort)
+	assert.Equal("https://forge-spoke.example.ts.net:8443", explicit.Origin)
 }

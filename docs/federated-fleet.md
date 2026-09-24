@@ -246,6 +246,29 @@ Tailscale app when `tailscale` is not on `PATH`.
 Review the displayed plan and confirm it. For unattended setup, inspect the
 same plan with `--dry-run`, then repeat with `--yes`.
 
+With `--tailscale`, anyone whose Tailscale login is on the allowlist opens the
+UI without a token. Setup allowlists this device's login and keeps any logins
+you allowed before. If your phone or another machine signs in to Tailscale with
+a different login, for example because the device is shared from another
+tailnet, add it:
+
+```sh
+kenn-forge fleet setup hub --tailscale \
+  --tailscale-login you@example.com \
+  --tailscale-login you@work.example
+```
+
+Passing `--tailscale-login` replaces the device's own login in the new
+allowlist, so list every login you use. To remove a login, delete it from
+`[api.tailscale_serve] allowed_users` in the config and restart Forge.
+
+Serve publishes on HTTPS port 443 by default. To use another port, such as
+`https://build-a.example.ts.net:8091`, pass `--tailscale-https-port 8091`.
+Running setup again keeps the port of the existing origin.
+
+When the MCP server is enabled, the same logins can reach it at the Serve
+origin without a token, for example `https://build-a.example.ts.net/mcp`.
+
 If your LAN, UniFi network, VPN, or reverse proxy already provides private
 HTTPS, give Forge its canonical origin instead:
 

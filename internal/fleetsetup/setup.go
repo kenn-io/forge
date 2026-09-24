@@ -52,39 +52,45 @@ const (
 // Options contains explicit setup inputs. Empty discovery-backed values are
 // resolved by Plan before any owned state is changed.
 type Options struct {
-	Role           Role
-	ConfigPath     string
-	DataDir        string
-	BinaryPath     string
-	User           string
-	TailscaleLogin string
-	TailscaleDNS   string
-	Origin         string
-	Port           int
-	Tailscale      bool
+	Role            Role
+	ConfigPath      string
+	DataDir         string
+	BinaryPath      string
+	User            string
+	TailscaleLogins []string
+	TailscaleDNS    string
+	// TailscaleHTTPSPort is the Serve HTTPS port. Zero keeps the port of an
+	// existing Tailscale origin, or uses 443.
+	TailscaleHTTPSPort int
+	Origin             string
+	Port               int
+	Tailscale          bool
 }
 
 // Plan is the complete, displayable setup intent.
 type Plan struct {
-	Role           Role
-	ConfigPath     string
-	DataDir        string
-	BinaryPath     string
-	User           string
-	UID            int
-	HomeDir        string
-	PathEnv        string
-	TailscaleLogin string
-	TailscaleDNS   string
-	Origin         string
-	AllowedHost    string
-	Publication    string
-	Host           string
-	Port           int
-	ServicePath    string
-	ServiceKind    string
-	ServiceLabel   string
-	EnableLinger   bool
+	Role       Role
+	ConfigPath string
+	DataDir    string
+	BinaryPath string
+	User       string
+	UID        int
+	HomeDir    string
+	PathEnv    string
+	// TailscaleLogins is the complete browser identity allowlist. An empty
+	// list leaves Tailscale identity mode disabled.
+	TailscaleLogins    []string
+	TailscaleDNS       string
+	TailscaleHTTPSPort int
+	Origin             string
+	AllowedHost        string
+	Publication        string
+	Host               string
+	Port               int
+	ServicePath        string
+	ServiceKind        string
+	ServiceLabel       string
+	EnableLinger       bool
 
 	serveAlreadyConfigured bool
 	tailscaleCommand       string
@@ -192,6 +198,15 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 	if options.Tailscale == (strings.TrimSpace(options.Origin) != "") {
 		return Plan{}, errors.New("choose exactly one publication mode: --tailscale or --origin")
 	}
+	if !options.Tailscale && len(options.TailscaleLogins) > 0 {
+		return Plan{}, errors.New("--tailscale-login requires --tailscale")
+	}
+	if !options.Tailscale && options.TailscaleHTTPSPort != 0 {
+		return Plan{}, errors.New("--tailscale-https-port requires --tailscale")
+	}
+	if options.TailscaleHTTPSPort < 0 || options.TailscaleHTTPSPort > 65535 {
+		return Plan{}, fmt.Errorf("tailscale HTTPS port must be between 1 and 65535, got %d", options.TailscaleHTTPSPort)
+	}
 	if options.Role != RoleHub && options.Role != RoleSpoke {
 		return Plan{}, fmt.Errorf("unsupported fleet setup role %q", options.Role)
 	}
@@ -276,6 +291,7 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 	origin := strings.TrimSpace(options.Origin)
 	tailnet := tailscaleDiscovery{}
 	tailscaleCommand := ""
+	httpsPort := 0
 	if options.Tailscale {
 		publication = publicationTailscale
 		tailscaleCommand, err = r.resolveTailscaleCommand()
@@ -283,16 +299,21 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 			return Plan{}, err
 		}
 		tailnet, err = r.discoverTailscale(
-			ctx, tailscaleCommand, options.TailscaleDNS, options.TailscaleLogin,
+			ctx, tailscaleCommand, options.TailscaleDNS, len(options.TailscaleLogins) == 0,
 		)
 		if err != nil {
 			return Plan{}, err
 		}
-		origin = "https://" + tailnet.DNSName
+		httpsPort = tailscaleHTTPSPort(options.TailscaleHTTPSPort, tailnet.DNSName, existing)
+		origin = "https://" + net.JoinHostPort(tailnet.DNSName, strconv.Itoa(httpsPort))
 	}
 	origin, err = federation.CanonicalOrigin(origin)
 	if err != nil {
 		return Plan{}, fmt.Errorf("canonicalize public origin: %w", err)
+	}
+	logins, err := planTailscaleLogins(options, tailnet.Login, existing)
+	if err != nil {
+		return Plan{}, err
 	}
 	parsedOrigin, err := url.Parse(origin)
 	if err != nil {
@@ -326,7 +347,7 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 	}
 	serveState := serveAbsent
 	if publication == publicationTailscale {
-		serveState, err = r.inspectServe(ctx, tailscaleCommand, tailnet.DNSName, port)
+		serveState, err = r.inspectServe(ctx, tailscaleCommand, tailnet.DNSName, httpsPort, port)
 		if err != nil {
 			return Plan{}, err
 		}
@@ -335,8 +356,9 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 		Role: options.Role, ConfigPath: configPath, DataDir: dataDir,
 		BinaryPath: binaryPath, User: selectedUser, UID: uid,
 		HomeDir: current.HomeDir, PathEnv: os.Getenv("PATH"),
-		TailscaleLogin: tailnet.Login, TailscaleDNS: tailnet.DNSName,
-		Origin: origin, AllowedHost: parsedOrigin.Host,
+		TailscaleLogins: logins, TailscaleDNS: tailnet.DNSName,
+		TailscaleHTTPSPort: httpsPort,
+		Origin:             origin, AllowedHost: parsedOrigin.Host,
 		Publication: publication, Host: "127.0.0.1", Port: port,
 		ServicePath: service.Path, ServiceKind: service.Kind,
 		ServiceLabel: service.Label, EnableLinger: enableLinger,
@@ -347,6 +369,54 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 		return Plan{}, err
 	}
 	return plan, nil
+}
+
+// tailscaleHTTPSPort keeps the Serve port of an existing origin on the same
+// device so a repeated setup does not change an enrolled federation origin.
+func tailscaleHTTPSPort(explicit int, dnsName string, existing *config.Config) int {
+	if explicit != 0 {
+		return explicit
+	}
+	if existing != nil && existing.Fleet.BaseURL != "" {
+		if parsed, err := url.Parse(existing.Fleet.BaseURL); err == nil &&
+			parsed.Scheme == "https" && canonicalDNSName(parsed.Hostname()) == dnsName {
+			if port, err := strconv.Atoi(parsed.Port()); err == nil && port > 0 {
+				return port
+			}
+		}
+	}
+	return 443
+}
+
+// planTailscaleLogins resolves the browser identity allowlist. A repeated
+// setup keeps logins already allowed so it never locks out a user added
+// earlier. External publication never enables identity mode: only Tailscale
+// Serve is known to replace client-supplied identity headers.
+func planTailscaleLogins(
+	options Options, discovered string, existing *config.Config,
+) ([]string, error) {
+	if !options.Tailscale {
+		return nil, nil
+	}
+	candidates := []string{}
+	if existing != nil && existing.API.TailscaleServe.Enabled {
+		candidates = append(candidates, existing.API.TailscaleServe.AllowedUsers...)
+	}
+	if discovered != "" {
+		candidates = append(candidates, discovered)
+	}
+	candidates = append(candidates, options.TailscaleLogins...)
+	logins := make([]string, 0, len(candidates))
+	for _, raw := range candidates {
+		login, err := config.NormalizeTailscaleLogin(raw)
+		if err != nil {
+			return nil, fmt.Errorf("tailscale login: %w", err)
+		}
+		if !slices.Contains(logins, login) {
+			logins = append(logins, login)
+		}
+	}
+	return logins, nil
 }
 
 func loadExistingConfig(path string, stat func(string) (os.FileInfo, error)) (*config.Config, error) {
@@ -419,9 +489,9 @@ func configureCandidate(candidate *config.Config, plan Plan) error {
 	candidate.TrustReverseProxy = false
 	candidate.API.RequireAuth = true
 	candidate.API.TailscaleServe = config.TailscaleServeAPI{}
-	if plan.Publication == publicationTailscale {
+	if len(plan.TailscaleLogins) > 0 {
 		candidate.API.TailscaleServe = config.TailscaleServeAPI{
-			Enabled: true, AllowedUsers: []string{plan.TailscaleLogin},
+			Enabled: true, AllowedUsers: slices.Clone(plan.TailscaleLogins),
 		}
 	}
 	candidate.Fleet.Enabled = true

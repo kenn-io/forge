@@ -243,6 +243,12 @@ func browserWebSocketOriginAllowed(r *http.Request) bool {
 	if !strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket") {
 		return true
 	}
+	return sameHTTPSOrigin(r)
+}
+
+// sameHTTPSOrigin reports whether the request has no Origin or one HTTPS
+// Origin naming the requested authority.
+func sameHTTPSOrigin(r *http.Request) bool {
 	origins := r.Header.Values("Origin")
 	if len(origins) == 0 {
 		return true

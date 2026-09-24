@@ -216,7 +216,10 @@ type Server struct {
 	// hostOpts is atomic: Serve repoints an ephemeral (port-0) bind
 	// at the kernel-assigned port while requests may already be
 	// reading the options.
-	hostOpts               atomic.Pointer[HostCheckOptions]
+	hostOpts atomic.Pointer[HostCheckOptions]
+	// tailnetMCP serves /mcp on this listener for allowlisted Tailscale
+	// Serve users; nil until the MCP companion is initialized.
+	tailnetMCP             atomic.Pointer[http.Handler]
 	buildInfo              BuildInfo
 	now                    func() time.Time
 	handler                http.Handler
@@ -1647,6 +1650,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.checkHost(w, r) {
+		return
+	}
+	if s.serveTailnetMCP(w, r) {
 		return
 	}
 	if s.daemonRequests.requireAPIAuth {

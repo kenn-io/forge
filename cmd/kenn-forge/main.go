@@ -859,7 +859,9 @@ func run(opts serve.Options) error {
 	}
 	switcher.Swap(srv)
 	if mcpSwitcher != nil {
-		mcpSwitcher.Swap(mcpSrv.HTTPHandler())
+		mcpHandler := mcpSrv.HTTPHandler()
+		mcpSwitcher.Swap(mcpHandler)
+		srv.SetTailnetMCPHandler(mcpHandler)
 	}
 
 	select {

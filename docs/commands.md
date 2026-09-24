@@ -94,7 +94,7 @@ Use Settings or edit TOML for normal configuration changes.
 ## Set up and manage a fleet
 
 ```sh
-kenn-forge fleet setup hub --tailscale
+kenn-forge fleet setup hub --tailscale --tailscale-login you@example.com
 kenn-forge fleet setup spoke --tailscale
 kenn-forge fleet setup hub --origin https://forge.internal.example
 kenn-forge fleet setup spoke --origin https://spoke.internal.example

@@ -34,8 +34,10 @@
   `internal/server/mcp_http.go::NewMCPHTTPGuard`).
 - With `[api.tailscale_serve]` enabled, the main listener also serves `/mcp` to
   allowlisted Serve users without a bearer. The identity header is ambient, so
-  a request whose Origin names another authority is rejected
-  (`internal/server/mcp_tailnet.go::Server.serveTailnetMCP`).
+  a request whose Origin names another authority is rejected. Serve reaches the
+  loopback listener with the public Host, so this path uses the SDK handler
+  without its localhost rebinding guard after Forge's host check
+  (`internal/mcpserver/server.go::Server.TailnetHTTPHandler`).
 - Tool implementations call the typed in-process Forge backend and never the
   daemon's public HTTP API (`internal/mcpserver/backend.go::Backend`,
   `internal/server/mcp_backend.go::Server.MCPBackend`).

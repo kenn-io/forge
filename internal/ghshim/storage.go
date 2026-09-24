@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
 	"go.kenn.io/forge/internal/db"
 )
@@ -55,13 +54,6 @@ func Read(ctx context.Context, database *db.DB, repo db.Repo, q Query) ([]byte, 
 		slices.SortStableFunc(pulls, func(a, b db.MergeRequest) int { return b.CreatedAt.Compare(a.CreatedAt) })
 		if len(pulls) > q.Limit {
 			pulls = pulls[:q.Limit]
-		}
-	}
-	for _, pr := range pulls {
-		for _, field := range q.Fields {
-			if (field == "headRefOid" && pr.PlatformHeadSHA == "") || (field == "createdAt" && pr.CreatedAt.IsZero()) || (field == "updatedAt" && pr.UpdatedAt.IsZero()) || (field == "url" && pr.URL == "") || (field == "title" && strings.TrimSpace(pr.Title) == "") {
-				return nil, fmt.Errorf("requested field is not stored")
-			}
 		}
 	}
 	return Encode(q, pulls)

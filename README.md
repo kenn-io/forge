@@ -98,7 +98,8 @@ binary in a separate directory ahead of the real `gh` on that tool's `PATH`.
 `FORGE_GH_REAL` can select the real executable explicitly.
 
 The shim serves piped `pr list` and `pr view <number>` JSON queries for watched
-GitHub repositories from Forge's SQLite data through the local daemon. Normal
+GitHub repositories from the local daemon's SQLite data on hubs and spokes.
+Missing numeric views can use the existing hub PR-read API. Normal
 Forge sync owns freshness; the shim neither fetches provider data nor keeps an
 extra cache. List queries require a completed repository sync, and historical
 lists also require a complete archived PR inventory. List filters include

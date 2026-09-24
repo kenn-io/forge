@@ -2,13 +2,17 @@ package server
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/mcpserver"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func tailnetMCPInitialize(
@@ -32,13 +36,38 @@ func tailnetMCPInitialize(
 	return response
 }
 
-func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
-	ts, srv := newTailscaleAuthTestServer(t)
+// newTailnetMCPTestServer serves the main listener on loopback with a public
+// allowed host, matching how Tailscale Serve reaches Forge.
+func newTailnetMCPTestServer(t *testing.T) (*httptest.Server, string) {
+	t.Helper()
+	ts := httptest.NewUnstartedServer(nil)
+	bind, err := config.ParseHostKey(ts.Listener.Addr().String())
+	require.NoError(t, err)
+	port, err := strconv.Atoi(bind.Port)
+	require.NoError(t, err)
+	publicHost := "forge.example.ts.net:" + bind.Port
+	srv := New(dbtest.Open(t), nil, nil, "/", &config.Config{
+		Host: "127.0.0.1", Port: port, AllowedHosts: []string{publicHost},
+	}, ServerOptions{
+		DaemonAccess: DaemonAccessOptions{
+			Token: "local-secret", RequireAPIAuth: true,
+			TailscaleServeEnabled: true,
+			TailscaleServeUsers:   []string{"user@example.com"},
+		},
+	})
 	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = mcp.Close() })
-	srv.SetTailnetMCPHandler(mcp.HTTPHandler())
-	sameOrigin := "https://" + strings.TrimPrefix(ts.URL, "http://")
+	srv.SetTailnetMCPHandler(mcp.TailnetHTTPHandler())
+	ts.Config.Handler = srv
+	ts.Start()
+	t.Cleanup(ts.Close)
+	return ts, publicHost
+}
+
+func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
+	ts, publicHost := newTailnetMCPTestServer(t)
+	sameOrigin := "https://" + publicHost
 
 	tests := []struct {
 		name     string
@@ -55,6 +84,7 @@ func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+				request.Host = publicHost
 				if test.login != "" {
 					request.Header.Set("Tailscale-User-Login", test.login)
 				}
@@ -73,7 +103,7 @@ func TestTailnetMCPRequiresTailscaleIdentityMode(t *testing.T) {
 	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = mcp.Close() })
-	srv.SetTailnetMCPHandler(mcp.HTTPHandler())
+	srv.SetTailnetMCPHandler(mcp.TailnetHTTPHandler())
 
 	response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
 		request.Header.Set("Tailscale-User-Login", "user@example.com")

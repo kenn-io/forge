@@ -109,44 +109,47 @@ describe("app store composition", () => {
     expect(stores.issues.getIssues()).toEqual([]);
   });
 
-  it("refreshes an open workspace PR on provider events while airplane mode pauses polling", async () => {
-    const initialResponse = await createMockApiFetch().fetch("/api/v1/pulls/github/acme/widgets/42");
-    let updatedDetail: PullDetail = await initialResponse.json();
-    const api = createMockApiFetch([
-      ({ method, url }) =>
-        method === "GET" && url.pathname.endsWith("/pulls/github/acme/widgets/42")
-          ? Response.json(updatedDetail)
-          : undefined,
-    ]);
-    vi.stubGlobal("fetch", api.fetch);
-    const { stores } = createAppStores({ runtime, getPage: () => "terminal" });
-    stores.settings.setAirplaneMode(true);
-    const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widgets" };
-    stores.detail.loadDetail("acme", "widgets", 42, { ...ref, sync: false });
-    await vi.waitFor(() => expect(stores.detail.getDetail()?.merge_request.Number).toBe(42));
-    stores.detail.startDetailPolling("acme", "widgets", 42, ref);
-    runtime.runCommand(stores.events.streamEffect, {
-      operation: "test workspace PR events",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await vi.waitFor(() => expect(eventSources).toHaveLength(1));
-    updatedDetail = {
-      ...updatedDetail,
-      merge_request: { ...updatedDetail.merge_request, Body: "Updated workspace PR body" },
-    };
-    emit(eventSources[0]!, "data_changed", {});
-    await vi.waitFor(() => expect(stores.detail.getDetail()?.merge_request.Body).toBe("Updated workspace PR body"));
+  it.each(["terminal", "mobile-workspace-item"])(
+    "refreshes an open workspace PR on %s provider events while airplane mode pauses polling",
+    async (page) => {
+      const initialResponse = await createMockApiFetch().fetch("/api/v1/pulls/github/acme/widgets/42");
+      let updatedDetail: PullDetail = await initialResponse.json();
+      const api = createMockApiFetch([
+        ({ method, url }) =>
+          method === "GET" && url.pathname.endsWith("/pulls/github/acme/widgets/42")
+            ? Response.json(updatedDetail)
+            : undefined,
+      ]);
+      vi.stubGlobal("fetch", api.fetch);
+      const { stores } = createAppStores({ runtime, getPage: () => page });
+      stores.settings.setAirplaneMode(true);
+      const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widgets" };
+      stores.detail.loadDetail("acme", "widgets", 42, { ...ref, sync: false });
+      await vi.waitFor(() => expect(stores.detail.getDetail()?.merge_request.Number).toBe(42));
+      stores.detail.startDetailPolling("acme", "widgets", 42, ref);
+      runtime.runCommand(stores.events.streamEffect, {
+        operation: "test workspace PR events",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      await vi.waitFor(() => expect(eventSources).toHaveLength(1));
+      updatedDetail = {
+        ...updatedDetail,
+        merge_request: { ...updatedDetail.merge_request, Body: "Updated workspace PR body" },
+      };
+      emit(eventSources[0]!, "data_changed", {});
+      await vi.waitFor(() => expect(stores.detail.getDetail()?.merge_request.Body).toBe("Updated workspace PR body"));
 
-    stores.detail.stopDetailPolling();
-    api.requests.length = 0;
-    await runtime.runCommand(stores.detail.refreshActiveDetailEffect(), {
-      operation: "test closed workspace PR",
-      safeContext: {},
-      onFailure: () => {},
-    }).exit;
-    expect(api.requests.filter(({ url }) => url.pathname.includes("/pulls/"))).toHaveLength(0);
-  });
+      stores.detail.stopDetailPolling();
+      api.requests.length = 0;
+      await runtime.runCommand(stores.detail.refreshActiveDetailEffect(), {
+        operation: "test closed workspace PR",
+        safeContext: {},
+        onFailure: () => {},
+      }).exit;
+      expect(api.requests.filter(({ url }) => url.pathname.includes("/pulls/"))).toHaveLength(0);
+    },
+  );
 
   it.each(["issues", "activity", "focus", "workspaces"])(
     "refreshes an open issue after data_changed on %s without waiting for the detail poll",

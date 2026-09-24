@@ -13,7 +13,6 @@ export type WorkspaceEventSignal =
     };
 
 type WorkspaceEventsSubscription = (subscriber: (event: WorkspaceEventsNotification) => void) => () => void;
-type WorkspaceSelection = () => () => void;
 
 function workspaceEventSignal(event: WorkspaceEventsNotification): WorkspaceEventSignal | undefined {
   switch (event.type) {
@@ -42,10 +41,7 @@ function workspaceEventSignal(event: WorkspaceEventsNotification): WorkspaceEven
   }
 }
 
-export const workspaceEventStream = (
-  subscribe: WorkspaceEventsSubscription,
-  selectWorkspace?: WorkspaceSelection,
-): Stream.Stream<WorkspaceEventSignal> =>
+export const workspaceEventStream = (subscribe: WorkspaceEventsSubscription): Stream.Stream<WorkspaceEventSignal> =>
   Stream.callback<WorkspaceEventSignal>((queue) =>
     Effect.gen(function* () {
       const offer = (signal: WorkspaceEventSignal): void => {
@@ -58,9 +54,5 @@ export const workspaceEventStream = (
         }),
       );
       yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
-      if (selectWorkspace !== undefined) {
-        const releaseSelection = yield* Effect.sync(selectWorkspace);
-        yield* Effect.addFinalizer(() => Effect.sync(releaseSelection));
-      }
     }),
   );

@@ -4067,9 +4067,11 @@
   });
 
   // Watching a diff owns server work and can reconnect SSE. Keep that lease
-  // tied to the visible pane, independently of workspace and PR updates.
+  // tied to the visible pane, independently of workspace and PR updates. The
+  // route already names the workspace, so a saved Diff tab prewarms before
+  // metadata arrives.
   $effect(() => {
-    if (!workspaceLive || !hostVisible || hideRightSidebar || !sidebarOpen || sidebarTab !== "diff") return;
+    if (!hostVisible || hideRightSidebar || !sidebarOpen || sidebarTab !== "diff") return;
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     if (!hostKey) return eventsStore.selectWorkspace(id);

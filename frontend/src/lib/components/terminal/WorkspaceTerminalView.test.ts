@@ -1398,6 +1398,26 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.selectWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it("starts the local diff lease for a saved Diff tab before workspace metadata arrives", async () => {
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
+    const metadata = deferred<Response>();
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: Request | URL | string, init?: RequestInit) =>
+        fetchPath(input) === "/api/v1/workspaces/ws-1" ? metadata.promise : originalFetch(input, init),
+      ),
+    );
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByText("Setting up workspace...");
+    await waitFor(() => expect(mocks.selectWorkspace).toHaveBeenCalledWith("ws-1"));
+
+    metadata.resolve(Response.json(workspaceResponse));
+    await screen.findByRole("tab", { name: "Home" });
+    expect(mocks.selectWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps an active diff load when selected prewarming becomes ready", async () => {
     window.__BASE_PATH__ = window.location.origin;
     localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");

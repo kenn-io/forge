@@ -120,7 +120,11 @@ describe("QuickActionSettings", () => {
     ]);
     await fireEvent.input(screen.getByRole("combobox"), { target: { value: "CODEX" } });
     expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getByRole("option", { name: "Codex" }).querySelector(".kit-harness-icon--openai")).not.toBeNull();
     await fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    expect(
+      screen.getByRole("button", { name: "Search agents...: Codex" }).querySelector(".kit-harness-icon--openai"),
+    ).not.toBeNull();
     await fireEvent.click(saveButton());
     await waitFor(() => {
       expect(mockPersistSettings).toHaveBeenCalledWith({ quick_actions: saved });

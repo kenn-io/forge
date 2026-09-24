@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { IconButton, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
+  import { HarnessIcon, IconButton, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import PlusIcon from "@lucide/svelte/icons/plus";
+  import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import { Effect } from "effect";
   import type { LaunchTarget, QuickAction } from "../../api/types.js";
+  import { harnessForAgentKey } from "../terminal/agentHarness.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
@@ -219,7 +221,16 @@
                 onselect={(value) => {
                   draft.agent = value;
                 }}
-              />
+              >
+                {#snippet icon(option)}
+                  {@const harness = harnessForAgentKey(option.name)}
+                  {#if harness}
+                    <HarnessIcon {harness} size={14} decorative />
+                  {:else}
+                    <SparklesIcon size={14} aria-hidden="true" />
+                  {/if}
+                {/snippet}
+              </Typeahead>
             </div>
             <div class="field field--remove">
               <span aria-hidden="true">&nbsp;</span>

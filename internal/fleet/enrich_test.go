@@ -304,7 +304,7 @@ func TestHubEnrichesAdHocWorkspaceFromAssociatedPull(t *testing.T) {
 		}},
 	}
 
-	enriched, err := EnrichProviderState(context.Background(), database, aggregate)
+	enriched, err := EnrichProviderState(t.Context(), database, aggregate)
 	require.NoError(err)
 	require.Len(enriched.Workspaces, 1)
 	require.NotNil(enriched.Workspaces[0].MRState)

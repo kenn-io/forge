@@ -191,3 +191,38 @@ func TestDiffFileStoreFailedEvictionKeepsEntryCounted(t *testing.T) {
 	assert.NotContains(store.entries, "oldest.diff")
 	assert.LessOrEqual(store.totalBytes, store.maxBytes)
 }
+
+func TestDiffFileStoreStuckEvictionDoesNotBlockNewerEvictions(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	store, err := newDiffFileStore(64)
+	require.NoError(err)
+	t.Cleanup(func() {
+		require.NoError(store.Close())
+	})
+
+	stuckPath, _, err := store.write("stuck.diff", make([]byte, 20))
+	require.NoError(err)
+	newerPath, _, err := store.write("newer.diff", make([]byte, 20))
+	require.NoError(err)
+
+	// Only the oldest diff stays undeletable, so eviction must move past it.
+	store.remove = func(path string) error {
+		if path == stuckPath {
+			return errors.New("file in use")
+		}
+		return os.Remove(path)
+	}
+	incomingPath, _, err := store.write("incoming.diff", make([]byte, 30))
+	require.NoError(err)
+
+	_, err = os.Stat(stuckPath)
+	require.NoError(err)
+	_, err = os.Stat(newerPath)
+	require.ErrorIs(err, os.ErrNotExist)
+	_, err = os.Stat(incomingPath)
+	require.NoError(err)
+	assert.Contains(store.entries, "stuck.diff")
+	assert.NotContains(store.entries, "newer.diff")
+	assert.Equal(int64(50), store.totalBytes)
+}

@@ -98,20 +98,18 @@ func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 
 	// The new diff already fits on its own (checked above), so evicting older
 	// entries normally gets back under the budget. The write has landed, so a
-	// failed removal does not fail it: the entry stays counted, eviction stops
-	// for now, and a later write retries it.
-	for d.totalBytes > d.maxBytes {
-		oldest := d.lru.Front()
-		if oldest == nil || oldest == added {
-			break
+	// failed removal does not fail it: that entry stays counted for a later
+	// write to retry, and eviction moves on to the next-oldest entry so one
+	// undeletable file cannot stop the cache from shrinking.
+	for elem := d.lru.Front(); d.totalBytes > d.maxBytes && elem != nil && elem != added; {
+		next := elem.Next()
+		entry := elem.Value.(diffFileEntry)
+		if err := d.remove(entry.path); err == nil || errors.Is(err, os.ErrNotExist) {
+			d.totalBytes -= entry.size
+			d.lru.Remove(elem)
+			delete(d.entries, entry.name)
 		}
-		entry := oldest.Value.(diffFileEntry)
-		if err := d.remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			break
-		}
-		d.totalBytes -= entry.size
-		d.lru.Remove(oldest)
-		delete(d.entries, entry.name)
+		elem = next
 	}
 	return abs, size, nil
 }

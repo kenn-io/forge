@@ -37,12 +37,26 @@ func TestRepositoryOverrides(t *testing.T) {
 }
 
 func TestDaemonDiscoveryUsesRuntimeBasePathAndBearer(t *testing.T) {
+	t.Run("explicit config", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "shim-config.toml")
+		t.Setenv("KENN_FORGE_HOME", t.TempDir())
+		t.Setenv("FORGE_GH_CONFIG", configPath)
+		assertDaemonDiscovery(t, dir, configPath)
+	})
+	t.Run("default config", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("KENN_FORGE_HOME", dir)
+		t.Setenv("FORGE_GH_CONFIG", "")
+		assertDaemonDiscovery(t, dir, filepath.Join(dir, "config.toml"))
+	})
+}
+
+func assertDaemonDiscovery(t *testing.T, dir, configPath string) {
+	t.Helper()
 	require := require.New(t)
 	assert := assert.New(t)
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
 	require.NoError(os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\nbase_path = \"/changed-config\"\n", dir), 0600))
-	t.Setenv("FORGE_GH_CONFIG", configPath)
 	token, err := runtimelock.EnsureAuthToken(dir)
 	require.NoError(err)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

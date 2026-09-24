@@ -143,7 +143,11 @@ func resolveRepo(q *ghshim.Query, repo string) bool {
 }
 
 func queryDaemon(q ghshim.Query) (string, bool, string) {
-	cfg, err := config.Load(os.Getenv("FORGE_GH_CONFIG"))
+	configPath := os.Getenv("FORGE_GH_CONFIG")
+	if configPath == "" {
+		configPath = config.DefaultConfigPath()
+	}
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return "", false, "daemon_unavailable"
 	}

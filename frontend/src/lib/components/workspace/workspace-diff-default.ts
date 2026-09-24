@@ -17,8 +17,9 @@ export function defaultWorkspaceDiffBase(
 ): WorkspaceDiffBase | null {
   if (state.worktreeDirty === undefined) return null;
   if (state.worktreeDirty) return "head";
-  // The pushed base diffs against @{upstream}; counts measured against a
-  // fork PR head or a missing tracking ref have no upstream to compare with.
+  // The pushed base diffs against @{upstream}. Counts measured against a fork
+  // PR head, a missing tracking ref, or an omitted count (a never-pushed branch)
+  // have no upstream to compare with, so all branch work shows on the target.
   const hasUpstream = state.commitsVsPRHead !== true && state.branchUpstreamMissing !== true;
   if (hasUpstream && (state.commitsAhead ?? 0) > 0) return "pushed";
   return hasMergeTarget ? "merge-target" : "head";

@@ -240,6 +240,7 @@ describe("WorkspaceRightSidebar", () => {
     ["a dirty worktree", { worktreeDirty: true, commitsAhead: 2 }, "head", "Compare with HEAD"],
     ["unpushed commits", { worktreeDirty: false, commitsAhead: 2 }, "pushed", "Compare with pushed branch"],
     ["a fully pushed branch", { worktreeDirty: false, commitsAhead: 0 }, "merge-target", "Compare with merge target"],
+    ["a never-pushed branch", { worktreeDirty: false }, "merge-target", "Compare with merge target"],
     [
       "commits counted against a fork PR head",
       { worktreeDirty: false, commitsAhead: 2, commitsVsPRHead: true },

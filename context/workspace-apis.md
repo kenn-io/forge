@@ -577,8 +577,9 @@ non-empty base branch on that row. When any of those is missing the API returns
 non-actionable state.
 
 The Diff panel opens on `HEAD` for a dirty worktree, the pushed branch for
-unpushed commits with an upstream, and otherwise the merge target when shown.
-Unknown git state keeps `HEAD`; a user's pick overrides the default for the panel's
+unpushed commits with an upstream, and otherwise the merge target when shown;
+a never-pushed branch reports no ahead count and opens on the target. An unknown
+dirty state keeps `HEAD`; a user's pick overrides the default for the panel's
 lifetime (`frontend/src/lib/components/workspace/workspace-diff-default.ts::defaultWorkspaceDiffBase`).
 
 The server is authoritative for availability. The sidebar hides the

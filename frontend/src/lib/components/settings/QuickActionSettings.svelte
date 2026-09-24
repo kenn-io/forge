@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { IconButton, SelectDropdown, type SelectDropdownOption } from "@kenn-io/kit-ui";
+  import { IconButton, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import { Effect } from "effect";
@@ -106,23 +106,21 @@
     return duplicates;
   }
 
-  function agentOptions(draft: ActionDraft): SelectDropdownOption[] {
-    const options: SelectDropdownOption[] = agentTargets.map((target) => ({
-      value: target.key,
+  function agentOptions(draft: ActionDraft): TypeaheadOption[] {
+    const options: TypeaheadOption[] = agentTargets.map((target) => ({
+      name: target.key,
       label: target.label,
-      ...(target.available
-        ? {}
-        : { indicator: { tone: "danger" as const, title: target.disabled_reason || "Not available" } }),
+      ...(target.available ? {} : { meta: target.disabled_reason || "Not available" }),
     }));
     const current = draft.agent.trim().toLowerCase();
-    if (current !== "" && !options.some((option) => option.value === current)) {
+    if (current !== "" && !options.some((option) => option.name === current)) {
       options.unshift({
-        value: current,
+        name: current,
         label: current,
-        indicator: { tone: "danger", title: "Not a configured agent" },
+        meta: "Not a configured agent",
       });
     }
-    return options;
+    return options.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
   }
 
   function actionName(draft: ActionDraft): string {
@@ -211,13 +209,14 @@
             </label>
             <div class="field field--agent">
               <span>Agent</span>
-              <SelectDropdown
-                class="agent-select"
+              <Typeahead
+                fallbackLabel="Select agent"
+                placeholder="Search agents..."
                 title="Quick action agent"
                 value={draft.agent}
                 options={agentOptions(draft)}
                 disabled={saving || agentOptions(draft).length === 0}
-                onchange={(value) => {
+                onselect={(value) => {
                   draft.agent = value;
                 }}
               />
@@ -386,7 +385,7 @@
     padding: 0 8px;
   }
 
-  .field :global(.agent-select) {
+  .field :global(.kit-typeahead) {
     width: 100%;
   }
 

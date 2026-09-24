@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"net"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
 	platformpkg "go.kenn.io/forge/platform"
+	"go.kenn.io/kit/atomicfile"
 )
 
 const (
@@ -1169,74 +1171,25 @@ agent_sessions = true
 // The file contains sensible defaults. Repos can be added later through the
 // settings UI.
 //
-// Writes to a temp file first, then hard-links into place so the target
-// path is never left empty or partially written.
+// The contents are staged in a temp file and published without replacing
+// anything, so the target path is never left empty or partially written
+// and a config created concurrently is kept.
 func EnsureDefault(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
-	if err != nil {
-		if _, statErr := os.Stat(path); statErr == nil {
-			return nil
-		}
-		return fmt.Errorf("creating temp config: %w", err)
+	err := atomicfile.WriteNew(path, []byte(defaultConfigContents()))
+	// ErrPublished means the default config is already in place and only
+	// a later fsync or cleanup step failed.
+	if err == nil || errors.Is(err, fs.ErrExist) || errors.Is(err, atomicfile.ErrPublished) {
+		return nil
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-
-	if _, err := tmp.WriteString(defaultConfigContents()); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing default config: %w", err)
+	if _, statErr := os.Stat(path); statErr == nil {
+		return nil
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("flushing default config: %w", err)
-	}
-
-	// Link fails atomically when path already exists, providing
-	// both atomic install and race-free existence check.
-	if err := os.Link(tmpPath, path); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil
-		}
-		// Hard links may not be supported (FAT/exFAT, network
-		// shares, cross-device). Fall back to O_EXCL create +
-		// write with cleanup on failure.
-		return writeExclusive(tmpPath, path)
-	}
-	return nil
-}
-
-// writeExclusive creates dst with O_EXCL (fails if it exists) and
-// copies the content from src. Partial files are removed on failure.
-func writeExclusive(src, dst string) error {
-	content, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("reading temp config: %w", err)
-	}
-
-	f, err := os.OpenFile(
-		dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600,
-	)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil
-		}
-		return fmt.Errorf("creating config %s: %w", dst, err)
-	}
-
-	if _, err := f.Write(content); err != nil {
-		f.Close()
-		os.Remove(dst)
-		return fmt.Errorf("writing config %s: %w", dst, err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(dst)
-		return fmt.Errorf("flushing config %s: %w", dst, err)
-	}
-	return nil
+	return fmt.Errorf("writing default config: %w", err)
 }
 
 func Load(path string) (*Config, error) {
@@ -3713,25 +3666,19 @@ func (c *Config) Save(path string) error {
 		}
 	}
 
-	tmp, err := os.CreateTemp(dir, ".kenn-forge-config-*.toml")
+	// savePath is already resolved, so a symlinked config is written
+	// through to its target.
+	file, err := atomicfile.Create(savePath)
 	if err != nil {
 		return fmt.Errorf("creating temp config: %w", err)
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chmod temp config: %w", err)
-	}
-	enc := toml.NewEncoder(tmp)
-	if err := enc.Encode(f); err != nil {
-		_ = tmp.Close()
+	defer func() { _ = file.Abort() }()
+	if err := toml.NewEncoder(file).Encode(f); err != nil {
 		return fmt.Errorf("encoding config: %w", err)
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temp config: %w", err)
-	}
-	if err := os.Rename(tmpPath, savePath); err != nil {
+	// ErrPublished means the new config is already in place and only a
+	// later directory fsync failed; callers must not roll back.
+	if err := file.Commit(); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("renaming temp config: %w", err)
 	}
 	return nil

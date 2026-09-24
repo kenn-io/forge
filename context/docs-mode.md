@@ -44,9 +44,9 @@ filesystem operations, search, and git pull/publish behavior.
   writes, renames, deletes, search, and blob serving must not escape the
   registered root or traverse ignored content
   (`internal/docs/folder.go::Registry.resolve`).
-- Writes use atomic sibling-temp renames; create and rename serialize their
-  no-clobber critical sections across folders and never overwrite a destination
-  (`internal/docs/folder.go::Registry`).
+- Writes use atomic sibling-temp renames; create and rename publish with
+  kernel no-replace primitives and never overwrite a destination
+  (`internal/docs/folder.go::Registry.RenameFile`).
 - Docs mutations retain origin/CSRF; file writes stay JSON-wrapped, not raw markdown
   (`internal/server/server.go::Server.isMutatingDocsAPIRequest`, `internal/server/docsapi/routes.go::docsWriteFileInput`).
 - Public operations use Huma and generated clients; blob responses remain binary

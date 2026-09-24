@@ -25,6 +25,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/kit/atomicfile"
 	_ "modernc.org/sqlite"
 )
 
@@ -434,32 +435,12 @@ func writeStatusFile(path string, status ephemeralStatus) error {
 	}
 	content = append(content, '\n')
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".dev-ephemeral-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temporary status file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	removeTmp := true
-	defer func() {
-		if removeTmp {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if _, err := tmp.Write(content); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write temporary status file: %w", err)
-	}
-	if err := tmp.Chmod(0o644); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chmod temporary status file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temporary status file: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	// ErrPublished means the file is already in place and only a later
+	// directory fsync failed.
+	err = atomicfile.WriteFile(path, content, atomicfile.WithPerm(0o644))
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("write status file: %w", err)
 	}
-	removeTmp = false
 	return nil
 }
 

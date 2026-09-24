@@ -1,7 +1,6 @@
 package devbox
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,6 +20,7 @@ import (
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"go.kenn.io/forge/internal/apiclient"
 	controlclient "go.kenn.io/forge/internal/apiclient/devbox"
+	"go.kenn.io/kit/atomicfile"
 )
 
 type Connection struct {
@@ -271,20 +271,9 @@ func (c *Connections) save(items []savedConnection) error {
 	if err != nil {
 		return err
 	}
-	temp, err := os.CreateTemp(filepath.Dir(c.path), ".devbox-connections-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
-	_, writeErr := io.Copy(temp, bytes.NewReader(data))
-	if writeErr == nil {
-		writeErr = temp.Sync()
-	}
-	closeErr := temp.Close()
-	if err := errors.Join(writeErr, closeErr); err != nil {
-		return err
-	}
-	if err := os.Rename(temp.Name(), c.path); err != nil {
+	// ErrPublished means the registry is already in place and only a later
+	// directory fsync failed.
+	if err := atomicfile.WriteFile(c.path, data); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
 	c.items = items

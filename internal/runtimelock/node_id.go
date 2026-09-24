@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/gofrs/flock"
+	"go.kenn.io/kit/atomicfile"
 )
 
 const (
@@ -59,7 +60,7 @@ func EnsureNodeID(dataDir string) (nodeID string, returnErr error) {
 		return "", fmt.Errorf("generate node ID: %w", err)
 	}
 	nodeID = hex.EncodeToString(raw)
-	if err := writeNodeID(dataDir, path, nodeID); err != nil {
+	if err := writeNodeID(path, nodeID); err != nil {
 		return "", err
 	}
 	return nodeID, nil
@@ -88,36 +89,12 @@ func validNodeID(nodeID string) bool {
 	return true
 }
 
-func writeNodeID(dataDir, path, nodeID string) error {
-	tmp, err := os.CreateTemp(dataDir, ".node_id.*.tmp")
-	if err != nil {
-		return fmt.Errorf("create node ID temp file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("restrict node ID temp file: %w", err)
-	}
-	if _, err := tmp.WriteString(nodeID + "\n"); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write node ID temp file: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync node ID temp file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close node ID temp file: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
+func writeNodeID(path, nodeID string) error {
+	// atomicfile writes 0600 by default. ErrPublished means the node ID is
+	// already in place and only a later directory fsync failed.
+	err := atomicfile.WriteFile(path, []byte(nodeID+"\n"))
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("publish node ID: %w", err)
 	}
-	committed = true
 	return nil
 }

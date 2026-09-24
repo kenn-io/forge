@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -326,6 +327,49 @@ func TestApplyRestoresConfigBeforeRestartingPreviousService(t *testing.T) {
 	restoredService, readErr := os.ReadFile(plan.ServicePath)
 	require.NoError(readErr)
 	assert.Equal(previousServiceBytes, restoredService)
+}
+
+func TestApplyRestoresSymlinkedConfigThroughLink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs extra privileges on Windows")
+	}
+	require := require.New(t)
+	assert := assert.New(t)
+	runner, root, _ := testRunner(t, "linux")
+	plan := Plan{
+		Role: RoleHub, ConfigPath: filepath.Join(root, "forge", "config.toml"),
+		DataDir: filepath.Join(root, "forge"), BinaryPath: filepath.Join(root, "kenn-forge"),
+		User: "operator", UID: 1000, HomeDir: root, PathEnv: "/usr/bin",
+		Origin: "https://forge.internal.example", AllowedHost: "forge.internal.example",
+		Publication: publicationExternal, Host: "127.0.0.1", Port: 8091,
+		ServicePath: filepath.Join(root, ".config/systemd/user/kenn-forge.service"),
+		ServiceKind: "systemd user service", ServiceLabel: "kenn-forge.service",
+	}
+	linkedConfig := filepath.Join(root, "dotfiles", "config.toml")
+	require.NoError(os.MkdirAll(filepath.Dir(linkedConfig), 0o700))
+	previousConfig := &config.Config{DataDir: plan.DataDir, Host: "127.0.0.1", Port: 8080}
+	require.NoError(previousConfig.Save(linkedConfig))
+	previousConfigBytes, err := os.ReadFile(linkedConfig)
+	require.NoError(err)
+	require.NoError(os.MkdirAll(filepath.Dir(plan.ConfigPath), 0o700))
+	require.NoError(os.Symlink(linkedConfig, plan.ConfigPath))
+	runner.deps.httpClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable, Status: "503 Service Unavailable",
+			Body: io.NopCloser(strings.NewReader("unavailable")), Header: make(http.Header),
+		}, nil
+	})}
+
+	_, err = runner.Apply(t.Context(), plan)
+
+	require.ErrorContains(err, "readiness")
+	assert.NotContains(err.Error(), "rollback")
+	info, err := os.Lstat(plan.ConfigPath)
+	require.NoError(err)
+	assert.NotZero(info.Mode()&os.ModeSymlink, "config link is kept")
+	restored, err := os.ReadFile(linkedConfig)
+	require.NoError(err)
+	assert.Equal(previousConfigBytes, restored)
 }
 
 func TestApplyPublishesConfigServiceAndCanonicalIdentity(t *testing.T) {

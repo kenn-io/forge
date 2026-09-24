@@ -49,6 +49,7 @@ import (
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
+	"go.kenn.io/kit/atomicfile"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	oteltelemetry "go.kenn.io/kit/telemetry"
 )
@@ -3990,14 +3991,14 @@ func writeServerInfoFile(path string, info e2eServerInfo) error {
 		return fmt.Errorf("marshal server info: %w", err)
 	}
 
-	tmpPath := path + ".tmp"
 	// Federation-mode server info contains local API bearers for its three
-	// isolated daemons. Keep the file private even in a caller-supplied directory.
-	if err := os.WriteFile(tmpPath, append(content, '\n'), 0o600); err != nil {
-		return fmt.Errorf("write temp server info file: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("rename server info file: %w", err)
+	// isolated daemons. Keep the file private (0600, atomicfile's default)
+	// even in a caller-supplied directory.
+	// ErrPublished means the file is already in place and only a later
+	// directory fsync failed.
+	err = atomicfile.WriteFile(path, append(content, '\n'))
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
+		return fmt.Errorf("write server info file: %w", err)
 	}
 	return nil
 }

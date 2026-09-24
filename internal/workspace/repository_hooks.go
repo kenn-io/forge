@@ -21,6 +21,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/kit/atomicfile"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitworktree "go.kenn.io/kit/git/worktree"
 )
@@ -450,29 +451,16 @@ func writeRoborevExclude(path string, base []byte, pattern string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect worktree Roborev exclude: %w", err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".forge-roborev-exclude-*")
-	if err != nil {
-		return fmt.Errorf("create worktree Roborev exclude: %w", err)
-	}
-	tmpPath := tmp.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
 	content := append([]byte(nil), base...)
 	if len(content) > 0 && content[len(content)-1] != '\n' {
 		content = append(content, '\n')
 	}
 	content = append(content, pattern...)
 	content = append(content, '\n')
-	if _, err := tmp.Write(content); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write worktree Roborev exclude: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close worktree Roborev exclude: %w", err)
-	}
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
-		return fmt.Errorf("chmod worktree Roborev exclude: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	// ErrPublished means the exclude file is already in place and only a
+	// later directory fsync failed.
+	err := atomicfile.WriteFile(path, content, atomicfile.WithPerm(0o644))
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("install worktree Roborev exclude: %w", err)
 	}
 	return nil

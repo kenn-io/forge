@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.kenn.io/kit/atomicfile"
 )
 
 const enrollmentStoreVersion = 1
@@ -848,38 +850,21 @@ func validateEnrollmentStore(state *persistedEnrollmentStore) error {
 	return nil
 }
 
-func writeEnrollmentStore(path string, state persistedEnrollmentStore) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".federation-enrollments.*.tmp")
+func writeEnrollmentStore(path string, state persistedEnrollmentStore) (err error) {
+	file, err := atomicfile.Create(path)
 	if err != nil {
 		return fmt.Errorf("create federation enrollment store temp file: %w", err)
 	}
-	tmpPath := tmp.Name()
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("restrict federation enrollment store temp file: %w", err)
-	}
-	encoder := jsontext.NewEncoder(tmp, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+	defer func() { err = errors.Join(err, file.Abort()) }()
+	encoder := jsontext.NewEncoder(file, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
 	if err := json.MarshalEncode(encoder, state); err != nil {
-		_ = tmp.Close()
 		return fmt.Errorf("encode federation enrollment store: %w", err)
 	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync federation enrollment store: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close federation enrollment store: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	// ErrPublished means the store is already in place and only a later
+	// directory fsync failed.
+	if err := file.Commit(); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("publish federation enrollment store: %w", err)
 	}
-	committed = true
 	return nil
 }
 

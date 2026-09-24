@@ -14,6 +14,7 @@ import (
 	shellquote "github.com/kballard/go-shellquote"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/kit/safefileio"
 )
 
 type tmuxEnvPolicy struct {
@@ -474,16 +475,11 @@ func paneHandoffCommand(pane tmuxPaneEnvironment) (string, func(), error) {
 func writeTmuxPaneScript(
 	envPath string, paneCommand string, paneLocals []string,
 ) (string, error) {
-	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "kenn-forge-tmux-pane-*")
+	file, err := safefileio.CreatePrivateTemp(tmuxPaneEnvironmentTempDir(), "kenn-forge-tmux-pane-*")
 	if err != nil {
 		return "", err
 	}
 	path := file.Name()
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return "", err
-	}
 
 	// Capture pane-local values before the env file overwrites them.
 	captures := make([]string, 0, len(paneLocals))
@@ -548,16 +544,11 @@ func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {
 	// This short-lived handoff keeps preserved values out of tmux argv. The
 	// file is 0600 and cleaned on tmux launch failure and pane shell exit, but
 	// it is not intended to be a same-user sandbox boundary.
-	file, err := os.CreateTemp(tmuxPaneEnvironmentTempDir(), "kenn-forge-tmux-env-*")
+	file, err := safefileio.CreatePrivateTemp(tmuxPaneEnvironmentTempDir(), "kenn-forge-tmux-env-*")
 	if err != nil {
 		return "", err
 	}
 	path := file.Name()
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return "", err
-	}
 	if _, err := file.WriteString(content.String()); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)

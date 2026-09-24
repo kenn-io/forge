@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"go.kenn.io/kit/atomicfile"
 )
 
 var errDiffCacheFileTooLarge = errors.New("diff file exceeds MCP diff cache")
@@ -18,6 +20,10 @@ type diffFileStore struct {
 	totalBytes int64
 	lru        *list.List
 	entries    map[string]*list.Element
+	// commit publishes a staged diff and remove deletes an evicted one;
+	// tests replace them to force failures.
+	commit func(*atomicfile.File) error
+	remove func(string) error
 }
 
 type diffFileEntry struct {
@@ -41,6 +47,7 @@ func newDiffFileStore(maxBytes int64) (*diffFileStore, error) {
 	return &diffFileStore{
 		dir: dir, maxBytes: maxBytes,
 		lru: list.New(), entries: make(map[string]*list.Element),
+		commit: (*atomicfile.File).Commit, remove: os.Remove,
 	}, nil
 }
 
@@ -65,66 +72,45 @@ func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 
 	// Stage the replacement fully before touching published state so a failed
 	// write never removes the current same-name diff or evicts other entries.
-	tmp, err := os.CreateTemp(d.dir, base+".*.tmp")
+	staged, err := atomicfile.Create(path, atomicfile.WithoutSync())
 	if err != nil {
 		return "", 0, err
 	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		_ = tmp.Close()
-		return "", 0, err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return "", 0, err
-	}
-	if err := tmp.Close(); err != nil {
+	defer func() { _ = staged.Abort() }()
+	if _, err := staged.Write(data); err != nil {
 		return "", 0, err
 	}
 
-	// A same-name entry is replaced by the rename below, never evicted, so it
-	// stays reachable for concurrent consumers until the atomic swap.
-	var existingSize int64
-	if existing := d.entries[base]; existing != nil {
-		existingSize = existing.Value.(diffFileEntry).size
-	}
-	evictCursor := d.lru.Front()
-	for d.totalBytes-existingSize+size > d.maxBytes {
-		for evictCursor != nil && evictCursor.Value.(diffFileEntry).name == base {
-			evictCursor = evictCursor.Next()
-		}
-		if evictCursor == nil {
-			return "", 0, fmt.Errorf("%w: no evictable files", errDiffCacheFileTooLarge)
-		}
-		entry := evictCursor.Value.(diffFileEntry)
-		next := evictCursor.Next()
-		if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", 0, err
-		}
-		d.totalBytes -= entry.size
-		d.lru.Remove(evictCursor)
-		delete(d.entries, entry.name)
-		evictCursor = next
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
+	// Publish before touching the cache so a failed commit leaves every
+	// existing entry in place. ErrPublished means the diff is already visible
+	// at path.
+	if err := d.commit(staged); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return "", 0, err
 	}
-	cleanup = false
 	if existing := d.entries[base]; existing != nil {
 		d.totalBytes -= existing.Value.(diffFileEntry).size
 		d.lru.Remove(existing)
 		delete(d.entries, base)
 	}
-	entry := diffFileEntry{name: base, path: abs, size: size}
-	d.entries[base] = d.lru.PushBack(entry)
+	added := d.lru.PushBack(diffFileEntry{name: base, path: abs, size: size})
+	d.entries[base] = added
 	d.totalBytes += size
+
+	// The new diff already fits on its own (checked above), so evicting older
+	// entries normally gets back under the budget. The write has landed, so a
+	// failed removal does not fail it: that entry stays counted for a later
+	// write to retry, and eviction moves on to the next-oldest entry so one
+	// undeletable file cannot stop the cache from shrinking.
+	for elem := d.lru.Front(); d.totalBytes > d.maxBytes && elem != nil && elem != added; {
+		next := elem.Next()
+		entry := elem.Value.(diffFileEntry)
+		if err := d.remove(entry.path); err == nil || errors.Is(err, os.ErrNotExist) {
+			d.totalBytes -= entry.size
+			d.lru.Remove(elem)
+			delete(d.entries, entry.name)
+		}
+		elem = next
+	}
 	return abs, size, nil
 }
 

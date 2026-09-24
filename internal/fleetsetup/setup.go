@@ -29,6 +29,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/runtimelock"
+	"go.kenn.io/kit/atomicfile"
 	"go.kenn.io/kit/daemon"
 )
 
@@ -654,7 +655,13 @@ func (r *Runner) applyConfig(plan Plan, transaction *transaction) error {
 	}
 	transaction.record(func(context.Context) error {
 		if existed {
-			return r.deps.writeFile(plan.ConfigPath, previous, 0o600)
+			// Save writes through a symlinked config, so restore through
+			// it too instead of replacing the link.
+			target := plan.ConfigPath
+			if resolved, err := filepath.EvalSymlinks(target); err == nil {
+				target = resolved
+			}
+			return r.deps.writeFile(target, previous, 0o600)
 		}
 		if err := r.deps.remove(plan.ConfigPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -665,28 +672,16 @@ func (r *Runner) applyConfig(plan Plan, transaction *transaction) error {
 }
 
 func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(dir, ".kenn-forge-setup-*")
-	if err != nil {
+	// ErrPublished means the file is already in place and only a later
+	// directory fsync failed.
+	err := atomicfile.WriteFile(path, data, atomicfile.WithPerm(mode))
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
-	tmpPath := file.Name()
-	defer os.Remove(tmpPath)
-	if err := file.Chmod(mode); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, path)
+	return nil
 }
 
 func (r *Runner) verifyReadiness(ctx context.Context, plan Plan, nodeID string) error {

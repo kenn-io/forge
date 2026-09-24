@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/kit/atomicfile"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -162,23 +163,12 @@ func (c *markdownImageCache) set(key string, image platform.MarkdownImage) error
 	if err := os.MkdirAll(c.root, 0o700); err != nil {
 		return err
 	}
-	temp, err := os.CreateTemp(c.root, ".markdown-image-*")
-	if err != nil {
-		return err
-	}
-	tempPath := temp.Name()
-	defer func() { _ = os.Remove(tempPath) }()
-	if _, err = temp.WriteString(encodeMarkdownImageCacheHeader(image)); err == nil {
-		_, err = temp.Write(image.Content)
-	}
-	closeErr := temp.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if err := os.Rename(tempPath, c.path(key)); err != nil {
+	// Cache entries are disposable, so skip fsync as before.
+	// ErrPublished means the entry is already visible.
+	err := atomicfile.WriteFile(c.path(key),
+		append([]byte(encodeMarkdownImageCacheHeader(image)), image.Content...),
+		atomicfile.WithoutSync())
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
 	return c.evictLocked(time.Now())

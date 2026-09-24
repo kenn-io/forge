@@ -77,7 +77,8 @@ func newDevboxCommand(run serve.Runner) *cobra.Command {
 	_ = github.MarkFlagRequired("socket")
 	_ = github.MarkFlagRequired("repository")
 	var registryConfig string
-	registry := &cobra.Command{Use: "registry", Short: "Serve devbox discovery through a trusted Unix-socket proxy", Args: cobra.NoArgs,
+	registry := &cobra.Command{
+		Use: "registry", Short: "Serve devbox discovery through a trusted Unix-socket proxy", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var cfg devbox.RegistryConfig
 			metadata, err := toml.DecodeFile(registryConfig, &cfg)
@@ -90,7 +91,8 @@ func newDevboxCommand(run serve.Runner) *cobra.Command {
 			ctx, cancel := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 			return devbox.ServeRegistry(ctx, cfg)
-		}}
+		},
+	}
 	registry.Flags().StringVar(&registryConfig, "config", "", "registry TOML configuration")
 	_ = registry.MarkFlagRequired("config")
 	root.AddCommand(worker, broker, registry, credential, github)

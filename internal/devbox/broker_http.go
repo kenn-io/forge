@@ -54,7 +54,8 @@ func registerBrokerRoutes(api huma.API, broker *Broker) {
 		OperationID: "erase-devbox-credential", Method: http.MethodDelete, Path: "/v1/credentials",
 	}, func(ctx context.Context, input *struct {
 		Repository string `query:"repository" required:"true"`
-	}) (*struct{}, error) {
+	},
+	) (*struct{}, error) {
 		uid, ok := ctx.Value(peerUIDKey{}).(uint32)
 		if !ok {
 			return nil, httpapi.NewProblem(http.StatusUnauthorized, httpapi.CodeUnauthorized, "Unix peer identity is unavailable", nil)

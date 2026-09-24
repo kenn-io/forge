@@ -19,7 +19,7 @@ func tailnetMCPInitialize(
 	t *testing.T, url string, decorate func(*http.Request),
 ) *http.Response {
 	t.Helper()
-	request, err := http.NewRequest(http.MethodPost, url+"/mcp", strings.NewReader(
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url+"/mcp", strings.NewReader(
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{`+
 			`"protocolVersion":"2025-06-18","capabilities":{},`+
 			`"clientInfo":{"name":"test","version":"1"}}}`,

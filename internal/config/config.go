@@ -910,7 +910,7 @@ func (f *Fleet) RoleOrDefault() FleetRole {
 
 // PeerTimeoutOrDefault returns the per-peer fetch timeout, defaulting to
 // 2s when unset or unparseable.
-func (f Fleet) PeerTimeoutOrDefault() time.Duration {
+func (f *Fleet) PeerTimeoutOrDefault() time.Duration {
 	if f.PeerTimeout == "" {
 		return 2 * time.Second
 	}

@@ -41,7 +41,7 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	ctx := t.Context()
 	directory := t.TempDir()
 	socket := filepath.Join(directory, "broker.sock")
-	listener, err := net.Listen("unix", socket)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", socket)
 	require.NoError(err)
 	broker := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request devbox.CredentialRequest
@@ -71,12 +71,14 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	require.NoError(os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexec "+shellquote.Join(realGit, "-c", "url."+remote+".insteadOf=https://github.com/example-org/project.git")+" \"$@\"\n"), 0o700))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	database := dbtest.Open(t)
-	cfg := &config.Config{DataDir: directory, Host: "127.0.0.1", Port: 8091, BasePath: "/",
+	cfg := &config.Config{
+		DataDir: directory, Host: "127.0.0.1", Port: 8091, BasePath: "/",
 		ExecutionWorker: config.ExecutionWorker{Enabled: true, UID: 1001, GitHubUserID: 1234, BrokerSocket: socket, CommitName: "Developer A", CommitEmail: "1234+developer-a@users.noreply.github.com"},
 		Tmux:            config.Tmux{Command: workspaceTestTmuxCommand},
 		Agents:          []config.Agent{{Key: "fixture", Label: "Fixture shell", Command: []string{"/bin/bash", "--noprofile", "--norc"}}},
 	}
-	opts := server.ServerOptions{ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef", Clones: clones, WorktreeDir: filepath.Join(directory, "worktrees"), HostCheckAllowLoopbackAnyPort: true,
+	opts := server.ServerOptions{
+		ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef", Clones: clones, WorktreeDir: filepath.Join(directory, "worktrees"), HostCheckAllowLoopbackAnyPort: true,
 		DaemonAccess: server.DaemonAccessOptions{Token: "worker-bearer", RequireAPIAuth: true}, DisableWorkspaceBackgroundMonitors: true, DetachRuntimeSessionsForRestart: true, PtyOwnerInProcess: true,
 	}
 	srv := server.New(database, nil, nil, "/", cfg, opts)

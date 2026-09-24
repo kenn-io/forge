@@ -210,7 +210,8 @@ func registerRegistryRoutes(api huma.API, c RegistryConfig, tokens map[string]st
 		Body struct {
 			Status string `json:"status"`
 		}
-	}, error) {
+	}, error,
+	) {
 		out := &struct {
 			Body struct {
 				Status string `json:"status"`
@@ -234,7 +235,8 @@ func registerRegistryRoutes(api huma.API, c RegistryConfig, tokens map[string]st
 	})
 	huma.Post(api, "/api/v1/devboxes/{host_id}/connect", func(ctx context.Context, input *struct {
 		HostID string `path:"host_id"`
-	}) (*struct{ Body Profile }, error) {
+	},
+	) (*struct{ Body Profile }, error) {
 		id, err := identify(ctx)
 		if err != nil {
 			return nil, err
@@ -246,7 +248,6 @@ func registerRegistryRoutes(api huma.API, c RegistryConfig, tokens map[string]st
 		}
 		return nil, httpapi.NotFound(httpapi.CodeNotFound, "devbox account is not assigned or is disabled", nil)
 	})
-
 }
 
 func ServeRegistry(ctx context.Context, c RegistryConfig) error {

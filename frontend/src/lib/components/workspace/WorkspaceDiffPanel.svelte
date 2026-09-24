@@ -20,6 +20,7 @@
     diffRefreshToken?: number;
     disabled?: boolean;
     showMergeTarget?: boolean;
+    defaultBase?: WorkspaceDiffBase | null;
   }
 
   const {
@@ -36,10 +37,13 @@
     diffRefreshToken = 0,
     disabled = false,
     showMergeTarget = true,
+    defaultBase = null,
   }: Props = $props();
   const { diff } = getStores();
 
-  let selectedBase = $state<WorkspaceDiffBase>("head");
+  // The default follows the workspace's git state until the user picks a base.
+  let chosenBase = $state<WorkspaceDiffBase | null>(null);
+  const selectedBase = $derived(chosenBase ?? defaultBase ?? "head");
   const base = $derived(
     !showMergeTarget && selectedBase === "merge-target" ? "head" : selectedBase
   );
@@ -86,7 +90,7 @@
 
   function selectBase(nextBase: WorkspaceDiffBase): void {
     if (disabled) return;
-    selectedBase = nextBase;
+    chosenBase = nextBase;
   }
 </script>
 

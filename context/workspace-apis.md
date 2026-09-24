@@ -576,6 +576,11 @@ non-empty base branch on that row. When any of those is missing the API returns
 "workspace merge target branch not available" and treats it as the
 non-actionable state.
 
+The Diff panel opens on `HEAD` for a dirty worktree, the pushed branch for
+unpushed commits with an upstream, and otherwise the merge target when shown.
+Unknown git state keeps `HEAD`; a user's pick overrides the default for the panel's
+lifetime (`frontend/src/lib/components/workspace/workspace-diff-default.ts::defaultWorkspaceDiffBase`).
+
 The server is authoritative for availability. The sidebar hides the
 merge-target-dependent controls (both the Target scope control and the commit
 range picker) whenever the workspace has no PR identity, which is necessary but

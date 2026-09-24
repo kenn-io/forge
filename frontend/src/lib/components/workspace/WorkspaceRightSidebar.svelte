@@ -6,6 +6,7 @@
   import WorkspaceDiffPanel from "./WorkspaceDiffPanel.svelte";
   import WorkspaceReviewsPanel from "./WorkspaceReviewsPanel.svelte";
   import KataLinksPanel from "../kata/KataLinksPanel.svelte";
+  import { defaultWorkspaceDiffBase, type WorkspaceDiffGitState } from "./workspace-diff-default.js";
 
   interface Props {
     activeTab: "diff" | "pr" | "issue" | "reviews" | "kata";
@@ -29,6 +30,7 @@
     diffRefreshToken?: number;
     disabled?: boolean;
     visible?: boolean;
+    gitState?: WorkspaceDiffGitState;
   }
 
   let {
@@ -53,6 +55,7 @@
     diffRefreshToken = 0,
     disabled = false,
     visible = true,
+    gitState = {},
   }: Props = $props();
 
   // Determine if we have valid context
@@ -77,6 +80,7 @@
       ? ownerItemNumber > 0 && hasRepo
       : hasPR
   );
+  const defaultDiffBase = $derived(defaultWorkspaceDiffBase(gitState, hasMergeTarget));
 
 </script>
 
@@ -97,6 +101,7 @@
         {diffRefreshToken}
         {disabled}
         showMergeTarget={hasMergeTarget}
+        defaultBase={defaultDiffBase}
       />
     {/key}
   {:else if activeTab === "pr"}

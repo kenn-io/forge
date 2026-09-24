@@ -19,7 +19,18 @@ export type WorkspaceDetail = Pick<
   | "tmux_session"
   | "worktree_path"
 > &
-  Partial<Pick<GeneratedWorkspace, "item_key" | "kata" | "commit_attribution">> & {
+  Partial<
+    Pick<
+      GeneratedWorkspace,
+      | "item_key"
+      | "kata"
+      | "commit_attribution"
+      | "worktree_dirty"
+      | "commits_ahead"
+      | "commits_vs_pr_head"
+      | "branch_upstream_missing"
+    >
+  > & {
     readonly associated_pr_number?: Exclude<GeneratedWorkspace["associated_pr_number"], undefined> | null;
     readonly error_message?: Exclude<GeneratedWorkspace["error_message"], undefined> | null;
     readonly item_type: "pull_request" | "issue" | "kata_task" | "adhoc";
@@ -72,6 +83,9 @@ const Attribution = Schema.Struct({
 const WorkspaceDetailSchema = Schema.Struct({
   commit_attribution: Schema.optionalKey(Attribution),
   associated_pr_number: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  branch_upstream_missing: Schema.optionalKey(Schema.Boolean),
+  commits_ahead: Schema.optionalKey(Schema.Number),
+  commits_vs_pr_head: Schema.optionalKey(Schema.Boolean),
   created_at: Schema.String,
   enrichment_status: Schema.Literals(["not_applicable", "pending", "fresh", "stale", "failed"]),
   error_message: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -91,6 +105,7 @@ const WorkspaceDetailSchema = Schema.Struct({
   repo_owner: Schema.String,
   status: Schema.String,
   tmux_session: Schema.String,
+  worktree_dirty: Schema.optionalKey(Schema.Boolean),
   worktree_path: Schema.String,
 });
 

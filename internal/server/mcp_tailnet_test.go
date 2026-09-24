@@ -1,0 +1,83 @@
+package server
+
+import (
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/internal/mcpserver"
+)
+
+func tailnetMCPInitialize(
+	t *testing.T, url string, decorate func(*http.Request),
+) *http.Response {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodPost, url+"/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{`+
+			`"protocolVersion":"2025-06-18","capabilities":{},`+
+			`"clientInfo":{"name":"test","version":"1"}}}`,
+	))
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	if decorate != nil {
+		decorate(request)
+	}
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	t.Cleanup(func() { response.Body.Close() })
+	return response
+}
+
+func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
+	ts, srv := newTailscaleAuthTestServer(t)
+	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = mcp.Close() })
+	srv.SetTailnetMCPHandler(mcp.HTTPHandler())
+	sameOrigin := "https://" + strings.TrimPrefix(ts.URL, "http://")
+
+	tests := []struct {
+		name     string
+		login    string
+		origin   string
+		expected int
+	}{
+		{name: "allowed user", login: "user@example.com", expected: http.StatusOK},
+		{name: "allowed user from same origin", login: "user@example.com", origin: sameOrigin, expected: http.StatusOK},
+		{name: "missing identity", expected: http.StatusUnauthorized},
+		{name: "other user", login: "other@example.com", expected: http.StatusUnauthorized},
+		{name: "cross-origin page", login: "user@example.com", origin: "https://attacker.example", expected: http.StatusForbidden},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+				if test.login != "" {
+					request.Header.Set("Tailscale-User-Login", test.login)
+				}
+				if test.origin != "" {
+					request.Header.Set("Origin", test.origin)
+				}
+			})
+			assert.Equal(t, test.expected, response.StatusCode)
+		})
+	}
+}
+
+func TestTailnetMCPRequiresTailscaleIdentityMode(t *testing.T) {
+	ts := newAuthTestServer(t, "secret-token")
+	srv := ts.Config.Handler.(*Server)
+	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = mcp.Close() })
+	srv.SetTailnetMCPHandler(mcp.HTTPHandler())
+
+	response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+		request.Header.Set("Tailscale-User-Login", "user@example.com")
+	})
+
+	assert.NotEqual(t, http.StatusOK, response.StatusCode)
+}

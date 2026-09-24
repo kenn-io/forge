@@ -84,6 +84,21 @@ Set the referenced environment variable from the token file, for example
 `export KENN_FORGE_API_TOKEN="$(cat ~/.kenn/forge/auth_token)"`, using the
 `token_path` reported by `kenn-forge daemon status --json`.
 
+If Forge is published with Tailscale Serve and your Tailscale login is allowed
+(see [Federated Forge](federated-fleet.md)), point the client at the Serve origin
+instead. No token is needed:
+
+```json
+{
+  "mcpServers": {
+    "kenn-forge": {
+      "type": "http",
+      "url": "https://build-a.example.ts.net/mcp"
+    }
+  }
+}
+```
+
 Earlier previews exposed a standalone `kenn-forge mcp` command with a stdio
 transport. That command and transport are removed without a compatibility
 shim: MCP is served only by the running daemon over the HTTP endpoint above,

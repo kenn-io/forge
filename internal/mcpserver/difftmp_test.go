@@ -2,10 +2,12 @@ package mcpserver
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/kit/atomicfile"
 )
 
 func TestDiffFileStoreWriteAtomicallyReplacesExistingFile(t *testing.T) {
@@ -117,4 +119,37 @@ func TestDiffFileStoreReplacementEvictsOthersButNeverItself(t *testing.T) {
 	data, err := os.ReadFile(replaced)
 	require.NoError(err)
 	assert.Len(data, 60)
+}
+
+func TestDiffFileStoreFailedCommitKeepsEntriesItWouldEvict(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	store, err := newDiffFileStore(64)
+	require.NoError(err)
+	t.Cleanup(func() {
+		require.NoError(store.Close())
+	})
+
+	oldestPath, _, err := store.write("oldest.diff", make([]byte, 30))
+	require.NoError(err)
+	newerPath, _, err := store.write("newer.diff", make([]byte, 30))
+	require.NoError(err)
+
+	// A directory appearing at the target makes the real Commit refuse to
+	// publish, after the cache would already need to evict oldest.diff.
+	store.commit = func(f *atomicfile.File) error {
+		require.NoError(os.Mkdir(f.Name(), 0o700))
+		return f.Commit()
+	}
+	_, _, err = store.write("incoming.diff", make([]byte, 30))
+	require.Error(err)
+
+	for _, path := range []string{oldestPath, newerPath} {
+		data, err := os.ReadFile(path)
+		require.NoError(err, filepath.Base(path))
+		assert.Len(data, 30)
+	}
+	assert.Equal(int64(60), store.totalBytes)
+	assert.Equal(2, store.lru.Len())
+	assert.NotContains(store.entries, "incoming.diff")
 }

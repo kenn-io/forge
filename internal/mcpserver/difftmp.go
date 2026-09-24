@@ -20,6 +20,8 @@ type diffFileStore struct {
 	totalBytes int64
 	lru        *list.List
 	entries    map[string]*list.Element
+	// commit publishes a staged diff; tests replace it to force failures.
+	commit func(*atomicfile.File) error
 }
 
 type diffFileEntry struct {
@@ -43,6 +45,7 @@ func newDiffFileStore(maxBytes int64) (*diffFileStore, error) {
 	return &diffFileStore{
 		dir: dir, maxBytes: maxBytes,
 		lru: list.New(), entries: make(map[string]*list.Element),
+		commit: (*atomicfile.File).Commit,
 	}, nil
 }
 
@@ -76,33 +79,10 @@ func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 		return "", 0, err
 	}
 
-	// A same-name entry is replaced by the rename below, never evicted, so it
-	// stays reachable for concurrent consumers until the atomic swap.
-	var existingSize int64
-	if existing := d.entries[base]; existing != nil {
-		existingSize = existing.Value.(diffFileEntry).size
-	}
-	evictCursor := d.lru.Front()
-	for d.totalBytes-existingSize+size > d.maxBytes {
-		for evictCursor != nil && evictCursor.Value.(diffFileEntry).name == base {
-			evictCursor = evictCursor.Next()
-		}
-		if evictCursor == nil {
-			return "", 0, fmt.Errorf("%w: no evictable files", errDiffCacheFileTooLarge)
-		}
-		entry := evictCursor.Value.(diffFileEntry)
-		next := evictCursor.Next()
-		if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", 0, err
-		}
-		d.totalBytes -= entry.size
-		d.lru.Remove(evictCursor)
-		delete(d.entries, entry.name)
-		evictCursor = next
-	}
-
-	// ErrPublished means the diff is already visible at path.
-	if err := staged.Commit(); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
+	// Publish before touching the cache so a failed commit leaves every
+	// existing entry in place. ErrPublished means the diff is already visible
+	// at path.
+	if err := d.commit(staged); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return "", 0, err
 	}
 	if existing := d.entries[base]; existing != nil {
@@ -110,9 +90,25 @@ func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 		d.lru.Remove(existing)
 		delete(d.entries, base)
 	}
-	entry := diffFileEntry{name: base, path: abs, size: size}
-	d.entries[base] = d.lru.PushBack(entry)
+	added := d.lru.PushBack(diffFileEntry{name: base, path: abs, size: size})
+	d.entries[base] = added
 	d.totalBytes += size
+
+	// The new diff already fits on its own (checked above), so evicting older
+	// entries always gets back under the budget. The write has landed, so a
+	// failed removal does not fail it: the entry is forgotten and its file is
+	// removed with the directory on Close.
+	for d.totalBytes > d.maxBytes {
+		oldest := d.lru.Front()
+		if oldest == nil || oldest == added {
+			break
+		}
+		entry := oldest.Value.(diffFileEntry)
+		_ = os.Remove(entry.path)
+		d.totalBytes -= entry.size
+		d.lru.Remove(oldest)
+		delete(d.entries, entry.name)
+	}
 	return abs, size, nil
 }
 

@@ -31,8 +31,8 @@ func CanonicalExisting(path string) (string, error) {
 			continue
 		}
 		resolved := windows.UTF16ToString(buffer[:length])
-		if strings.HasPrefix(resolved, `\\?\UNC\`) {
-			resolved = `\\` + strings.TrimPrefix(resolved, `\\?\UNC\`)
+		if rest, ok := strings.CutPrefix(resolved, `\\?\UNC\`); ok {
+			resolved = `\\` + rest
 		} else {
 			resolved = strings.TrimPrefix(resolved, `\\?\`)
 		}

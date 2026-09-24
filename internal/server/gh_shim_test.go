@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/ghshim"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil"
 )
@@ -67,4 +68,34 @@ func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
 	response := testutil.DoJSON(t, spoke, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: "view", Host: "github.com", Owner: "acme", Repo: "widget", Number: 7, State: "open", Limit: 30, Fields: []string{"number"}})
 	assert.Contains(response.Body.String(), `"reason":"untracked"`)
 	assert.Equal(int64(1), hubReads.Load())
+}
+
+func TestGHShimHubRequiresConfiguredProviderIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		providerID string
+		handled    bool
+		reason     string
+	}{
+		{"configured identity", "repo-acme-widget", true, "served"},
+		{"reused route", "repo-original-widget", false, "untracked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			configured := defaultTestRepos[0]
+			configured.PlatformExternalID = tc.providerID
+			hub, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{configured})
+			seedPR(t, database, "acme", "widget", 7)
+			response := testutil.DoJSON(t, hub, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: "view", Host: "github.com", Owner: "acme", Repo: "widget", Number: 7, State: "open", Limit: 30, Fields: []string{"number"}})
+			require.Equal(http.StatusOK, response.Code, response.Body.String())
+			var result struct {
+				Handled bool
+				Reason  string
+			}
+			require.NoError(json.Unmarshal(response.Body.Bytes(), &result))
+			assert.Equal(tc.handled, result.Handled)
+			assert.Equal(tc.reason, result.Reason)
+		})
+	}
 }

@@ -38,7 +38,9 @@ func (s *Handler) ghShim(ctx context.Context, input *ghShimInput) (*ghShimOutput
 			return fallback("provider_unavailable")
 		}
 		for _, ref := range refs {
-			if ref.Platform == platform.KindGitHub && strings.EqualFold(ref.Host, q.Host) && strings.EqualFold(ref.Owner, q.Owner) && strings.EqualFold(ref.Name, q.Repo) {
+			// Routes are mutable; only the stable provider ID proves the
+			// routed row is the configured repository.
+			if ref.Platform == platform.KindGitHub && strings.EqualFold(ref.Host, repo.PlatformHost) && ref.PlatformExternalID != "" && ref.PlatformExternalID == repo.PlatformRepoID {
 				tracked = true
 				break
 			}

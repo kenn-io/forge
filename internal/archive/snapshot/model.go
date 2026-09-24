@@ -9,8 +9,9 @@ import (
 
 const Schema = "kenn-forge-archive-snapshot/1"
 const MaxBytes = 32 << 20
+const MaxRecords = 10_000
 
-var ErrTooLarge = errors.New("cached archive snapshot exceeds 32 MiB; no items were dropped")
+var ErrTooLarge = errors.New("cached archive snapshot exceeds the 10,000-record or 32 MiB text/response budget; narrow the repo scope; no items were dropped")
 
 type ArchiveSnapshot struct {
 	ExportSchema string                `json:"schema"`

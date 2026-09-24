@@ -688,26 +688,42 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, provider, _, ref := setupArchiveTestServer(t, nil)
+	client := setupTestClient(t, srv)
 	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
-	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repo.ID, Number: 1, Title: "Open repair", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-90 * 24 * time.Hour), UpdatedAt: now})
+	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repo.ID, Number: 1, Title: "Open repair", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-90 * 24 * time.Hour), UpdatedAt: now})
 	require.NoError(err)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/archive/snapshot?start=2026-09-13T12:00:00Z&end=2026-09-20T12:00:00Z", http.NoBody)
-	request.Host = "forge.test"
-	response := httptest.NewRecorder()
-	srv.ServeHTTP(response, request)
-	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	var payload struct {
-		Schema       string `json:"schema"`
-		PullRequests []struct {
-			Title string `json:"title"`
-		} `json:"pull_requests"`
-	}
-	require.NoError(json.Unmarshal(response.Body.Bytes(), &payload))
-	assert.Equal("kenn-forge-archive-snapshot/1", payload.Schema)
-	require.Len(payload.PullRequests, 1)
-	assert.Equal("Open repair", payload.PullRequests[0].Title)
+	query := generated.GetArchiveSnapshotQuery{Start: "2026-09-13T12:00:00Z", End: "2026-09-20T12:00:00Z", Repo: []string{fmt.Sprintf("%s|%s/%s", ref.Platform, ref.Host, ref.RepoPath)}}
+	response, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.NoError(err)
+	require.NotNil(response.JSON200)
+	assert.Equal("kenn-forge-archive-snapshot/1", response.JSON200.Schema1)
+	require.Len(response.JSON200.PullRequests, 1)
+	assert.Equal("Open repair", response.JSON200.PullRequests[0].Title)
+
+	outside := ref
+	outside.Name = "not-configured"
+	outside.RepoPath = "owner/not-configured"
+	outside.PlatformExternalID = "other-id"
+	_, err = database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(outside))
+	require.NoError(err)
+	query.Repo = []string{fmt.Sprintf("%s|%s/%s", outside.Platform, outside.Host, outside.RepoPath)}
+	rejected, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.Error(err)
+	require.NotNil(rejected.Error)
+	assert.Equal(generated.ProblemErrorCodeValidationError, rejected.Error.Code)
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+ WITH RECURSIVE sequence(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM sequence WHERE n<10001)
+ INSERT INTO forge_mr_events (merge_request_id,event_type,dedupe_key,created_at)
+ SELECT ?, 'review', 'review-' || n, ? FROM sequence`, mrID, now)
+	require.NoError(err)
+	query.Repo = nil
+	oversized, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.Error(err)
+	require.NotNil(oversized.Error)
+	assert.Equal(generated.ProblemErrorCodePayloadTooLarge, oversized.Error.Code)
 	assert.Zero(provider.calls.Load())
 }

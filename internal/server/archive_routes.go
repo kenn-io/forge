@@ -541,8 +541,9 @@ func archiveReportCounts(counts report.Counts) archiveReportCountsResponse {
 }
 
 type archiveSnapshotInput struct {
-	Start string `query:"start" required:"true" doc:"Inclusive UTC RFC3339 issue-creation boundary."`
-	End   string `query:"end" required:"true" doc:"Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit."`
+	Repositories []string `query:"repo,explode" doc:"Optional configured repository subset. Repeat repo=provider|platform_host/repo_path to split large exports. Limits: 10,000 items/reviews/references and 32 MiB projected text or response; no items are dropped."`
+	Start        string   `query:"start" required:"true" doc:"Inclusive UTC RFC3339 issue-creation boundary."`
+	End          string   `query:"end" required:"true" doc:"Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit."`
 }
 
 type archiveSnapshotOutput = httpapi.BodyOutput[snapshot.ArchiveSnapshot]
@@ -562,7 +563,14 @@ func (s *Server) getArchiveSnapshot(ctx context.Context, input *archiveSnapshotI
 	if !start.Before(end) {
 		return nil, httpapi.Validation("query.end", "end must be after start")
 	}
-	result, err := s.archive.Snapshot(ctx, start, end)
+	refs, err := archiveQueryRefs(input.Repositories)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.archive.Snapshot(ctx, archive.SnapshotOptions{Start: start, End: end, Repositories: refs})
+	if errors.Is(err, archive.ErrSnapshotScope) {
+		return nil, httpapi.Validation("query.repo", err.Error())
+	}
 	if errors.Is(err, snapshot.ErrTooLarge) {
 		return nil, httpapi.NewProblem(http.StatusRequestEntityTooLarge, httpapi.CodePayloadTooLarge, err.Error(), nil)
 	}

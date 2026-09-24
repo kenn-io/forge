@@ -436,3 +436,7 @@ Run Go tests with `-shuffle=on`. Regenerate OpenAPI and generated clients with
   missing association is unknown and conveys no trust decision (`internal/platformdb/persist.go::DBMREvent`).
 - Cached zero size values lack observation metadata; export them as unavailable until storage can
   distinguish measured zero from missing data (`internal/archive/snapshot.go::Service.Snapshot`).
+- Archive references must survive renames; ambiguous route reuse or an out-of-scope target must
+  remain a coverage gap, never an invented link (`internal/archive/snapshot.go::Service.Snapshot`).
+- Reject oversized exports before loading item and review text; callers can narrow repository scope
+  but exports must never silently discard candidates (`internal/db/queries_archive_snapshot.go::MeasureArchiveSnapshot`).

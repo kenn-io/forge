@@ -48071,6 +48071,9 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
+	// Repo Optional configured repository subset. Repeat repo=provider|platform_host/repo_path to split large exports. Limits: 10,000 items/reviews/references and 32 MiB projected text or response; no items are dropped.
+	Repo []string `json:"repo,omitempty"`
+
 	// Start Inclusive UTC RFC3339 issue-creation boundary.
 	Start string `json:"start"`
 

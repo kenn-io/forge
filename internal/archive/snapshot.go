@@ -16,15 +16,24 @@ import (
 	"go.kenn.io/forge/internal/archive/snapshot"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/platformdb"
+	"go.kenn.io/forge/platform"
 )
+
+type SnapshotOptions struct {
+	Start, End   time.Time
+	Repositories []platform.RepoRef
+}
+
+var ErrSnapshotScope = errors.New("snapshot repositories must belong to the configured cached inventory")
 
 // Snapshot exports the configured cached inventory in one read transaction.
 // It never starts sync, records hot views, or resolves identities with a provider.
-func (s *Service) Snapshot(ctx context.Context, start, end time.Time) (snapshot.ArchiveSnapshot, error) {
-	return s.snapshot(ctx, start, end, nil)
+func (s *Service) Snapshot(ctx context.Context, opts SnapshotOptions) (snapshot.ArchiveSnapshot, error) {
+	return s.snapshot(ctx, opts, nil)
 }
 
-func (s *Service) snapshot(ctx context.Context, start, end time.Time, afterCoverage func() error) (snapshot.ArchiveSnapshot, error) {
+func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCoverage func() error) (snapshot.ArchiveSnapshot, error) {
+	start, end := opts.Start, opts.End
 	result := snapshot.ArchiveSnapshot{ExportSchema: snapshot.Schema, ObservedAt: s.now().UTC(), Start: start.UTC(), End: end.UTC(), Repositories: []snapshot.SnapshotRepository{}, PullRequests: []snapshot.SnapshotPullRequest{}, Issues: []snapshot.SnapshotItem{}, Relations: []snapshot.SnapshotRelation{}}
 	if start.IsZero() || end.IsZero() || !start.Before(end) {
 		return result, errors.New("snapshot start must precede end")
@@ -41,6 +50,17 @@ func (s *Service) snapshot(ctx context.Context, start, end time.Time, afterCover
 		return result, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	selected := map[int64]bool{}
+	for _, ref := range opts.Repositories {
+		repo, err := db.LoadArchiveSnapshotRepository(ctx, tx, platformdb.DBRepoIdentity(ref))
+		if err != nil {
+			return result, err
+		}
+		if repo == nil {
+			return result, ErrSnapshotScope
+		}
+		selected[repo.ID] = false
+	}
 	repos := map[int64]db.Repo{}
 	repoIDs := []int64{}
 	coverage, err := db.LoadArchiveReportRepositories(ctx, tx, nil, result.ObservedAt)
@@ -57,8 +77,17 @@ func (s *Service) snapshot(ctx context.Context, start, end time.Time, afterCover
 			return result, err
 		}
 		if repo == nil {
+			if len(selected) > 0 {
+				continue
+			}
 			result.Repositories = append(result.Repositories, snapshot.SnapshotRepository{ID: "unresolved:" + string(ref.Platform) + ":" + ref.Host + ":" + ref.RepoPath, Provider: string(ref.Platform), Host: ref.Host, ProviderID: ref.PlatformExternalID, Path: ref.RepoPath, SyncError: "Configured repository has no active cached identity"})
 			continue
+		}
+		if len(selected) > 0 {
+			if _, ok := selected[repo.ID]; !ok {
+				continue
+			}
+			selected[repo.ID] = true
 		}
 		if _, exists := repos[repo.ID]; exists {
 			continue
@@ -72,10 +101,22 @@ func (s *Service) snapshot(ctx context.Context, start, end time.Time, afterCover
 		}
 		result.Repositories = append(result.Repositories, record)
 	}
+	for _, found := range selected {
+		if !found {
+			return result, ErrSnapshotScope
+		}
+	}
 	if afterCoverage != nil {
 		if err := afterCoverage(); err != nil {
 			return result, err
 		}
+	}
+	measurement, err := db.MeasureArchiveSnapshot(ctx, tx, repoIDs, start, end)
+	if err != nil {
+		return result, err
+	}
+	if measurement.Records > snapshot.MaxRecords || measurement.TextBytes > snapshot.MaxBytes {
+		return snapshot.ArchiveSnapshot{}, snapshot.ErrTooLarge
 	}
 	items, err := db.LoadArchiveSnapshotItems(ctx, tx, repoIDs, start, end)
 	if err != nil {
@@ -135,11 +176,14 @@ func (s *Service) snapshot(ctx context.Context, start, end time.Time, afterCover
 		return result, err
 	}
 	for _, link := range links {
+		pull := &result.PullRequests[pullPositions[link.MergeRequestID]]
 		issueID, ok := issueIDs[link.IssueID]
-		if !ok {
+		if !ok || !link.Resolved {
+			if !slices.Contains(pull.Gaps, "unresolved_issue_reference") {
+				pull.Gaps = append(pull.Gaps, "unresolved_issue_reference")
+			}
 			continue
 		}
-		pull := result.PullRequests[pullPositions[link.MergeRequestID]]
 		result.Relations = append(result.Relations, snapshot.SnapshotRelation{SourceID: pull.ID, TargetID: issueID, Kind: "linked_issue", EvidenceID: issueID + "/reference/" + url.QueryEscape(link.EventKey), URL: link.URL, ObservedAt: link.ObservedAt.UTC()})
 	}
 	encoded, err := json.Marshal(result)

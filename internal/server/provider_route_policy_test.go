@@ -53,6 +53,8 @@ func TestProviderRouteOwnershipExamples(t *testing.T) {
 	assert.Equal(routepolicy.NodeLocal, rules["get-settings"].Owner)
 	assert.Equal(routepolicy.NodeLocal, rules["get-local-settings"].Owner)
 	assert.Equal(routepolicy.ProviderHubOnly, rules["federation-get-provider-settings"].Owner)
+	assert.Equal(routepolicy.ProviderHubOnly, rules["federation-query-workspace-provider-state"].Owner)
+	assert.Equal(federationauth.ScopeProviderRead, rules["federation-query-workspace-provider-state"].PeerScope)
 	assert.Equal(routepolicy.ProviderHubOnly, rules["merge-pull"].Owner)
 	assert.Equal(routepolicy.NodeLocal, rules["get-pull-diff"].Owner)
 	assert.Equal(routepolicy.NodeLocal, rules["get-workspace"].Owner)

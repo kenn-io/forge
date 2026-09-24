@@ -11726,6 +11726,7 @@ type ClientInterface interface {
 	UpdateSettingsWithResponse(ctx context.Context, options *UpdateSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateSettingsResp, error)
 	GetFleetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetFleetSettingsResp, error)
 	UpdateFleetSettingsWithResponse(ctx context.Context, options *UpdateFleetSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetSettingsResp, error)
+	GetLocalSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetLocalSettingsResp, error)
 	CreateRepoPresetWithResponse(ctx context.Context, options *CreateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoPresetResp, error)
 	DeleteRepoPresetWithResponse(ctx context.Context, options *DeleteRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoPresetResp, error)
 	UpdateRepoPresetWithResponse(ctx context.Context, options *UpdateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoPresetResp, error)
@@ -29411,6 +29412,61 @@ func (c *Client) UpdateFleetSettingsWithResponse(ctx context.Context, options *U
 	}
 }
 
+// GetLocalSettings Get settings owned by this Forge without contacting a fleet hub
+func (c *Client) GetLocalSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetLocalSettingsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/settings/local",
+		Method:     "GET",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/settings/local")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetLocalSettingsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetLocalSettingsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetLocalSettingsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetLocalSettingsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // CreateRepoPreset Create repository preset
 func (c *Client) CreateRepoPresetWithResponse(ctx context.Context, options *CreateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoPresetResp, error) {
 	var err error
@@ -37638,6 +37694,20 @@ func (c *Client) UpdateFleetSettingsRaw(ctx context.Context, httpClient *http.Cl
 	return httpClient.Do(req)
 }
 
+// GetLocalSettingsRaw returns an unread response. The caller must close its body.
+func (c *Client) GetLocalSettingsRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/settings/local",
+		Method:     "GET",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // CreateRepoPresetRaw returns an unread response. The caller must close its body.
 func (c *Client) CreateRepoPresetRaw(ctx context.Context, httpClient *http.Client, options *CreateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -44332,6 +44402,21 @@ func NewUpdateFleetSettingsRequest(ctx context.Context, baseURL string, options 
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetLocalSettingsRequest constructs a typed request for a caller-owned transport.
+func NewGetLocalSettingsRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/settings/local",
+		Method:     "GET",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewCreateRepoPresetRequest constructs a typed request for a caller-owned transport.
 func NewCreateRepoPresetRequest(ctx context.Context, baseURL string, options *CreateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -49717,6 +49802,10 @@ type UpdateFleetSettingsResponse = FleetSettingsResponse
 
 type UpdateFleetSettingsErrorResponse = ProblemError
 
+type GetLocalSettingsResponse = SettingsResponse
+
+type GetLocalSettingsErrorResponse = ProblemError
+
 type CreateRepoPresetResponse = SettingsResponse
 
 type CreateRepoPresetErrorResponse = ProblemError
@@ -52492,6 +52581,14 @@ type UpdateFleetSettingsResp struct {
 	StatusCode   int
 	Error        *UpdateFleetSettingsErrorResponse
 	JSON200      *UpdateFleetSettingsResponse
+}
+
+type GetLocalSettingsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetLocalSettingsErrorResponse
+	JSON200      *GetLocalSettingsResponse
 }
 
 type CreateRepoPresetResp struct {

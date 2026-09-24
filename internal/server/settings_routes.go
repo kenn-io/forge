@@ -344,6 +344,13 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		Tags:        []string{"Settings"},
 	}, s.getSettings)
 	huma.Register(api, huma.Operation{
+		OperationID: "get-local-settings",
+		Method:      http.MethodGet,
+		Path:        "/settings/local",
+		Summary:     "Get settings owned by this Forge without contacting a fleet hub",
+		Tags:        []string{"Settings"},
+	}, s.getLocalSettings)
+	huma.Register(api, huma.Operation{
 		OperationID: "update-settings",
 		Method:      http.MethodPut,
 		Path:        "/settings",

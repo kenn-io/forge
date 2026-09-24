@@ -122,6 +122,7 @@ export type SettingsReadError = ApiProblemError | TransientTransportError;
 export class SettingsWorkflow extends Context.Service<
   SettingsWorkflow,
   {
+    readonly readLocal: Effect.Effect<SettingsSnapshot, SettingsReadError>;
     readonly persist: (request: () => UpdateSettingsRequest) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly updateFleet: (request: FleetSettingsUpdate) => Effect.Effect<FleetSettingsSnapshot, SettingsError>;
     readonly createRepoPreset: (preset: RepoPreset) => Effect.Effect<SettingsSnapshot, SettingsError>;
@@ -335,6 +336,9 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
     const uncertainMutations = yield* Ref.make<ReadonlyMap<string, RetainedSettingsUncertainty>>(new Map());
     const readSettings = (operation: string) =>
       retryIdempotentRead(api.execute(operation, (signal) => api.client.SettingsService.getSettings({ signal })));
+    const readLocal = retryIdempotentRead(
+      api.execute("GET /settings/local", (signal) => api.client.SettingsService.getLocalSettings({ signal })),
+    );
     const retainUncertainty = (keys: readonly string[], uncertainty: RetainedSettingsUncertainty) =>
       Ref.update(uncertainMutations, (entries) => {
         const next = new Map(entries);
@@ -686,6 +690,7 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
           ),
         );
     return {
+      readLocal,
       persist: (request: () => UpdateSettingsRequest) => submitSettings({ _tag: "Partial", request }),
       updateFleet: (request: FleetSettingsUpdate) =>
         queue

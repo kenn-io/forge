@@ -330,6 +330,20 @@ export const updateFleetSettings = async (
   });
 };
 
+export const getGetLocalSettingsUrl = () => {
+  return `/settings/local`;
+};
+
+/**
+ * @summary Get settings owned by this Forge without contacting a fleet hub
+ */
+export const getLocalSettings = async (options?: Parameters<typeof orvalFetch>[1]): Promise<SettingsResponse> => {
+  return orvalFetch<SettingsResponse>(getGetLocalSettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
 export const getCreateRepoPresetUrl = () => {
   return `/settings/repo-presets`;
 };

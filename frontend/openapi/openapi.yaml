@@ -24258,6 +24258,25 @@ paths:
       summary: Update fleet settings
       tags:
         - Settings
+  /settings/local:
+    get:
+      operationId: get-local-settings
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get settings owned by this Forge without contacting a fleet hub
+      tags:
+        - Settings
   /settings/repo-presets:
     post:
       operationId: create-repo-preset

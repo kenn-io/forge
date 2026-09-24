@@ -4389,6 +4389,13 @@ base_url = %q
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
 	assert.Equal(canonicalWorktreeBase, settings.Repos[0].WorktreeBasePath)
+
+	response = testutil.DoJSON(t, spoke, http.MethodGet, "/api/v1/settings/local", nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.Equal(25, settings.Detail.InitialTimelineEntryLimit)
+	assert.True(settings.Workspaces.AutoAssignOnCreate)
+	assert.Equal(config.FleetRoleSpoke, settings.Fleet.Role)
 }
 
 func TestNodeWorktreeBaseOverrideFollowsHubRepositoryIdentity(t *testing.T) {

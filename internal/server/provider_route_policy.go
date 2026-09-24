@@ -230,6 +230,7 @@ var providerRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "get-repo-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-roborev-status", Owner: NodeLocal},
 	{OperationID: "get-settings", Owner: NodeLocal},
+	{OperationID: "get-local-settings", Owner: NodeLocal},
 	{OperationID: "get-snapshot", Owner: NodeLocal},
 	{OperationID: "get-snapshot-aggregate", Owner: NodeLocal},
 	{OperationID: "get-snapshot-raw", Owner: NodeLocal},

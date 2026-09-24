@@ -874,6 +874,15 @@ func (s *Server) getSettings(
 	return s.settingsOutputResponse(ctx)
 }
 
+func (s *Server) getLocalSettings(
+	ctx context.Context, _ *struct{},
+) (*getSettingsOutput, error) {
+	if s.cfg == nil {
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+	}
+	return s.settingsOutputResponseWithProvider(ctx, nil)
+}
+
 func (s *Server) mutateRepoPresets(
 	ctx context.Context,
 	mutate func([]config.RepoPreset) ([]config.RepoPreset, error),

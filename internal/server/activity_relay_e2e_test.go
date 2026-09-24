@@ -7,10 +7,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-
-	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
-
-	jsonv2 "encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +19,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
+	jsonv2 "encoding/json/v2"
 
 	"github.com/cenkalti/backoff/v7"
 	"github.com/stretchr/testify/assert"

@@ -2,6 +2,7 @@ package providerapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"go.kenn.io/forge/internal/mcpserver"
@@ -78,7 +79,7 @@ func FederationWorkflowMutationFromMCP(
 }
 
 func FederationWorkflowProblem(err error) error {
-	backendErr, ok := err.(*mcpserver.Error)
+	backendErr, ok := errors.AsType[*mcpserver.Error](err)
 	if !ok {
 		return httpapi.Internal(err.Error())
 	}

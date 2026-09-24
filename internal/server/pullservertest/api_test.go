@@ -1020,7 +1020,8 @@ func TestAPIGetRepoCommitDiff(t *testing.T) {
 	assert := assert.New(t)
 
 	_, _, _, _, commitSHAs, srv := servertest.SetupTestServerWithClonesAndServer(t)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(
+		t.Context(),
 		http.MethodGet,
 		"/api/v1/repo/gh/acme/widget/commits/"+commitSHAs[2]+"/diff",
 		nil,

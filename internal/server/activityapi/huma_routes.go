@@ -607,7 +607,7 @@ func (s *Handlers) SyncIssue(ctx context.Context, input *itemapi.IssueRepoNumber
 		repo.Owner, repo.Name, input.Number,
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "is not tracked") {
+		if errors.Is(err, ghclient.ErrRepoNotTracked) {
 			return nil, httpapi.Forbidden(err.Error(), nil)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
@@ -765,14 +765,14 @@ func (s *Handlers) OverlayLocalActivityWorkspaceSnapshot(
 	overlays := activityWorkspaceOverlays(snapshot, repositories)
 	for i := range response.Items {
 		if workspace, ok := overlays[itemapi.ActivityItemIdentity(response.Items[i])]; ok {
-			copy := workspace
-			response.Items[i].Workspace = &copy
+			workspaceCopy := workspace
+			response.Items[i].Workspace = &workspaceCopy
 		}
 	}
 	for i := range response.ItemActivity {
 		if workspace, ok := overlays[itemapi.ActivitySubjectIdentity(response.ItemActivity[i])]; ok {
-			copy := workspace
-			response.ItemActivity[i].Workspace = &copy
+			workspaceCopy := workspace
+			response.ItemActivity[i].Workspace = &workspaceCopy
 		}
 	}
 	if input.Projection != "events" && !input.InvolvesMe {
@@ -814,7 +814,7 @@ func activityWorkspaceOverlays(
 ) map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef {
 	overlays := make(map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef)
 	for key, activity := range snapshot.Subjects {
-		itemType := ""
+		var itemType string
 		workspace := activity.Workspace
 		switch key.ItemType {
 		case db.WorkspaceItemTypePullRequest:
@@ -845,7 +845,7 @@ func activityWorkspaceOverlays(
 		if _, ok := snapshot.Subjects[key]; ok {
 			continue
 		}
-		itemType := ""
+		var itemType string
 		switch key.ItemType {
 		case db.WorkspaceItemTypePullRequest:
 			itemType = "pr"

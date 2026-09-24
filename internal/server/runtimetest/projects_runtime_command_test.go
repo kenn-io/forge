@@ -267,8 +267,7 @@ func TestProjectWorktreeCommandSessionExpandsHomeCWD(t *testing.T) {
 	home, err := os.UserHomeDir()
 	require.NoError(err)
 
-	srv, projectID, worktreeID, recordPath :=
-		setupProjectWorktreeCommandSessionTestWithRecord(t)
+	srv, projectID, worktreeID, recordPath := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

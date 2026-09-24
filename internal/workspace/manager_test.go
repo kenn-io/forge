@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
@@ -1191,6 +1192,7 @@ func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
 		{
 			name: "ordinary directory",
 			prepare: func(t *testing.T, _, expectedPath, _ string) {
+				t.Helper()
 				require.NoError(t, os.MkdirAll(expectedPath, 0o755))
 			},
 			wantReason: WorkspaceDirectoryNotLinkedWorktree,
@@ -1198,6 +1200,7 @@ func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
 		{
 			name: "wrong branch",
 			prepare: func(t *testing.T, localRepo, expectedPath, _ string) {
+				t.Helper()
 				runWorkspaceTestGit(
 					t, localRepo,
 					"worktree", "add", expectedPath, "-b", "other/branch", "HEAD",
@@ -1208,6 +1211,7 @@ func TestCreateIssueRecoveryRejectsInvalidExpectedDirectory(t *testing.T) {
 		{
 			name: "wrong repository",
 			prepare: func(t *testing.T, _, expectedPath, branch string) {
+				t.Helper()
 				otherRepo := filepath.Join(t.TempDir(), "other")
 				runWorkspaceTestGit(
 					t, filepath.Dir(otherRepo),
@@ -1446,6 +1450,7 @@ func TestSetupReusesPreIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
 func testSetupReusesManagedCloneAfterRepositoryRename(
 	t *testing.T, identityScoped bool,
 ) {
+	t.Helper()
 	require := require.New(t)
 	database := openTestDB(t)
 	worktreeRoot := t.TempDir()
@@ -1864,6 +1869,19 @@ func TestCreateRepoNotTracked(t *testing.T) {
 		t.Context(), "github", "github.com", "unknown", "repo", 1,
 	)
 	require.Error(t, err)
+	require.ErrorIs(t, err, ErrWorkspaceNotFound)
+}
+
+func TestCreateKataTaskRepoNotTracked(t *testing.T) {
+	d := openTestDB(t)
+	mgr := newTestManager(t, d, t.TempDir())
+
+	_, err := mgr.CreateKataTask(
+		t.Context(), "github", "github.com", "unknown", "repo",
+		db.WorkspaceKataMetadata{
+			DaemonID: "desktop", ProjectUID: "project-kata", IssueUID: "issue-kata-1",
+		},
+	)
 	require.ErrorIs(t, err, ErrWorkspaceNotFound)
 }
 
@@ -2338,7 +2356,6 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(before, after)
 	assert.FileExists(filepath.Join(ws.WorktreePath, "unfinished.txt"))
-
 }
 
 func TestReuseExistingWorkspaceWorktreeRechecksSymlinkAfterLock(t *testing.T) {
@@ -4792,7 +4809,6 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 func TestValidateLocalBranchNameIgnoresBrokenWorkingTreeCwd(t *testing.T) {
 	require := require.New(t)
 	if os.Getenv("KENN_FORGE_TEST_VALIDATE_BRANCH_CWD") == "1" {
-		require.NoError(os.Chdir(os.Getenv("KENN_FORGE_TEST_BROKEN_CWD")))
 		require.NoError(validateLocalBranchName(
 			t.Context(), "", "kenn-forge/issue-23-federation-test",
 		))
@@ -4810,10 +4826,10 @@ func TestValidateLocalBranchNameIgnoresBrokenWorkingTreeCwd(t *testing.T) {
 		os.Args[0],
 		"-test.run=^TestValidateLocalBranchNameIgnoresBrokenWorkingTreeCwd$",
 	)
+	cmd.Dir = brokenCwd
 	cmd.Env = append(
 		os.Environ(),
 		"KENN_FORGE_TEST_VALIDATE_BRANCH_CWD=1",
-		"KENN_FORGE_TEST_BROKEN_CWD="+brokenCwd,
 	)
 	out, err := cmd.CombinedOutput()
 	require.NoError(err, string(out))
@@ -5420,6 +5436,7 @@ func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
 			configure: func(
 				t *testing.T, cloneDir, branch string, prNumber int,
 			) worktreeExpectation {
+				t.Helper()
 				// Reproduce the dangerous repo state from issue #256: the real
 				// branch and GitHub's synthetic pull ref both exist and point at
 				// the same commit. Starting from refs/pull/<number>/head lets Git
@@ -5443,6 +5460,7 @@ func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
 			configure: func(
 				t *testing.T, cloneDir, branch string, prNumber int,
 			) worktreeExpectation {
+				t.Helper()
 				// A base repo can have a branch with the same name as a fork PR
 				// branch, but that origin branch is not the fork head. Fork
 				// workspaces must prefer the GitHub pull ref over any same-named
@@ -5795,7 +5813,7 @@ func TestLocalBranchExistsIgnoresInheritedGitEnv(t *testing.T) {
 	targetClone := setupBareCloneForWorkspaceGitTest(t)
 	poisonClone := setupBareCloneForWorkspaceGitTest(t)
 	require.NoError(runGitWithoutHooks(
-		context.Background(), poisonClone,
+		t.Context(), poisonClone,
 		"branch", "kenn-forge/issue-7", "main",
 	))
 
@@ -5803,7 +5821,7 @@ func TestLocalBranchExistsIgnoresInheritedGitEnv(t *testing.T) {
 	t.Setenv("GIT_WORK_TREE", t.TempDir())
 
 	exists, err := localBranchExists(
-		context.Background(), targetClone, "kenn-forge/issue-7",
+		t.Context(), targetClone, "kenn-forge/issue-7",
 	)
 
 	require.NoError(err)
@@ -6480,7 +6498,7 @@ func TestManagerTerminalPaneSnapshotIncludesPtyOwnerTitle(t *testing.T) {
 	}
 
 	snapshot, err := mgr.TerminalPaneSnapshot(
-		context.Background(), ws, ws.TmuxSession,
+		t.Context(), ws, ws.TmuxSession,
 	)
 
 	require.NoError(err)
@@ -6611,7 +6629,7 @@ func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
 	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 
@@ -6657,7 +6675,7 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
@@ -6694,7 +6712,7 @@ func TestManagerDeleteStopsBeforeTeardownWhenAdmissionFails(t *testing.T) {
 	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 
@@ -6739,7 +6757,7 @@ func TestManagerDeleteTreatsTmuxServerExitDuringKillAsGone(t *testing.T) {
 	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
 	require.NoError(err)
 	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
@@ -6770,7 +6788,7 @@ func TestManagerDeleteAllowsErroredWorkspaceWhenTmuxUnavailable(t *testing.T) {
 		filepath.Join(t.TempDir(), "missing-tmux"),
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := &Workspace{
 		ID:              "ws-tmux-unavailable",
 		PlatformHost:    "github.com",
@@ -6802,7 +6820,7 @@ func TestManagerReapOrphanTmuxSessionsIgnoresUnavailableTmux(t *testing.T) {
 	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{filepath.Join(t.TempDir(), "missing-tmux")})
 
-	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
+	require.NoError(mgr.ReapOrphanTmuxSessions(t.Context()))
 }
 
 func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) {
@@ -6844,9 +6862,9 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		TmuxSession:  "forge-0000000000000001",
 		Status:       "ready",
 	}
-	require.NoError(d.InsertWorkspace(context.Background(), live))
+	require.NoError(d.InsertWorkspace(t.Context(), live))
 
-	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
+	require.NoError(mgr.ReapOrphanTmuxSessions(t.Context()))
 
 	argvs := readRecorderArgv(t, record)
 	require.Len(argvs, 2)
@@ -6888,7 +6906,7 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	storedHostSession := "forge-host-1111111111111111"
 	orphanHostSession := "forge-host-2222222222222222"
 
-	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
 		ID:           "0000000000000001",
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
@@ -6906,18 +6924,18 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		time.Time{},
 	)
 	require.NoError(d.UpsertHostRuntimeTmuxSession(
-		context.Background(), &db.HostRuntimeTmuxSession{
+		t.Context(), &db.HostRuntimeTmuxSession{
 			SessionKey:  "host-live",
 			SessionName: storedHostSession,
 		},
 	))
-	project, err := d.CreateProject(context.Background(), db.CreateProjectInput{
+	project, err := d.CreateProject(t.Context(), db.CreateProjectInput{
 		DisplayName: "runtime-project",
 		LocalPath:   filepath.Join(t.TempDir(), "project"),
 	})
 	require.NoError(err)
 	worktree, err := d.CreateProjectWorktree(
-		context.Background(), db.CreateProjectWorktreeInput{
+		t.Context(), db.CreateProjectWorktreeInput{
 			ProjectID: project.ID,
 			Branch:    "feature/runtime",
 			Path:      filepath.Join(t.TempDir(), "worktree"),
@@ -6928,7 +6946,7 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		"-3333333333333333"
 	orphanProjectSession := "forge-project-worktree-unrecorded-4444444444444444"
 	require.NoError(d.UpsertProjectWorktreeTmuxSession(
-		context.Background(), &db.ProjectWorktreeTmuxSession{
+		t.Context(), &db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktree.ID,
 			SessionKey:  "project-live",
 			SessionName: storedProjectSession,
@@ -6957,7 +6975,7 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 
-	require.NoError(mgr.ReapOrphanTmuxSessions(context.Background()))
+	require.NoError(mgr.ReapOrphanTmuxSessions(t.Context()))
 
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
@@ -7011,7 +7029,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 			"kenn-forge-0000000000000003": true,
 		},
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
 		ID:           "0000000000000001",
@@ -7137,7 +7155,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 	mgr.SetTmuxCommand([]string{script, "wrap"})
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
 		ID:           "0000000000000001",
@@ -7209,7 +7227,7 @@ func TestManagerListTmuxSessionInfosRealTmux(t *testing.T) {
 	mgr.SetTmuxCommand(tmuxCommand)
 	run("set-option", "-t", owned, "@forge_owner", mgr.tmuxOwnerMarker())
 
-	infos, err := mgr.listTmuxSessionInfos(context.Background())
+	infos, err := mgr.listTmuxSessionInfos(t.Context())
 	require.NoError(err)
 	owners := make(map[string]string, len(infos))
 	for _, info := range infos {
@@ -7229,7 +7247,7 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
 		ID:           "0000000000000001",
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
@@ -7252,7 +7270,7 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 		"claude", "kenn-forge-0000000000000001-c857d09db23e6822",
 		createdAt,
 	)
-	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
 		ID:           "0000000000000002",
 		PlatformHost: "github.com",
 		RepoOwner:    "acme",
@@ -7271,7 +7289,7 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 	)
 
 	sessions, err := mgr.TmuxSessionsForWorkspace(
-		context.Background(),
+		t.Context(),
 		"0000000000000001",
 		"kenn-forge-0000000000000001",
 	)
@@ -7284,7 +7302,7 @@ func TestManagerTmuxSessionsForWorkspaceReadsStoredRuntimeSessions(
 	}, sessions)
 
 	sessions, err = mgr.TmuxSessionsForWorkspace(
-		context.Background(),
+		t.Context(),
 		"0000000000000001",
 		"",
 	)
@@ -7325,7 +7343,7 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
 	}
-	require.NoError(d.InsertWorkspace(context.Background(), ws))
+	require.NoError(d.InsertWorkspace(t.Context(), ws))
 	recordRuntimeTmuxSessionForTest(
 		t, d, ws.ID, "0000000000000001_codex", "codex",
 		"kenn-forge-0000000000000001-57de4cf40144bdf7",
@@ -7337,7 +7355,7 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 		time.Time{},
 	)
 
-	require.NoError(mgr.cleanupTmuxSession(context.Background(), ws))
+	require.NoError(mgr.cleanupTmuxSession(t.Context(), ws))
 
 	argvs := readRecorderArgv(t, record)
 	assert.Contains(argvs, []string{
@@ -7355,7 +7373,7 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 		"kill-session", "-t",
 		"kenn-forge-0000000000000002-57de4cf40144bdf7",
 	})
-	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), ws.ID)
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(t.Context(), ws.ID)
 	require.NoError(err)
 	assert.Empty(stored)
 }
@@ -7408,7 +7426,7 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 		GitHeadRef:   "feature/live",
 		WorktreePath: filepath.Join(t.TempDir(), "live"),
 	}
-	require.NoError(d.InsertWorkspace(context.Background(), ws))
+	require.NoError(d.InsertWorkspace(t.Context(), ws))
 	for _, targetKey := range []string{"codex", "claude"} {
 		recordRuntimeTmuxSessionForTest(
 			t,
@@ -7424,7 +7442,7 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 		)
 	}
 
-	err := mgr.cleanupTmuxSession(context.Background(), ws)
+	err := mgr.cleanupTmuxSession(t.Context(), ws)
 	require.Error(err)
 	assert.Contains(err.Error(), "kenn-forge-0000000000000001-57de4cf40144bdf7")
 
@@ -7441,7 +7459,7 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 		"kenn-forge-0000000000000001-c857d09db23e6822",
 	})
 
-	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), ws.ID)
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(t.Context(), ws.ID)
 	require.NoError(err)
 	require.Len(stored, 2)
 }
@@ -7454,7 +7472,7 @@ func TestManagerForgetRuntimeSessionCreatedAtPreservesRecreatedRow(
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
 		ID:           "ws-1",
 		TmuxSession:  "kenn-forge-ws-1",
 		Status:       "ready",
@@ -7479,12 +7497,12 @@ func TestManagerForgetRuntimeSessionCreatedAtPreservesRecreatedRow(
 	)
 
 	deleted, err := mgr.ForgetRuntimeSessionCreatedAt(
-		context.Background(), "ws-1", sessionKey, oldCreatedAt,
+		t.Context(), "ws-1", sessionKey, oldCreatedAt,
 	)
 	require.NoError(err)
 	assert.False(deleted)
 
-	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), "ws-1")
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(t.Context(), "ws-1")
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.Equal(newCreatedAt, stored[0].CreatedAt)
@@ -7498,7 +7516,7 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	require.NoError(d.InsertWorkspace(context.Background(), &Workspace{
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
 		ID:           "ws-1",
 		TmuxSession:  "kenn-forge-ws-1",
 		Status:       "ready",
@@ -7536,22 +7554,22 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 
 	require.NoError(os.WriteFile(existsFile, []byte("1"), 0o644))
 	deleted, err := mgr.ForgetRuntimeSessionAfterExit(
-		context.Background(), "ws-1", sessionKey, createdAt, tmuxSession,
+		t.Context(), "ws-1", sessionKey, createdAt, tmuxSession,
 	)
 	require.NoError(err)
 	assert.False(deleted)
-	stored, err := d.ListWorkspaceRuntimeTmuxSessions(context.Background(), "ws-1")
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(t.Context(), "ws-1")
 	require.NoError(err)
 	require.Len(stored, 1)
 	assert.Equal(sessionKey, stored[0].SessionKey)
 
 	require.NoError(os.Remove(existsFile))
 	deleted, err = mgr.ForgetRuntimeSessionAfterExit(
-		context.Background(), "ws-1", sessionKey, createdAt, tmuxSession,
+		t.Context(), "ws-1", sessionKey, createdAt, tmuxSession,
 	)
 	require.NoError(err)
 	assert.True(deleted)
-	stored, err = d.ListWorkspaceRuntimeTmuxSessions(context.Background(), "ws-1")
+	stored, err = d.ListWorkspaceRuntimeTmuxSessions(t.Context(), "ws-1")
 	require.NoError(err)
 	assert.Empty(stored)
 
@@ -7579,7 +7597,7 @@ func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 	mgr := newTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetClones(gitclone.New(filepath.Join(dir, "clones"), nil))
-	ctx := context.Background()
+	ctx := t.Context()
 	errMsg := "ensure clone failed"
 	ws := &Workspace{
 		ID:              "ws-retry-missing-clone",
@@ -7618,7 +7636,7 @@ func TestManagerRequestRetryQueuesWhileCreatingAndStartsIfErrored(t *testing.T) 
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := &Workspace{
 		ID:              "ws-queued-retry",
 		PlatformHost:    "github.com",
@@ -7669,7 +7687,7 @@ func TestManagerRequestRetryPreservesReusedIssueBranchSentinel(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	ctx := context.Background()
+	ctx := t.Context()
 	errMsg := "setup failed"
 	ws := &Workspace{
 		ID:              "ws-reused-issue-retry",
@@ -7709,7 +7727,7 @@ func TestManagerRequestRetryStartsWhenSetupFailedBeforeQueue(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	ctx := context.Background()
+	ctx := t.Context()
 	errMsg := "ensure clone failed"
 	ws := &Workspace{
 		ID:              "ws-raced-retry",
@@ -7754,7 +7772,7 @@ func TestManagerRequestRetryDiscardsQueuedRetryWhenSetupSucceeds(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := &Workspace{
 		ID:              "ws-discard-retry",
 		PlatformHost:    "github.com",
@@ -7883,7 +7901,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	mgr.SetTmuxGraphics(true)
 	mgr.SetTmuxMouse(true)
 
-	require.NoError(mgr.EnsureTmux(context.Background(), "sess-macos", "/tmp/cwd"))
+	require.NoError(mgr.EnsureTmux(t.Context(), "sess-macos", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
 	require.Len(argvs, 4)
@@ -8190,74 +8208,78 @@ func TestFileLockManagerAcquireRelease(t *testing.T) {
 }
 
 func TestFileLockManagerSerializesGoroutines(t *testing.T) {
-	require := require.New(t)
-	mgr := NewFileLockManager()
-	ctx := t.Context()
-	repo := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		mgr := NewFileLockManager()
+		ctx := t.Context()
+		repo := t.TempDir()
 
-	const goroutines = 6
-	var inCritical atomic.Int32
-	var maxObserved atomic.Int32
-	var overlap atomic.Int32
+		const goroutines = 6
+		var inCritical atomic.Int32
+		var maxObserved atomic.Int32
+		var overlap atomic.Int32
 
-	var wg sync.WaitGroup
-	for range goroutines {
-		wg.Go(func() {
-			lock, err := mgr.Acquire(ctx, repo)
-			if err != nil {
-				return
-			}
-			defer func() { _ = lock.Unlock() }()
-			current := inCritical.Add(1)
-			defer inCritical.Add(-1)
-			if current > 1 {
-				overlap.Add(1)
-			}
-			for {
-				prev := maxObserved.Load()
-				if current <= prev || maxObserved.CompareAndSwap(prev, current) {
-					break
+		var wg sync.WaitGroup
+		for range goroutines {
+			wg.Go(func() {
+				lock, err := mgr.Acquire(ctx, repo)
+				if err != nil {
+					return
 				}
-			}
-			time.Sleep(15 * time.Millisecond)
-		})
-	}
-	wg.Wait()
+				defer func() { _ = lock.Unlock() }()
+				current := inCritical.Add(1)
+				defer inCritical.Add(-1)
+				if current > 1 {
+					overlap.Add(1)
+				}
+				for {
+					prev := maxObserved.Load()
+					if current <= prev || maxObserved.CompareAndSwap(prev, current) {
+						break
+					}
+				}
+				time.Sleep(15 * time.Millisecond)
+			})
+		}
+		wg.Wait()
 
-	require.Equal(int32(1), maxObserved.Load(),
-		"only one goroutine should hold the lock at a time")
-	require.Equal(int32(0), overlap.Load(),
-		"no goroutine should observe another holder in its critical section")
-	require.Equal(int32(0), inCritical.Load())
+		require.Equal(int32(1), maxObserved.Load(),
+			"only one goroutine should hold the lock at a time")
+		require.Equal(int32(0), overlap.Load(),
+			"no goroutine should observe another holder in its critical section")
+		require.Equal(int32(0), inCritical.Load())
+	})
 }
 
 func TestFileLockManagerCtxCancelWhileWaiting(t *testing.T) {
-	require := require.New(t)
-	mgr := NewFileLockManager()
-	repo := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		mgr := NewFileLockManager()
+		repo := t.TempDir()
 
-	held, err := mgr.Acquire(t.Context(), repo)
-	require.NoError(err)
-	defer func() { _ = held.Unlock() }()
+		held, err := mgr.Acquire(t.Context(), repo)
+		require.NoError(err)
+		defer func() { _ = held.Unlock() }()
 
-	ctx, cancel := context.WithCancel(t.Context())
-	gotErr := make(chan error, 1)
-	started := make(chan struct{})
-	go func() {
-		close(started)
-		_, err := mgr.Acquire(ctx, repo)
-		gotErr <- err
-	}()
-	<-started
-	time.Sleep(20 * time.Millisecond)
-	cancel()
+		ctx, cancel := context.WithCancel(t.Context())
+		gotErr := make(chan error, 1)
+		started := make(chan struct{})
+		go func() {
+			close(started)
+			_, err := mgr.Acquire(ctx, repo)
+			gotErr <- err
+		}()
+		<-started
+		synctest.Wait()
+		cancel()
 
-	select {
-	case err := <-gotErr:
-		require.ErrorIs(err, context.Canceled)
-	case <-time.After(2 * time.Second):
-		require.FailNow("Acquire did not return after ctx cancel")
-	}
+		select {
+		case err := <-gotErr:
+			require.ErrorIs(err, context.Canceled)
+		case <-time.After(2 * time.Second):
+			require.FailNow("Acquire did not return after ctx cancel")
+		}
+	})
 }
 
 func TestFileLockManagerDoubleUnlock(t *testing.T) {
@@ -8598,7 +8620,7 @@ func TestSetupRemovesManagedCloneWhenRepositoryRouteChangesDuringFetch(t *testin
 	platformHost, cloneURL := setupRouteChangingCloneRemoteForWorkspaceTest(
 		t, func() error {
 			_, _, err := database.ReconcileRepositoryObservation(
-				context.Background(), db.RepoIdentity{
+				t.Context(), db.RepoIdentity{
 					Platform: "github", PlatformHost: platformHost,
 					PlatformRepoID: "provider-replacement",
 					Owner:          "acme", Name: "widget",
@@ -8654,7 +8676,7 @@ func TestCreateIssueRemovesManagedCloneWhenRepositoryRouteChangesDuringFetch(t *
 	platformHost, cloneURL := setupRouteChangingCloneRemoteForWorkspaceTest(
 		t, func() error {
 			_, _, err := database.ReconcileRepositoryObservation(
-				context.Background(), db.RepoIdentity{
+				t.Context(), db.RepoIdentity{
 					Platform: "github", PlatformHost: platformHost,
 					PlatformRepoID: "provider-replacement",
 					Owner:          "acme", Name: "widget",
@@ -8701,7 +8723,7 @@ func TestSetupFailsBeforeGitWhenSourceItemWasRemovedUpstream(t *testing.T) {
 		db.WorkspaceItemTypePullRequest,
 		db.WorkspaceItemTypeIssue,
 	} {
-		t.Run(string(itemType), func(t *testing.T) {
+		t.Run(itemType, func(t *testing.T) {
 			require := require.New(t)
 			d := openTestDB(t)
 			repoID := seedRepo(t, d, "github.com", "acme", "widget")
@@ -8806,7 +8828,7 @@ func TestRefreshWorkspaceHeadRepoSnapshotSurvivesQueuedReconciliation(t *testing
 		interleaved = true
 		go func() {
 			_, _, err := d.ReconcileRepositoryObservation(
-				context.Background(), db.RepoIdentity{
+				t.Context(), db.RepoIdentity{
 					Platform: "github", PlatformHost: "github.com",
 					PlatformRepoID: "repo-acme-other",
 					Owner:          "acme", Name: "other",
@@ -8820,7 +8842,7 @@ func TestRefreshWorkspaceHeadRepoSnapshotSurvivesQueuedReconciliation(t *testing
 
 	refreshDone := make(chan error, 1)
 	go func() {
-		_, err := mgr.RefreshWorkspaceHeadRepoSnapshot(context.Background(), ws)
+		_, err := mgr.RefreshWorkspaceHeadRepoSnapshot(t.Context(), ws)
 		refreshDone <- err
 	}()
 	select {
@@ -8881,7 +8903,7 @@ func TestSyncWorkspaceBaseBranchSurvivesQueuedReconciliationWriter(t *testing.T)
 	mgr := NewManager(d, t.TempDir())
 	go func() {
 		syncDone <- mgr.syncWorkspaceBaseBranch(
-			context.Background(), ws.WorktreePath, originRemoteName, ws,
+			t.Context(), ws.WorktreePath, originRemoteName, ws,
 		)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
@@ -8898,7 +8920,7 @@ func TestSyncWorkspaceBaseBranchSurvivesQueuedReconciliationWriter(t *testing.T)
 	writerDone := make(chan error, 1)
 	go func() {
 		_, _, err := d.ReconcileRepositoryObservation(
-			context.Background(), db.RepoIdentity{
+			t.Context(), db.RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
 				PlatformRepoID: "repo-acme-other", Owner: "acme", Name: "other",
 				RepoPath: "acme/other",

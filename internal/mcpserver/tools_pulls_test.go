@@ -28,10 +28,12 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 					assert.Equal("bug", query.Label)
 					assert.Equal(3, query.Limit)
 					rows := []Pull{
-						{Number: 1, State: "open", Repository: repo, MergeableState: "clean", WorkflowStatus: "awaiting_merge",
+						{
+							Number: 1, State: "open", Repository: repo, MergeableState: "clean", WorkflowStatus: "awaiting_merge",
 							ReviewDecision: "APPROVED", CIStatus: "success", HeadSHA: "head-one",
 							Labels: []string{"bug", "priority: high"}, Checks: []Check{{Name: "unit", Conclusion: "success"}}, Body: "large description",
-							DetailLoaded: true, DetailFetchedAt: "2026-09-12T12:00:00Z"},
+							DetailLoaded: true, DetailFetchedAt: "2026-09-12T12:00:00Z",
+						},
 						{Number: 2, State: "open", Repository: repo, MergeableState: "dirty", Stack: &Stack{Position: 2, Size: 3}},
 						{Number: 3, State: "open", Repository: repo},
 					}

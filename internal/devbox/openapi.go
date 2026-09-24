@@ -1,9 +1,10 @@
 package devbox
 
 import (
+	"net/http"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"net/http"
 )
 
 // NewControlOpenAPI describes the native registry and Unix broker APIs, which

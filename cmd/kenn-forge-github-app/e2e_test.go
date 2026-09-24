@@ -2,23 +2,27 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
-	appfiles "go.kenn.io/forge/internal/githubapp"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	appfiles "go.kenn.io/forge/internal/githubapp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,7 +80,7 @@ func newTestEnv(t *testing.T, fake *githubapptest.Fake, configPath string) (*app
 		pollInterval: 10 * time.Millisecond,
 		now:          time.Now,
 		openBrowser: func(string) error {
-			return fmt.Errorf("browser not scripted for this test")
+			return errors.New("browser not scripted for this test")
 		},
 	}
 	return env, out
@@ -104,6 +108,7 @@ func scriptBrowserWithInstall(
 	t *testing.T, fake *githubapptest.Fake, install func(appID int64) error,
 ) func(string) error {
 	t.Helper()
+	ctx := t.Context()
 	return func(target string) error {
 		if m := installSlugRe.FindStringSubmatch(target); m != nil {
 			app, ok := fake.AppBySlug(m[1])
@@ -119,7 +124,7 @@ func scriptBrowserWithInstall(
 			}
 			return fake.DeleteApp(app.ID)
 		}
-		return submitManifestForm(target)
+		return submitManifestForm(ctx, target)
 	}
 }
 
@@ -127,8 +132,15 @@ func scriptBrowserWithInstall(
 // JS does: read the flow contract from /flow.json and POST the
 // manifest form to GitHub, following the redirect chain back through
 // the CLI callback into the setup page's done view.
-func submitManifestForm(pageURL string) error {
-	resp, err := http.Get(strings.TrimRight(pageURL, "/") + "/flow.json")
+func submitManifestForm(ctx context.Context, pageURL string) error {
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, strings.TrimRight(pageURL, "/")+"/flow.json", nil,
+	)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -143,7 +155,15 @@ func submitManifestForm(pageURL string) error {
 	if flow.Action == "" || flow.Manifest == "" {
 		return fmt.Errorf("flow.json missing action or manifest: %+v", flow)
 	}
-	final, err := http.PostForm(flow.Action, url.Values{"manifest": {flow.Manifest}})
+	form := url.Values{"manifest": {flow.Manifest}}.Encode()
+	postReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, flow.Action, strings.NewReader(form),
+	)
+	if err != nil {
+		return err
+	}
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	final, err := client.Do(postReq)
 	if err != nil {
 		return err
 	}
@@ -361,7 +381,7 @@ func TestManageSameHostAppsByOwnerOrAppID(t *testing.T) {
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "acme")
 	require.NoError(runCLI([]string{
-		"install", "--app-id", fmt.Sprint(orgApp.AppID), "--timeout", "10s",
+		"install", "--app-id", strconv.FormatInt(orgApp.AppID, 10), "--timeout", "10s",
 	}, env))
 	cfg, err = config.Load(configPath)
 	require.NoError(err)
@@ -398,7 +418,7 @@ func TestInstallRejectsDuplicateInstallationAccountAcrossApps(t *testing.T) {
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
 	err = runCLI([]string{
-		"install", "--app-id", fmt.Sprint(orgAppID), "--timeout", "10s",
+		"install", "--app-id", strconv.FormatInt(orgAppID, 10), "--timeout", "10s",
 	}, env)
 	require.Error(err)
 	require.ErrorContains(err, "duplicate github app installation")
@@ -516,7 +536,7 @@ func TestInstallHydratesMinimalAppMetadataBeforeOpeningInstallURL(t *testing.T) 
 		}
 		app, ok := fake.AppBySlug("kenn-forge-minimal")
 		if !ok {
-			return fmt.Errorf("missing fake app kenn-forge-minimal")
+			return errors.New("missing fake app kenn-forge-minimal")
 		}
 		_, err := fake.Install(app.ID, "kenn-io")
 		return err
@@ -616,7 +636,7 @@ func TestDeleteHydratesMinimalAppMetadataBeforeOpeningSettingsURL(t *testing.T) 
 		}
 		app, ok := fake.AppBySlug("kenn-forge-delete-minimal")
 		if !ok {
-			return fmt.Errorf("missing fake app kenn-forge-delete-minimal")
+			return errors.New("missing fake app kenn-forge-delete-minimal")
 		}
 		return fake.DeleteApp(app.ID)
 	}
@@ -657,7 +677,7 @@ func TestDeleteOpensSettingsForRepairInvalidConfig(t *testing.T) {
 		}
 		app, ok := fake.AppBySlug("kenn-forge-delete-repair")
 		if !ok {
-			return fmt.Errorf("missing fake app kenn-forge-delete-repair")
+			return errors.New("missing fake app kenn-forge-delete-repair")
 		}
 		return fake.DeleteApp(app.ID)
 	}
@@ -1210,7 +1230,7 @@ func TestDeleteRemovesGeneratedPrivateKeyAfterAppRename(t *testing.T) {
 		}
 		app, ok := fake.AppBySlug("kenn-forge-renamed-live")
 		if !ok {
-			return fmt.Errorf("missing fake app kenn-forge-renamed-live")
+			return errors.New("missing fake app kenn-forge-renamed-live")
 		}
 		return fake.DeleteApp(app.ID)
 	}
@@ -1289,8 +1309,11 @@ func TestCreateNoBrowserPrintsManifestURL(t *testing.T) {
 	// No browser scripted: drive the flow from the printed URL like a
 	// user pasting it into a browser by hand.
 	done := make(chan error, 1)
+	ctx := t.Context()
 	go func() {
-		deadline := time.Now().Add(5 * time.Second)
+		deadline := time.After(5 * time.Second)
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
 		for {
 			if m := regexp.MustCompile(`http://127\.0\.0\.1:\d+/\S+`).FindString(out.String()); m != "" {
 				u, err := url.Parse(m)
@@ -1302,28 +1325,32 @@ func TestCreateNoBrowserPrintsManifestURL(t *testing.T) {
 					done <- fmt.Errorf("manifest setup URL must include an unguessable path: %s", m)
 					return
 				}
-				done <- submitManifestForm(m)
+				done <- submitManifestForm(ctx, m)
 				return
 			}
-			if time.Now().After(deadline) {
+			select {
+			case <-deadline:
 				done <- fmt.Errorf("manifest URL never printed; output: %s", out.String())
 				return
+			case <-ticker.C:
 			}
-			time.Sleep(5 * time.Millisecond)
 		}
 	}()
 	go func() {
 		// Approve the install once the app exists.
-		deadline := time.Now().Add(5 * time.Second)
+		deadline := time.After(5 * time.Second)
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
 		for {
 			if app, ok := fake.AppBySlug("kenn-forge-nobrowser"); ok {
 				_, _ = fake.Install(app.ID, "kenn-io")
 				return
 			}
-			if time.Now().After(deadline) {
+			select {
+			case <-deadline:
 				return
+			case <-ticker.C:
 			}
-			time.Sleep(5 * time.Millisecond)
 		}
 	}()
 	require.NoError(t, runCLI([]string{

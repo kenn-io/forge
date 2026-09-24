@@ -348,6 +348,11 @@ func TestMissingRuntimeTokenSyncReturnsBadRequestE2E(t *testing.T) {
 		httpServer.URL+"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/sync",
 		nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	requireMissingTokenBadRequest(t, resp)
 }
 
@@ -364,6 +369,11 @@ func TestMissingTokenRepoPreviewReturnsBadRequestE2E(t *testing.T) {
 			"pattern":       "*",
 		},
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	requireMissingTokenBadRequest(t, resp)
 }
 
@@ -382,6 +392,11 @@ func TestMissingTokenBulkAddReposReturnsBadRequestE2E(t *testing.T) {
 			}},
 		},
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	requireMissingTokenBadRequest(t, resp)
 }
 
@@ -463,6 +478,11 @@ func TestPlatformTokenRemovalAppliesWithoutRestartE2E(t *testing.T) {
 		t, httpServer.Client(), http.MethodPost,
 		httpServer.URL+"/api/v1/repos/preview", previewBody,
 	)
+	t.Cleanup(func() {
+		if secondResp != nil && secondResp.Body != nil {
+			_ = secondResp.Body.Close()
+		}
+	})
 	requireMissingTokenBadRequest(t, secondResp)
 	assert.Len(tokens, firstCallCount,
 		"no provider request may carry the removed credential")
@@ -894,6 +914,11 @@ func streamTokenRotationConfigEvents(
 	setAcceptedHostForE2ETest(req)
 	resp, err := httpServer.Client().Do(req)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	stream := &tokenRotationConfigEventStream{
 		resp:   resp,
 		cancel: cancel,

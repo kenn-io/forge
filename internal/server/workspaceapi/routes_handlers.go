@@ -170,11 +170,13 @@ type listWorkspacesOutput = httpapi.BodyOutput[listWorkspacesOutputBody]
 
 type getWorkspaceOutput = httpapi.BodyOutput[workspaceResponse]
 
-type getWorkspaceDiffOutput = httpapi.BodyOutput[diffResponse]
-type getWorkspaceFilePreviewOutput = httpapi.BodyOutput[filePreviewResponse]
-type getWorkspaceFilesOutput = httpapi.BodyOutput[filesResponse]
-type watchWorkspaceDiffOutput = httpapi.BodyOutput[workspaceDiffWatchResponse]
-type getWorkspaceCommitsOutput = httpapi.BodyOutput[commitsResponse]
+type (
+	getWorkspaceDiffOutput        = httpapi.BodyOutput[diffResponse]
+	getWorkspaceFilePreviewOutput = httpapi.BodyOutput[filePreviewResponse]
+	getWorkspaceFilesOutput       = httpapi.BodyOutput[filesResponse]
+	watchWorkspaceDiffOutput      = httpapi.BodyOutput[workspaceDiffWatchResponse]
+	getWorkspaceCommitsOutput     = httpapi.BodyOutput[commitsResponse]
+)
 
 type getWorkspaceRuntimeOutput = httpapi.BodyOutput[workspaceRuntimeResponse]
 
@@ -1230,7 +1232,7 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 			"owner", owner, "name", name, "err", err)
 		return nil
 	}
-	if strings.Contains(err.Error(), "is not tracked") {
+	if errors.Is(err, ghclient.ErrRepoNotTracked) {
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1258,7 +1260,7 @@ func (s *Handler) refreshWorkspaceIssue(
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(err.Error(), "is not tracked") {
+	if errors.Is(err, ghclient.ErrRepoNotTracked) {
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1282,10 +1284,10 @@ func (s *Handler) refreshWorkspacePullRequest(
 	if removed {
 		return nil
 	}
-	var diffErr *ghclient.DiffSyncError
 	err = s.syncer.SyncMROnProvider(ctx, kind, host, owner, name, number)
-	if err != nil && !errors.As(err, &diffErr) {
-		if strings.Contains(err.Error(), "is not tracked") {
+	diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
+	if err != nil && !isDiffErr {
+		if errors.Is(err, ghclient.ErrRepoNotTracked) {
 			return httpapi.Forbidden(err.Error(), nil)
 		}
 		return httpapi.ProviderCallProblemWithDetail(
@@ -2461,11 +2463,11 @@ func readOnlyWorktreeIsDirty(ctx context.Context, worktreePath string) (bool, er
 		"--ignore-submodules=none",
 	)
 	if err != nil {
-		out := append(stdout, stderr...)
+		stdout = append(stdout, stderr...)
 		return false, fmt.Errorf(
 			"check worktree dirty state: %w: %s",
 			err,
-			strings.TrimSpace(string(out)),
+			strings.TrimSpace(string(stdout)),
 		)
 	}
 	return strings.TrimSpace(string(stdout)) != "", nil

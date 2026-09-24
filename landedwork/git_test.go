@@ -71,8 +71,8 @@ func TestObjectViewIgnoresGlobalAndSystemConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg"))
 	system := filepath.Join(root, "system.gitconfig")
 	require := require.New(t)
-	require.NoError(os.WriteFile(filepath.Join(root, ".gitconfig"), []byte("[landingprobe]\n global = visible\n"), 0600))
-	require.NoError(os.WriteFile(system, []byte("[landingprobe]\n system = visible\n"), 0600))
+	require.NoError(os.WriteFile(filepath.Join(root, ".gitconfig"), []byte("[landingprobe]\n global = visible\n"), 0o600))
+	require.NoError(os.WriteFile(system, []byte("[landingprobe]\n system = visible\n"), 0o600))
 	m := &meter{limits: Limits{Records: 1000, Nodes: 1000, InputBytes: 1 << 20, OutputBytes: 1 << 20}}
 	v, err := openView(ctx, r.Root, m)
 	require.NoError(err)

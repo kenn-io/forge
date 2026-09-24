@@ -100,7 +100,7 @@ func (s *Server) spawnWorkspaceWithAgent(
 	if messageStatus.State != "delivered" {
 		stateErr := &Error{
 			Kind:      "agent_handoff_failed",
-			Message:   fmt.Sprintf("initial message state is %s", messageStatus.State),
+			Message:   "initial message state is " + messageStatus.State,
 			Ambiguous: messageStatus.State == "pending" || messageStatus.State == "uncertain",
 			Details:   map[string]any{"initial_message_state": messageStatus.State},
 		}
@@ -128,12 +128,12 @@ func validateSpawnWorkspaceInput(
 	if strings.TrimSpace(in.Timeout) != "" {
 		parsed, err := time.ParseDuration(strings.TrimSpace(in.Timeout))
 		if err != nil || parsed <= 0 {
-			return in, 0, fmt.Errorf("timeout must be a positive duration")
+			return in, 0, errors.New("timeout must be a positive duration")
 		}
 		timeout = parsed
 	}
 	if timeout > maxAgentHandoffTimeout {
-		return in, 0, fmt.Errorf("timeout must not exceed 15m")
+		return in, 0, errors.New("timeout must not exceed 15m")
 	}
 	in.AgentTarget = strings.ToLower(strings.TrimSpace(in.AgentTarget))
 	message, err := normalizeSpawnInitialMessage(in.InitialMessage)
@@ -142,19 +142,19 @@ func validateSpawnWorkspaceInput(
 	}
 	in.InitialMessage = message
 	if (in.Source == nil) == (in.Resume == nil) {
-		return in, 0, fmt.Errorf("provide exactly one of source or resume")
+		return in, 0, errors.New("provide exactly one of source or resume")
 	}
 	if in.Resume != nil {
 		if in.AgentTarget == "" {
-			return in, 0, fmt.Errorf("agent_target is required when resume is provided")
+			return in, 0, errors.New("agent_target is required when resume is provided")
 		}
 		in.Resume.WorkspaceID = strings.TrimSpace(in.Resume.WorkspaceID)
 		in.Resume.RuntimeSessionKey = strings.TrimSpace(in.Resume.RuntimeSessionKey)
 		if in.Resume.WorkspaceID == "" {
-			return in, 0, fmt.Errorf("resume.workspace_id is required")
+			return in, 0, errors.New("resume.workspace_id is required")
 		}
 		if in.Resume.RuntimeSessionKey == "" {
-			return in, 0, fmt.Errorf("resume.runtime_session_key is required")
+			return in, 0, errors.New("resume.runtime_session_key is required")
 		}
 		return in, timeout, nil
 	}
@@ -162,7 +162,7 @@ func validateSpawnWorkspaceInput(
 	switch in.Source.Type {
 	case "item":
 		if in.Source.Item == nil || in.Source.AdHoc != nil {
-			return in, 0, fmt.Errorf("source must contain exactly one tagged item")
+			return in, 0, errors.New("source must contain exactly one tagged item")
 		}
 		item, err := normalizeSpawnItem(*in.Source.Item)
 		if err != nil {
@@ -171,7 +171,7 @@ func validateSpawnWorkspaceInput(
 		in.Source.Item = &item
 	case "adhoc":
 		if in.Source.AdHoc == nil || in.Source.Item != nil {
-			return in, 0, fmt.Errorf("source must contain exactly one tagged adhoc repo")
+			return in, 0, errors.New("source must contain exactly one tagged adhoc repo")
 		}
 		repo, err := normalizeSpawnRepo(in.Source.AdHoc.Repo)
 		if err != nil {
@@ -180,7 +180,7 @@ func validateSpawnWorkspaceInput(
 		in.Source.AdHoc.Repo = repo
 		in.Source.AdHoc.Branch = strings.TrimSpace(in.Source.AdHoc.Branch)
 	default:
-		return in, 0, fmt.Errorf("source.type must be item or adhoc")
+		return in, 0, errors.New("source.type must be item or adhoc")
 	}
 	return in, timeout, nil
 }
@@ -279,13 +279,13 @@ func (s *Server) resumeAgentHandoff(
 		out.Runtime = spawnedRuntimeFrom(runtime)
 		if runtime.TargetKey != in.AgentTarget {
 			return workspace, runtime, handoffFailure(
-				ctx, fmt.Errorf("agent_target does not match the existing runtime"),
+				ctx, errors.New("agent_target does not match the existing runtime"),
 				*out, "workspace_ready", "runtime_launched",
 			)
 		}
 		if runtime.Kind != "agent" || (runtime.Status != "starting" && runtime.Status != "running") {
 			return workspace, runtime, handoffFailure(
-				ctx, fmt.Errorf("agent runtime is not live"), *out,
+				ctx, errors.New("agent runtime is not live"), *out,
 				"workspace_ready", "runtime_launched",
 			)
 		}
@@ -293,7 +293,7 @@ func (s *Server) resumeAgentHandoff(
 		return workspace, runtime, nil
 	}
 	return workspace, RuntimeSession{}, handoffFailure(
-		ctx, fmt.Errorf("agent runtime was not found"), *out,
+		ctx, errors.New("agent runtime was not found"), *out,
 		"workspace_ready", "runtime_launched",
 	)
 }
@@ -340,10 +340,10 @@ func normalizeSpawnRepo(repo repoFilterInput) (repoFilterInput, error) {
 	repo.Owner = strings.Trim(strings.TrimSpace(repo.Owner), "/")
 	repo.Name = strings.Trim(strings.TrimSpace(repo.Name), "/")
 	if repo.Provider == "" {
-		return repo, fmt.Errorf("repo provider is required")
+		return repo, errors.New("repo provider is required")
 	}
 	if repo.PlatformRepoID == "" {
-		return repo, fmt.Errorf("repo platform_repo_id is required")
+		return repo, errors.New("repo platform_repo_id is required")
 	}
 	kind, err := platform.NormalizeKind(repo.Provider)
 	if err != nil {
@@ -360,22 +360,22 @@ func normalizeSpawnRepo(repo repoFilterInput) (repoFilterInput, error) {
 	if repo.RepoPath != "" {
 		parts := strings.Split(repo.RepoPath, "/")
 		if len(parts) < 2 || slicesContainEmpty(parts) {
-			return repo, fmt.Errorf("repo_path must contain an owner and repository name")
+			return repo, errors.New("repo_path must contain an owner and repository name")
 		}
 		pathOwner := strings.Join(parts[:len(parts)-1], "/")
 		pathName := parts[len(parts)-1]
 		if (repo.Owner != "" || repo.Name != "") &&
 			(repo.Owner != pathOwner || repo.Name != pathName) {
-			return repo, fmt.Errorf("repo_path conflicts with repo owner or name")
+			return repo, errors.New("repo_path conflicts with repo owner or name")
 		}
 		repo.Owner = pathOwner
 		repo.Name = pathName
 	}
 	if repo.Owner == "" {
-		return repo, fmt.Errorf("repo owner is required")
+		return repo, errors.New("repo owner is required")
 	}
 	if repo.Name == "" {
-		return repo, fmt.Errorf("repo name is required")
+		return repo, errors.New("repo name is required")
 	}
 	if repo.RepoPath == "" {
 		repo.RepoPath = repo.Owner + "/" + repo.Name
@@ -389,20 +389,20 @@ func slicesContainEmpty(values []string) bool {
 
 func normalizeSpawnInitialMessage(message string) (string, error) {
 	if !utf8.ValidString(message) {
-		return "", fmt.Errorf("initial_message must be valid UTF-8")
+		return "", errors.New("initial_message must be valid UTF-8")
 	}
 	message = strings.ReplaceAll(message, "\r\n", "\n")
 	message = strings.ReplaceAll(message, "\r", "\n")
 	if strings.TrimSpace(message) == "" {
-		return "", fmt.Errorf("initial_message must not be blank")
+		return "", errors.New("initial_message must not be blank")
 	}
 	for _, value := range message {
 		if value != '\n' && !unicode.IsPrint(value) {
-			return "", fmt.Errorf("initial_message contains an unsafe control character")
+			return "", errors.New("initial_message contains an unsafe control character")
 		}
 	}
 	if len(message) > maxAgentInitialMessage {
-		return "", fmt.Errorf("initial_message must not exceed 64 KiB")
+		return "", errors.New("initial_message must not exceed 64 KiB")
 	}
 	return message, nil
 }
@@ -430,7 +430,7 @@ func (s *Server) defaultAgentTarget(
 		keys = append(keys, target.Key)
 	}
 	if len(available) == 0 {
-		return "", fmt.Errorf("no available coding-agent targets are configured")
+		return "", errors.New("no available coding-agent targets are configured")
 	}
 	preferred, found, err := s.backend.PreferredWorkspaceAgentTarget(
 		ctx, time.Now().UTC().Add(-workspaceAgentPreferenceWindow), keys,
@@ -462,7 +462,7 @@ func (s *Server) resolveOrCreateWorkspace(
 	if source.AdHoc != nil {
 		return s.createAdHocWorkspace(ctx, *source.AdHoc)
 	}
-	return Workspace{}, false, fmt.Errorf("unsupported workspace source")
+	return Workspace{}, false, errors.New("unsupported workspace source")
 }
 
 func (s *Server) resolveOrCreatePRWorkspace(
@@ -494,8 +494,8 @@ func (s *Server) resolveOrCreatePRWorkspace(
 }
 
 func isWorkspaceAlreadyExistsError(err error) bool {
-	var backendErr *Error
-	if !errors.As(err, &backendErr) || backendErr == nil {
+	backendErr, ok := errors.AsType[*Error](err)
+	if !ok || backendErr == nil {
 		return false
 	}
 	return backendErr.Kind == "conflict" &&
@@ -605,7 +605,7 @@ func (s *Server) ensureRuntimeStillLive(
 		}
 		break
 	}
-	return fmt.Errorf("agent runtime exited before its coding session was observed")
+	return errors.New("agent runtime exited before its coding session was observed")
 }
 
 func (s *Server) agentHandoffPoller() agenthandoff.Poller {
@@ -631,8 +631,8 @@ func (s *Server) submitInitialAgentMessage(
 	if err == nil {
 		return initialMessageStatusRow(messageStatus), nil
 	}
-	var backendErr *Error
-	if !errors.As(err, &backendErr) || backendErr == nil || !backendErr.Ambiguous {
+	backendErr, ok := errors.AsType[*Error](err)
+	if !ok || backendErr == nil || !backendErr.Ambiguous {
 		return initialMessageStatusRow(messageStatus), err
 	}
 	recoveredStatus, recoveryErr := s.recoverInitialMessageStatus(
@@ -648,8 +648,8 @@ func (s *Server) submitInitialAgentMessage(
 // the same runtime: the agent has not enabled its input mode yet, so nothing
 // was written.
 func isInputModeNotReady(err error) bool {
-	var backendErr *Error
-	if !errors.As(err, &backendErr) || backendErr == nil {
+	backendErr, ok := errors.AsType[*Error](err)
+	if !ok || backendErr == nil {
 		return false
 	}
 	return backendErr.Code == ErrorCodeInitialMessageInputModeNotReady &&
@@ -719,8 +719,8 @@ func handoffFailure(
 		Kind: "agent_handoff_failed", Message: cause.Error(), Retryable: false,
 		Details: map[string]any{},
 	}
-	var backendErr *Error
-	if errors.As(cause, &backendErr) {
+	backendErr, ok := errors.AsType[*Error](cause)
+	if ok {
 		result.Kind = backendErr.Kind
 		result.Code = backendErr.Code
 		result.Message = backendErr.Message

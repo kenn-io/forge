@@ -1,7 +1,6 @@
 package workspaceapi
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -32,7 +31,7 @@ func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
 		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	})
 	require.NoError(err)
-	_, err = database.WriteDB().ExecContext(context.Background(), `
+	_, err = database.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_workspaces
 		    (id, platform, platform_host, repo_owner, repo_name,
 		     item_type, item_number, item_key, git_head_ref, worktree_path,
@@ -45,7 +44,7 @@ func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
 	require.NoError(err)
 
 	h := New(Deps{DB: database})
-	snapshot, err := h.FleetSnapshot(context.Background())
+	snapshot, err := h.FleetSnapshot(t.Context())
 	require.NoError(err)
 	require.Len(snapshot.Workspaces, 1)
 	workspace := snapshot.Workspaces[0]

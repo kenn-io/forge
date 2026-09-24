@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -43,7 +44,7 @@ func (s *Server) setItemWorkflowState(
 	}
 	status := strings.TrimSpace(in.Status)
 	if status == "" {
-		return setWorkflowOutput{}, fmt.Errorf("status is required")
+		return setWorkflowOutput{}, errors.New("status is required")
 	}
 	if _, err := workflowStateSet([]string{status}); err != nil {
 		return setWorkflowOutput{}, err

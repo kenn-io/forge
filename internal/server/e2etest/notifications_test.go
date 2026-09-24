@@ -596,7 +596,7 @@ func TestNotificationReadPropagationDefersQueuedAcksOnRefetchRateLimitE2E(t *tes
 				Rate: gh.Rate{Reset: gh.Timestamp{Time: resetAt}},
 				Response: &http.Response{
 					StatusCode: http.StatusForbidden,
-					Request:    httptest.NewRequest(http.MethodGet, "https://api.github.com/notifications/threads/"+threadID, nil),
+					Request:    httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/notifications/threads/"+threadID, nil),
 				},
 				Message: "API rate limit exceeded",
 			}

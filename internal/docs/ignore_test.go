@@ -18,10 +18,10 @@ func seedFolder(t *testing.T, files map[string]string) (*Registry, string) {
 	t.Helper()
 	root := t.TempDir()
 	for rel, body := range files {
-		req := require.New(t)
+		require := require.New(t)
 		full := filepath.Join(root, filepath.FromSlash(rel))
-		req.NoError(os.MkdirAll(filepath.Dir(full), 0o755))
-		req.NoError(os.WriteFile(full, []byte(body), 0o644))
+		require.NoError(os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(os.WriteFile(full, []byte(body), 0o644))
 	}
 	return NewRegistry([]config.DocFolder{
 		{ID: "notes", Name: "Notes", Path: root},
@@ -172,13 +172,13 @@ func TestRenameFileRefusesIgnoredSourceOrDest(t *testing.T) {
 }
 
 func TestReadBlobRefusesGitignoredPath(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	r, root := seedFolder(t, map[string]string{
 		".gitignore": "drafts/\n",
 	})
 	pngData := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
-	req.NoError(os.MkdirAll(filepath.Join(root, "drafts"), 0o755))
-	req.NoError(os.WriteFile(filepath.Join(root, "drafts/icon.png"), pngData, 0o644))
+	require.NoError(os.MkdirAll(filepath.Join(root, "drafts"), 0o755))
+	require.NoError(os.WriteFile(filepath.Join(root, "drafts/icon.png"), pngData, 0o644))
 	if _, err := r.ReadBlob("notes", "drafts/icon.png"); !errors.Is(err, ErrOutsideFolder) {
 		assert.ErrorIs(t, err, ErrOutsideFolder)
 	}

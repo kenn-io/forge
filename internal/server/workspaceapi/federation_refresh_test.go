@@ -161,7 +161,7 @@ func TestRefreshWorkspaceUsesHubProjectionWithoutLocalSyncer(t *testing.T) {
 		Now: func() time.Time { return issuedAt.Add(time.Minute) },
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})

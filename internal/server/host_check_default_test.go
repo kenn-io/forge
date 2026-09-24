@@ -39,7 +39,7 @@ func TestNewCfgNilTestFriendlyDefault(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
 			req.Host = tc.host
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
@@ -59,7 +59,7 @@ func TestNewDerivesHostCheckFromUnvalidatedConfig(t *testing.T) {
 		TrustReverseProxy: true,
 	}, ServerOptions{})
 
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
 	req.Host = "127.0.0.1:8091"
 	req.Header.Set("X-Forwarded-Host", "mm.example.com")
 	rr := httptest.NewRecorder()

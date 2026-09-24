@@ -454,7 +454,8 @@ func TestAgentContextForAdHocWorkspace(t *testing.T) {
 		RepoName:        "widget",
 		ItemType:        db.WorkspaceItemTypeAdHoc,
 		GitHeadRef:      "spike/thing",
-		WorkspaceBranch: "spike/thing"}
+		WorkspaceBranch: "spike/thing",
+	}
 
 	rendered := RenderAgentContext(BuildAgentContext(summary))
 
@@ -479,7 +480,8 @@ func TestAgentContextForAdHocWorkspaceWithDetectedPR(t *testing.T) {
 		GitHeadRef:          "spike/thing",
 		WorkspaceBranch:     "spike/thing",
 		AssociatedPRNumber:  &prNumber,
-		AssociatedPRVisible: true}
+		AssociatedPRVisible: true,
+	}
 
 	rendered := RenderAgentContext(BuildAgentContext(summary))
 
@@ -500,7 +502,8 @@ func TestAgentContextForAdHocWorkspaceBeforeSetup(t *testing.T) {
 		RepoName:        "widget",
 		ItemType:        db.WorkspaceItemTypeAdHoc,
 		GitHeadRef:      "spike/thing",
-		WorkspaceBranch: workspaceBranchUnknown}
+		WorkspaceBranch: workspaceBranchUnknown,
+	}
 
 	rendered := RenderAgentContext(BuildAgentContext(summary))
 

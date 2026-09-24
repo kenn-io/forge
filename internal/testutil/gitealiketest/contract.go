@@ -181,7 +181,7 @@ func Run(t *testing.T, adapter Adapter) {
 		budget := ghsync.NewSyncBudget(20)
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{SyncBudget: budget})
 		ref := repoRef(adapter, "owner", "repo")
-		ctx := ghsync.WithArchiveSyncBudget(context.Background())
+		ctx := ghsync.WithArchiveSyncBudget(t.Context())
 
 		issues, err := client.ListIssuesPage(ctx, ref, platform.ItemPageQuery{Order: platform.ItemOrderCreated})
 		require.NoError(t, err)
@@ -206,14 +206,14 @@ func Run(t *testing.T, adapter Adapter) {
 		defer server.Close()
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{})
 
-		name, err := client.LookupRepository(context.Background(), "owner", "repo")
+		name, err := client.LookupRepository(t.Context(), "owner", "repo")
 		require.NoError(t, err)
 		assert.Equal(t, "repo", name)
 	})
 
 	t.Run("foreground timeout", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture
 			w.WriteHeader(http.StatusOK)
 		}))
 		defer server.Close()
@@ -221,7 +221,7 @@ func Run(t *testing.T, adapter Adapter) {
 			ForegroundTimeout: 20 * time.Millisecond,
 		})
 
-		_, err := client.LookupRepository(context.Background(), "owner", "repo")
+		_, err := client.LookupRepository(t.Context(), "owner", "repo")
 		require.Error(t, err)
 	})
 
@@ -236,7 +236,7 @@ func Run(t *testing.T, adapter Adapter) {
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{
 			ForegroundTimeout: time.Minute,
 		})
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error, 1)
 		go func() {
 			_, err := client.LookupRepository(ctx, "owner", "repo")
@@ -274,7 +274,7 @@ func Run(t *testing.T, adapter Adapter) {
 		})
 		firstDone := make(chan error, 1)
 		go func() {
-			_, err := client.LookupRepository(context.Background(), "owner", "repo")
+			_, err := client.LookupRepository(t.Context(), "owner", "repo")
 			firstDone <- err
 		}()
 
@@ -284,7 +284,7 @@ func Run(t *testing.T, adapter Adapter) {
 			require.FailNow(t, "request did not start")
 		}
 
-		waitingCtx, cancelWaiting := context.WithCancel(context.Background())
+		waitingCtx, cancelWaiting := context.WithCancel(t.Context())
 		waitingDone := make(chan error, 1)
 		go func() {
 			_, err := client.LookupRepository(waitingCtx, "owner", "repo")
@@ -318,7 +318,7 @@ func Run(t *testing.T, adapter Adapter) {
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{SyncBudget: budget})
 
 		_, err := client.LookupRepository(
-			ghsync.WithSyncBudget(context.Background()), "owner", "repo",
+			ghsync.WithSyncBudget(t.Context()), "owner", "repo",
 		)
 		require.NoError(t, err)
 		assert.Equal(t, 1, budget.Spent())
@@ -358,9 +358,9 @@ func Run(t *testing.T, adapter Adapter) {
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{})
 		ref := repoRef(adapter, "owner", "repo")
 
-		mergeRequests, err := client.ListOpenMergeRequests(context.Background(), ref)
+		mergeRequests, err := client.ListOpenMergeRequests(t.Context(), ref)
 		require.NoError(t, err)
-		issues, err := client.ListOpenIssues(context.Background(), ref)
+		issues, err := client.ListOpenIssues(t.Context(), ref)
 		require.NoError(t, err)
 
 		assert.True(t, sawPulls)
@@ -397,23 +397,23 @@ func Run(t *testing.T, adapter Adapter) {
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{})
 		ref := repoRef(adapter, "owner", "repo")
 
-		_, err := client.CreateMergeRequestComment(context.Background(), ref, 7, "comment")
+		_, err := client.CreateMergeRequestComment(t.Context(), ref, 7, "comment")
 		require.NoError(t, err)
-		_, err = client.EditIssueComment(context.Background(), ref, 8, 10, "comment")
+		_, err = client.EditIssueComment(t.Context(), ref, 8, 10, "comment")
 		require.NoError(t, err)
-		require.NoError(t, client.DeleteMergeRequestComment(context.Background(), ref, 7, 10))
-		require.NoError(t, client.DeleteIssueComment(context.Background(), ref, 8, 10))
-		_, err = client.CreateIssue(context.Background(), ref, "issue", "body")
+		require.NoError(t, client.DeleteMergeRequestComment(t.Context(), ref, 7, 10))
+		require.NoError(t, client.DeleteIssueComment(t.Context(), ref, 8, 10))
+		_, err = client.CreateIssue(t.Context(), ref, "issue", "body")
 		require.NoError(t, err)
-		_, err = client.SetIssueState(context.Background(), ref, 8, "closed")
+		_, err = client.SetIssueState(t.Context(), ref, 8, "closed")
 		require.NoError(t, err)
-		_, err = client.SetMergeRequestState(context.Background(), ref, 7, "closed")
+		_, err = client.SetMergeRequestState(t.Context(), ref, 7, "closed")
 		require.NoError(t, err)
 		prTitle := "pr"
 		prBody := "body"
-		_, err = client.EditMergeRequestContent(context.Background(), ref, 7, &prTitle, &prBody)
+		_, err = client.EditMergeRequestContent(t.Context(), ref, 7, &prTitle, &prBody)
 		require.NoError(t, err)
-		_, err = client.MergeMergeRequest(context.Background(), ref, 7, "title", "message", "squash", "")
+		_, err = client.MergeMergeRequest(t.Context(), ref, 7, "title", "message", "squash", "")
 		require.NoError(t, err)
 
 		assert.Equal(t, []string{
@@ -454,7 +454,7 @@ func Run(t *testing.T, adapter Adapter) {
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{})
 
 		event, err := client.ApproveMergeRequest(
-			context.Background(), repoRef(adapter, "owner", "repo"), 7, "ship it", "reviewed-head",
+			t.Context(), repoRef(adapter, "owner", "repo"), 7, "ship it", "reviewed-head",
 		)
 		require.NoError(t, err)
 		assert.True(t, sawRequest)
@@ -477,7 +477,7 @@ func Run(t *testing.T, adapter Adapter) {
 		defer server.Close()
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{})
 
-		_, err := client.GetMergeRequest(context.Background(), repoRef(adapter, "owner", "repo"), 99)
+		_, err := client.GetMergeRequest(t.Context(), repoRef(adapter, "owner", "repo"), 99)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, platform.ErrNotFound)
 	})
@@ -497,14 +497,14 @@ func Run(t *testing.T, adapter Adapter) {
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{})
 		ref := repoRef(adapter, "owner", "repo")
 
-		_, err := client.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "merge", "reviewed-head")
+		_, err := client.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "merge", "reviewed-head")
 		require.Error(t, err)
 		var platformErr *platform.Error
 		require.ErrorAs(t, err, &platformErr)
 		assert.Equal(t, platform.ErrCodeStaleState, platformErr.Code)
 
 		message = "merge conflict detected"
-		_, err = client.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "merge", "reviewed-head")
+		_, err = client.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "merge", "reviewed-head")
 		require.Error(t, err)
 		require.NotErrorIs(t, err, platform.ErrStaleState)
 		var httpErr *gitealike.HTTPError
@@ -540,11 +540,11 @@ func Run(t *testing.T, adapter Adapter) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			_, errStale = client.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "merge", "reviewed-head")
+			_, errStale = client.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "merge", "reviewed-head")
 		}()
 		go func() {
 			defer wg.Done()
-			_, errGeneric = client.MergeMergeRequest(context.Background(), ref, 8, "t", "m", "merge", "reviewed-head")
+			_, errGeneric = client.MergeMergeRequest(t.Context(), ref, 8, "t", "m", "merge", "reviewed-head")
 		}()
 		wg.Wait()
 
@@ -569,7 +569,7 @@ func Run(t *testing.T, adapter Adapter) {
 		defer server.Close()
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{})
 
-		catalog, err := client.ListLabels(context.Background(), repoRef(adapter, "acme", "widget"))
+		catalog, err := client.ListLabels(t.Context(), repoRef(adapter, "acme", "widget"))
 		require.NoError(t, err)
 		require.Len(t, catalog.Labels, 2)
 		assert.Equal(t, "bug", catalog.Labels[0].Name)
@@ -610,7 +610,7 @@ func Run(t *testing.T, adapter Adapter) {
 			defer server.Close()
 			client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{})
 
-			labels, err := labelTarget.set(client, context.Background(), repoRef(adapter, "acme", "widget"))
+			labels, err := labelTarget.set(client, t.Context(), repoRef(adapter, "acme", "widget"))
 			require.NoError(t, err)
 			assert.Equal(t, []int64{12}, putBody["labels"])
 			require.Len(t, labels, 1)

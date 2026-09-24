@@ -447,8 +447,7 @@ func fleetProcessProbeOutput(
 	cmd := procutil.CommandContext(ctx, name, args...)
 	out, err := procutil.Output(ctx, cmd, reason)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && ctx.Err() == nil && exitErr.ExitCode() == 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && ctx.Err() == nil && exitErr.ExitCode() == 1 {
 			return out, nil
 		}
 		return nil, err
@@ -470,8 +469,8 @@ func (m *fleetTmuxMonitor) tmuxOutput(ctx context.Context, args ...string) ([]by
 }
 
 func tmuxEmptyServerError(err error) bool {
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok {
 		return false
 	}
 	stderr := strings.ToLower(string(exitErr.Stderr))

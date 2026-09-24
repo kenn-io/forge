@@ -506,7 +506,7 @@ func TestExternalPublicationUsesDaemonBearerAndDisablesTailscaleIdentity(t *test
 func TestCheckLocalPortOwnerAuthenticatesTheExistingForge(t *testing.T) {
 	require := require.New(t)
 	const token = "local-daemon-secret"
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 	dataDir := t.TempDir()
 	require.NoError(os.WriteFile(runtimelock.AuthTokenPath(dataDir), []byte(token), 0o600))
@@ -536,7 +536,7 @@ func TestCheckLocalPortOwnerDoesNotDiscloseBearerBeforeProof(t *testing.T) {
 	require := require.New(t)
 	const token = "local-daemon-secret"
 	var receivedAuthorization atomic.Value
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 	attacker := http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		receivedAuthorization.Store(request.Header.Get("Authorization"))

@@ -107,11 +107,11 @@ func TestListUnassignedWorkspaceSubjectKeysSupportsLargeSetsAndHidesRemovedItems
 	)
 	require.NoError(err)
 
-	candidates := make([]WorkspaceSubjectKey, 11_000)
-	for i := range candidates {
-		candidates[i] = WorkspaceSubjectKey{
+	candidates := make([]WorkspaceSubjectKey, 0, 11_001)
+	for i := range 11_000 {
+		candidates = append(candidates, WorkspaceSubjectKey{
 			RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: i + 1,
-		}
+		})
 	}
 	candidates = append(candidates, WorkspaceSubjectKey{
 		RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 2,

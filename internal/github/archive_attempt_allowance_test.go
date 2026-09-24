@@ -43,6 +43,9 @@ func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 		require.NoError(err)
 		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		require.NoError(err)
 		assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	}
@@ -50,6 +53,9 @@ func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 	require.NoError(err)
 	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	assert.Nil(resp)
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 
@@ -77,6 +83,9 @@ func TestArchiveAttemptAllowanceBoundsAuthRetries(t *testing.T) {
 	require.NoError(err)
 
 	resp, err := authRT.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	assert.Nil(resp)
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 	// The initial attempt spent the only admitted unit; the authentication
@@ -99,6 +108,9 @@ func TestArchiveAttemptAllowanceLeavesLiveContextsUnbounded(t *testing.T) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 		require.NoError(err)
 		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		require.NoError(err)
 		assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	}
@@ -142,12 +154,18 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	req, err = http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 	require.NoError(err)
-	resp, err := transport.RoundTrip(req)
+	resp, err = transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	assert.Nil(resp)
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 
@@ -210,7 +228,10 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 		ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	window, ok = registry.PacingWindow(identity, resources)
@@ -230,7 +251,10 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 		ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err = transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	window, ok = registry.PacingWindow(identity, resources)
@@ -282,7 +306,10 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 			ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
 		)
 		require.NoError(err)
-		_, err = transport.RoundTrip(req)
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -336,7 +363,10 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 		if err != nil {
 			return err
 		}
-		_, err = transport.RoundTrip(req)
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -404,7 +434,10 @@ func TestArchiveProviderAttemptAllowanceSeedsCostAcrossQuotaWindowReset(t *testi
 			ctx, http.MethodPost, "https://api.github.test/graphql", nil,
 		)
 		require.NoError(err)
-		_, err = transport.RoundTrip(req)
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -461,6 +494,9 @@ func TestArchiveProviderAttemptAllowanceRechecksEveryRequiredPool(t *testing.T) 
 	)
 	require.NoError(err)
 	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	assert.Nil(resp)
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 	assert.Zero(calls.Load())

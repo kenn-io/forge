@@ -44,7 +44,7 @@ func TestServerPtyOwnerHelperStopsWhenParentKilled(t *testing.T) {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 		}
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		_ = ptyowner.NewClient(root, []string{"/bin/sh"}).Stop(stopCtx, session)
 	})

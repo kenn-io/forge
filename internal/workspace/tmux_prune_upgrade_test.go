@@ -1,7 +1,7 @@
 package workspace
 
 import (
-	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
-	"os"
 )
 
 // TestPruneMissingTmuxSessionsKeepsReadyWorkspacesWhenServerIsEmpty pins
@@ -41,7 +40,7 @@ func TestPruneMissingTmuxSessionsKeepsReadyWorkspacesWhenServerIsEmpty(
 	d := openTestDB(t)
 	mgr := NewManager(d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
 		ID:           "0000000000000009",
 		PlatformHost: "github.com",

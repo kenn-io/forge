@@ -67,7 +67,7 @@ func TestAPIListPullsIncludesLabels(t *testing.T) {
 }
 
 func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
@@ -76,8 +76,8 @@ func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
 	repo, err := database.GetRepoByIdentity(
 		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
 	)
-	req.NoError(err)
-	req.NotNil(repo)
+	require.NoError(err)
+	require.NotNil(repo)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.WriteDB().ExecContext(ctx, `
 		INSERT INTO forge_archive_items (
@@ -88,24 +88,24 @@ func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
 			(?, 'merge_request', 2, 'removed-pr-2', ?, ?, 'removed_upstream')`,
 		repo.ID, now, now, repo.ID, now, now,
 	)
-	req.NoError(err)
+	require.NoError(err)
 
 	client := setupTestClient(t, srv)
 	state := "all"
 	listed, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{State: &state}})
-	req.NoError(err)
-	req.Equal(http.StatusOK, listed.StatusCode)
-	req.NotNil(listed.JSON200)
-	req.Len(*listed.JSON200, 1)
-	req.EqualValues(1, (*listed.JSON200)[0].Number)
+	require.NoError(err)
+	require.Equal(http.StatusOK, listed.StatusCode)
+	require.NotNil(listed.JSON200)
+	require.Len(*listed.JSON200, 1)
+	require.EqualValues(1, (*listed.JSON200)[0].Number)
 
 	detail, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(2)}})
-	req.Error(err)
-	req.Equal(http.StatusNotFound, detail.StatusCode)
+	require.Error(err)
+	require.Equal(http.StatusNotFound, detail.StatusCode)
 
 	stackID, err := database.UpsertStack(ctx, repo.ID, 1, "Synthetic stack")
-	req.NoError(err)
-	req.NoError(database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
+	require.NoError(err)
+	require.NoError(database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
 		{MergeRequestID: inaccessiblePRID, Position: 1},
 		{MergeRequestID: removedPRID, Position: 2},
 	}))
@@ -142,22 +142,20 @@ func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
 		},
 	}
 	for name, readPath := range readPaths {
-		t.Run(name, func(t *testing.T) {
-			status, requestErr := readPath()
-			require.Error(t, requestErr)
-			assert.Equal(t, http.StatusNotFound, status)
-		})
+		status, requestErr := readPath()
+		require.Error(requestErr, name)
+		require.Equal(http.StatusNotFound, status, name)
 	}
 
 	repoFilter := "acme/widget"
 	stacks, err := client.HTTP.ListStacksWithResponse(ctx, &generated.ListStacksRequestOptions{Query: &generated.ListStacksQuery{Repo: &repoFilter}})
-	req.NoError(err)
-	req.Equal(http.StatusOK, stacks.StatusCode)
-	req.NotNil(stacks.JSON200)
-	req.Len(*stacks.JSON200, 1)
-	req.NotNil((*stacks.JSON200)[0].Members)
-	req.Len((*stacks.JSON200)[0].Members, 1)
-	req.EqualValues(1, ((*stacks.JSON200)[0].Members)[0].Number)
+	require.NoError(err)
+	require.Equal(http.StatusOK, stacks.StatusCode)
+	require.NotNil(stacks.JSON200)
+	require.Len(*stacks.JSON200, 1)
+	require.NotNil((*stacks.JSON200)[0].Members)
+	require.Len((*stacks.JSON200)[0].Members, 1)
+	require.EqualValues(1, (*stacks.JSON200)[0].Members[0].Number)
 }
 
 func TestAPIActivityAndRepoSummariesHideRemovedUpstreamArchiveRows(t *testing.T) {
@@ -326,7 +324,7 @@ func TestAPIResolveAndAutocompleteHideOnlyRemovedUpstreamItems(t *testing.T) {
 		{number: 3, status: http.StatusOK},
 		{number: 4, status: http.StatusNotFound},
 	} {
-		resp, resolveErr := client.HTTP.ResolveRepoItemWithResponse(ctx, &generated.ResolveRepoItemRequestOptions{PathParams: &generated.ResolveRepoItemPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(tc.number)}})
+		resp, resolveErr := client.HTTP.ResolveRepoItemWithResponse(ctx, &generated.ResolveRepoItemRequestOptions{PathParams: &generated.ResolveRepoItemPath{Provider: "github", Owner: "acme", Name: "widget", Number: tc.number}})
 		if tc.status >= http.StatusBadRequest {
 			require.Error(resolveErr)
 		} else {
@@ -360,15 +358,15 @@ func TestAPIResolveAndAutocompleteHideOnlyRemovedUpstreamItems(t *testing.T) {
 }
 
 func TestAPIRemovedIssueMutationsReturnNotFoundWithoutProviderWrites(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
 	ctx := t.Context()
 	issueID := seedIssue(t, database, "acme", "widget", 7, "open")
 	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	req.NoError(err)
-	req.NotNil(repo)
+	require.NoError(err)
+	require.NotNil(repo)
 	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeIssue, 7, db.ArchiveLifecycleStateRemovedUpstream)
-	req.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
 		IssueID: issueID, PlatformExternalID: "99", EventType: "issue_comment",
 		CreatedAt: time.Now().UTC(), DedupeKey: "removed-comment-99",
 	}}))
@@ -394,19 +392,16 @@ func TestAPIRemovedIssueMutationsReturnNotFoundWithoutProviderWrites(t *testing.
 		{name: "set assignees", method: http.MethodPut, path: "/api/v1/issues/github/acme/widget/7/assignees", body: map[string]any{"assignees": []string{}}},
 		{name: "set state", method: http.MethodPost, path: "/api/v1/issues/github/acme/widget/7/github-state", body: map[string]any{"state": "closed"}},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require := require.New(t)
-			rr := doLabelAPIRequest(t, srv, tc.method, tc.path, tc.body)
-			require.Equal(http.StatusNotFound, rr.Code, rr.Body.String())
-			var problem generated.ProblemError
-			require.NoError(json.Unmarshal(rr.Body.Bytes(), &problem))
-			require.Equal(generated.ProblemErrorCode("issueNotFound"), problem.Code)
-		})
+		rr := doLabelAPIRequest(t, srv, tc.method, tc.path, tc.body)
+		require.Equal(http.StatusNotFound, rr.Code, tc.name, rr.Body.String())
+		var problem generated.ProblemError
+		require.NoError(json.Unmarshal(rr.Body.Bytes(), &problem), tc.name)
+		require.Equal(generated.ProblemErrorCode("issueNotFound"), problem.Code, tc.name)
 	}
-	req.Empty(providerClient.Comments["acme/widget#7"])
-	req.Equal("original title", providerIssue.GetTitle())
-	req.Equal("original body", providerIssue.GetBody())
-	req.Equal("open", providerIssue.GetState())
+	require.Empty(providerClient.Comments["acme/widget#7"])
+	require.Equal("original title", providerIssue.GetTitle())
+	require.Equal("original body", providerIssue.GetBody())
+	require.Equal("open", providerIssue.GetState())
 }
 
 func TestAPIRefreshPullCIHidesOnlyRemovedUpstreamItems(t *testing.T) {
@@ -438,15 +433,15 @@ func TestAPIRefreshPullCIHidesOnlyRemovedUpstreamItems(t *testing.T) {
 }
 
 func TestAPIRemovedPullMutationsReturnNotFoundWithoutProviderWrites(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
 	ctx := t.Context()
 	seedPR(t, database, "acme", "widget", 7)
 	repo, err := database.GetRepoByIdentity(
 		ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"),
 	)
-	req.NoError(err)
-	req.NotNil(repo)
+	require.NoError(err)
+	require.NotNil(repo)
 	markArchiveItemLifecycle(
 		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 7,
 		db.ArchiveLifecycleStateRemovedUpstream,
@@ -461,34 +456,22 @@ func TestAPIRemovedPullMutationsReturnNotFoundWithoutProviderWrites(t *testing.T
 	providerClient.OpenPRs["acme/widget"] = []*gh.PullRequest{providerPR}
 	client := setupTestClient(t, srv)
 
-	t.Run("post comment", func(t *testing.T) {
-		require := require.New(t)
-		resp, requestErr := client.HTTP.PostPrCommentWithResponse(ctx, &generated.PostPrCommentRequestOptions{PathParams: &generated.PostPrCommentPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.PostPrCommentBody{Body: "must not post"}})
-		require.Error(requestErr)
-		require.NotNil(resp)
-		require.Equal(http.StatusNotFound, resp.StatusCode, string(resp.Body))
-		require.NotNil(resp.Error)
-		require.Equal(
-			generated.ProblemErrorCode("pullNotFound"),
-			resp.Error.Code,
-		)
-	})
+	commentResp, commentErr := client.HTTP.PostPrCommentWithResponse(ctx, &generated.PostPrCommentRequestOptions{PathParams: &generated.PostPrCommentPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(7)}, Body: &generated.PostPrCommentBody{Body: "must not post"}})
+	require.Error(commentErr)
+	require.NotNil(commentResp)
+	require.Equal(http.StatusNotFound, commentResp.StatusCode, string(commentResp.Body))
+	require.NotNil(commentResp.Error)
+	require.Equal(generated.ProblemErrorCode("pullNotFound"), commentResp.Error.Code)
 
-	t.Run("ready for review", func(t *testing.T) {
-		require := require.New(t)
-		resp, requestErr := client.HTTP.MarkPullReadyForReviewWithResponse(ctx, &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(7)}})
-		require.Error(requestErr)
-		require.NotNil(resp)
-		require.Equal(http.StatusNotFound, resp.StatusCode, string(resp.Body))
-		require.NotNil(resp.Error)
-		require.Equal(
-			generated.ProblemErrorCode("pullNotFound"),
-			resp.Error.Code,
-		)
-	})
+	readyResp, readyErr := client.HTTP.MarkPullReadyForReviewWithResponse(ctx, &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(7)}})
+	require.Error(readyErr)
+	require.NotNil(readyResp)
+	require.Equal(http.StatusNotFound, readyResp.StatusCode, string(readyResp.Body))
+	require.NotNil(readyResp.Error)
+	require.Equal(generated.ProblemErrorCode("pullNotFound"), readyResp.Error.Code)
 
-	req.Empty(providerClient.Comments["acme/widget#7"])
-	req.True(providerPR.GetDraft())
+	require.Empty(providerClient.Comments["acme/widget#7"])
+	require.True(providerPR.GetDraft())
 }
 
 func TestAPISynchronousSyncRejectsRemovedUpstreamTombstones(t *testing.T) {
@@ -873,7 +856,7 @@ func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
 	require.Len(*filterResp.JSON200, 1)
 	assert.EqualValues(issueNumber, (*filterResp.JSON200)[0].Number)
 
-	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, detailResp.StatusCode)
 	require.NotNil(detailResp.JSON200)

@@ -1192,7 +1192,7 @@ func TestWorkspaceForceDeleteToleratesMissingWorktreeCommonDirE2E(
 	assert := assert.New(t)
 
 	client, database, _, _ := setupLifecycleWorkspaceServer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 	installGitCommonDirReadFailure(t)
 

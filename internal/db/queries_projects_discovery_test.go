@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 
 func createDiscoveryTestProject(t *testing.T, d *DB, name string) *Project {
 	t.Helper()
-	p, err := d.CreateProject(context.Background(), CreateProjectInput{
+	p, err := d.CreateProject(t.Context(), CreateProjectInput{
 		DisplayName: name,
 		LocalPath:   filepath.Join(t.TempDir(), name),
 	})
@@ -21,7 +20,7 @@ func createDiscoveryTestProject(t *testing.T, d *DB, name string) *Project {
 
 func mustListWorktrees(t *testing.T, d *DB, projectID string) []ProjectWorktree {
 	t.Helper()
-	wts, err := d.ListProjectWorktrees(context.Background(), projectID)
+	wts, err := d.ListProjectWorktrees(t.Context(), projectID)
 	require.NoError(t, err)
 	return wts
 }
@@ -40,7 +39,7 @@ func worktreeByPath(t *testing.T, wts []ProjectWorktree, path string) ProjectWor
 
 func mustGetProject(t *testing.T, d *DB, projectID string) *Project {
 	t.Helper()
-	p, err := d.GetProjectByID(context.Background(), projectID)
+	p, err := d.GetProjectByID(t.Context(), projectID)
 	require.NoError(t, err)
 	return p
 }
@@ -51,7 +50,7 @@ func mustGetProject(t *testing.T, d *DB, projectID string) *Project {
 func TestReconcileProjectInventory_DiscoversLinkedWorktreeAndProjectFacts(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 
 	project := createDiscoveryTestProject(t, d, "alpha")
@@ -81,7 +80,7 @@ func TestReconcileProjectInventory_DiscoversLinkedWorktreeAndProjectFacts(t *tes
 func TestReconcileProjectInventory_PreservesWorktreeIDAndTmuxLink(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 
 	project := createDiscoveryTestProject(t, d, "beta")
@@ -128,7 +127,7 @@ func TestReconcileProjectInventory_PreservesWorktreeIDAndTmuxLink(t *testing.T) 
 func TestReconcileProjectInventory_StaleAndReappear(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 
 	project := createDiscoveryTestProject(t, d, "gamma")
@@ -162,7 +161,7 @@ func TestReconcileProjectInventory_StaleAndReappear(t *testing.T) {
 func TestMarkProjectStaleThenReconcileClears(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 
 	project := createDiscoveryTestProject(t, d, "delta")

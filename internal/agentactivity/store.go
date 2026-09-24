@@ -109,36 +109,36 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 	}
 
 	cwd, err := canonicalWorkspacePath(hook.CWD)
-	if err != nil {
-		return nil
-	}
-	report := Report{
-		Agent:             agent,
-		SessionID:         hook.SessionID,
-		RuntimeSessionKey: runtimeSessionKey,
-		CWD:               cwd,
-		State:             state,
-		UpdatedAt:         s.now().UTC(),
-	}
-	if state == StateDone {
-		previous, ok := s.readReport(s.reportPath(agent, hook.SessionID))
-		if ok && previous.RuntimeSessionKey == runtimeSessionKey {
-			switch {
-			case isIdlePrompt(hook) && (previous.State == StateInput ||
-				previous.State == StateApproval):
-				// Claude Code raises idle_prompt after a minute of waiting for
-				// input whatever it is waiting for; an unanswered question or
-				// permission prompt is still pending, not finished.
-				return nil
-			case previous.State == StateDone:
-				// A completion that is already recorded keeps its original
-				// timestamp: idle_prompt follows Stop, and a fresh timestamp
-				// would make an acknowledged "done" reappear as new.
-				report.UpdatedAt = previous.UpdatedAt
+	if err == nil {
+		report := Report{
+			Agent:             agent,
+			SessionID:         hook.SessionID,
+			RuntimeSessionKey: runtimeSessionKey,
+			CWD:               cwd,
+			State:             state,
+			UpdatedAt:         s.now().UTC(),
+		}
+		if state == StateDone {
+			previous, ok := s.readReport(s.reportPath(agent, hook.SessionID))
+			if ok && previous.RuntimeSessionKey == runtimeSessionKey {
+				switch {
+				case isIdlePrompt(hook) && (previous.State == StateInput ||
+					previous.State == StateApproval):
+					// Claude Code raises idle_prompt after a minute of waiting for
+					// input whatever it is waiting for; an unanswered question or
+					// permission prompt is still pending, not finished.
+					return nil
+				case previous.State == StateDone:
+					// A completion that is already recorded keeps its original
+					// timestamp: idle_prompt follows Stop, and a fresh timestamp
+					// would make an acknowledged "done" reappear as new.
+					report.UpdatedAt = previous.UpdatedAt
+				}
 			}
 		}
+		return s.writeReport(report)
 	}
-	return s.writeReport(report)
+	return nil
 }
 
 func isIdlePrompt(hook HookEvent) bool {

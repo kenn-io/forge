@@ -84,7 +84,7 @@ func TestFromRootNeedsCompleteHistory(t *testing.T) {
 			case "inventory":
 				e.Inventory.Complete = false
 			case "shallow":
-				require.NoError(os.WriteFile(filepath.Join(f.repo.GitDir, "shallow"), []byte(f.head+"\n"), 0600))
+				require.NoError(os.WriteFile(filepath.Join(f.repo.GitDir, "shallow"), []byte(f.head+"\n"), 0o600))
 				reason = "shallow_boundary"
 			case "missing root":
 				f.repo.Run("commit-graph", "write", "--reachable")

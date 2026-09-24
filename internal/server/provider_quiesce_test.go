@@ -39,7 +39,7 @@ func TestStandaloneProviderWritesDoNotRequireSpokePreparationState(t *testing.T)
 	require.NoError(t, err)
 
 	srv := New(database, nil, nil, "/", nil, ServerOptions{})
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/1/comments",
 		bytes.NewReader([]byte(`{"body":""}`)),
@@ -79,6 +79,11 @@ func TestLocalEnrollmentRestoresSpokePreparationBarrier(t *testing.T) {
 	blocked := authenticatedProviderRequest(
 		t, daemon, http.MethodPost, "/api/v1/notifications/read",
 	)
+	t.Cleanup(func() {
+		if blocked != nil && blocked.Body != nil {
+			_ = blocked.Body.Close()
+		}
+	})
 
 	require.Equal(t, http.StatusConflict, blocked.StatusCode)
 }
@@ -111,6 +116,11 @@ func TestSpokePreparationBarrierGatesAuthenticatedProviderWritesAndSurvivesResta
 	blocked := authenticatedProviderRequest(
 		t, first, http.MethodPost, "/api/v1/notifications/read",
 	)
+	t.Cleanup(func() {
+		if blocked != nil && blocked.Body != nil {
+			_ = blocked.Body.Close()
+		}
+	})
 	require.Equal(http.StatusConflict, blocked.StatusCode)
 	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(blocked.Body).Decode(&problem))
@@ -118,6 +128,11 @@ func TestSpokePreparationBarrierGatesAuthenticatedProviderWritesAndSurvivesResta
 	assert.Equal("spokePreparationInProgress", problem.Details["reason"])
 
 	read := authenticatedProviderRequest(t, first, http.MethodGet, "/api/v1/version")
+	t.Cleanup(func() {
+		if read != nil && read.Body != nil {
+			_ = read.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusOK, read.StatusCode)
 	status, err := gate.Status(t.Context())
 	require.NoError(err)
@@ -136,5 +151,10 @@ func TestSpokePreparationBarrierGatesAuthenticatedProviderWritesAndSurvivesResta
 	blocked = authenticatedProviderRequest(
 		t, second, http.MethodPost, "/api/v1/notifications/read",
 	)
+	t.Cleanup(func() {
+		if blocked != nil && blocked.Body != nil {
+			_ = blocked.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusConflict, blocked.StatusCode)
 }

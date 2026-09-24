@@ -125,16 +125,14 @@ func TestWorkspaceLaunchRefreshAcceptsRenamedStableRepository(t *testing.T) {
 			edit: func(spec *db.WorkspaceLaunchSpec) {
 				spec.Repository.Provider = "gitlab"
 				spec.Repository.PlatformHost = "gitlab.com"
-				spec.Repository.CloneURL =
-					"https://gitlab.com/acme-renamed/widget-renamed.git"
+				spec.Repository.CloneURL = "https://gitlab.com/acme-renamed/widget-renamed.git"
 			},
 		},
 		{
 			name: "platform host mismatch",
 			edit: func(spec *db.WorkspaceLaunchSpec) {
 				spec.Repository.PlatformHost = "github.example.test"
-				spec.Repository.CloneURL =
-					"https://github.example.test/acme-renamed/widget-renamed.git"
+				spec.Repository.CloneURL = "https://github.example.test/acme-renamed/widget-renamed.git"
 			},
 		},
 	} {
@@ -142,8 +140,7 @@ func TestWorkspaceLaunchRefreshAcceptsRenamedStableRepository(t *testing.T) {
 			_, candidate := workspaceLaunchResponseForTest()
 			candidate.Repository.Owner = "acme-renamed"
 			candidate.Repository.Name = "widget-renamed"
-			candidate.Repository.CloneURL =
-				"https://github.com/acme-renamed/widget-renamed.git"
+			candidate.Repository.CloneURL = "https://github.com/acme-renamed/widget-renamed.git"
 			test.edit(&candidate)
 			require.ErrorContains(
 				t, ValidateFederationWorkspaceLaunchSpecResponse(request, candidate),

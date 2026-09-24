@@ -13,16 +13,15 @@ var testDBTemplate = &testDBTemplateState{}
 
 type testDBTemplateState struct {
 	once    sync.Once
-	path    string
+	data    []byte
 	initErr error
 }
 
 func openTemplateTestDB(t *testing.T) *DB {
 	t.Helper()
 
-	templatePath := testDBTemplatePath(t)
 	path := filepath.Join(t.TempDir(), "test.db")
-	copyTestDBTemplate(t, templatePath, path)
+	copyTestDBTemplate(t, testDBTemplateBytes(t), path)
 
 	d, err := OpenPreparedForTest(path)
 	require.NoError(t, err)
@@ -30,22 +29,17 @@ func openTemplateTestDB(t *testing.T) *DB {
 	return d
 }
 
-func testDBTemplatePath(t *testing.T) string {
+func testDBTemplateBytes(t *testing.T) []byte {
 	t.Helper()
 
 	testDBTemplate.once.Do(func() {
-		dir, err := os.MkdirTemp("", "kenn-forge-db-package-test-template-*")
-		if err != nil {
-			testDBTemplate.initErr = err
-			return
-		}
-		path := filepath.Join(dir, "template.db")
+		path := filepath.Join(t.TempDir(), "template.db")
 		d, err := Open(path)
 		if err != nil {
 			testDBTemplate.initErr = err
 			return
 		}
-		if _, err := d.WriteDB().Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		if _, err := d.WriteDB().ExecContext(t.Context(), "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
 			_ = d.Close()
 			testDBTemplate.initErr = err
 			return
@@ -54,16 +48,19 @@ func testDBTemplatePath(t *testing.T) string {
 			testDBTemplate.initErr = err
 			return
 		}
-		testDBTemplate.path = path
+		data, err := os.ReadFile(path)
+		if err != nil {
+			testDBTemplate.initErr = err
+			return
+		}
+		testDBTemplate.data = data
 	})
 	require.NoError(t, testDBTemplate.initErr)
-	return testDBTemplate.path
+	return testDBTemplate.data
 }
 
-func copyTestDBTemplate(t *testing.T, src, dst string) {
+func copyTestDBTemplate(t *testing.T, src []byte, dst string) {
 	t.Helper()
 
-	data, err := os.ReadFile(src)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(dst, data, 0o600))
+	require.NoError(t, os.WriteFile(dst, src, 0o600))
 }

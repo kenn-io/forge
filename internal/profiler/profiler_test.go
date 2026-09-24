@@ -22,7 +22,7 @@ func TestNewHandlerRegistersStandardProfilerEndpoints(t *testing.T) {
 		"/debug/pprof/trace",
 	} {
 		t.Run(path, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodGet, path, nil)
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
 			require.NoError(t, err)
 
 			_, pattern := mux.Handler(req)
@@ -83,7 +83,7 @@ func TestStartServesProfilerIndex(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(srv)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
@@ -106,12 +106,12 @@ func TestStartRejectsNonBoundHostHeader(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(srv)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"http://"+srv.Addr().String()+"/debug/pprof/",
 		nil,
@@ -134,12 +134,12 @@ func TestStartRejectsCrossSiteBrowserRequest(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(srv)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"http://"+srv.Addr().String()+"/debug/pprof/",
 		nil,
@@ -162,12 +162,12 @@ func TestStartRejectsMismatchedOrigin(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(srv)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"http://"+srv.Addr().String()+"/debug/pprof/",
 		nil,
@@ -190,12 +190,12 @@ func TestStartRejectsBrowserRequestWithoutMetadata(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(srv)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"http://"+srv.Addr().String()+"/debug/pprof/",
 		nil,
@@ -221,12 +221,12 @@ func TestStartAllowsNonBrowserRequestWithoutMetadata(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(srv)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"http://"+srv.Addr().String()+"/debug/pprof/",
 		nil,
@@ -249,7 +249,7 @@ func TestStartCapsExpensiveProfileSeconds(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(srv)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
@@ -271,7 +271,7 @@ func TestStartCapsRuntimeProfileSeconds(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(srv)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})

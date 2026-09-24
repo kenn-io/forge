@@ -38,17 +38,17 @@ type roborevRepositoryConfig struct {
 func roborevManagedCloneServerAddress(endpoint string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || parsed.Scheme != "http" || parsed.Host == "" {
-		return "", fmt.Errorf("roborev managed-clone initialization requires a loopback HTTP endpoint")
+		return "", errors.New("roborev managed-clone initialization requires a loopback HTTP endpoint")
 	}
 	if parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("roborev managed-clone initialization requires an origin-only loopback HTTP endpoint")
+		return "", errors.New("roborev managed-clone initialization requires an origin-only loopback HTTP endpoint")
 	}
 	host := strings.ToLower(parsed.Hostname())
 	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
-		return "", fmt.Errorf("roborev managed-clone initialization requires 127.0.0.1, localhost, or [::1]")
+		return "", errors.New("roborev managed-clone initialization requires 127.0.0.1, localhost, or [::1]")
 	}
 	if parsed.Port() == "" {
-		return "", fmt.Errorf("roborev managed-clone initialization requires an explicit endpoint port")
+		return "", errors.New("roborev managed-clone initialization requires an explicit endpoint port")
 	}
 	return parsed.Host, nil
 }
@@ -57,7 +57,7 @@ func normalizeRepositoryRelativeDir(raw string) (string, error) {
 	value := strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
 	value = strings.TrimSuffix(value, "/")
 	if value == "" {
-		return "", fmt.Errorf("snapshot_dir is empty")
+		return "", errors.New("snapshot_dir is empty")
 	}
 	if strings.IndexFunc(value, unicode.IsControl) >= 0 {
 		return "", fmt.Errorf("snapshot_dir %q must not contain control characters", raw)
@@ -187,7 +187,7 @@ func workspaceRoborevConfig(workspacePath string) ([]byte, error) {
 		return nil, fmt.Errorf("inspect workspace .roborev.toml: %w", err)
 	}
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("workspace .roborev.toml must be a regular file")
+		return nil, errors.New("workspace .roborev.toml must be a regular file")
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -245,15 +245,14 @@ func ensureManagedCloneExclude(
 		return fmt.Errorf("resolve managed clone common directory: %w", err)
 	}
 	if canonicalGitDir == canonicalCommonDir {
-		return fmt.Errorf("managed workspace must be a linked worktree")
+		return errors.New("managed workspace must be a linked worktree")
 	}
 
 	sharedBare, err := gitCombinedOutput(
 		ctx, commonDir, "config", "--local", "--bool", "--get", "core.bare",
 	)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); !ok || exitErr.ExitCode() != 1 {
 			return fmt.Errorf("inspect managed clone core.bare: %w", err)
 		}
 	}
@@ -335,7 +334,7 @@ func userExcludeEntries(
 		parts = parts[:len(parts)-1]
 	}
 	if len(parts)%2 != 0 {
-		return nil, fmt.Errorf("inspect user Git excludes file: invalid Git config output")
+		return nil, errors.New("inspect user Git excludes file: invalid Git config output")
 	}
 	entries := make([]gitConfigPathEntry, 0, len(parts)/2)
 	for i := 0; i < len(parts); i += 2 {
@@ -354,8 +353,7 @@ func worktreeRoborevBaseExclude(
 		"forge.roborevBaseExcludesFile",
 	)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 			return "", nil
 		}
 		return "", fmt.Errorf("inspect saved user Git excludes file: %w", err)
@@ -447,7 +445,7 @@ func effectiveBaseExclude(
 func writeRoborevExclude(path string, base []byte, pattern string) error {
 	if info, err := os.Lstat(path); err == nil {
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("worktree Roborev exclude must be a regular file")
+			return errors.New("worktree Roborev exclude must be a regular file")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect worktree Roborev exclude: %w", err)
@@ -678,7 +676,7 @@ func (m *Manager) resolveTrustedDefaultCommit(
 	ctx context.Context, commonDir string, ws *Workspace,
 ) (string, error) {
 	if m.clones == nil {
-		return "", fmt.Errorf("clone manager not set")
+		return "", errors.New("clone manager not set")
 	}
 	preferred := ""
 	if m.db != nil {
@@ -805,11 +803,11 @@ func confirmRoborevRegistration(
 	}
 	content, err := io.ReadAll(io.LimitReader(response.Body, 2<<20+1))
 	if err != nil || len(content) > 2<<20 {
-		return fmt.Errorf("confirm Roborev registration: invalid daemon response")
+		return errors.New("confirm Roborev registration: invalid daemon response")
 	}
 	var inventory roborevRegistrationInventory
 	if err := json.Unmarshal(content, &inventory); err != nil || inventory.TotalCount == nil {
-		return fmt.Errorf("confirm Roborev registration: invalid daemon response")
+		return errors.New("confirm Roborev registration: invalid daemon response")
 	}
 	want, err := canonicalFilesystemPath(workspacePath)
 	if err != nil {
@@ -821,7 +819,7 @@ func confirmRoborevRegistration(
 			return nil
 		}
 	}
-	return fmt.Errorf("confirm Roborev registration: workspace is absent from daemon inventory")
+	return errors.New("confirm Roborev registration: workspace is absent from daemon inventory")
 }
 
 func (m *Manager) setupManagedRepositoryHooks(

@@ -3,7 +3,6 @@ package apitest
 import (
 	"context"
 	"encoding/json"
-	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -196,7 +197,7 @@ func newHostValidationClient(t *testing.T, srv *server.Server, baseURL string) *
 				_ = req.Body.Close()
 				body = strings.NewReader(string(payload))
 			}
-			serverReq := httptest.NewRequest(req.Method, req.URL.String(), body)
+			serverReq := httptest.NewRequestWithContext(t.Context(), req.Method, req.URL.String(), body)
 			serverReq.Header = req.Header.Clone()
 			if req.Method != http.MethodGet && serverReq.Header.Get("Content-Type") == "" {
 				serverReq.Header.Set("Content-Type", "application/json")

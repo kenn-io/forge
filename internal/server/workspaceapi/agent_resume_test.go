@@ -2,13 +2,14 @@ package workspaceapi
 
 import (
 	"context"
-	shellquote "github.com/kballard/go-shellquote"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	shellquote "github.com/kballard/go-shellquote"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,7 +80,7 @@ exec sleep 60
 				Targets:                 []localruntime.LaunchTarget{{Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent, "--model", "model-a"}}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 			})
 			t.Cleanup(func() {
-				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 				defer cancel()
 				runtime.StopWorkspace(cleanupCtx, "workspace")
 				runtime.Shutdown()

@@ -1,13 +1,15 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
 func main() {
-	listener, err := net.Listen("tcp", "0.0.0.0:7373")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "0.0.0.0:7373")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -25,7 +27,9 @@ func main() {
 func forward(client net.Conn) {
 	defer client.Close()
 
-	server, err := net.Dial("tcp", "127.0.0.1:7374")
+	server, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(
+		context.Background(), "tcp", "127.0.0.1:7374",
+	)
 	if err != nil {
 		log.Printf("connect to Roborev: %v", err)
 		return

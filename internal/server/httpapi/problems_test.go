@@ -554,7 +554,7 @@ func TestHumaNewErrorIsReplaced(t *testing.T) {
 	assert.Equal("oops", pe.Detail)
 
 	// huma.NewError with non-nil errs[i] populates Errors[] for parity.
-	got = huma.Error400BadRequest("oops", fmt.Errorf("inner"))
+	got = huma.Error400BadRequest("oops", errors.New("inner"))
 	pe = got.(*ProblemError)
 	require.Len(pe.Errors, 1)
 	assert.Equal("inner", pe.Errors[0].Message)

@@ -193,7 +193,7 @@ func TestPrepareRequiresRepositoryRoot(t *testing.T) {
 	ctx, _ := f.prepare(t)
 	nested := filepath.Join(f.repo.Root, "nested")
 	require := require.New(t)
-	require.NoError(os.Mkdir(nested, 0700))
+	require.NoError(os.Mkdir(nested, 0o700))
 	p, err := landedwork.Prepare(ctx, nested, f.bounds(), fixtureLimits())
 	require.NoError(err)
 	assert := assert.New(t)

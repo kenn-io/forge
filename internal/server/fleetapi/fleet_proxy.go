@@ -931,10 +931,15 @@ func (s *Handler) serveFleetWebSocketProxy(
 	dialHeader := make(http.Header)
 	copyProxyWebSocketRequestHeaders(dialHeader, r.Header)
 	s.authorizeFederationRequest(dialHeader, target.credential)
-	peerConn, _, err := terminalwebsocket.Dial(
+	// A successful dial hijacks the response body as the connection
+	// transport. Close that body only when the handshake fails.
+	peerConn, peerResp, err := terminalwebsocket.Dial(
 		r.Context(), peerURL, dialHeader, target.clients.websocket,
 	)
 	if err != nil {
+		if peerResp != nil && peerResp.Body != nil {
+			_ = peerResp.Body.Close()
+		}
 		attachSpan.SetAttributes(attribute.Bool("error", true))
 		writeProblemResponse(w, httpapi.NewProblem(
 			http.StatusBadGateway,

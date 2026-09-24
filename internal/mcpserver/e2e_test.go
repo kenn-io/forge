@@ -110,7 +110,7 @@ esac
 		HostCheckAllowLoopbackAnyPort: true,
 	})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(forge.Shutdown(shutdownCtx))
 	})

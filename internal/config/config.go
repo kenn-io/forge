@@ -282,17 +282,17 @@ type GitHubAppConfig struct {
 	SelectedRepos []string `toml:"selected_repos,omitempty" json:"selected_repos,omitempty"`
 }
 
-func (r Repo) FullName() string {
+func (r *Repo) FullName() string {
 	return r.Owner + "/" + r.Name
 }
 
-func (r Repo) HasNameGlob() bool {
+func (r *Repo) HasNameGlob() bool {
 	return strings.ContainsAny(r.Name, "*?[")
 }
 
 // PlatformHostOrDefault returns the configured platform host,
 // defaulting to the provider's public host when empty.
-func (r Repo) PlatformHostOrDefault() string {
+func (r *Repo) PlatformHostOrDefault() string {
 	if r.PlatformHost == "" {
 		if host, ok := platformpkg.DefaultHost(platformpkg.Kind(r.PlatformOrDefault())); ok {
 			return host
@@ -302,7 +302,7 @@ func (r Repo) PlatformHostOrDefault() string {
 	return r.PlatformHost
 }
 
-func (r Repo) PlatformOrDefault() string {
+func (r *Repo) PlatformOrDefault() string {
 	if r.Platform == "" {
 		return defaultPlatform
 	}
@@ -312,7 +312,7 @@ func (r Repo) PlatformOrDefault() string {
 // ResolveToken returns the token for this repo. When TokenEnv is
 // set, it reads from that env var. Falls back to globalToken if
 // the env var is empty or TokenEnv is not set.
-func (r Repo) ResolveToken(globalToken string) string {
+func (r *Repo) ResolveToken(globalToken string) string {
 	if r.TokenEnv != "" {
 		if tok := os.Getenv(r.TokenEnv); tok != "" {
 			return tok
@@ -402,7 +402,7 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	return nil
 }
 
-func (r Repo) ownerHasGlob() bool {
+func (r *Repo) ownerHasGlob() bool {
 	return strings.ContainsAny(r.Owner, "*?[")
 }
 
@@ -410,7 +410,7 @@ func (r Repo) ownerHasGlob() bool {
 // repository. A pattern's members are discovered at runtime, so its own
 // credential route is a discovery aid rather than the credential that serves
 // any particular repository.
-func (r Repo) nameHasGlob() bool {
+func (r *Repo) nameHasGlob() bool {
 	return strings.ContainsAny(r.Name, "*?[")
 }
 
@@ -900,7 +900,7 @@ type Fleet struct {
 	Sessions    FleetSessions `toml:"sessions" json:"sessions"`
 }
 
-func (f Fleet) RoleOrDefault() FleetRole {
+func (f *Fleet) RoleOrDefault() FleetRole {
 	role := FleetRole(strings.TrimSpace(string(f.Role)))
 	if role == "" {
 		return FleetRoleHub
@@ -910,7 +910,7 @@ func (f Fleet) RoleOrDefault() FleetRole {
 
 // PeerTimeoutOrDefault returns the per-peer fetch timeout, defaulting to
 // 2s when unset or unparseable.
-func (f Fleet) PeerTimeoutOrDefault() time.Duration {
+func (f *Fleet) PeerTimeoutOrDefault() time.Duration {
 	if f.PeerTimeout == "" {
 		return 2 * time.Second
 	}
@@ -1470,9 +1470,7 @@ func (c *Config) validate() error {
 	c.Modes = c.Modes.WithDefaults()
 	c.Workspaces = c.Workspaces.withDefaults()
 	if c.Workspaces.DefaultSidebarView != "diff" && c.Workspaces.DefaultSidebarView != "item" {
-		return fmt.Errorf(
-			"config: workspaces.default_sidebar_view must be one of diff or item",
-		)
+		return errors.New("config: workspaces.default_sidebar_view must be one of diff or item")
 	}
 
 	for i := range c.Repos {
@@ -1596,7 +1594,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("config: invalid MCP port %d", c.MCP.Port)
 	}
 	if c.MCP.DiffCacheMB < 0 || c.MCP.DiffCacheMB > math.MaxInt64>>20 {
-		return fmt.Errorf("config: MCP diff cache size is outside the supported range")
+		return errors.New("config: MCP diff cache size is outside the supported range")
 	}
 	if c.MCP.Enabled {
 		mcpPort := c.MCPPort()
@@ -1782,16 +1780,12 @@ func (c *Config) validate() error {
 
 	if len(c.Tmux.Command) > 0 &&
 		strings.TrimSpace(c.Tmux.Command[0]) == "" {
-		return fmt.Errorf(
-			"config: invalid tmux.command: first element must be non-empty",
-		)
+		return errors.New("config: invalid tmux.command: first element must be non-empty")
 	}
 
 	if len(c.Shell.Command) > 0 &&
 		strings.TrimSpace(c.Shell.Command[0]) == "" {
-		return fmt.Errorf(
-			"config: invalid shell.command: first element must be non-empty",
-		)
+		return errors.New("config: invalid shell.command: first element must be non-empty")
 	}
 
 	return nil
@@ -1801,7 +1795,7 @@ func normalizePlatformTransport(p *PlatformConfig) error {
 	p.BaseURL = strings.TrimSpace(p.BaseURL)
 	if p.Type != string(platformpkg.KindGitea) {
 		if p.BaseURL != "" || p.AllowInsecure {
-			return fmt.Errorf("base_url and allow_insecure are supported only for gitea")
+			return errors.New("base_url and allow_insecure are supported only for gitea")
 		}
 		return nil
 	}
@@ -1810,22 +1804,22 @@ func normalizePlatformTransport(p *PlatformConfig) error {
 	}
 	u, err := url.Parse(p.BaseURL)
 	if err != nil || u.Scheme == "" || u.Host == "" || u.Hostname() == "" {
-		return fmt.Errorf("base_url must be an absolute http(s) URL")
+		return errors.New("base_url must be an absolute http(s) URL")
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("base_url scheme must be http or https")
+		return errors.New("base_url scheme must be http or https")
 	}
 	if u.User != nil {
-		return fmt.Errorf("base_url must not include user info")
+		return errors.New("base_url must not include user info")
 	}
 	if u.RawQuery != "" || u.ForceQuery {
-		return fmt.Errorf("base_url must not include a query string")
+		return errors.New("base_url must not include a query string")
 	}
 	if u.Fragment != "" {
-		return fmt.Errorf("base_url must not include a fragment")
+		return errors.New("base_url must not include a fragment")
 	}
 	if u.Scheme == "http" && !p.AllowInsecure {
-		return fmt.Errorf("base_url uses plain HTTP; set allow_insecure = true to acknowledge that API tokens will be sent without TLS")
+		return errors.New("base_url uses plain HTTP; set allow_insecure = true to acknowledge that API tokens will be sent without TLS")
 	}
 	u.Path = strings.TrimRight(u.Path, "/")
 	p.BaseURL = u.String()
@@ -2652,6 +2646,7 @@ func descriptorCredentialAvailable(desc tokenauth.Descriptor) bool {
 			if err == nil && len(bytes.TrimSpace(data)) > 0 {
 				return true
 			}
+		case tokenauth.SourceKindGitHubCLI, tokenauth.SourceKindGitLabCLI, tokenauth.SourceKindForgejoCLI:
 		}
 	}
 	return false

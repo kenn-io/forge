@@ -2,6 +2,7 @@ package workspaceapi
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,7 +46,7 @@ func TestLaunchSpecBranchActionMapsHubOutage(t *testing.T) {
 		Cause: providerplane.ErrHubUnavailable,
 	})
 
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(t, ok)
 	assert.Equal(t, httpapi.CodeHubUnavailable, problem.Code)
 }
@@ -53,7 +54,7 @@ func TestLaunchSpecBranchActionMapsHubOutage(t *testing.T) {
 func TestBranchActionMapsMissingGitCredential(t *testing.T) {
 	err := workspaceBranchActionProblem(gitclone.ErrCredentialUnavailable)
 
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(t, ok)
 	assert.Equal(t, httpapi.CodeGitCredentialUnavailable, problem.Code)
 }

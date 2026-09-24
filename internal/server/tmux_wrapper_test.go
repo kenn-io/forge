@@ -303,7 +303,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	// The generated API client also points at this URL rather than
 	// the in-process roundtripper used elsewhere, because we cannot
 	// split HTTP and WebSocket transports per-request.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	serveErr := make(chan error, 1)
 	go func() {

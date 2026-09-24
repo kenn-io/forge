@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
-	"go.kenn.io/forge/internal/apiclient"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +15,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
+	"go.kenn.io/forge/internal/apiclient"
 
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
@@ -758,7 +759,11 @@ func TestRepoConfigAPIE2EUpdatesUIVisibility(t *testing.T) {
 	require.NotNil(entry)
 
 	summaryNames := func() []string {
-		resp, err := ts.Client().Get(ts.URL + "/api/v1/repos/summary")
+		respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/repos/summary", nil)
+		require.NoError(err)
+		httpClient := ts.Client()
+		httpClient.Timeout = 5 * time.Second
+		resp, err := httpClient.Do(respReq)
 		require.NoError(err)
 		defer resp.Body.Close()
 		require.Equal(http.StatusOK, resp.StatusCode)

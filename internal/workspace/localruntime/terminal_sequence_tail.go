@@ -80,6 +80,7 @@ func trailingIncompleteTerminalDataLen(data []byte) int {
 			terminalSequenceStringSTPending:
 			start = -1
 			state = terminalSequenceGround
+		case terminalSequenceGround, terminalSequenceOSC, terminalSequenceString:
 		}
 	}
 

@@ -25,7 +25,7 @@ func copyShallow(source, dir string, m *meter) (err error) {
 	if _, err = io.Copy(b, f); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "shallow"), b.Bytes(), 0600)
+	return os.WriteFile(filepath.Join(dir, "shallow"), b.Bytes(), 0o600)
 }
 
 // A reachable shallow root can hide either introduced or excluded ancestry.
@@ -72,8 +72,7 @@ func (v *objectView) ancestor(ctx context.Context, base, head string) (bool, err
 	if err == nil {
 		return true, nil
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok && exit.ExitCode() == 1 {
 		return false, nil
 	}
 	return false, err

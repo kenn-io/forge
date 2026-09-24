@@ -74,7 +74,8 @@ func renderSpec(openAPI interface {
 	Downgrade() ([]byte, error)
 	YAML() ([]byte, error)
 	DowngradeYAML() ([]byte, error)
-}, version, format string) ([]byte, error) {
+}, version, format string,
+) ([]byte, error) {
 	switch format {
 	case "json":
 		var (

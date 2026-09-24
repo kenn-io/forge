@@ -1,7 +1,6 @@
 package fleetapi
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,7 +18,7 @@ import (
 func TestBuildLocalRawSurfacesWorktreeLinkedIssues(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "app", LocalPath: filepath.Join(t.TempDir(), "app"), DefaultBranch: "main",

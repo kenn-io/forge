@@ -130,8 +130,8 @@ func NewRegistry(folders []config.DocFolder, options ...RegistryOption) *Registr
 	resolved := make([]config.DocFolder, 0, len(folders))
 	byID := make(map[string]config.DocFolder, len(folders))
 	for _, v := range folders {
-		if real, err := filepath.EvalSymlinks(v.Path); err == nil {
-			v.Path = real
+		if resolved, err := filepath.EvalSymlinks(v.Path); err == nil {
+			v.Path = resolved
 		}
 		resolved = append(resolved, v)
 		byID[v.ID] = v
@@ -208,11 +208,11 @@ func (r *Registry) Add(v config.DocFolder) error {
 	r.mu.RUnlock()
 	expanded, err := expandTilde(v.Path)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidFolder, err)
+		return fmt.Errorf("%w: %w", ErrInvalidFolder, err)
 	}
 	abs, err := filepath.Abs(expanded)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidFolder, err)
+		return fmt.Errorf("%w: %w", ErrInvalidFolder, err)
 	}
 	v.Path = abs
 	info, err := os.Stat(v.Path)
@@ -222,8 +222,8 @@ func (r *Registry) Add(v config.DocFolder) error {
 	if !info.IsDir() {
 		return fmt.Errorf("%w: path %q is not a directory", ErrInvalidFolder, v.Path)
 	}
-	if real, err := filepath.EvalSymlinks(v.Path); err == nil {
-		v.Path = real
+	if resolved, err := filepath.EvalSymlinks(v.Path); err == nil {
+		v.Path = resolved
 	}
 	if v.Name == "" {
 		v.Name = filepath.Base(v.Path)
@@ -722,11 +722,11 @@ func (r *Registry) resolve(folderID, relPath string) (string, error) {
 	}
 	full := filepath.Join(v.Path, clean)
 	// Resolve symlinks if the target exists.
-	if real, err := filepath.EvalSymlinks(full); err == nil {
-		if !pathWithin(v.Path, real) {
+	if resolved, err := filepath.EvalSymlinks(full); err == nil {
+		if !pathWithin(v.Path, resolved) {
 			return "", ErrOutsideFolder
 		}
-		return real, nil
+		return resolved, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
@@ -772,7 +772,7 @@ func (r *Registry) lexicalPath(folderID, relPath string) (string, error) {
 func cleanRelativePath(relPath string) (string, error) {
 	clean := filepath.Clean(relPath)
 	if clean == "." || clean == "" {
-		return "", fmt.Errorf("empty path")
+		return "", errors.New("empty path")
 	}
 	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", ErrOutsideFolder

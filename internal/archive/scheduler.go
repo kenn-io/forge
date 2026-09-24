@@ -43,7 +43,7 @@ func (s *Scheduler) Run(
 	var worked atomic.Bool
 	var wg sync.WaitGroup
 	for _, key := range keys {
-		key, repos := key, groups[key]
+		repos := groups[key]
 		wg.Go(func() {
 			handled, err := work(ctx, repos)
 			if handled {
@@ -79,8 +79,8 @@ func (e *featureDeferredError) Error() string { return e.Detail }
 func (e *featureDeferredError) Unwrap() error { return errAdmissionDeferred }
 
 func featureDeferredBeforeProvider(err error) bool {
-	var deferred *featureDeferredError
-	return errors.As(err, &deferred) && deferred != nil && !deferred.providerAttempted
+	deferred, ok := errors.AsType[*featureDeferredError](err)
+	return ok && deferred != nil && !deferred.providerAttempted
 }
 
 // RunEligible performs one worker pass. Tests and one-shot callers use it;
@@ -264,9 +264,9 @@ func (s *Service) runNextInventoryWork(
 // admission denial before any provider request is idle: nothing was attempted
 // and the deferral names when to look again, so the worker may back off.
 func (s *Service) finishWork(err error) (bool, error) {
-	var deferred *featureDeferredError
+	deferred, deferredOK := errors.AsType[*featureDeferredError](err)
 	switch {
-	case errors.As(err, &deferred):
+	case deferredOK:
 		return deferred.providerAttempted, nil
 	case errors.Is(err, errRequestPreempted):
 		return true, nil

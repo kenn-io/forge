@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -119,7 +120,7 @@ func normalizedOrigin(raw string) (string, error) {
 		return "", err
 	}
 	if u.Scheme == "" || u.Host == "" {
-		return "", fmt.Errorf("missing scheme or host")
+		return "", errors.New("missing scheme or host")
 	}
 	return originFromURL(u), nil
 }

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -34,6 +33,11 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 		"cwd":         cwd,
 	})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/runtime/sessions", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var session map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&session))
@@ -46,6 +50,11 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 
 	// Re-ensure returns the live session instead of launching again.
 	resp = httpDo(t, ts, http.MethodPost, "/api/v1/runtime/sessions", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var second map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&second))
@@ -54,6 +63,11 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 	assert.Equal(tmuxSession, second["tmux_session"])
 
 	resp = httpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var listBody struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -67,6 +81,11 @@ func TestHostRuntimeCommandSessionLifecycle(t *testing.T) {
 		"/api/v1/runtime/sessions/surface:host:console:console:root/attach-spec",
 		nil,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var spec map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&spec))
@@ -145,7 +164,7 @@ func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 	// A stored row without a live runtime session models a host session
 	// surviving from before a kenn-forge restart.
 	require.NoError(srv.db.UpsertHostRuntimeTmuxSession(
-		context.Background(), &db.HostRuntimeTmuxSession{
+		t.Context(), &db.HostRuntimeTmuxSession{
 			SessionKey:  "surface:host:console:console:root",
 			SessionName: "kenn-forge-stored-console",
 			Label:       "Stored Console",
@@ -154,6 +173,11 @@ func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 	))
 
 	resp := httpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var listBody struct {
 		Sessions []map[string]any `json:"sessions"`
@@ -173,7 +197,7 @@ func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
 	resp.Body.Close()
 
 	assertFakeTmuxKilledSession(t, recordPath, "kenn-forge-stored-console")
-	rows, err := srv.db.ListHostRuntimeTmuxSessions(context.Background())
+	rows, err := srv.db.ListHostRuntimeTmuxSessions(t.Context())
 	require.NoError(err)
 	assert.Empty(rows)
 }
@@ -237,6 +261,11 @@ func TestFleetHostRuntimeSessionRoutesE2E(t *testing.T) {
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/fleet/hosts/self/runtime/sessions", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode,
 		"fleet self-alias launch must reach the local handler")
 	var launched struct {
@@ -251,6 +280,11 @@ func TestFleetHostRuntimeSessionRoutesE2E(t *testing.T) {
 	// The fleet surface carries launch/stop/attach-spec; listings come
 	// from the snapshot. The local listing confirms the launch landed.
 	resp = httpDo(t, ts, http.MethodGet, "/api/v1/runtime/sessions", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var listBody struct {
 		Sessions []map[string]any `json:"sessions"`

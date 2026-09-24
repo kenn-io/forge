@@ -115,8 +115,10 @@ func (e *cloneValidationError) Error() string { return e.err.Error() }
 
 func (e *cloneValidationError) Unwrap() error { return e.err }
 
-type repositoryIdentityContextKey struct{}
-type requiredCredentialContextKey struct{}
+type (
+	repositoryIdentityContextKey struct{}
+	requiredCredentialContextKey struct{}
+)
 
 // WithRepositoryIdentity partitions clone-backed work by the provider's
 // stable repository identity. Callers should set this after reconciling a
@@ -150,7 +152,7 @@ func (m *Manager) RequireCredentialRoute(
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
-		return fmt.Errorf("%w: %v", ErrCredentialUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrCredentialUnavailable, err)
 	}
 	if strings.TrimSpace(token) == "" {
 		return fmt.Errorf("%w for %s/%s", ErrCredentialUnavailable, owner, name)
@@ -456,8 +458,10 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 	}
 	started, flight, err := m.awaitEnsureCloneFlight(ctx, key, run, validate)
 	if err != nil {
-		var invalidated *cloneValidationError
-		if started || !errors.As(err, &invalidated) {
+		if started {
+			return err
+		}
+		if _, ok := errors.AsType[*cloneValidationError](err); !ok {
 			return err
 		}
 		// The starter's route lost ownership and its failed validation
@@ -609,24 +613,24 @@ func (m *Manager) restoreExistingClone(
 
 func (m *Manager) validateRemoteTransport(platform, host, remoteURL string) error {
 	u, err := url.Parse(strings.TrimSpace(remoteURL))
-	if err != nil || !strings.EqualFold(u.Scheme, "http") {
-		return nil
+	if err == nil && strings.EqualFold(u.Scheme, "http") {
+		if m.AllowsInsecureHTTP(platform, host) {
+			return nil
+		}
+		hostname := strings.Trim(strings.ToLower(u.Hostname()), "[]")
+		if !strings.EqualFold(strings.TrimSpace(platform), "gitea") && hostname == "localhost" {
+			return nil
+		}
+		if ip := net.ParseIP(hostname); !strings.EqualFold(strings.TrimSpace(platform), "gitea") &&
+			ip != nil && ip.IsLoopback() {
+			return nil
+		}
+		return fmt.Errorf(
+			"plain HTTP clone transport for %s host %q requires allow_insecure = true",
+			strings.ToLower(strings.TrimSpace(platform)), host,
+		)
 	}
-	if m.AllowsInsecureHTTP(platform, host) {
-		return nil
-	}
-	hostname := strings.Trim(strings.ToLower(u.Hostname()), "[]")
-	if !strings.EqualFold(strings.TrimSpace(platform), "gitea") && hostname == "localhost" {
-		return nil
-	}
-	if ip := net.ParseIP(hostname); !strings.EqualFold(strings.TrimSpace(platform), "gitea") &&
-		ip != nil && ip.IsLoopback() {
-		return nil
-	}
-	return fmt.Errorf(
-		"plain HTTP clone transport for %s host %q requires allow_insecure = true",
-		strings.ToLower(strings.TrimSpace(platform)), host,
-	)
+	return nil
 }
 
 func validateEnsureCloneCaller(
@@ -1116,7 +1120,7 @@ func (m *Manager) validateRemoteIdentity(
 	}
 	rewrites, err := m.git(ctx, dir, "config", "--local", "--get-regexp", `^url\..*\.(insteadOf|pushInsteadOf)$`)
 	if err == nil && strings.TrimSpace(string(rewrites)) != "" {
-		return fmt.Errorf("authenticated git rejects repository-local URL rewrites")
+		return errors.New("authenticated git rejects repository-local URL rewrites")
 	}
 	for _, key := range []string{"remote." + remote + ".url", "remote." + remote + ".pushurl"} {
 		out, err := m.git(ctx, dir, "config", "--get-all", key)
@@ -1262,7 +1266,7 @@ func (m *Manager) gitNetworked(
 		wrapped = wrapGitError(err, stderr)
 	}
 	if required && errors.Is(wrapped, tokenauth.ErrMissingToken) {
-		return nil, fmt.Errorf("%w: %v", ErrCredentialUnavailable, wrapped)
+		return nil, fmt.Errorf("%w: %w", ErrCredentialUnavailable, wrapped)
 	}
 	return nil, wrapped
 }
@@ -1353,10 +1357,11 @@ func safeGitErrorCause(err error) error {
 }
 
 func gitExitCode(err error) (int, bool) {
-	var exitErr interface {
+	type exitCoder interface {
+		error
 		ExitCode() (int, bool)
 	}
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[exitCoder](err); ok {
 		return exitErr.ExitCode()
 	}
 	return 0, false
@@ -1411,7 +1416,7 @@ func (m *Manager) gitRunnerAuthed(
 	if err != nil {
 		if required && !errors.Is(err, context.Canceled) &&
 			!errors.Is(err, context.DeadlineExceeded) {
-			return runner, "", fmt.Errorf("%w: %v", ErrCredentialUnavailable, err)
+			return runner, "", fmt.Errorf("%w: %w", ErrCredentialUnavailable, err)
 		}
 		return runner, "", fmt.Errorf("resolve git token for host %s: %w", host, err)
 	}

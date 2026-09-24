@@ -53,7 +53,7 @@ func resolveIdentityFromPathWithGitEnv(
 	gitEnv []string,
 ) (*db.PlatformIdentity, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("path is required")
+		return nil, errors.New("path is required")
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {

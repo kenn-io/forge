@@ -137,7 +137,7 @@ func TestFederationEventEndpointEnforcesCredentialProtocolAndRequestBounds(t *te
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			request, err := http.NewRequest(
+			request, err := http.NewRequestWithContext(t.Context(),
 				http.MethodGet, httpServer.URL+"/api/v1/federation/events", test.body,
 			)
 			require.NoError(t, err)
@@ -169,7 +169,7 @@ func TestFederationEventCredentialRevocationAppliesToNextConnection(t *testing.T
 	}, time.Second, time.Millisecond)
 
 	require.NoError(server.options.FederationCredentials.RevokeInbound(token))
-	request, err := federationEventRequest(httpServer.URL, token, "")
+	request, err := federationEventRequest(t, httpServer.URL, token, "")
 	require.NoError(err)
 	response, err := httpServer.Client().Do(request)
 	require.NoError(err)
@@ -229,7 +229,8 @@ func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
 				NodeID: federationEventTestNodeID, BaseURL: spoke.URL,
 				State: federation.EnrollmentActive,
 			}},
-		}}
+		},
+	}
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(cfg.Save(cfgPath))
 	server := NewWithConfig(dbtest.Open(t), nil, nil, nil, cfg, cfgPath, ServerOptions{
@@ -249,7 +250,7 @@ func TestEnrollmentRevocationClosesExistingFederationEventStream(t *testing.T) {
 	stream := openFederationEventStream(t, httpServer, token, "")
 	defer stream.response.Body.Close()
 
-	request, err := http.NewRequest(
+	request, err := http.NewRequestWithContext(t.Context(),
 		http.MethodDelete,
 		httpServer.URL+"/api/v1/fleet/enrollments/"+enrollmentID,
 		nil,
@@ -505,10 +506,15 @@ func openFederationEventStream(
 	t *testing.T, server *httptest.Server, token, cursor string,
 ) testFederationEventStream {
 	t.Helper()
-	request, err := federationEventRequest(server.URL, token, cursor)
+	request, err := federationEventRequest(t, server.URL, token, cursor)
 	require.NoError(t, err)
 	response, err := server.Client().Do(request)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+	})
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	require.Equal(t, "text/event-stream", response.Header.Get("Content-Type"))
 	frames := make(chan testSSEFrame, 8)
@@ -516,8 +522,9 @@ func openFederationEventStream(
 	return testFederationEventStream{response: response, frames: frames}
 }
 
-func federationEventRequest(baseURL, token, cursor string) (*http.Request, error) {
-	request, err := http.NewRequest(
+func federationEventRequest(t *testing.T, baseURL, token, cursor string) (*http.Request, error) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(t.Context(),
 		http.MethodGet, baseURL+"/api/v1/federation/events", nil,
 	)
 	if err != nil {

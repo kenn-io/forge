@@ -107,6 +107,11 @@ func completionEntryIsDir(searchDir string, entry os.DirEntry) bool {
 	return info.IsDir()
 }
 
+func filesystemPathIsGitDir(ctx context.Context, path string) bool {
+	_, err := gitDiscoveryOutput(ctx, path, "rev-parse", "--git-dir")
+	return err == nil
+}
+
 func (s *Server) validateFilesystemRepo(
 	ctx context.Context, input *filesystemValidateRepoInput,
 ) (*filesystemValidateRepoOutput, error) {
@@ -126,7 +131,7 @@ func (s *Server) validateFilesystemRepo(
 		return out, nil
 	}
 
-	if _, err := gitDiscoveryOutput(ctx, path, "rev-parse", "--git-dir"); err != nil {
+	if !filesystemPathIsGitDir(ctx, path) {
 		out.Body.Message = "Not a git repository"
 		return out, nil
 	}

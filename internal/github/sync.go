@@ -620,9 +620,11 @@ type WatchedMR struct {
 // defaultParallelism is the worker pool size used by RunOnce when
 // SetParallelism has not been called. Bounded so we don't burst the
 // per-host GitHub rate limit / abuse-detection thresholds.
-const defaultParallelism = 4
-const rateLimitSnapshotRefreshInterval = 3 * time.Minute
-const activeMRWarmRefreshInterval = 10 * time.Minute
+const (
+	defaultParallelism               = 4
+	rateLimitSnapshotRefreshInterval = 3 * time.Minute
+	activeMRWarmRefreshInterval      = 10 * time.Minute
+)
 
 // Display-name cache parameters. Display names rarely change,
 // so the success TTL is long enough to skip lookups across many
@@ -643,8 +645,11 @@ type pendingSyncRun struct {
 	bypassRepos         []RepoRef
 }
 
-const syncProgressLogInterval = 100
-const largeRepoBulkGraphQLThreshold = syncProgressLogInterval
+const (
+	syncProgressLogInterval       = 100
+	largeRepoBulkGraphQLThreshold = syncProgressLogInterval
+)
+
 const (
 	defaultBranchActivityRetention  = 90 * 24 * time.Hour
 	defaultBranchActivityMaxCommits = 5000
@@ -1062,8 +1067,8 @@ func joinPartialFailureCause(budgetCause, cause error) error {
 }
 
 func partialSyncFailureScope(err error) failScope {
-	var partial *PartialSyncError
-	if !errors.As(err, &partial) {
+	partial, ok := errors.AsType[*PartialSyncError](err)
+	if !ok {
 		return 0
 	}
 	var scope failScope
@@ -1696,8 +1701,7 @@ func (s *Syncer) commitIssueParentSnapshotWithRouteFence(
 			ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)), *fence,
 		)
 	}
-	lockedCtx, releaseReconciliation, err :=
-		s.db.LockRepositoryReconciliationReadForWrite(ctx)
+	lockedCtx, releaseReconciliation, err := s.db.LockRepositoryReconciliationReadForWrite(ctx)
 	if err != nil {
 		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
 			return 0, 0, false, nil
@@ -1757,8 +1761,7 @@ func (s *Syncer) commitMergeRequestParentSnapshotWithRouteFence(
 			ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)), *fence,
 		)
 	}
-	lockedCtx, releaseReconciliation, err :=
-		s.db.LockRepositoryReconciliationReadForWrite(ctx)
+	lockedCtx, releaseReconciliation, err := s.db.LockRepositoryReconciliationReadForWrite(ctx)
 	if err != nil {
 		if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
 			return 0, 0, false, nil
@@ -1773,10 +1776,9 @@ func (s *Syncer) commitMergeRequestParentSnapshotWithRouteFence(
 	); err != nil {
 		return 0, 0, false, err
 	}
-	mrID, revision, accepted, err :=
-		s.db.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
-			ctx, mr, s.terminalLivenessComputer(ctx, repo, mr),
-		)
+	mrID, revision, accepted, err := s.db.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
+		ctx, mr, s.terminalLivenessComputer(ctx, repo, mr),
+	)
 	if err != nil || !accepted {
 		return mrID, revision, accepted, err
 	}
@@ -1964,6 +1966,10 @@ func livenessHeadForRound(normalized, existing *db.MergeRequest) string {
 
 var errParentSnapshotAdvanced = errors.New("provider parent snapshot advanced during child refresh")
 
+// ErrRepoNotTracked marks sync requests for repositories outside the
+// configured tracked set so handlers can map them to 403 without matching text.
+var ErrRepoNotTracked = errors.New("not tracked")
+
 const authenticatedViewerLoginTTL = time.Hour
 
 func registryFromGitHubClients(clients map[string]Client) *platform.Registry {
@@ -2012,14 +2018,12 @@ func (s *Syncer) issueFetchOutcomeError(
 	err error,
 ) error {
 	reader, readerErr := s.issueReaderFor(repo)
-	if readerErr != nil {
-		return nil
+	if readerErr == nil {
+		if provider, ok := reader.(*platformgithub.Provider); ok {
+			return provider.IssueLookupOutcomeError(ctx, platformRepoRef(repo), number, issue, err)
+		}
 	}
-	provider, ok := reader.(*platformgithub.Provider)
-	if !ok {
-		return nil
-	}
-	return provider.IssueLookupOutcomeError(ctx, platformRepoRef(repo), number, issue, err)
+	return nil
 }
 
 // issueOnlyFetchOutcomeError adds the GitHub Issues API's PR-shape
@@ -2037,14 +2041,12 @@ func (s *Syncer) issueOnlyFetchOutcomeError(
 		return outcomeErr
 	}
 	reader, readerErr := s.issueReaderFor(repo)
-	if readerErr != nil {
-		return nil
+	if readerErr == nil {
+		if provider, ok := reader.(*platformgithub.Provider); ok {
+			return provider.IssuePullRequestOutcomeError(platformRepoRef(repo), number, issue)
+		}
 	}
-	provider, ok := reader.(*platformgithub.Provider)
-	if !ok {
-		return nil
-	}
-	return provider.IssuePullRequestOutcomeError(platformRepoRef(repo), number, issue)
+	return nil
 }
 
 // mergeRequestFetchOutcomeError is the merge-request counterpart to
@@ -2057,14 +2059,12 @@ func (s *Syncer) mergeRequestFetchOutcomeError(
 	err error,
 ) error {
 	reader, readerErr := s.mergeRequestReaderFor(repo)
-	if readerErr != nil {
-		return nil
+	if readerErr == nil {
+		if provider, ok := reader.(*platformgithub.Provider); ok {
+			return provider.MergeRequestLookupOutcomeError(ctx, platformRepoRef(repo), number, pr, err)
+		}
 	}
-	provider, ok := reader.(*platformgithub.Provider)
-	if !ok {
-		return nil
-	}
-	return provider.MergeRequestLookupOutcomeError(ctx, platformRepoRef(repo), number, pr, err)
+	return nil
 }
 
 // SetWatchInterval sets the fast-sync interval for watched MRs.
@@ -2783,7 +2783,7 @@ func (s *Syncer) ClientForRepo(
 		}
 	}
 	return nil, fmt.Errorf(
-		"repo %s/%s is not tracked", owner, name,
+		"repo %s/%s is %w", owner, name, ErrRepoNotTracked,
 	)
 }
 
@@ -4451,10 +4451,8 @@ func (s *Syncer) runWorker(
 		if rt := s.rateTrackers[bucket]; rt != nil {
 			if backoff, wait := rt.ShouldBackoff(); backoff {
 				s.publishStatus(&SyncStatus{
-					Running: true,
-					Progress: fmt.Sprintf(
-						"rate limited, waiting %s", formatRateLimitWait(wait),
-					),
+					Running:  true,
+					Progress: "rate limited, waiting " + formatRateLimitWait(wait),
 				})
 				select {
 				case <-time.After(wait):
@@ -5204,7 +5202,7 @@ func (s *Syncer) syncRepoIdentity(
 	}
 	identity = platformdb.DBRepositoryIdentity(resolved)
 	if identity.PlatformRepoID == "" {
-		return db.RepoIdentity{}, nil, time.Time{}, fmt.Errorf("provider returned no repo id")
+		return db.RepoIdentity{}, nil, time.Time{}, errors.New("provider returned no repo id")
 	}
 	return identity, &resolved, observedAt, nil
 }
@@ -5530,8 +5528,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	resolvedRef, repoID, resolvedRepo, observedAt, _, err :=
-		s.reconcileRepoIdentityObservation(ctx, repo)
+	resolvedRef, repoID, resolvedRepo, observedAt, _, err := s.reconcileRepoIdentityObservation(ctx, repo)
 	if err != nil {
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
 	}
@@ -5945,8 +5942,7 @@ func (s *Syncer) reconcileRepoForDirectSync(
 ) (RepoRef, int64, db.RepositoryRouteFence, bool, error) {
 	var zero db.RepositoryRouteFence
 	for range 2 {
-		resolvedRef, repoID, providerRepo, observedAt, accepted, err :=
-			s.reconcileRepoIdentityObservation(ctx, repo)
+		resolvedRef, repoID, providerRepo, observedAt, accepted, err := s.reconcileRepoIdentityObservation(ctx, repo)
 		if err != nil {
 			return RepoRef{}, 0, zero, false, fmt.Errorf(
 				"resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err,
@@ -6217,7 +6213,7 @@ func (s *Syncer) syncRepoOverview(
 	}
 
 	var timelineTags []string
-	selectedTags := []*gh.RepositoryTag(nil)
+	var selectedTags []*gh.RepositoryTag
 	if len(selectedReleases) == 0 {
 		tags, err := client.ListTags(ctx, repo.Owner, repo.Name, 3)
 		if err != nil {
@@ -7142,8 +7138,9 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 		)
 		if !routeOK {
 			return false, fmt.Errorf(
-				"repo %s/%s on %s/%s with provider ID %q is not tracked",
+				"repo %s/%s on %s/%s with provider ID %q is %w",
 				stored.Owner, stored.Name, stored.Platform, stored.PlatformHost, providerID,
+				ErrRepoNotTracked,
 			)
 		}
 		if routedID := strings.TrimSpace(routed.PlatformExternalID); routedID != "" {
@@ -7378,8 +7375,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 			}
 		}
 		if normalized.AuthorDisplayName == "" && existing != nil {
-			normalized.AuthorDisplayName =
-				existing.AuthorDisplayName
+			normalized.AuthorDisplayName = existing.AuthorDisplayName
 		}
 	}
 
@@ -7613,8 +7609,7 @@ func (s *Syncer) indexUpsertMR(
 		); ok {
 			normalized.AuthorDisplayName = name
 		} else if existing != nil {
-			normalized.AuthorDisplayName =
-				existing.AuthorDisplayName
+			normalized.AuthorDisplayName = existing.AuthorDisplayName
 		}
 	}
 
@@ -8278,8 +8273,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 		normalized.DetailFetchedAt = existing.DetailFetchedAt
 		if normalized.AuthorDisplayName == "" {
-			normalized.AuthorDisplayName =
-				existing.AuthorDisplayName
+			normalized.AuthorDisplayName = existing.AuthorDisplayName
 		}
 	}
 
@@ -8662,7 +8656,7 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 				ctx, repo, repoID, number, existing, routeFence, calls,
 			)
 		}
-		err = fmt.Errorf("client returned nil pull request")
+		err = errors.New("client returned nil pull request")
 	}
 	if err != nil {
 		return calls, fmt.Errorf(
@@ -9159,11 +9153,11 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	}
 	checks, err := ciReader.ListCIChecks(ctx, platformRepoRef(repo), headSHA)
 	calls++
-	if err != nil && !errors.Is(err, platform.ErrUnsupportedCapability) {
-		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
+	if errors.Is(err, platform.ErrUnsupportedCapability) {
+		return calls, pending, nil
 	}
 	if err != nil {
-		return calls, pending, nil
+		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
 	}
 	dbChecks := platformdb.DBCIChecks(checks)
 	if dbChecks == nil {
@@ -9308,7 +9302,7 @@ func (s *Syncer) fetchIssueDetail(
 				ctx, repo, number, existing, routeFence, calls,
 			)
 		}
-		err = fmt.Errorf("client returned nil issue")
+		err = errors.New("client returned nil issue")
 	}
 	if err != nil {
 		return calls, fmt.Errorf(
@@ -9587,7 +9581,7 @@ func (s *Syncer) refreshTimeline(
 	livenessHeadSHA string,
 ) error {
 	if ghPR == nil {
-		return fmt.Errorf("nil pull request")
+		return errors.New("nil pull request")
 	}
 	number := ghPR.GetNumber()
 	client, err := s.clientFor(repo)
@@ -10579,7 +10573,7 @@ func (s *Syncer) refreshIssueTimeline(
 	visibility map[int64]platformgithub.CommentVisibility,
 ) error {
 	if ghIssue == nil {
-		return fmt.Errorf("nil issue")
+		return errors.New("nil issue")
 	}
 	number := ghIssue.GetNumber()
 	client, err := s.clientFor(repo)
@@ -10840,8 +10834,7 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 // lookupDestination extracts the transfer destination from a typed lookup
 // error, or nil when the error carries none (a true removal).
 func lookupDestination(err error) *platform.RepoRef {
-	var pErr *platform.Error
-	if errors.As(err, &pErr) && pErr != nil {
+	if pErr, ok := errors.AsType[*platform.Error](err); ok && pErr != nil {
 		return pErr.Destination
 	}
 	return nil
@@ -11062,8 +11055,7 @@ func (s *Syncer) drainDetailQueue(
 		if verified {
 			repo = verifiedRepos[repoKey]
 		} else {
-			resolvedRepo, resolvedRepoID, resolvedFence, found, resolveErr :=
-				s.reconcileRepoForDirectSync(ctx, repo)
+			resolvedRepo, resolvedRepoID, resolvedFence, found, resolveErr := s.reconcileRepoForDirectSync(ctx, repo)
 			if resolveErr != nil || !found {
 				probe.abandon()
 				rejectedRepos[repoKey] = true
@@ -11112,7 +11104,7 @@ func (s *Syncer) drainDetailQueue(
 				cloneFetchOK = true
 			}
 		}
-		providerCalls := 0
+		var providerCalls int
 		if qi.Type == QueueItemPR {
 			providerCalls, err = s.fetchMRDetail(
 				itemCtx, repo, repoID, qi.Number, cloneFetchOK,
@@ -11327,8 +11319,8 @@ func (s *Syncer) SyncRepoOnProvider(
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
 		return fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			owner, name, kind, host,
+			"repo %s/%s on %s/%s is %w",
+			owner, name, kind, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -11381,8 +11373,8 @@ func (s *Syncer) SyncClosedMROnProvider(
 		)
 		if !routeOK {
 			return fmt.Errorf(
-				"repo %s/%s on %s/%s is not tracked",
-				stored.Owner, stored.Name, stored.Platform, stored.PlatformHost,
+				"repo %s/%s on %s/%s is %w",
+				stored.Owner, stored.Name, stored.Platform, stored.PlatformHost, ErrRepoNotTracked,
 			)
 		}
 		if routedID := strings.TrimSpace(routed.PlatformExternalID); routedID != "" &&
@@ -11430,8 +11422,8 @@ func (s *Syncer) SyncMROnProvider(
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
 		return fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			owner, name, kind, host,
+			"repo %s/%s on %s/%s is %w",
+			owner, name, kind, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -11483,7 +11475,7 @@ func (s *Syncer) syncMRWithHost(
 			host = s.hostFor(owner, name)
 		}
 		return fmt.Errorf(
-			"repo %s/%s on %s is not tracked", owner, name, host,
+			"repo %s/%s on %s is %w", owner, name, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -11511,8 +11503,8 @@ func (s *Syncer) syncMRWithWatchedRefTracking(
 	if !ok {
 		host := repoHost(RepoRef{Platform: kind, PlatformHost: mr.PlatformHost})
 		return fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			mr.Owner, mr.Name, kind, host,
+			"repo %s/%s on %s/%s is %w",
+			mr.Owner, mr.Name, kind, host, ErrRepoNotTracked,
 		)
 	}
 	return s.syncMRForRepo(ctx, repo, mr.Number, true, providerAttempted)
@@ -11666,7 +11658,7 @@ func (s *Syncer) syncMRForRepoResolved(
 					)
 					return err
 				}
-				err = fmt.Errorf("client returned nil pull request")
+				err = errors.New("client returned nil pull request")
 			}
 			if err == nil {
 				normalized, err = NormalizePR(repoID, ghPR)
@@ -11759,8 +11751,7 @@ func (s *Syncer) syncMRForRepoResolved(
 			repairCtx := s.db.WithRepositoryRouteFence(
 				ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)), routeFence,
 			)
-			repairCtx, releaseRepair, lockErr :=
-				s.db.LockRepositoryReconciliationReadForWrite(repairCtx)
+			repairCtx, releaseRepair, lockErr := s.db.LockRepositoryReconciliationReadForWrite(repairCtx)
 			if errors.Is(lockErr, db.ErrRepositoryRouteFenceChanged) {
 				abandonRepair()
 				return nil
@@ -11924,7 +11915,7 @@ func (s *Syncer) syncMRForRepoResolved(
 			return nil
 		}
 
-		pending := false
+		var pending bool
 		_, pending, err = s.syncProviderMRDetailExtras(
 			ctx, mrReader, repo, mrID, number, revision, normalized.PlatformHeadSHA,
 			livenessHeadForRound(normalized, existing),
@@ -12235,8 +12226,8 @@ func (s *Syncer) SyncIssueOnProvider(
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
 		return fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			owner, name, kind, host,
+			"repo %s/%s on %s/%s is %w",
+			owner, name, kind, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -12270,7 +12261,7 @@ func (s *Syncer) syncIssueWithHost(
 			host = s.hostFor(owner, name)
 		}
 		return fmt.Errorf(
-			"repo %s/%s on %s is not tracked", owner, name, host,
+			"repo %s/%s on %s is %w", owner, name, host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = owner
@@ -12348,8 +12339,8 @@ func (s *Syncer) SyncArchiveItem(
 	repo, ok := s.trackedRepoByIdentity(ref.Platform, ref.Owner, ref.Name, ref.Host)
 	if !ok {
 		return result, fmt.Errorf(
-			"repo %s/%s on %s/%s is not tracked",
-			ref.Owner, ref.Name, ref.Platform, ref.Host,
+			"repo %s/%s on %s/%s is %w",
+			ref.Owner, ref.Name, ref.Platform, ref.Host, ErrRepoNotTracked,
 		)
 	}
 	repo.Owner = ref.Owner
@@ -12511,7 +12502,7 @@ func (s *Syncer) SyncItemByNumber(
 		return "", err
 	}
 	if !ok {
-		return "", fmt.Errorf("repo %s/%s is not tracked", owner, name)
+		return "", fmt.Errorf("repo %s/%s is %w", owner, name, ErrRepoNotTracked)
 	}
 	repo.Owner = owner
 	repo.Name = name

@@ -38,7 +38,7 @@ func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
 
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -61,7 +61,7 @@ func setupTestServerWithFixtureClient(
 
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -84,7 +84,7 @@ func setupTestClient(t *testing.T, srv *server.Server) *apiclient.Client {
 				body = strings.NewReader(string(payload))
 			}
 
-			serverReq := httptest.NewRequest(req.Method, req.URL.String(), body)
+			serverReq := httptest.NewRequestWithContext(t.Context(), req.Method, req.URL.String(), body)
 			serverReq.Header = req.Header.Clone()
 			if req.Method != http.MethodGet && serverReq.Header.Get("Content-Type") == "" {
 				serverReq.Header.Set("Content-Type", "application/json")

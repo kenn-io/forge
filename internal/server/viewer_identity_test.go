@@ -33,6 +33,7 @@ func (p *viewerIdentityProvider) Host() string            { return p.host }
 func (p *viewerIdentityProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{ReadAuthenticatedUser: true}
 }
+
 func (p *viewerIdentityProvider) AuthenticatedUser(_ context.Context, ref platform.RepoRef) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -42,9 +43,11 @@ func (p *viewerIdentityProvider) AuthenticatedUser(_ context.Context, ref platfo
 	}
 	return p.logins[ref.RepoPath], nil
 }
+
 func (p *viewerIdentityProvider) AuthenticatedUserCacheKey(ref platform.RepoRef) string {
 	return p.cacheKeys[ref.RepoPath]
 }
+
 func (p *viewerIdentityProvider) callCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -209,6 +212,7 @@ func (p *unkeyedViewerIdentityProvider) Host() string            { return p.base
 func (p *unkeyedViewerIdentityProvider) Capabilities() platform.Capabilities {
 	return p.base.Capabilities()
 }
+
 func (p *unkeyedViewerIdentityProvider) AuthenticatedUser(
 	ctx context.Context, ref platform.RepoRef,
 ) (string, error) {

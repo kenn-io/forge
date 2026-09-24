@@ -76,7 +76,7 @@ func TestClientUsesOnlyHubCredential(t *testing.T) {
 	})
 	require.NoError(err)
 
-	request, err := http.NewRequest(
+	request, err := http.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"https://spoke.invalid/api/v1/repos/acme%2Fwidgets/pulls?q=open",
 		nil,
@@ -87,7 +87,7 @@ func TestClientUsesOnlyHubCredential(t *testing.T) {
 	request.Header.Set("Origin", "https://browser.invalid")
 
 	response, err := client.Do(
-		context.Background(), federationauth.ScopeProviderRead, request,
+		t.Context(), federationauth.ScopeProviderRead, request,
 	)
 	require.NoError(err)
 	require.NoError(response.Body.Close())
@@ -112,11 +112,18 @@ func TestClientRejectsScopeOutsideProviderPlane(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/workspaces", nil)
 
-	_, err = client.Do(
-		context.Background(), federationauth.ScopeWorkspaceRead, request,
+	resp, err := client.Do(
+		t.Context(), federationauth.ScopeWorkspaceRead, request,
 	)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	assert.ErrorIs(t, err, ErrInvalidScope)
 }
 
@@ -174,9 +181,9 @@ func TestClientRefusesHubRedirect(t *testing.T) {
 		HTTPClient:  hub.Client(),
 	})
 	require.NoError(err)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
 	response, err := client.Do(
-		context.Background(), federationauth.ScopeProviderRead, request,
+		t.Context(), federationauth.ScopeProviderRead, request,
 	)
 	require.NoError(err)
 	defer response.Body.Close()
@@ -212,12 +219,19 @@ func TestClientRejectsOversizedBodyBeforeNetwork(t *testing.T) {
 		HTTPClient:  hub.Client(), BodyLimit: 3,
 	})
 	require.NoError(err)
-	request := httptest.NewRequest(
+	request := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost, "/api/v1/pulls", strings.NewReader("four"),
 	)
-	_, err = client.Do(
-		context.Background(), federationauth.ScopeProviderWrite, request,
+	resp, err := client.Do(
+		t.Context(), federationauth.ScopeProviderWrite, request,
 	)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.ErrorIs(err, ErrRequestBodyTooLarge)
 	assert.Zero(requests.Load())
 }
@@ -237,7 +251,7 @@ func TestReadJSONPreservesHubProblem(t *testing.T) {
 			)),
 		}, nil
 	})
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
 
 	err := ReadJSON(
 		t.Context(), client, federationauth.ScopeProviderRead, request, &struct{}{},
@@ -264,7 +278,7 @@ func TestReadJSONRejectsOversizedHubBody(t *testing.T) {
 			)),
 		}, nil
 	})
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
 
 	err := ReadJSON(
 		t.Context(), client, federationauth.ScopeProviderRead, request, &struct{}{},

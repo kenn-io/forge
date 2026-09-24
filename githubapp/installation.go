@@ -2,6 +2,7 @@ package githubapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -38,7 +39,7 @@ func (e *InstallationError) Unwrap() error { return e.cause }
 // does not establish deletion; CheckInstallation also verifies App identity.
 func (c *Client) GetInstallation(ctx context.Context, appJWT string, installationID int64) (*Installation, error) {
 	if installationID <= 0 {
-		return nil, fmt.Errorf("installation ID must be positive")
+		return nil, errors.New("installation ID must be positive")
 	}
 	var installation Installation
 	path := fmt.Sprintf("/app/installations/%d", installationID)
@@ -46,7 +47,7 @@ func (c *Client) GetInstallation(ctx context.Context, appJWT string, installatio
 		return nil, fmt.Errorf("getting installation: %w", err)
 	}
 	if installation.ID != installationID || installation.AppID <= 0 {
-		return nil, fmt.Errorf("installation response identity mismatch")
+		return nil, errors.New("installation response identity mismatch")
 	}
 	return &installation, nil
 }
@@ -58,14 +59,14 @@ func (c *Client) GetInstallation(ctx context.Context, appJWT string, installatio
 // lifecycle classification; every other error leaves availability unknown.
 func (c *Client) CheckInstallation(ctx context.Context, appJWT string, appID, installationID int64) (*Installation, error) {
 	if appID <= 0 || installationID <= 0 {
-		return nil, fmt.Errorf("App and installation IDs must be positive")
+		return nil, errors.New("App and installation IDs must be positive")
 	}
 	app, err := c.GetApp(ctx, appJWT)
 	if err != nil {
 		return nil, appAuthenticationError(err)
 	}
 	if app.ID != appID {
-		return nil, fmt.Errorf("authenticated App identity mismatch")
+		return nil, errors.New("authenticated App identity mismatch")
 	}
 	installation, err := c.GetInstallation(ctx, appJWT, installationID)
 	if err != nil {
@@ -75,7 +76,7 @@ func (c *Client) CheckInstallation(ctx context.Context, appJWT string, appID, in
 		return nil, appAuthenticationError(err)
 	}
 	if installation.AppID != appID {
-		return nil, fmt.Errorf("installation App identity mismatch")
+		return nil, errors.New("installation App identity mismatch")
 	}
 	if installation.SuspendedAt != nil {
 		return nil, &InstallationError{Kind: InstallationSuspended}

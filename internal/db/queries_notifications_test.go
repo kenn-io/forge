@@ -222,22 +222,22 @@ func TestNotificationsListFiltersSearchAndPriority(t *testing.T) {
 	items, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "unread", Sort: "priority"})
 	require.NoError(err)
 	require.Len(items, 3)
-	check := assert.New(t)
-	check.Equal("mention", items[0].PlatformNotificationID)
-	check.Equal("review", items[1].PlatformNotificationID)
-	check.Equal("comment", items[2].PlatformNotificationID)
+	assert := assert.New(t)
+	assert.Equal("mention", items[0].PlatformNotificationID)
+	assert.Equal("review", items[1].PlatformNotificationID)
+	assert.Equal("comment", items[2].PlatformNotificationID)
 
 	items, err = d.ListNotifications(t.Context(), ListNotificationsOpts{State: "done"})
 	require.NoError(err)
 	require.Len(items, 1)
-	check.Equal("done", items[0].PlatformNotificationID)
+	assert.Equal("done", items[0].PlatformNotificationID)
 
 	notifications[1].SubjectTitle = "Needle migration plan"
 	require.NoError(d.UpsertNotifications(t.Context(), []Notification{notifications[1]}))
 	items, err = d.ListNotifications(t.Context(), ListNotificationsOpts{State: "all", Search: "needle"})
 	require.NoError(err)
 	require.Len(items, 1)
-	check.Equal("mention", items[0].PlatformNotificationID)
+	assert.Equal("mention", items[0].PlatformNotificationID)
 }
 
 func TestNotificationSummaryIgnoresListState(t *testing.T) {
@@ -269,6 +269,7 @@ func TestNotificationSummaryIgnoresListState(t *testing.T) {
 
 func TestNotificationsReadQueuesWithoutDone(t *testing.T) {
 	require := require.New(t)
+	assert := assert.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -280,21 +281,21 @@ func TestNotificationsReadQueuesWithoutDone(t *testing.T) {
 	readAt := now.Add(time.Minute)
 	queued, err := d.QueueNotificationIDsRead(t.Context(), []int64{items[0].ID}, readAt)
 	require.NoError(err)
-	assert.Equal(t, []int64{items[0].ID}, queued)
+	assert.Equal([]int64{items[0].ID}, queued)
 
 	readItems, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "read"})
 	require.NoError(err)
 	require.Len(readItems, 1)
-	check := assert.New(t)
-	check.Nil(readItems[0].DoneAt)
-	check.Nil(readItems[0].SourceLastAcknowledgedAt)
-	if check.NotNil(readItems[0].SourceAckQueuedAt) {
-		check.True(readAt.Equal(*readItems[0].SourceAckQueuedAt))
+
+	assert.Nil(readItems[0].DoneAt)
+	assert.Nil(readItems[0].SourceLastAcknowledgedAt)
+	if assert.NotNil(readItems[0].SourceAckQueuedAt) {
+		assert.True(readAt.Equal(*readItems[0].SourceAckQueuedAt))
 	}
 
 	doneItems, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "done"})
 	require.NoError(err)
-	check.Empty(doneItems)
+	assert.Empty(doneItems)
 }
 
 func TestMarkNotificationsAcknowledgedScopesThreadIDsToPlatformHost(t *testing.T) {
@@ -721,10 +722,10 @@ func TestNotificationMutationsReturnOnlyUpdatedIDs(t *testing.T) {
 	done, err := d.MarkNotificationsDone(t.Context(), []int64{id, missingID}, now.Add(2*time.Minute), false)
 	require.NoError(err)
 
-	check := assert.New(t)
-	check.ElementsMatch([]int64{id}, queued)
-	check.ElementsMatch([]int64{id}, undone)
-	check.ElementsMatch([]int64{id}, done)
+	assert := assert.New(t)
+	assert.ElementsMatch([]int64{id}, queued)
+	assert.ElementsMatch([]int64{id}, undone)
+	assert.ElementsMatch([]int64{id}, done)
 }
 
 func TestNotificationsHideUnmonitoredRepos(t *testing.T) {

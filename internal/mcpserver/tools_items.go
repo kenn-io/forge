@@ -2,7 +2,7 @@ package mcpserver
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sort"
 	"unicode/utf8"
 
@@ -118,7 +118,7 @@ func (s *Server) getItemContext(ctx context.Context, in getItemContextInput) (ge
 	case "issue":
 		return s.getIssueContext(ctx, in)
 	default:
-		return getItemContextOutput{}, fmt.Errorf("item.type must be pr or issue")
+		return getItemContextOutput{}, errors.New("item.type must be pr or issue")
 	}
 }
 
@@ -128,7 +128,7 @@ func (s *Server) getPullContext(ctx context.Context, in getItemContextInput) (ge
 		return getItemContextOutput{}, err
 	}
 	if detail.Pull == nil {
-		return getItemContextOutput{}, fmt.Errorf("pull detail missing pull")
+		return getItemContextOutput{}, errors.New("pull detail missing pull")
 	}
 	pull := *detail.Pull
 	out := pullContext(detail, in)
@@ -180,7 +180,7 @@ func (s *Server) getIssueContext(ctx context.Context, in getItemContextInput) (g
 		return getItemContextOutput{}, err
 	}
 	if detail.Issue == nil {
-		return getItemContextOutput{}, fmt.Errorf("issue detail missing issue")
+		return getItemContextOutput{}, errors.New("issue detail missing issue")
 	}
 	issue := *detail.Issue
 	workflow := candidateWorkflow{Status: workflowStatusOrNew(issue.WorkflowStatus)}
@@ -241,22 +241,22 @@ func (s *Server) listItemsByWorkflowState(
 
 func validateItemRef(ref itemRefInput) error {
 	if ref.Type != "pr" && ref.Type != "issue" {
-		return fmt.Errorf("item.type must be pr or issue")
+		return errors.New("item.type must be pr or issue")
 	}
 	if ref.Provider == "" {
-		return fmt.Errorf("item.provider is required")
+		return errors.New("item.provider is required")
 	}
 	if ref.PlatformRepoID == "" {
-		return fmt.Errorf("item.platform_repo_id is required")
+		return errors.New("item.platform_repo_id is required")
 	}
 	if ref.Owner == "" {
-		return fmt.Errorf("item.owner is required")
+		return errors.New("item.owner is required")
 	}
 	if ref.Name == "" {
-		return fmt.Errorf("item.name is required")
+		return errors.New("item.name is required")
 	}
 	if ref.Number <= 0 {
-		return fmt.Errorf("item.number must be greater than zero")
+		return errors.New("item.number must be greater than zero")
 	}
 	return nil
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
@@ -65,7 +65,7 @@ func TestProviderCapabilitiesAdvertiseReviewerMutationWithReviewRequestTransport
 
 func TestProviderSetAssigneesReplacesSetThroughEditOptions(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.example.com", Owner: "acme", Name: "widget"}
 	transport := &fakeTransport{
 		pr: PullRequestDTO{
@@ -79,11 +79,11 @@ func TestProviderSetAssigneesReplacesSetThroughEditOptions(t *testing.T) {
 	}
 	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
 
-	prAssignees, err := provider.SetMergeRequestAssignees(context.Background(), ref, 7, []string{"alice", "bob"})
+	prAssignees, err := provider.SetMergeRequestAssignees(t.Context(), ref, 7, []string{"alice", "bob"})
 	require.NoError(err)
 	assert.Equal([]string{"alice", "bob"}, prAssignees)
 
-	issueAssignees, err := provider.SetIssueAssignees(context.Background(), ref, 8, []string{"carol"})
+	issueAssignees, err := provider.SetIssueAssignees(t.Context(), ref, 8, []string{"carol"})
 	require.NoError(err)
 	assert.Equal([]string{"carol"}, issueAssignees)
 
@@ -91,11 +91,11 @@ func TestProviderSetAssigneesReplacesSetThroughEditOptions(t *testing.T) {
 }
 
 func TestProviderSetAssigneesWithoutMutationsReturnsUnsupportedCapability(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "codeberg.org", Owner: "acme", Name: "widget"}
 	provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{})
 
-	_, err := provider.SetMergeRequestAssignees(context.Background(), ref, 7, []string{"alice"})
+	_, err := provider.SetMergeRequestAssignees(t.Context(), ref, 7, []string{"alice"})
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
 	require.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)
@@ -103,7 +103,7 @@ func TestProviderSetAssigneesWithoutMutationsReturnsUnsupportedCapability(t *tes
 
 func TestProviderReviewerMutationsReadBackFromPullRequestField(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.example.com", Owner: "acme", Name: "widget"}
 	transport := &reviewRequestFakeTransport{
 		fakeTransport: &fakeTransport{},
@@ -116,11 +116,11 @@ func TestProviderReviewerMutationsReadBackFromPullRequestField(t *testing.T) {
 	}
 	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
 
-	requested, err := provider.RequestMergeRequestReviewers(context.Background(), ref, 7, []string{"bob"})
+	requested, err := provider.RequestMergeRequestReviewers(t.Context(), ref, 7, []string{"bob"})
 	require.NoError(err)
 	assert.Equal([]string{"alice", "bob"}, requested)
 
-	removed, err := provider.RemoveMergeRequestReviewers(context.Background(), ref, 7, []string{"carol"})
+	removed, err := provider.RemoveMergeRequestReviewers(t.Context(), ref, 7, []string{"carol"})
 	require.NoError(err)
 	assert.Equal([]string{"alice", "bob"}, removed)
 
@@ -129,7 +129,7 @@ func TestProviderReviewerMutationsReadBackFromPullRequestField(t *testing.T) {
 
 func TestProviderRequestReviewersWithEmptyListReadsWithoutMutating(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindGitea, Host: "gitea.example.com", Owner: "acme", Name: "widget"}
 	transport := &reviewRequestFakeTransport{
 		fakeTransport: &fakeTransport{},
@@ -140,7 +140,7 @@ func TestProviderRequestReviewersWithEmptyListReadsWithoutMutating(t *testing.T)
 	}
 	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
 
-	current, err := provider.RequestMergeRequestReviewers(context.Background(), ref, 7, nil)
+	current, err := provider.RequestMergeRequestReviewers(t.Context(), ref, 7, nil)
 	require.NoError(err)
 	assert.Equal([]string{"carol"}, current)
 	assert.Empty(transport.reviewRequests, "an empty request must not call the review-request endpoint")
@@ -148,7 +148,7 @@ func TestProviderRequestReviewersWithEmptyListReadsWithoutMutating(t *testing.T)
 
 func TestProviderReviewerMutationsDeriveFromReviewsWhenFieldUnknown(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "codeberg.org", Owner: "acme", Name: "widget"}
 	transport := &reviewRequestFakeTransport{
 		fakeTransport: &fakeTransport{},
@@ -164,17 +164,17 @@ func TestProviderReviewerMutationsDeriveFromReviewsWhenFieldUnknown(t *testing.T
 	}
 	provider := NewProvider(platform.KindForgejo, "codeberg.org", transport, WithMutations())
 
-	requested, err := provider.RequestMergeRequestReviewers(context.Background(), ref, 7, []string{"alice"})
+	requested, err := provider.RequestMergeRequestReviewers(t.Context(), ref, 7, []string{"alice"})
 	require.NoError(err)
 	assert.Equal([]string{"alice"}, requested)
 }
 
 func TestProviderReviewerMutationsWithoutTransportReturnUnsupportedCapability(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "codeberg.org", Owner: "acme", Name: "widget"}
 	provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{}, WithMutations())
 
-	_, err := provider.RequestMergeRequestReviewers(context.Background(), ref, 7, []string{"alice"})
+	_, err := provider.RequestMergeRequestReviewers(t.Context(), ref, 7, []string{"alice"})
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
 	require.Equal(platform.ErrCodeUnsupportedCapability, platformErr.Code)

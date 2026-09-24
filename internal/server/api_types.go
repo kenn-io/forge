@@ -168,14 +168,16 @@ type resolveItemResponse struct {
 	RepoTracked bool   `json:"repo_tracked"`
 }
 
-type diffResponse = httpapi.DiffResponse
-type rateLimitResourceStatus struct {
-	Remaining int    `json:"remaining"`
-	Limit     int    `json:"limit"`
-	ResetAt   string `json:"reset_at"`
-	Known     bool   `json:"known"`
-	Requests  int    `json:"requests"`
-}
+type (
+	diffResponse            = httpapi.DiffResponse
+	rateLimitResourceStatus struct {
+		Remaining int    `json:"remaining"`
+		Limit     int    `json:"limit"`
+		ResetAt   string `json:"reset_at"`
+		Known     bool   `json:"known"`
+		Requests  int    `json:"requests"`
+	}
+)
 
 // rateLimitHostStatus is one credential principal's provider-side quota on one
 // host. GitHub meters each principal independently, so an App installation and

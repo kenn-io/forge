@@ -212,7 +212,7 @@ func (c *EventClient) readStream(
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return ready, fmt.Errorf("%w: read event stream: %v", ErrEventProtocol, err)
+		return ready, fmt.Errorf("%w: read event stream: %w", ErrEventProtocol, err)
 	}
 	if !ready {
 		return false, fmt.Errorf(
@@ -241,7 +241,7 @@ func (c *EventClient) consumeFrame(
 	}
 	payload := jsontext.Value(frame.data.String())
 	if frame.eventType == "reconnect.stale" {
-		if !jsontext.Value(payload).IsValid() {
+		if !payload.IsValid() {
 			return fmt.Errorf("%w: stale event payload is not JSON", ErrEventProtocol)
 		}
 		// A restarted hub begins a new event-ID lifetime. Its stale
@@ -256,7 +256,7 @@ func (c *EventClient) consumeFrame(
 	if id <= *cursor {
 		return nil
 	}
-	if !IsHubProviderEvent(frame.eventType) || !jsontext.Value(payload).IsValid() {
+	if !IsHubProviderEvent(frame.eventType) || !payload.IsValid() {
 		// A numeric cursor lets the spoke skip a poison frame safely. Refreshing
 		// authoritative state recovers the consequence the frame may represent.
 		*cursor = id

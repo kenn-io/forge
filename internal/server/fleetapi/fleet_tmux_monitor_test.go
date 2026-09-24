@@ -1,7 +1,6 @@
 package fleetapi
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -160,7 +159,7 @@ exit 0
 			)
 			mon.probeTimeout = 5 * time.Second
 
-			mon.refreshInventory(context.Background())
+			mon.refreshInventory(t.Context())
 
 			snap := mon.snapshot()
 			require.NotNil(snap.CurrentInventory)

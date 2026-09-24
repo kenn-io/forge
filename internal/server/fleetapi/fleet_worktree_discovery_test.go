@@ -1,7 +1,6 @@
 package fleetapi
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -60,7 +59,7 @@ func TestDiscoverProjectInventory_StandardRepoSurfacesLinkedWorktree(t *testing.
 	require := require.New(t)
 	repoDir, wtDir := seedRepoWithWorktree(t, "feature/live", "wtA")
 
-	inv, err := discoverProjectInventory(context.Background(), repoDir)
+	inv, err := discoverProjectInventory(t.Context(), repoDir)
 	require.NoError(err)
 	require.Equal("standard", inv.RepositoryKind)
 	require.Equal("main", inv.DefaultBranch)
@@ -83,7 +82,7 @@ func TestDiscoverProjectInventory_BareRepoKind(t *testing.T) {
 	require.NoError(os.MkdirAll(bareDir, 0o755))
 	runGit(t, bareDir, "init", "--bare", "-q")
 
-	inv, err := discoverProjectInventory(context.Background(), bareDir)
+	inv, err := discoverProjectInventory(t.Context(), bareDir)
 	require.NoError(err)
 	require.Equal("bare", inv.RepositoryKind)
 	require.Empty(inv.Worktrees)
@@ -93,7 +92,7 @@ func TestDiscoverProjectInventory_MissingRepoErrors(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	_, err := discoverProjectInventory(context.Background(), filepath.Join(t.TempDir(), "not-a-repo"))
+	_, err := discoverProjectInventory(t.Context(), filepath.Join(t.TempDir(), "not-a-repo"))
 	require.Error(t, err)
 }
 
@@ -105,7 +104,7 @@ func TestRegisterProject_ImmediatelyDiscoversWorktrees(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	srv, database := setupTestServer(t)
 	ts := httptest.NewServer(srv.localHandler())
@@ -115,6 +114,11 @@ func TestRegisterProject_ImmediatelyDiscoversWorktrees(t *testing.T) {
 
 	body := mustMarshal(t, map[string]any{"local_path": repoDir})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var registered map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&registered))
@@ -144,7 +148,7 @@ func TestFleetWorktreeDiscoverer_StaleThenReappear(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	srv, database := setupTestServer(t)
 	repoDir, wtDir := seedRepoWithWorktree(t, "feature/live", "wtC")

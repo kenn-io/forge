@@ -209,7 +209,7 @@ func remoteBranchExists(
 	}
 	fields := strings.Fields(out)
 	if len(fields) != 2 || fields[1] != ref {
-		return false, fmt.Errorf("check remote branch: unexpected ls-remote output")
+		return false, errors.New("check remote branch: unexpected ls-remote output")
 	}
 	return true, nil
 }

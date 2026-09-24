@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	gh "github.com/google/go-github/v91/github"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/platform"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	gh "github.com/google/go-github/v91/github"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/platform"
 )
 
 type workflowRateObserver struct{ requests, remaining int }

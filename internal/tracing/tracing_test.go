@@ -1,6 +1,7 @@
 package tracing
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestStartAttachSpanExtractsQueryParamContext(t *testing.T) {
 		otel.SetTextMapPropagator(prevProp)
 	})
 
-	r := httptest.NewRequest("GET",
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 		"/ws/v1/workspaces/abc/terminal"+
 			"?traceparent=00-11111111111111111111111111111111-2222222222222222-01"+
 			"&baggage=interaction%3Dworkspace-switch%2Cworkspace.id%3Dabc",
@@ -65,7 +66,7 @@ func TestStartAttachSpanWithoutParamsStartsRootSpan(t *testing.T) {
 		otel.SetTextMapPropagator(prevProp)
 	})
 
-	r := httptest.NewRequest("GET", "/ws/v1/workspaces/abc/terminal", nil)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ws/v1/workspaces/abc/terminal", nil)
 	_, span := StartAttachSpan(r, "terminal.attach")
 	span.End()
 

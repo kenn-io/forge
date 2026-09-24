@@ -125,7 +125,8 @@ func (s *Handler) createWorkerWorkspace(ctx context.Context, input *struct{ Body
 func (s *Handler) refreshWorkerContext(ctx context.Context, input *struct {
 	ID   string `path:"id"`
 	Body db.WorkspaceLaunchSpec
-}) (*struct{}, error) {
+},
+) (*struct{}, error) {
 	if err := input.Body.RequireVisible(s.now().UTC()); err != nil {
 		return nil, workspaceLaunchSpecProblem(err)
 	}

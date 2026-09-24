@@ -911,7 +911,7 @@ func enrollmentProblem(err error) error {
 }
 
 func newFederationHTTPClient() *http.Client {
-	return hardenedFederationHTTPClient(http.DefaultClient, false)
+	return hardenedFederationHTTPClient(&http.Client{Timeout: 15 * time.Second}, false)
 }
 
 func newFederationMemberClients(base *http.Client) federationMemberClients {
@@ -936,7 +936,7 @@ func hardenedFederationProxyHTTPClient(base *http.Client) *http.Client {
 
 func hardenedFederationHTTPClient(base *http.Client, streaming bool) *http.Client {
 	if base == nil {
-		base = http.DefaultClient
+		base = &http.Client{Timeout: 15 * time.Second}
 	}
 	client := *base
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {

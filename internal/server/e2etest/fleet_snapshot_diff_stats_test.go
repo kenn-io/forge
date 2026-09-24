@@ -64,7 +64,7 @@ func TestFleetSnapshotDetachedWorktreeDiffForSyncedRepoE2E(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init", "-q")

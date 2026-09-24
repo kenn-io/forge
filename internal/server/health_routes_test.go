@@ -21,7 +21,7 @@ func TestHealthReportsRunningBuildWithoutBearer(t *testing.T) {
 	})
 	srv.SetBuildInfo(BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)})
 	response := httptest.NewRecorder()
-	srv.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	srv.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil))
 	require.Equal(t, http.StatusOK, response.Code)
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))

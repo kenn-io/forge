@@ -153,7 +153,7 @@ func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
 	forge := httptest.NewServer(srv)
 	defer forge.Close()
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		forge.URL+"/api/roborev/api/jobs/123/retry?force=1",
 		strings.NewReader(`{"reason":"retry"}`),
@@ -267,7 +267,7 @@ func TestRoborevNDJSONPassThrough(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			flusher, ok := w.(http.Flusher)
 			if !ok {
-				http.Error(w, "not a Flusher", 500)
+				http.Error(w, "not a Flusher", http.StatusInternalServerError)
 				return
 			}
 			for _, line := range lines {
@@ -287,15 +287,16 @@ func TestRoborevNDJSONPassThrough(t *testing.T) {
 	forge := httptest.NewServer(srv)
 	defer forge.Close()
 
-	r := require.New(t)
+	require := require.New(t)
 
-	resp, err := http.Get(
-		forge.URL + "/api/roborev/stream",
-	)
-	r.NoError(err)
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, forge.URL+"/api/roborev/stream", nil)
+	require.NoError(err)
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	resp, err := httpClient.Do(respReq)
+	require.NoError(err)
 	defer resp.Body.Close()
 
-	r.Equal(http.StatusOK, resp.StatusCode)
+	require.Equal(http.StatusOK, resp.StatusCode)
 
 	scanner := bufio.NewScanner(resp.Body)
 	var received []string
@@ -304,8 +305,8 @@ func TestRoborevNDJSONPassThrough(t *testing.T) {
 		// Unblock the daemon to send the next line.
 		gate <- struct{}{}
 	}
-	r.NoError(scanner.Err())
-	r.Equal(lines, received)
+	require.NoError(scanner.Err())
+	require.Equal(lines, received)
 }
 
 func TestRoborevProxyCancelsIdleUpstreamBeforeReconnect(t *testing.T) {
@@ -327,7 +328,7 @@ func TestRoborevProxyCancelsIdleUpstreamBeforeReconnect(t *testing.T) {
 	defer forge.Close()
 
 	startRequest := func() (context.CancelFunc, <-chan error) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		req, err := http.NewRequestWithContext(
 			ctx,
 			http.MethodGet,

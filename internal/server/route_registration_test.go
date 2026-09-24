@@ -24,11 +24,11 @@ func TestAPIRoutesUseHumaRegistration(t *testing.T) {
 		if strings.HasSuffix(path, "_test.go") {
 			continue
 		}
-		source, err := os.ReadFile(filepath.Join(path))
+		source, err := os.ReadFile(path)
 		require.NoError(err)
 
 		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, filepath.Join(path), source, 0)
+		file, err := parser.ParseFile(fset, path, source, 0)
 		require.NoError(err)
 
 		ast.Inspect(file, func(node ast.Node) bool {

@@ -3,14 +3,15 @@ package apitest
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"go.kenn.io/forge/internal/platformdb"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/internal/platformdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,7 +31,7 @@ func TestAPIArchiveRoutesRemainRegisteredWithoutController(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/status", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/archive/status", http.NoBody)
 	req.Host = "forge.test"
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -128,12 +129,12 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 		reportResponse.JSON200.Repositories[0].Coverage.MergeRequests)
 	require.NotNil(reportResponse.JSON200.Activity)
 	require.Len(reportResponse.JSON200.Activity, 3)
-	assert.Equal("issue-7", (reportResponse.JSON200.Activity)[0].ProviderExternalID)
+	assert.Equal("issue-7", reportResponse.JSON200.Activity[0].ProviderExternalID)
 	assert.Equal(generated.ArchiveReportActivityResponseKindIssueClosed,
-		(reportResponse.JSON200.Activity)[1].Kind)
-	require.NotNil((reportResponse.JSON200.Activity)[1].Actor)
-	assert.Equal("closer", *(reportResponse.JSON200.Activity)[1].Actor)
-	merged := (reportResponse.JSON200.Activity)[2]
+		reportResponse.JSON200.Activity[1].Kind)
+	require.NotNil(reportResponse.JSON200.Activity[1].Actor)
+	assert.Equal("closer", *reportResponse.JSON200.Activity[1].Actor)
+	merged := reportResponse.JSON200.Activity[2]
 	assert.Equal(generated.ArchiveReportActivityResponseKindMergeRequestMerged, merged.Kind)
 	require.NotNil(merged.Actor)
 	assert.Equal("merger", *merged.Actor)
@@ -206,8 +207,8 @@ func TestAPIArchiveReportExcludesOnlyRemovedUpstreamParents(t *testing.T) {
 				state, body, created_at, updated_at, last_activity_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 'body', ?, ?, ?)`,
 			repo.ID, number, externalID, number,
-			"https://github.test/owner/repo/issues/"+fmt.Sprint(number),
-			"Synthetic issue "+fmt.Sprint(number), "issue-author", now, now, now,
+			"https://github.test/owner/repo/issues/"+strconv.Itoa(number),
+			"Synthetic issue "+strconv.Itoa(number), "issue-author", now, now, now,
 		)
 		require.NoError(insertErr)
 		id, insertErr := result.LastInsertId()
@@ -225,8 +226,8 @@ func TestAPIArchiveReportExcludesOnlyRemovedUpstreamParents(t *testing.T) {
 	insertMR := func(number int, externalID, lifecycle string) int64 {
 		id, insertErr := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 			RepoID: repo.ID, PlatformID: int64(number), PlatformExternalID: externalID,
-			Number: number, URL: "https://github.test/owner/repo/pull/" + fmt.Sprint(number),
-			Title: "Synthetic merge request " + fmt.Sprint(number), Author: "pr-author",
+			Number: number, URL: "https://github.test/owner/repo/pull/" + strconv.Itoa(number),
+			Title: "Synthetic merge request " + strconv.Itoa(number), Author: "pr-author",
 			State: db.MergeRequestStateOpen, Body: "body",
 			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		})
@@ -377,7 +378,7 @@ func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {
 	require := require.New(t)
 	srv, _, _, _, _ := setupArchiveTestServer(t, nil)
 
-	crossSite := httptest.NewRequest(
+	crossSite := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost, "/api/v1/archive/start", strings.NewReader(`{"all":true}`),
 	)
 	crossSite.Host = "forge.test"
@@ -387,7 +388,7 @@ func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {
 	srv.ServeHTTP(crossSiteRecorder, crossSite)
 	assert.Equal(http.StatusForbidden, crossSiteRecorder.Code)
 
-	badHost := httptest.NewRequest(http.MethodGet, "/api/v1/archive/status", http.NoBody)
+	badHost := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/archive/status", http.NoBody)
 	badHost.Host = "attacker.example"
 	badHostRecorder := httptest.NewRecorder()
 	srv.ServeHTTP(badHostRecorder, badHost)
@@ -403,7 +404,7 @@ func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {
 		Archive: archiveStatusController{},
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(authServer.Shutdown(ctx))
 	})
@@ -441,6 +442,7 @@ func (p *archiveAPITestProvider) ListIssuesPage(context.Context, platform.RepoRe
 	p.pageCall()
 	return platform.Page[platform.Issue]{Exhausted: true}, nil
 }
+
 func (p *archiveAPITestProvider) ListMergeRequestsPage(context.Context, platform.RepoRef, platform.ItemPageQuery) (platform.Page[platform.MergeRequest], error) {
 	p.pageCall()
 	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
@@ -497,7 +499,7 @@ func setupArchiveTestServer(
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{Archive: controller})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -527,12 +529,12 @@ func TestAPIArchivePacingReportsProviderHeadroom(t *testing.T) {
 	syncer.SetQuotaRegistry(registry)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
 	req.Host = "forge.test"
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -573,12 +575,12 @@ func TestAPIArchivePacingEmptyWithoutKnownPools(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
 	req.Host = "forge.test"
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -606,12 +608,12 @@ func TestAPIArchivePacingReportsPartiallyKnownCredentials(t *testing.T) {
 	syncer.SetQuotaRegistry(registry)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
 	req.Host = "forge.test"
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -649,12 +651,12 @@ func TestAPIArchivePacingUsesPerPoolReserves(t *testing.T) {
 	syncer.SetQuotaRegistry(registry)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/archive/pacing", http.NoBody)
 	req.Host = "forge.test"
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)

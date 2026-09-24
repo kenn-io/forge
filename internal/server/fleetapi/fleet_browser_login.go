@@ -204,9 +204,10 @@ func (h *Handler) requestBrowserLoginTicket(
 		return browserLoginTicket{}, err
 	}
 	var ticket browserLoginTicket
+	fleet := h.configSnapshot().Fleet
 	if err := h.fetchFederationJSON(
 		ctx, target, target.clients.rest,
-		h.configSnapshot().Fleet.PeerTimeoutOrDefault(), request, &ticket,
+		fleet.PeerTimeoutOrDefault(), request, &ticket,
 	); err != nil {
 		return browserLoginTicket{}, err
 	}

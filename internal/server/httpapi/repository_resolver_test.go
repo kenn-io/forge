@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -121,7 +120,7 @@ func TestRepositoryResolverGuardRepositoryRouteFenceBlocksReconciliation(t *test
 	guardDone := make(chan guardResult, 1)
 	go func() {
 		matches, guardErr := resolver.GuardRepositoryRouteFence(
-			context.Background(), *repo, fence, func() error {
+			t.Context(), *repo, fence, func() error {
 				close(publishStarted)
 				<-releasePublish
 				return nil
@@ -139,7 +138,7 @@ func TestRepositoryResolverGuardRepositoryRouteFenceBlocksReconciliation(t *test
 	writerDone := make(chan error, 1)
 	go func() {
 		_, _, reconcileErr := database.ReconcileRepositoryObservation(
-			context.Background(),
+			t.Context(),
 			db.RepoIdentity{
 				Platform:       "github",
 				PlatformHost:   "github.com",

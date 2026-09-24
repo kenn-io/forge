@@ -1,7 +1,6 @@
 package fleetapi
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -23,7 +22,7 @@ import (
 func TestBuildLocalRawOverlaysBranchMatchedPR(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
 	repoID := seedActiveLinkRepo(t, database)
@@ -75,7 +74,7 @@ func TestBuildLocalRawOverlaysBranchMatchedPR(t *testing.T) {
 func TestRecomputeThenSnapshotShowsBranchMatchedPR(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
 	repoID := seedActiveLinkRepo(t, database)
@@ -117,7 +116,7 @@ func TestRecomputeThenSnapshotShowsBranchMatchedPR(t *testing.T) {
 func TestBuildLocalRawLeavesUnlinkedWorktreeWithoutPR(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "app", LocalPath: filepath.Join(t.TempDir(), "app"), DefaultBranch: "main",

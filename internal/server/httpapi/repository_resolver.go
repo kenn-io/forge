@@ -11,9 +11,13 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-var ErrRepoPathRequired = errors.New("repo_path is required")
-var ErrRepoNotFound = errors.New("repo not found")
-var ErrRepositoryStoreUnavailable = errors.New("repository store unavailable")
+var (
+	ErrRepoPathRequired           = errors.New("repo_path is required")
+	ErrRepoNotFound               = errors.New("repo not found")
+	ErrRepositoryStoreUnavailable = errors.New("repository store unavailable")
+	ErrPlatformHostRequired       = errors.New("platform_host is required")
+	ErrUnsupportedPlatform        = errors.New("unsupported platform")
+)
 
 type RepositoryResolver struct {
 	db                   *db.DB
@@ -57,8 +61,7 @@ func ProviderRouteLookupError(err error) error {
 	if errors.Is(err, ErrRepoNotFound) {
 		return NotFound(CodeRepoNotFound, "repo not found", nil)
 	}
-	if strings.Contains(err.Error(), "platform_host is required") ||
-		strings.Contains(err.Error(), "unsupported platform") {
+	if errors.Is(err, ErrPlatformHostRequired) || errors.Is(err, ErrUnsupportedPlatform) {
 		return BadRequest(CodeBadRequest, err.Error(), nil)
 	}
 	return Internal("get repo failed")
@@ -181,14 +184,14 @@ func (r *RepositoryResolver) Lookup(
 	repoPath = strings.Trim(repoPath, "/ ")
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrUnsupportedPlatform, err)
 	}
 	provider = string(kind)
 	if platformHost == "" {
 		var ok bool
 		platformHost, ok = platform.DefaultHost(kind)
 		if !ok {
-			return nil, fmt.Errorf("platform_host is required for provider %q", kind)
+			return nil, fmt.Errorf("%w for provider %q", ErrPlatformHostRequired, kind)
 		}
 	}
 	if repoPath == "" {

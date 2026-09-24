@@ -411,7 +411,7 @@ func (c ArchiveCapabilities) HasHistoricalInventory() bool {
 }
 
 func (c ArchiveCapabilities) Support(capability ArchiveCapability) (ArchiveCapabilitySupport, error) {
-	supported := false
+	var supported bool
 	switch capability {
 	case ArchiveCapabilityHistoricalIssues:
 		supported = c.HistoricalIssues

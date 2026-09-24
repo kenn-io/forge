@@ -16,11 +16,11 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	require := require.New(t)
 	token := requireLiveGitHubToken(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	httpClient := oauth2.NewClient(
-		context.Background(),
+		t.Context(),
 		oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token}),
 	)
 	client := githubv4.NewClient(httpClient)
@@ -66,5 +66,4 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	var issueQuery gqlIssueQuery
 	err = client.Query(ctx, &issueQuery, vars)
 	require.NoError(err, "bulk issue GraphQL query should validate against GitHub")
-
 }

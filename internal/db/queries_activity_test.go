@@ -27,30 +27,40 @@ func TestListActivity(t *testing.T) {
 		t, d, repoA, 10, "Crash on startup", base.Add(2*time.Minute))
 
 	err := d.UpsertMREvents(ctx, []MREvent{
-		{MergeRequestID: prID1, EventType: "issue_comment", Author: "carol",
+		{
+			MergeRequestID: prID1, EventType: "issue_comment", Author: "carol",
 			Body:      "Looks good to me",
 			CreatedAt: base.Add(3 * time.Minute),
-			DedupeKey: "comment-1"},
-		{MergeRequestID: prID2, EventType: "review", Author: "dave",
+			DedupeKey: "comment-1",
+		},
+		{
+			MergeRequestID: prID2, EventType: "review", Author: "dave",
 			Summary:   "APPROVED",
 			CreatedAt: base.Add(4 * time.Minute),
-			DedupeKey: "review-1"},
-		{MergeRequestID: prID1, EventType: "commit", Author: "alice",
+			DedupeKey: "review-1",
+		},
+		{
+			MergeRequestID: prID1, EventType: "commit", Author: "alice",
 			Summary: "abc123", Body: "fix: handle nil",
 			CreatedAt: base.Add(5 * time.Minute),
-			DedupeKey: "commit-abc123"},
-		{MergeRequestID: prID1, EventType: "review_comment", Author: "eve",
+			DedupeKey: "commit-abc123",
+		},
+		{
+			MergeRequestID: prID1, EventType: "review_comment", Author: "eve",
 			Body:      "nit: rename var",
 			CreatedAt: base.Add(6 * time.Minute),
-			DedupeKey: "review_comment-1"},
+			DedupeKey: "review_comment-1",
+		},
 	})
 	require.NoError(t, err)
 
 	err = d.UpsertIssueEvents(ctx, []IssueEvent{
-		{IssueID: issueID1, EventType: "issue_comment", Author: "frank",
+		{
+			IssueID: issueID1, EventType: "issue_comment", Author: "frank",
 			Body:      "Can reproduce on macOS",
 			CreatedAt: base.Add(7 * time.Minute),
-			DedupeKey: "icomment-1"},
+			DedupeKey: "icomment-1",
+		},
 	})
 	require.NoError(t, err)
 
@@ -435,10 +445,12 @@ func TestListActivity(t *testing.T) {
 		newest := all[0]
 
 		err = d.UpsertMREvents(ctx, []MREvent{
-			{MergeRequestID: prID1, EventType: "issue_comment", Author: "grace",
+			{
+				MergeRequestID: prID1, EventType: "issue_comment", Author: "grace",
 				Body:      "New comment",
 				CreatedAt: base.Add(10 * time.Minute),
-				DedupeKey: "comment-new"},
+				DedupeKey: "comment-new",
+			},
 		})
 		require.NoError(err)
 
@@ -2192,6 +2204,7 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 			staleURL:   "https://github.com/acme/widget/pull/7",
 			currentURL: "https://github.com/acme/gadget/pull/7",
 			insertParent: func(t *testing.T, d *DB, repoID int64, number int, url string) {
+				t.Helper()
 				mr := testMR(repoID, number, withMRTitle("Current parent title"))
 				mr.URL = url
 				insertTestMRWithOptions(t, d, mr)
@@ -2203,6 +2216,7 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 			staleURL:   "https://github.com/acme/widget/issues/7",
 			currentURL: "https://github.com/acme/gadget/issues/7",
 			insertParent: func(t *testing.T, d *DB, repoID int64, number int, url string) {
+				t.Helper()
 				issue := testIssue(repoID, number, withIssueTitle("Current parent title"))
 				issue.URL = url
 				insertTestIssueWithOptions(t, d, issue)
@@ -2284,10 +2298,14 @@ func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
 	stackedPRID := insertTestMRWithOptions(t, d, stackedPR)
 	lastComment := now.Add(-14 * time.Hour)
 	require.NoError(d.UpsertMREvents(ctx, []MREvent{
-		{MergeRequestID: stackedPRID, EventType: "issue_comment", Author: "reviewer",
-			CreatedAt: lastComment, DedupeKey: "stack-comment"},
-		{MergeRequestID: stackedPRID, EventType: "cross_referenced", Author: "bot",
-			CreatedAt: now.Add(-time.Hour), DedupeKey: "stack-xref"},
+		{
+			MergeRequestID: stackedPRID, EventType: "issue_comment", Author: "reviewer",
+			CreatedAt: lastComment, DedupeKey: "stack-comment",
+		},
+		{
+			MergeRequestID: stackedPRID, EventType: "cross_referenced", Author: "bot",
+			CreatedAt: now.Add(-time.Hour), DedupeKey: "stack-xref",
+		},
 	}))
 
 	// Only the provider timestamp is inside the window; the ledger is stale.
@@ -2323,10 +2341,14 @@ func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
 	issueID := insertTestIssueWithOptions(t, d, issue)
 	lastIssueComment := now.Add(-5 * time.Hour)
 	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{
-		{IssueID: issueID, EventType: "issue_comment", Author: "reporter",
-			CreatedAt: lastIssueComment, DedupeKey: "issue-comment"},
-		{IssueID: issueID, EventType: "assigned", Author: "triager",
-			CreatedAt: now.Add(-30 * time.Minute), DedupeKey: "issue-assigned"},
+		{
+			IssueID: issueID, EventType: "issue_comment", Author: "reporter",
+			CreatedAt: lastIssueComment, DedupeKey: "issue-comment",
+		},
+		{
+			IssueID: issueID, EventType: "assigned", Author: "triager",
+			CreatedAt: now.Add(-30 * time.Minute), DedupeKey: "issue-assigned",
+		},
 	}))
 
 	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{Since: &since, Limit: 50})

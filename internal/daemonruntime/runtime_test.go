@@ -22,7 +22,7 @@ import (
 func TestNewIdentityKeepsMCPListenAddrDiscoverySurfacesAligned(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(listener.Close()) })
 	dataDir := t.TempDir()

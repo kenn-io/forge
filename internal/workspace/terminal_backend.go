@@ -2,7 +2,7 @@ package workspace
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/ptyowner"
@@ -56,7 +56,7 @@ func (m *Manager) EnsureTerminal(
 ) error {
 	if m.usesPtyOwnerForWorkspace(ws) {
 		if m.ptyOwner == nil {
-			return fmt.Errorf("pty owner backend unavailable")
+			return errors.New("pty owner backend unavailable")
 		}
 		return m.ptyOwner.Ensure(ctx, ws.TmuxSession, ws.WorktreePath)
 	}
@@ -80,7 +80,7 @@ func (m *Manager) newTerminalSession(
 ) error {
 	if m.usesPtyOwnerForWorkspace(ws) {
 		if m.ptyOwner == nil {
-			return fmt.Errorf("pty owner backend unavailable")
+			return errors.New("pty owner backend unavailable")
 		}
 		return m.ptyOwner.Ensure(ctx, ws.TmuxSession, ws.WorktreePath)
 	}

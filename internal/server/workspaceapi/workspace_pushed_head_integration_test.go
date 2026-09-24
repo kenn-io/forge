@@ -106,7 +106,7 @@ func newPushedHeadIntegrationFixture(
 		},
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(t, fixture.handler.Shutdown(ctx))
 	})

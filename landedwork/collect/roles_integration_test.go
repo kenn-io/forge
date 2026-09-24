@@ -134,6 +134,6 @@ func integratedRoleTransport(t *testing.T, mode, source, side, inner, head strin
 		default:
 			require.Fail(t, "unexpected request", req.URL.String())
 		}
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
 	})
 }

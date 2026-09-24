@@ -362,18 +362,17 @@ func gitUpstreamState(
 	mergeRef, mergeErr := gitConfigValue(
 		ctx, dir, "branch."+branch+".merge",
 	)
-	if remoteErr != nil || mergeErr != nil {
+	if remoteErr == nil && mergeErr == nil {
+		state.hasTracking = true
+		state.remoteName = remoteName
+		state.branchName = strings.TrimPrefix(mergeRef, "refs/heads/")
+		remoteURL, err := gitRemoteURL(ctx, dir, remoteName)
+		if err != nil {
+			return state, fmt.Errorf("git remote get-url %q: %w", remoteName, err)
+		}
+		state.remoteURL = remoteURL
 		return state, nil
 	}
-
-	state.hasTracking = true
-	state.remoteName = remoteName
-	state.branchName = strings.TrimPrefix(mergeRef, "refs/heads/")
-	remoteURL, err := gitRemoteURL(ctx, dir, remoteName)
-	if err != nil {
-		return state, fmt.Errorf("git remote get-url %q: %w", remoteName, err)
-	}
-	state.remoteURL = remoteURL
 	return state, nil
 }
 

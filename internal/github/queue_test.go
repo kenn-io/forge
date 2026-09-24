@@ -160,7 +160,7 @@ func TestBuildQueueSortedByScoreDescending(t *testing.T) {
 	assert.Equal(20, q[0].Number) // highest
 	assert.Equal(30, q[1].Number) // middle
 
-	for i := 0; i < len(q)-1; i++ {
+	for i := range len(q) - 1 {
 		assert.Greater(q[i].Score, q[i+1].Score)
 	}
 }
@@ -263,12 +263,18 @@ func TestBuildQueueDormantOpenItemsRefreshDaily(t *testing.T) {
 func TestBuildQueueDailyCoverageCannotStarveBehindActiveWork(t *testing.T) {
 	assert := assert.New(t)
 	items := []QueueItem{
-		{Number: 1, IsOpen: true, Starred: true, UpdatedAt: testNow,
-			DetailFetchedAt: new(testNow.Add(-time.Hour))},
-		{Number: 2, IsOpen: true, UpdatedAt: testNow.Add(-14 * 24 * time.Hour),
-			DetailFetchedAt: new(testNow.Add(-25 * time.Hour))},
-		{Number: 3, IsOpen: true, UpdatedAt: testNow.Add(-30 * 24 * time.Hour),
-			DetailFetchedAt: new(testNow.Add(-26 * time.Hour))},
+		{
+			Number: 1, IsOpen: true, Starred: true, UpdatedAt: testNow,
+			DetailFetchedAt: new(testNow.Add(-time.Hour)),
+		},
+		{
+			Number: 2, IsOpen: true, UpdatedAt: testNow.Add(-14 * 24 * time.Hour),
+			DetailFetchedAt: new(testNow.Add(-25 * time.Hour)),
+		},
+		{
+			Number: 3, IsOpen: true, UpdatedAt: testNow.Add(-30 * 24 * time.Hour),
+			DetailFetchedAt: new(testNow.Add(-26 * time.Hour)),
+		},
 	}
 	queue := BuildQueue(items, testNow)
 	require.Len(t, queue, 3)
@@ -280,10 +286,14 @@ func TestBuildQueueDailyCoverageCannotStarveBehindActiveWork(t *testing.T) {
 func TestDailyCoverageIncludesNeverFetchedItemsWithLimitedCapacity(t *testing.T) {
 	require := require.New(t)
 	items := []QueueItem{
-		{Number: 1, IsOpen: true, UpdatedAt: testNow.Add(-96 * time.Hour),
-			DetailFetchedAt: new(testNow.Add(-72 * time.Hour))},
-		{Number: 2, IsOpen: true, UpdatedAt: testNow.Add(-96 * time.Hour),
-			DetailFetchedAt: new(testNow.Add(-48 * time.Hour))},
+		{
+			Number: 1, IsOpen: true, UpdatedAt: testNow.Add(-96 * time.Hour),
+			DetailFetchedAt: new(testNow.Add(-72 * time.Hour)),
+		},
+		{
+			Number: 2, IsOpen: true, UpdatedAt: testNow.Add(-96 * time.Hour),
+			DetailFetchedAt: new(testNow.Add(-48 * time.Hour)),
+		},
 		{Number: 3, IsOpen: true, UpdatedAt: testNow.Add(-24 * time.Hour)},
 	}
 	var checked []int

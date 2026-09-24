@@ -160,6 +160,7 @@ func (r *requestRecorder) take() []string {
 	r.lines = nil
 	return out
 }
+
 func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

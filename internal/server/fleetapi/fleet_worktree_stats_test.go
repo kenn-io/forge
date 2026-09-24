@@ -53,7 +53,7 @@ func TestApplyWorktreeStatsZeroSampleStillSurfaces(t *testing.T) {
 func TestFleetWorktreeStatsCollectTargetsDedupesByPath(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	appPath := filepath.Join(t.TempDir(), "app")
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
@@ -147,7 +147,7 @@ func TestFleetWorktreeStatsSamplerSurfacesLiveDiffInSnapshot(t *testing.T) {
 	}
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init", "-q")
@@ -195,7 +195,7 @@ func TestFleetWorktreeStatsSamplerFiresOnChange(t *testing.T) {
 	}
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init", "-q")
@@ -243,7 +243,7 @@ func TestFleetWorktreeStatsRefreshFiresOnChange(t *testing.T) {
 	}
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init", "-q")

@@ -62,9 +62,7 @@ func newAPIVerbCommand(
 			"to discover available operations.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 2 {
-				return &apiVerbError{apiVerbExitNoRequest, fmt.Errorf(
-					"usage: kenn-forge api [flags] METHOD PATH",
-				)}
+				return &apiVerbError{apiVerbExitNoRequest, errors.New("usage: kenn-forge api [flags] METHOD PATH")}
 			}
 			return nil
 		},
@@ -135,10 +133,18 @@ func runAPIVerb(method, requestPath string, opts apiVerbOptions, stdout io.Write
 	}
 
 	url := daemon.BaseURL + path
-	req, err := http.NewRequest(method, url, body)
+	ctx := context.Background()
+	if opts.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, opts.timeout)
+		defer cancel()
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return &apiVerbError{apiVerbExitNoRequest,
-			fmt.Errorf("build request: %w", err)}
+		return &apiVerbError{
+			apiVerbExitNoRequest,
+			fmt.Errorf("build request: %w", err),
+		}
 	}
 	// The server's CSRF guard requires application/json on every
 	// mutation, including zero-body endpoints (e.g. POST /sync), so
@@ -148,21 +154,27 @@ func runAPIVerb(method, requestPath string, opts apiVerbOptions, stdout io.Write
 	}
 	resp, err := daemon.Client.Do(req)
 	if err != nil {
-		return &apiVerbError{apiVerbExitNoRequest,
-			fmt.Errorf("request failed: %w", err)}
+		return &apiVerbError{
+			apiVerbExitNoRequest,
+			fmt.Errorf("request failed: %w", err),
+		}
 	}
 	defer resp.Body.Close()
 	if opts.includeStatus {
 		if _, err := fmt.Fprintf(
 			stdout, "%s %s\r\n\r\n", resp.Proto, resp.Status,
 		); err != nil {
-			return &apiVerbError{apiVerbExitNoRequest,
-				fmt.Errorf("write status line: %w", err)}
+			return &apiVerbError{
+				apiVerbExitNoRequest,
+				fmt.Errorf("write status line: %w", err),
+			}
 		}
 	}
 	if _, err := io.Copy(stdout, resp.Body); err != nil {
-		return &apiVerbError{apiVerbExitNoRequest,
-			fmt.Errorf("read response: %w", err)}
+		return &apiVerbError{
+			apiVerbExitNoRequest,
+			fmt.Errorf("read response: %w", err),
+		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return &apiVerbError{apiVerbExitHTTPError, fmt.Errorf(

@@ -550,6 +550,6 @@ func archiveProblemReason(problem *generated.ProblemError) string {
 	if problem.Details == nil {
 		return ""
 	}
-	reason, _ := (problem.Details)["reason"].(string)
+	reason, _ := problem.Details["reason"].(string)
 	return reason
 }

@@ -114,8 +114,8 @@ func archiveInventoryFeatureDisabled(err error, itemType db.ArchiveItemType) boo
 	if !errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 		return false
 	}
-	var platformErr *platform.Error
-	if !errors.As(err, &platformErr) {
+	platformErr, ok := errors.AsType[*platform.Error](err)
+	if !ok {
 		return false
 	}
 	switch itemType {

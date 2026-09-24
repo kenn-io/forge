@@ -2,7 +2,7 @@ package github
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -63,7 +63,7 @@ func TestFetchAllPagesError(t *testing.T) {
 	_, err := fetchAllPages(
 		t.Context(),
 		func(_ context.Context, cursor *string) ([]int, platformgithub.GraphQLPageInfo, error) {
-			return nil, platformgithub.GraphQLPageInfo{}, fmt.Errorf("graphql: rate limited")
+			return nil, platformgithub.GraphQLPageInfo{}, errors.New("graphql: rate limited")
 		},
 	)
 	require.Error(t, err)
@@ -133,7 +133,7 @@ func TestFetchAllPagesPartialResultsOnError(t *testing.T) {
 					EndCursor:   "c1",
 				}, nil
 			}
-			return nil, platformgithub.GraphQLPageInfo{}, fmt.Errorf("page 2 failed")
+			return nil, platformgithub.GraphQLPageInfo{}, errors.New("page 2 failed")
 		},
 	)
 	require.Error(t, err)

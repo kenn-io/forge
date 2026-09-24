@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -12,7 +11,7 @@ import (
 func seedRepositoryCatalogCollision(t *testing.T, d *DB) (int64, int64) {
 	t.Helper()
 	require := require.New(t)
-	result, err := d.WriteDB().Exec(`
+	result, err := d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_repos (
 			platform, platform_host, platform_repo_id,
 			owner, name, repo_path, owner_key, name_key, repo_path_key,
@@ -28,7 +27,7 @@ func seedRepositoryCatalogCollision(t *testing.T, d *DB) (int64, int64) {
 	lastID, err := result.LastInsertId()
 	require.NoError(err)
 	oldID, newID := lastID-1, lastID
-	_, err = d.WriteDB().Exec(`
+	_, err = d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_repo_routes (
 			repo_id, platform, platform_host,
 			owner, name, repo_path, owner_key, name_key, repo_path_key,
@@ -175,7 +174,7 @@ func TestOperationalAssociationsDoNotCrossRepositoryIncarnations(t *testing.T) {
 		t.Context(), []Notification{oldNotification, currentNotification},
 	))
 	var currentNotificationRepoID int64
-	require.NoError(d.ReadDB().QueryRow(`
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(), `
 		SELECT repo_id FROM forge_notification_items
 		WHERE platform_notification_id = 'current'`,
 	).Scan(&currentNotificationRepoID))
@@ -193,7 +192,7 @@ func TestOperationalAssociationsDoNotCrossRepositoryIncarnations(t *testing.T) {
 		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	})
 	require.NoError(err)
-	_, err = d.WriteDB().Exec(`
+	_, err = d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_workspaces (
 			id, platform, platform_host,
 			repo_owner, repo_name,
@@ -393,7 +392,7 @@ func TestGetRepositoryByProviderIDOrdersRoutesByFirstSeen(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
 	oldID, _ := seedRepositoryCatalogCollision(t, d)
-	_, err := d.WriteDB().Exec(`
+	_, err := d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_repo_routes (
 			repo_id, platform, platform_host,
 			owner, name, repo_path, owner_key, name_key, repo_path_key,
@@ -579,7 +578,7 @@ func TestInsertWorkspaceWaitsForReconciliation(t *testing.T) {
 	writerDone := make(chan error, 1)
 	go func() {
 		_, _, reconcileErr := d.ReconcileRepositoryObservation(
-			context.Background(),
+			t.Context(),
 			RepoIdentity{
 				Platform:       "github",
 				PlatformHost:   "github.com",
@@ -595,7 +594,7 @@ func TestInsertWorkspaceWaitsForReconciliation(t *testing.T) {
 
 	insertDone := make(chan error, 1)
 	go func() {
-		insertDone <- d.InsertWorkspace(context.Background(), &Workspace{
+		insertDone <- d.InsertWorkspace(t.Context(), &Workspace{
 			ID: "ws-reconcile-race", Platform: "github",
 			PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget",
 			ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
@@ -708,7 +707,7 @@ func TestReconcileRepositoryObservationRenamesSameProviderID(t *testing.T) {
 	)
 	insertTestIssueWithOptions(t, d, testIssue(original.Repository.ID, 1))
 	insertTestMRWithOptions(t, d, testMR(original.Repository.ID, 2))
-	_, err := d.WriteDB().Exec(`
+	_, err := d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_archive_repos (
 			repo_id, collection_mode, operator_state, created_at, updated_at
 		) VALUES (?, 'full', 'active', datetime('now'), datetime('now'))`,
@@ -731,13 +730,13 @@ func TestReconcileRepositoryObservationRenamesSameProviderID(t *testing.T) {
 	assert.Equal("org-b/project-b", renamed.Repository.RepoPath)
 
 	var issueRepoID, mergeRequestRepoID, archiveRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_issues WHERE number = 1`,
 	).Scan(&issueRepoID))
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_merge_requests WHERE number = 2`,
 	).Scan(&mergeRequestRepoID))
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_archive_repos WHERE repo_id = ?`,
 		original.Repository.ID,
 	).Scan(&archiveRepoID))
@@ -791,7 +790,7 @@ func TestReconcileRepositoryObservationReplacesAndReactivates(t *testing.T) {
 	assert.Equal(newRepo.Repository.ID, activeOldRoute.Repository.ID)
 
 	var issueRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_issues WHERE number = 1`,
 	).Scan(&issueRepoID))
 	assert.Equal(oldRepo.Repository.ID, issueRepoID)
@@ -836,7 +835,7 @@ func TestReconcileRepositoryObservationAdoptionKeepsLegacyContent(t *testing.T) 
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	result, err := d.WriteDB().Exec(`
+	result, err := d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_repos (
 			platform, platform_host, platform_repo_id,
 			owner, name, repo_path, owner_key, name_key, repo_path_key,
@@ -849,7 +848,7 @@ func TestReconcileRepositoryObservationAdoptionKeepsLegacyContent(t *testing.T) 
 	require.NoError(err)
 	legacyID, err := result.LastInsertId()
 	require.NoError(err)
-	_, err = d.WriteDB().Exec(`
+	_, err = d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_repo_routes (
 			repo_id, platform, platform_host,
 			owner, name, repo_path, owner_key, name_key, repo_path_key,
@@ -869,7 +868,7 @@ func TestReconcileRepositoryObservationAdoptionKeepsLegacyContent(t *testing.T) 
 	assert.Equal(legacyID, canonical.Repository.ID,
 		"first verification adopts the legacy row instead of stranding it")
 	var issueRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_issues WHERE number = 1`,
 	).Scan(&issueRepoID))
 	assert.Equal(canonical.Repository.ID, issueRepoID,
@@ -883,14 +882,14 @@ func TestReconcileRepositoryObservationRollsBackOnRouteWriteFailure(t *testing.T
 	original := reconcileCatalogRepository(
 		t, d, "provider-old", "org-a", "project-a", baseTime(),
 	)
-	_, err := d.WriteDB().Exec(`
+	_, err := d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_projects (
 			id, display_name, local_path, repo_id
 		) VALUES ('project-local', 'Project Local', '/tmp/project-local', ?)`,
 		original.Repository.ID,
 	)
 	require.NoError(err)
-	_, err = d.WriteDB().Exec(`
+	_, err = d.WriteDB().ExecContext(t.Context(), `
 		CREATE TRIGGER reject_catalog_route_insert
 		BEFORE INSERT ON forge_repo_routes
 		BEGIN
@@ -918,7 +917,7 @@ func TestReconcileRepositoryObservationRollsBackOnRouteWriteFailure(t *testing.T
 	assert.Equal(original.Repository.ID, active.Repository.ID)
 	assert.Equal(RepositoryLifecycleActive, active.Lifecycle)
 	var projectRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_projects WHERE id = 'project-local'`,
 	).Scan(&projectRepoID))
 	assert.Equal(original.Repository.ID, projectRepoID)
@@ -977,7 +976,7 @@ func TestReconcileRepositoryObservationRejectsIncompleteIdentity(t *testing.T) {
 		require.Error(err)
 	}
 	var repositoryCount int
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT COUNT(*) FROM forge_repos`,
 	).Scan(&repositoryCount))
 	require.Zero(repositoryCount)
@@ -1043,7 +1042,7 @@ func TestRepositoryCatalogReadWaitsForReconciliation(t *testing.T) {
 	writerDone := make(chan error, 1)
 	go func() {
 		_, _, reconcileErr := d.ReconcileRepositoryObservation(
-			context.Background(),
+			t.Context(),
 			RepoIdentity{
 				Platform:       "github",
 				PlatformHost:   "github.com",
@@ -1064,7 +1063,7 @@ func TestRepositoryCatalogReadWaitsForReconciliation(t *testing.T) {
 	readDone := make(chan readResult, 1)
 	go func() {
 		entry, readErr := d.GetRepositoryByProviderID(
-			context.Background(), "github", "github.com", "provider-old",
+			t.Context(), "github", "github.com", "provider-old",
 		)
 		readDone <- readResult{entry: entry, err: readErr}
 	}()
@@ -1092,7 +1091,7 @@ func TestDeactivateRepositoryObservationPreservesHistory(t *testing.T) {
 		t, d, "provider-1", "org-a", "project-a", baseTime(),
 	)
 	insertTestIssueWithOptions(t, d, testIssue(repository.Repository.ID, 1))
-	_, err := d.WriteDB().Exec(`
+	_, err := d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_archive_repos (
 			repo_id, collection_mode, operator_state, created_at, updated_at
 		) VALUES (?, 'full', 'active', datetime('now'), datetime('now'))`,
@@ -1120,10 +1119,10 @@ func TestDeactivateRepositoryObservationPreservesHistory(t *testing.T) {
 	require.NoError(err)
 	assert.Nil(active)
 	var issueRepoID, archiveRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_issues WHERE number = 1`,
 	).Scan(&issueRepoID))
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_archive_repos WHERE repo_id = ?`,
 		repository.Repository.ID,
 	).Scan(&archiveRepoID))
@@ -1211,7 +1210,7 @@ func TestUpsertRepoByProviderIDDoesNotMergeRouteReplacement(t *testing.T) {
 	require.NotNil(oldEntry)
 	assert.Equal(RepositoryLifecycleInactive, oldEntry.Lifecycle)
 	var issueRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_issues WHERE number = 1`,
 	).Scan(&issueRepoID))
 	assert.Equal(oldID, issueRepoID)

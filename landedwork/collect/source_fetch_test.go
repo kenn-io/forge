@@ -31,7 +31,7 @@ func collectGitHubProof(t *testing.T, ctx context.Context, path string, b landed
 	require.NoError(err)
 	require.True(p.Query().Complete)
 	hc := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body := ""
+		var body string
 		switch req.URL.Path {
 		case "/repos/example/project":
 			body = `{"id":12,"name":"project","owner":{"login":"example"}}`
@@ -48,7 +48,7 @@ func collectGitHubProof(t *testing.T, ctx context.Context, path string, b landed
 			require.True(slices.Contains(p.Query().Commits, sha), "unexpected association: %s", req.URL.Path)
 			body = `[{"id":7,"number":3,"base":{"repo":{"id":12}}}]`
 		}
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
 	})}
 	client, err := github.NewClient(github.ClientConfig{Read: hc, Write: hc, Notifications: hc, Clock: time.Now})
 	require.NoError(err)
@@ -109,8 +109,10 @@ func TestGitHubSingleParentCollection(t *testing.T) {
 				assert.Equal("unsupported_discovery", result.Coverage.Inventory.Reason)
 				return
 			}
-			assert.Equal([]landedwork.Landing{{CandidateID: "7", Before: base, Terminal: head, Source: sources,
-				Proofs: proofs, Spine: spine, Introduced: spine}}, result.Landings)
+			assert.Equal([]landedwork.Landing{{
+				CandidateID: "7", Before: base, Terminal: head, Source: sources,
+				Proofs: proofs, Spine: spine, Introduced: spine,
+			}}, result.Landings)
 			assert.True(result.Coverage.Complete)
 			assert.Equal(head, result.Coverage.CertifiedHead)
 			assert.Empty(result.Coverage.Gaps)
@@ -174,8 +176,10 @@ func TestCallerFetchesObservedSource(t *testing.T) {
 				assert.Equal(missing, result, "a different fetched head cannot replace observed evidence")
 				return
 			}
-			assert.Equal([]landedwork.Landing{{CandidateID: "7", Proofs: []string{"squash"}, Before: base, Terminal: head,
-				Source: sources, Spine: []string{head}, Introduced: []string{head}}}, result.Landings)
+			assert.Equal([]landedwork.Landing{{
+				CandidateID: "7", Proofs: []string{"squash"}, Before: base, Terminal: head,
+				Source: sources, Spine: []string{head}, Introduced: []string{head},
+			}}, result.Landings)
 			assert.True(result.Coverage.Complete)
 			assert.Equal(head, result.Coverage.CertifiedHead)
 			assert.Empty(result.Coverage.Gaps)

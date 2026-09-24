@@ -78,6 +78,9 @@ func TestKataAPIClientStreamEventsRawDoesNotBuffer(t *testing.T) {
 	t.Cleanup(cancel)
 	go func() {
 		response, streamErr := api.StreamEventsRaw(streamCtx, nil)
+		if response != nil {
+			_ = response.Body.Close()
+		}
 		result <- streamResult{response: response, err: streamErr}
 	}()
 

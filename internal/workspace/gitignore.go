@@ -131,8 +131,7 @@ func gitPathIgnored(ctx context.Context, worktreePath, rel string) (bool, error)
 	if err == nil {
 		return true, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 		return false, nil
 	}
 	return false, fmt.Errorf("git check-ignore %s: %w", rel, err)

@@ -209,8 +209,8 @@ func diffPatchPath(path string) string {
 }
 
 func diffRouteError(err error) error {
-	var derr *Error
-	if !errors.As(err, &derr) {
+	derr, ok := errors.AsType[*Error](err)
+	if !ok {
 		return err
 	}
 	msg := strings.ToLower(derr.Message)

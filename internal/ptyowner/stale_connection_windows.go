@@ -15,8 +15,8 @@ func isPlatformStaleOwnerConnection(err error) bool {
 		errors.Is(err, windows.WSAECONNABORTED) {
 		return true
 	}
-	var errno syscall.Errno
-	if !errors.As(err, &errno) {
+	errno, ok := errors.AsType[syscall.Errno](err)
+	if !ok {
 		return false
 	}
 	return errno == windows.WSAECONNREFUSED ||

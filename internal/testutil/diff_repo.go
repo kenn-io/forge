@@ -3,6 +3,7 @@ package testutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -296,7 +297,7 @@ func diffContextFileContent(index int, changed bool) string {
 
 func git(ctx context.Context, dir string, args ...string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("git: no args")
+		return errors.New("git: no args")
 	}
 	cmd := gitcmd.New().Command(ctx, dir, args...)
 	// Strip inherited GIT_* variables before spawning git. When the

@@ -82,7 +82,11 @@ func TestProviderProxyPreservesHubResponse(t *testing.T) {
 	t.Cleanup(hub.Close)
 
 	spoke := newProviderProxyTestServer(t, hub, hub.Client(), nil)
-	response, err := spoke.Client().Get(spoke.URL + "/api/v1/pulls")
+	responseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
+	require.NoError(err)
+	httpClient := spoke.Client()
+	httpClient.Timeout = 5 * time.Second
+	response, err := httpClient.Do(responseReq)
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(response.Body.Close()) })
 	body, err := io.ReadAll(response.Body)
@@ -102,7 +106,7 @@ func TestHubUnavailableDoesNotFallBackToLocalProviderHandler(t *testing.T) {
 	require := require.New(t)
 	runParallelServerTest(t)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 	unreachable := "https://" + listener.Addr().String()
 	require.NoError(listener.Close())
@@ -117,7 +121,11 @@ func TestHubUnavailableDoesNotFallBackToLocalProviderHandler(t *testing.T) {
 	)
 	spoke.Config.Handler.(*providerDispatchTestHandler).hubURL = unreachable
 
-	response, err := spoke.Client().Get(spoke.URL + "/api/v1/pulls")
+	responseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
+	require.NoError(err)
+	httpClient := spoke.Client()
+	httpClient.Timeout = 5 * time.Second
+	response, err := httpClient.Do(responseReq)
 	require.NoError(err)
 	defer response.Body.Close()
 	var problem httpapi.ProblemError
@@ -152,7 +160,7 @@ func TestNodeHEADProviderReadUsesHubGETOwnership(t *testing.T) {
 			w.Header().Set("X-Provider-Source", "spoke")
 		}),
 	)
-	request, err := http.NewRequest(http.MethodHead, spoke.URL+"/api/v1/pulls", nil)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodHead, spoke.URL+"/api/v1/pulls", nil)
 	require.NoError(err)
 	response, err := spoke.Client().Do(request)
 	require.NoError(err)
@@ -186,10 +194,16 @@ func TestNodeMarkdownImageUsesHubProviderReader(t *testing.T) {
 			http.Error(w, "spoke provider reader unavailable", http.StatusServiceUnavailable)
 		}),
 	)
-	response, err := spoke.Client().Get(
-		spoke.URL + "/api/v1/repo/github/acme/widget/markdown-image?source=" +
+	responseReq, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet,
+		spoke.URL+"/api/v1/repo/github/acme/widget/markdown-image?source="+
 			url.QueryEscape("https://github.com/acme/widget/raw/main/image.png"),
+		nil,
 	)
+	require.NoError(err)
+	httpClient := spoke.Client()
+	httpClient.Timeout = 5 * time.Second
+	response, err := httpClient.Do(responseReq)
 	require.NoError(err)
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
@@ -215,7 +229,7 @@ func TestProviderWriteTransportFailureReportsUnknownMutationOutcome(t *testing.T
 		return nil, providerplane.ErrHubUnavailable
 	}))
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPut, "/api/v1/settings", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/v1/settings", nil)
 	proxy.ServeHTTP(recorder, request, ProviderRouteRule{
 		Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite,
 	})
@@ -491,22 +505,23 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	response, err := spoke.overlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
 		&listActivityInput{Unassigned: true},
-		activityResponse{Items: []activityItemResponse{
-			{
-				Repo: activityRepoRefResponse{
-					Provider: "github", PlatformHost: "github.com",
-					PlatformRepoID: "repo-acme-widget",
+		activityResponse{
+			Items: []activityItemResponse{
+				{
+					Repo: activityRepoRefResponse{
+						Provider: "github", PlatformHost: "github.com",
+						PlatformRepoID: "repo-acme-widget",
+					},
+					ItemType: "issue", ItemNumber: 7,
 				},
-				ItemType: "issue", ItemNumber: 7,
-			},
-			{
-				Repo: activityRepoRefResponse{
-					Provider: "github", PlatformHost: "github.com",
-					PlatformRepoID: "repo-acme-widget",
+				{
+					Repo: activityRepoRefResponse{
+						Provider: "github", PlatformHost: "github.com",
+						PlatformRepoID: "repo-acme-widget",
+					},
+					ItemType: "issue", ItemNumber: 8,
 				},
-				ItemType: "issue", ItemNumber: 8,
 			},
-		},
 			UseWorkspaceActivityForRecency: true,
 		},
 		snapshot,
@@ -524,7 +539,7 @@ func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {
 	require := require.New(t)
 	runParallelServerTest(t)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 	unreachable := "https://" + listener.Addr().String()
 	require.NoError(listener.Close())
@@ -553,7 +568,11 @@ func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {
 	spoke := httptest.NewServer(srv)
 	t.Cleanup(spoke.Close)
 
-	response, err := spoke.Client().Get(spoke.URL + "/api/v1/pulls")
+	responseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
+	require.NoError(err)
+	spokeClient := spoke.Client()
+	spokeClient.Timeout = 5 * time.Second
+	response, err := spokeClient.Do(responseReq)
 	require.NoError(err)
 	defer response.Body.Close()
 	var problem httpapi.ProblemError
@@ -604,7 +623,11 @@ func TestNodeProviderRoutesStopWhenFleetIsDisabled(t *testing.T) {
 	spoke := httptest.NewServer(srv)
 	t.Cleanup(spoke.Close)
 
-	response, err := spoke.Client().Get(spoke.URL + "/api/v1/pulls")
+	responseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
+	require.NoError(err)
+	httpClient := spoke.Client()
+	httpClient.Timeout = 5 * time.Second
+	response, err := httpClient.Do(responseReq)
 	require.NoError(err)
 	require.NoError(response.Body.Close())
 	require.Equal(http.StatusOK, response.StatusCode)
@@ -613,7 +636,9 @@ func TestNodeProviderRoutesStopWhenFleetIsDisabled(t *testing.T) {
 	srv.cfgMu.Lock()
 	srv.cfg.Fleet.Enabled = false
 	srv.cfgMu.Unlock()
-	response, err = spoke.Client().Get(spoke.URL + "/api/v1/pulls")
+	responseReq, err = http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
+	require.NoError(err)
+	response, err = httpClient.Do(responseReq)
 	require.NoError(err)
 	defer response.Body.Close()
 	var problem httpapi.ProblemError
@@ -631,7 +656,9 @@ func TestNodeProviderRoutesStopWhenFleetIsDisabled(t *testing.T) {
 	srv.cfgMu.Lock()
 	srv.cfg.Fleet.Enabled = true
 	srv.cfgMu.Unlock()
-	response, err = spoke.Client().Get(spoke.URL + "/api/v1/pulls")
+	responseReq, err = http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
+	require.NoError(err)
+	response, err = httpClient.Do(responseReq)
 	require.NoError(err)
 	defer response.Body.Close()
 	assert.Equal(http.StatusOK, response.StatusCode)
@@ -710,7 +737,11 @@ func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
 	spoke := httptest.NewServer(nodeServer)
 	t.Cleanup(spoke.Close)
 
-	response, err := spoke.Client().Get(spoke.URL + "/api/v1/pulls?state=open")
+	responseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls?state=open", nil)
+	require.NoError(err)
+	httpClient := spoke.Client()
+	httpClient.Timeout = 5 * time.Second
+	response, err := httpClient.Do(responseReq)
 	require.NoError(err)
 	defer response.Body.Close()
 	require.Equal(http.StatusOK, response.StatusCode)
@@ -724,7 +755,11 @@ func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
 
 	activityURL := spoke.URL + "/api/v1/activity?projection=events&item_types=pr&since=" +
 		url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-	activityHTTPResponse, err := spoke.Client().Get(activityURL)
+	activityHTTPResponseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, activityURL, nil)
+	require.NoError(err)
+	httpClient = spoke.Client()
+	httpClient.Timeout = 5 * time.Second
+	activityHTTPResponse, err := httpClient.Do(activityHTTPResponseReq)
 	require.NoError(err)
 	defer activityHTTPResponse.Body.Close()
 	require.Equal(http.StatusOK, activityHTTPResponse.StatusCode)
@@ -935,7 +970,11 @@ func TestProviderProxyMapsHubTimeoutToUnavailable(t *testing.T) {
 	httpClient := hub.Client()
 	httpClient.Timeout = 25 * time.Millisecond
 	spoke := newProviderProxyTestServer(t, hub, httpClient, nil)
-	response, err := spoke.Client().Get(spoke.URL + "/api/v1/pulls")
+	responseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
+	require.NoError(err)
+	spokeClient := spoke.Client()
+	spokeClient.Timeout = 5 * time.Second
+	response, err := spokeClient.Do(responseReq)
 	require.NoError(err)
 	defer response.Body.Close()
 	var problem httpapi.ProblemError
@@ -1015,13 +1054,16 @@ func TestProviderProxyHonorsCallerCancellation(t *testing.T) {
 	t.Cleanup(hub.Close)
 	spoke := newProviderProxyTestServer(t, hub, hub.Client(), nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodGet, spoke.URL+"/api/v1/pulls", nil,
 	)
 	require.NoError(t, err)
 	cancel()
-	_, err = spoke.Client().Do(request)
+	canceledResp, err := spoke.Client().Do(request)
+	if canceledResp != nil {
+		_ = canceledResp.Body.Close()
+	}
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -1062,7 +1104,7 @@ func TestProviderProxyRejectsOversizedHubResponse(t *testing.T) {
 	}))
 	t.Cleanup(spoke.Close)
 
-	request, err := http.NewRequest(http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
 	require.NoError(err)
 	response, err := spoke.Client().Do(request)
 	require.NoError(err)
@@ -1105,7 +1147,7 @@ func TestProviderProxyReportsUnknownWriteOutcomeWhenResponseBufferingFails(t *te
 			proxy := newProviderProxy(client)
 			proxy.responseBodyLimit = test.limit
 			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodPost, "/api/v1/provider-write", nil)
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/provider-write", nil)
 
 			proxy.ServeHTTP(recorder, request, ProviderRouteRule{
 				PeerScope: federationauth.ScopeProviderWrite,

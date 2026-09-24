@@ -336,7 +336,6 @@ github_user_id = 1234
 login = "user-a"
 commit_name = "Developer A"
 commit_email = "1234+user-a@users.noreply.github.com"
-worktree_dir = "/home/user-a/workspaces"
 ```
 
 Start `kenn-forge devbox broker --config /etc/forge-broker/broker.toml` as a
@@ -401,6 +400,7 @@ github_user_id = 1234
 broker_socket = "/run/forge-broker/broker.sock"
 commit_name = "Developer A"
 commit_email = "1234+user-a@users.noreply.github.com"
+worktree_dir = "/home/user-a/workspaces"
 
 [tmux]
 command = ["tmux"]

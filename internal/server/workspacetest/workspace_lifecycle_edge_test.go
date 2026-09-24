@@ -1,7 +1,6 @@
 package workspacetest
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -96,7 +95,7 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 
 func gitOutputForLifecycle(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := gitcmd.New().Output(context.Background(), dir, args...)
+	out, err := gitcmd.New().Output(t.Context(), dir, args...)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

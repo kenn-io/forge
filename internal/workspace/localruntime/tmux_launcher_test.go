@@ -255,7 +255,7 @@ exit 0
 		HideStatus:  true,
 	}
 
-	_, err := launcher.prepare(context.Background())
+	_, err := launcher.prepare(t.Context())
 
 	require.Error(err)
 	assert.Contains(err.Error(), "hide tmux status")
@@ -327,7 +327,7 @@ exit 0
 		HideStatus: true,
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	errCh := make(chan error, 1)
 	go func() {
 		_, err := launcher.prepare(ctx)
@@ -394,7 +394,7 @@ exit 0
 		},
 	}
 
-	_, err := launcher.prepare(context.Background())
+	_, err := launcher.prepare(t.Context())
 
 	require.Error(err)
 	assert.Contains(err.Error(), "tmux new-session")
@@ -526,7 +526,7 @@ exit 0
 		OwnerMarker: "kenn-forge:test-owner",
 	}
 
-	_, err := launcher.prepare(context.Background())
+	_, err := launcher.prepare(t.Context())
 
 	require.Error(err)
 	records := readNullArgvRecord(t, record)

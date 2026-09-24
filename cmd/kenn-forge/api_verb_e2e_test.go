@@ -56,9 +56,16 @@ func TestAPIVerbE2E(t *testing.T) {
 
 	// Enforcement proof: a credential-less request is rejected.
 	require.Eventually(func() bool {
-		resp, err := http.Get(fmt.Sprintf(
-			"http://127.0.0.1:%d/api/v1/snapshot", port,
-		))
+		req, err := http.NewRequestWithContext(
+			t.Context(),
+			http.MethodGet,
+			fmt.Sprintf("http://127.0.0.1:%d/api/v1/snapshot", port),
+			nil,
+		)
+		if err != nil {
+			return false
+		}
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 		if err != nil {
 			return false
 		}

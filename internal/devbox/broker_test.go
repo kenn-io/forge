@@ -128,7 +128,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	if runtime.GOOS != "linux" || os.Getuid() == 0 {
 		return // The deployed socket admission uses Linux non-root peer credentials.
 	}
-	listener, err := net.Listen("unix", broker.config.Socket)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", broker.config.Socket)
 	require.NoError(err)
 	t.Cleanup(func() { _ = listener.Close() })
 	ctx, cancel := context.WithCancel(t.Context())

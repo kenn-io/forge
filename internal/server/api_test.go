@@ -1262,7 +1262,7 @@ func setupTestClientWithBaseURL(
 				body = strings.NewReader(string(payload))
 			}
 
-			serverReq := httptest.NewRequest(req.Method, req.URL.String(), body)
+			serverReq := httptest.NewRequestWithContext(t.Context(), req.Method, req.URL.String(), body)
 			serverReq.Header = req.Header.Clone()
 			serverReq = serverReq.WithContext(req.Context())
 
@@ -1587,7 +1587,7 @@ func TestAPIReplyToGitHubReviewThreadUsesProviderCommentID(t *testing.T) {
 	require.Len(threads, 1)
 
 	localThreadID := strconv.FormatInt(threads[0].ID, 10)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/7/discussions/"+localThreadID+"/reply",
 		strings.NewReader(`{"body":"Reply from kenn-forge"}`),
@@ -1908,7 +1908,7 @@ func TestAPIGetVersionReturnsBuildMetadata(t *testing.T) {
 		BuildDate: "2026-07-12T12:00:00Z",
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/version", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -5986,7 +5986,7 @@ func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
 	)
 	require.NotNil(resp.JSON200.Warnings)
 	require.Len(resp.JSON200.Warnings, 1)
-	assert.Contains((resp.JSON200.Warnings)[0], "Could not refresh CI checks")
+	assert.Contains(resp.JSON200.Warnings[0], "Could not refresh CI checks")
 
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
@@ -7071,8 +7071,8 @@ func TestAPICreateIssueReportsUnknownOutcomeForUnverifiedProviderFailure(t *test
 
 	assert.Equal(generated.ProblemErrorCodeMutationOutcomeUnknown, resp.Error.Code)
 	require.NotNil(resp.Error.Details)
-	assert.Equal("gitlab", (resp.Error.Details)["provider"])
-	assert.Equal("gitlab.example.com", (resp.Error.Details)["platformHost"])
+	assert.Equal("gitlab", resp.Error.Details["provider"])
+	assert.Equal("gitlab.example.com", resp.Error.Details["platformHost"])
 }
 
 func TestAPICreateIssueReportsUnknownOutcomeWhenPersistenceFailsAfterProviderSuccess(t *testing.T) {
@@ -7117,8 +7117,8 @@ func TestAPICreateIssueReportsUnknownOutcomeWhenPersistenceFailsAfterProviderSuc
 
 	assert.Equal(generated.ProblemErrorCodeMutationOutcomeUnknown, resp.Error.Code)
 	require.NotNil(resp.Error.Details)
-	assert.Equal("github", (resp.Error.Details)["provider"])
-	assert.Equal("github.com", (resp.Error.Details)["platformHost"])
+	assert.Equal("github", resp.Error.Details["provider"])
+	assert.Equal("github.com", resp.Error.Details["platformHost"])
 }
 
 func TestAPIEditPRContentRejectsNilProviderPayload(t *testing.T) {
@@ -7489,7 +7489,7 @@ func TestAPIEditPrCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 		DedupeKey:      "comment-9876",
 	}}))
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPatch,
 		"/api/v1/pulls/gh/acme/widget/7/comments/9876",
 		strings.NewReader(`{"body":"edited body"}`),
@@ -7535,7 +7535,7 @@ func TestAPIEditPrCommentRejectsCommentFromDifferentPR(t *testing.T) {
 		DedupeKey:      "comment-5555",
 	}}))
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPatch,
 		"/api/v1/pulls/gh/acme/widget/7/comments/5555",
 		strings.NewReader(`{"body":"wrong target"}`),
@@ -7584,7 +7584,7 @@ func TestAPIEditIssueCommentUpdatesGitHubAndLocalTimeline(t *testing.T) {
 		DedupeKey:    "issue-comment-1234",
 	}}))
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPatch,
 		"/api/v1/issues/gh/acme/widget/5/comments/1234",
 		strings.NewReader(`{"body":"edited issue body"}`),
@@ -7630,7 +7630,7 @@ func TestAPIEditIssueCommentRejectsCommentFromDifferentIssue(t *testing.T) {
 		DedupeKey:  "issue-comment-6666",
 	}}))
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPatch,
 		"/api/v1/issues/gh/acme/widget/5/comments/6666",
 		strings.NewReader(`{"body":"wrong target"}`),
@@ -7671,7 +7671,7 @@ func TestAPIDeletePrCommentLeavesLocalStateForSync(t *testing.T) {
 		DedupeKey:      "comment-9876",
 	}}))
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/9876", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/9876", nil)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
@@ -7706,7 +7706,7 @@ func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderRejects(t *testing.T)
 		DedupeKey:  "issue-comment-1234",
 	}}))
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/1234", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/1234", nil)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
@@ -7740,7 +7740,7 @@ func TestAPIDeletePrCommentKeepsLocalCommentWhenProviderReportsNotFound(t *testi
 		DedupeKey:      "comment-4321",
 	}}))
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/4321", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/4321", nil)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
@@ -7774,7 +7774,7 @@ func TestAPIDeleteIssueCommentKeepsLocalCommentWhenProviderReportsNotFound(t *te
 		DedupeKey:  "issue-comment-4321",
 	}}))
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/4321", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/4321", nil)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
@@ -7810,14 +7810,14 @@ func TestAPIDeleteIssueCommentLeavesLocalStateForSync(t *testing.T) {
 		DedupeKey:  "issue-comment-5432",
 	}}))
 
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/5432", nil)
+	deleteReq := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/v1/issues/gh/acme/widget/5/comments/5432", nil)
 	deleteReq.Header.Set("Content-Type", "application/json")
 	deleteRec := httptest.NewRecorder()
 	srv.ServeHTTP(deleteRec, deleteReq)
 	require.Equal(http.StatusNoContent, deleteRec.Code, deleteRec.Body.String())
 	assert.Equal(int32(1), deleteCalls.Load())
 
-	detailReq := httptest.NewRequest(http.MethodGet, "/api/v1/issues/gh/acme/widget/5", nil)
+	detailReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/issues/gh/acme/widget/5", nil)
 	detailRec := httptest.NewRecorder()
 	srv.ServeHTTP(detailRec, detailReq)
 	require.Equal(http.StatusOK, detailRec.Code, detailRec.Body.String())
@@ -7852,7 +7852,7 @@ func TestAPIDeletePrCommentRejectsAnotherParentBeforeProviderCall(t *testing.T) 
 		DedupeKey:      "comment-6543",
 	}}))
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/6543", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/api/v1/pulls/gh/acme/widget/7/comments/6543", nil)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
@@ -7907,7 +7907,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 		DedupeKey:      "autocomplete-mr-comment",
 	}}))
 
-	userReq := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=@&q=al&limit=10", nil)
+	userReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=@&q=al&limit=10", nil)
 	userRR := httptest.NewRecorder()
 	srv.ServeHTTP(userRR, userReq)
 	require.Equal(http.StatusOK, userRR.Code, userRR.Body.String())
@@ -7919,7 +7919,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 
 	// Naming the target item promotes its author and participants ahead of
 	// the recency ordering.
-	itemReq := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=@&q=al&limit=10&item_type=issue&item_number=17", nil)
+	itemReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=@&q=al&limit=10&item_type=issue&item_number=17", nil)
 	itemRR := httptest.NewRecorder()
 	srv.ServeHTTP(itemRR, itemReq)
 	require.Equal(http.StatusOK, itemRR.Code, itemRR.Body.String())
@@ -7927,12 +7927,12 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	require.NoError(json.NewDecoder(itemRR.Body).Decode(&itemBody))
 	assert.Equal([]string{"alex", "albert", "alice"}, itemBody.Users)
 
-	halfReq := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=@&q=al&item_number=17", nil)
+	halfReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=@&q=al&item_number=17", nil)
 	halfRR := httptest.NewRecorder()
 	srv.ServeHTTP(halfRR, halfReq)
 	assert.Equal(http.StatusBadRequest, halfRR.Code, halfRR.Body.String())
 
-	refReq := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
+	refReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
 	refRR := httptest.NewRecorder()
 	srv.ServeHTTP(refRR, refReq)
 	require.Equal(http.StatusOK, refRR.Code, refRR.Body.String())
@@ -7945,7 +7945,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	}, refBody.References)
 	assert.Empty(refBody.Users)
 
-	bangReq := httptest.NewRequest(http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=!&q=1&limit=10", nil)
+	bangReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repo/gh/acme/widget/comment-autocomplete?trigger=!&q=1&limit=10", nil)
 	bangRR := httptest.NewRecorder()
 	srv.ServeHTTP(bangRR, bangReq)
 	assert.Equal(http.StatusBadRequest, bangRR.Code, bangRR.Body.String())
@@ -7987,7 +7987,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	})
 	require.NoError(err)
 
-	gitlabIssueReq := httptest.NewRequest(http.MethodGet, "/api/v1/host/gitlab.example.com/repo/gitlab/group/project/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
+	gitlabIssueReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/host/gitlab.example.com/repo/gitlab/group/project/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
 	gitlabIssueRR := httptest.NewRecorder()
 	srv.ServeHTTP(gitlabIssueRR, gitlabIssueReq)
 	require.Equal(http.StatusOK, gitlabIssueRR.Code, gitlabIssueRR.Body.String())
@@ -7998,7 +7998,7 @@ func TestAPICommentAutocomplete(t *testing.T) {
 		{Kind: "issue", Number: 17, Title: "Mention issue", State: "open"},
 	}, gitlabIssueBody.References)
 
-	gitlabMRReq := httptest.NewRequest(http.MethodGet, "/api/v1/host/gitlab.example.com/repo/gitlab/group/project/comment-autocomplete?trigger=!&q=1&limit=10", nil)
+	gitlabMRReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/host/gitlab.example.com/repo/gitlab/group/project/comment-autocomplete?trigger=!&q=1&limit=10", nil)
 	gitlabMRRR := httptest.NewRecorder()
 	srv.ServeHTTP(gitlabMRRR, gitlabMRReq)
 	require.Equal(http.StatusOK, gitlabMRRR.Code, gitlabMRRR.Body.String())
@@ -8053,7 +8053,7 @@ func TestAPICommentAutocompleteUsesRepoPlatformHost(t *testing.T) {
 	})
 	require.NoError(err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/host/ghe.example.com/repo/gh/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/host/ghe.example.com/repo/gh/acme/widget/comment-autocomplete?trigger=%23&q=1&limit=10", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -8117,7 +8117,7 @@ func TestAPICommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 	})
 	require.NoError(err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/host/github.com/repo/gitea/acme/widget/comment-autocomplete?trigger=%23&q=collision&limit=10", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/host/github.com/repo/gitea/acme/widget/comment-autocomplete?trigger=%23&q=collision&limit=10", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -8188,7 +8188,7 @@ func TestAPICommentAutocompleteGitLabMergeRequestReferencesScopesByProvider(t *t
 	})
 	require.NoError(err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/host/gitlab.example.com/repo/gitlab/acme/widget/comment-autocomplete?trigger=!&q=collision&limit=10", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/host/gitlab.example.com/repo/gitlab/acme/widget/comment-autocomplete?trigger=!&q=collision&limit=10", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -8246,7 +8246,7 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil).WithContext(ctx)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/sync", nil).WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
 	cancel()
 
@@ -10487,7 +10487,7 @@ func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
 		_ = srv.Shutdown(ctx)
 	})
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/api/v1/host/ghe.example.com/issues/gh/acme/widget/7",
 		nil,
@@ -10573,7 +10573,7 @@ func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/api/v1/host/forge.example.com/issues/gitlab/acme/widget/7",
 		nil,
@@ -10663,7 +10663,7 @@ func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/api/v1/host/forge.example.com/pulls/gitlab/acme/widget/7",
 		nil,
@@ -10780,7 +10780,7 @@ func TestAPICreateWorkspaceRejectsOmittedProviderForUnambiguousRepo(t *testing.T
 		"name": "widget",
 		"mr_number": 7
 	}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces", payload)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/workspaces", payload)
 	req.Header.Set("content-type", "application/json")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -10872,7 +10872,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 		_ = srv.Shutdown(shutdownCtx)
 	})
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/host/ghe.example.com/issues/gh/acme/widget/7/sync",
 		http.NoBody,
@@ -11095,7 +11095,7 @@ func TestAPIIssueDataFromGraphQLSync(t *testing.T) {
 	assert.Equal("open", apiIssue.State)
 	require.NotNil(apiIssue.Labels)
 	require.Len(apiIssue.Labels, 1)
-	assert.Equal("bug", (apiIssue.Labels)[0].Name)
+	assert.Equal("bug", apiIssue.Labels[0].Name)
 
 	// Verify via GetIssue API
 	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(60)}})
@@ -11201,7 +11201,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	assert.Equal("open", apiIssue.State)
 	require.NotNil(apiIssue.Labels)
 	require.Len(apiIssue.Labels, 1)
-	assert.Equal("bug", (apiIssue.Labels)[0].Name)
+	assert.Equal("bug", apiIssue.Labels[0].Name)
 
 	detailResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(80)}})
 	require.NoError(err)
@@ -11366,7 +11366,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 	assert.Equal(int32(1), conditionalCalls.Load(),
 		"only the changed PR should run a conditional detail fetch")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls/gh/acme/widget/1", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls/gh/acme/widget/1", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code)
@@ -11678,7 +11678,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalIssueDetail(t *testing.T) {
 	assert.Equal(int32(1), conditionalCalls.Load(),
 		"only the missing-detail issue should run a conditional detail fetch")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/issues/gh/acme/widget/1", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/issues/gh/acme/widget/1", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	require.Equal(http.StatusOK, rr.Code)
@@ -14892,7 +14892,7 @@ func TestMRListIncludesWorktreeLinks(t *testing.T) {
 			},
 		}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -14923,7 +14923,7 @@ func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
 			},
 		}))
 
-	req := httptest.NewRequest(http.MethodGet,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 		"/api/v1/pulls/gh/acme/widget/1", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -20328,7 +20328,7 @@ func TestAPIGitealikeMergeHeadMismatchMapsToStaleState(t *testing.T) {
 	require.NotNil(resp.Error)
 	assert.Equal("conflict", string(resp.Error.Code))
 	require.NotNil(resp.Error.Details)
-	assert.Equal("stale_state", (resp.Error.Details)["reason"])
+	assert.Equal("stale_state", resp.Error.Details["reason"])
 	assert.Equal([]string{"abc123"}, transport.mergeHeadPins)
 }
 
@@ -21237,7 +21237,7 @@ func TestAPIGitealikeDraftPRFieldsPersistThroughServer(t *testing.T) {
 	require.NotNil(apiMR.ClosedAt)
 	require.NotNil(apiMR.Labels)
 	require.Len(apiMR.Labels, 1)
-	assert.Equal("bug", (apiMR.Labels)[0].Name)
+	assert.Equal("bug", apiMR.Labels[0].Name)
 }
 
 type lockedGitealikeTransport struct {
@@ -21727,7 +21727,7 @@ func TestAPIRateLimitsMarksExpiredProviderQuotaUnknown(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/rate-limits", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rate-limits", nil)
 	New(database, syncer, nil, "/", nil, ServerOptions{}).ServeHTTP(recorder, request)
 	require.Equal(http.StatusOK, recorder.Code)
 
@@ -21756,7 +21756,7 @@ func TestAPIRateLimitsRollsExpiredTrackerBeforeResponse(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/rate-limits", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/rate-limits", nil)
 	New(database, syncer, nil, "/", nil, ServerOptions{}).ServeHTTP(recorder, request)
 	require.Equal(http.StatusOK, recorder.Code)
 
@@ -22667,7 +22667,7 @@ func TestAPIGetRepoCommitDiff(t *testing.T) {
 	assert := assert.New(t)
 
 	_, _, _, _, commitSHAs, srv := setupTestServerWithClonesAndServer(t)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/api/v1/repo/gh/acme/widget/commits/"+commitSHAs[2]+"/diff",
 		nil,
@@ -22703,7 +22703,7 @@ func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
 	before, err := os.ReadFile(configPath)
 	require.NoError(err)
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/api/v1/repo/gh/acme/widget/commits/--output=config/diff",
 		nil,
@@ -22723,7 +22723,7 @@ func TestAPIGetFilePreview_ReturnsHeadContent(t *testing.T) {
 	assert := assert.New(t)
 
 	_, _, _, _, _, srv := setupTestServerWithClonesAndServer(t)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/api/v1/pulls/gh/acme/widget/1/file-preview?path=file5.txt",
 		nil,
@@ -23328,7 +23328,7 @@ func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *te
 
 func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t *testing.T) {
 	runParallelServerTest(t)
-	req := require.New(t)
+
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
@@ -23344,7 +23344,7 @@ func TestAPIListActivityIncrementalSearchReturnsParentsMatchedByProviderEvents(t
 		withSeedPRTitle("Another unrelated parent"),
 		withSeedPRTimes(activityAt, activityAt, activityAt),
 	)
-	req.NoError(database.UpsertMREvents(ctx, []db.MREvent{
+	require.NoError(t, database.UpsertMREvents(ctx, []db.MREvent{
 		{
 			MergeRequestID: bodyMatchID,
 			EventType:      "issue_comment",
@@ -30595,4 +30595,20 @@ func TestAPIHeadRepoKindClassifiesSameRepoForkAndUnknown(t *testing.T) {
 		require.NoError(json.Unmarshal(response.Body.Bytes(), &detail))
 		assert.Equal(t, test.want, string(detail.HeadRepoKind))
 	}
+}
+
+func TestSyncIssueUntrackedRepoReturnsForbidden(t *testing.T) {
+	require := require.New(t)
+
+	srv, database := setupTestServerWithMock(t, &mockGH{})
+	seedIssue(t, database, "acme", "retired", 3, "open")
+	client := setupTestClient(t, srv)
+
+	resp, err := client.HTTP.SyncIssueWithResponse(t.Context(), &generated.SyncIssueRequestOptions{
+		PathParams: &generated.SyncIssuePath{Provider: "gh", Owner: "acme", Name: "retired", Number: int64(3)},
+	})
+	require.Error(err)
+	require.NotNil(resp)
+	require.Equal(http.StatusForbidden, resp.StatusCode, string(resp.Body))
+	require.Contains(string(resp.Body), "not tracked")
 }

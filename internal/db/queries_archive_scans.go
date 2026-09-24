@@ -297,7 +297,7 @@ func resetArchiveScanTx(
 // repository ID. Missing rows read as an untouched pending generation one.
 func loadArchiveScanStates(
 	ctx context.Context,
-	queryer archiveQueryer,
+	queryer rowQueryer,
 	states []ArchiveRepoState,
 ) error {
 	if len(states) == 0 {

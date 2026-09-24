@@ -122,7 +122,7 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			got = nil
-			req := httptest.NewRequest(
+			req := httptest.NewRequestWithContext(t.Context(),
 				tc.method, tc.path, strings.NewReader(tc.body),
 			)
 			req.Header.Set("Content-Type", "application/json")

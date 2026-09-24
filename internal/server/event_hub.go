@@ -295,7 +295,7 @@ func (h *EventHub) ringSnapshotSinceLocked(
 	}
 
 	out := make([]RecordedEvent, 0, h.ringCount)
-	for i := 0; i < h.ringCount; i++ {
+	for i := range h.ringCount {
 		rec := h.ring[(h.ringHead+i)%len(h.ring)]
 		if rec.ID > cursor {
 			out = append(out, rec)

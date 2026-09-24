@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"go.kenn.io/forge/platform"
 )
@@ -233,7 +234,7 @@ func (c *Client) getAttachmentImage(
 	req.Header.Set("Authorization", "Bearer "+token)
 	client := c.markdownImageHTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	resp, err := client.Do(req)
 	if err != nil {

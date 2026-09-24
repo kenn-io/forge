@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,12 +66,20 @@ func TestInactiveFleetNodeKeepsLocalServicesWithoutProviderPlane(t *testing.T) {
 		"/api/v1/workspaces",
 		"/api/v1/snapshot?include_peers=true",
 	} {
-		response, err := httpServer.Client().Get(httpServer.URL + path)
+		responseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, httpServer.URL+path, nil)
+		require.NoError(err)
+		httpClient := httpServer.Client()
+		httpClient.Timeout = 5 * time.Second
+		response, err := httpClient.Do(responseReq)
 		require.NoError(err)
 		response.Body.Close()
 		assert.Equal(http.StatusOK, response.StatusCode, path)
 	}
-	providerResponse, err := httpServer.Client().Get(httpServer.URL + "/api/v1/pulls")
+	providerResponseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, httpServer.URL+"/api/v1/pulls", nil)
+	require.NoError(err)
+	httpClient := httpServer.Client()
+	httpClient.Timeout = 5 * time.Second
+	providerResponse, err := httpClient.Do(providerResponseReq)
 	require.NoError(err)
 	providerResponse.Body.Close()
 	assert.Equal(http.StatusServiceUnavailable, providerResponse.StatusCode)

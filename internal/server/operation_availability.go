@@ -252,7 +252,7 @@ func deriveOperationAvailabilityWithContext(
 		if !httpapi.CapabilityEnabled(caps, capability) {
 			return httpapi.OperationAvailability{
 				Code:               availabilityCodeUnsupportedCapability,
-				UnavailableReason:  fmt.Sprintf("Provider does not support %s", capability),
+				UnavailableReason:  "Provider does not support " + capability,
 				RequiredCapability: capability,
 			}
 		}
@@ -364,7 +364,7 @@ func apiBucketsFromPlatform(buckets []platform.RateLimitBucket) ([]apiBucket, bo
 func invalidOperationRateLimitBucketReport(op operationDescriptor) rateLimitAvailability {
 	return rateLimitAvailability{
 		limited: true,
-		reason:  fmt.Sprintf("Provider reported invalid rate-limit buckets for %s", op.name),
+		reason:  "Provider reported invalid rate-limit buckets for " + op.name,
 	}
 }
 
@@ -669,7 +669,7 @@ func writeCredentialGateFromError(host string, err error) writeCredentialGate {
 func formatRateLimit(host string, resetAt *time.Time) rateLimitAvailability {
 	res := rateLimitAvailability{
 		limited: true,
-		reason:  fmt.Sprintf("%s rate-limited", host),
+		reason:  host + " rate-limited",
 	}
 	if resetAt != nil {
 		res.retryAt = formatUTCRFC3339(*resetAt)

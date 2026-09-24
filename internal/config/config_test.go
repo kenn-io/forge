@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -4173,7 +4172,7 @@ func TestGitHubCLITokenForHostTimesOutWithoutCallerDeadline(t *testing.T) {
 	setGHAuthExecTimeout(t, time.Second)
 
 	start := time.Now()
-	got, err := GitHubCLITokenForHost(context.Background(), "github.com")
+	got, err := GitHubCLITokenForHost(t.Context(), "github.com")
 	elapsed := time.Since(start)
 
 	require.NoError(t, err)

@@ -186,7 +186,8 @@ func (s *Handler) buildLocalRaw(ctx context.Context) (fleet.RawSnapshot, error) 
 		raw.Workspaces = slices.Clone(summaries)
 		for i := range summaries {
 			sum := summaries[i]
-			projKey, ok := "", false
+			var projKey string
+			var ok bool
 			if stableKey := stableIdentityKey(sum.Repository); stableKey != "" {
 				projKey, ok = projByStableIdentity[stableKey]
 			} else {

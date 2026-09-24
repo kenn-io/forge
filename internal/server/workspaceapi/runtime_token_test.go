@@ -46,7 +46,7 @@ func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
 	h := New(Deps{DB: database, Workspaces: manager, Runtime: runtime})
 	h.Start(t.Context(), true)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(h.Shutdown(ctx))
 	})
@@ -56,7 +56,7 @@ func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
 	api := humago.NewWithPrefix(mux, "/api/v1", huma.DefaultConfig("workspace test", "1"))
 	h.Register(api)
 	body := bytes.NewBufferString(`{"target_key":"tokenfail"}`)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/workspaces/ws-runtime-token/runtime/sessions",
 		body,

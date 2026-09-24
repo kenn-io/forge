@@ -204,7 +204,7 @@ func TestFleetRevokePassesTheDaemonMutationGuard(t *testing.T) {
 		},
 	)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})

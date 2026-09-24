@@ -28,18 +28,18 @@ type Limiter struct {
 	acquireTimeout time.Duration
 }
 
-func NewLimiter(max int) *Limiter {
-	return NewLimiterWithAcquireTimeout(max, DefaultAcquireTimeout)
+func NewLimiter(limit int) *Limiter {
+	return NewLimiterWithAcquireTimeout(limit, DefaultAcquireTimeout)
 }
 
 // NewLimiterWithAcquireTimeout creates a subprocess limiter with bounded
 // acquisition waits. Non-positive timeouts wait until the caller's context ends.
-func NewLimiterWithAcquireTimeout(max int, acquireTimeout time.Duration) *Limiter {
-	if max <= 0 {
-		max = 1
+func NewLimiterWithAcquireTimeout(limit int, acquireTimeout time.Duration) *Limiter {
+	if limit <= 0 {
+		limit = 1
 	}
 	return &Limiter{
-		sem:            semaphore.NewWeighted(int64(max)),
+		sem:            semaphore.NewWeighted(int64(limit)),
 		acquireTimeout: acquireTimeout,
 	}
 }
@@ -119,7 +119,7 @@ func SetDefaultLimiterForTest(limiter *Limiter) func() {
 
 func Command(name string, arg ...string) *exec.Cmd {
 	resolvedName, resolvedArgs := ResolveCommand(name, arg...)
-	//nolint:forbidigo // This is the central wrapper forbidigo requires callers to use.
+	//nolint:forbidigo,noctx // Central wrapper; CommandContext is the cancellable counterpart.
 	cmd := exec.Command(resolvedName, resolvedArgs...)
 	ConfigureBackgroundCommand(cmd)
 	return cmd
@@ -233,10 +233,10 @@ func WrapResourceExhaustion(err error, action string) error {
 		return err
 	}
 	if action == "" {
-		return fmt.Errorf("%w: %v", ErrProcessLimitReached, err)
+		return fmt.Errorf("%w: %w", ErrProcessLimitReached, err)
 	}
 	return fmt.Errorf(
-		"%w while %s: %v",
+		"%w while %s: %w",
 		ErrProcessLimitReached, action, err,
 	)
 }

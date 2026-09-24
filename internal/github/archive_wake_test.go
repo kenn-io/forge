@@ -63,7 +63,7 @@ func startPacedArchiveLoop(t *testing.T, runner *pacedArchiveRunner) (*Syncer, f
 	syncer := NewSyncerWithRegistry(nil, nil, nil, nil, time.Hour, nil, nil)
 	syncer.SetArchiveService(runner)
 	syncer.SetArchivePollIntervalForTesting(time.Second)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ready := make(chan struct{})
 	close(ready)
 	done := make(chan struct{})
@@ -176,7 +176,7 @@ func TestArchiveLoopWakesWhenSyncRunCompletes(t *testing.T) {
 
 		// A completed sync run (here with no repositories) must wake the
 		// worker immediately and restart the backoff from the pacing interval.
-		syncer.RunOnce(context.Background())
+		syncer.RunOnce(t.Context())
 		time.Sleep(time.Second)
 		synctest.Wait()
 		require.Equal([]time.Duration{0, time.Second}, runner.offsetsFrom(backedOff))
@@ -205,7 +205,7 @@ func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
 
 		// Live work preempting an admitted archive request marks the host.
 		// Only the release that frees the host wakes the worker, immediately.
-		_, releaseArchive, ok := syncer.tryBeginArchiveProviderRequest(context.Background(), key)
+		_, releaseArchive, ok := syncer.tryBeginArchiveProviderRequest(t.Context(), key)
 		require.True(ok)
 		started := make(chan struct{})
 		var releaseFirst func()

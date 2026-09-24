@@ -36,24 +36,26 @@ func (d *DB) ListInvolvedWorkspaceSubjectKeys(
 			WHERE r.lifecycle_state = 'active'
 			  AND %[3]s
 			  AND %[4]s`, subject.alias, subject.table, candidateCondition, involvementCondition)
-		rows, err := d.roQueryContext(ctx, query, args...)
-		if err != nil {
-			return nil, fmt.Errorf("list involved workspace %s subjects: %w", subject.itemType, err)
-		}
-		for rows.Next() {
-			var key WorkspaceSubjectKey
-			key.ItemType = subject.itemType
-			if err := rows.Scan(&key.RepoID, &key.ItemNumber); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("scan involved workspace %s subject: %w", subject.itemType, err)
+		if err := func() error {
+			rows, err := d.roQueryContext(ctx, query, args...)
+			if err != nil {
+				return fmt.Errorf("list involved workspace %s subjects: %w", subject.itemType, err)
 			}
-			keys[key] = struct{}{}
-		}
-		if err := rows.Close(); err != nil {
-			return nil, fmt.Errorf("close involved workspace %s subjects: %w", subject.itemType, err)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("list involved workspace %s subject rows: %w", subject.itemType, err)
+			defer rows.Close()
+			for rows.Next() {
+				var key WorkspaceSubjectKey
+				key.ItemType = subject.itemType
+				if err := rows.Scan(&key.RepoID, &key.ItemNumber); err != nil {
+					return fmt.Errorf("scan involved workspace %s subject: %w", subject.itemType, err)
+				}
+				keys[key] = struct{}{}
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("list involved workspace %s subject rows: %w", subject.itemType, err)
+			}
+			return nil
+		}(); err != nil {
+			return nil, err
 		}
 	}
 	return keys, nil

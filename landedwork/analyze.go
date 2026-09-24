@@ -20,8 +20,10 @@ func Analyze(ctx context.Context, p *Interval, e Evidence, limits Limits) (r Res
 	if err = validate(ctx, p.query.Bounds, limits); err != nil {
 		return r, err
 	}
-	r.Coverage = Coverage{Bounds: p.query.Bounds, Inventory: e.Inventory, CertifiedHead: p.query.Bounds.Base,
-		Gaps: slices.Clone(p.query.Gaps)}
+	r.Coverage = Coverage{
+		Bounds: p.query.Bounds, Inventory: e.Inventory, CertifiedHead: p.query.Bounds.Base,
+		Gaps: slices.Clone(p.query.Gaps),
+	}
 	m := &meter{limits: limits}
 	defer func() {
 		if ctx.Err() != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
@@ -178,7 +179,7 @@ func FingerprintDiffSnapshot(
 		return "", err
 	}
 	if !current.IncludeUntracked {
-		return DiffFingerprint(fmt.Sprintf("%x", h.Sum(nil))), nil
+		return DiffFingerprint(hex.EncodeToString(h.Sum(nil))), nil
 	}
 
 	rawOut, err := worktreeGitOutput(
@@ -243,7 +244,7 @@ func FingerprintDiffSnapshot(
 		attribute.Int("workspace.diff.fingerprint_paths", len(orderedPaths)),
 		attribute.Int64("workspace.diff.fingerprint_bytes_read", bytesRead),
 	)
-	return DiffFingerprint(fmt.Sprintf("%x", h.Sum(nil))), nil
+	return DiffFingerprint(hex.EncodeToString(h.Sum(nil))), nil
 }
 
 func fingerprintRepositoryAttributes(

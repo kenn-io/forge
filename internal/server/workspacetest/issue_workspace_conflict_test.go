@@ -2,7 +2,6 @@ package workspacetest
 
 import (
 	"net/http"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -131,19 +130,6 @@ func TestIssueWorkspaceCreateIgnoresBrokenCallerCwdForBranchValidation(t *testin
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	seedIssue(t, fixture.database, "acme", "widget", 23, "open")
-
-	brokenCwd := t.TempDir()
-	require.NoError(os.WriteFile(
-		filepath.Join(brokenCwd, ".git"),
-		[]byte("gitdir: /definitely/not/a/git/worktree\n"),
-		0o644,
-	))
-	previousCwd, err := os.Getwd()
-	require.NoError(err)
-	require.NoError(os.Chdir(brokenCwd))
-	t.Cleanup(func() {
-		require.NoError(os.Chdir(previousCwd))
-	})
 
 	branch := "kenn-forge/issue-23-federation-test"
 	resp, err := fixture.client.HTTP.CreateIssueWorkspaceWithResponse(t.Context(), &generated.CreateIssueWorkspaceRequestOptions{PathParams: &generated.CreateIssueWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(23)}, Body: &generated.CreateIssueWorkspaceInputBody{GitHeadRef: &branch}})

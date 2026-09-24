@@ -14,34 +14,9 @@ import (
 // state pointing only at disposable fixtures. Never probe the developer's config.
 func TestCommitFixtureIgnoresInheritedGitState(t *testing.T) {
 	t.Parallel()
-	setupRequire := require.New(t)
-	root := isolatedCommitFixtureDir(t)
-	parent := filepath.Join(root, "parent")
-	setupRequire.NoError(os.Mkdir(parent, 0o700))
-	commitTestRun(t, parent, "git", "init", "--initial-branch=main")
-	commitTestRun(t, parent, "git", "config", "user.name", "Fixture Owner")
-	commitTestRun(t, parent, "git", "config", "user.email", "owner@example.test")
-	setupRequire.NoError(os.WriteFile(filepath.Join(parent, "sentinel.txt"), []byte("untouched\n"), 0o600))
-	commitTestRun(t, parent, "git", "add", ".")
-	commitTestRun(t, parent, "git", "commit", "-m", "sentinel")
-	originalHead := gitSHA(t, parent, "HEAD")
+	parent, originalHead, externalHome, globalConfig, systemConfig, executable, protected := arrangeInheritedGitFixture(t)
+	root := filepath.Dir(parent)
 	linkedWorktree := filepath.Join(root, "linked-worktree")
-	commitTestRun(t, parent, "git", "worktree", "add", "--detach", linkedWorktree, "HEAD")
-	externalHome := filepath.Join(root, "external-home")
-	setupRequire.NoError(os.Mkdir(externalHome, 0o700))
-	globalConfig := filepath.Join(externalHome, ".gitconfig")
-	systemConfig := filepath.Join(root, "system.gitconfig")
-	for _, path := range []string{globalConfig, systemConfig} {
-		setupRequire.NoError(os.WriteFile(path, []byte("[user]\n\tname = External Identity\n"), 0o600))
-	}
-	protected := make(map[string][]byte)
-	for _, path := range []string{globalConfig, systemConfig, filepath.Join(parent, ".git", "config"), filepath.Join(parent, ".git", "index")} {
-		contents, err := os.ReadFile(path)
-		setupRequire.NoError(err)
-		protected[path] = contents
-	}
-	executable, err := os.Executable()
-	setupRequire.NoError(err)
 	for _, test := range []struct {
 		name     string
 		tempBase string
@@ -81,4 +56,38 @@ func TestCommitFixtureIgnoresInheritedGitState(t *testing.T) {
 			}
 		})
 	}
+}
+
+func arrangeInheritedGitFixture(t *testing.T) (parent, originalHead, externalHome, globalConfig, systemConfig, executable string, protected map[string][]byte) {
+	t.Helper()
+	require := require.New(t)
+	root := isolatedCommitFixtureDir(t)
+	parent = filepath.Join(root, "parent")
+	require.NoError(os.Mkdir(parent, 0o700))
+	commitTestRun(t, parent, "git", "init", "--initial-branch=main")
+	commitTestRun(t, parent, "git", "config", "user.name", "Fixture Owner")
+	commitTestRun(t, parent, "git", "config", "user.email", "owner@example.test")
+	require.NoError(os.WriteFile(filepath.Join(parent, "sentinel.txt"), []byte("untouched\n"), 0o600))
+	commitTestRun(t, parent, "git", "add", ".")
+	commitTestRun(t, parent, "git", "commit", "-m", "sentinel")
+	originalHead = gitSHA(t, parent, "HEAD")
+	linkedWorktree := filepath.Join(root, "linked-worktree")
+	commitTestRun(t, parent, "git", "worktree", "add", "--detach", linkedWorktree, "HEAD")
+	externalHome = filepath.Join(root, "external-home")
+	require.NoError(os.Mkdir(externalHome, 0o700))
+	globalConfig = filepath.Join(externalHome, ".gitconfig")
+	systemConfig = filepath.Join(root, "system.gitconfig")
+	for _, path := range []string{globalConfig, systemConfig} {
+		require.NoError(os.WriteFile(path, []byte("[user]\n\tname = External Identity\n"), 0o600))
+	}
+	protected = make(map[string][]byte)
+	for _, path := range []string{globalConfig, systemConfig, filepath.Join(parent, ".git", "config"), filepath.Join(parent, ".git", "index")} {
+		contents, err := os.ReadFile(path)
+		require.NoError(err)
+		protected[path] = contents
+	}
+	var err error
+	executable, err = os.Executable()
+	require.NoError(err)
+	return parent, originalHead, externalHome, globalConfig, systemConfig, executable, protected
 }

@@ -4,6 +4,7 @@
 package providerplane
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -48,7 +49,7 @@ func CanonicalRepositoryRoute(route RepositoryRoute) (RepositoryRoute, error) {
 	}
 	host, ok := platform.HostOrDefault(kind, route.PlatformHost)
 	if !ok {
-		return RepositoryRoute{}, fmt.Errorf("platform host is required")
+		return RepositoryRoute{}, errors.New("platform host is required")
 	}
 	route.Provider = string(kind)
 	route.PlatformHost = strings.ToLower(strings.TrimSpace(host))
@@ -160,17 +161,17 @@ func (d RepositoryDescriptor) Validate() error {
 		return err
 	}
 	if !d.Identity().Valid() {
-		return fmt.Errorf("repository descriptor stable identity is required")
+		return errors.New("repository descriptor stable identity is required")
 	}
 	if d.Provider != strings.TrimSpace(d.Provider) ||
 		d.PlatformHost != strings.TrimSpace(d.PlatformHost) ||
 		d.PlatformRepoID != strings.TrimSpace(d.PlatformRepoID) ||
 		d.Owner != strings.TrimSpace(d.Owner) ||
 		d.Name != strings.TrimSpace(d.Name) {
-		return fmt.Errorf("repository descriptor identity must be canonical")
+		return errors.New("repository descriptor identity must be canonical")
 	}
 	if strings.TrimSpace(d.CloneURL) == "" || d.CloneURL != strings.TrimSpace(d.CloneURL) {
-		return fmt.Errorf("repository descriptor clone URL is required")
+		return errors.New("repository descriptor clone URL is required")
 	}
 	if err := validateFederationNetworkRemote(d.CloneURL); err != nil {
 		return fmt.Errorf("repository descriptor clone URL: %w", err)
@@ -182,13 +183,13 @@ func (d RepositoryDescriptor) Validate() error {
 	}
 	if strings.TrimSpace(d.DefaultBranch) == "" ||
 		d.DefaultBranch != strings.TrimSpace(d.DefaultBranch) {
-		return fmt.Errorf("repository descriptor default branch is required")
+		return errors.New("repository descriptor default branch is required")
 	}
 	if d.SnapshotRevision == 0 {
-		return fmt.Errorf("repository descriptor snapshot revision is required")
+		return errors.New("repository descriptor snapshot revision is required")
 	}
 	if d.ObservedAt.IsZero() || d.ObservedAt.Location() != time.UTC {
-		return fmt.Errorf("repository descriptor observed time must be UTC")
+		return errors.New("repository descriptor observed time must be UTC")
 	}
 	return nil
 }
@@ -202,7 +203,7 @@ func (d RepositoryDescriptor) ValidateRoute(route RepositoryRoute) error {
 		return err
 	}
 	if d.Route() != route {
-		return fmt.Errorf("repository descriptor does not match requested route")
+		return errors.New("repository descriptor does not match requested route")
 	}
 	return nil
 }
@@ -264,16 +265,16 @@ func BuildDiffDescriptor(snapshot DiffSnapshot) (DiffDescriptor, error) {
 func (d DiffDescriptor) Validate() error {
 	if d.ProtocolVersion != federation.ProtocolVersion ||
 		d.ProtocolVersion != d.Repository.ProtocolVersion {
-		return fmt.Errorf("diff descriptor protocol version mismatch")
+		return errors.New("diff descriptor protocol version mismatch")
 	}
 	if err := d.Repository.Validate(); err != nil {
 		return err
 	}
 	if d.PullNumber < 1 {
-		return fmt.Errorf("diff descriptor pull number is required")
+		return errors.New("diff descriptor pull number is required")
 	}
 	if d.SnapshotRevision == 0 {
-		return fmt.Errorf("diff descriptor snapshot revision is required")
+		return errors.New("diff descriptor snapshot revision is required")
 	}
 	for name, value := range map[string]string{
 		"platform head": d.PlatformHeadSHA,
@@ -307,7 +308,7 @@ func validateProviderHostPair(kind platform.Kind, host string) error {
 func (c Hub) validate() (Hub, error) {
 	c.NodeID = strings.TrimSpace(c.NodeID)
 	if !federation.ValidNodeID(c.NodeID) {
-		return Hub{}, fmt.Errorf("hub node ID is invalid")
+		return Hub{}, errors.New("hub node ID is invalid")
 	}
 	baseURL, err := federation.CanonicalOrigin(c.BaseURL)
 	if err != nil {

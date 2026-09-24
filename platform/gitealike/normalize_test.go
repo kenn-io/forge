@@ -5,13 +5,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
 func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	created := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	updated := created.Add(time.Hour)
 	canPush := false
@@ -72,7 +72,7 @@ func TestNormalizeRepositoryPreservesFeatureState(t *testing.T) {
 		IssuesEnabled:        &issuesEnabled,
 		MergeRequestsEnabled: &mergeRequestsEnabled,
 	})
-	require := Require.New(t)
+	require := require.New(t)
 	require.NoError(err)
 	require.NotNil(repo.Features.IssuesEnabled)
 	require.NotNil(repo.Features.MergeRequestsEnabled)
@@ -82,7 +82,7 @@ func TestNormalizeRepositoryPreservesFeatureState(t *testing.T) {
 
 func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	closed := base.Add(2 * time.Hour)
 	mergeable := true
@@ -330,7 +330,7 @@ func TestNormalizeMergeRequestIssueEventsAndArtifacts(t *testing.T) {
 
 func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	stopped := started.Add(time.Minute)
 	laterStopped := stopped.Add(time.Minute)
@@ -365,7 +365,7 @@ func TestNormalizeStatusesMapsCommitStatusesAndActionRuns(t *testing.T) {
 
 func TestNormalizeStatusesKeepsQueuedActionRerunAsLatest(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	started := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	stopped := started.Add(time.Minute)
 	queuedAt := stopped.Add(time.Minute)
@@ -437,7 +437,7 @@ func TestNormalizeEventsPreserveCommentHTMLURL(t *testing.T) {
 }
 
 func TestNormalizeIssue_ExtractsAssignees(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	repo := platform.RepoRef{
 		Platform: platform.KindGitea,
@@ -466,7 +466,7 @@ func TestNormalizeIssue_ExtractsAssignees(t *testing.T) {
 }
 
 func TestNormalizeIssue_EmptyAssignees(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	repo := platform.RepoRef{
 		Platform: platform.KindGitea,
@@ -490,7 +490,7 @@ func TestNormalizeIssue_EmptyAssignees(t *testing.T) {
 }
 
 func TestNormalizeIssue_SkipsEmptyUsernames(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	repo := platform.RepoRef{
 		Platform: platform.KindGitea,

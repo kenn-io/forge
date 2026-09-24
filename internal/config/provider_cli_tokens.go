@@ -56,6 +56,7 @@ func providerCLITokenForHost(platform, host string) string {
 		token, _ = GitLabCLITokenForHost(ctx, host)
 	case tokenauth.SourceKindForgejoCLI:
 		token, _ = ForgejoCLITokenForHost(ctx, host)
+	default:
 	}
 	return token
 }
@@ -80,7 +81,8 @@ func GitLabCLITokenForHost(ctx context.Context, host string) (string, error) {
 			strings.EqualFold(name, "GITLAB_ACCESS_TOKEN") ||
 			strings.EqualFold(name, "OAUTH_TOKEN")
 	})
-	cmd.Env = append(env, "GLAB_CHECK_UPDATE=false", "NO_COLOR=1")
+	env = append(env, "GLAB_CHECK_UPDATE=false", "NO_COLOR=1")
+	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil {
 		return "", nil
@@ -169,26 +171,25 @@ func (r *jsonRawOptional) UnmarshalJSON(data []byte) error {
 // as a missing credential does not; a malformed file is reported so the
 // operator learns why the fallback stays silent.
 func ForgejoCLITokenForHost(_ context.Context, host string) (string, error) {
-	path, err := forgejoCLIKeysPath()
-	if err != nil {
-		return "", nil
+	path, pathErr := forgejoCLIKeysPath()
+	if pathErr == nil {
+		data, readErr := os.ReadFile(path)
+		if readErr == nil {
+			var keys forgejoCLIKeys
+			if err := json.Unmarshal(data, &keys); err != nil {
+				return "", fmt.Errorf("parse fj keys file %s: %w", path, err)
+			}
+			login, ok := keys.lookup(host)
+			if !ok {
+				return "", nil
+			}
+			if login.expired(time.Now()) {
+				return "", nil
+			}
+			return strings.TrimSpace(login.Token), nil
+		}
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", nil
-	}
-	var keys forgejoCLIKeys
-	if err := json.Unmarshal(data, &keys); err != nil {
-		return "", fmt.Errorf("parse fj keys file %s: %w", path, err)
-	}
-	login, ok := keys.lookup(host)
-	if !ok {
-		return "", nil
-	}
-	if login.expired(time.Now()) {
-		return "", nil
-	}
-	return strings.TrimSpace(login.Token), nil
+	return "", nil
 }
 
 // lookup finds the entry for host: an exact key, an alias fj resolves to a

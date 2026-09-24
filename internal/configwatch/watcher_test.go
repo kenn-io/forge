@@ -29,14 +29,20 @@ func newTestWatcher(t *testing.T, path string, onChange func()) *Watcher {
 
 func waitForCount(t *testing.T, c *atomic.Int32, want int32, timeout time.Duration) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
 		if c.Load() == want {
 			return
 		}
-		time.Sleep(time.Millisecond)
+		select {
+		case <-deadline:
+			require.Equalf(t, want, c.Load(), "callback count never reached %d", want)
+			return
+		case <-ticker.C:
+		}
 	}
-	require.Equalf(t, want, c.Load(), "callback count never reached %d", want)
 }
 
 func TestWatcher_NewValidatesInputs(t *testing.T) {
@@ -108,33 +114,44 @@ func TestWatcher_DebouncesBurst(t *testing.T) {
 }
 
 func TestWatcher_IgnoresUnrelatedFiles(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	req.NoError(os.WriteFile(path, []byte("a = 1"), 0o600))
+	require.NoError(os.WriteFile(path, []byte("a = 1"), 0o600))
 
+	fired := make(chan struct{}, 1)
 	var count atomic.Int32
-	w := newTestWatcher(t, path, func() { count.Add(1) })
+	w := newTestWatcher(t, path, func() {
+		count.Add(1)
+		select {
+		case fired <- struct{}{}:
+		default:
+		}
+	})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	w.Start(ctx)
-	req.NoError(w.WaitReady(ctx))
+	require.NoError(w.WaitReady(ctx))
 
 	// Writes to a sibling file in the same directory must not fire.
 	sibling := filepath.Join(dir, "other.toml")
-	req.NoError(os.WriteFile(sibling, []byte("noise = true"), 0o600))
+	require.NoError(os.WriteFile(sibling, []byte("noise = true"), 0o600))
 
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-fired:
+		require.Fail("sibling file should not trigger the watcher")
+	case <-time.After(100 * time.Millisecond):
+	}
 	assert.Equal(t, int32(0), count.Load(),
 		"sibling file should not trigger the watcher")
 }
 
 func TestWatcher_FiresOnAtomicRename(t *testing.T) {
-	req := require.New(t)
+	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	req.NoError(os.WriteFile(path, []byte("a = 1"), 0o600))
+	require.NoError(os.WriteFile(path, []byte("a = 1"), 0o600))
 
 	var count atomic.Int32
 	w := newTestWatcher(t, path, func() { count.Add(1) })
@@ -142,13 +159,13 @@ func TestWatcher_FiresOnAtomicRename(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	w.Start(ctx)
-	req.NoError(w.WaitReady(ctx))
+	require.NoError(w.WaitReady(ctx))
 
 	// Atomic-rename save pattern: write a sibling, then rename over.
 	// Vim's ":w" uses this when backupcopy=auto.
 	tmp := filepath.Join(dir, ".config.toml.tmp")
-	req.NoError(os.WriteFile(tmp, []byte("a = 2"), 0o600))
-	req.NoError(os.Rename(tmp, path))
+	require.NoError(os.WriteFile(tmp, []byte("a = 2"), 0o600))
+	require.NoError(os.Rename(tmp, path))
 
 	waitForCount(t, &count, 1, time.Second)
 }

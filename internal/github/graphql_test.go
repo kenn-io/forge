@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -198,6 +199,7 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 			name:         "pull request",
 			responseData: `{"repository":{"pullRequest":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
 			complete: func(t *testing.T, fetcher *GraphQLFetcher) map[int64]platformgithub.CommentVisibility {
+				t.Helper()
 				pr := platformgithub.GraphQLPR{Number: 7}
 				pr.Comments.PageInfo = platformgithub.GraphQLPageInfo{HasNextPage: true, EndCursor: "comment-100"}
 				bulk := convertGQLPR(&pr)
@@ -211,6 +213,7 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 			name:         "issue",
 			responseData: `{"repository":{"issue":{"comments":{"nodes":[{"databaseId":202,"fullDatabaseId":"3714845345","isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`,
 			complete: func(t *testing.T, fetcher *GraphQLFetcher) map[int64]platformgithub.CommentVisibility {
+				t.Helper()
 				issue := platformgithub.GraphQLIssue{Number: 8}
 				issue.Comments.PageInfo = platformgithub.GraphQLPageInfo{HasNextPage: true, EndCursor: "comment-100"}
 				bulk := convertGQLIssue(&issue)
@@ -477,8 +480,8 @@ func TestGraphqlRateTransport(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-RateLimit-Remaining", "4999")
 		w.Header().Set("X-RateLimit-Limit", "5000")
-		w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", time.Now().Add(30*time.Minute).Unix()))
-		w.WriteHeader(200)
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(30*time.Minute).Unix(), 10))
+		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"data":{}}`))
 	})
 	srv := httptest.NewServer(handler)
@@ -490,7 +493,7 @@ func TestGraphqlRateTransport(t *testing.T) {
 	}
 	client := &http.Client{Transport: transport}
 
-	req, err := http.NewRequest("POST", srv.URL, nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL, nil)
 	require.NoError(t, err)
 	resp, err := client.Do(req)
 	require.NoError(t, err)

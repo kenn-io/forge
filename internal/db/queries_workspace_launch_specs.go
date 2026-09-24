@@ -30,7 +30,7 @@ func marshalWorkspaceLaunchSpec(spec WorkspaceLaunchSpec) ([]byte, error) {
 
 func insertWorkspaceLaunchSpec(
 	ctx context.Context,
-	executor workspaceInsertExecutor,
+	executor execer,
 	workspaceID string,
 	spec WorkspaceLaunchSpec,
 ) error {
@@ -477,7 +477,7 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 			reason = "launchSpecMismatch"
 		}
 		if reason != "" {
-			platformRepoID := ""
+			var platformRepoID string
 			if spec != nil {
 				platformRepoID = spec.Repository.PlatformRepoID
 			} else {

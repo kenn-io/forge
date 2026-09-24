@@ -202,7 +202,7 @@ func (d *DB) PauseArchives(ctx context.Context, repoIDs []int64, now time.Time) 
 // inventory that can now replace a previously unsupported result.
 func (d *DB) ReconcileArchiveCoverage(ctx context.Context, repoID int64, coverage ArchiveCoverageSet, now time.Time) error {
 	if repoID <= 0 {
-		return fmt.Errorf("reconcile archive coverage: repository ID is required")
+		return errors.New("reconcile archive coverage: repository ID is required")
 	}
 	for name, value := range map[string]ArchiveCoverage{
 		"issues": coverage.Issues, "merge_requests": coverage.MergeRequests,
@@ -672,13 +672,9 @@ func (d *DB) QueueArchivePromptByIdentity(
 	return queueArchivePromptByIdentity(ctx, d.rwStmts, identity, now)
 }
 
-type archiveExecer interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
 func queueArchivePromptByIdentity(
 	ctx context.Context,
-	execer archiveExecer,
+	execer execer,
 	identity RepoIdentity,
 	now time.Time,
 ) error {
@@ -711,7 +707,7 @@ func (d *DB) ListArchiveRepoStates(ctx context.Context, repoIDs []int64) ([]Arch
 
 func listArchiveRepoStates(
 	ctx context.Context,
-	queryer archiveQueryer,
+	queryer rowQueryer,
 	repoIDs []int64,
 ) ([]ArchiveRepoState, error) {
 	query := `
@@ -752,16 +748,7 @@ func listArchiveRepoStates(
 	return states, nil
 }
 
-type archiveRowScanner interface {
-	Scan(dest ...any) error
-}
-
-type archiveQueryer interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-func scanArchiveRepoState(row archiveRowScanner, state *ArchiveRepoState) error {
+func scanArchiveRepoState(row scanner, state *ArchiveRepoState) error {
 	return row.Scan(
 		&state.RepoID, &state.CollectionMode, &state.OperatorState,
 		&state.InitialStartedAt, &state.InitialCompletedAt,
@@ -844,7 +831,7 @@ const dueArchiveItemsQuery = `
 
 func claimArchiveItemForRepo(
 	ctx context.Context,
-	queryer archiveQueryer,
+	queryer rowQueryer,
 	repoID int64,
 	now time.Time,
 	excludedItemTypes []ArchiveItemType,
@@ -1042,7 +1029,7 @@ func (d *DB) getArchiveProgress(
 
 func loadArchiveProgressCounts(
 	ctx context.Context,
-	queryer archiveQueryer,
+	queryer rowQueryer,
 	repoIDs []int64,
 	now time.Time,
 ) (map[int64]ArchiveProgressCounts, error) {
@@ -1311,46 +1298,46 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 		if err != nil {
 			return err
 		}
-		if outcome.typedErr != nil || outcome.replay {
-			typedErr = outcome.typedErr
-			return nil
-		}
-		if commit.InventoryAvailable {
-			if _, err := reconcileArchiveInventoryAvailableTx(
-				ctx, tx, commit.RepoID, commit.ItemType, commit.Now,
-			); err != nil {
+		typedErr = outcome.typedErr
+		if !outcome.replay && typedErr == nil {
+			if commit.InventoryAvailable {
+				if _, err := reconcileArchiveInventoryAvailableTx(
+					ctx, tx, commit.RepoID, commit.ItemType, commit.Now,
+				); err != nil {
+					return err
+				}
+			}
+			for _, item := range commit.Items {
+				item.ProviderCreatedAt = canonicalUTCTime(item.ProviderCreatedAt)
+				item.ProviderUpdatedAt = canonicalUTCTime(item.ProviderUpdatedAt)
+				if err := commitArchiveInventoryItemTx(
+					ctx, tx, commit.RepoID, commit.ItemType, item,
+					commit.RefreshReason,
+				); err != nil {
+					return err
+				}
+			}
+			if err := advanceArchiveScanTx(ctx, tx, commit, kind, outcome.newPageCount, commit.Now); err != nil {
 				return err
 			}
-		}
-		for _, item := range commit.Items {
-			item.ProviderCreatedAt = canonicalUTCTime(item.ProviderCreatedAt)
-			item.ProviderUpdatedAt = canonicalUTCTime(item.ProviderUpdatedAt)
-			if err := commitArchiveInventoryItemTx(
-				ctx, tx, commit.RepoID, commit.ItemType, item,
-				commit.RefreshReason,
-			); err != nil {
-				return err
-			}
-		}
-		if err := advanceArchiveScanTx(ctx, tx, commit, kind, outcome.newPageCount, commit.Now); err != nil {
-			return err
-		}
-		if commit.Exhausted && commit.Coverage != ArchiveCoverageUnknown {
-			column := "issues_coverage"
-			if commit.ItemType == ArchiveItemTypeMergeRequest {
-				column = "merge_requests_coverage"
-			}
-			if _, err := tx.ExecContext(ctx, `
+			if commit.Exhausted && commit.Coverage != ArchiveCoverageUnknown {
+				column := "issues_coverage"
+				if commit.ItemType == ArchiveItemTypeMergeRequest {
+					column = "merge_requests_coverage"
+				}
+				if _, err := tx.ExecContext(ctx, `
 				UPDATE forge_archive_repos
 				SET `+column+` = ?, updated_at = MAX(updated_at, ?)
 				WHERE repo_id = ?`, commit.Coverage, commit.Now, commit.RepoID); err != nil {
-				return fmt.Errorf("record archive inventory coverage: %w", err)
+					return fmt.Errorf("record archive inventory coverage: %w", err)
+				}
 			}
+			if err := clearArchiveRepositoryFailureTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
+				return err
+			}
+			return completeArchiveInitialIfReadyTx(ctx, tx, commit.RepoID, commit.Now)
 		}
-		if err := clearArchiveRepositoryFailureTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
-			return err
-		}
-		return completeArchiveInitialIfReadyTx(ctx, tx, commit.RepoID, commit.Now)
+		return nil
 	})
 	if err != nil {
 		return err

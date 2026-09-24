@@ -129,7 +129,7 @@ func TestEnsureCommandSessionAndPersistLaunchesTmuxBackedCommand(t *testing.T) {
 
 	cwd := t.TempDir()
 	info, err := mgr.EnsureCommandSessionAndPersist(
-		context.Background(), "scope-1",
+		t.Context(), "scope-1",
 		commandSessionTestSpec("client:key one", cwd),
 		persistCommandSessionNoop,
 	)
@@ -176,7 +176,7 @@ func TestEnsureCommandSessionAndPersistReturnsExistingLiveSession(t *testing.T) 
 	})
 	t.Cleanup(mgr.Shutdown)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cwd := t.TempDir()
 	first, err := mgr.EnsureCommandSessionAndPersist(
 		ctx, "scope-1", commandSessionTestSpec("client:key one", cwd),
@@ -218,7 +218,7 @@ func TestEnsureCommandSessionAndPersistRejectsKeyOwnedByAnotherScope(t *testing.
 	})
 	t.Cleanup(mgr.Shutdown)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := mgr.EnsureCommandSessionAndPersist(
 		ctx, "scope-1", commandSessionTestSpec("client:key one", t.TempDir()),
 		persistCommandSessionNoop,
@@ -239,7 +239,7 @@ func TestEnsureCommandSessionAndPersistRequiresCommand(t *testing.T) {
 	t.Cleanup(mgr.Shutdown)
 
 	_, err := mgr.EnsureCommandSessionAndPersist(
-		context.Background(), "scope-1",
+		t.Context(), "scope-1",
 		CommandLaunchSpec{SessionKey: "client:key one"},
 		persistCommandSessionNoop,
 	)
@@ -263,7 +263,7 @@ func TestEnsureCommandSessionAndPersistReattachesToSurvivingTmuxSession(t *testi
 	t.Cleanup(mgr.Shutdown)
 
 	info, err := mgr.EnsureCommandSessionAndPersist(
-		context.Background(), "scope-1",
+		t.Context(), "scope-1",
 		commandSessionTestSpec("client:key one", t.TempDir()),
 		persistCommandSessionNoop,
 	)
@@ -293,7 +293,7 @@ func TestRollbackLaunchPreservesNewerCommandSessionGeneration(t *testing.T) {
 	})
 	t.Cleanup(mgr.Shutdown)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cwd := t.TempDir()
 	original, err := mgr.EnsureCommandSessionAndPersist(
 		ctx, "scope-1", commandSessionTestSpec("client:key one", cwd),
@@ -335,7 +335,7 @@ func TestRollbackLaunchPreservesAdoptedCommandSessionBackend(t *testing.T) {
 	})
 	t.Cleanup(mgr.Shutdown)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cwd := t.TempDir()
 	original, err := mgr.EnsureCommandSessionAndPersist(
 		ctx, "scope-1", commandSessionTestSpec("client:key one", cwd),
@@ -383,7 +383,7 @@ func TestEnsureCommandSessionAndPersistSerializesSameKeyOwnership(t *testing.T) 
 		info SessionInfo
 		err  error
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	spec := commandSessionTestSpec("surface:shared", t.TempDir())
 	aPersistEntered := make(chan struct{})
 	failAPersist := make(chan struct{})
@@ -502,7 +502,7 @@ func TestEnsureCommandSessionAndPersistPreservesPersistenceCauseAndRollbackDiagn
 	persistenceErr := errors.New("metadata write failed")
 
 	_, err := mgr.EnsureCommandSessionAndPersist(
-		context.Background(), "scope-1",
+		t.Context(), "scope-1",
 		commandSessionTestSpec("surface:typed-error", t.TempDir()),
 		func(context.Context, SessionInfo) error { return persistenceErr },
 	)
@@ -532,7 +532,7 @@ func TestEnsureCommandSessionAndPersistRejectsForeignTmuxSessionOwner(t *testing
 	t.Cleanup(mgr.Shutdown)
 
 	_, err := mgr.EnsureCommandSessionAndPersist(
-		context.Background(), "scope-1",
+		t.Context(), "scope-1",
 		commandSessionTestSpec("client:key one", t.TempDir()),
 		persistCommandSessionNoop,
 	)

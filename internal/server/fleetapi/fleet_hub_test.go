@@ -42,7 +42,7 @@ func TestBuildFleetSnapshotMergesMemberAndDegrades(t *testing.T) {
 		config.FleetMember{NodeID: "cccccccccccccccccccccccccccccccc", Name: "epyc", BaseURL: "https://127.0.0.1:1"},
 	)
 
-	snap, err := srv.buildFleetSnapshot(context.Background(), true)
+	snap, err := srv.buildFleetSnapshot(t.Context(), true)
 	require.NoError(err)
 	var reachable, down int
 	for _, h := range snap.Hosts {
@@ -119,7 +119,7 @@ func TestBuildFleetSnapshotSkipsMembersWhenFederationDisabled(t *testing.T) {
 		Members: []config.FleetMember{{NodeID: testMemberNodeID, Name: "mbp", BaseURL: peer.URL}},
 	}})
 
-	snap, err := srv.buildFleetSnapshot(context.Background(), true)
+	snap, err := srv.buildFleetSnapshot(t.Context(), true)
 	require.NoError(t, err)
 	require.Len(t, snap.Hosts, 1, "disabled federation must return local host only")
 	assert.Equal(t, 0, peerRequests, "disabled federation must not fetch members")
@@ -127,7 +127,7 @@ func TestBuildFleetSnapshotSkipsMembersWhenFederationDisabled(t *testing.T) {
 
 func TestBuildFleetSnapshotLocalOnly(t *testing.T) {
 	srv := &Handler{db: dbtest.Open(t), config: ConfigSnapshot{}}
-	snap, err := srv.buildFleetSnapshot(context.Background(), false)
+	snap, err := srv.buildFleetSnapshot(t.Context(), false)
 	require.NoError(t, err)
 	require.Len(t, snap.Hosts, 1, "local-only build must yield exactly one self host")
 	assert.True(t, snap.Hosts[0].Reachable, "self host must be reachable")
@@ -140,7 +140,7 @@ func TestBuildFleetSnapshotDefaultsToFleetNamespace(t *testing.T) {
 	assert := assert.New(t)
 	srv := New(Deps{DB: dbtest.Open(t), NodeID: testHubNodeID})
 
-	snap, err := srv.buildFleetSnapshot(context.Background(), false)
+	snap, err := srv.buildFleetSnapshot(t.Context(), false)
 	require.NoError(err)
 	require.Len(snap.Hosts, 1)
 	assert.Equal(testHubNodeID, snap.Hosts[0].ConfigKey)
@@ -404,7 +404,7 @@ func TestSpokeAggregateAllowsHubMemberFanoutToReachItsOwnDeadline(t *testing.T) 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		writer http.ResponseWriter, _ *http.Request,
 	) {
-		time.Sleep(40 * time.Millisecond)
+		time.Sleep(40 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 		assert.NoError(t, json.NewEncoder(writer).Encode(aggregate))
 	}))
 	defer hub.Close()

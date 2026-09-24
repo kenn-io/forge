@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -393,7 +394,7 @@ func TestRepositoryDescriptorOrdersObservationTimeWithRepositoryIdentity(t *test
 	writeDone := make(chan error, 1)
 	go func() {
 		_, _, writeErr := database.ReconcileRepositoryObservation(
-			context.Background(), identity, observedAt,
+			t.Context(), identity, observedAt,
 		)
 		writeDone <- writeErr
 	}()
@@ -406,7 +407,7 @@ func TestRepositoryDescriptorOrdersObservationTimeWithRepositoryIdentity(t *test
 	descriptorDone := make(chan descriptorResult, 1)
 	go func() {
 		output, descriptorErr := server.federationRepositoryDescriptor(
-			context.Background(), &federationRepositoryDescriptorInput{Body: providerplane.RepositoryRoute{
+			t.Context(), &federationRepositoryDescriptorInput{Body: providerplane.RepositoryRoute{
 				Provider: "github", PlatformHost: "github.com",
 				Owner: "acme", Name: "widget",
 			}},
@@ -527,7 +528,7 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 		},
 	)
 	require.Error(err)
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(ok)
 	assert.Equal(httpapi.CodeGitCredentialUnavailable, problem.Code)
 }
@@ -579,7 +580,7 @@ func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
 		},
 	)
 	require.Error(err)
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(ok)
 	assert.Equal(httpapi.CodeGitCredentialUnavailable, problem.Code)
 	assert.Equal("contributor/widget", problem.Details["repoPath"])
@@ -772,7 +773,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	assert.Equal(httpapi.CodeHubUnavailable, problem.Code)
 
 	localCtx := gitclone.WithRepositoryIdentity(
-		context.Background(), diffRepo.PlatformRepoID,
+		t.Context(), diffRepo.PlatformRepoID,
 	)
 	localDiff, err := nodeClones.Diff(
 		localCtx, "github", "github.com", "acme", "widgets",

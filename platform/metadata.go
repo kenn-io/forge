@@ -58,6 +58,8 @@ func NormalizeKind(raw string) (Kind, error) {
 		return KindForgejo, nil
 	case "tea":
 		return KindGitea, nil
+	case KindGitHub, KindGitLab, KindForgejo, KindGitea:
+		return kind, nil
 	}
 	if !validKindRe.MatchString(string(kind)) {
 		return "", fmt.Errorf("unsupported platform %q", raw)

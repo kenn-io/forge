@@ -12,11 +12,10 @@ import (
 )
 
 var templateCache = &templateState{}
-var templateRoot = os.TempDir()
 
 type templateState struct {
 	once       sync.Once
-	path       string
+	data       []byte
 	initErr    error
 	buildCount atomic.Int32
 }
@@ -26,55 +25,49 @@ type templateState struct {
 // The first call builds a migrated template database. Later calls copy that
 // template into t.TempDir(), preserving test isolation without rerunning every
 // migration for every test fixture.
-func Open(t testing.TB) *db.DB {
-	t.Helper()
+func Open(tb testing.TB) *db.DB {
+	tb.Helper()
 
-	path := filepath.Join(t.TempDir(), "test.db")
-	return OpenAt(t, path)
+	path := filepath.Join(tb.TempDir(), "test.db")
+	return OpenAt(tb, path)
 }
 
 // OpenAt copies the migrated test template to path and opens that copy.
-func OpenAt(t testing.TB, path string) *db.DB {
-	t.Helper()
+func OpenAt(tb testing.TB, path string) *db.DB {
+	tb.Helper()
 
-	templatePath := templatePath(t)
-	copyFile(t, templatePath, path)
-	return OpenPreparedAt(t, path)
+	copyFile(tb, templateBytes(tb), path)
+	return OpenPreparedAt(tb, path)
 }
 
 // OpenPreparedAt opens an existing database that was prepared through this
 // fixture without rerunning migrations.
-func OpenPreparedAt(t testing.TB, path string) *db.DB {
-	t.Helper()
+func OpenPreparedAt(tb testing.TB, path string) *db.DB {
+	tb.Helper()
 
 	database, err := db.OpenPreparedForTest(path)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = database.Close() })
+	require.NoError(tb, err)
+	tb.Cleanup(func() { _ = database.Close() })
 	return database
 }
 
 // OpenWithMigrationsAt opens path through the production migration path for
 // tests that specifically exercise migration or startup repair behavior.
-func OpenWithMigrationsAt(t testing.TB, path string) *db.DB {
-	t.Helper()
+func OpenWithMigrationsAt(tb testing.TB, path string) *db.DB {
+	tb.Helper()
 
 	database, err := db.Open(path)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = database.Close() })
+	require.NoError(tb, err)
+	tb.Cleanup(func() { _ = database.Close() })
 	return database
 }
 
-func templatePath(t testing.TB) string {
-	t.Helper()
+func templateBytes(tb testing.TB) []byte {
+	tb.Helper()
 
 	templateCache.once.Do(func() {
 		templateCache.buildCount.Add(1)
-		dir, err := os.MkdirTemp(templateRoot, "kenn-forge-test-db-template-*")
-		if err != nil {
-			templateCache.initErr = err
-			return
-		}
-		path := filepath.Join(dir, "template.db")
+		path := filepath.Join(tb.TempDir(), "template.db")
 		database, err := db.Open(path)
 		if err != nil {
 			templateCache.initErr = err
@@ -89,16 +82,19 @@ func templatePath(t testing.TB) string {
 			templateCache.initErr = err
 			return
 		}
-		templateCache.path = path
+		data, err := os.ReadFile(path)
+		if err != nil {
+			templateCache.initErr = err
+			return
+		}
+		templateCache.data = data
 	})
-	require.NoError(t, templateCache.initErr)
-	return templateCache.path
+	require.NoError(tb, templateCache.initErr)
+	return templateCache.data
 }
 
-func copyFile(t testing.TB, src, dst string) {
-	t.Helper()
+func copyFile(tb testing.TB, src []byte, dst string) {
+	tb.Helper()
 
-	data, err := os.ReadFile(src)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(dst, data, 0o600))
+	require.NoError(tb, os.WriteFile(dst, src, 0o600))
 }

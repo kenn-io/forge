@@ -48,8 +48,8 @@ func (c *Client) classifyRepositoryFeatureError(
 		return c.mapGitLabError(capability, err), false
 	}
 
-	var responseErr *gitlab.ErrorResponse
-	if !errors.As(err, &responseErr) || responseErr == nil ||
+	responseErr, ok := errors.AsType[*gitlab.ErrorResponse](err)
+	if !ok || responseErr == nil ||
 		(!responseErr.HasStatusCode(http.StatusForbidden) &&
 			!responseErr.HasStatusCode(http.StatusNotFound) &&
 			!responseErr.HasStatusCode(http.StatusGone)) {

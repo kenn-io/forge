@@ -254,6 +254,7 @@ func testArchiveReactivationReclassifiesWorkspaceHeadRepo(
 	headClone string,
 	expectKind generated.WorkspaceResponseMrHeadRepoKind,
 ) {
+	t.Helper()
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -437,6 +438,7 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	t *testing.T,
 	tt archiveMergeMetricsCase,
 ) {
+	t.Helper()
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -647,7 +649,7 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	require.NotNil(reportResponse.JSON200)
 	require.NotNil(reportResponse.JSON200.Activity)
 	require.Len(reportResponse.JSON200.Activity, 1)
-	merged := (reportResponse.JSON200.Activity)[0]
+	merged := reportResponse.JSON200.Activity[0]
 	assert.Equal(generated.ArchiveReportActivityResponseKindMergeRequestMerged, merged.Kind)
 	require.NotNil(merged.Actor)
 	assert.Equal("merge-admin", *merged.Actor)

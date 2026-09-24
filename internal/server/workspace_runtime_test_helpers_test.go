@@ -55,6 +55,13 @@ func dialWebSocketForTest(
 ) *websocket.Conn {
 	t.Helper()
 	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	if err != nil && resp != nil && resp.Body != nil {
 		body, readErr := io.ReadAll(resp.Body)
 		require.NoError(t, readErr)

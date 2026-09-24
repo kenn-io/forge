@@ -620,8 +620,7 @@ func (s *Syncer) prepareNotificationRepoAttempt(
 	if err := s.ensureNotificationIdentityBudget(repo, client); err != nil {
 		return nil, false, err
 	}
-	resolved, observedRepoID, providerRepo, observedAt, accepted, err :=
-		s.reconcileRepoIdentityObservation(ctx, repo)
+	resolved, observedRepoID, providerRepo, observedAt, accepted, err := s.reconcileRepoIdentityObservation(ctx, repo)
 	if err != nil {
 		return nil, false, fmt.Errorf(
 			"verify repository identity before notification sync of %s/%s on %s: %w",

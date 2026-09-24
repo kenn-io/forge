@@ -2,6 +2,7 @@ package forgejo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -67,7 +68,7 @@ func (t *transport) PublishDiffReviewDraft(
 		return nil, forgejoHTTPError(resp, err)
 	}
 	if review == nil {
-		return nil, fmt.Errorf("forgejo create pull review returned nil review")
+		return nil, errors.New("forgejo create pull review returned nil review")
 	}
 	published := &platform.PublishedDiffReview{
 		ProviderReviewID: strconv.FormatInt(review.ID, 10),
@@ -194,11 +195,11 @@ func forgejoReviewThread(
 	var newLine *int
 	if comment.OldLineNum > 0 && comment.LineNum > 0 {
 		old := int(comment.OldLineNum)
-		new := int(comment.LineNum)
-		line = new
+		newLineNum := int(comment.LineNum)
+		line = newLineNum
 		lineType = "context"
 		oldLine = &old
-		newLine = &new
+		newLine = &newLineNum
 	} else if comment.OldLineNum > 0 {
 		old := int(comment.OldLineNum)
 		line = old
@@ -206,8 +207,8 @@ func forgejoReviewThread(
 		lineType = "delete"
 		oldLine = &old
 	} else if comment.LineNum > 0 {
-		new := int(comment.LineNum)
-		newLine = &new
+		newLineNum := int(comment.LineNum)
+		newLine = &newLineNum
 	}
 	resolvedAt := (*time.Time)(nil)
 	resolved := comment.Resolver != nil

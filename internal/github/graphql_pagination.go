@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -38,9 +39,7 @@ func fetchAllPagesWithProgress[T any](
 			break
 		}
 		if pi.EndCursor == "" {
-			return all, fmt.Errorf(
-				"graphql pagination: hasNextPage true but endCursor empty",
-			)
+			return all, errors.New("graphql pagination: hasNextPage true but endCursor empty")
 		}
 		if cursor != nil && pi.EndCursor == *cursor {
 			return all, fmt.Errorf(

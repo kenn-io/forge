@@ -219,7 +219,7 @@ func TestGitHubAsyncMergePersistsOnlyAfterTerminalSuccess(t *testing.T) {
 	})
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/7/merge",
 		strings.NewReader(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),

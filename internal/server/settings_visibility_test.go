@@ -685,7 +685,7 @@ name = "wid*"
 	go func() {
 		var buf bytes.Buffer
 		buf.WriteString(`{"hidden":true}`)
-		req := httptest.NewRequest(http.MethodPut,
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPut,
 			"/api/v1/repo/github/acme/widget/ui-visibility", &buf)
 		req.Host = "127.0.0.1:8091"
 		req.Header.Set("Content-Type", "application/json")

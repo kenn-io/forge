@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/pem"
 	"fmt"
-	"go.kenn.io/forge/internal/platformdb"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/internal/platformdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -115,7 +116,7 @@ token_env = "KENN_FORGE_ARCHIVE_E2E_TOKEN"
 	waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
 	waitForFile(t, runtimelock.AuthTokenPath(dataDir), 10*time.Second)
 	require.Eventually(func() bool {
-		request, requestErr := http.NewRequest(
+		request, requestErr := http.NewRequestWithContext(t.Context(),
 			http.MethodGet,
 			fmt.Sprintf("http://127.0.0.1:%d/archive-e2e/api/v1/health", port),
 			nil,

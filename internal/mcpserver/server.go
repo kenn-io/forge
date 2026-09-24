@@ -1,7 +1,7 @@
 package mcpserver
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -30,7 +30,7 @@ type Server struct {
 
 func New(opts Options) (*Server, error) {
 	if opts.Backend == nil {
-		return nil, fmt.Errorf("MCP backend is required")
+		return nil, errors.New("MCP backend is required")
 	}
 	diffCacheBytes := opts.DiffCacheBytes
 	if diffCacheBytes <= 0 {

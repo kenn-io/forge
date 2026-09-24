@@ -133,7 +133,7 @@ func TestHiddenRepoPreferenceCascadesOnRepoDelete(t *testing.T) {
 	require.NoError(err)
 	require.NoError(d.SetRepoHiddenFromUI(ctx, repoID, true))
 
-	_, err = d.WriteDB().Exec("DELETE FROM forge_repos WHERE id = ?", repoID)
+	_, err = d.WriteDB().ExecContext(t.Context(), "DELETE FROM forge_repos WHERE id = ?", repoID)
 	require.NoError(err)
 
 	assert.Empty(hiddenRepoIDs(t, d))

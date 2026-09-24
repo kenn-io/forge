@@ -4,12 +4,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -66,11 +66,13 @@ func (h *switchableFederationHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 	if h.offline.Load() {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"status": http.StatusServiceUnavailable,
 			"code":   httpapi.CodeHubUnavailable,
 			"detail": "the federation hub is unavailable",
-		})
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 	h.current.Load().handler.ServeHTTP(w, r)
@@ -88,8 +90,7 @@ type federatedDaemonFixture struct {
 	Switch      *switchableFederationHandler
 }
 
-type countingSyntheticProvider struct {
-}
+type countingSyntheticProvider struct{}
 
 func (p *countingSyntheticProvider) Seed(t *testing.T, database *db.DB) int64 {
 	t.Helper()
@@ -351,7 +352,7 @@ func seedFederatedWorkspace(
 		ID: id, Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
-		ItemKey: fmt.Sprint(number), GitHeadRef: branch, WorkspaceBranch: branch,
+		ItemKey: strconv.Itoa(number), GitHeadRef: branch, WorkspaceBranch: branch,
 		WorktreePath: filepath.Join(t.TempDir(), id), Status: "ready", CreatedAt: now,
 	}
 	require.NoError(t, database.CreateWorkspaceWithLaunchSpec(
@@ -366,7 +367,7 @@ func seedFederatedWorkspace(
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
-			ItemKey: fmt.Sprint(number), GitHeadRef: branch,
+			ItemKey: strconv.Itoa(number), GitHeadRef: branch,
 			Pull: &db.WorkspaceLaunchPull{
 				HeadBranch: branch, HeadRepoKind: "same_repo", SnapshotRevision: 1,
 			},

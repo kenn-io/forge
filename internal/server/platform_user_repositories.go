@@ -167,8 +167,7 @@ func (s *Server) fetchUserRepositoriesPage(
 // gh auth login", anything else surfaces as a bad-gateway-style
 // upstream error with the CLI's own message.
 func userRepositoriesProblem(err error, platformHost string) error {
-	var execErr *exec.Error
-	if errors.As(err, &execErr) && errors.Is(execErr.Err, exec.ErrNotFound) {
+	if execErr, ok := errors.AsType[*exec.Error](err); ok && errors.Is(execErr.Err, exec.ErrNotFound) {
 		return httpapi.NotFound(
 			httpapi.CodeToolMissing,
 			"the gh CLI is not installed on this host",
@@ -176,8 +175,7 @@ func userRepositoriesProblem(err error, platformHost string) error {
 		)
 	}
 	message := err.Error()
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && len(exitErr.Stderr) > 0 {
 		message = strings.TrimSpace(string(exitErr.Stderr))
 	}
 	lowered := strings.ToLower(message)

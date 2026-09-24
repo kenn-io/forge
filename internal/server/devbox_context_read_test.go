@@ -49,7 +49,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	}
 	require.NoError(database.CreateWorkspaceWithLaunchSpec(ctx, ws, spec))
 	socket := filepath.Join(t.TempDir(), "broker.sock")
-	listener, err := net.Listen("unix", socket)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
 	require.NoError(err)
 	var denyCredential atomic.Bool
 	broker := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +118,8 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 		CreatedAt: issuedAt, UpdatedAt: issuedAt, LastActivityAt: issuedAt,
 	})
 	require.NoError(err)
-	controller := &Server{options: ServerOptions{Devboxes: connections}, db: controllerDB,
+	controller := &Server{
+		options: ServerOptions{Devboxes: connections}, db: controllerDB,
 		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: controllerDB}),
 		now:          func() time.Time { return issuedAt.Add(time.Duration(elapsed.Load())) },
 	}
@@ -126,7 +127,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	controller.registerDevboxAPI(humago.New(mux, huma.DefaultConfig("controller", "1")))
 	request := func(path string) *httptest.ResponseRecorder {
 		response := httptest.NewRecorder()
-		mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/devboxes/compute-a/workspaces/work-a"+path, nil))
+		mux.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/devboxes/compute-a/workspaces/work-a"+path, nil))
 		return response
 	}
 	routes := []string{

@@ -1758,10 +1758,11 @@ func isShowRefMissingError(err error) bool {
 	if strings.Contains(strings.ToLower(err.Error()), "not a valid ref") {
 		return true
 	}
-	var exitErr interface {
+	type exitCoder interface {
+		error
 		ExitCode() (int, bool)
 	}
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[exitCoder](err); ok {
 		code, ok := exitErr.ExitCode()
 		return ok && code == 1
 	}

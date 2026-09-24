@@ -79,7 +79,7 @@ func (rec *gitlabAPIRecorder) findEventually(method, path string) bool {
 		if time.Now().After(deadline) {
 			return false
 		}
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(25 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 	}
 }
 
@@ -440,7 +440,7 @@ func doGitLabJSON(
 	if body != "" {
 		reader = strings.NewReader(body)
 	}
-	req := httptest.NewRequest(method, path, reader)
+	req := httptest.NewRequestWithContext(t.Context(), method, path, reader)
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -1190,7 +1190,7 @@ func TestGitLabMutationGenericMergeConflictDoesNotResync(t *testing.T) {
 	assert.Equal("conflict", problem.Details["reason"])
 
 	// Give a wrongly-scheduled background sync time to surface.
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 	_, synced := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
 	assert.False(synced, "generic conflicts must not resync on head-binding providers")
 }

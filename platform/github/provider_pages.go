@@ -66,8 +66,8 @@ const (
 )
 
 func RepositoryFeatureDisabled(host, capability string, err error) error {
-	var responseErr *gh.ErrorResponse
-	if !errors.As(err, &responseErr) || responseErr.Response == nil ||
+	responseErr, ok := errors.AsType[*gh.ErrorResponse](err)
+	if !ok || responseErr.Response == nil ||
 		responseErr.Response.StatusCode != http.StatusGone {
 		return nil
 	}
@@ -229,6 +229,7 @@ func (p *Provider) MergeRequestLookupOutcomeError(
 	}
 	return nil
 }
+
 func (p *Provider) listInventoryIssuesPage(
 	ctx context.Context,
 	ref platform.RepoRef,
@@ -404,6 +405,9 @@ func mapGitHubReadError(host string, now func() time.Time, capability platform.A
 		); disabled != nil {
 			return disabled
 		}
+	case platform.ArchiveCapabilityOrdinaryComments,
+		platform.ArchiveCapabilitySubmittedReviews,
+		platform.ArchiveCapabilityInlineReviewComments:
 	}
 	if existing, ok := errors.AsType[*platform.Error](err); ok {
 		mapped := *existing
@@ -419,48 +423,62 @@ func mapGitHubReadError(host string, now func() time.Time, capability platform.A
 		return &mapped
 	}
 	response := githubArchiveErrorResponse(err)
+	if response != nil {
+		defer response.Body.Close()
+	}
 	resetAt := ArchiveResetAt(response)
 	if rateLimit, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		if !rateLimit.Rate.Reset.IsZero() {
 			reset := rateLimit.Rate.Reset.UTC()
 			resetAt = &reset
 		}
-		return &platform.Error{Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub,
-			PlatformHost: host, Capability: string(capability), ResetAt: resetAt, Err: err}
+		return &platform.Error{
+			Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub,
+			PlatformHost: host, Capability: string(capability), ResetAt: resetAt, Err: err,
+		}
 	}
 	if abuseLimit, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
 		if resetAt == nil && abuseLimit.RetryAfter != nil {
 			reset := now().UTC().Add(*abuseLimit.RetryAfter)
 			resetAt = &reset
 		}
-		return &platform.Error{Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub,
-			PlatformHost: host, Capability: string(capability), ResetAt: resetAt, Err: err}
+		return &platform.Error{
+			Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub,
+			PlatformHost: host, Capability: string(capability), ResetAt: resetAt, Err: err,
+		}
 	}
 	status := StatusCode(err)
 	if status == http.StatusTooManyRequests ||
 		status == http.StatusForbidden && response != nil && response.Header.Get("X-RateLimit-Remaining") == "0" {
-		return &platform.Error{Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub,
-			PlatformHost: host, Capability: string(capability), ResetAt: resetAt, Err: err}
+		return &platform.Error{
+			Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub,
+			PlatformHost: host, Capability: string(capability), ResetAt: resetAt, Err: err,
+		}
 	}
 	if status == http.StatusForbidden || status == http.StatusUnauthorized {
-		return &platform.Error{Code: platform.ErrCodePermissionDenied, Provider: platform.KindGitHub,
-			PlatformHost: host, Capability: string(capability), Err: err}
+		return &platform.Error{
+			Code: platform.ErrCodePermissionDenied, Provider: platform.KindGitHub,
+			PlatformHost: host, Capability: string(capability), Err: err,
+		}
 	}
 	return err
 }
 
 func githubArchiveErrorResponse(err error) *http.Response {
+	var response *http.Response
 	if rateLimit, ok := errors.AsType[*gh.RateLimitError](err); ok {
-		return rateLimit.Response
+		response = rateLimit.Response
+	} else if abuseLimit, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
+		response = abuseLimit.Response
+	} else if ghErr, ok := errors.AsType[*gh.ErrorResponse](err); ok {
+		response = ghErr.Response
 	}
-	if abuseLimit, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
-		return abuseLimit.Response
+	if response != nil && response.Body == nil {
+		response.Body = http.NoBody
 	}
-	if response, ok := errors.AsType[*gh.ErrorResponse](err); ok {
-		return response.Response
-	}
-	return nil
+	return response
 }
+
 func (p *Provider) InventoryAPI() (InventoryAPI, error) {
 	client, ok := p.client.(InventoryAPI)
 	if !ok {
@@ -560,13 +578,11 @@ func ArchiveDestination(ref platform.RepoRef, repositoryURL string) *platform.Re
 }
 
 func StatusCode(err error) int {
-	var response *gh.ErrorResponse
-	if errors.As(err, &response) && response.Response != nil {
+	if response, ok := errors.AsType[*gh.ErrorResponse](err); ok && response.Response != nil {
 		return response.Response.StatusCode
 	}
 	if redirect, ok := errors.AsType[*url.Error](err); ok {
-		var responseError *gh.ErrorResponse
-		if errors.As(redirect.Err, &responseError) && responseError.Response != nil {
+		if responseError, ok := errors.AsType[*gh.ErrorResponse](redirect.Err); ok && responseError.Response != nil {
 			return responseError.Response.StatusCode
 		}
 	}

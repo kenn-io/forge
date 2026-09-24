@@ -1,7 +1,6 @@
 package forgejo
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/gitealike"
 )
@@ -36,7 +35,7 @@ var (
 
 func TestClientReadsIssuePullReferenceTimelineEvents(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var timelinePages []string
 
 	var server *httptest.Server
@@ -75,7 +74,7 @@ func TestClientReadsIssuePullReferenceTimelineEvents(t *testing.T) {
 
 	client, err := NewClient("codeberg.test", testTokenSource("forgejo-token"), WithBaseURLForTesting(server.URL), WithTransport(http.DefaultTransport))
 	require.NoError(err)
-	events, err := client.ListIssueEvents(context.Background(), platform.RepoRef{
+	events, err := client.ListIssueEvents(t.Context(), platform.RepoRef{
 		Host: "codeberg.test", Owner: "owner", Name: "repo", RepoPath: "owner/repo",
 	}, 3)
 	require.NoError(err)
@@ -89,7 +88,7 @@ func TestClientReadsIssuePullReferenceTimelineEvents(t *testing.T) {
 
 func TestClientReadsForgejoActionsChecks(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 
 	var sawStatuses, sawActions bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +118,7 @@ func TestClientReadsForgejoActionsChecks(t *testing.T) {
 
 	client, err := NewClient("forgejo.test", testTokenSource("forgejo-token"), WithBaseURLForTesting(server.URL), WithTransport(http.DefaultTransport))
 	require.NoError(err)
-	checks, err := client.ListCIChecks(context.Background(), platform.RepoRef{Owner: "owner", Name: "repo"}, "abc")
+	checks, err := client.ListCIChecks(t.Context(), platform.RepoRef{Owner: "owner", Name: "repo"}, "abc")
 	require.NoError(err)
 
 	assert.True(sawStatuses)
@@ -129,7 +128,7 @@ func TestClientReadsForgejoActionsChecks(t *testing.T) {
 
 func TestClientReadsCommitStatusesWhenActionsEndpointUnavailable(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 
 	testCases := []struct {
 		name       string
@@ -164,7 +163,7 @@ func TestClientReadsCommitStatusesWhenActionsEndpointUnavailable(t *testing.T) {
 			require.NoError(err)
 			ref := platform.RepoRef{Owner: "owner", Name: "repo"}
 
-			checks, err := client.ListCIChecks(context.Background(), ref, "abc")
+			checks, err := client.ListCIChecks(t.Context(), ref, "abc")
 
 			require.NoError(err)
 			require.Len(checks, 1)

@@ -6,7 +6,7 @@ import (
 
 	forgejosdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3"
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform/gitealike"
 )
 
@@ -25,7 +25,7 @@ func TestConvertRepositoryPreservesFeatureState(t *testing.T) {
 				ID: 1, Name: "repo", FullName: "owner/repo",
 				HasIssues: tt.issues, HasPullRequests: tt.pullRequests,
 			})
-			require := Require.New(t)
+			require := require.New(t)
 			require.NoError(err)
 			require.NotNil(repo.IssuesEnabled)
 			require.NotNil(repo.MergeRequestsEnabled)
@@ -38,7 +38,7 @@ func TestConvertRepositoryPreservesFeatureState(t *testing.T) {
 
 func TestConvertForgejoSDKRecords(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	created := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	updated := created.Add(time.Hour)
 	closed := created.Add(2 * time.Hour)

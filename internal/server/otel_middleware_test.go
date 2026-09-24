@@ -37,7 +37,7 @@ func TestHTTPSpansParentedOnTraceparent(t *testing.T) {
 	require.NoError(err)
 	srv := New(database, nil, nil, "/", nil, ServerOptions{})
 
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
 	req.Header.Set("traceparent", "00-33333333333333333333333333333333-4444444444444444-01")
 	req.Header.Set("baggage", "interaction=workspace-switch,workspace.id=ws-9")
 	rec := httptest.NewRecorder()
@@ -70,7 +70,7 @@ func TestHTTPSpanUsesMatchedRouteUnderBasePath(t *testing.T) {
 	database := dbtest.Open(t)
 	srv := New(database, nil, nil, "/kenn-forge/", nil, ServerOptions{})
 
-	req := httptest.NewRequest(http.MethodGet, "/kenn-forge/api/v1/sync/status", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/api/v1/sync/status", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -104,7 +104,7 @@ func TestOTelTraceableFiltersOnlyLongLivedStreams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.target, nil)
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.target, nil)
 			if tt.upgrade {
 				req.Header.Set("Upgrade", "websocket")
 			}

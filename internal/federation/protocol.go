@@ -175,7 +175,7 @@ func CanonicalOrigin(raw string) (string, error) {
 	}
 	port := u.Port()
 	if strings.HasSuffix(u.Host, ":") {
-		return "", fmt.Errorf("federation origin has an empty port")
+		return "", errors.New("federation origin has an empty port")
 	}
 	if port != "" {
 		parsedPort, parseErr := strconv.Atoi(port)

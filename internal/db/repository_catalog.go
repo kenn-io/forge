@@ -78,15 +78,6 @@ type PullDiffProviderSnapshot struct {
 	State            string
 }
 
-type repositoryCatalogQueryer interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
-type repositoryCatalogScanner interface {
-	Scan(...any) error
-}
-
 func validateRepositoryObservation(identity RepoIdentity) error {
 	if strings.TrimSpace(identity.Platform) == "" {
 		return errors.New("repository observation platform is required")
@@ -794,7 +785,7 @@ func historicalRouteHasOtherRepositoryTx(
 
 func repositoryRouteHasOtherRepository(
 	ctx context.Context,
-	queryer repositoryCatalogQueryer,
+	queryer rowQueryer,
 	identity RepoIdentity,
 	repoID int64,
 ) (bool, error) {
@@ -1027,7 +1018,7 @@ func currentRepositoryIDByRouteTx(
 
 func currentRepositoryRouteFence(
 	ctx context.Context,
-	queryer repositoryCatalogQueryer,
+	queryer rowQueryer,
 	identity RepoIdentity,
 ) (RepositoryRouteFence, bool, error) {
 	var fence RepositoryRouteFence
@@ -1348,7 +1339,7 @@ func updateRepositoryDisplayTx(
 
 func loadRepositoryCatalogEntry(
 	ctx context.Context,
-	q repositoryCatalogQueryer,
+	q rowQueryer,
 	where string,
 	args ...any,
 ) (*RepositoryCatalogEntry, error) {
@@ -1376,7 +1367,7 @@ func loadRepositoryCatalogEntry(
 }
 
 func scanRepositoryCatalogEntry(
-	scanner repositoryCatalogScanner,
+	scanner scanner,
 	entry *RepositoryCatalogEntry,
 ) error {
 	r := &entry.Repository
@@ -1415,7 +1406,7 @@ func scanRepositoryCatalogEntry(
 
 func loadRepositoryRoutes(
 	ctx context.Context,
-	q repositoryCatalogQueryer,
+	q rowQueryer,
 	repoIDs []int64,
 ) (map[int64][]RepositoryRoute, error) {
 	routesByRepo := make(map[int64][]RepositoryRoute, len(repoIDs))

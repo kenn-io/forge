@@ -1,7 +1,6 @@
 package gitlab
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
@@ -25,7 +24,7 @@ func gitlabLabelTestRef() platform.RepoRef {
 }
 
 func TestClientListLabelsCollectsPagesAndNormalizes(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	var pages []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +41,7 @@ func TestClientListLabelsCollectsPagesAndNormalizes(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	catalog, err := client.ListLabels(context.Background(), gitlabLabelTestRef())
+	catalog, err := client.ListLabels(t.Context(), gitlabLabelTestRef())
 	require.NoError(err)
 	require.Len(catalog.Labels, 2)
 	assert.Equal([]string{"1", "2"}, pages)
@@ -67,7 +66,7 @@ func TestClientSetLabelsSendsCommaJoinedNames(t *testing.T) {
 			response: `{"id": 1001, "iid": 7, "project_id": 42, "state": "opened", "labels": ["bug", "triage"]}`,
 			set: func(client *Client) ([]platform.Label, error) {
 				return client.SetMergeRequestLabels(
-					context.Background(), gitlabLabelTestRef(), 7, []string{"bug", "triage"},
+					t.Context(), gitlabLabelTestRef(), 7, []string{"bug", "triage"},
 				)
 			},
 		},
@@ -77,14 +76,14 @@ func TestClientSetLabelsSendsCommaJoinedNames(t *testing.T) {
 			response: `{"id": 3001, "iid": 11, "project_id": 42, "state": "opened", "labels": ["bug", "triage"]}`,
 			set: func(client *Client) ([]platform.Label, error) {
 				return client.SetIssueLabels(
-					context.Background(), gitlabLabelTestRef(), 11, []string{"bug", "triage"},
+					t.Context(), gitlabLabelTestRef(), 11, []string{"bug", "triage"},
 				)
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require := Require.New(t)
+			require := require.New(t)
 			assert := assert.New(t)
 			var body map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +107,7 @@ func TestClientSetLabelsSendsCommaJoinedNames(t *testing.T) {
 }
 
 func TestClientSetLabelsSendsEmptyStringToClearAll(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	var body map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +119,7 @@ func TestClientSetLabelsSendsEmptyStringToClearAll(t *testing.T) {
 	defer server.Close()
 
 	labels, err := newTestClient(t, server.URL).SetMergeRequestLabels(
-		context.Background(), gitlabLabelTestRef(), 7, nil,
+		t.Context(), gitlabLabelTestRef(), 7, nil,
 	)
 	require.NoError(err)
 	assert.Empty(labels)
@@ -132,7 +131,7 @@ func TestClientSetLabelsSendsEmptyStringToClearAll(t *testing.T) {
 }
 
 func TestClientSetLabelsRejectsCommaNamesWithoutCallingProvider(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -145,12 +144,12 @@ func TestClientSetLabelsRejectsCommaNamesWithoutCallingProvider(t *testing.T) {
 	for _, set := range []func() ([]platform.Label, error){
 		func() ([]platform.Label, error) {
 			return client.SetMergeRequestLabels(
-				context.Background(), gitlabLabelTestRef(), 7, []string{"bug", "reviewed,deploy"},
+				t.Context(), gitlabLabelTestRef(), 7, []string{"bug", "reviewed,deploy"},
 			)
 		},
 		func() ([]platform.Label, error) {
 			return client.SetIssueLabels(
-				context.Background(), gitlabLabelTestRef(), 11, []string{"reviewed,deploy"},
+				t.Context(), gitlabLabelTestRef(), 11, []string{"reviewed,deploy"},
 			)
 		},
 	} {
@@ -162,14 +161,14 @@ func TestClientSetLabelsRejectsCommaNamesWithoutCallingProvider(t *testing.T) {
 }
 
 func TestClientSetLabelsMapsProviderErrors(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"message": "403 Forbidden"}`, http.StatusForbidden)
 	}))
 	defer server.Close()
 
 	_, err := newTestClient(t, server.URL).SetIssueLabels(
-		context.Background(), gitlabLabelTestRef(), 11, []string{"bug"},
+		t.Context(), gitlabLabelTestRef(), 11, []string{"bug"},
 	)
 
 	require.ErrorIs(err, platform.ErrPermissionDenied)

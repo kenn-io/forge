@@ -269,7 +269,7 @@ func worktreeDiffFromRefsPath(
 		files = dropWhitespaceOnlyModifications(files, counts)
 	}
 
-	wsCount := 0
+	var wsCount int
 	whitespaceCtx, whitespaceSpan := workspaceDiffTracer.Start(
 		assembleCtx, "workspace.diff.whitespace",
 	)
@@ -355,7 +355,7 @@ func worktreeBlobContent(
 	object := ref + ":" + path
 	sizeOut, err := worktreeGitOutput(ctx, dir, "cat-file", "-s", object)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", gitclone.ErrNotFound, err)
+		return nil, fmt.Errorf("%w: %w", gitclone.ErrNotFound, err)
 	}
 	size, err := strconv.ParseInt(strings.TrimSpace(string(sizeOut)), 10, 64)
 	if err != nil {
@@ -366,7 +366,7 @@ func worktreeBlobContent(
 	}
 	data, err := worktreeGitOutput(ctx, dir, "cat-file", "blob", object)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", gitclone.ErrNotFound, err)
+		return nil, fmt.Errorf("%w: %w", gitclone.ErrNotFound, err)
 	}
 	return &gitclone.FileContent{Path: path, Data: data, Size: size}, nil
 }
@@ -378,7 +378,7 @@ func readWorktreeFileContent(
 ) (*gitclone.FileContent, error) {
 	opened, err := openWorktreePath(dir, path)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", gitclone.ErrNotFound, err)
+		return nil, fmt.Errorf("%w: %w", gitclone.ErrNotFound, err)
 	}
 	if opened.file == nil {
 		data := []byte(opened.symlinkTarget)
@@ -966,30 +966,28 @@ func worktreeMergeTargetBaseRef(
 	if targetBranch == "" {
 		return "", false, nil
 	}
-	if _, err := worktreeGitOutput(
+	if _, refErr := worktreeGitOutput(
 		ctx, dir, "check-ref-format", "--branch", targetBranch,
-	); err != nil {
-		return "", false, nil
+	); refErr == nil {
+		targetRef := "refs/remotes/origin/" + targetBranch
+		if _, verifyErr := worktreeGitOutput(
+			ctx, dir, "rev-parse", "--verify", "--quiet",
+			targetRef+"^{commit}",
+		); verifyErr == nil {
+			out, err := worktreeGitOutput(
+				ctx, dir, "merge-base", targetRef, "HEAD",
+			)
+			if err != nil {
+				return "", false, fmt.Errorf("git merge-base: %w", err)
+			}
+			baseRef := strings.TrimSpace(string(out))
+			if baseRef == "" {
+				return "", false, nil
+			}
+			return baseRef, true, nil
+		}
 	}
-
-	targetRef := "refs/remotes/origin/" + targetBranch
-	if _, err := worktreeGitOutput(
-		ctx, dir, "rev-parse", "--verify", "--quiet",
-		targetRef+"^{commit}",
-	); err != nil {
-		return "", false, nil
-	}
-	out, err := worktreeGitOutput(
-		ctx, dir, "merge-base", targetRef, "HEAD",
-	)
-	if err != nil {
-		return "", false, fmt.Errorf("git merge-base: %w", err)
-	}
-	baseRef := strings.TrimSpace(string(out))
-	if baseRef == "" {
-		return "", false, nil
-	}
-	return baseRef, true, nil
+	return "", false, nil
 }
 
 func worktreeGitOutput(

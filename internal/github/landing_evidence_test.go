@@ -36,7 +36,7 @@ func TestRoutedProviderLandingEvidence(t *testing.T) {
 				default:
 					require.Fail("unexpected request", r.URL.String())
 				}
-				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 			})}
 			client, err := platformgithub.NewClient(platformgithub.ClientConfig{Read: hc, Write: hc, Notifications: hc, Clock: time.Now})
 			require.NoError(err)

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -227,7 +228,7 @@ func (resource nativeStackResource) nativeStack() NativeStack {
 
 func ValidateNativeStack(stack NativeStack) error {
 	if stack.ID <= 0 || stack.Number <= 0 {
-		return fmt.Errorf("invalid stack identity")
+		return errors.New("invalid stack identity")
 	}
 	if len(stack.Members) == 0 {
 		return fmt.Errorf("stack %d has no members", stack.Number)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -51,7 +52,7 @@ func TestRegisterProjectUsesHubRepositoryIdentity(t *testing.T) {
 		},
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})
@@ -78,7 +79,7 @@ func TestWorktreeLifecycleProblemMapsExistingBranch(t *testing.T) {
 		managedworktree.ErrBranchAlreadyExists, "body.setup_script",
 	)
 
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(t, ok, "want *ProblemError, got %T", err)
 	assert.Equal(t, http.StatusConflict, problem.Status)
 	assert.Equal(t, httpapi.CodeBranchConflict, problem.Code)
@@ -169,7 +170,7 @@ func TestCreateProjectWorktreeFromMergeRequestUsesHubFacts(t *testing.T) {
 		EnrichmentDisabled:         true,
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})

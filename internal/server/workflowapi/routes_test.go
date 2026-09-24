@@ -50,6 +50,7 @@ func (p *workflowTestProvider) Capabilities() platform.Capabilities { return p.c
 func (p *workflowTestProvider) AuthenticatedUser(context.Context, platform.RepoRef) (string, error) {
 	return p.authenticatedUser, nil
 }
+
 func (p *workflowTestProvider) ListManualWorkflows(context.Context, platform.RepoRef) ([]platform.WorkflowDefinition, error) {
 	p.catalogCalls++
 	if p.onCatalog != nil {
@@ -57,10 +58,12 @@ func (p *workflowTestProvider) ListManualWorkflows(context.Context, platform.Rep
 	}
 	return p.catalog, p.catalogErr
 }
+
 func (p *workflowTestProvider) ListWorkflowEnvironments(context.Context, platform.RepoRef) ([]platform.WorkflowEnvironment, error) {
 	p.environmentCalls++
 	return p.environments, nil
 }
+
 func (p *workflowTestProvider) ListWorkflowRuns(_ context.Context, _ platform.RepoRef, query platform.WorkflowRunQuery) (platform.Page[platform.WorkflowRun], error) {
 	p.runQueries = append(p.runQueries, query)
 	if query.PerPage != 20 || query.Cursor != "cursor-1" || query.WorkflowID != "release.yml" || query.Event != "workflow_dispatch" || query.Branch != "main" {
@@ -68,6 +71,7 @@ func (p *workflowTestProvider) ListWorkflowRuns(_ context.Context, _ platform.Re
 	}
 	return p.runs, p.runsErr
 }
+
 func (p *workflowTestProvider) GetWorkflowRun(_ context.Context, _ platform.RepoRef, runID string) (platform.WorkflowRun, error) {
 	p.runIDs = append(p.runIDs, runID)
 	if p.followRun != nil {
@@ -75,9 +79,11 @@ func (p *workflowTestProvider) GetWorkflowRun(_ context.Context, _ platform.Repo
 	}
 	return platform.WorkflowRun{}, platform.ErrNotFound
 }
+
 func (p *workflowTestProvider) ListWorkflowRunJobs(context.Context, platform.RepoRef, string) ([]platform.WorkflowRunJob, error) {
 	return p.jobs, p.jobsErr
 }
+
 func (p *workflowTestProvider) DispatchWorkflow(_ context.Context, _ platform.RepoRef, request platform.WorkflowDispatchRequest) (platform.WorkflowDispatchResult, error) {
 	p.dispatches = append(p.dispatches, request)
 	return p.dispatch, p.dispatchErr
@@ -152,7 +158,7 @@ func workflowRequest(t *testing.T, mux http.Handler, method, path string, body a
 	if body != nil {
 		require.NoError(t, json.NewEncoder(&payload).Encode(body))
 	}
-	req := httptest.NewRequest(method, "/api/v1"+path, &payload)
+	req := httptest.NewRequestWithContext(t.Context(), method, "/api/v1"+path, &payload)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -568,6 +574,7 @@ func TestWorkflowDispatchEnforcesInputLimitsAndOperationGate(t *testing.T) {
 	assert.Equal("rateLimited", body["code"])
 	assert.Empty(provider.dispatches)
 }
+
 func TestWorkflowDispatchMapsWriteCredentialAvailabilityToForbidden(t *testing.T) {
 	for _, reason := range []string{"missing_write_credential", "write_credential_error"} {
 		t.Run(reason, func(t *testing.T) {

@@ -1277,7 +1277,7 @@ repo_path = "acme/widget"
 			if i%2 == 1 {
 				projectUID = "project-new"
 			}
-			request := httptest.NewRequest(
+			request := httptest.NewRequestWithContext(t.Context(),
 				http.MethodPost,
 				"/api/v1/kata/workspaces",
 				bytes.NewReader(requestBodies[projectUID]),

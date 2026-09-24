@@ -426,8 +426,8 @@ func (t *transport) ListActionRuns(
 }
 
 func actionRunsUnavailable(err error) bool {
-	var httpErr *gitealike.HTTPError
-	if !errors.As(err, &httpErr) {
+	httpErr, ok := errors.AsType[*gitealike.HTTPError](err)
+	if !ok {
 		return false
 	}
 	switch httpErr.StatusCode {

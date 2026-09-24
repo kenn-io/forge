@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"go.kenn.io/forge/internal/config"
@@ -36,16 +37,16 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	if *dbPath == "" {
-		return fmt.Errorf("-db is required")
+		return errors.New("-db is required")
 	}
 	if !*providerOnly && *projectPath == "" {
-		return fmt.Errorf("-project-path is required")
+		return errors.New("-project-path is required")
 	}
 	if !*providerOnly && *worktreePath == "" {
-		return fmt.Errorf("-worktree-path is required")
+		return errors.New("-worktree-path is required")
 	}
 	if *providerOnly && *cloneURL == "" {
-		return fmt.Errorf("-clone-url is required with -provider-only")
+		return errors.New("-clone-url is required with -provider-only")
 	}
 	switch db.MergeRequestState(*pullState) {
 	case db.MergeRequestStateOpen, db.MergeRequestStateClosed, db.MergeRequestStateMerged:
@@ -284,11 +285,11 @@ func startWorkspaceTmux(ctx context.Context, session, worktreePath string) error
 	// seeded sessions must land on the same dedicated kenn-forge
 	// server the fleet monitor reads, not the global tmux server.
 	tmuxCmd := config.DefaultTmuxCommand()
-	killArgs := append(tmuxCmd[1:], "kill-session", "-t", session)
+	killArgs := slices.Concat(tmuxCmd[1:], []string{"kill-session", "-t", session})
 	_ = procutil.CommandContext(ctx, tmuxCmd[0], killArgs...).Run()
-	newArgs := append(
+	newArgs := slices.Concat(
 		config.DefaultTmuxCommand()[1:],
-		"new-session", "-d", "-s", session, "-c", worktreePath, "sh",
+		[]string{"new-session", "-d", "-s", session, "-c", worktreePath, "sh"},
 	)
 	cmd := procutil.CommandContext(ctx, tmuxCmd[0], newArgs...)
 	output, err := cmd.CombinedOutput()

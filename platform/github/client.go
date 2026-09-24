@@ -166,7 +166,6 @@ func (c *Client) SetWriteGraphQLRateTracker(rateTracker platform.RateObserver) {
 // GitHub App installation token while writes use the user's own
 // credential (the mutation-marked chain skips the app candidate).
 func (c *Client) splitAuthActive() bool {
-
 	return c.auth.InstallationActive != nil && c.auth.InstallationActive("")
 }
 
@@ -178,7 +177,6 @@ func (c *Client) splitAuthActive() bool {
 // installation-token-only endpoints on this so a PAT-backed owner on a
 // host that also hosts another owner's app is not routed there.
 func (c *Client) splitAuthActiveForOwner(owner string) bool {
-
 	return c.auth.InstallationActive != nil && c.auth.InstallationActive(owner)
 }
 
@@ -368,7 +366,7 @@ func (c *Client) notificationItem(subjectType, apiURL, owner, repo string) (stri
 	}
 	segments := strings.Split(strings.TrimRight(apiURL, "/"), "/")
 	lastSegment := func(prefix string) (string, bool) {
-		for i := 0; i < len(segments)-1; i++ {
+		for i := range len(segments) - 1 {
 			if segments[i] == prefix {
 				return segments[i+1], true
 			}
@@ -1221,7 +1219,7 @@ func (c *Client) ListRepositoriesByOwner(
 	)
 	if userErr != nil {
 		return nil, fmt.Errorf(
-			"listing repositories for %s: org=%v user=%w",
+			"listing repositories for %s: org=%w user=%w",
 			owner, err, userErr,
 		)
 	}
@@ -1244,7 +1242,7 @@ func (c *Client) authenticatedLogin(ctx context.Context) (string, error) {
 	}
 	login := user.GetLogin()
 	if login == "" {
-		return "", fmt.Errorf("authenticated user login is empty")
+		return "", errors.New("authenticated user login is empty")
 	}
 	c.viewerLogin = login
 	c.viewerLoginAt = c.now()
@@ -2056,8 +2054,7 @@ func (c *Client) DeleteIssueComment(
 	resp, err := c.writeGH().Issues.DeleteComment(ctx, owner, repo, commentID)
 	c.trackWriteRate(resp)
 	if err != nil {
-		var responseErr *gh.ErrorResponse
-		if errors.As(err, &responseErr) && responseErr.Response != nil && responseErr.Response.StatusCode == http.StatusNotFound {
+		if responseErr, ok := errors.AsType[*gh.ErrorResponse](err); ok && responseErr.Response != nil && responseErr.Response.StatusCode == http.StatusNotFound {
 			return &platform.Error{
 				Code:         platform.ErrCodeNotFound,
 				Provider:     platform.KindGitHub,
@@ -2402,8 +2399,8 @@ func githubSuggestionLiveHeadRepoFullName(pr *gh.PullRequest) string {
 }
 
 func githubSuggestionHeadRepoUnavailable(err error) bool {
-	var ghErr *gh.ErrorResponse
-	if !errors.As(err, &ghErr) || ghErr.Response == nil {
+	ghErr, ok := errors.AsType[*gh.ErrorResponse](err)
+	if !ok || ghErr.Response == nil {
 		return false
 	}
 	switch ghErr.Response.StatusCode {
@@ -2676,15 +2673,14 @@ func applyReviewSuggestionEdits(
 	})
 	for i := 1; i < len(edits); i += 1 {
 		if edits[i].start <= edits[i-1].end {
-			return "", fmt.Errorf("suggestions contain overlapping line ranges")
+			return "", errors.New("suggestions contain overlapping line ranges")
 		}
 	}
 	for i := len(edits) - 1; i >= 0; i -= 1 {
 		edit := edits[i]
 		prefix := append([]string{}, lines[:edit.start-1]...)
-		next := append(prefix, edit.replacement...)
-		next = append(next, lines[edit.end:]...)
-		lines = next
+		prefix = append(prefix, edit.replacement...)
+		lines = append(prefix, lines[edit.end:]...)
 	}
 	return joinGitHubSuggestionContent(lines, newline, trailingNewline), nil
 }
@@ -2804,7 +2800,11 @@ func (c *Client) MarkPullRequestReadyForReview(
 		},
 	}
 	var idResult readyForReviewIDResponse
-	if _, err := postGraphQL(idPayload, &idResult); err != nil {
+	resp, err := postGraphQL(idPayload, &idResult)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
 		return nil, fmt.Errorf(
 			"marking %s/%s#%d ready for review: resolve pull request id: %w",
 			owner, repo, number, err,
@@ -2835,7 +2835,11 @@ func (c *Client) MarkPullRequestReadyForReview(
 		},
 	}
 	var mutationResult readyForReviewMutationResponse
-	if _, err := postGraphQL(mutationPayload, &mutationResult); err != nil {
+	resp, err = postGraphQL(mutationPayload, &mutationResult)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
 		return nil, fmt.Errorf(
 			"marking %s/%s#%d ready for review: %w",
 			owner, repo, number, err,
@@ -2934,7 +2938,11 @@ func (c *Client) ConvertPullRequestToDraft(
 		},
 	}
 	var idResult draftIDResponse
-	if _, err := postGraphQL(idPayload, &idResult); err != nil {
+	resp, err := postGraphQL(idPayload, &idResult)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
 		return nil, fmt.Errorf(
 			"converting %s/%s#%d to draft: resolve pull request id: %w",
 			owner, repo, number, err,
@@ -2965,7 +2973,11 @@ func (c *Client) ConvertPullRequestToDraft(
 		},
 	}
 	var mutationResult draftMutationResponse
-	if _, err := postGraphQL(mutationPayload, &mutationResult); err != nil {
+	resp, err = postGraphQL(mutationPayload, &mutationResult)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
 		return nil, fmt.Errorf(
 			"converting %s/%s#%d to draft: %w",
 			owner, repo, number, err,
@@ -3190,7 +3202,7 @@ func (c *Client) ListManualWorkflowRuns(
 			return platform.Page[*gh.WorkflowRun]{}, &platform.Error{
 				Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub,
 				PlatformHost: c.platformHost, Field: "cursor",
-				Err: fmt.Errorf("cursor must be a positive decimal GitHub page number"),
+				Err: errors.New("cursor must be a positive decimal GitHub page number"),
 			}
 		}
 		page = parsed

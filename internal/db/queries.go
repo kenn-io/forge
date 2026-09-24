@@ -1409,8 +1409,7 @@ func (d *DB) GetActiveRepoByID(ctx context.Context, id int64) (*Repo, error) {
 
 func (d *DB) getRepoByID(ctx context.Context, id int64, activeOnly bool) (*Repo, error) {
 	var r Repo
-	query :=
-		`SELECT id, platform, platform_host, platform_repo_id,
+	query := `SELECT id, platform, platform_host, platform_repo_id,
 		        owner, name, repo_path,
 		        owner_key, name_key, repo_path_key,
 		        web_url, clone_url, default_branch,
@@ -2507,14 +2506,10 @@ func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	return listMREvents(ctx, d.roStmts, mrID)
 }
 
-type mrEventQueryer interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
 // listMREvents reads a merge request's events through the supplied queryer, so
 // in-transaction callers (terminal liveness finalization) see the same rows
 // their transaction will update.
-func listMREvents(ctx context.Context, q mrEventQueryer, mrID int64) ([]MREvent, error) {
+func listMREvents(ctx context.Context, q queryer, mrID int64) ([]MREvent, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT id, merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
 		       metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved
@@ -4548,14 +4543,16 @@ func (d *DB) GetWorktreeLinksForMRs(
 			WHERE merge_request_id IN (` +
 			strings.Join(placeholders, ",") + `)
 			ORDER BY linked_at DESC`
-		rows, err := d.roQueryContext(ctx, query, args...)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"get worktree links for MRs: %w", err,
-			)
-		}
-		links, err := scanWorktreeLinks(rows)
-		rows.Close()
+		links, err := func() ([]WorktreeLink, error) {
+			rows, err := d.roQueryContext(ctx, query, args...)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"get worktree links for MRs: %w", err,
+				)
+			}
+			defer rows.Close()
+			return scanWorktreeLinks(rows)
+		}()
 		if err != nil {
 			return nil, err
 		}
@@ -4702,8 +4699,7 @@ func (d *DB) resolveWorkspaceLookupRoute(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
 ) (string, string, string, int64, bool, error) {
-	_, host, _, _, ownerKey, nameKey, pathKey, repoID, err :=
-		d.canonicalizeWorkspaceRepo(ctx, provider, platformHost, owner, name)
+	_, host, _, _, ownerKey, nameKey, pathKey, repoID, err := d.canonicalizeWorkspaceRepo(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return "", "", "", 0, false, err
 	}
@@ -4878,10 +4874,9 @@ func (d *DB) prepareWorkspaceInsert(
 	requestedRepoID := ws.RepoID
 	ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		prepared.repoOwnerKey, prepared.repoNameKey, prepared.repoPathKey,
-		prepared.repoID, err =
-		d.canonicalizeWorkspaceRepo(
-			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		)
+		prepared.repoID, err = d.canonicalizeWorkspaceRepo(
+		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
 	if err != nil {
 		return preparedWorkspaceInsert{}, err
 	}
@@ -4921,13 +4916,9 @@ func (d *DB) prepareWorkspaceInsert(
 	return prepared, nil
 }
 
-type workspaceInsertExecutor interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-}
-
 func insertPreparedWorkspace(
 	ctx context.Context,
-	executor workspaceInsertExecutor,
+	executor execer,
 	ws *Workspace,
 	prepared preparedWorkspaceInsert,
 ) error {
@@ -5008,8 +4999,7 @@ func (d *DB) GetWorkspaceLinkedToMRForProvider(
 	mrNumber int,
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	platformHost, owner, name, repoID, legacySafe, err :=
-		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
+	platformHost, owner, name, repoID, legacySafe, err := d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -5063,8 +5053,7 @@ func (d *DB) getWorkspaceByMR(
 	mrNumber int,
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	platformHost, owner, name, repoID, legacySafe, err :=
-		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
+	platformHost, owner, name, repoID, legacySafe, err := d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -5122,8 +5111,7 @@ func (d *DB) getWorkspaceByIssue(
 	issueNumber int,
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	platformHost, owner, name, repoID, legacySafe, err :=
-		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
+	platformHost, owner, name, repoID, legacySafe, err := d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -5163,8 +5151,7 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 	if itemType == "" || itemKey == "" {
 		return nil, nil
 	}
-	platformHost, owner, name, repoID, legacySafe, err :=
-		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
+	platformHost, owner, name, repoID, legacySafe, err := d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -5374,7 +5361,7 @@ func (d *DB) FailWorkspaceDeletion(ctx context.Context, id, message string) erro
 		return fmt.Errorf("read workspace deletion failure result: %w", err)
 	}
 	if rowsAffected != 1 {
-		return fmt.Errorf("fail workspace deletion: workspace is not deleting")
+		return errors.New("fail workspace deletion: workspace is not deleting")
 	}
 	return nil
 }

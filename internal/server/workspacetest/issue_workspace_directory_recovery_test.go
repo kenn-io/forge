@@ -85,7 +85,7 @@ func TestIssueWorkspaceDirectoryRecoveryRejectsMissingPath(t *testing.T) {
 	require.NotNil(problem)
 	assert.Equal(generated.ProblemErrorCodeWorkspaceDirectoryNotReusable, problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal("missing", (problem.Details)["reason"])
+	assert.Equal("missing", problem.Details["reason"])
 
 	workspace, err := fixture.database.GetWorkspaceByIssueForProvider(
 		t.Context(), "github", "github.com", "acme", "widget", 7,
@@ -106,6 +106,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 		{
 			name: "ordinary directory",
 			prepare: func(t *testing.T, _ workspaceServerFixture, path string) {
+				t.Helper()
 				require.NoError(t, os.MkdirAll(path, 0o755))
 			},
 			wantReason: "not_linked_worktree",
@@ -113,6 +114,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 		{
 			name: "wrong repository",
 			prepare: func(t *testing.T, _ workspaceServerFixture, path string) {
+				t.Helper()
 				repo := filepath.Join(t.TempDir(), "other")
 				gitfixture.Run(t, filepath.Dir(repo), "init", "--initial-branch=main", repo)
 				gitfixture.Run(t, repo, "config", "user.email", "test@test.com")
@@ -129,6 +131,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 		{
 			name: "wrong branch",
 			prepare: func(t *testing.T, fixture workspaceServerFixture, path string) {
+				t.Helper()
 				gitfixture.Run(t, fixture.bare, "worktree", "add", path, "-b", "other/branch", "main")
 			},
 			wantReason:    "branch_mismatch",
@@ -139,6 +142,7 @@ func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
 		{
 			name: "detached head",
 			prepare: func(t *testing.T, fixture workspaceServerFixture, path string) {
+				t.Helper()
 				gitfixture.Run(t, fixture.bare, "worktree", "add", "--detach", path, "main")
 			},
 			wantReason:    "branch_mismatch",
@@ -214,7 +218,7 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 	require.NotNil(problem)
 	assert.Equal(generated.ProblemErrorCodeBranchConflict, problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal(true, (problem.Details)["existingDirectory"])
+	assert.Equal(true, problem.Details["existingDirectory"])
 	require.NotNil(problem.Errors)
 	locations := map[string]any{}
 	for _, detail := range problem.Errors {
@@ -233,7 +237,7 @@ func TestIssueWorkspaceConflictRejectsAlternateBranchForExistingDirectory(t *tes
 	require.NotNil(problem)
 	assert.Equal(generated.ProblemErrorCodeBranchConflict, problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal(true, (problem.Details)["existingDirectory"])
+	assert.Equal(true, problem.Details["existingDirectory"])
 
 	workspace, getErr := fixture.database.GetWorkspaceByIssueForProvider(
 		t.Context(), "github", "github.com", "acme", "widget", 7,

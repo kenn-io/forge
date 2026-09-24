@@ -882,7 +882,7 @@ func (s *Server) requireSync() error {
 func (s *Server) onlyReposFromFilter(filters []string) ([]ghclient.RepoRef, error) {
 	values := splitRepoFilterValues(filters)
 	if len(values) == 0 {
-		return nil, fmt.Errorf("repository must match a configured provider|platform_host/repo_path")
+		return nil, errors.New("repository must match a configured provider|platform_host/repo_path")
 	}
 
 	tracked := s.syncer.TrackedRepos()
@@ -1240,13 +1240,13 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	// in either case, so degrade gracefully: keep the response, but report
 	// the diff problem as a warning so the UI can explain why the diff view
 	// is stale or empty.
-	var diffErr *ghclient.DiffSyncError
 	syncErr := s.syncer.SyncMROnProvider(
 		ctx, httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
 		repo.Owner, repo.Name, input.Number,
 	)
-	if syncErr != nil && !errors.As(syncErr, &diffErr) {
-		if strings.Contains(syncErr.Error(), "is not tracked") {
+	diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](syncErr)
+	if syncErr != nil && !isDiffErr {
+		if errors.Is(syncErr, ghclient.ErrRepoNotTracked) {
 			return nil, httpapi.Forbidden(syncErr.Error(), nil)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
@@ -1359,7 +1359,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		repo.Owner, repo.Name, input.Number,
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "is not tracked") {
+		if errors.Is(err, ghclient.ErrRepoNotTracked) {
 			return nil, httpapi.Forbidden(err.Error(), nil)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
@@ -1517,14 +1517,14 @@ func (s *Server) overlayLocalActivityWorkspaceSnapshot(
 	overlays := activityWorkspaceOverlays(snapshot, repositories)
 	for i := range response.Items {
 		if workspace, ok := overlays[activityItemIdentity(response.Items[i])]; ok {
-			copy := workspace
-			response.Items[i].Workspace = &copy
+			workspaceCopy := workspace
+			response.Items[i].Workspace = &workspaceCopy
 		}
 	}
 	for i := range response.ItemActivity {
 		if workspace, ok := overlays[activitySubjectIdentity(response.ItemActivity[i])]; ok {
-			copy := workspace
-			response.ItemActivity[i].Workspace = &copy
+			workspaceCopy := workspace
+			response.ItemActivity[i].Workspace = &workspaceCopy
 		}
 	}
 	if input.Projection != "events" && !input.InvolvesMe {
@@ -1566,7 +1566,7 @@ func activityWorkspaceOverlays(
 ) map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef {
 	overlays := make(map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef)
 	for key, activity := range snapshot.Subjects {
-		itemType := ""
+		var itemType string
 		workspace := activity.Workspace
 		switch key.ItemType {
 		case db.WorkspaceItemTypePullRequest:
@@ -1597,7 +1597,7 @@ func activityWorkspaceOverlays(
 		if _, ok := snapshot.Subjects[key]; ok {
 			continue
 		}
-		itemType := ""
+		var itemType string
 		switch key.ItemType {
 		case db.WorkspaceItemTypePullRequest:
 			itemType = "pr"
@@ -2565,9 +2565,9 @@ func (s *Server) resolveItem(
 				ctx, providerKind, providerHost, repo.Owner, repo.Name, number,
 			)
 		}
-		var diffErr *ghclient.DiffSyncError
-		if syncErr != nil && !errors.As(syncErr, &diffErr) {
-			if strings.Contains(syncErr.Error(), "is not tracked") {
+		diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](syncErr)
+		if syncErr != nil && !isDiffErr {
+			if errors.Is(syncErr, ghclient.ErrRepoNotTracked) {
 				return nil, httpapi.Forbidden(syncErr.Error(), nil)
 			}
 			return nil, httpapi.ProviderCallProblemWithDetail(
@@ -2617,8 +2617,8 @@ func (s *Server) resolveItem(
 	// field, so the staleness reaches the client when they navigate to
 	// the PR detail page: getPull infers the warning from the persisted
 	// row state via diffWarnings.
-	var diffErr *ghclient.DiffSyncError
-	if err != nil && !errors.As(err, &diffErr) {
+	diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
+	if err != nil && !isDiffErr {
 		// Classified lookup outcomes (removed, inaccessible, moved with
 		// its destination) arrive as platform errors; map them to their
 		// typed problems instead of collapsing into an internal error.
@@ -2627,7 +2627,7 @@ func (s *Server) resolveItem(
 		}
 		if ghErr, ok := errors.AsType[*gh.ErrorResponse](err); ok {
 			if ghErr.Response != nil &&
-				ghErr.Response.StatusCode == 404 {
+				ghErr.Response.StatusCode == http.StatusNotFound {
 				return nil, httpapi.NotFound(httpapi.CodeNotFound,
 					"item not found: "+err.Error(), nil)
 			}

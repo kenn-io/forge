@@ -352,7 +352,7 @@ func readWhitespaceBlobDigests(
 	if parse.err != nil {
 		if runErr != nil {
 			return nil, fmt.Errorf(
-				"parse whitespace candidate blobs: %v; git cat-file: %w: %s",
+				"parse whitespace candidate blobs: %w; git cat-file: %w: %s",
 				parse.err,
 				runErr,
 				strings.TrimSpace(stderr.String()),

@@ -51,12 +51,14 @@ func TestLoadOrCreateLegacyConfigDestinationStates(t *testing.T) {
 		{
 			name: "generated default",
 			prepareDestination: func(t *testing.T, destination, _ string) {
+				t.Helper()
 				require.NoError(t, EnsureDefault(destination))
 			},
 		},
 		{
 			name: "identical migration without marker",
 			prepareDestination: func(t *testing.T, destination, migrated string) {
+				t.Helper()
 				require.NoError(t, os.MkdirAll(filepath.Dir(destination), 0o700))
 				require.NoError(t, os.WriteFile(destination, []byte(migrated), 0o600))
 			},
@@ -64,6 +66,7 @@ func TestLoadOrCreateLegacyConfigDestinationStates(t *testing.T) {
 		{
 			name: "conflicting destination",
 			prepareDestination: func(t *testing.T, destination, _ string) {
+				t.Helper()
 				require.NoError(t, os.MkdirAll(filepath.Dir(destination), 0o700))
 				require.NoError(t, os.WriteFile(destination, []byte("[[repos]]\nowner = \"other\"\nname = \"repo\"\n"), 0o600))
 			},

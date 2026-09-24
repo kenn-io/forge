@@ -297,7 +297,7 @@ type hubClient struct {
 func NewClient(options Options) (Client, error) {
 	localNodeID := strings.TrimSpace(options.LocalNodeID)
 	if !federation.ValidNodeID(localNodeID) {
-		return nil, fmt.Errorf("local node ID is invalid")
+		return nil, errors.New("local node ID is invalid")
 	}
 	hub, err := options.Hub.validate()
 	if err != nil {
@@ -337,7 +337,7 @@ func (c *hubClient) Do(
 		return nil, errors.New("provider request is required")
 	}
 	if !strings.HasPrefix(request.URL.Path, "/api/v1/") {
-		return nil, fmt.Errorf("provider request path must be under /api/v1")
+		return nil, errors.New("provider request path must be under /api/v1")
 	}
 	if c.credentials == nil {
 		return nil, ErrCredentialUnavailable
@@ -378,7 +378,7 @@ func (c *hubClient) Do(
 	}
 	response, err := httpClient.Do(proxied)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrHubUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrHubUnavailable, err)
 	}
 	return response, nil
 }

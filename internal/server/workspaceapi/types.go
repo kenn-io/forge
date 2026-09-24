@@ -7,17 +7,21 @@ import (
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
-type diffResponse = httpapi.DiffResponse
-type filesResponse = httpapi.FilesResponse
+type (
+	diffResponse  = httpapi.DiffResponse
+	filesResponse = httpapi.FilesResponse
+)
 
 type workspaceDiffWatchResponse struct {
 	Changed bool   `json:"changed" doc:"True when the caller must reload the watched default-HEAD snapshot."`
 	Version string `json:"version" doc:"Opaque version of the current default-HEAD snapshot; never a version from another diff scope."`
 }
 
-type filePreviewResponse = httpapi.FilePreviewResponse
-type commitResponse = httpapi.CommitResponse
-type commitsResponse = httpapi.CommitsResponse
+type (
+	filePreviewResponse = httpapi.FilePreviewResponse
+	commitResponse      = httpapi.CommitResponse
+	commitsResponse     = httpapi.CommitsResponse
+)
 
 // WorkspaceRef is the lightweight link from item detail APIs back to an
 // existing kenn-forge workspace.

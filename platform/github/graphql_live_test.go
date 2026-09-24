@@ -24,10 +24,10 @@ func TestLiveReviewThreadGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	}
 
 	require := require.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	httpClient := oauth2.NewClient(
-		context.Background(),
+		t.Context(),
 		oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token}),
 	)
 	client, err := NewClient(ClientConfig{

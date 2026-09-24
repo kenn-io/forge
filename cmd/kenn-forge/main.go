@@ -73,7 +73,7 @@ func newMCPStartupHandler() http.Handler {
 
 func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error) {
 	primaryAddr := cfg.ListenAddr()
-	primary, err := net.Listen("tcp", primaryAddr)
+	primary, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", primaryAddr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listen on %s: %w", primaryAddr, err)
 	}
@@ -81,7 +81,7 @@ func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error)
 		return primary, nil, nil
 	}
 	mcpAddr := cfg.MCPListenAddr()
-	mcpListener, err := net.Listen("tcp", mcpAddr)
+	mcpListener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", mcpAddr)
 	if err != nil {
 		_ = primary.Close()
 		return nil, nil, fmt.Errorf("listen for MCP on %s: %w", mcpAddr, err)
@@ -145,10 +145,14 @@ type versionOutput struct {
 }
 
 func main() {
+	os.Exit(runMain())
+}
+
+func runMain() int {
 	closeLog, err := configureLogging(os.Stderr)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "configure logging: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer func() {
 		if err := closeLog(); err != nil {
@@ -159,12 +163,12 @@ func main() {
 	if err := runCLI(os.Args[1:], os.Stdout); err != nil {
 		if _, ok := errors.AsType[*apiVerbError](err); ok {
 			_, _ = fmt.Fprintln(os.Stderr, err)
-			os.Exit(exitCodeForAPIVerb(err))
-			return
+			return exitCodeForAPIVerb(err)
 		}
 		slog.Error("fatal", "err", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func configureLogging(stderr io.Writer) (func() error, error) {
@@ -265,13 +269,13 @@ func writeVersion(stdout io.Writer, asJSON bool) error {
 
 func runPtyOwner(root, session, cwd, commandJSON string) error {
 	if session == "" {
-		return fmt.Errorf("pty-owner session is required")
+		return errors.New("pty-owner session is required")
 	}
 	if root == "" {
-		return fmt.Errorf("pty-owner root is required")
+		return errors.New("pty-owner root is required")
 	}
 	if cwd == "" {
-		return fmt.Errorf("pty-owner cwd is required")
+		return errors.New("pty-owner cwd is required")
 	}
 	var command []string
 	if commandJSON != "" {
@@ -627,7 +631,7 @@ func run(opts serve.Options) error {
 		return err
 	}
 
-	slog.Info(fmt.Sprintf("starting server at http://%s", ln.Addr().String()))
+	slog.Info("starting server at http://" + ln.Addr().String())
 	if mcpListenAddr != "" {
 		slog.Info("starting MCP listener", "url", mcpURL)
 	}

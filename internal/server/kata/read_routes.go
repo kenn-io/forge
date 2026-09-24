@@ -58,8 +58,10 @@ func (*kataIssueDetailResponse) TransformSchema(_ huma.Registry, schema *huma.Sc
 	return schema
 }
 
-type kataIssueDetailOutput = httpapi.BodyOutput[kataIssueDetailResponse]
-type kataLaunchTargetOutput = httpapi.BodyOutput[kataLaunchTarget]
+type (
+	kataIssueDetailOutput  = httpapi.BodyOutput[kataIssueDetailResponse]
+	kataLaunchTargetOutput = httpapi.BodyOutput[kataLaunchTarget]
+)
 
 func registerKataReadAPI(api huma.API, h *Handler) {
 	huma.Get(api, "/kata/daemons/{daemon_id}/references", h.listKataReferences,

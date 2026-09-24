@@ -89,7 +89,7 @@ func TestMCPHTTPGuardEnforcesLoopbackAuthorityOriginAndAuthentication(t *testing
 			handler := NewMCPHTTPGuard(next, MCPHTTPGuardOptions{
 				Bind: bind, Token: token, RequireAuth: tt.requireAuth,
 			})
-			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8092/mcp", nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://127.0.0.1:8092/mcp", nil)
 			req.Host = tt.host
 			req.RemoteAddr = tt.remoteAddr
 			if tt.origin != "" {

@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.kenn.io/forge/internal/platformdb"
 	"log/slog"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"go.kenn.io/forge/internal/platformdb"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
@@ -645,8 +646,8 @@ func pageScopedProviderFailure(err error) bool {
 	if errors.Is(err, platform.ErrPageLimit) {
 		return true
 	}
-	var platformErr *platform.Error
-	if !errors.As(err, &platformErr) {
+	platformErr, ok := errors.AsType[*platform.Error](err)
+	if !ok {
 		return false
 	}
 	if platformErr.Code != platform.ErrCodeProviderContract {
@@ -697,8 +698,7 @@ func defaultArchiveRetryDecision(err error, attempt int, now time.Time) RetryDec
 		errors.Is(err, platform.ErrInvalidRepoRef), errors.Is(err, platform.ErrInvalidArgument):
 		return RetryDecision{Code: db.ArchiveErrorCodeRepoBlocked}
 	case errors.Is(err, platform.ErrRateLimited):
-		var platformErr *platform.Error
-		if errors.As(err, &platformErr) && platformErr.ResetAt != nil {
+		if platformErr, ok := errors.AsType[*platform.Error](err); ok && platformErr.ResetAt != nil {
 			reset := platformErr.ResetAt.UTC()
 			return RetryDecision{Code: db.ArchiveErrorCodeBudgetExhausted, RetryAt: &reset}
 		}

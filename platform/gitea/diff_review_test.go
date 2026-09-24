@@ -221,11 +221,7 @@ func TestListMergeRequestReviewThreadsMapsAuthenticationErrors(t *testing.T) {
 				Owner: "acme", Name: "widgets",
 			}, 42)
 
-			if status == http.StatusUnauthorized {
-				require.ErrorIs(err, platform.ErrPermissionDenied)
-			} else {
-				require.ErrorIs(err, platform.ErrPermissionDenied)
-			}
+			require.ErrorIs(err, platform.ErrPermissionDenied)
 			var platformErr *platform.Error
 			require.ErrorAs(err, &platformErr)
 			require.Equal(platform.KindGitea, platformErr.Provider)

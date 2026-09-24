@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -70,12 +71,12 @@ func TestSignedWebhookFansOutAndKeepsPayloadsPrivate(t *testing.T) {
 	default:
 	}
 	publicFeed := httptest.NewRecorder()
-	ingress.ServeHTTP(publicFeed, httptest.NewRequest(http.MethodGet, "/activity", nil))
+	ingress.ServeHTTP(publicFeed, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/activity", nil))
 	assert.Equal(http.StatusNotFound, publicFeed.Code)
 	privateWebhook := deliver(t, private, secret, "pull_request", body)
 	assert.Equal(http.StatusNotFound, privateWebhook.Code)
 	health := httptest.NewRecorder()
-	private.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	private.ServeHTTP(health, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil))
 	assert.Equal(http.StatusNoContent, health.Code)
 }
 
@@ -229,7 +230,7 @@ func TestReadReconnectsWhenAnOpenStreamStalls(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, ": connected\n\n")
-		http.NewResponseController(w).Flush() //nolint:errcheck // the stall is the point
+		http.NewResponseController(w).Flush()
 		<-r.Context().Done()
 	}))
 	t.Cleanup(server.Close)
@@ -441,7 +442,7 @@ func TestFlushedChecksLeaveRoomForWorkflowAndActivity(t *testing.T) {
 				for i := range received {
 					received[i] = <-hints
 				}
-				assert.ElementsMatch(t, append(checks, workflow), received)
+				assert.ElementsMatch(t, slices.Concat(checks, []Hint{workflow}), received)
 				assert.Equal(t, ordinary, <-hints)
 			})
 		})
@@ -449,12 +450,12 @@ func TestFlushedChecksLeaveRoomForWorkflowAndActivity(t *testing.T) {
 }
 
 func deliver(t *testing.T, handler http.Handler, secret []byte, event, body string) *httptest.ResponseRecorder {
-	require := require.New(t)
 	t.Helper()
+	require := require.New(t)
 	mac := hmac.New(sha256.New, secret)
 	_, err := io.WriteString(mac, body)
 	require.NoError(err)
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/github/team", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhooks/github/team", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GitHub-Event", event)
 	req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))

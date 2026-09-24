@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +30,11 @@ func TestHealthEndpointsE2E_ReturnOKWhenReady(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 
-			resp, err := ts.Client().Get(ts.URL + tt.path)
+			respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+tt.path, nil)
+			require.NoError(err)
+			httpClient := ts.Client()
+			httpClient.Timeout = 5 * time.Second
+			resp, err := httpClient.Do(respReq)
 			require.NoError(err)
 			defer resp.Body.Close()
 
@@ -62,7 +67,11 @@ func TestHealthEndpointsE2E_RemainAvailableAtRootWithBasePath(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 
-			resp, err := ts.Client().Get(ts.URL + tt.path)
+			respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+tt.path, nil)
+			require.NoError(err)
+			httpClient := ts.Client()
+			httpClient.Timeout = 5 * time.Second
+			resp, err := httpClient.Do(respReq)
 			require.NoError(err)
 			defer resp.Body.Close()
 
@@ -87,7 +96,11 @@ func TestHealthzE2E_ReturnsServiceUnavailableWhenDatabaseClosed(t *testing.T) {
 
 	require.NoError(database.Close())
 
-	resp, err := ts.Client().Get(ts.URL + "/healthz")
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/healthz", nil)
+	require.NoError(err)
+	httpClient := ts.Client()
+	httpClient.Timeout = 5 * time.Second
+	resp, err := httpClient.Do(respReq)
 	require.NoError(err)
 	defer resp.Body.Close()
 

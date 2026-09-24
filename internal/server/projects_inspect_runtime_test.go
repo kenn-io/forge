@@ -20,8 +20,7 @@ func TestInspectProjectWorktreeCountsStoredTmuxSessionsWithRuntime(t *testing.T)
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, projectID, worktreeID, _ :=
-		setupProjectWorktreeCommandSessionTestWithRecord(t)
+	srv, projectID, worktreeID, _ := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	require.NotNil(srv.runtime, "fixture must configure a runtime manager")
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
@@ -38,6 +37,11 @@ func TestInspectProjectWorktreeCountsStoredTmuxSessionsWithRuntime(t *testing.T)
 
 	resp := httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/inspect", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var got struct {
 		AliveSessionCount int `json:"alive_session_count"`

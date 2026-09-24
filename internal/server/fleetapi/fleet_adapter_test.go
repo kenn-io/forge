@@ -58,7 +58,7 @@ func TestBuildLocalRawCorrelatesRenamedRepositoryByStableIdentity(t *testing.T) 
 func TestBuildLocalRawSynthesizesAndDedupes(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "app", LocalPath: filepath.Join(t.TempDir(), "app"), DefaultBranch: "main",
@@ -106,7 +106,7 @@ func TestBuildLocalRawSynthesizesAndDedupes(t *testing.T) {
 func TestBuildLocalRawSynthesizedProjectFillsDefaultBranchFromSyncedRepo(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-o-synced",
@@ -141,7 +141,7 @@ func TestBuildLocalRawSynthesizedProjectFillsDefaultBranchFromSyncedRepo(t *test
 func TestBuildLocalRawOverlaysWorkspaceOntoProjectWorktree(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "app", LocalPath: filepath.Join(t.TempDir(), "app"), DefaultBranch: "main",
@@ -216,7 +216,7 @@ func TestAddWorktreeWorkspaceOverlayPreservesStaleState(t *testing.T) {
 func TestBuildLocalRawSurfacesHiddenWorktree(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "app", LocalPath: filepath.Join(t.TempDir(), "app"), DefaultBranch: "main",
@@ -245,7 +245,7 @@ func TestBuildLocalRawSurfacesHiddenWorktree(t *testing.T) {
 func TestBuildLocalRawSurfacesWorktreeSessionBackend(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "app", LocalPath: filepath.Join(t.TempDir(), "app"), DefaultBranch: "main",
@@ -274,7 +274,7 @@ func TestBuildLocalRawSurfacesWorktreeSessionBackend(t *testing.T) {
 func TestBuildLocalRawDropsDeletedProject(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "app", LocalPath: filepath.Join(t.TempDir(), "app"), DefaultBranch: "main",
@@ -308,7 +308,7 @@ func TestBuildLocalRawSurfacesPlatformAuthenticated(t *testing.T) {
 	mon.runOnce()
 
 	srv := &Handler{db: database, fleetPlatformAuthMonitor: mon}
-	raw, err := srv.buildLocalRaw(context.Background())
+	raw, err := srv.buildLocalRaw(t.Context())
 	require.NoError(err)
 	require.NotNil(raw.PlatformAuthenticated, "a resolved auth signal surfaces in the snapshot")
 	require.True(*raw.PlatformAuthenticated)
@@ -319,7 +319,7 @@ func TestBuildLocalRawOmitsPlatformAuthenticatedWhenUnresolved(t *testing.T) {
 	database := dbtest.Open(t)
 
 	srv := &Handler{db: database}
-	raw, err := srv.buildLocalRaw(context.Background())
+	raw, err := srv.buildLocalRaw(t.Context())
 	require.NoError(err)
 	require.Nil(raw.PlatformAuthenticated, "an unresolved auth state is omitted, not reported false")
 }
@@ -348,7 +348,7 @@ func TestAddWorktreeWorkspaceOverlayPreservesHidden(t *testing.T) {
 func TestBuildLocalRawReconcilesLiveTmuxInventory(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	worktreePath := filepath.Join(t.TempDir(), "ws")
 	createdAt := time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC)
 	polledAt := time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC)
@@ -427,7 +427,7 @@ func TestBuildLocalRawReconcilesLiveTmuxInventory(t *testing.T) {
 func TestBuildLocalRawIncludesProjectWorktreeRuntimeTmuxSession(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	projectPath := filepath.Join(t.TempDir(), "app")
 	worktreePath := filepath.Join(t.TempDir(), "app-runtime")
 	createdAt := time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC)
@@ -776,14 +776,22 @@ func TestWorktreeFromWorkspaceMapsSessionBackend(t *testing.T) {
 		itemType string
 		want     string
 	}{
-		{"pty owner maps to localPTY", workspace.TerminalBackendPtyOwner,
-			db.WorkspaceItemTypePullRequest, fleet.SessionBackendLocalPTY},
-		{"tmux maps to localTmux", workspace.TerminalBackendTmux,
-			db.WorkspaceItemTypePullRequest, fleet.SessionBackendLocalTmux},
-		{"issue workspace still carries the backend", workspace.TerminalBackendPtyOwner,
-			db.WorkspaceItemTypeIssue, fleet.SessionBackendLocalPTY},
-		{"unset backend falls back to empty", "",
-			db.WorkspaceItemTypePullRequest, ""},
+		{
+			"pty owner maps to localPTY", workspace.TerminalBackendPtyOwner,
+			db.WorkspaceItemTypePullRequest, fleet.SessionBackendLocalPTY,
+		},
+		{
+			"tmux maps to localTmux", workspace.TerminalBackendTmux,
+			db.WorkspaceItemTypePullRequest, fleet.SessionBackendLocalTmux,
+		},
+		{
+			"issue workspace still carries the backend", workspace.TerminalBackendPtyOwner,
+			db.WorkspaceItemTypeIssue, fleet.SessionBackendLocalPTY,
+		},
+		{
+			"unset backend falls back to empty", "",
+			db.WorkspaceItemTypePullRequest, "",
+		},
 	}
 	for _, tc := range cases {
 		sum := db.WorkspaceSummary{
@@ -804,7 +812,7 @@ func TestWorktreeFromWorkspaceMapsSessionBackend(t *testing.T) {
 func TestBuildLocalRawPopulatesRegistryIDs(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	projPath := filepath.Join(t.TempDir(), "app")
 	proj, err := database.CreateProject(ctx, db.CreateProjectInput{

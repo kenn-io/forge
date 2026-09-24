@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	appfiles "go.kenn.io/forge/internal/githubapp"
 	"net/http"
 	"net/url"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	appfiles "go.kenn.io/forge/internal/githubapp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,13 +43,21 @@ func TestCollectProviderTokensMintsGitHubAppToken(t *testing.T) {
 	manifestJSON, err := manifest.JSON()
 	require.NoError(err)
 	noRedirect := &http.Client{
+		Timeout: 10 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-	resp, err := noRedirect.PostForm(
-		fake.URL()+"/settings/apps/new", url.Values{"manifest": {manifestJSON}},
+	form := url.Values{"manifest": {manifestJSON}}.Encode()
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		fake.URL()+"/settings/apps/new",
+		strings.NewReader(form),
 	)
+	require.NoError(err)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := noRedirect.Do(req)
 	require.NoError(err)
 	defer resp.Body.Close()
 	loc, err := url.Parse(resp.Header.Get("Location"))

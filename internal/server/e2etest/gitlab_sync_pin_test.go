@@ -63,6 +63,7 @@ func setupGitLabCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string) {
 	require.NoError(err, "%s%s", out, stderr)
 	return cloneURL, baseSHA, headSHA
 }
+
 func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

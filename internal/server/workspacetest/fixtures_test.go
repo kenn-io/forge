@@ -211,7 +211,7 @@ func setupTestClientWithBaseURL(
 				body = strings.NewReader(string(payload))
 			}
 
-			serverReq := httptest.NewRequest(req.Method, req.URL.String(), body)
+			serverReq := httptest.NewRequestWithContext(t.Context(), req.Method, req.URL.String(), body)
 			serverReq.Header = req.Header.Clone()
 			if req.Method != http.MethodGet && serverReq.Header.Get("Content-Type") == "" {
 				serverReq.Header.Set("Content-Type", "application/json")

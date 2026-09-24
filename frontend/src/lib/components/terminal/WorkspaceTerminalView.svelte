@@ -4355,6 +4355,7 @@
               </code>
             </div>
             <div class="header-end">
+              <div class="workspace-actions">{@render workspaceControls()}</div>
               {#if !hideRightSidebar}
                 <div class="panel-toggle-group">
                   <button
@@ -4501,17 +4502,6 @@
         >
           <div class="terminal-area">
             <div class="workspace-surface">
-              {#if !controlsInPane}
-                <!-- Kept for the standalone Workspaces tab, whose panes have no tab
-                     strip to hold the controls, and for a flattened detail surface,
-                     which suppresses per-leaf chrome. Otherwise the pane's own
-                     popover renders these, and a bar here would be a second copy of
-                     them above the terminal. -->
-                <div class="workspace-toolbar">
-                  <div class="workspace-toolbar-title">Workflow</div>
-                  <div class="workspace-actions">{@render workspaceControls()}</div>
-                </div>
-              {/if}
               {#if workspace?.commit_attribution}
                 {@const attribution = workspace.commit_attribution}
                 <details class="commit-attribution" class:attribution-warning={attribution.status === "mismatch" || attribution.status === "unverified"}>
@@ -5288,8 +5278,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 34px;
-    padding: 0 10px;
+    flex-wrap: wrap;
+    min-height: 34px;
+    padding: 4px 10px;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-default);
     border-left: 1px solid var(--border-default);
@@ -5299,6 +5290,8 @@
 
   .header-start {
     display: flex;
+    min-width: 0;
+    flex: 1 1 160px;
     align-items: center;
     gap: 8px;
     overflow: hidden;
@@ -5329,8 +5322,10 @@
   .header-end {
     display: flex;
     align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
   }
 
   .header-btn {
@@ -5391,37 +5386,11 @@
   .commit-attribution { padding: 8px 12px; font-size: var(--font-size-sm); }
   .attribution-warning { color: var(--color-danger); }
 
-  .workspace-toolbar {
-    display: flex;
-    align-items: stretch;
-    justify-content: space-between;
-    gap: var(--space-4);
-    height: 30px;
-    padding: 0 6px 0 0;
-    border-bottom: 1px solid var(--border-default);
-    border-left: 1px solid var(--border-default);
-    background: var(--bg-inset);
-    flex-shrink: 0;
-  }
-
-  .workspace-toolbar-title {
-    display: inline-flex;
-    align-items: center;
-    padding: 0 10px;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-
   .workspace-actions {
     display: flex;
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
-    padding-left: 6px;
-    border-left: 1px solid var(--border-muted);
   }
 
   .runtime-error {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { mountTerminalPopover } from "./terminal-popover.js";
   import type { LaunchTarget } from "../../api/types.js";
   import PlayIcon from "@lucide/svelte/icons/play";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
@@ -25,6 +26,7 @@
 
   let open = $state(false);
   let rootEl = $state<HTMLDivElement | null>(null);
+  let panelEl = $state<HTMLDivElement | null>(null);
 
   const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
 
@@ -46,7 +48,7 @@
     if (!open) return;
 
     function onPointerDown(ev: PointerEvent): void {
-      if (rootEl && ev.target instanceof Node && rootEl.contains(ev.target)) {
+      if (rootEl && ev.target instanceof Node && (rootEl.contains(ev.target) || panelEl?.contains(ev.target))) {
         return;
       }
       open = false;
@@ -68,6 +70,7 @@
 <div class="launch-menu" bind:this={rootEl}>
   <button
     class="launch-trigger"
+    title="Launch"
     aria-label="Launch"
     aria-haspopup="true"
     aria-expanded={open}
@@ -83,7 +86,6 @@
       strokeWidth="2.5"
       aria-hidden="true"
     />
-    <span>Launch</span>
     <ChevronDownIcon
       class="launch-trigger-chevron"
       size="12"
@@ -92,7 +94,13 @@
     />
   </button>
   {#if open}
-    <div class="launch-popover">
+    <div
+      class="launch-popover"
+      role="dialog"
+      aria-label="Run configurations"
+      bind:this={panelEl}
+      {@attach (node) => mountTerminalPopover(node, rootEl!)}
+    >
       <div class="popover-heading">Run configurations</div>
       {#each visibleTargets as target (target.key)}
         <button
@@ -153,10 +161,8 @@
   }
 
   .launch-popover {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 4px);
-    z-index: 20;
+    position: fixed;
+    z-index: calc(var(--z-overlay) - 1);
     min-width: 220px;
     padding: 4px;
     border: 1px solid var(--border-default);

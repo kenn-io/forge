@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { mountTerminalPopover } from "./terminal-popover.js";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import PlayIcon from "@lucide/svelte/icons/play";
   import SaveIcon from "@lucide/svelte/icons/save";
@@ -33,6 +34,7 @@
 
   let open = $state(false);
   let rootEl = $state<HTMLDivElement | null>(null);
+  let panelEl = $state<HTMLDivElement | null>(null);
 
   const selectedPreset = $derived(
     presets.find((preset) => preset.id === selectedPresetId) ?? null,
@@ -46,7 +48,7 @@
     if (!open) return;
 
     function onPointerDown(ev: PointerEvent): void {
-      if (rootEl && ev.target instanceof Node && rootEl.contains(ev.target)) {
+      if (rootEl && ev.target instanceof Node && (rootEl.contains(ev.target) || panelEl?.contains(ev.target))) {
         return;
       }
       open = false;
@@ -71,6 +73,7 @@
   <button
     class="preset-trigger"
     type="button"
+    title="Workflow presets"
     aria-label="Workflow presets"
     aria-haspopup="true"
     aria-expanded={open}
@@ -81,11 +84,16 @@
     }}
   >
     <SaveIcon size="12" strokeWidth="2" aria-hidden="true" />
-    <span>Presets</span>
     <ChevronDownIcon size="12" strokeWidth="2" aria-hidden="true" />
   </button>
   {#if open}
-    <div class="preset-popover" role="dialog" aria-label="Workflow presets">
+    <div
+      class="preset-popover"
+      bind:this={panelEl}
+      {@attach (node) => mountTerminalPopover(node, rootEl!)}
+      role="dialog"
+      aria-label="Workflow presets"
+    >
       <div class="popover-heading">Workflow presets</div>
       <button
         class="preset-command"
@@ -187,10 +195,8 @@
   }
 
   .preset-popover {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 4px);
-    z-index: 25;
+    position: fixed;
+    z-index: calc(var(--z-overlay) - 1);
     width: 260px;
     padding: 4px;
     border: 1px solid var(--border-default);

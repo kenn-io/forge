@@ -2667,28 +2667,24 @@ test.describe("workspace launch home", () => {
 
     const metrics = await page.evaluate(() => {
       const titleBar = document.querySelector(".header-bar");
-      const toolbar = document.querySelector(".workspace-toolbar");
       const stage = document.querySelector(".workspace-stage");
       const split = document.querySelector(".workspace-stage .tabbed-panel-split");
       const firstLeaf = document.querySelector(".workspace-stage .tabbed-panel-leaf");
-      if (!titleBar || !toolbar || !stage || !split || !firstLeaf) {
+      if (!titleBar || !stage || !split || !firstLeaf) {
         throw new Error("Missing workflow header, stage, or split panel");
       }
 
       const titleBarRect = titleBar.getBoundingClientRect();
-      const toolbarRect = toolbar.getBoundingClientRect();
       const stageRect = stage.getBoundingClientRect();
       const splitRect = split.getBoundingClientRect();
       const firstLeafRect = firstLeaf.getBoundingClientRect();
       const titleBarStyles = getComputedStyle(titleBar);
-      const toolbarStyles = getComputedStyle(toolbar);
       const stageStyles = getComputedStyle(stage);
 
       return {
         titleBorderLeft: titleBarStyles.borderLeftWidth,
-        toolbarBorderLeft: toolbarStyles.borderLeftWidth,
-        titleToToolbarLeft: toolbarRect.left - titleBarRect.left,
-        toolbarToFirstLeafLeft: firstLeafRect.left - toolbarRect.left,
+        titleToFirstLeafLeft: firstLeafRect.left - titleBarRect.left,
+        titleToStageTop: stageRect.top - titleBarRect.bottom,
         padding: [stageStyles.paddingTop, stageStyles.paddingRight, stageStyles.paddingBottom, stageStyles.paddingLeft],
         delta: {
           left: splitRect.left - stageRect.left,
@@ -2700,9 +2696,8 @@ test.describe("workspace launch home", () => {
     });
 
     expect(metrics.titleBorderLeft).toBe("1px");
-    expect(metrics.toolbarBorderLeft).toBe("1px");
-    expect(Math.abs(metrics.titleToToolbarLeft)).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(metrics.toolbarToFirstLeafLeft)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(metrics.titleToFirstLeafLeft)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(metrics.titleToStageTop)).toBeLessThanOrEqual(0.5);
     expect(metrics.padding).toEqual(["0px", "0px", "0px", "0px"]);
     expect(Math.abs(metrics.delta.left)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(metrics.delta.top)).toBeLessThanOrEqual(0.5);

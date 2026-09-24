@@ -36,12 +36,17 @@ func TestLiveReviewThreadGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	})
 	require.NoError(err)
 
+	issues, _, _, err := client.ListInventoryIssuesPage(ctx, "kenn-io", "forge", "created", "", "")
+	require.NoError(err, "archive issue GraphQL query should validate against GitHub")
+	require.NotEmpty(issues)
+	require.NotNil(issues[0].AuthorAssociation) //nolint:staticcheck // This is a GraphQL detail result.
 	threads, _, _, err := client.ListInventoryReviewThreadsPage(
 		ctx, "github.com", "kenn-io", "forge", 830, "",
 	)
 	require.NoError(err, "review-thread GraphQL query should validate against GitHub")
 	require.NotEmpty(threads, "live review fixture should contain a review thread")
 	require.NotEmpty(threads[0].Comments, "live review fixture should contain a review comment")
+	require.NotNil(threads[0].Comments[0].AuthorAssociation, "review authors retain their repository association")
 	require.False(threads[0].Comments[0].CreatedAt.IsZero(),
 		"review-thread GraphQL query should return comment creation time")
 	require.False(threads[0].Comments[0].UpdatedAt.IsZero(),
@@ -57,6 +62,7 @@ func TestLiveReviewThreadGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	require.NoError(err, "review-thread comment GraphQL query should validate against GitHub")
 	require.NotEmpty(comments, "live review fixture should return its review thread")
 	require.NotEmpty(comments[0].Comments, "live review fixture should contain a review comment")
+	require.NotNil(comments[0].Comments[0].AuthorAssociation, "paginated comments retain association")
 	require.False(comments[0].Comments[0].CreatedAt.IsZero(),
 		"paginated review-comment query should return creation time")
 	require.False(comments[0].Comments[0].UpdatedAt.IsZero(),

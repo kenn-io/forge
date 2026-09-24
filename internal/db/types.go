@@ -587,6 +587,7 @@ type MergeRequest struct {
 	URL                string
 	Title              string
 	Author             string
+	AuthorAssociation  *string `json:"-"`
 	AuthorDisplayName  string
 	State              MergeRequestState `enum:"open,closed,merged"`
 	IsDraft            bool
@@ -698,6 +699,7 @@ type MREvent struct {
 	PlatformExternalID string
 	EventType          string
 	Author             string
+	AuthorAssociation  *string `json:"-"`
 	Summary            string
 	Body               string
 	MetadataJSON       string
@@ -918,6 +920,7 @@ type Issue struct {
 	URL                string
 	Title              string
 	Author             string
+	AuthorAssociation  *string `json:"-"`
 	State              string
 	Body               string
 	CommentCount       int

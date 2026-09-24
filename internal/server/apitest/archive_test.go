@@ -683,3 +683,31 @@ func requireEnsureConfigured(t *testing.T, s *archive.Service, refs []platform.R
 	_, err := s.EnsureConfigured(t.Context(), refs)
 	require.NoError(t, err)
 }
+
+func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, provider, _, ref := setupArchiveTestServer(t, nil)
+	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repo.ID, Number: 1, Title: "Open repair", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-90 * 24 * time.Hour), UpdatedAt: now})
+	require.NoError(err)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/archive/snapshot?start=2026-09-13T12:00:00Z&end=2026-09-20T12:00:00Z", http.NoBody)
+	request.Host = "forge.test"
+	response := httptest.NewRecorder()
+	srv.ServeHTTP(response, request)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var payload struct {
+		Schema       string `json:"schema"`
+		PullRequests []struct {
+			Title string `json:"title"`
+		} `json:"pull_requests"`
+	}
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &payload))
+	assert.Equal("kenn-forge-archive-snapshot/1", payload.Schema)
+	require.Len(payload.PullRequests, 1)
+	assert.Equal("Open repair", payload.PullRequests[0].Title)
+	assert.Zero(provider.calls.Load())
+}

@@ -1391,6 +1391,7 @@ func GithubReviewThreadComment(
 		ProviderCommentID: FirstNonEmpty(GithubInt64ID(comment.DatabaseID), comment.NodeID),
 		Body:              comment.Body,
 		AuthorLogin:       comment.AuthorLogin,
+		AuthorAssociation: comment.AuthorAssociation,
 		DirectURL:         comment.URL,
 		Range:             GithubReviewLineRange(thread, comment),
 		Resolved:          thread.IsResolved,

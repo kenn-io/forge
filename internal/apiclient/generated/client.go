@@ -303,6 +303,31 @@ func (o *GetArchiveReportRequestOptions) GetHeader() (map[string]string, error) 
 	return nil, nil
 }
 
+// GetArchiveSnapshotRequestOptions is the options needed to make a request to GetArchiveSnapshot.
+type GetArchiveSnapshotRequestOptions struct {
+	Query *GetArchiveSnapshotQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetArchiveSnapshotRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetArchiveSnapshotRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetArchiveSnapshotRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetArchiveSnapshotRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // StartArchivesRequestOptions is the options needed to make a request to StartArchives.
 type StartArchivesRequestOptions struct {
 	Body *StartArchivesBody
@@ -11398,6 +11423,7 @@ type ClientInterface interface {
 	ListArchivePacingWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListArchivePacingResp, error)
 	PauseArchivesWithResponse(ctx context.Context, options *PauseArchivesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PauseArchivesResp, error)
 	GetArchiveReportWithResponse(ctx context.Context, options *GetArchiveReportRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetArchiveReportResp, error)
+	GetArchiveSnapshotWithResponse(ctx context.Context, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetArchiveSnapshotResp, error)
 	StartArchivesWithResponse(ctx context.Context, options *StartArchivesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StartArchivesResp, error)
 	ListArchiveStatusWithResponse(ctx context.Context, options *ListArchiveStatusRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListArchiveStatusResp, error)
 	ListDevboxConnectionsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListDevboxConnectionsResp, error)
@@ -12438,6 +12464,67 @@ func (c *Client) GetArchiveReportWithResponse(ctx context.Context, options *GetA
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "GetArchiveReportResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetArchiveSnapshot Export cached work and archive coverage
+func (c *Client) GetArchiveSnapshotWithResponse(ctx context.Context, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetArchiveSnapshotResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"end":   {Style: "form", Explode: &[]bool{false}[0]},
+		"start": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/archive/snapshot")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetArchiveSnapshotResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetArchiveSnapshotErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetArchiveSnapshotResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetArchiveSnapshotResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -32310,6 +32397,26 @@ func (c *Client) GetArchiveReportRaw(ctx context.Context, httpClient *http.Clien
 	return httpClient.Do(req)
 }
 
+// GetArchiveSnapshotRaw returns an unread response. The caller must close its body.
+func (c *Client) GetArchiveSnapshotRaw(ctx context.Context, httpClient *http.Client, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"end":   {Style: "form", Explode: &[]bool{false}[0]},
+		"start": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // StartArchivesRaw returns an unread response. The caller must close its body.
 func (c *Client) StartArchivesRaw(ctx context.Context, httpClient *http.Client, options *StartArchivesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -38671,6 +38778,27 @@ func NewGetArchiveReportRequest(ctx context.Context, baseURL string, options *Ge
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/report",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetArchiveSnapshotRequest constructs a typed request for a caller-owned transport.
+func NewGetArchiveSnapshotRequest(ctx context.Context, baseURL string, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"end":   {Style: "form", Explode: &[]bool{false}[0]},
+		"start": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
 		Method:        "GET",
 		Options:       options,
 		QueryEncoding: queryEncoding,
@@ -47942,6 +48070,14 @@ type GetArchiveReportQuery struct {
 	Verbose *bool    `json:"verbose,omitempty"`
 }
 
+type GetArchiveSnapshotQuery struct {
+	// Start Inclusive UTC RFC3339 issue-creation boundary.
+	Start string `json:"start"`
+
+	// End Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit.
+	End string `json:"end"`
+}
+
 type ListArchiveStatusQuery struct {
 	// Repo Repeated provider|platform_host/repo_path filters.
 	Repo []string `json:"repo,omitempty"`
@@ -48594,6 +48730,10 @@ type PauseArchivesErrorResponse = ProblemError
 type GetArchiveReportResponse = ArchiveReportResponse
 
 type GetArchiveReportErrorResponse = ProblemError
+
+type GetArchiveSnapshotResponse = ArchiveSnapshot
+
+type GetArchiveSnapshotErrorResponse = ProblemError
 
 type StartArchivesResponse []ArchiveStatusResponse
 
@@ -49979,6 +50119,14 @@ type GetArchiveReportResp struct {
 	StatusCode   int
 	Error        *GetArchiveReportErrorResponse
 	JSON200      *GetArchiveReportResponse
+}
+
+type GetArchiveSnapshotResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetArchiveSnapshotErrorResponse
+	JSON200      *GetArchiveSnapshotResponse
 }
 
 type StartArchivesResp struct {
@@ -53192,6 +53340,19 @@ type ArchiveRepositoryRef struct {
 	RepoPath     string `json:"repo_path"`
 }
 
+type ArchiveSnapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string               `json:"$schema,omitempty"`
+	End          time.Time             `json:"end"`
+	Issues       []SnapshotItem        `json:"issues"`
+	ObservedAt   time.Time             `json:"observed_at"`
+	PullRequests []SnapshotPullRequest `json:"pull_requests"`
+	Relations    []SnapshotRelation    `json:"relations"`
+	Repositories []SnapshotRepository  `json:"repositories"`
+	Schema1      string                `json:"schema"`
+	Start        time.Time             `json:"start"`
+}
+
 type ArchiveStatusResponse struct {
 	ActivePhases           []ArchiveStatusResponseActivePhases `json:"active_phases"`
 	BudgetWaitUntil        *time.Time                          `json:"budget_wait_until,omitempty"`
@@ -56258,6 +56419,111 @@ type Snapshot struct {
 	Sessions              []SessionSummary   `json:"sessions"`
 	Workspaces            []WorkspaceSummary `json:"workspaces"`
 	Worktrees             []WorktreeSummary  `json:"worktrees"`
+}
+
+type SnapshotCheck struct {
+	Conclusion string `json:"conclusion"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	URL        string `json:"url"`
+}
+
+type SnapshotCoverage struct {
+	ActivePhases           []string   `json:"active_phases"`
+	ArchivedItems          int64      `json:"archived_items"`
+	BudgetWaitUntil        *time.Time `json:"budget_wait_until,omitempty"`
+	CollectionMode         string     `json:"collection_mode"`
+	Comments               string     `json:"comments"`
+	InaccessibleItems      int64      `json:"inaccessible_items"`
+	InitialCompletedAt     *time.Time `json:"initial_completed_at,omitempty"`
+	InlineComments         string     `json:"inline_comments"`
+	Issues                 string     `json:"issues"`
+	MaintenanceSucceededAt *time.Time `json:"maintenance_succeeded_at,omitempty"`
+	MergeRequests          string     `json:"merge_requests"`
+	OperatorState          string     `json:"operator_state"`
+	Reviews                string     `json:"reviews"`
+	Status                 string     `json:"status"`
+	UnsupportedItems       int64      `json:"unsupported_items"`
+}
+
+type SnapshotItem struct {
+	Author               string     `json:"author"`
+	AuthorAssociation    *string    `json:"author_association,omitempty"`
+	Body                 string     `json:"body"`
+	BodyTruncated        bool       `json:"body_truncated"`
+	CreatedAt            time.Time  `json:"created_at"`
+	DetailFirstFetchedAt *time.Time `json:"detail_first_fetched_at,omitempty"`
+	ID                   string     `json:"id"`
+	Labels               []string   `json:"labels"`
+	Number               int64      `json:"number"`
+	RepositoryID         string     `json:"repository_id"`
+	State                string     `json:"state"`
+	Title                string     `json:"title"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+	URL                  string     `json:"url"`
+}
+
+type SnapshotPullRequest struct {
+	Additions            *int64           `json:"additions,omitempty"`
+	Author               string           `json:"author"`
+	AuthorAssociation    *string          `json:"author_association,omitempty"`
+	BaseBranch           string           `json:"base_branch"`
+	Body                 string           `json:"body"`
+	BodyTruncated        bool             `json:"body_truncated"`
+	ChangedFiles         *int64           `json:"changed_files,omitempty"`
+	CheckState           string           `json:"check_state"`
+	Checks               []SnapshotCheck  `json:"checks"`
+	CreatedAt            time.Time        `json:"created_at"`
+	Deletions            *int64           `json:"deletions,omitempty"`
+	DetailFirstFetchedAt *time.Time       `json:"detail_first_fetched_at,omitempty"`
+	Draft                bool             `json:"draft"`
+	Gaps                 []string         `json:"gaps"`
+	HeadBranch           string           `json:"head_branch"`
+	HeadInSameRepository bool             `json:"head_in_same_repository"`
+	HeadSha              string           `json:"head_sha"`
+	ID                   string           `json:"id"`
+	Labels               []string         `json:"labels"`
+	MergeableState       string           `json:"mergeable_state"`
+	Number               int64            `json:"number"`
+	RepositoryID         string           `json:"repository_id"`
+	ReviewState          string           `json:"review_state"`
+	Reviews              []SnapshotReview `json:"reviews"`
+	State                string           `json:"state"`
+	Title                string           `json:"title"`
+	UpdatedAt            time.Time        `json:"updated_at"`
+	URL                  string           `json:"url"`
+}
+
+type SnapshotRelation struct {
+	EvidenceID string    `json:"evidence_id"`
+	Kind       string    `json:"kind"`
+	ObservedAt time.Time `json:"observed_at"`
+	SourceID   string    `json:"source_id"`
+	TargetID   string    `json:"target_id"`
+	URL        string    `json:"url"`
+}
+
+type SnapshotRepository struct {
+	Coverage      SnapshotCoverage `json:"coverage"`
+	DefaultBranch string           `json:"default_branch"`
+	Host          string           `json:"host"`
+	ID            string           `json:"id"`
+	LastSyncAt    *time.Time       `json:"last_sync_at,omitempty"`
+	Path          string           `json:"path"`
+	Provider      string           `json:"provider"`
+	ProviderID    string           `json:"provider_id"`
+	SyncError     string           `json:"sync_error"`
+}
+
+type SnapshotReview struct {
+	Author            string    `json:"author"`
+	AuthorAssociation *string   `json:"author_association,omitempty"`
+	Body              string    `json:"body"`
+	BodyTruncated     bool      `json:"body_truncated"`
+	CreatedAt         time.Time `json:"created_at"`
+	ID                string    `json:"id"`
+	State             string    `json:"state"`
+	URL               string    `json:"url"`
 }
 
 type SnippetRange struct {

@@ -10,9 +10,9 @@ Provider support is split into three layers:
 
 1. Public `platform` owns provider-neutral domain types, capability
    interfaces, typed platform errors and registry lookup; SQL projections stay internal.
-2. Public `platform/<provider>` owns provider API transport and normalization
+1. Public `platform/<provider>` owns provider API transport and normalization
    into `platform` types.
-3. Existing orchestration packages (`internal/github` sync compatibility,
+1. Existing orchestration packages (`internal/github` sync compatibility,
    server handlers, config startup, clone setup, and UI stores) consume the
    neutral interfaces or persisted DB rows.
 
@@ -426,3 +426,13 @@ Choose the smallest boundary that catches the regression:
 
 Run Go tests with `-shuffle=on`. Regenerate OpenAPI and generated clients with
 `make api-generate` after Huma route, route metadata, or API type changes.
+
+## Cached archive consumers
+
+- Archive export reads one saved database view and never refreshes provider data or marks items hot;
+  consumers must retain coverage gaps instead of treating export time as source freshness
+  (`internal/archive/snapshot.go::Service.Snapshot`).
+- Author association belongs to each authored item or review, never to the enclosing PR's author;
+  missing association is unknown and conveys no trust decision (`internal/platformdb/persist.go::DBMREvent`).
+- Cached zero size values lack observation metadata; export them as unavailable until storage can
+  distinguish measured zero from missing data (`internal/archive/snapshot.go::Service.Snapshot`).

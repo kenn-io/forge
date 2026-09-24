@@ -5,8 +5,10 @@ import type {
   ArchiveMutationBody,
   ArchivePacingStatusResponse,
   ArchiveReportResponse,
+  ArchiveSnapshot,
   ArchiveStatusResponse,
   GetArchiveReportParams,
+  GetArchiveSnapshotParams,
   ListArchiveStatusParams,
 } from "../models";
 
@@ -101,6 +103,33 @@ export const getArchiveReport = async (
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<ArchiveReportResponse> => {
   return orvalFetch<ArchiveReportResponse>(getGetArchiveReportUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetArchiveSnapshotUrl = (params: GetArchiveSnapshotParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/archive/snapshot?${stringifiedParams}` : `/archive/snapshot`;
+};
+
+/**
+ * @summary Export cached work and archive coverage
+ */
+export const getArchiveSnapshot = async (
+  params: GetArchiveSnapshotParams,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ArchiveSnapshot> => {
+  return orvalFetch<ArchiveSnapshot>(getGetArchiveSnapshotUrl(params), {
     ...options,
     method: "GET",
   });

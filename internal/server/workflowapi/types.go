@@ -1,8 +1,8 @@
 package workflowapi
 
 import (
-	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/platform"
 )
 
 type repositoryInput struct {

@@ -61,4 +61,3 @@ func TestIsAncestor(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(ancestor)
 }
-

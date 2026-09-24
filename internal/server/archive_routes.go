@@ -11,6 +11,7 @@ import (
 
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/archive/report"
+	"go.kenn.io/forge/internal/archive/snapshot"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -170,6 +171,7 @@ func (*archiveReportResponse) TransformSchema(_ huma.Registry, schema *huma.Sche
 type archiveReportOutput = httpapi.BodyOutput[archiveReportResponse]
 
 func (s *Server) registerArchiveAPI(api huma.API) {
+	huma.Register(api, huma.Operation{OperationID: "get-archive-snapshot", Method: http.MethodGet, Path: "/archive/snapshot", DefaultStatus: http.StatusOK, Summary: "Export cached work and archive coverage", Tags: []string{"Archive"}}, s.getArchiveSnapshot)
 	huma.Register(api, huma.Operation{
 		OperationID: "start-archives", Method: http.MethodPost, Path: "/archive/start",
 		DefaultStatus: http.StatusOK, Summary: "Start historical archives", Tags: []string{"Archive"},
@@ -536,4 +538,36 @@ func archiveReportCounts(counts report.Counts) archiveReportCountsResponse {
 		OrdinaryComments:    counts.OrdinaryComments, ReviewsSubmitted: counts.ReviewsSubmitted,
 		InlineReviewComments: counts.InlineReviewComments,
 	}
+}
+
+type archiveSnapshotInput struct {
+	Start string `query:"start" required:"true" doc:"Inclusive UTC RFC3339 issue-creation boundary."`
+	End   string `query:"end" required:"true" doc:"Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit."`
+}
+
+type archiveSnapshotOutput = httpapi.BodyOutput[snapshot.ArchiveSnapshot]
+
+func (s *Server) getArchiveSnapshot(ctx context.Context, input *archiveSnapshotInput) (*archiveSnapshotOutput, error) {
+	if s.archive == nil {
+		return nil, httpapi.ServiceUnavailable("archive service not configured")
+	}
+	start, err := parseArchiveUTCTime("query.start", input.Start)
+	if err != nil {
+		return nil, err
+	}
+	end, err := parseArchiveUTCTime("query.end", input.End)
+	if err != nil {
+		return nil, err
+	}
+	if !start.Before(end) {
+		return nil, httpapi.Validation("query.end", "end must be after start")
+	}
+	result, err := s.archive.Snapshot(ctx, start, end)
+	if errors.Is(err, snapshot.ErrTooLarge) {
+		return nil, httpapi.NewProblem(http.StatusRequestEntityTooLarge, httpapi.CodePayloadTooLarge, err.Error(), nil)
+	}
+	if err != nil {
+		return nil, archiveOperationProblem(err)
+	}
+	return &archiveSnapshotOutput{Body: result}, nil
 }

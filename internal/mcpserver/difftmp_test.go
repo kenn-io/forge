@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -152,4 +153,41 @@ func TestDiffFileStoreFailedCommitKeepsEntriesItWouldEvict(t *testing.T) {
 	assert.Equal(int64(60), store.totalBytes)
 	assert.Equal(2, store.lru.Len())
 	assert.NotContains(store.entries, "incoming.diff")
+}
+
+func TestDiffFileStoreFailedEvictionKeepsEntryCounted(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	store, err := newDiffFileStore(64)
+	require.NoError(err)
+	t.Cleanup(func() {
+		require.NoError(store.Close())
+	})
+
+	oldestPath, _, err := store.write("oldest.diff", make([]byte, 30))
+	require.NoError(err)
+	_, _, err = store.write("newer.diff", make([]byte, 30))
+	require.NoError(err)
+
+	// Removal can fail, for example on Windows while a reader holds the
+	// evicted diff open.
+	store.remove = func(string) error { return errors.New("file in use") }
+	incomingPath, _, err := store.write("incoming.diff", make([]byte, 30))
+	require.NoError(err, "the new diff already landed")
+	_, err = os.Stat(incomingPath)
+	require.NoError(err)
+	_, err = os.Stat(oldestPath)
+	require.NoError(err)
+	assert.Contains(store.entries, "oldest.diff")
+	assert.Equal(int64(90), store.totalBytes)
+	assert.Equal(3, store.lru.Len())
+
+	// A later write retries the eviction once removal works again.
+	store.remove = os.Remove
+	_, _, err = store.write("latest.diff", make([]byte, 4))
+	require.NoError(err)
+	_, err = os.Stat(oldestPath)
+	require.ErrorIs(err, os.ErrNotExist)
+	assert.NotContains(store.entries, "oldest.diff")
+	assert.LessOrEqual(store.totalBytes, store.maxBytes)
 }

@@ -20,8 +20,10 @@ type diffFileStore struct {
 	totalBytes int64
 	lru        *list.List
 	entries    map[string]*list.Element
-	// commit publishes a staged diff; tests replace it to force failures.
+	// commit publishes a staged diff and remove deletes an evicted one;
+	// tests replace them to force failures.
 	commit func(*atomicfile.File) error
+	remove func(string) error
 }
 
 type diffFileEntry struct {
@@ -45,7 +47,7 @@ func newDiffFileStore(maxBytes int64) (*diffFileStore, error) {
 	return &diffFileStore{
 		dir: dir, maxBytes: maxBytes,
 		lru: list.New(), entries: make(map[string]*list.Element),
-		commit: (*atomicfile.File).Commit,
+		commit: (*atomicfile.File).Commit, remove: os.Remove,
 	}, nil
 }
 
@@ -95,16 +97,18 @@ func (d *diffFileStore) write(name string, data []byte) (string, int64, error) {
 	d.totalBytes += size
 
 	// The new diff already fits on its own (checked above), so evicting older
-	// entries always gets back under the budget. The write has landed, so a
-	// failed removal does not fail it: the entry is forgotten and its file is
-	// removed with the directory on Close.
+	// entries normally gets back under the budget. The write has landed, so a
+	// failed removal does not fail it: the entry stays counted, eviction stops
+	// for now, and a later write retries it.
 	for d.totalBytes > d.maxBytes {
 		oldest := d.lru.Front()
 		if oldest == nil || oldest == added {
 			break
 		}
 		entry := oldest.Value.(diffFileEntry)
-		_ = os.Remove(entry.path)
+		if err := d.remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			break
+		}
 		d.totalBytes -= entry.size
 		d.lru.Remove(oldest)
 		delete(d.entries, entry.name)

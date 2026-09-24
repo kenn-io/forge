@@ -446,14 +446,14 @@ func TestNotificationsAPIBulkMutationsScopeToTrackedRepos(t *testing.T) {
 
 	var bulk itemapi.NotificationBulkResponse
 	require.NoError(json.NewDecoder(resp.Body).Decode(&bulk))
-	check := assert.New(t)
-	check.Equal([]int64{trackedID}, bulk.Succeeded)
-	check.Equal([]int64{trackedID}, bulk.Queued)
-	check.Equal([]itemapi.NotificationBulkFailure{{ID: removedID, Error: "notification not found"}}, bulk.Failed)
+	assert := assert.New(t)
+	assert.Equal([]int64{trackedID}, bulk.Succeeded)
+	assert.Equal([]int64{trackedID}, bulk.Queued)
+	assert.Equal([]itemapi.NotificationBulkFailure{{ID: removedID, Error: "notification not found"}}, bulk.Failed)
 	removedItems, err := database.ListNotifications(t.Context(), db.ListNotificationsOpts{State: "unread", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "removed"})
 	require.NoError(err)
 	require.Len(removedItems, 1)
-	check.Nil(removedItems[0].SourceAckQueuedAt)
+	assert.Nil(removedItems[0].SourceAckQueuedAt)
 }
 
 func TestNotificationsAPIBulkReportsMissingIDs(t *testing.T) {

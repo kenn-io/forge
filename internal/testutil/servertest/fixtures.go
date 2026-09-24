@@ -207,9 +207,8 @@ func SetupTestClientWithBaseURL(
 				body = strings.NewReader(string(payload))
 			}
 
-			serverReq := httptest.NewRequest(req.Method, req.URL.String(), body)
+			serverReq := httptest.NewRequestWithContext(req.Context(), req.Method, req.URL.String(), body)
 			serverReq.Header = req.Header.Clone()
-			serverReq = serverReq.WithContext(req.Context())
 
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, serverReq)

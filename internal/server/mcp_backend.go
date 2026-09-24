@@ -671,12 +671,12 @@ func (b mcpBackend) SubmitInitialMessage(
 		converted := mcpapi.McpBackendError(err)
 		if result.State == "pending" || result.State == "uncertain" {
 			if backendErr, ok := errors.AsType[*mcpserver.Error](converted); ok {
-				copy := *backendErr
-				copy.Ambiguous = true
-				copy.Retryable = false
-				copy.Details = mcpapi.CloneMCPErrorDetails(backendErr.Details)
-				copy.Details["initial_message_state"] = result.State
-				converted = &copy
+				annotated := *backendErr
+				annotated.Ambiguous = true
+				annotated.Retryable = false
+				annotated.Details = mcpapi.CloneMCPErrorDetails(backendErr.Details)
+				annotated.Details["initial_message_state"] = result.State
+				converted = &annotated
 			}
 		}
 		return status, converted

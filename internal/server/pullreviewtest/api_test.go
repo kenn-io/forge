@@ -3902,7 +3902,7 @@ func TestAPIGitealikeMergeHeadMismatchMapsToStaleState(t *testing.T) {
 	require.NotNil(resp.Error)
 	assert.Equal("conflict", string(resp.Error.Code))
 	require.NotNil(resp.Error.Details)
-	assert.Equal("stale_state", (resp.Error.Details)["reason"])
+	assert.Equal("stale_state", resp.Error.Details["reason"])
 	assert.Equal([]string{"abc123"}, transport.MergeHeadPins)
 }
 

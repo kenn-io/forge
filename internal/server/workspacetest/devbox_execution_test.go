@@ -78,7 +78,8 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 		Tmux:            config.Tmux{Command: workspaceTestTmuxCommand},
 		Agents:          []config.Agent{{Key: "fixture", Label: "Fixture shell", Command: []string{"/bin/bash", "--noprofile", "--norc"}}},
 	}
-	opts := server.ServerOptions{ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef", Clones: clones, WorktreeDir: filepath.Join(directory, "worktrees"), HostCheckAllowLoopbackAnyPort: true,
+	opts := server.ServerOptions{
+		ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef", Clones: clones, WorktreeDir: filepath.Join(directory, "worktrees"), HostCheckAllowLoopbackAnyPort: true,
 		DaemonAccess: authapi.DaemonAccessOptions{Token: "worker-bearer", RequireAPIAuth: true}, DisableWorkspaceBackgroundMonitors: true, DetachRuntimeSessionsForRestart: true, PtyOwnerInProcess: true,
 	}
 	srv := server.New(database, nil, nil, "/", cfg, opts)

@@ -85,8 +85,9 @@ func TestTerminalPasteImageAcceptsFleetPeerRelay(t *testing.T) {
 	srv := New(
 		serverfake.OpenTestDB(t), nil, nil, "/",
 		&config.Config{DataDir: dataDir},
-		ServerOptions{FederationCredentials: store,
-			DaemonAccess: authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
+		ServerOptions{
+			FederationCredentials: store,
+			DaemonAccess:          authapi.DaemonAccessOptions{Token: "local-secret", RequireAPIAuth: true},
 			HostCheck: authapi.HostCheckOptions{
 				Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			},

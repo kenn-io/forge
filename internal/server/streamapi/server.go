@@ -104,6 +104,7 @@ func (s *Handlers) TrackHTTPConn(_ net.Conn, state http.ConnState) {
 		s.ConnWG.Add(1)
 	case http.StateHijacked, http.StateClosed:
 		s.ConnWG.Done()
+	case http.StateActive, http.StateIdle:
 	}
 }
 
@@ -814,7 +815,6 @@ func ServeSSESubscribedFromHubTransformed(
 	afterReplay func(io.Writer, authapi.SseController) bool,
 	preparedReplay *sseReplaySnapshot,
 ) {
-
 	if err := rc.Flush(); err != nil {
 		return
 	}
@@ -824,7 +824,9 @@ func ServeSSESubscribedFromHubTransformed(
 	// live broadcasts and never out of order with them.
 	deliveredThrough := cursor
 	if hasCursor {
-		replay, synID, stale := []syncevents.RecordedEvent(nil), uint64(0), false
+		var replay []syncevents.RecordedEvent
+		var synID uint64
+		var stale bool
 		if preparedReplay == nil {
 			replay, synID, stale = hub.ReplaySnapshotSince(cursor)
 		} else {

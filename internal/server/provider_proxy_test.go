@@ -325,22 +325,23 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	response, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
 		&itemapi.ListActivityInput{Unassigned: true},
-		itemapi.ActivityResponse{Items: []itemapi.ActivityItemResponse{
-			{
-				Repo: itemapi.ActivityRepoRefResponse{
-					Provider: "github", PlatformHost: "github.com",
-					PlatformRepoID: "repo-acme-widget",
+		itemapi.ActivityResponse{
+			Items: []itemapi.ActivityItemResponse{
+				{
+					Repo: itemapi.ActivityRepoRefResponse{
+						Provider: "github", PlatformHost: "github.com",
+						PlatformRepoID: "repo-acme-widget",
+					},
+					ItemType: "issue", ItemNumber: 7,
 				},
-				ItemType: "issue", ItemNumber: 7,
-			},
-			{
-				Repo: itemapi.ActivityRepoRefResponse{
-					Provider: "github", PlatformHost: "github.com",
-					PlatformRepoID: "repo-acme-widget",
+				{
+					Repo: itemapi.ActivityRepoRefResponse{
+						Provider: "github", PlatformHost: "github.com",
+						PlatformRepoID: "repo-acme-widget",
+					},
+					ItemType: "issue", ItemNumber: 8,
 				},
-				ItemType: "issue", ItemNumber: 8,
 			},
-		},
 			UseWorkspaceActivityForRecency: true,
 		},
 		snapshot,

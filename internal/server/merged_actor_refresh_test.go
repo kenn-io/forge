@@ -1,10 +1,11 @@
 package server
 
 import (
+	"testing"
+
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 
 	jsonv2 "encoding/json/v2"
-	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

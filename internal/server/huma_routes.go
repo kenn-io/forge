@@ -265,7 +265,7 @@ func NewClientOpenAPI() *huma.OpenAPI {
 // NewHealthOpenAPI describes the health API served outside /api/v1.
 func NewHealthOpenAPI() *huma.OpenAPI {
 	api := humago.New(http.NewServeMux(), routepolicy.HealthAPIConfig())
-	(wiredServer(&Server{})).routepolicy.RegisterHealthAPI(api)
+	wiredServer(&Server{}).routepolicy.RegisterHealthAPI(api)
 	return api.OpenAPI()
 }
 

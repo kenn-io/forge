@@ -295,18 +295,6 @@ type Server struct {
 	telemetryapi    *telemetryapi.Handlers
 }
 
-// trackHTTPConn is installed as http.Server.ConnState by Serve so
-// Shutdown can wait for per-connection goroutines to fully unwind.
-func (s *Server) trackHTTPConn(_ net.Conn, state http.ConnState) {
-	switch state {
-	case http.StateNew:
-		s.connWG.Add(1)
-	case http.StateHijacked, http.StateClosed:
-		s.connWG.Done()
-	case http.StateActive, http.StateIdle:
-	}
-}
-
 // Hub returns the server's SSE event hub. Callers should never
 // retain the returned pointer beyond the server's lifetime.
 func (s *Server) Hub() *syncevents.EventHub { return s.hub }

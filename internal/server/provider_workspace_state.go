@@ -12,8 +12,6 @@ import (
 	"go.kenn.io/forge/internal/server/spokeapi"
 )
 
-const maxWorkspaceProviderStateSubjects = 500
-
 type federationWorkspaceProviderStateRequest struct {
 	Workspaces []federationWorkspaceProviderSubject `json:"workspaces" nullable:"false" maxItems:"500"`
 }

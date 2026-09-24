@@ -662,7 +662,9 @@ func (h *Handler) requestSpokeEnrollmentRevocation(
 	if !ok {
 		return httpapi.Internal("outbound spoke credential is unavailable")
 	}
-	request, err := generated.NewRevokeFederationEnrollmentRequest(ctx, strings.TrimRight(enrollment.SpokeBaseURL, "/")+"/api/v1", &generated.RevokeFederationEnrollmentRequestOptions{PathParams: &generated.RevokeFederationEnrollmentPath{EnrollmentID: enrollment.ID}})
+	requestContext, cancel := context.WithTimeout(ctx, h.configSnapshot().Fleet.PeerTimeoutOrDefault())
+	defer cancel()
+	request, err := generated.NewRevokeFederationEnrollmentRequest(requestContext, strings.TrimRight(enrollment.SpokeBaseURL, "/")+"/api/v1", &generated.RevokeFederationEnrollmentRequestOptions{PathParams: &generated.RevokeFederationEnrollmentPath{EnrollmentID: enrollment.ID}})
 	if err != nil {
 		return httpapi.Internal("build spoke revocation request: " + err.Error())
 	}

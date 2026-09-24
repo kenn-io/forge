@@ -1074,19 +1074,30 @@ func (s *Server) updateSettings(
 func (s *Server) updateLocalSettings(
 	ctx context.Context, input *updateSettingsInput,
 ) (*settingsOutput, error) {
+	if err := s.commitLocalSettings(ctx, input); err != nil {
+		return nil, err
+	}
+	// A spoke's hub-owned fields are optional here: the local change is already
+	// committed, so a hub outage must not turn it into a reported failure.
+	provider, err := s.fetchProviderSettings(ctx)
+	if err != nil {
+		slog.Warn("load hub settings after spoke-local settings save", "err", err)
+		provider = nil
+	}
+	return s.settingsOutputResponseWithProvider(ctx, provider)
+}
+
+func (s *Server) commitLocalSettings(
+	ctx context.Context, input *updateSettingsInput,
+) error {
 	if s.cfgPath == "" {
-		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+		return httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	if workspaces := input.Body.Workspaces; workspaces != nil && workspaces.DefaultExecutionTarget != nil {
 		if err := config.ValidateDefaultExecutionTarget(*workspaces.DefaultExecutionTarget); err != nil {
-			return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+			return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 		}
 	}
-	provider, err := s.fetchProviderSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	s.configReloadMu.Lock()
 	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
@@ -1188,7 +1199,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.MCP = prevMCP
 		s.cfg.Roborev = prevRoborev
 		s.cfgMu.Unlock()
-		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.AirplaneMode = prevAirplaneMode
@@ -1206,7 +1217,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.MCP = prevMCP
 		s.cfg.Roborev = prevRoborev
 		s.cfgMu.Unlock()
-		return nil, httpapi.Internal("save config: " + err.Error())
+		return httpapi.Internal("save config: " + err.Error())
 	}
 	budgetRaised := s.cfg.SyncBudgetPerHour > prevSyncBudgetPerHour
 	if s.syncer != nil {
@@ -1236,8 +1247,7 @@ func (s *Server) updateLocalSettings(
 		// next pass; run one now so the raised ceiling takes visible effect.
 		s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	}
-
-	return s.settingsOutputResponseWithProvider(ctx, provider)
+	return nil
 }
 
 func (s *settingsResponse) applyProviderSettings(provider settingsResponse) {

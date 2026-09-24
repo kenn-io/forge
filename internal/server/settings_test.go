@@ -4488,7 +4488,7 @@ port = 8091
 	assert.Empty(settings.Repos[0].WorktreeBasePath)
 }
 
-func TestNodeLocalSettingsDoNotCommitWhenHubSnapshotIsUnavailable(t *testing.T) {
+func TestNodeLocalSettingsCommitWhileHubIsUnavailable(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, configPath := setupTestServerWithConfigContent(t, `
@@ -4511,11 +4511,13 @@ auto_assign_on_create = false
 		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
 
-	require.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
-	assert.False(srv.cfg.Workspaces.AutoAssignOnCreate)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.True(settings.Workspaces.AutoAssignOnCreate)
 	persisted, err := config.Load(configPath)
 	require.NoError(err)
-	assert.False(persisted.Workspaces.AutoAssignOnCreate)
+	assert.True(persisted.Workspaces.AutoAssignOnCreate)
 }
 
 func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {

@@ -6344,6 +6344,8 @@ components:
           items:
             $ref: "#/components/schemas/ProviderRepositoryObservation"
           type: array
+        sync:
+          $ref: "#/components/schemas/SyncSettingsResponse"
       required:
         - repos
         - repository_observations
@@ -6353,6 +6355,7 @@ components:
         - pull_requests
         - issues
         - notifications
+        - sync
       type: object
     ProviderSettingsUpdate:
       additionalProperties: false
@@ -6372,6 +6375,8 @@ components:
           $ref: "#/components/schemas/Issues"
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
+        sync:
+          $ref: "#/components/schemas/SyncSettingsUpdate"
       type: object
     ProviderStateConflict:
       additionalProperties: false
@@ -8680,6 +8685,9 @@ components:
           $ref: "#/components/schemas/ModeVisibility"
         notifications:
           $ref: "#/components/schemas/NotificationsSettingsResponse"
+        provider_settings_loaded:
+          description: Whether hub-owned fields (repositories, presets, activity, detail, sync, pull requests, issues, notifications) hold the effective values. False on a spoke when the hub's settings were not loaded; those fields cannot be edited until they are.
+          type: boolean
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
         quick_actions:
@@ -8720,6 +8728,7 @@ components:
         - fleet
         - mcp
         - roborev
+        - provider_settings_loaded
       type: object
     Snapshot:
       additionalProperties: false
@@ -24256,6 +24265,25 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Update fleet settings
+      tags:
+        - Settings
+  /settings/local:
+    get:
+      operationId: get-local-settings
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get settings owned by this Forge without contacting a fleet hub
       tags:
         - Settings
   /settings/repo-presets:

@@ -430,6 +430,7 @@ command = ["codex", "--full-auto"]
 	require.Len(resp.Agents, 1)
 	assert.Equal("codex", resp.Agents[0].Key)
 	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
+	assert.True(resp.ProviderSettingsLoaded, "a Forge that owns its provider settings always has them loaded")
 }
 
 func TestHandleGetSettingsReportsMCPDesiredAndActiveState(t *testing.T) {
@@ -4389,6 +4390,14 @@ base_url = %q
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
 	assert.Equal(canonicalWorktreeBase, settings.Repos[0].WorktreeBasePath)
+
+	response = testutil.DoJSON(t, spoke, http.MethodGet, "/api/v1/settings/local", nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.Equal(25, settings.Detail.InitialTimelineEntryLimit)
+	assert.True(settings.Workspaces.AutoAssignOnCreate)
+	assert.Equal(config.FleetRoleSpoke, settings.Fleet.Role)
+	assert.False(settings.ProviderSettingsLoaded)
 }
 
 func TestNodeWorktreeBaseOverrideFollowsHubRepositoryIdentity(t *testing.T) {
@@ -4479,9 +4488,10 @@ port = 8091
 	require.Len(settings.Repos, 1)
 	assert.Equal("repo-late", settings.Repos[0].PlatformRepoID)
 	assert.Empty(settings.Repos[0].WorktreeBasePath)
+	assert.True(settings.ProviderSettingsLoaded)
 }
 
-func TestNodeLocalSettingsDoNotCommitWhenHubSnapshotIsUnavailable(t *testing.T) {
+func TestNodeLocalSettingsCommitWhileHubIsUnavailable(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, configPath := setupTestServerWithConfigContent(t, `
@@ -4504,11 +4514,51 @@ auto_assign_on_create = false
 		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
 
-	require.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
-	assert.False(srv.cfg.Workspaces.AutoAssignOnCreate)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.True(settings.Workspaces.AutoAssignOnCreate)
+	assert.False(settings.ProviderSettingsLoaded)
 	persisted, err := config.Load(configPath)
 	require.NoError(err)
-	assert.False(persisted.Workspaces.AutoAssignOnCreate)
+	assert.True(persisted.Workspaces.AutoAssignOnCreate)
+}
+
+func TestNodeLocalSettingsSaveStopsWaitingForHubAtPeerTimeout(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, configPath := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+
+[fleet]
+peer_timeout = "50ms"
+`, &mockGH{})
+	srv.providerSource = &hubProviderSource{
+		client: providerPlaneClientFunc(func(
+			ctx context.Context, _ federationauth.Scope, _ *http.Request,
+		) (*http.Response, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}),
+	}
+	callerContext, cancelCaller := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancelCaller()
+	autoAssign := true
+	started := time.Now()
+
+	output, err := srv.updateSettings(callerContext, &updateSettingsInput{Body: updateSettingsRequest{
+		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	}})
+
+	require.NoError(err)
+	assert.Less(time.Since(started), 5*time.Second,
+		"a committed spoke-local save must not wait on the hub past the peer timeout")
+	assert.True(output.Body.Workspaces.AutoAssignOnCreate)
+	assert.False(output.Body.ProviderSettingsLoaded)
+	persisted, err := config.Load(configPath)
+	require.NoError(err)
+	assert.True(persisted.Workspaces.AutoAssignOnCreate)
 }
 
 func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
@@ -4532,6 +4582,8 @@ func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
 	var settings settingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.False(settings.Fleet.Enabled)
+	require.False(settings.ProviderSettingsLoaded,
+		"a spoke without its hub's settings must not present local values as hub-owned")
 }
 
 func TestInactiveSpokeSettingsStayLocal(t *testing.T) {
@@ -4890,4 +4942,78 @@ func TestHandleGetSettingsReportsEmptyQuickActionsArray(t *testing.T) {
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
 	require.Contains(raw, "quick_actions")
 	assert.JSONEq("[]", string(raw["quick_actions"]))
+}
+
+func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{})
+	srv.syncer = nil
+	srv.cfg.Fleet.Enabled = true
+	srv.fleetEnabledAtBoot = true
+	hubSettings := providerSettingsResponse{
+		Repos: []ghclient.ConfiguredRepoStatus{}, RepoPresets: []config.RepoPreset{},
+		RepositoryObservations: []providerRepositoryObservation{},
+		Sync:                   syncSettingsResponse{BudgetPerHour: 2400},
+	}
+	var forwarded providerSettingsUpdate
+	srv.providerSource = &hubProviderSource{
+		client: providerPlaneClientFunc(func(
+			_ context.Context, _ federationauth.Scope, request *http.Request,
+		) (*http.Response, error) {
+			if request.Method == http.MethodPut {
+				require.NoError(json.NewDecoder(request.Body).Decode(&forwarded))
+				hubSettings.Sync.BudgetPerHour = *forwarded.Sync.BudgetPerHour
+			}
+			encoded, err := json.Marshal(hubSettings)
+			require.NoError(err)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(bytes.NewReader(encoded)),
+				Request:    request,
+			}, nil
+		}),
+	}
+
+	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.Equal(2400, settings.Sync.BudgetPerHour)
+
+	budget := 1800
+	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Sync: &syncSettingsUpdate{BudgetPerHour: &budget},
+	})
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.NotNil(forwarded.Sync)
+	require.NotNil(forwarded.Sync.BudgetPerHour)
+	assert.Equal(1800, *forwarded.Sync.BudgetPerHour)
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.Equal(1800, settings.Sync.BudgetPerHour)
+}
+
+func TestHubAppliesSyncBudgetFromSpoke(t *testing.T) {
+	require := require.New(t)
+	srv, _, configPath := setupTestServerWithConfig(t)
+	srv.syncer = nil
+	ctx := federationauth.WithPrincipal(t.Context(), federationauth.Principal{
+		NodeID: proxyTestNodeID,
+		Scopes: map[federationauth.Scope]struct{}{federationauth.ScopeProviderWrite: {}},
+	})
+	budget := 1800
+
+	output, err := srv.federationUpdateProviderSettings(ctx, &federationUpdateProviderSettingsInput{
+		Body: providerSettingsUpdate{Sync: &syncSettingsUpdate{BudgetPerHour: &budget}},
+	})
+
+	require.NoError(err)
+	require.Equal(1800, output.Body.Sync.BudgetPerHour)
+	persisted, err := config.Load(configPath)
+	require.NoError(err)
+	require.Equal(1800, persisted.SyncBudgetPerHour)
 }

@@ -662,7 +662,10 @@ func (h *Handler) requestSpokeEnrollmentRevocation(
 	if !ok {
 		return httpapi.Internal("outbound spoke credential is unavailable")
 	}
-	request, err := generated.NewRevokeFederationEnrollmentRequest(ctx, strings.TrimRight(enrollment.SpokeBaseURL, "/")+"/api/v1", &generated.RevokeFederationEnrollmentRequestOptions{PathParams: &generated.RevokeFederationEnrollmentPath{EnrollmentID: enrollment.ID}})
+	fleet := h.configSnapshot().Fleet
+	requestContext, cancel := context.WithTimeout(ctx, fleet.PeerTimeoutOrDefault())
+	defer cancel()
+	request, err := generated.NewRevokeFederationEnrollmentRequest(requestContext, strings.TrimRight(enrollment.SpokeBaseURL, "/")+"/api/v1", &generated.RevokeFederationEnrollmentRequestOptions{PathParams: &generated.RevokeFederationEnrollmentPath{EnrollmentID: enrollment.ID}})
 	if err != nil {
 		return httpapi.Internal("build spoke revocation request: " + err.Error())
 	}
@@ -916,10 +919,26 @@ func newFederationHTTPClient() *http.Client {
 
 func newFederationMemberClients(base *http.Client) federationMemberClients {
 	return federationMemberClients{
-		rest:      hardenedFederationHTTPClient(base, false),
+		rest:      hardenedFederationMemberHTTPClient(base),
 		proxy:     hardenedFederationProxyHTTPClient(base),
 		websocket: hardenedFederationHTTPClient(base, true),
 	}
+}
+
+// Member REST requests carry a live fleet timeout on their request context.
+// Transport deadlines would cap that timeout even after a config reload.
+func hardenedFederationMemberHTTPClient(base *http.Client) *http.Client {
+	client := hardenedFederationHTTPClient(base, true)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		return client
+	}
+	transport = transport.Clone()
+	transport.DialContext = (&net.Dialer{KeepAlive: 30 * time.Second}).DialContext
+	transport.TLSHandshakeTimeout = 0
+	transport.ResponseHeaderTimeout = 0
+	client.Transport = transport
+	return client
 }
 
 func hardenedFederationProxyHTTPClient(base *http.Client) *http.Client {

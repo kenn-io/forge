@@ -40,6 +40,9 @@ type settingsResponse struct {
 	Fleet         fleetSettingsResponse           `json:"fleet"`
 	MCP           mcpSettingsResponse             `json:"mcp"`
 	Roborev       roborevSettingsResponse         `json:"roborev"`
+	// ProviderSettingsLoaded is false on a spoke whose response lacks the hub's
+	// settings; its hub-owned fields then hold spoke-local values.
+	ProviderSettingsLoaded bool `json:"provider_settings_loaded" doc:"Whether hub-owned fields (repositories, presets, activity, detail, sync, pull requests, issues, notifications) hold the effective values. False on a spoke when the hub's settings were not loaded; those fields cannot be edited until they are."`
 }
 
 // syncSettingsResponse reports the effective hourly sync ceiling. The schema
@@ -874,6 +877,15 @@ func (s *Server) getSettings(
 	return s.settingsOutputResponse(ctx)
 }
 
+func (s *Server) getLocalSettings(
+	ctx context.Context, _ *struct{},
+) (*getSettingsOutput, error) {
+	if s.cfg == nil {
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+	}
+	return s.settingsOutputResponseWithProvider(ctx, nil)
+}
+
 func (s *Server) mutateRepoPresets(
 	ctx context.Context,
 	mutate func([]config.RepoPreset) ([]config.RepoPreset, error),
@@ -985,6 +997,7 @@ func (s *Server) settingsOutputResponseWithProvider(
 	if provider != nil {
 		body.applyProviderSettings(provider.Settings)
 	}
+	body.ProviderSettingsLoaded = s.providerSource == nil || provider != nil
 	return &settingsOutput{Body: body}, nil
 }
 
@@ -1065,19 +1078,35 @@ func (s *Server) updateSettings(
 func (s *Server) updateLocalSettings(
 	ctx context.Context, input *updateSettingsInput,
 ) (*settingsOutput, error) {
+	if err := s.commitLocalSettings(ctx, input); err != nil {
+		return nil, err
+	}
+	// A spoke's hub-owned fields are optional here: the local change is already
+	// committed, so a slow or unavailable hub must not delay or fail the response.
+	s.cfgMu.Lock()
+	fleet := s.cfg.Fleet
+	s.cfgMu.Unlock()
+	providerContext, cancel := context.WithTimeout(ctx, fleet.PeerTimeoutOrDefault())
+	defer cancel()
+	provider, err := s.fetchProviderSettings(providerContext)
+	if err != nil {
+		slog.Warn("load hub settings after spoke-local settings save", "err", err)
+		provider = nil
+	}
+	return s.settingsOutputResponseWithProvider(ctx, provider)
+}
+
+func (s *Server) commitLocalSettings(
+	ctx context.Context, input *updateSettingsInput,
+) error {
 	if s.cfgPath == "" {
-		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+		return httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	if workspaces := input.Body.Workspaces; workspaces != nil && workspaces.DefaultExecutionTarget != nil {
 		if err := config.ValidateDefaultExecutionTarget(*workspaces.DefaultExecutionTarget); err != nil {
-			return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+			return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 		}
 	}
-	provider, err := s.fetchProviderSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	s.configReloadMu.Lock()
 	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
@@ -1179,7 +1208,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.MCP = prevMCP
 		s.cfg.Roborev = prevRoborev
 		s.cfgMu.Unlock()
-		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.AirplaneMode = prevAirplaneMode
@@ -1197,7 +1226,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.MCP = prevMCP
 		s.cfg.Roborev = prevRoborev
 		s.cfgMu.Unlock()
-		return nil, httpapi.Internal("save config: " + err.Error())
+		return httpapi.Internal("save config: " + err.Error())
 	}
 	budgetRaised := s.cfg.SyncBudgetPerHour > prevSyncBudgetPerHour
 	if s.syncer != nil {
@@ -1227,8 +1256,7 @@ func (s *Server) updateLocalSettings(
 		// next pass; run one now so the raised ceiling takes visible effect.
 		s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	}
-
-	return s.settingsOutputResponseWithProvider(ctx, provider)
+	return nil
 }
 
 func (s *settingsResponse) applyProviderSettings(provider settingsResponse) {

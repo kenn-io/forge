@@ -47,6 +47,8 @@
   let settings = $state.raw<Settings | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let providerReady = $state(true);
+  let providerError = $state<string | null>(null);
   let airplaneMode = $state(false);
   let savingAirplaneMode = $state(false);
   let airplaneModeError = $state<string | null>(null);
@@ -63,6 +65,12 @@
   const providerOwner: SettingsOwner = $derived(
     settings?.fleet.role === "spoke" ? "hub" : "local",
   );
+  const providerPanels = new Set([
+    "settings-repositories",
+    "settings-activity",
+    "settings-pull-requests",
+    "settings-detail",
+  ]);
   const categories: SettingsCategory[] = $derived.by(() => {
     const query = searchQuery.trim().toLowerCase();
     const visible =
@@ -82,35 +90,75 @@
     error = null;
     const execution = runtime.runCommand(
       Effect.gen(function* () {
+        const settingsWorkflow = yield* SettingsWorkflow;
+        const local = yield* settingsWorkflow.readLocal.pipe(
+          Effect.match({ onFailure: () => null, onSuccess: (loaded) => loaded }),
+        );
+        if (local) {
+          const loaded = local;
+          yield* Effect.sync(() => {
+            settings = loaded;
+            airplaneMode = loaded.airplane_mode;
+            settingsStore.setAirplaneMode(loaded.airplane_mode);
+            settingsStore.setModeVisibility(loaded.modes);
+            hydrateTerminalSettings(terminalHydration, loaded.terminal);
+            settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
+            settingsStore.setQuickActions(loaded.quick_actions ?? []);
+            hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
+            hydrateRoborevSettings(roborevHydration, loaded.roborev);
+            providerReady = loaded.provider_settings_loaded;
+            loading = false;
+          });
+        }
         const workflow = yield* StartupWorkflow;
         yield* workflow.invalidate;
-        return yield* workflow.start;
-      }).pipe(
-        Effect.matchEffect({
-          onFailure: (failure) =>
-            Effect.sync(() => {
-              error = startupErrorMessage(failure);
-              loading = false;
-            }),
-          onSuccess: (loaded) =>
-            Effect.sync(() => {
-              settings = loaded;
-              airplaneMode = loaded.airplane_mode;
-              settingsStore.setAirplaneMode(loaded.airplane_mode);
-              settingsStore.setConfiguredRepos(loaded.repos);
-              settingsStore.setRepoPresets(loaded.repo_presets);
-              settingsStore.setModeVisibility(loaded.modes);
-              hydrateTerminalSettings(terminalHydration, loaded.terminal);
-              settingsStore.setPullRequestSettings(loaded.pull_requests);
-              settingsStore.setDetailSettings(loaded.detail);
-              settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
-              settingsStore.setQuickActions(loaded.quick_actions ?? []);
-              hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
-              hydrateRoborevSettings(roborevHydration, loaded.roborev);
-              loading = false;
-            }),
-        }),
-      ),
+        const result = yield* workflow.start.pipe(Effect.match({
+          onFailure: (failure) => ({ loaded: null, message: startupErrorMessage(failure) }),
+          onSuccess: (loaded) => ({ loaded, message: null }),
+        }));
+        yield* Effect.sync(() => {
+          if (!result.loaded) {
+            if (settings) providerError = result.message;
+            else error = result.message;
+            loading = false;
+            return;
+          }
+          const loaded = result.loaded;
+          settings = settings?.fleet.role === "spoke"
+            ? {
+                ...settings,
+                repos: loaded.repos,
+                repo_presets: loaded.repo_presets,
+                activity: loaded.activity,
+                detail: loaded.detail,
+                pull_requests: loaded.pull_requests,
+                issues: loaded.issues,
+                notifications: loaded.notifications,
+                sync: loaded.sync,
+                provider_settings_loaded: loaded.provider_settings_loaded,
+              }
+            : loaded;
+          if (loaded.fleet.role !== "spoke") {
+            airplaneMode = loaded.airplane_mode;
+            settingsStore.setAirplaneMode(loaded.airplane_mode);
+            settingsStore.setModeVisibility(loaded.modes);
+            hydrateTerminalSettings(terminalHydration, loaded.terminal);
+            settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
+            settingsStore.setQuickActions(loaded.quick_actions ?? []);
+            hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
+            hydrateRoborevSettings(roborevHydration, loaded.roborev);
+          }
+          settingsStore.setConfiguredRepos(loaded.repos);
+          settingsStore.setRepoPresets(loaded.repo_presets);
+          settingsStore.setPullRequestSettings(loaded.pull_requests);
+          settingsStore.setDetailSettings(loaded.detail);
+          providerReady = loaded.provider_settings_loaded;
+          providerError = loaded.provider_settings_loaded
+            ? null
+            : "Hub-owned settings are unavailable until this spoke is connected to its hub.";
+          loading = false;
+        });
+      }),
       {
         operation: "load settings page",
         safeContext: {},
@@ -130,7 +178,8 @@
         return yield* workflow.persist(() => ({ airplane_mode: enabled }));
       }).pipe(
         Effect.tap((saved) => Effect.sync(() => {
-          settings = saved;
+          // A spoke save can succeed without hub-owned fields; keep the loaded ones.
+          settings = settings ? { ...settings, airplane_mode: saved.airplane_mode } : saved;
           airplaneMode = saved.airplane_mode;
           settingsStore.setAirplaneMode(saved.airplane_mode);
         })),
@@ -191,18 +240,24 @@
           {@const panelVisible = categories.some((panel) => panel.id === meta.id)}
           <div class="settings-panel" hidden={!panelVisible || meta.id !== activeId}>
             <SettingsSection title={meta.title} description={meta.description}>
-              {#if meta.id === "settings-sync"}
+              {#if providerOwner === "hub" && !providerReady && providerPanels.has(meta.id)}
+                <p class="state-msg">{providerError ?? "Loading settings from the hub..."}</p>
+              {:else if meta.id === "settings-sync"}
             <Toggle label="Airplane mode" bind:checked={airplaneMode} disabled={savingAirplaneMode} onchange={toggleAirplaneMode} />
             <p class="sync-description">Pause automatic background sync on this Forge instance. Relay updates, opening an item, and manual Sync remain available. This setting is remembered after restart.</p>
             <p class="sync-description">An update already running will finish. On a spoke, this pauses local background refresh; the hub keeps its own sync setting.</p>
             {#if airplaneModeError}<p class="state-error" role="alert">{airplaneModeError}</p>{/if}
-            <SyncBudgetSettings
-              sync={loaded.sync}
-              owner={providerOwner}
-              onUpdate={(sync) => {
-                settings = { ...settings!, sync };
-              }}
-            />
+            {#if providerOwner === "hub" && !providerReady}
+              <p class="state-msg">{providerError ?? "Loading sync settings from the hub..."}</p>
+            {:else}
+              <SyncBudgetSettings
+                sync={loaded.sync}
+                owner={providerOwner}
+                onUpdate={(sync) => {
+                  settings = { ...settings!, sync };
+                }}
+              />
+            {/if}
           {:else if meta.id === "settings-repositories"}
             <RepoSettings
               repos={loaded.repos}

@@ -368,7 +368,8 @@ func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T
 
 	clients := newFederationMemberClients(base)
 
-	assert.Equal(15*time.Second, clients.rest.Timeout)
+	assert.Zero(clients.rest.Timeout,
+		"member requests use the live peer timeout on their request context")
 	assert.Zero(clients.proxy.Timeout,
 		"proxied operations own their request lifetime through the browser context")
 	assert.Zero(clients.websocket.Timeout,
@@ -376,8 +377,8 @@ func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T
 	restTransport, ok := clients.rest.Transport.(*http.Transport)
 	require.True(ok)
 	assert.NotSame(baseTransport, restTransport)
-	assert.Equal(5*time.Second, restTransport.TLSHandshakeTimeout)
-	assert.Equal(10*time.Second, restTransport.ResponseHeaderTimeout)
+	assert.Zero(restTransport.TLSHandshakeTimeout)
+	assert.Zero(restTransport.ResponseHeaderTimeout)
 	proxyTransport, ok := clients.proxy.Transport.(*http.Transport)
 	require.True(ok)
 	assert.Zero(proxyTransport.ResponseHeaderTimeout,

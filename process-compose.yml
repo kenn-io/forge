@@ -10,6 +10,18 @@ shell:
   shell_argument: "-c"
 
 processes:
+  git-fetch:
+    description: "Refresh remote refs every 15 minutes while on main"
+    namespace: dev
+    log_location: "tmp/logs/git-fetch-process-compose.log"
+    command: |
+      while true; do
+        if [ "$(git branch --show-current)" = "main" ]; then
+          git fetch || echo "git fetch failed; retrying in 15 minutes" >&2
+        fi
+        sleep 900
+      done
+
   backend:
     description: "Go backend with Air live reload on 127.0.0.1:8091"
     namespace: dev

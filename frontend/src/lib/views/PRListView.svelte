@@ -291,6 +291,7 @@
       <DetailPaneLayout
         layout={paneLayout}
         tabs={paneTabs}
+        {...(workspaceClaim.ref() !== null ? { flattenBelowPx: 0 } : {})}
         tablistLabel="Pull request detail panes"
         leafLabel="Pull request detail pane group"
         routeTabKey={detailTab}

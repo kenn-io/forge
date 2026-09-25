@@ -2984,7 +2984,7 @@ func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.
 		})
 		added <- rr.Code
 	}()
-	require.Never(func() bool { return len(added) > 0 }, 200*time.Millisecond, 10*time.Millisecond,
+	require.Never(func() bool { return len(added) > 0 }, time.Second, 10*time.Millisecond,
 		"an add must wait for discovery instead of being overwritten by its stale snapshot")
 	close(release)
 	require.NoError(<-done)

@@ -143,16 +143,28 @@ func (s *Handler) buildHubAggregate(
 	includeMembers bool,
 	memberTimeout time.Duration,
 ) (fleet.NeutralSnapshot, error) {
-	fleetConfig := s.configSnapshot().Fleet
 	var results []fleet.PeerResult
-	if includeMembers && fleetConfig.Enabled && len(fleetConfig.Members) > 0 {
-		results = s.fetchMemberResults(ctx, fleetConfig, memberTimeout)
-	}
-	if includeMembers && s.executionTargets != nil {
-		results = append(results, s.executionTargets(ctx, memberTimeout)...)
+	if includeMembers {
+		results = s.fetchPeerResults(ctx, s.configSnapshot().Fleet, memberTimeout)
 	}
 	aggregate := fleet.BuildNeutralAggregate(local, results)
 	return fleet.EnrichProviderState(ctx, s.db, aggregate)
+}
+
+// fetchPeerResults fans out to enrolled members and execution targets.
+func (s *Handler) fetchPeerResults(
+	ctx context.Context,
+	fleetConfig config.Fleet,
+	memberTimeout time.Duration,
+) []fleet.PeerResult {
+	var results []fleet.PeerResult
+	if fleetConfig.Enabled && len(fleetConfig.Members) > 0 {
+		results = s.fetchMemberResults(ctx, fleetConfig, memberTimeout)
+	}
+	if s.executionTargets != nil {
+		results = append(results, s.executionTargets(ctx, memberTimeout)...)
+	}
+	return results
 }
 
 // fetchMemberResults fans out to each active member's raw endpoint.

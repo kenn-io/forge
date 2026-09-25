@@ -117,6 +117,9 @@ type Handler struct {
 	// by this handler; it keeps the monitors active for hub-driven spokes
 	// that never open a local event stream.
 	snapshotDemandAt atomic.Int64
+	// activityPeers holds the latest member results behind hub Activity
+	// workspace indicators so Activity never waits on a member fan-out.
+	activityPeers activityPeerCache
 }
 
 // New constructs a Fleet handler without starting its workers.

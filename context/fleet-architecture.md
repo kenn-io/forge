@@ -125,7 +125,11 @@ or remote workspace and session operations.
   (`internal/fleet/enrich.go::ProjectForObserver`).
 - Hub Activity workspace indicators include the fleet; peer provider responses
   omit them so spokes can apply their local workspace ownership
-  (`internal/server/huma_routes.go::Server.listActivityService`).
+  (`internal/server/huma_routes.go::Server.listActivityService`). Activity reads
+  fresh local workspaces with the latest member results and never waits on the
+  member fan-out beyond a short bound when results are missing or stale; one
+  background refresh runs at a time
+  (`internal/server/fleetapi/activity_workspaces.go::Handler.latestActivityPeerResults`).
 - Workspace lists consume inline projected summaries without per-host fan-out;
   remote actions require the owning host's projected operation availability.
   Explicitly incomplete aggregates retain absent-host rows; authoritative views

@@ -25,7 +25,7 @@ import (
 func main() { os.Exit(run(os.Args[1:])) }
 
 func run(args []string) int {
-	real, err := realGH()
+	realPath, err := realGH()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -48,7 +48,7 @@ func run(args []string) int {
 		}
 	}
 	recordUsage(args, reason)
-	return passthrough(real, args)
+	return passthrough(realPath, args)
 }
 
 func realGH() (string, error) {

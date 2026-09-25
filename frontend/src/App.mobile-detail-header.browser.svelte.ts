@@ -76,7 +76,7 @@ describe("phone detail header", () => {
 
   it("restores the list's scroll offset through Back and starts a fresh visit at the top", async () => {
     // Short enough that the five fixture rows overflow the list viewport.
-    await page.viewport(390, 360);
+    await page.viewport(390, 300);
     mounted = await mountBrowserApp("/m/pulls");
     await vi.waitFor(() => expect(count(".mobile-shell .pull-item")).toBeGreaterThan(0), WAIT);
     const rows = count(".mobile-shell .pull-item");

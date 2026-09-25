@@ -23,6 +23,7 @@ type providerSettingsResponse struct {
 	PullRequests           config.PullRequests             `json:"pull_requests"`
 	Issues                 config.Issues                   `json:"issues"`
 	Notifications          notificationsSettingsResponse   `json:"notifications"`
+	Sync                   syncSettingsResponse            `json:"sync"`
 }
 
 type providerRepositoryObservation struct {
@@ -45,6 +46,7 @@ type providerSettingsUpdate struct {
 	Detail       *config.Detail       `json:"detail,omitempty"`
 	PullRequests *config.PullRequests `json:"pull_requests,omitempty"`
 	Issues       *config.Issues       `json:"issues,omitempty"`
+	Sync         *syncSettingsUpdate  `json:"sync,omitempty"`
 }
 
 type federationProviderSettingsOutput = httpapi.BodyOutput[providerSettingsResponse]
@@ -104,7 +106,7 @@ func providerSettingsFrom(settings settingsResponse) providerSettingsResponse {
 		RepoPresets:            cloneRepoPresets(settings.RepoPresets),
 		Activity:               settings.Activity, Detail: settings.Detail,
 		PullRequests: settings.PullRequests, Issues: settings.Issues,
-		Notifications: settings.Notifications,
+		Notifications: settings.Notifications, Sync: settings.Sync,
 	}
 }
 
@@ -166,7 +168,7 @@ func (settings providerSettingsResponse) projection() providerSettingsProjection
 			Repos: settings.Repos, RepoPresets: settings.RepoPresets,
 			Activity: settings.Activity, Detail: settings.Detail,
 			PullRequests: settings.PullRequests, Issues: settings.Issues,
-			Notifications: settings.Notifications,
+			Notifications: settings.Notifications, Sync: settings.Sync,
 		},
 		RepositoryObservations: settings.RepositoryObservations,
 	}
@@ -176,5 +178,6 @@ func (update providerSettingsUpdate) settingsUpdate() updateSettingsRequest {
 	return updateSettingsRequest{
 		Activity: update.Activity, Detail: update.Detail,
 		PullRequests: update.PullRequests, Issues: update.Issues,
+		Sync: update.Sync,
 	}
 }

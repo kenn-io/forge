@@ -190,9 +190,11 @@ describe("SettingsPage", () => {
     render(SettingsRuntimeHarness, { props: { component: SettingsPage, componentProps: {} } });
     await fireEvent.click(await screen.findByRole("button", { name: /^Sync/ }));
 
-    await waitFor(() => expect(
-      screen.getAllByText("Hub-owned settings are unavailable until this spoke is connected to its hub.").length,
-    ).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Hub-owned settings are unavailable until this spoke is connected to its hub.").length,
+      ).toBeGreaterThan(0),
+    );
     expect(screen.queryByLabelText("Hourly sync budget")).toBeNull();
     expect(screen.getByRole("switch", { name: "Airplane mode" })).toBeTruthy();
   });

@@ -1434,7 +1434,7 @@ func TestFederationProviderSettingsUseDedicatedProjection(t *testing.T) {
 	delete(body, "$schema")
 	assert.ElementsMatch([]string{
 		"activity", "detail", "issues", "notifications",
-		"pull_requests", "repo_presets", "repos", "repository_observations",
+		"pull_requests", "repo_presets", "repos", "repository_observations", "sync",
 	}, slices.Collect(maps.Keys(body)))
 }
 

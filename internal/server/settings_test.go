@@ -4943,3 +4943,77 @@ func TestHandleGetSettingsReportsEmptyQuickActionsArray(t *testing.T) {
 	require.Contains(raw, "quick_actions")
 	assert.JSONEq("[]", string(raw["quick_actions"]))
 }
+
+func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{})
+	srv.syncer = nil
+	srv.cfg.Fleet.Enabled = true
+	srv.fleetEnabledAtBoot = true
+	hubSettings := providerSettingsResponse{
+		Repos: []ghclient.ConfiguredRepoStatus{}, RepoPresets: []config.RepoPreset{},
+		RepositoryObservations: []providerRepositoryObservation{},
+		Sync:                   syncSettingsResponse{BudgetPerHour: 2400},
+	}
+	var forwarded providerSettingsUpdate
+	srv.providerSource = &hubProviderSource{
+		client: providerPlaneClientFunc(func(
+			_ context.Context, _ federationauth.Scope, request *http.Request,
+		) (*http.Response, error) {
+			if request.Method == http.MethodPut {
+				require.NoError(json.NewDecoder(request.Body).Decode(&forwarded))
+				hubSettings.Sync.BudgetPerHour = *forwarded.Sync.BudgetPerHour
+			}
+			encoded, err := json.Marshal(hubSettings)
+			require.NoError(err)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(bytes.NewReader(encoded)),
+				Request:    request,
+			}, nil
+		}),
+	}
+
+	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.Equal(2400, settings.Sync.BudgetPerHour)
+
+	budget := 1800
+	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Sync: &syncSettingsUpdate{BudgetPerHour: &budget},
+	})
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.NotNil(forwarded.Sync)
+	require.NotNil(forwarded.Sync.BudgetPerHour)
+	assert.Equal(1800, *forwarded.Sync.BudgetPerHour)
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.Equal(1800, settings.Sync.BudgetPerHour)
+}
+
+func TestHubAppliesSyncBudgetFromSpoke(t *testing.T) {
+	require := require.New(t)
+	srv, _, configPath := setupTestServerWithConfig(t)
+	srv.syncer = nil
+	ctx := federationauth.WithPrincipal(t.Context(), federationauth.Principal{
+		NodeID: proxyTestNodeID,
+		Scopes: map[federationauth.Scope]struct{}{federationauth.ScopeProviderWrite: {}},
+	})
+	budget := 1800
+
+	output, err := srv.federationUpdateProviderSettings(ctx, &federationUpdateProviderSettingsInput{
+		Body: providerSettingsUpdate{Sync: &syncSettingsUpdate{BudgetPerHour: &budget}},
+	})
+
+	require.NoError(err)
+	require.Equal(1800, output.Body.Sync.BudgetPerHour)
+	persisted, err := config.Load(configPath)
+	require.NoError(err)
+	require.Equal(1800, persisted.SyncBudgetPerHour)
+}

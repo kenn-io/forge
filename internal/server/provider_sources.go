@@ -787,5 +787,8 @@ func providerSettingsRequestBody(update updateSettingsRequest) *generated.Provid
 	if value := update.Issues; value != nil {
 		body.Issues = new(generated.Issues(*value))
 	}
+	if value := update.Sync; value != nil && value.BudgetPerHour != nil {
+		body.Sync = &generated.SyncSettingsUpdate{BudgetPerHour: new(int64(*value.BudgetPerHour))}
+	}
 	return body
 }

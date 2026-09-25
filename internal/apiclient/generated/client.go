@@ -55435,15 +55435,17 @@ type ProviderSettingsResponse struct {
 	RepoPresets            []RepoPreset                    `json:"repo_presets"`
 	Repos                  []ConfiguredRepoStatus          `json:"repos"`
 	RepositoryObservations []ProviderRepositoryObservation `json:"repository_observations"`
+	Sync                   SyncSettingsResponse            `json:"sync"`
 }
 
 type ProviderSettingsUpdate struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string       `json:"$schema,omitempty"`
-	Activity     *Activity     `json:"activity,omitempty"`
-	Detail       *Detail       `json:"detail,omitempty"`
-	Issues       *Issues       `json:"issues,omitempty"`
-	PullRequests *PullRequests `json:"pull_requests,omitempty"`
+	Schema       *string             `json:"$schema,omitempty"`
+	Activity     *Activity           `json:"activity,omitempty"`
+	Detail       *Detail             `json:"detail,omitempty"`
+	Issues       *Issues             `json:"issues,omitempty"`
+	PullRequests *PullRequests       `json:"pull_requests,omitempty"`
+	Sync         *SyncSettingsUpdate `json:"sync,omitempty"`
 }
 
 type ProviderStateConflict struct {

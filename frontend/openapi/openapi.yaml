@@ -6344,6 +6344,8 @@ components:
           items:
             $ref: "#/components/schemas/ProviderRepositoryObservation"
           type: array
+        sync:
+          $ref: "#/components/schemas/SyncSettingsResponse"
       required:
         - repos
         - repository_observations
@@ -6353,6 +6355,7 @@ components:
         - pull_requests
         - issues
         - notifications
+        - sync
       type: object
     ProviderSettingsUpdate:
       additionalProperties: false
@@ -6372,6 +6375,8 @@ components:
           $ref: "#/components/schemas/Issues"
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
+        sync:
+          $ref: "#/components/schemas/SyncSettingsUpdate"
       type: object
     ProviderStateConflict:
       additionalProperties: false

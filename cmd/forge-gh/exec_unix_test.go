@@ -21,12 +21,12 @@ func TestPassThroughPreservesArgumentsStreamsAndExit(t *testing.T) {
 		os.Exit(run([]string{"pr", "view", "two words", "--unknown=value"}))
 	}
 	dir := t.TempDir()
-	real := filepath.Join(dir, "gh")
-	require.NoError(os.WriteFile(real, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\ncat\nprintf 'provider error\\n' >&2\nexit 7\n"), 0o700))
+	realPath := filepath.Join(dir, "gh")
+	require.NoError(os.WriteFile(realPath, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\ncat\nprintf 'provider error\\n' >&2\nexit 7\n"), 0o700))
 	binary, err := os.Executable()
 	require.NoError(err)
 	cmd := procutil.CommandContext(t.Context(), binary, "-test.run=^TestPassThroughPreservesArgumentsStreamsAndExit$")
-	cmd.Env = append(os.Environ(), "FORGE_GH_TEST_CHILD=1", "FORGE_GH_REAL="+real, "KENN_FORGE_HOME="+dir)
+	cmd.Env = append(os.Environ(), "FORGE_GH_TEST_CHILD=1", "FORGE_GH_REAL="+realPath, "KENN_FORGE_HOME="+dir)
 	cmd.Stdin = strings.NewReader("input\n")
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -54,11 +54,11 @@ func TestRealGHSkipsShimSymlinkAndNonExecutable(t *testing.T) {
 	require.NoError(err)
 	require.NoError(os.Symlink(self, filepath.Join(dir, "gh")))
 	require.NoError(os.WriteFile(filepath.Join(other, "gh"), []byte("not executable"), 0o600))
-	real := filepath.Join(third, "gh")
-	require.NoError(os.WriteFile(real, []byte("#!/bin/sh\nexit 0\n"), 0o700))
+	realPath := filepath.Join(third, "gh")
+	require.NoError(os.WriteFile(realPath, []byte("#!/bin/sh\nexit 0\n"), 0o700))
 	t.Setenv("FORGE_GH_REAL", "")
 	t.Setenv("PATH", strings.Join([]string{dir, other, third}, string(os.PathListSeparator)))
 	got, err := realGH()
 	require.NoError(err)
-	assert.Equal(real, got)
+	assert.Equal(realPath, got)
 }

@@ -2930,3 +2930,32 @@ name = "widget"
 	assert.NotContains(srv.workspaces.TmuxStripEnvVars(), "TMUX_TMPDIR",
 		"rejected collisions must never enter the strip sets")
 }
+
+func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.InitializeProviderRepositories(t.Context(), func(ctx context.Context, cfg *config.Config) []ghclient.RepoRef {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "discovered", PlatformExternalID: "12345"}}
+		})
+	}()
+	<-entered
+	response := httptest.NewRecorder()
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1:8091/healthz", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
+	srv.ServeHTTP(response, request)
+	assert.Equal(t, http.StatusOK, response.Code)
+	close(release)
+	require.NoError(<-done)
+	repos := srv.syncer.TrackedRepos()
+	require.Len(repos, 1)
+	require.Equal("12345", repos[0].PlatformExternalID)
+}

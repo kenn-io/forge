@@ -390,7 +390,7 @@ func TestRunClosesPrimaryListenerWhenProfilerStartFails(t *testing.T) {
 	}, 2*time.Second, 25*time.Millisecond)
 }
 
-func TestResolveStartupReposAirplaneModeUsesCachedCatalog(t *testing.T) {
+func TestResolveProviderReposAirplaneModeUsesCachedCatalog(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
@@ -408,7 +408,7 @@ func TestResolveStartupReposAirplaneModeUsesCachedCatalog(t *testing.T) {
 		called = true
 		return nil, nil
 	}}
-	repos := resolveStartupRepos(t.Context(), &config.Config{
+	repos := resolveProviderRepos(t.Context(), &config.Config{
 		AirplaneMode: true,
 		Repos: []config.Repo{
 			{Owner: "acme", Name: "*"},
@@ -430,7 +430,7 @@ func TestResolveStartupReposAirplaneModeUsesCachedCatalog(t *testing.T) {
 	}}, repos)
 }
 
-func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
+func TestResolveProviderReposExpandsConfiguredGlobs(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &config.Config{
 		Repos: []config.Repo{{Owner: "roborev-dev", Name: "*"}},
@@ -450,7 +450,7 @@ func TestResolveStartupReposExpandsConfiguredGlobs(t *testing.T) {
 		},
 	}
 
-	repos := resolveStartupRepos(
+	repos := resolveProviderRepos(
 		t.Context(),
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
@@ -489,7 +489,7 @@ func (r archiveContextRepositoryReader) GetRepository(
 	return r.mainTestRepositoryReader.GetRepository(ctx, ref)
 }
 
-func TestResolveStartupReposUsesArchiveRouteWithoutOrdinaryPAT(t *testing.T) {
+func TestResolveProviderReposUsesArchiveRouteWithoutOrdinaryPAT(t *testing.T) {
 	require := require.New(t)
 	sawArchiveContext := false
 	cfg := &config.Config{
@@ -505,7 +505,7 @@ func TestResolveStartupReposUsesArchiveRouteWithoutOrdinaryPAT(t *testing.T) {
 		sawArchiveContext: &sawArchiveContext,
 	})
 
-	repos := resolveStartupRepos(t.Context(), cfg, registry, nil, nil)
+	repos := resolveProviderRepos(t.Context(), cfg, registry, nil, nil)
 
 	require.Len(repos, 1)
 	assert.True(t, sawArchiveContext,
@@ -522,7 +522,7 @@ func (getRepoFailingClient) GetRepository(
 	return nil, errors.New("transient resolve failure")
 }
 
-func TestResolveStartupReposPrefersResolvedOverFallbackDuplicates(t *testing.T) {
+func TestResolveProviderReposPrefersResolvedOverFallbackDuplicates(t *testing.T) {
 	assert := assert.New(t)
 	// The exact entry fails resolution and falls back to a synthetic ref;
 	// the overlapping glob resolves the same repo as archived. The resolved
@@ -544,7 +544,7 @@ func TestResolveStartupReposPrefersResolvedOverFallbackDuplicates(t *testing.T) 
 		},
 	}}
 
-	repos := resolveStartupRepos(
+	repos := resolveProviderRepos(
 		t.Context(),
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
@@ -564,13 +564,13 @@ func TestResolveStartupReposPrefersResolvedOverFallbackDuplicates(t *testing.T) 
 	}}, repos)
 }
 
-func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
+func TestResolveProviderReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &config.Config{
 		Repos: []config.Repo{{Owner: "roborev-dev", Name: "kenn-forge"}},
 	}
 
-	repos := resolveStartupRepos(
+	repos := resolveProviderRepos(
 		t.Context(),
 		cfg,
 		mustProviderRegistry(t, nil),
@@ -588,7 +588,7 @@ func TestResolveStartupReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	}}, repos)
 }
 
-func TestResolveStartupReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
+func TestResolveProviderReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -623,7 +623,7 @@ func TestResolveStartupReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
 		},
 	}}
 
-	repos := resolveStartupRepos(
+	repos := resolveProviderRepos(
 		t.Context(),
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
@@ -638,7 +638,7 @@ func TestResolveStartupReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
 	assert.Equal("acme/tools", repos[0].ConfiguredRepoPath)
 }
 
-func TestResolveStartupReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
+func TestResolveProviderReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Now().UTC()
@@ -663,7 +663,7 @@ func TestResolveStartupReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
 		Owner: "acme", Name: "tools", PlatformRepoID: original.PlatformRepoID,
 	}}}
 	client := &testutil.FixtureClient{}
-	repos := resolveStartupRepos(
+	repos := resolveProviderRepos(
 		t.Context(), cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		database, nil,
@@ -673,7 +673,7 @@ func TestResolveStartupReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
 	require.Equal(original.PlatformRepoID, repos[0].PlatformExternalID)
 	require.Equal("acme/tools-renamed", repos[0].RepoPath)
 
-	withoutCatalog := resolveStartupRepos(
+	withoutCatalog := resolveProviderRepos(
 		t.Context(), cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
 		nil, nil,
@@ -681,7 +681,7 @@ func TestResolveStartupReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
 	require.Empty(withoutCatalog, "a stable identity must not fall back to a reused route")
 }
 
-func TestResolveStartupReposRegistersCredentialAliasForCatalogFallback(t *testing.T) {
+func TestResolveProviderReposRegistersCredentialAliasForCatalogFallback(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Now().UTC()
@@ -704,7 +704,7 @@ func TestResolveStartupReposRegistersCredentialAliasForCatalogFallback(t *testin
 	require.NoError(err)
 	cfg := &config.Config{Repos: []config.Repo{{Owner: "acme", Name: "tools"}}}
 
-	repos := resolveStartupRepos(
+	repos := resolveProviderRepos(
 		t.Context(),
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
@@ -722,7 +722,7 @@ func TestResolveStartupReposRegistersCredentialAliasForCatalogFallback(t *testin
 	require.Equal("tools", route.Key.Name)
 }
 
-func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
+func TestResolveProviderReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -742,7 +742,7 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 		Repos: []config.Repo{{Owner: "acme", Name: "*"}},
 	}
 
-	repos := resolveStartupRepos(
+	repos := resolveProviderRepos(
 		ctx, cfg, mustProviderRegistry(t, nil), database, nil,
 	)
 
@@ -766,7 +766,7 @@ func TestResolveStartupReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 	}, repos)
 }
 
-func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
+func TestResolveProviderReposUsesProviderRegistryForGitLab(t *testing.T) {
 	assert := assert.New(t)
 	cfg := &config.Config{
 		Repos: []config.Repo{{
@@ -781,7 +781,7 @@ func TestResolveStartupReposUsesProviderRegistryForGitLab(t *testing.T) {
 		host: "gitlab.com",
 	})
 
-	repos := resolveStartupRepos(t.Context(), cfg, registry, nil, nil)
+	repos := resolveProviderRepos(t.Context(), cfg, registry, nil, nil)
 
 	assert.Equal([]ghclient.RepoRef{{
 		Platform:           platform.KindGitLab,
@@ -1136,7 +1136,7 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 			return nil, errors.New("offline")
 		},
 	}
-	repos := resolveStartupRepos(
+	repos := resolveProviderRepos(
 		t.Context(),
 		cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
@@ -1653,4 +1653,39 @@ func TestRunCLIPtyOwnerParsesBeforeServerStartup(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsafe pty owner session")
+}
+
+func TestResolveStartupReposDoesNotContactProvider(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.PlatformRepoID = "R_widget"
+	_, err := database.UpsertRepoByProviderID(t.Context(), identity)
+	require.NoError(err)
+	repos := resolveStartupRepos(t.Context(), &config.Config{
+		Repos: []config.Repo{{Owner: "acme", Name: "*"}},
+	}, database, nil)
+	require.Len(repos, 1)
+	require.Equal("R_widget", repos[0].PlatformExternalID)
+}
+
+func TestResolveStartupReposPreservesProviderIdentities(t *testing.T) {
+	for _, provider := range []string{"github", "gitlab", "forgejo", "gitea"} {
+		t.Run(provider, func(t *testing.T) {
+			require := require.New(t)
+			database := dbtest.Open(t)
+			identity := db.RepoIdentity{Platform: provider, PlatformHost: "forge.example", PlatformRepoID: "12345", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
+			_, err := database.UpsertRepoByProviderID(t.Context(), identity)
+			require.NoError(err)
+			cfg := &config.Config{Repos: []config.Repo{
+				{Platform: provider, PlatformHost: "forge.example", Owner: "acme", Name: "widget", PlatformRepoID: "12345"},
+				{Platform: provider, PlatformHost: "forge.example", Owner: "acme", Name: "widget", PlatformRepoID: "67890"},
+				{Platform: provider, PlatformHost: "forge.example", Owner: "acme", Name: "new"},
+			}}
+			repos := resolveStartupRepos(t.Context(), cfg, database, nil)
+			require.Len(repos, 1, "uncached configurations await background discovery")
+			require.Equal("12345", repos[0].PlatformExternalID)
+			require.Equal(platform.Kind(provider), repos[0].Platform)
+		})
+	}
 }

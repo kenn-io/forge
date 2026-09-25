@@ -716,8 +716,10 @@ func run(opts serve.Options) error {
 
 	var archiveService *archive.Service
 	var repos []ghclient.RepoRef
+	var startupRouters map[string]*ghclient.HostRouter
 	if controlPlanes.Provider != nil {
 		controlPlane := controlPlanes.Provider
+		startupRouters = controlPlane.githubRouters
 		syncer = ghclient.NewSyncerWithRegistry(
 			controlPlane.registry, database, cloneMgr, nil,
 			cfg.SyncDuration(), controlPlane.rateTrackers, controlPlane.budgets,
@@ -727,7 +729,7 @@ func run(opts serve.Options) error {
 			syncer.DisableSync()
 		}
 		repos = resolveStartupRepos(
-			ctx, cfg, syncer.SyncRegistry(), database, controlPlane.githubRouters,
+			ctx, cfg, database, controlPlane.githubRouters,
 		)
 		slog.Debug("startup repos resolved", "count", len(repos))
 		syncer.SetBranchActivityLimits(
@@ -826,7 +828,6 @@ func run(opts serve.Options) error {
 				stacks.SyncCompletedHook(ctx, database, nil),
 			),
 		)
-		syncer.Start(ctx)
 		if !opts.DisableSync && cfg.Relay.URL != "" {
 			backgroundLoops.start(func(runCtx context.Context) {
 				syncer.RunRelay(runCtx, ghclient.RelayOptions{URL: cfg.Relay.URL, Client: relayHTTPClient()})
@@ -865,6 +866,17 @@ func run(opts serve.Options) error {
 	if mcpSwitcher != nil {
 		mcpSwitcher.Swap(mcpSrv.HTTPHandler())
 		srv.SetTailnetMCPHandler(mcpSrv.TailnetHTTPHandler())
+	}
+
+	if syncer != nil && !opts.DisableSync {
+		backgroundLoops.start(func(runCtx context.Context) {
+			if err := srv.InitializeProviderRepositories(runCtx, func(resolveCtx context.Context, current *config.Config) []ghclient.RepoRef {
+				return resolveProviderRepos(resolveCtx, current, syncer.SyncRegistry(), database, startupRouters)
+			}); err != nil {
+				slog.Warn("initialize provider repositories", "err", err)
+			}
+			syncer.Start(runCtx)
+		})
 	}
 
 	select {
@@ -1064,7 +1076,34 @@ func configureCloneTransportPolicy(clones *gitclone.Manager, cfg *config.Config)
 	}
 }
 
+// resolveStartupRepos restores the configured catalog without contacting a provider.
+// Live discovery runs after the ready handler is installed.
 func resolveStartupRepos(
+	ctx context.Context,
+	cfg *config.Config,
+	database *db.DB,
+	githubRouters map[string]*ghclient.HostRouter,
+) []ghclient.RepoRef {
+	set := ghclient.NewExpandedRepoSet()
+	for _, raw := range cfg.Repos {
+		var repos []ghclient.RepoRef
+		if raw.HasNameGlob() {
+			repos = fallbackGlobFromDB(ctx, database, raw)
+		} else {
+			repos = fallbackExactFromDB(ctx, database, raw)
+		}
+		ghclient.RegisterConfiguredRepoCredentialAliases(githubRouters, raw, repos)
+		for _, repo := range repos {
+			if repo.PlatformExternalID == "" {
+				continue
+			}
+			set.Add(repo, false)
+		}
+	}
+	return set.Refs()
+}
+
+func resolveProviderRepos(
 	ctx context.Context,
 	cfg *config.Config,
 	registry *platform.Registry,

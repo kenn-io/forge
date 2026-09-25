@@ -20,6 +20,8 @@ func hiddenRepoIDs(t *testing.T, d *DB) []int64 {
 }
 
 func TestSetRepoHiddenFromUIRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -55,6 +57,8 @@ func TestSetRepoHiddenFromUIRoundTrip(t *testing.T) {
 }
 
 func TestSetRepoHiddenFromUIUnknownRepo(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -71,6 +75,8 @@ func TestSetRepoHiddenFromUIUnknownRepo(t *testing.T) {
 // so resolving the row's lifecycle and writing the preference cannot
 // interleave with the displacement.
 func TestSetRepoHiddenFromUIUnderReadLockExcludesDisplacement(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -124,6 +130,8 @@ func TestSetRepoHiddenFromUIUnderReadLockExcludesDisplacement(t *testing.T) {
 }
 
 func TestHiddenRepoPreferenceCascadesOnRepoDelete(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()

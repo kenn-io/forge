@@ -31,6 +31,8 @@ func seedAssigneeTestMR(t *testing.T, d *DB, updatedAt time.Time, assigneesJSON,
 }
 
 func TestUpsertMergeRequestPersistsAndParsesUserLists(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -51,6 +53,8 @@ func TestUpsertMergeRequestPersistsAndParsesUserLists(t *testing.T) {
 }
 
 func TestUpsertMergeRequestPreservesUserListsWhenProviderOmitsThem(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -104,6 +108,8 @@ func TestUpsertMergeRequestPreservesUserListsWhenProviderOmitsThem(t *testing.T)
 }
 
 func TestUpdateMergeRequestUserListsPersistMutationResults(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -130,6 +136,8 @@ func TestUpdateMergeRequestUserListsPersistMutationResults(t *testing.T) {
 }
 
 func TestUpdateIssueAssigneesPersistsMutationResults(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)

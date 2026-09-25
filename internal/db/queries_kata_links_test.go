@@ -10,6 +10,8 @@ import (
 )
 
 func TestKataIssueLinkCRUDUsesStableSubjectIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -83,6 +85,8 @@ func TestKataIssueLinkCRUDUsesStableSubjectIdentity(t *testing.T) {
 }
 
 func TestCreateKataIssueLinkIsIdempotentAndRefreshesProjectUID(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -147,6 +151,8 @@ func TestCreateKataIssueLinkIsIdempotentAndRefreshesProjectUID(t *testing.T) {
 }
 
 func TestKataIssueLinkValidationRejectsAmbiguousAndBlankIdentities(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 
@@ -190,6 +196,8 @@ func TestKataIssueLinkValidationRejectsAmbiguousAndBlankIdentities(t *testing.T)
 }
 
 func TestKataIssueLinksSurviveRepoRenameAndCascadeWithOwners(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)

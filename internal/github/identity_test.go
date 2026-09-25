@@ -12,7 +12,7 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
-func TestHTTPIdentityResolverResolvesStableUserID(t *testing.T) {
+func TestHTTPIdentityResolverResolvesStableUserID(t *testing.T) { //nolint:paralleltest // t.Setenv writes TOKEN_A
 	require := require.New(t)
 	assert := assert.New(t)
 	source := identityTestSource(t, "TOKEN_A", "token-a")
@@ -33,7 +33,7 @@ func TestHTTPIdentityResolverResolvesStableUserID(t *testing.T) {
 	assert.Equal("token-a", token)
 }
 
-func TestHTTPIdentityResolverUsesPATSideOfAppChain(t *testing.T) {
+func TestHTTPIdentityResolverUsesPATSideOfAppChain(t *testing.T) { //nolint:paralleltest // t.Setenv writes USER_PAT
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv("USER_PAT", "user-token")
@@ -69,7 +69,7 @@ func TestHTTPIdentityResolverUsesPATSideOfAppChain(t *testing.T) {
 	assert.Equal("user-token", token)
 }
 
-func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) {
+func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) { //nolint:paralleltest // t.Setenv writes SECRET_TOKEN
 	tests := []struct {
 		name string
 		user *gh.User
@@ -95,7 +95,7 @@ func TestHTTPIdentityResolverRejectsInvalidResponsesSafely(t *testing.T) {
 	}
 }
 
-func TestHTTPIdentityResolverBoundsLookupDuration(t *testing.T) {
+func TestHTTPIdentityResolverBoundsLookupDuration(t *testing.T) { //nolint:paralleltest // t.Setenv writes TIMEOUT_TOKEN
 	resolver := HTTPIdentityResolver{
 		Timeout: 20 * time.Millisecond,
 		Lookup: func(ctx context.Context, _ string, _ tokenauth.Source) (*gh.User, error) {
@@ -114,6 +114,8 @@ func TestHTTPIdentityResolverBoundsLookupDuration(t *testing.T) {
 }
 
 func TestIdentityBoundSourceRejectsCrossUserRotation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	source := &mutableIdentityTestSource{token: "same-user-token"}
 	resolver := identityResolverFunc(func(_ context.Context, _ string, source tokenauth.Source) (GitHubIdentity, string, error) {
@@ -153,6 +155,8 @@ func (s *mutableIdentityTestSource) Descriptor() tokenauth.Descriptor {
 }
 
 func TestInstallationIdentity(t *testing.T) {
+	t.Parallel()
+
 	got := InstallationIdentity("GitHub.COM", 789)
 
 	assert.Equal(t, IdentityKey{

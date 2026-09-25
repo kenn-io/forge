@@ -78,6 +78,8 @@ func startPacedArchiveLoop(t *testing.T, runner *pacedArchiveRunner) (*Syncer, f
 }
 
 func TestArchiveLoopBacksOffWhileIdleAndResetsOnWake(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -103,6 +105,8 @@ func TestArchiveLoopBacksOffWhileIdleAndResetsOnWake(t *testing.T) {
 }
 
 func TestArchiveLoopKeepsPacingIntervalWhileWorkFlows(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -127,6 +131,8 @@ func TestArchiveLoopKeepsPacingIntervalWhileWorkFlows(t *testing.T) {
 }
 
 func TestArchiveLoopIdleBackoffIsCapped(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -144,6 +150,8 @@ func TestArchiveLoopIdleBackoffIsCapped(t *testing.T) {
 }
 
 func TestArchiveLoopKeepsPacingIntervalWhilePassesFail(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -163,6 +171,8 @@ func TestArchiveLoopKeepsPacingIntervalWhilePassesFail(t *testing.T) {
 }
 
 func TestArchiveLoopWakesWhenSyncRunCompletes(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -184,6 +194,8 @@ func TestArchiveLoopWakesWhenSyncRunCompletes(t *testing.T) {
 }
 
 func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -235,6 +247,8 @@ func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
 }
 
 func TestCanceledProviderWorkStopsWaitingForArchive(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		syncer := &Syncer{archiveProviderRequests: make(map[string]archiveProviderRequest)}

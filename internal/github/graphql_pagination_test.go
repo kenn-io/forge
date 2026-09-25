@@ -11,6 +11,8 @@ import (
 )
 
 func TestFetchAllPagesSinglePage(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	items, err := fetchAllPages(
@@ -25,6 +27,8 @@ func TestFetchAllPagesSinglePage(t *testing.T) {
 }
 
 func TestFetchAllPagesMultiPage(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	calls := 0
 
@@ -57,6 +61,8 @@ func TestFetchAllPagesMultiPage(t *testing.T) {
 }
 
 func TestFetchAllPagesError(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	// Test error on first page
@@ -71,6 +77,8 @@ func TestFetchAllPagesError(t *testing.T) {
 }
 
 func TestFetchAllPagesContextCanceled(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
@@ -84,6 +92,8 @@ func TestFetchAllPagesContextCanceled(t *testing.T) {
 }
 
 func TestFetchAllPagesEmptyCursor(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	items, err := fetchAllPages(
@@ -101,6 +111,8 @@ func TestFetchAllPagesEmptyCursor(t *testing.T) {
 }
 
 func TestFetchAllPagesRepeatedCursor(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	calls := 0
 
@@ -120,6 +132,8 @@ func TestFetchAllPagesRepeatedCursor(t *testing.T) {
 }
 
 func TestFetchAllPagesPartialResultsOnError(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	calls := 0
 

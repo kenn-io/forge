@@ -11,6 +11,8 @@ import (
 )
 
 func TestFleetProtocolMigrationConvertsHistoricalCoordinatorSealDigest(t *testing.T) {
+	t.Parallel()
+
 	// This is the shipped protocol-3 encoding, before coordinator_node_id
 	// became hub_node_id. Keep the fixture independent of the current encoder.
 	historical := `{"enrollment_id":"historical-enrollment","node_id":"spoke-1","coordinator_node_id":"hub-1","protocol_version":%d,"migration_version":54,"receipts_digest":"receipts-digest","drained_ack_generation":4,"preparation_digest":""}`
@@ -68,6 +70,8 @@ func TestFleetProtocolMigrationConvertsHistoricalCoordinatorSealDigest(t *testin
 }
 
 func TestFleetProtocolMigrationPreservesSealsAndResumesBeforeEnrollmentPublish(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
@@ -137,6 +141,8 @@ func TestFleetProtocolMigrationPreservesSealsAndResumesBeforeEnrollmentPublish(t
 }
 
 func TestFleetProtocolMigrationRejectsUnsupportedSealWithoutPartialWrites(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	request := spokePreparationSealRequestForTest()

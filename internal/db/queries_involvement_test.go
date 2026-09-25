@@ -10,6 +10,8 @@ import (
 )
 
 func TestListMergeRequestsInvolvingViewer(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -67,6 +69,8 @@ func TestListMergeRequestsInvolvingViewer(t *testing.T) {
 }
 
 func TestListIssuesInvolvingViewer(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -89,6 +93,8 @@ func TestListIssuesInvolvingViewer(t *testing.T) {
 }
 
 func TestListActivityInvolvingViewerUsesSubjectInvolvement(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)

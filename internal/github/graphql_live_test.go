@@ -12,6 +12,8 @@ import (
 )
 
 func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
+	t.Parallel()
+
 	skipUnlessLiveGitHubTests(t)
 	require := require.New(t)
 	token := requireLiveGitHubToken(t)

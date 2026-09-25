@@ -28,6 +28,8 @@ func TestWorkspaceAgentLaunchesMigrationUpgradesV52(t *testing.T) {
 }
 
 func TestPreferredWorkspaceAgentTargetUsesRecentDistinctLaunches(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)

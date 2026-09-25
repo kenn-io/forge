@@ -42,6 +42,8 @@ func (s staticGitLabToken) Descriptor() tokenauth.Descriptor {
 //     readable — GitLab's confidential-content ambiguity) surfaces as a
 //     partial issue-scope failure and retains the cached row untouched.
 func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -279,6 +281,8 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 }
 
 func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()

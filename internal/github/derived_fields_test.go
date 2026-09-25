@@ -15,6 +15,8 @@ import (
 // while ci_had_pending and detail_fetched_at are owned by the snapshot
 // upsert itself (stored flag wins; a set marker is never cleared).
 func TestCarryMergeRequestDerivedFieldsPersistence(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name           string
 		closedHeadSHA  string

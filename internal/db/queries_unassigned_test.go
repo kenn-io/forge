@@ -10,6 +10,8 @@ import (
 )
 
 func TestUnassignedFiltersPullsIssuesAndActivityBeforeLimit(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -85,6 +87,8 @@ func TestUnassignedFiltersPullsIssuesAndActivityBeforeLimit(t *testing.T) {
 }
 
 func TestListUnassignedWorkspaceSubjectKeysSupportsLargeSetsAndHidesRemovedItems(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)

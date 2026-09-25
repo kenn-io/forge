@@ -8,6 +8,8 @@ import (
 )
 
 func TestUpsertAndListWorktreeStatsRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -31,6 +33,8 @@ func TestUpsertAndListWorktreeStatsRoundTrip(t *testing.T) {
 }
 
 func TestUpsertWorktreeStatsReplacesPriorSample(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -54,6 +58,8 @@ func TestUpsertWorktreeStatsReplacesPriorSample(t *testing.T) {
 }
 
 func TestUpsertWorktreeStatsReportsChange(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -81,6 +87,8 @@ func TestUpsertWorktreeStatsReportsChange(t *testing.T) {
 }
 
 func TestUpsertWorktreeStatsRequiresPath(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	_, err := d.UpsertWorktreeStats(
 		t.Context(), "  ", WorktreeGitStats{}, time.Now(),
@@ -89,6 +97,8 @@ func TestUpsertWorktreeStatsRequiresPath(t *testing.T) {
 }
 
 func TestPruneWorktreeStatsDropsAbsentPaths(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -113,6 +123,8 @@ func TestPruneWorktreeStatsDropsAbsentPaths(t *testing.T) {
 }
 
 func TestPruneWorktreeStatsEmptyKeepClearsTable(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

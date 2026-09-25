@@ -9,6 +9,8 @@ import (
 )
 
 func TestFillMissingMergedMRMetricsFillsOnlyMissingFields(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -47,6 +49,8 @@ func TestFillMissingMergedMRMetricsFillsOnlyMissingFields(t *testing.T) {
 }
 
 func TestFillMissingMergedMRMetricsUsesAvailableProviderFields(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -77,6 +81,8 @@ func TestFillMissingMergedMRMetricsUsesAvailableProviderFields(t *testing.T) {
 }
 
 func TestFillMissingMergedMRMetricsAcceptsEitherMergedIndicator(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		state        MergeRequestState
@@ -125,6 +131,8 @@ func TestFillMissingMergedMRMetricsAcceptsEitherMergedIndicator(t *testing.T) {
 }
 
 func TestFillMissingMergedMRMetricsReplacesCanonicalMetrics(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -164,6 +172,8 @@ func TestFillMissingMergedMRMetricsReplacesCanonicalMetrics(t *testing.T) {
 }
 
 func TestFillMissingMergedMRMetricsRejectsUnprovenIdentity(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		state       MergeRequestState

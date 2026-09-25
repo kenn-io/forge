@@ -15,6 +15,8 @@ import (
 )
 
 func TestRoutedProviderLandingEvidence(t *testing.T) {
+	t.Parallel()
+
 	for _, archive := range []bool{false, true} {
 		name := "foreground"
 		if archive {

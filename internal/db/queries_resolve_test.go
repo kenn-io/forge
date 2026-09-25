@@ -9,6 +9,8 @@ import (
 )
 
 func TestResolveItemNumber(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -55,6 +57,8 @@ func TestResolveItemNumber(t *testing.T) {
 }
 
 func TestResolveItemNumberHidesOnlyRemovedUpstreamItems(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()

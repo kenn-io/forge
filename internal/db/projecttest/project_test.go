@@ -18,6 +18,8 @@ func openTestDB(t *testing.T) *db.DB {
 }
 
 func TestCreateProjectWithoutPlatformIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -44,6 +46,8 @@ func TestCreateProjectWithoutPlatformIdentity(t *testing.T) {
 }
 
 func TestCreateProjectLinkedToRepo(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -74,6 +78,8 @@ func TestCreateProjectLinkedToRepo(t *testing.T) {
 }
 
 func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -107,6 +113,8 @@ func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
 }
 
 func TestCreateProjectRejectsBlankRequiredFields(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -128,6 +136,8 @@ func TestCreateProjectRejectsBlankRequiredFields(t *testing.T) {
 }
 
 func TestCreateProjectDuplicateLocalPath(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -148,6 +158,8 @@ func TestCreateProjectDuplicateLocalPath(t *testing.T) {
 }
 
 func TestGetProjectByIDNotFound(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -159,6 +171,8 @@ func TestGetProjectByIDNotFound(t *testing.T) {
 }
 
 func TestGetProjectByLocalPath(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -179,6 +193,8 @@ func TestGetProjectByLocalPath(t *testing.T) {
 }
 
 func TestListProjectsOrdersByDisplayName(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -202,6 +218,8 @@ func TestListProjectsOrdersByDisplayName(t *testing.T) {
 }
 
 func TestCreateProjectWorktreeRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -229,6 +247,8 @@ func TestCreateProjectWorktreeRoundTrip(t *testing.T) {
 }
 
 func TestCreateProjectWorktreeRejectsUnknownProject(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -248,6 +268,8 @@ func TestCreateProjectWorktreeRejectsUnknownProject(t *testing.T) {
 // background discovery pass created) rather than conflicting — while still
 // rejecting a path already owned by a different project.
 func TestCreateProjectWorktreeConvergesByPath(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -290,6 +312,8 @@ func TestCreateProjectWorktreeConvergesByPath(t *testing.T) {
 }
 
 func TestListProjectWorktreesScopedToProject(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -326,6 +350,8 @@ func TestListProjectWorktreesScopedToProject(t *testing.T) {
 }
 
 func TestProjectWorktreeCascadesOnProjectDelete(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -355,6 +381,8 @@ func TestProjectWorktreeCascadesOnProjectDelete(t *testing.T) {
 }
 
 func TestProjectWorktreeTmuxSessionRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -382,6 +410,8 @@ func TestProjectWorktreeTmuxSessionRoundTrip(t *testing.T) {
 }
 
 func TestProjectWorktreeTmuxSessionKeyedBySessionKey(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -427,6 +457,8 @@ func TestProjectWorktreeTmuxSessionKeyedBySessionKey(t *testing.T) {
 }
 
 func TestProjectWorktreeTmuxSessionForgetAndCascade(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)

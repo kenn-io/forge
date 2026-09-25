@@ -10,6 +10,8 @@ import (
 )
 
 func TestArchiveReportActivityUsesHalfOpenAttributionAndProviderIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -60,6 +62,8 @@ func TestArchiveReportActivityUsesHalfOpenAttributionAndProviderIdentity(t *test
 }
 
 func TestArchiveReportActivityHidesRemovedUpstreamParents(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	start := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -112,6 +116,8 @@ func TestArchiveReportActivityHidesRemovedUpstreamParents(t *testing.T) {
 }
 
 func TestArchiveReportActivityMeasuresUTF8Bytes(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -141,6 +147,8 @@ func TestArchiveReportActivityMeasuresUTF8Bytes(t *testing.T) {
 }
 
 func TestArchiveReportActivityIncludesCurrentCloseAndMergeLifecycle(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -214,6 +222,8 @@ func TestArchiveReportActivityIncludesCurrentCloseAndMergeLifecycle(t *testing.T
 }
 
 func TestArchiveReportActivityOmitsActorFromEarlierCloseCycle(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -248,6 +258,8 @@ func TestArchiveReportActivityOmitsActorFromEarlierCloseCycle(t *testing.T) {
 }
 
 func TestArchiveReportActivityOmitsActorWhenNewestCloseDoesNotMatch(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -285,6 +297,8 @@ func TestArchiveReportActivityOmitsActorWhenNewestCloseDoesNotMatch(t *testing.T
 }
 
 func TestArchiveReportRepositoriesAreSnapshotCoverageOrderedByFullIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)

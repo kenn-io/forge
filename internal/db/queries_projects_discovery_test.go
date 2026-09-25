@@ -48,6 +48,8 @@ func mustGetProject(t *testing.T, d *DB, projectID string) *Project {
 // a discovery pass surfaces a linked worktree without explicit registration and
 // refreshes the project's repository kind and default branch.
 func TestReconcileProjectInventory_DiscoversLinkedWorktreeAndProjectFacts(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -78,6 +80,8 @@ func TestReconcileProjectInventory_DiscoversLinkedWorktreeAndProjectFacts(t *tes
 // re-discovering the same path keeps the row's id (so linked tmux sessions
 // survive the ON DELETE CASCADE) while refreshing its branch.
 func TestReconcileProjectInventory_PreservesWorktreeIDAndTmuxLink(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -125,6 +129,8 @@ func TestReconcileProjectInventory_PreservesWorktreeIDAndTmuxLink(t *testing.T) 
 // a pass is marked stale (not deleted) and clears its stale flag — keeping its
 // id — when the path reappears.
 func TestReconcileProjectInventory_StaleAndReappear(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -159,6 +165,8 @@ func TestReconcileProjectInventory_StaleAndReappear(t *testing.T) {
 // TestMarkProjectStaleThenReconcileClears verifies a failed discovery marks the
 // project stale and a later successful pass clears it.
 func TestMarkProjectStaleThenReconcileClears(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

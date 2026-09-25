@@ -17,6 +17,8 @@ import (
 func TestDeleteProjectWorktreeTmuxSessionCreatedAtPreservesNewerGeneration(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -62,6 +64,8 @@ func TestDeleteProjectWorktreeTmuxSessionCreatedAtPreservesNewerGeneration(
 func TestDeleteHostRuntimeTmuxSessionCreatedAtPreservesNewerGeneration(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -90,6 +94,8 @@ func TestDeleteHostRuntimeTmuxSessionCreatedAtPreservesNewerGeneration(
 }
 
 func TestDeleteProjectWorktreeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -117,6 +123,8 @@ func TestDeleteProjectWorktreeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
 }
 
 func TestDeleteHostRuntimeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -139,6 +147,8 @@ func TestDeleteHostRuntimeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
 // collision across projects: discovery for project B must not move a worktree
 // row (and its stable id and tmux links) owned by project A.
 func TestReconcileProjectInventoryDoesNotStealForeignWorktree(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)

@@ -35,6 +35,8 @@ func (s staticGiteaLikeToken) Descriptor() tokenauth.Descriptor {
 }
 
 func TestGiteaLikeProviderMergeMetricsReachArchiveReport(t *testing.T) {
+	t.Parallel()
+
 	type newClient func(string, tokenauth.Source, string) (platform.MergeRequestReader, error)
 	tests := []struct {
 		name      string

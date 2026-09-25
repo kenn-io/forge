@@ -243,6 +243,8 @@ func (p *preemptibleArchiveProvider) GetIssue(
 }
 
 func TestArchiveHydrationPRShapedIssueBecomesTerminalInSQLite(t *testing.T) {
+	t.Parallel()
+
 	testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
 		t,
 		http.StatusOK,
@@ -252,6 +254,8 @@ func TestArchiveHydrationPRShapedIssueBecomesTerminalInSQLite(t *testing.T) {
 }
 
 func TestArchiveHydrationDeletedGitHubIssueBecomesTerminalInSQLite(t *testing.T) {
+	t.Parallel()
+
 	testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
 		t,
 		http.StatusGone,
@@ -364,6 +368,8 @@ func testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
 }
 
 func TestArchiveHydrationKeepsIncompleteMergedGitHubPRFailed(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -436,6 +442,8 @@ func TestArchiveHydrationKeepsIncompleteMergedGitHubPRFailed(t *testing.T) {
 }
 
 func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -523,6 +531,8 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 }
 
 func TestArchiveDisabledIssueInventoryCompletesUnsupportedWithoutBlockingMergeRequests(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -707,6 +717,8 @@ func (f *disabledArchiveHydrationFixture) progress(t *testing.T) db.ArchiveDatas
 }
 
 func TestArchiveDisabledIssueHydrationRecoversImmediatelyAfterRestart(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newDisabledArchiveHydrationFixture(t)
@@ -746,6 +758,8 @@ func TestArchiveDisabledIssueHydrationRecoversImmediatelyAfterRestart(t *testing
 }
 
 func TestArchiveDisabledIssueHydrationRecoversAfterManualProbe(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newDisabledArchiveHydrationFixture(t)
@@ -792,6 +806,8 @@ func (r *blockingArchiveRunner) RunPass(ctx context.Context) (bool, error) {
 }
 
 func TestArchiveWorkerJoinsSyncerShutdown(t *testing.T) {
+	t.Parallel()
+
 	database := dbtest.Open(t)
 	syncer := NewSyncerWithRegistry(nil, database, nil, nil, time.Hour, nil, nil)
 	runner := newBlockingArchiveRunner()
@@ -799,19 +815,21 @@ func TestArchiveWorkerJoinsSyncerShutdown(t *testing.T) {
 	syncer.Start(t.Context())
 	select {
 	case <-runner.started:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.Fail(t, "archive worker did not start")
 	}
 
 	syncer.Stop()
 	select {
 	case <-runner.done:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.Fail(t, "syncer stop returned before archive worker exited")
 	}
 }
 
 func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -842,7 +860,7 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repo)
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		states, stateErr := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
 		require.NoError(stateErr)
@@ -862,6 +880,8 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 }
 
 func TestSetReposSeedsArchiveDiscoveryAndRetriesCredentialsBeforeCutover(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -884,6 +904,8 @@ func TestSetReposSeedsArchiveDiscoveryAndRetriesCredentialsBeforeCutover(t *test
 }
 
 func TestSetReposSeedsActiveArchiveForArchivedRepo(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -916,6 +938,8 @@ func TestSetReposSeedsActiveArchiveForArchivedRepo(t *testing.T) {
 }
 
 func TestSetReposPassesOnlySeededRefsToRetryAuthentication(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -940,6 +964,8 @@ func TestSetReposPassesOnlySeededRefsToRetryAuthentication(t *testing.T) {
 }
 
 func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -1010,6 +1036,8 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 }
 
 func TestSyncReusedRouteResolvingSuccessorKeepsBothReposTracked(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -1081,6 +1109,8 @@ func TestSyncReusedRouteResolvingSuccessorKeepsBothReposTracked(t *testing.T) {
 }
 
 func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -1133,6 +1163,8 @@ func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
 }
 
 func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1184,6 +1216,8 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 }
 
 func TestGitHubArchiveAdmissionUsesCredentialRESTAndGraphQLPools(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1264,6 +1298,8 @@ func TestGitHubArchiveAdmissionUsesCredentialRESTAndGraphQLPools(t *testing.T) {
 }
 
 func TestGitHubArchiveAdmissionCapsAttemptAllowanceByProviderQuota(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1313,6 +1349,8 @@ func TestGitHubArchiveAdmissionCapsAttemptAllowanceByProviderQuota(t *testing.T)
 }
 
 func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1338,6 +1376,8 @@ func TestArchiveAdmissionAttemptAllowanceUsesAvailableSurplus(t *testing.T) {
 }
 
 func TestGitealikeArchiveAdmissionDoesNotTruncateAdmittedMergeRequest(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1383,6 +1423,8 @@ func TestGitealikeArchiveAdmissionDoesNotTruncateAdmittedMergeRequest(t *testing
 }
 
 func TestArchiveAdmissionPreservesProviderReserveForDeclaredCost(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1419,6 +1461,8 @@ func TestArchiveAdmissionPreservesProviderReserveForDeclaredCost(t *testing.T) {
 }
 
 func TestArchiveRampDenialRetriesWithinCurrentWindow(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1444,6 +1488,8 @@ func TestArchiveRampDenialRetriesWithinCurrentWindow(t *testing.T) {
 }
 
 func TestArchiveAdmissionDefersToNotificationAndActiveDetailWork(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1477,6 +1523,8 @@ func TestArchiveAdmissionDefersToNotificationAndActiveDetailWork(t *testing.T) {
 }
 
 func TestArchiveAdmissionDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
@@ -1519,6 +1567,8 @@ func TestArchiveAdmissionDenialAbandonsExpiredFeatureProbeReservation(t *testing
 }
 
 func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
@@ -1572,6 +1622,8 @@ func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReser
 }
 
 func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1609,6 +1661,8 @@ func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
 }
 
 func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	syncer := NewSyncerWithRegistry(nil, dbtest.Open(t), nil, nil, time.Hour, nil, nil)
 	key := RateBucketKey("github", "github.test", "host")
@@ -1626,7 +1680,7 @@ func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {
 
 	select {
 	case <-archiveCtx.Done():
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.Fail("live work did not cancel archive request")
 	}
 	select {
@@ -1638,12 +1692,14 @@ func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	releaseArchive()
 	select {
 	case <-liveDone:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.Fail("live work did not proceed after archive lease released")
 	}
 }
 
 func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := dbtest.Open(t)
@@ -1696,7 +1752,7 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 		releaseArchive()
 		require.NoError(<-done)
 		require.Fail("merged-actor backfill overlapped an active archive request")
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		releaseArchive()
 		require.Fail("merged-actor backfill did not cancel the active archive request")
 	}
@@ -1708,7 +1764,7 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	releaseArchive()
 	select {
 	case <-provider.started:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.Fail("merged-actor backfill did not proceed after the archive lease released")
 	}
 	releaseProvider()
@@ -1716,6 +1772,8 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 }
 
 func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name      string
 		operation priorityWorkOperation
@@ -1784,6 +1842,8 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 }
 
 func TestSyncRepoRegistersReadAndWriteIdentityProviderWork(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -1834,6 +1894,8 @@ func TestSyncRepoRegistersReadAndWriteIdentityProviderWork(t *testing.T) {
 }
 
 func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -1915,7 +1977,7 @@ func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *tes
 	go func() { done <- syncer.SyncNotifications(t.Context()) }()
 	select {
 	case <-oldArchiveCtx.Done():
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.Fail("notification sync did not preempt the initial read identity archive")
 	}
 	select {
@@ -1926,12 +1988,12 @@ func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *tes
 	releaseOldArchive()
 	select {
 	case <-getRepoStarted:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.Fail("notification sync did not begin repository verification")
 	}
 	select {
 	case <-newArchiveCtx.Done():
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.Fail("notification sync did not preempt the reconciled read identity archive")
 	}
 	select {
@@ -1942,7 +2004,7 @@ func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *tes
 	releaseNewArchive()
 	select {
 	case <-listStarted:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		require.Fail("notification sync did not begin listing notifications")
 	}
 	for bucket, label := range map[string]string{
@@ -1962,6 +2024,8 @@ func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *tes
 }
 
 func TestProcessQueuedNotificationReadsHoldsWriteIdentityProviderWork(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -2033,6 +2097,8 @@ func TestProcessQueuedNotificationReadsHoldsWriteIdentityProviderWork(t *testing
 }
 
 func TestSyncerConfiguredRepositoriesCarryFullProviderIdentity(t *testing.T) {
+	t.Parallel()
+
 	database := dbtest.Open(t)
 	syncer := NewSyncerWithRegistry(nil, database, nil, []RepoRef{{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
@@ -2049,6 +2115,8 @@ func TestSyncerConfiguredRepositoriesCarryFullProviderIdentity(t *testing.T) {
 }
 
 func TestArchiveAdmitNotDeferredByDisplacedRepositoryCooldown(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := dbtest.Open(t)
 	key := RateBucketKey("github", "github.test", "host")
@@ -2082,6 +2150,8 @@ func TestArchiveAdmitNotDeferredByDisplacedRepositoryCooldown(t *testing.T) {
 }
 
 func TestConfiguredRepositoriesCarryStableProviderIdentity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := dbtest.Open(t)
 	syncer := NewSyncer(
@@ -2137,6 +2207,8 @@ func newProviderQuotaAdmissionSyncer(
 // immediately: archive availability is a floor on remaining quota, not a ramp
 // across the window.
 func TestGitHubArchiveAdmissionGrantsFullSurplusAtWindowStart(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -2165,6 +2237,8 @@ func TestGitHubArchiveAdmissionGrantsFullSurplusAtWindowStart(t *testing.T) {
 // admission must not defer because live sync spent the configured hourly
 // ceiling while provider quota still has surplus above the archive reserve.
 func TestGitHubArchiveAdmissionIgnoresLocalSyncBudget(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
 	reset := now.Add(30 * time.Minute)
@@ -2187,6 +2261,8 @@ func TestGitHubArchiveAdmissionIgnoresLocalSyncBudget(t *testing.T) {
 // provider window resets, even though the global rate reserve buffer still
 // has headroom.
 func TestGitHubArchiveAdmissionDefersAtArchiveReserve(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -2212,6 +2288,8 @@ func TestGitHubArchiveAdmissionDefersAtArchiveReserve(t *testing.T) {
 // smallest-limit pool still has headroom: reserves are per pool, and the
 // min-limit pool's reserve must not be applied to a larger pool.
 func TestGitHubArchiveAdmissionHonorsEachPoolsOwnReserve(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -2237,6 +2315,8 @@ func TestGitHubArchiveAdmissionHonorsEachPoolsOwnReserve(t *testing.T) {
 // pools that actually lack headroom. Waiting for the latest reset across all
 // pools would leave archives paused after the exhausted pool has reset.
 func TestGitHubArchiveAdmissionRetriesWhenDeficientPoolResets(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)

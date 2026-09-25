@@ -9,6 +9,8 @@ import (
 )
 
 func TestSnapshotBoundUpdatesRejectAdvancedRevision(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -75,6 +77,8 @@ func TestSnapshotBoundUpdatesRejectAdvancedRevision(t *testing.T) {
 }
 
 func TestMergeRequestChildSnapshotCommitsProviderActivityAndEventAtomically(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)

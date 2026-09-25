@@ -44,6 +44,8 @@ func workspaceLaunchFixture(t *testing.T, database *DB, id string) (*Workspace, 
 }
 
 func TestWorkspaceAndLaunchSpecPersistAtomically(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -60,6 +62,8 @@ func TestWorkspaceAndLaunchSpecPersistAtomically(t *testing.T) {
 }
 
 func TestListUnpreparedProviderWorkspacesUsesOneReadConnection(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-unprepared-one-connection")
@@ -96,6 +100,8 @@ func TestCreateWorkspaceWithLaunchSpecRejectsCatalogIdentityMismatch(t *testing.
 }
 
 func TestPutWorkspaceLaunchSpecRejectsCatalogIdentityMismatch(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-put-mismatch")
@@ -111,6 +117,8 @@ func TestPutWorkspaceLaunchSpecRejectsCatalogIdentityMismatch(t *testing.T) {
 }
 
 func TestRefreshWorkspaceLaunchSpecRejectsSameRouteIdentityMismatch(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-refresh-mismatch")
@@ -132,6 +140,8 @@ func TestRefreshWorkspaceLaunchSpecRejectsSameRouteIdentityMismatch(t *testing.T
 }
 
 func TestWorkspaceLaunchSpecRoundTripsCanonicalUTCTimestamps(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -153,6 +163,8 @@ func TestWorkspaceLaunchSpecRoundTripsCanonicalUTCTimestamps(t *testing.T) {
 }
 
 func TestHistoricalWorkspaceRepositoryIdentityRejectsReusedRoute(t *testing.T) {
+	t.Parallel()
+
 	database := openTestDB(t)
 	seedRepositoryCatalogCollision(t, database)
 	platformRepoID, err := database.ResolveUnambiguousHistoricalWorkspaceRepoID(

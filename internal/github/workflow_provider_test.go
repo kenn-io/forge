@@ -122,6 +122,8 @@ func (*workflowDispatchOnlyFake) DispatchManualWorkflow(context.Context, string,
 }
 
 func TestGitHubWorkflowCapabilitiesAreIndependent(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		client      Client
@@ -172,6 +174,8 @@ func TestGitHubWorkflowCapabilitiesAreIndependent(t *testing.T) {
 }
 
 func TestGitHubWorkflowProviderCatalogPreservesPartialAvailability(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fake := &workflowProviderFake{
@@ -215,6 +219,8 @@ func TestGitHubWorkflowProviderCatalogPreservesPartialAvailability(t *testing.T)
 }
 
 func TestGitHubWorkflowProviderAbortsCatalogOnFatalDefinitionErrors(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		err    error
@@ -288,6 +294,8 @@ func TestGitHubWorkflowProviderAbortsCatalogOnFatalDefinitionErrors(t *testing.T
 }
 
 func TestGitHubWorkflowProviderKeepsPerDefinitionFailuresPartial(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		err  error
@@ -335,6 +343,8 @@ func TestGitHubWorkflowProviderKeepsPerDefinitionFailuresPartial(t *testing.T) {
 }
 
 func TestGitHubWorkflowEnvironmentsReadOnlyEnvironmentTransport(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fake := &workflowProviderFake{
@@ -352,6 +362,8 @@ func TestGitHubWorkflowEnvironmentsReadOnlyEnvironmentTransport(t *testing.T) {
 }
 
 func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	created, err := time.Parse(time.RFC3339, "2026-08-27T12:00:00+01:00")
@@ -416,6 +428,8 @@ func TestGitHubWorkflowProviderNormalizesRunsJobsAndDispatch(t *testing.T) {
 }
 
 func TestGitHubWorkflowProviderUnsupportedClientsAreTyped(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: &mockClient{}, Clock: time.Now})
@@ -430,6 +444,8 @@ func TestGitHubWorkflowProviderUnsupportedClientsAreTyped(t *testing.T) {
 }
 
 func TestRoutedClientRoutesWorkflowOperationsByRepository(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fallback := &workflowProviderFake{}
@@ -466,6 +482,8 @@ func TestRoutedClientRoutesWorkflowOperationsByRepository(t *testing.T) {
 }
 
 func TestRoutedClientWorkflowMethodsRejectClientsWithoutOptionalInterfaces(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	router, err := NewHostRouter(
 		"github.com",

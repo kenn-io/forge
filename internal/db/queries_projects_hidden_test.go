@@ -9,6 +9,8 @@ import (
 )
 
 func TestSetProjectWorktreeHiddenRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -33,6 +35,8 @@ func TestSetProjectWorktreeHiddenRoundTrip(t *testing.T) {
 }
 
 func TestSetProjectWorktreeHiddenWrongProjectIsNotFound(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -51,6 +55,8 @@ func TestSetProjectWorktreeHiddenWrongProjectIsNotFound(t *testing.T) {
 // the cut: a user-hidden worktree must survive discovery reconciliation, which
 // refreshes the branch and clears staleness but must never unhide it.
 func TestReconcileProjectInventoryPreservesHiddenFlag(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

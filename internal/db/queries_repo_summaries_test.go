@@ -9,6 +9,8 @@ import (
 )
 
 func TestListRepoSummariesIncludesOverviewSnapshot(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -83,6 +85,8 @@ func TestListRepoSummariesIncludesOverviewSnapshot(t *testing.T) {
 }
 
 func TestListRepoSummariesExcludesLockedPullRequestsFromOpenCounts(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -103,6 +107,8 @@ func TestListRepoSummariesExcludesLockedPullRequestsFromOpenCounts(t *testing.T)
 }
 
 func TestUpsertRepoOverviewClearsTimelineWhenReleaseChangesWithoutCloneData(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 

@@ -60,7 +60,9 @@
   let menuStyle = $state("");
   let openExecution: AppExecution<void, never> | null = null;
   const agentTargets = $derived(
-    launchTargets.filter((target) => target.kind === "agent" && target.available),
+    launchTargets
+      .filter((target) => target.kind === "agent" && target.available)
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "accent" })),
   );
   const blocked = $derived(disabled || busy);
   const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);

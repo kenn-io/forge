@@ -122,7 +122,7 @@ func TestActiveRepoRejectsActiveRowWithoutProviderIdentity(t *testing.T) {
 	// Normal writes cannot produce this row; a corrupted store must fail
 	// loudly instead of yielding an empty identity that compares equal to
 	// other unresolved references.
-	result, err := d.WriteDB().Exec(`
+	result, err := d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_repos (
 			platform, platform_host, platform_repo_id,
 			owner, name, repo_path, owner_key, name_key, repo_path_key,

@@ -301,6 +301,9 @@ func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRe
 			if err != nil {
 				return 0, fmt.Errorf("resolve stored archive repository %s: %w", archiveRepoIdentityKey(ref), err)
 			}
+			if active == nil {
+				return 0, fmt.Errorf("resolve stored archive repository %s: route resolved to an inactive repository", archiveRepoIdentityKey(ref))
+			}
 			identity.PlatformRepoID = active.Identity().PlatformRepoID
 			storedID = active.ID
 		} else {

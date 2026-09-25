@@ -24,7 +24,8 @@ func TestRepositoryOverrides(t *testing.T) {
 	t.Setenv("GH_REPO", "github.com/acme/env-repo")
 	t.Setenv("GH_HOST", "github.com")
 	for _, tc := range []struct{ input, host, repo string }{
-		{"", "github.com", "env-repo"}, {"acme/widget", "github.com", "widget"},
+		{"", "github.com", "env-repo"},
+		{"acme/widget", "github.com", "widget"},
 		{"https://github.com/acme/widget.git", "github.com", "widget"},
 		{"git@code.example:acme/widget.git", "code.example", "widget"},
 		{"code.example/acme/widget", "code.example", "widget"},
@@ -56,7 +57,7 @@ func assertDaemonDiscovery(t *testing.T, dir, configPath string) {
 	t.Helper()
 	require := require.New(t)
 	assert := assert.New(t)
-	require.NoError(os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\nbase_path = \"/changed-config\"\n", dir), 0600))
+	require.NoError(os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\nbase_path = \"/changed-config\"\n", dir), 0o600))
 	token, err := runtimelock.EnsureAuthToken(dir)
 	require.NoError(err)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,9 +89,9 @@ func TestDefaultHostMatchesGHSoleConfiguredHost(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GH_CONFIG_DIR", dir)
 	t.Setenv("GH_HOST", "")
-	require.NoError(os.WriteFile(filepath.Join(dir, "hosts.yml"), []byte("code.example:\n  user: user-a\n"), 0600))
+	require.NoError(os.WriteFile(filepath.Join(dir, "hosts.yml"), []byte("code.example:\n  user: user-a\n"), 0o600))
 	assert.Equal("code.example", defaultGHHost())
-	require.NoError(os.WriteFile(filepath.Join(dir, "hosts.yml"), []byte("code.example: {}\ngithub.com: {}\n"), 0600))
+	require.NoError(os.WriteFile(filepath.Join(dir, "hosts.yml"), []byte("code.example: {}\ngithub.com: {}\n"), 0o600))
 	assert.Equal("github.com", defaultGHHost())
 	t.Setenv("GH_HOST", "override.example")
 	assert.Equal("override.example", defaultGHHost())

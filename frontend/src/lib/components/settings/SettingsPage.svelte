@@ -175,7 +175,8 @@
         return yield* workflow.persist(() => ({ airplane_mode: enabled }));
       }).pipe(
         Effect.tap((saved) => Effect.sync(() => {
-          settings = saved;
+          // A spoke save can succeed without hub-owned fields; keep the loaded ones.
+          settings = settings ? { ...settings, airplane_mode: saved.airplane_mode } : saved;
           airplaneMode = saved.airplane_mode;
           settingsStore.setAirplaneMode(saved.airplane_mode);
         })),

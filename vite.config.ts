@@ -1,6 +1,8 @@
 import { defineConfig } from "vite-plus";
 
 const rootVP = "node node_modules/vite-plus/bin/vp";
+const frontendVP = "node ../node_modules/vite-plus/bin/vp";
+const packageVP = "node ../../node_modules/vite-plus/bin/vp";
 const effectDiagnostics =
   "(cd frontend && NODE_PATH=../node_modules node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error)";
 
@@ -52,8 +54,8 @@ export default defineConfig({
       // package-local typechecks cheap without exposing per-package tasks.
       "svelte-check": {
         command: [
-          "(cd frontend && ../node_modules/.bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)",
-          "(cd packages/github-app-ui && ../../node_modules/.bin/svelte-check --tsconfig ./tsconfig.json --fail-on-warnings)",
+          `(cd frontend && ${frontendVP} exec -- svelte-check --config ./vite.config.ts --tsconfig ./tsconfig.json --fail-on-warnings)`,
+          `(cd packages/github-app-ui && ${packageVP} exec -- svelte-check --config ./vite.config.ts --tsconfig ./tsconfig.json --fail-on-warnings)`,
         ],
         input: [
           { auto: true },

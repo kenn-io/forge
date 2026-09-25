@@ -162,6 +162,25 @@ describe("SettingsPage", () => {
     expect((screen.getByRole("switch", { name: "Airplane mode" }) as HTMLInputElement).checked).toBe(true);
   });
 
+  it("keeps hub-owned spoke settings when an airplane mode save omits them", async () => {
+    const local = makeSettings();
+    local.fleet.role = "spoke";
+    const hub = { ...local, sync: { budget_per_hour: 2400 } };
+    loadLocalSettings.mockReturnValue(Effect.succeed(local));
+    loadSettings.mockReturnValue(Effect.succeed(hub));
+    persistSettings.mockReturnValue(Effect.succeed({ ...local, airplane_mode: true }));
+
+    render(SettingsRuntimeHarness, { props: { component: SettingsPage, componentProps: {} } });
+    await fireEvent.click(await screen.findByRole("button", { name: /^Sync/ }));
+    const budget = await screen.findByLabelText("Hourly sync budget");
+    await waitFor(() => expect((budget as HTMLInputElement).value).toBe("2400"));
+
+    await fireEvent.click(screen.getByRole("switch", { name: "Airplane mode" }));
+
+    await waitFor(() => expect(setAirplaneMode).toHaveBeenLastCalledWith(true));
+    expect((screen.getByLabelText("Hourly sync budget") as HTMLInputElement).value).toBe("2400");
+  });
+
   it("keeps airplane mode off when saving fails", async () => {
     loadSettings.mockReturnValue(Effect.succeed(makeSettings()));
     persistSettings.mockReturnValue(

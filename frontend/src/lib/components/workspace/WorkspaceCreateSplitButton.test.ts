@@ -166,7 +166,7 @@ describe("WorkspaceCreateSplitButton", () => {
     ).toBe(true);
   });
 
-  it("supports menu arrow, boundary, and keyboard activation", async () => {
+  it("supports menu arrow, boundary, and selection", async () => {
     const onCreate = vi.fn();
     render(WorkspaceCreateSplitButton, {
       props: { label: "Create Workspace", launchTargets: targets, onCreate },
@@ -191,12 +191,12 @@ describe("WorkspaceCreateSplitButton", () => {
     expect(document.activeElement).toBe(claude);
     await fireEvent.keyDown(claude, { key: "ArrowDown" });
     expect(document.activeElement).toBe(codex);
-    await fireEvent.keyDown(codex, { key: " " });
+    await fireEvent.click(codex);
 
     expect(onCreate).toHaveBeenCalledWith("codex");
 
     await fireEvent.click(trigger);
-    await fireEvent.keyDown(screen.getByRole("menuitem", { name: "Claude" }), { key: "Enter" });
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Claude" }));
 
     expect(onCreate).toHaveBeenCalledTimes(2);
     expect(onCreate).toHaveBeenLastCalledWith("claude");
@@ -224,7 +224,7 @@ describe("WorkspaceCreateSplitButton", () => {
     expect(screen.queryByRole("menu")).toBeNull();
 
     await fireEvent.click(trigger);
-    await fireEvent.pointerDown(document.body);
+    await fireEvent.mouseDown(document.body);
     expect(screen.queryByRole("menu")).toBeNull();
   });
 

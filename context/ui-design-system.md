@@ -94,11 +94,14 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 - Chip: icons go in `children` (kit centers them), dropdown chevrons in
   `trailing`; no downstream `.kit-chip__label` overrides — repo chips
   depend on its ellipsis.
-- Agent launch targets draw their icon as a kit `HarnessIcon` via `LaunchTargetName`
+- Agent launch targets draw their icon as a kit `HarnessIcon` via `LaunchTargetName` or the shared agent-key resolver
   (key → glyph by shared leading segments of the glyph id or its agent product
   names, then a bare prefix of at least four characters;
   `frontend/src/lib/components/terminal/agentHarness.ts::harnessForAgentKey`).
   The glyph only replaces the generic kind icon; the target's own label always stays.
+- Agent menus use kit `MenuItem`'s icon slot even for unrecognized profiles;
+  empty icons must preserve label alignment, not collapse the column
+  (`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte`).
 - Theme resolution: kit's theme store owns dark/light/system resolution
   and persistence (`kenn-forge-theme` key); `theme.svelte.ts` adapts it.
   Relative timestamps use kit `formatRelativeTime`;

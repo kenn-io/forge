@@ -27,6 +27,8 @@ func githubLabel(id int64, name, description, color string, isDefault bool) *gh.
 }
 
 func TestNormalizePRNilInputReturnsError(t *testing.T) {
+	t.Parallel()
+
 	pr, err := NormalizePR(7, nil)
 	require.Error(t, err)
 	require.Nil(t, pr)
@@ -34,6 +36,8 @@ func TestNormalizePRNilInputReturnsError(t *testing.T) {
 }
 
 func TestNormalizeIssueNilInputReturnsError(t *testing.T) {
+	t.Parallel()
+
 	issue, err := NormalizeIssue(10, nil)
 	require.Error(t, err)
 	require.Nil(t, issue)
@@ -41,6 +45,8 @@ func TestNormalizeIssueNilInputReturnsError(t *testing.T) {
 }
 
 func TestNormalizeCommentVisibilityMetadata(t *testing.T) {
+	t.Parallel()
+
 	comment := &gh.IssueComment{ID: new(int64(73))}
 	visibility := platformgithub.CommentVisibility{Hidden: true, Reason: "OFF_TOPIC"}
 
@@ -70,6 +76,8 @@ func TestNormalizeCommentVisibilityMetadata(t *testing.T) {
 }
 
 func TestNormalizePR_OpenPR(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	ghPR := &gh.PullRequest{
@@ -120,6 +128,8 @@ func TestNormalizePR_OpenPR(t *testing.T) {
 }
 
 func TestNormalizePR_MergedPR(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	mergedAt := time.Now().UTC().Truncate(time.Second)
 	ghPR := &gh.PullRequest{
@@ -140,6 +150,8 @@ func TestNormalizePR_MergedPR(t *testing.T) {
 }
 
 func TestNormalizePR_Labels(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	updatedAt := time.Date(2024, 6, 7, 10, 11, 12, 0, time.UTC)
 	ghPR := &gh.PullRequest{
@@ -165,6 +177,8 @@ func TestNormalizePR_Labels(t *testing.T) {
 }
 
 func TestNormalizeIssue_Labels(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	updatedAt := time.Date(2024, 6, 8, 9, 10, 11, 0, time.UTC)
 	ghIssue := &gh.Issue{
@@ -190,6 +204,8 @@ func TestNormalizeIssue_Labels(t *testing.T) {
 }
 
 func TestNormalizePR_LabelsSkipsMalformedLabels(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	updatedAt := time.Date(2024, 6, 9, 10, 11, 12, 0, time.UTC)
 	blankName := "   "
@@ -218,6 +234,8 @@ func TestNormalizePR_LabelsSkipsMalformedLabels(t *testing.T) {
 }
 
 func TestNormalizeIssue_LabelsFallbackToCreatedAt(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	createdAt := time.Date(2024, 6, 10, 9, 10, 11, 0, time.UTC)
 	ghIssue := &gh.Issue{
@@ -243,6 +261,8 @@ func TestNormalizeIssue_LabelsFallbackToCreatedAt(t *testing.T) {
 }
 
 func TestNormalizeCommentEvent(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	c := &gh.IssueComment{
@@ -267,6 +287,8 @@ func TestNormalizeCommentEvent(t *testing.T) {
 }
 
 func TestNormalizeForcePushEvent(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	event := NormalizeForcePushEvent(17, platformgithub.ForcePushEvent{
@@ -289,6 +311,8 @@ func TestNormalizeForcePushEvent(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 15, 0, 0, time.UTC)
@@ -320,6 +344,8 @@ func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventCommentDeleted(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 18, 0, 0, time.UTC)
@@ -343,6 +369,8 @@ func TestNormalizeTimelineEventCommentDeleted(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventRenamedTitle(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 5, 0, 0, time.UTC)
@@ -365,6 +393,8 @@ func TestNormalizeTimelineEventRenamedTitle(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventBaseRefChanged(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 10, 0, 0, time.UTC)
@@ -387,6 +417,8 @@ func TestNormalizeTimelineEventBaseRefChanged(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventAssigned(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 22, 0, 0, time.UTC)
@@ -408,6 +440,8 @@ func TestNormalizeTimelineEventAssigned(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventLifecycle(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 30, 0, 0, time.UTC)
@@ -443,6 +477,8 @@ func TestNormalizeTimelineEventLifecycle(t *testing.T) {
 }
 
 func TestNormalizeIssueTimelineEventAssigned(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 22, 0, 0, time.UTC)
@@ -465,6 +501,8 @@ func TestNormalizeIssueTimelineEventAssigned(t *testing.T) {
 }
 
 func TestNormalizeIssueTimelineEventCrossReferenced(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 30, 0, 0, time.UTC)
@@ -495,6 +533,8 @@ func TestNormalizeIssueTimelineEventCrossReferenced(t *testing.T) {
 }
 
 func TestNormalizeIssueTimelineEventLifecycle(t *testing.T) {
+	t.Parallel()
+
 	createdAt := time.Date(2024, 6, 1, 12, 40, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -541,6 +581,8 @@ func TestNormalizeIssueTimelineEventLifecycle(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventForcePush(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 20, 0, 0, time.UTC)
@@ -568,6 +610,8 @@ func TestNormalizeTimelineEventForcePush(t *testing.T) {
 }
 
 func TestNormalizeTimelineEventFallbackDedupeIgnoresCrossReferenceTitle(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 25, 0, 0, time.UTC)
 
@@ -606,6 +650,8 @@ func TestNormalizeTimelineEventFallbackDedupeIgnoresCrossReferenceTitle(t *testi
 }
 
 func TestNormalizeCommitEvent_CreatedAtIsUTC(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	//nolint:forbidigo // Test fixture intentionally uses a non-UTC zone to verify normalization.
 	edt := time.FixedZone("EDT", -4*3600)
@@ -631,6 +677,8 @@ func TestNormalizeCommitEvent_CreatedAtIsUTC(t *testing.T) {
 }
 
 func TestNormalizeIssueCommentEvent(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Date(2024, 6, 7, 8, 9, 10, 0, time.UTC)
 	id := int64(777)
@@ -659,6 +707,8 @@ func TestNormalizeIssueCommentEvent(t *testing.T) {
 }
 
 func TestNormalizePR_MergeableState(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		state *string
@@ -690,17 +740,23 @@ func TestNormalizePR_MergeableState(t *testing.T) {
 }
 
 func TestDeriveOverallCIStatus_NoChecksOrStatuses(t *testing.T) {
+	t.Parallel()
+
 	result := DeriveOverallCIStatus(nil, nil)
 	assert.Empty(t, result)
 }
 
 func TestDeriveOverallCIStatus_EmptyCombined(t *testing.T) {
+	t.Parallel()
+
 	combined := &gh.CombinedStatus{State: new("pending")}
 	result := DeriveOverallCIStatus(nil, combined)
 	assert.Empty(t, result, "no actual statuses means empty, even if state says pending")
 }
 
 func TestDeriveOverallCIStatus_CheckRunsOnly(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		runs []*gh.CheckRun
@@ -770,6 +826,8 @@ func TestDeriveOverallCIStatus_CheckRunsOnly(t *testing.T) {
 }
 
 func TestDeriveOverallCIStatus_NonSuccessConclusions(t *testing.T) {
+	t.Parallel()
+
 	// Any completed conclusion not in {success, neutral, skipped} is failure.
 	for _, conclusion := range []string{
 		"action_required", "failure", "timed_out",
@@ -785,6 +843,8 @@ func TestDeriveOverallCIStatus_NonSuccessConclusions(t *testing.T) {
 }
 
 func TestDeriveOverallCIStatus_CombinedStatusOnly(t *testing.T) {
+	t.Parallel()
+
 	combined := &gh.CombinedStatus{
 		TotalCount: new(1),
 		State:      new("success"),
@@ -796,6 +856,8 @@ func TestDeriveOverallCIStatus_CombinedStatusOnly(t *testing.T) {
 }
 
 func TestDeriveOverallCIStatus_CombinedUsesAggregatedState(t *testing.T) {
+	t.Parallel()
+
 	// Statuses slice may be truncated by pagination; the pre-aggregated
 	// State field reflects all pages, so we rely on it instead.
 	combined := &gh.CombinedStatus{
@@ -809,6 +871,8 @@ func TestDeriveOverallCIStatus_CombinedUsesAggregatedState(t *testing.T) {
 }
 
 func TestDeriveOverallCIStatus_MixedSources(t *testing.T) {
+	t.Parallel()
+
 	runs := []*gh.CheckRun{
 		{Status: new("completed"), Conclusion: new("success")},
 	}
@@ -823,6 +887,8 @@ func TestDeriveOverallCIStatus_MixedSources(t *testing.T) {
 }
 
 func TestNormalizeCIChecks_ExpectedAndPendingStatus(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	combined := &gh.CombinedStatus{
@@ -855,6 +921,8 @@ func TestNormalizeCIChecks_ExpectedAndPendingStatus(t *testing.T) {
 }
 
 func TestNormalizeCheckRuns_SortsByCasefoldedName(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	buildName := "build"
@@ -882,6 +950,8 @@ func TestNormalizeCheckRuns_SortsByCasefoldedName(t *testing.T) {
 }
 
 func TestNormalizeCheckRunsIncludesDurationWhenTimestampsPresent(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -913,6 +983,8 @@ func TestNormalizeCheckRunsIncludesDurationWhenTimestampsPresent(t *testing.T) {
 }
 
 func TestNormalizeCIChecks_LatestCheckRunPerNameWins(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
@@ -950,6 +1022,8 @@ func TestNormalizeCIChecks_LatestCheckRunPerNameWins(t *testing.T) {
 }
 
 func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
@@ -985,6 +1059,8 @@ func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *tes
 }
 
 func TestNormalizeCIChecks_QueuedRerunReplacesCancelledRunThatCompletedLater(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1027,6 +1103,8 @@ func TestNormalizeCIChecks_QueuedRerunReplacesCancelledRunThatCompletedLater(t *
 }
 
 func TestNormalizeCIChecks_QueuedRerunWithoutStartTimesUsesSuiteCreation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1066,6 +1144,8 @@ func TestNormalizeCIChecks_QueuedRerunWithoutStartTimesUsesSuiteCreation(t *test
 }
 
 func TestNormalizeCIChecks_RunIDOrdersAttemptsBeforeTimestamps(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1110,6 +1190,8 @@ func TestNormalizeCIChecks_RunIDOrdersAttemptsBeforeTimestamps(t *testing.T) {
 }
 
 func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
@@ -1145,6 +1227,8 @@ func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testi
 }
 
 func TestNormalizeCIChecks_DeduplicatesBySourceAwareKey(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1203,6 +1287,8 @@ func TestNormalizeCIChecks_DeduplicatesBySourceAwareKey(t *testing.T) {
 }
 
 func TestNormalizeCIChecks_StatusMissingUpdatedAtFallsBackToCreatedAt(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
@@ -1240,6 +1326,8 @@ func TestNormalizeCIChecks_StatusMissingUpdatedAtFallsBackToCreatedAt(t *testing
 }
 
 func TestDeriveOverallCIStatus_LatestCheckRunPerNameWins(t *testing.T) {
+	t.Parallel()
+
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	newer := older.Add(10 * time.Minute)
 	name := "build"
@@ -1268,6 +1356,8 @@ func TestDeriveOverallCIStatus_LatestCheckRunPerNameWins(t *testing.T) {
 }
 
 func TestNormalizeCIChecks_SortsByCasefoldedName(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	buildName := "build"
@@ -1295,11 +1385,15 @@ func TestNormalizeCIChecks_SortsByCasefoldedName(t *testing.T) {
 }
 
 func TestDeriveReviewDecision_Empty(t *testing.T) {
+	t.Parallel()
+
 	result := DeriveReviewDecision(nil)
 	assert.Empty(t, result)
 }
 
 func TestDeriveReviewDecision_ApprovedOnly(t *testing.T) {
+	t.Parallel()
+
 	reviews := []*gh.PullRequestReview{
 		{User: &gh.User{Login: new("alice")}, State: new("APPROVED")},
 		{User: &gh.User{Login: new("bob")}, State: new("COMMENTED")},
@@ -1309,6 +1403,8 @@ func TestDeriveReviewDecision_ApprovedOnly(t *testing.T) {
 }
 
 func TestDeriveReviewDecision_ChangesRequestedWins(t *testing.T) {
+	t.Parallel()
+
 	reviews := []*gh.PullRequestReview{
 		{User: &gh.User{Login: new("alice")}, State: new("APPROVED")},
 		{User: &gh.User{Login: new("bob")}, State: new("CHANGES_REQUESTED")},
@@ -1318,6 +1414,8 @@ func TestDeriveReviewDecision_ChangesRequestedWins(t *testing.T) {
 }
 
 func TestDeriveReviewDecision_CommentedOnlyIgnored(t *testing.T) {
+	t.Parallel()
+
 	reviews := []*gh.PullRequestReview{
 		{User: &gh.User{Login: new("alice")}, State: new("COMMENTED")},
 		{User: &gh.User{Login: new("bob")}, State: new("DISMISSED")},
@@ -1327,6 +1425,8 @@ func TestDeriveReviewDecision_CommentedOnlyIgnored(t *testing.T) {
 }
 
 func TestDeriveReviewDecision_LatestStatePerUser(t *testing.T) {
+	t.Parallel()
+
 	// bob first requested changes, then approved — latest should be APPROVED
 	reviews := []*gh.PullRequestReview{
 		{User: &gh.User{Login: new("bob")}, State: new("CHANGES_REQUESTED")},
@@ -1337,6 +1437,8 @@ func TestDeriveReviewDecision_LatestStatePerUser(t *testing.T) {
 }
 
 func TestNormalizePR_BotUserDisplayName(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	ghPR := &gh.PullRequest{
 		ID:     new(int64(3003)),
@@ -1357,6 +1459,8 @@ func TestNormalizePR_BotUserDisplayName(t *testing.T) {
 }
 
 func TestNameOrEmpty(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		user *gh.User

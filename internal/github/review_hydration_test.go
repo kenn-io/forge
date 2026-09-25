@@ -104,6 +104,8 @@ func (f completeReviewSyncFixture) sync(t *testing.T) error {
 }
 
 func TestGitealikeReviewHydrationCompletesAtomicallyInOneSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newCompleteReviewSyncFixture(t, 17)
@@ -122,6 +124,8 @@ func TestGitealikeReviewHydrationCompletesAtomicallyInOneSync(t *testing.T) {
 }
 
 func TestGitealikeReviewHydrationPreservesCompleteDatasetOnReadFailure(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newCompleteReviewSyncFixture(t, 17)

@@ -2341,6 +2341,8 @@ func TestOpenInitializesBranchActivitySchema(t *testing.T) {
 }
 
 func TestRepoTimestampWritesStoreUTC(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -2383,6 +2385,8 @@ func TestRepoTimestampWritesStoreUTC(t *testing.T) {
 }
 
 func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name    string
 		version int
@@ -2397,6 +2401,8 @@ func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {
 }
 
 func TestOpenReturnsRecreateGuidanceForDirtyMigrations(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
@@ -2419,6 +2425,8 @@ func TestOpenReturnsRecreateGuidanceForDirtyMigrations(t *testing.T) {
 }
 
 func TestOpenRejectsIncompleteLegacyDatabase(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "broken-legacy.db")

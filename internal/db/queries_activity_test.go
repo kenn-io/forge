@@ -774,6 +774,8 @@ func TestListActivity(t *testing.T) {
 }
 
 func TestListActivityAtOrBeforeCursorBeyondUnixNanoRange(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -812,6 +814,8 @@ func TestListActivityAtOrBeforeCursorBeyondUnixNanoRange(t *testing.T) {
 }
 
 func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
+	t.Parallel()
+
 	t.Run("hide closed merged uses notification subject state and keeps unknown state", func(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
@@ -916,6 +920,8 @@ func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
 }
 
 func TestListCollapsedActivityProjection(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1025,6 +1031,8 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 }
 
 func TestListCollapsedActivityProjectionRetainsVisibleEventsForBotParents(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1065,6 +1073,8 @@ func TestListCollapsedActivityProjectionRetainsVisibleEventsForBotParents(t *tes
 }
 
 func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1127,6 +1137,8 @@ func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(
 }
 
 func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1174,6 +1186,8 @@ func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
 }
 
 func TestListCollapsedActivityProjectionDetectsNonNewestNotificationMutation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1258,6 +1272,8 @@ func insertOversizedBranchCommitRow(
 }
 
 func TestListActivityItemAuthor(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1329,6 +1345,8 @@ func TestListActivityItemAuthor(t *testing.T) {
 }
 
 func TestListActivityCarriesParentRecencyWhenNewerEventsAreFiltered(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1386,6 +1404,8 @@ func TestListActivityCarriesParentRecencyWhenNewerEventsAreFiltered(t *testing.T
 }
 
 func TestListActivitySubjectsUsesAuthoritativeRecencyForWindowAndLimit(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1440,6 +1460,8 @@ func TestListActivitySubjectsUsesAuthoritativeRecencyForWindowAndLimit(t *testin
 }
 
 func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -1525,6 +1547,8 @@ func activityBodies(items []ActivityItem) []string {
 }
 
 func TestParseDBTime(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	tests := []struct {
 		name  string
@@ -1593,6 +1617,8 @@ func TestParseDBTime(t *testing.T) {
 }
 
 func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1645,6 +1671,8 @@ func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 }
 
 func TestUpsertMREventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1683,6 +1711,8 @@ func TestUpsertMREventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T)
 }
 
 func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1735,6 +1765,8 @@ func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 }
 
 func TestUpsertIssueEventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1773,6 +1805,8 @@ func TestUpsertIssueEventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing
 }
 
 func TestListActivityIncludesNotifications(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -1839,6 +1873,8 @@ func TestListActivityIncludesNotifications(t *testing.T) {
 }
 
 func TestListActivityAuthors(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1963,6 +1999,8 @@ func TestListActivityAuthors(t *testing.T) {
 }
 
 func TestListActivityNotificationCarriesSubjectState(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2005,6 +2043,8 @@ func TestListActivityNotificationCarriesSubjectState(t *testing.T) {
 }
 
 func TestListActivityNotificationMatchesRepoByIdentity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2046,6 +2086,8 @@ func TestListActivityNotificationMatchesRepoByIdentity(t *testing.T) {
 }
 
 func TestListActivityNotificationRepoFiltersApplyBeforeUnionLimit(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2125,6 +2167,8 @@ func TestListActivityNotificationRepoFiltersApplyBeforeUnionLimit(t *testing.T) 
 }
 
 func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2191,6 +2235,8 @@ func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
 }
 
 func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		itemType     string
@@ -2280,6 +2326,8 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 }
 
 func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2384,6 +2432,8 @@ func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
 }
 
 func TestListActivityAuthorsIncludeParentsRecentOnlyByCloseOrMerge(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)

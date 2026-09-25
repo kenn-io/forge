@@ -17,6 +17,8 @@ func plannerStatisticsRows(t *testing.T, d *DB, table string) int {
 }
 
 func TestOpenCreatesPlannerStatistics(t *testing.T) {
+	t.Parallel()
+
 	d := openDBWithMigrations(t)
 	var tables int
 	require.NoError(t, d.ReadDB().QueryRowContext(t.Context(),
@@ -25,6 +27,8 @@ func TestOpenCreatesPlannerStatistics(t *testing.T) {
 }
 
 func TestOptimizeRecordsStatisticsForPopulatedTables(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -44,6 +48,8 @@ func TestOptimizeRecordsStatisticsForPopulatedTables(t *testing.T) {
 }
 
 func TestOptimizeReloadsStatisticsOnEveryReadConnection(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

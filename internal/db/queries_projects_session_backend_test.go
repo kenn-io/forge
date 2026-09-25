@@ -9,6 +9,8 @@ import (
 )
 
 func TestSetProjectWorktreeSessionBackendRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -33,6 +35,8 @@ func TestSetProjectWorktreeSessionBackendRoundTrip(t *testing.T) {
 }
 
 func TestSetProjectWorktreeSessionBackendWrongProjectIsNotFound(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -52,6 +56,8 @@ func TestSetProjectWorktreeSessionBackendWrongProjectIsNotFound(t *testing.T) {
 // survive discovery reconciliation, which refreshes branch/staleness but must
 // never clear the override.
 func TestReconcileProjectInventoryPreservesSessionBackend(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

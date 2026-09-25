@@ -11,6 +11,8 @@ import (
 // project row and, via ON DELETE CASCADE, its registered worktrees. This is the
 // storage half of the host write-through for /api/project/remove.
 func TestDeleteProjectCascadesWorktrees(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -32,6 +34,8 @@ func TestDeleteProjectCascadesWorktrees(t *testing.T) {
 // ErrProjectNotFound rather than silently succeeding, so the host write-through
 // can surface a 404 instead of a misleading 204.
 func TestDeleteProjectNotFound(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	require.ErrorIs(d.DeleteProject(t.Context(), "prj_missing"), ErrProjectNotFound,
@@ -42,6 +46,8 @@ func TestDeleteProjectNotFound(t *testing.T) {
 // worktree row, leaving the owning project intact. This is the storage half of
 // the host write-through for /api/worktree/delete.
 func TestDeleteProjectWorktreeRemovesRow(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -62,6 +68,8 @@ func TestDeleteProjectWorktreeRemovesRow(t *testing.T) {
 // TestDeleteProjectWorktreeNotFound proves deleting an unknown worktree id
 // reports ErrProjectNotFound so the host write-through can surface a 404.
 func TestDeleteProjectWorktreeNotFound(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	proj := createDiscoveryTestProject(t, d, "app")
@@ -76,6 +84,8 @@ func TestDeleteProjectWorktreeNotFound(t *testing.T) {
 // owning project: a worktree id under a different project is treated as not
 // found and left in place.
 func TestDeleteProjectWorktreeScopedToProject(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

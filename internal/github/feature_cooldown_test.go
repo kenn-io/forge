@@ -27,6 +27,8 @@ func (p cooldownCapabilityOnlyProvider) Capabilities() platform.Capabilities {
 }
 
 func TestDisabledIssueScopeUsesDailyBackgroundProbeAndManualBypass(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -86,6 +88,8 @@ func TestDisabledIssueScopeUsesDailyBackgroundProbeAndManualBypass(t *testing.T)
 }
 
 func TestExplicitTransientIssueProbeClearsCooldownAndPreservesRetryScope(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -132,6 +136,8 @@ func TestExplicitTransientIssueProbeClearsCooldownAndPreservesRetryScope(t *test
 }
 
 func TestDisabledIssueAfterItemFailurePreservesRetryScope(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -175,6 +181,8 @@ func TestDisabledIssueAfterItemFailurePreservesRetryScope(t *testing.T) {
 }
 
 func TestCooldownSkippedIssueScopePreservesRetryUntilSuccessfulProbe(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -216,6 +224,8 @@ func TestCooldownSkippedIssueScopePreservesRetryUntilSuccessfulProbe(t *testing.
 }
 
 func TestIndexReaderResolutionFailureAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		feature      string
@@ -280,6 +290,8 @@ func TestIndexReaderResolutionFailureAbandonsExpiredFeatureProbeReservation(t *t
 }
 
 func TestExpiredMergeRequestCooldownAllowsOneConcurrentBackgroundProbe(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -336,6 +348,8 @@ func TestExpiredMergeRequestCooldownAllowsOneConcurrentBackgroundProbe(t *testin
 }
 
 func TestSuccessfulProbeDoesNotClearConcurrentDisabledRenewal(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -392,6 +406,8 @@ func TestSuccessfulProbeDoesNotClearConcurrentDisabledRenewal(t *testing.T) {
 }
 
 func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -432,6 +448,8 @@ func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 }
 
 func TestDetailBudgetDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -481,6 +499,8 @@ func TestDetailBudgetDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) 
 }
 
 func TestWrappedRawDisabledIssueResponseStopsDetailDrainAndStartsCooldown(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -533,6 +553,8 @@ func TestWrappedRawDisabledIssueResponseStopsDetailDrainAndStartsCooldown(t *tes
 }
 
 func TestWrappedRawDisabledMergeRequestTimelineStopsDetailDrainAndStartsCooldown(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -585,6 +607,8 @@ func TestWrappedRawDisabledMergeRequestTimelineStopsDetailDrainAndStartsCooldown
 }
 
 func TestDisabledPRCooldownDoesNotExhaustIssueDetailBudget(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -646,6 +670,8 @@ func TestDisabledPRCooldownDoesNotExhaustIssueDetailBudget(t *testing.T) {
 }
 
 func TestDisabledMergeRequestCooldownSkipsWatchedSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -682,6 +708,8 @@ func TestDisabledMergeRequestCooldownSkipsWatchedSync(t *testing.T) {
 }
 
 func TestWatchedSyncLocalFailureAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
@@ -718,6 +746,8 @@ func TestWatchedSyncLocalFailureAbandonsExpiredFeatureProbeReservation(t *testin
 }
 
 func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		feature string
@@ -789,6 +819,8 @@ func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservat
 }
 
 func TestGitHubCooldownCanonicalizesIndexAndWatchedRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -821,6 +853,8 @@ func TestGitHubCooldownCanonicalizesIndexAndWatchedRepositoryIdentity(t *testing
 }
 
 func TestWrappedRawDisabledResponseRenewsWatchedMergeRequestCooldown(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
@@ -855,6 +889,8 @@ func TestWrappedRawDisabledResponseRenewsWatchedMergeRequestCooldown(t *testing.
 }
 
 func TestConcurrentDisabledRenewalAfterNotModifiedListSkipsPRCommentRefresh(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -911,6 +947,8 @@ func TestConcurrentDisabledRenewalAfterNotModifiedListSkipsPRCommentRefresh(t *t
 }
 
 func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -958,6 +996,8 @@ func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
 }
 
 func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -1012,6 +1052,8 @@ func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
 }
 
 func TestDisabledIssueCooldownDoesNotCrossProviderHostOrScope(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	syncer := &Syncer{now: func() time.Time { return now }}
@@ -1058,6 +1100,8 @@ func TestDisabledIssueCooldownDoesNotCrossProviderHostOrScope(t *testing.T) {
 // repository keeps its cooldown across a rename. Routes only identify
 // repositories that have never been provider-verified.
 func TestFeatureCooldownNotInheritedAcrossRouteReplacement(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	c := &repositoryFeatureCooldowns{}

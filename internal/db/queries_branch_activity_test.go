@@ -10,6 +10,8 @@ import (
 )
 
 func TestBranchActivityPersistence(t *testing.T) {
+	t.Parallel()
+
 	t.Run("upserts commits and prunes outside retention", func(t *testing.T) {
 		assert := assert.New(t)
 		d := openTestDB(t)

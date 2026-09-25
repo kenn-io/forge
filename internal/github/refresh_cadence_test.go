@@ -12,6 +12,8 @@ import (
 )
 
 func TestDormantCommentRefreshWaitsForDailyDeadline(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -48,6 +50,8 @@ func TestDormantCommentRefreshWaitsForDailyDeadline(t *testing.T) {
 }
 
 func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T) {
+	t.Parallel()
+
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure stays overdue"}[fail], func(t *testing.T) {
 			require := require.New(t)
@@ -92,6 +96,8 @@ func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T)
 }
 
 func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
+	t.Parallel()
+
 	for _, kind := range []string{"pull request", "issue"} {
 		for _, listUnchanged := range []bool{false, true} {
 			listResult := map[bool]string{false: "list 200", true: "list 304"}[listUnchanged]
@@ -179,6 +185,8 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 }
 
 func TestSyncReportsDailyBacklogWhenBudgetCannotCoverOpenItems(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
@@ -203,6 +211,8 @@ func TestSyncReportsDailyBacklogWhenBudgetCannotCoverOpenItems(t *testing.T) {
 }
 
 func TestDetailDrainHydratesRecentNeverFetchedBeforeActiveWork(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()

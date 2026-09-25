@@ -41,6 +41,8 @@ func notificationFixture(threadID, reason string, updated time.Time) Notificatio
 }
 
 func TestLatestOpenPRNotificationActivity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -108,6 +110,8 @@ func TestLatestOpenPRNotificationActivity(t *testing.T) {
 }
 
 func TestLatestOpenPRNotificationActivityFollowsLinkedRepositoryRename(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -146,6 +150,8 @@ func TestLatestOpenPRNotificationActivityFollowsLinkedRepositoryRename(t *testin
 }
 
 func TestLatestOpenPRNotificationActivityKeepsLinkedIdentityAcrossRouteReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -204,6 +210,8 @@ func TestLatestOpenPRNotificationActivityKeepsLinkedIdentityAcrossRouteReuse(t *
 }
 
 func TestNotificationsListFiltersSearchAndPriority(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
@@ -241,6 +249,8 @@ func TestNotificationsListFiltersSearchAndPriority(t *testing.T) {
 }
 
 func TestNotificationSummaryIgnoresListState(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -268,6 +278,8 @@ func TestNotificationSummaryIgnoresListState(t *testing.T) {
 }
 
 func TestNotificationsReadQueuesWithoutDone(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -299,6 +311,8 @@ func TestNotificationsReadQueuesWithoutDone(t *testing.T) {
 }
 
 func TestMarkNotificationsAcknowledgedScopesThreadIDsToPlatformHost(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -329,6 +343,8 @@ func TestMarkNotificationsAcknowledgedScopesThreadIDsToPlatformHost(t *testing.T
 }
 
 func TestNotificationsQueueReadPropagation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -385,6 +401,8 @@ func TestNotificationsQueueReadPropagation(t *testing.T) {
 }
 
 func TestSpokePreparationDrainsOnlyFrozenNotificationAckGeneration(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -429,6 +447,8 @@ func TestSpokePreparationDrainsOnlyFrozenNotificationAckGeneration(t *testing.T)
 }
 
 func TestSpokePreparationCountsUndeliverableNotificationAcks(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	repoID := seedNotificationRepo(t, database)
@@ -471,6 +491,8 @@ func TestSpokePreparationCountsUndeliverableNotificationAcks(t *testing.T) {
 }
 
 func TestReadPropagationGenerationPreservesReadStateForStaleUnreadSync(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -511,6 +533,8 @@ func TestReadPropagationGenerationPreservesReadStateForStaleUnreadSync(t *testin
 }
 
 func TestReadPropagationGenerationKeepsDoneWhenGitHubShowsNewerReadActivity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -556,6 +580,8 @@ func TestReadPropagationGenerationKeepsDoneWhenGitHubShowsNewerReadActivity(t *t
 }
 
 func TestGitHubReportedReadRecordsGenerationForStaleUnreadSync(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -584,6 +610,8 @@ func TestGitHubReportedReadRecordsGenerationForStaleUnreadSync(t *testing.T) {
 }
 
 func TestReadPropagationFailureDoesNotMarkNewerUnreadActivityForRetry(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -617,6 +645,8 @@ func TestReadPropagationFailureDoesNotMarkNewerUnreadActivityForRetry(t *testing
 }
 
 func TestReadPropagationSuccessDoesNotClearNewerUnreadActivity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -649,6 +679,8 @@ func TestReadPropagationSuccessDoesNotClearNewerUnreadActivity(t *testing.T) {
 }
 
 func TestReopenNotificationAckPropagationRestoresUnreadAndClearsGeneration(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -681,6 +713,8 @@ func TestReopenNotificationAckPropagationRestoresUnreadAndClearsGeneration(t *te
 }
 
 func TestUpsertNotificationsIgnoresStaleSourceUpdates(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -704,6 +738,8 @@ func TestUpsertNotificationsIgnoresStaleSourceUpdates(t *testing.T) {
 }
 
 func TestNotificationMutationsReturnOnlyUpdatedIDs(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
@@ -729,6 +765,8 @@ func TestNotificationMutationsReturnOnlyUpdatedIDs(t *testing.T) {
 }
 
 func TestNotificationsHideUnmonitoredRepos(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -776,6 +814,8 @@ func TestNotificationsHideUnmonitoredRepos(t *testing.T) {
 }
 
 func TestNotificationSummaryRepoFacetsIncludePlatformHost(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -800,6 +840,8 @@ func TestNotificationSummaryRepoFacetsIncludePlatformHost(t *testing.T) {
 }
 
 func TestUpsertNotificationsPreservesQueuedReadUntilNewerActivity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -838,6 +880,8 @@ func TestUpsertNotificationsPreservesQueuedReadUntilNewerActivity(t *testing.T) 
 }
 
 func TestUpsertNotificationsClearsQueuedReadForActivityAfterQueuedGeneration(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -865,6 +909,8 @@ func TestUpsertNotificationsClearsQueuedReadForActivityAfterQueuedGeneration(t *
 }
 
 func TestUpsertNotificationsRejectsBlankPlatform(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedNotificationRepo(t, d)
@@ -894,6 +940,8 @@ func TestUpsertNotificationsRejectsBlankPlatform(t *testing.T) {
 }
 
 func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -924,6 +972,8 @@ func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
 }
 
 func TestNotificationSyncWatermarksAreScopedByRepoIdentity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -958,6 +1008,8 @@ func TestNotificationSyncWatermarksAreScopedByRepoIdentity(t *testing.T) {
 }
 
 func TestConditionalNotificationWritesRejectABARouteReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -1015,6 +1067,8 @@ func TestConditionalNotificationWritesRejectABARouteReuse(t *testing.T) {
 }
 
 func TestQueuedNotificationAcksStayWithinPlatformAndHost(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedNotificationRepo(t, d)
@@ -1062,6 +1116,8 @@ func TestQueuedNotificationAcksStayWithinPlatformAndHost(t *testing.T) {
 }
 
 func TestMarkClosedLinkedNotificationsDoneRespectsNotificationPlatform(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -1121,6 +1177,8 @@ func TestMarkClosedLinkedNotificationsDoneRespectsNotificationPlatform(t *testin
 }
 
 func TestUpsertNotificationsReopensDoneReadForActivityAfterDoneGeneration(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -1150,6 +1208,8 @@ func TestUpsertNotificationsReopensDoneReadForActivityAfterDoneGeneration(t *tes
 }
 
 func TestNotificationsRouteFilterFollowsRepositoryRename(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1186,6 +1246,8 @@ func TestNotificationsRouteFilterFollowsRepositoryRename(t *testing.T) {
 }
 
 func TestNotificationSummaryGroupsByCurrentRoute(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1217,6 +1279,8 @@ func TestNotificationSummaryGroupsByCurrentRoute(t *testing.T) {
 // propagation fences and routed mark-read calls do not fail against the
 // cached historical route.
 func TestListQueuedNotificationAcksFollowsRenamedRepositoryRoute(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -1262,6 +1326,8 @@ func TestListQueuedNotificationAcksFollowsRenamedRepositoryRoute(t *testing.T) {
 }
 
 func TestListQueuedNotificationAcksDoesNotLetUnroutableLinkedRowsConsumeLimit(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -1336,6 +1402,8 @@ func TestListQueuedNotificationAcksDoesNotLetUnroutableLinkedRowsConsumeLimit(t 
 }
 
 func TestDeferQueuedNotificationAcksUsesStableRepoIDAfterRename(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()

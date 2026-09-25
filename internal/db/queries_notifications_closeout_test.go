@@ -96,6 +96,8 @@ func readCloseoutState(t *testing.T, d *DB, threadID string) closeoutState {
 }
 
 func TestMarkClosedLinkedNotificationsDoneSweep(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -171,6 +173,8 @@ func TestMarkClosedLinkedNotificationsDoneSweep(t *testing.T) {
 }
 
 func TestMarkClosedLinkedItemNotificationsDoneScopesToOneItem(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -253,6 +257,8 @@ func TestMarkClosedLinkedItemNotificationsDoneScopesToOneItem(t *testing.T) {
 }
 
 func TestMarkClosedLinkedItemNotificationsDoneSkipsInactiveRepository(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -273,6 +279,8 @@ func TestMarkClosedLinkedItemNotificationsDoneSkipsInactiveRepository(t *testing
 // The previous single-statement form scanned the entire item table once per
 // active notification.
 func TestClosedLinkedNotificationStatementsUseItemIndexes(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	fx := seedCloseoutFixture(t, d)
 	now := fx.now

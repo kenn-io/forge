@@ -9,6 +9,8 @@ import (
 )
 
 func TestSetProjectWorktreeLinkedIssuesRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -34,6 +36,8 @@ func TestSetProjectWorktreeLinkedIssuesRoundTrip(t *testing.T) {
 }
 
 func TestSetProjectWorktreeLinkedIssuesWrongProjectIsNotFound(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -52,6 +56,8 @@ func TestSetProjectWorktreeLinkedIssuesWrongProjectIsNotFound(t *testing.T) {
 // session-backend guards: user-set linked issues must survive discovery
 // reconciliation, which refreshes branch/staleness but must never clear them.
 func TestReconcileProjectInventoryPreservesLinkedIssues(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

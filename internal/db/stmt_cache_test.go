@@ -12,6 +12,8 @@ import (
 )
 
 func TestOpenAppliesConnectionPragmasToEveryPooledConnection(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -74,6 +76,8 @@ func seedStatementCacheRepos(tb testing.TB, d *DB) RepoIdentity {
 }
 
 func TestRepositoryLookupCompilesEachStatementOncePerConnection(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -99,6 +103,8 @@ func TestRepositoryLookupCompilesEachStatementOncePerConnection(t *testing.T) {
 }
 
 func TestStmtCacheEvictsLeastRecentlyUsedBeyondLimit(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -130,6 +136,8 @@ func TestStmtCacheEvictsLeastRecentlyUsedBeyondLimit(t *testing.T) {
 }
 
 func TestStmtCacheClosesEvictedStatementOnlyAfterInFlightCalls(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -153,6 +161,8 @@ func TestStmtCacheClosesEvictedStatementOnlyAfterInFlightCalls(t *testing.T) {
 }
 
 func TestStmtCacheServesConcurrentCallersUnderEviction(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	ctx := t.Context()
 	cache := newStmtCache(d.ReadDB(), 2)
@@ -186,6 +196,8 @@ func TestStmtCacheServesConcurrentCallersUnderEviction(t *testing.T) {
 }
 
 func TestDBCloseFinalizesCachedStatements(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)

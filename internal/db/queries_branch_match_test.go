@@ -27,6 +27,8 @@ func createLinkedProject(t *testing.T, d *DB, name string, repoID int64) *Projec
 // identity, and excludes worktrees on local-only projects that cannot match a
 // platform merge request.
 func TestListWorktreesForBranchMatch_ReturnsRepoLinkedWorktrees(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -73,6 +75,8 @@ func TestListWorktreesForBranchMatch_ReturnsRepoLinkedWorktrees(t *testing.T) {
 // display fields, keyed by the worktree key the snapshot overlays onto
 // registered worktrees.
 func TestListWorktreeLinkPRs_JoinsLinkedMergeRequestDisplayFields(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -120,6 +124,8 @@ func TestListWorktreeLinkPRs_JoinsLinkedMergeRequestDisplayFields(t *testing.T) 
 // TestListWorktreeLinkPRs_EmptyWhenNoLinks verifies the snapshot-side read
 // returns no rows when no worktree links exist, so the enrichment is a no-op.
 func TestListWorktreeLinkPRs_EmptyWhenNoLinks(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	prs, err := d.ListWorktreeLinkPRs(t.Context())
 	require.NoError(t, err)
@@ -127,6 +133,8 @@ func TestListWorktreeLinkPRs_EmptyWhenNoLinks(t *testing.T) {
 }
 
 func TestListWorktreeLinkPRs_OmitsRemovedPullRequestMetadata(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -162,6 +170,8 @@ func TestListWorktreeLinkPRs_OmitsRemovedPullRequestMetadata(t *testing.T) {
 // "detached"/"detached/<short-sha>" representation discovery stores and the
 // empty-branch form.
 func TestListWorktreesForBranchMatch_ExcludesStaleAndEmptyBranch(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)

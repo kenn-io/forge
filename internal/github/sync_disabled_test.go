@@ -36,6 +36,8 @@ func (p disabledSyncReviewThreadProvider) ListMergeRequestReviewThreads(
 }
 
 func TestDisabledSyncRejectsCapturedProviderReaderWhenInvoked(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	var calls atomic.Int32
 	registry, err := platform.NewRegistry(disabledSyncReviewThreadProvider{calls: &calls})

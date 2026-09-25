@@ -68,6 +68,8 @@ func mergeRequestSnapshotRevision(t *testing.T, database *db.DB, repoID int64, n
 }
 
 func TestCommitIssueParentSnapshotRejectsStaleLabels(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -111,6 +113,8 @@ func TestCommitIssueParentSnapshotRejectsStaleLabels(t *testing.T) {
 }
 
 func TestNormalSyncRejectsIssueCommentsAfterParentAdvances(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -158,6 +162,8 @@ func TestNormalSyncRejectsIssueCommentsAfterParentAdvances(t *testing.T) {
 }
 
 func TestNormalSyncRejectsAllMergeRequestChildrenAfterParentAdvances(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -216,6 +222,8 @@ func TestNormalSyncRejectsAllMergeRequestChildrenAfterParentAdvances(t *testing.
 }
 
 func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.example.com",
@@ -287,6 +295,8 @@ func TestSyncArchiveItemClassifiesOnlyConfirmedParentNotFound(t *testing.T) {
 }
 
 func TestArchiveItemSyncCostIncludesProviderConfirmationAndAuthRetry(t *testing.T) {
+	t.Parallel()
+
 	syncer := &Syncer{}
 	tests := []struct {
 		name     string
@@ -309,6 +319,8 @@ func TestArchiveItemSyncCostIncludesProviderConfirmationAndAuthRetry(t *testing.
 }
 
 func TestCommitMergeRequestParentSnapshotRollsBackParentWhenLabelsFail(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -521,6 +533,8 @@ func (r *recordingCloneRoutes) seen() []string {
 // picks no credential route, which drops private fetches and lets public ones
 // run outside identity routing.
 func TestSyncRepoRoutesCloneCredentialsForUnqualifiedGitHubRepoRef(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -585,6 +599,8 @@ func TestSyncRepoRoutesCloneCredentialsForUnqualifiedGitHubRepoRef(t *testing.T)
 }
 
 func TestSyncRepoRecordsDefaultBranchCommits(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupSyncBranchActivityFixture(t, "main")
@@ -628,6 +644,8 @@ func TestSyncRepoRecordsDefaultBranchCommits(t *testing.T) {
 }
 
 func TestSyncRepoCapsDefaultBranchCommits(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupSyncBranchActivityFixture(t, "main")
@@ -658,6 +676,8 @@ func TestSyncRepoCapsDefaultBranchCommits(t *testing.T) {
 }
 
 func TestSyncRepoRecordsDefaultBranchForcePushBeforeUpdatingTip(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupSyncBranchActivityFixture(t, "main")
@@ -693,6 +713,8 @@ func TestSyncRepoRecordsDefaultBranchForcePushBeforeUpdatingTip(t *testing.T) {
 }
 
 func TestSyncRepoResumesDefaultBranchActivityAfterCloneReplacement(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupSyncBranchActivityFixture(t, "main")
@@ -735,6 +757,8 @@ func TestSyncRepoResumesDefaultBranchActivityAfterCloneReplacement(t *testing.T)
 }
 
 func TestSyncRepoSkipsBranchActivityWhenCloneFetchFails(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupSyncBranchActivityFixture(t, "main")
@@ -783,7 +807,7 @@ func TestSyncRepoSkipsBranchActivityWhenCloneFetchFails(t *testing.T) {
 	assert.Empty(syncActivityForcePushes(t, fixture.DB))
 }
 
-func TestSyncMRDiffPreservesCloneContextCancellation(t *testing.T) {
+func TestSyncMRDiffPreservesCloneContextCancellation(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH to a fake git
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -896,6 +920,8 @@ esac
 }
 
 func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupSyncBranchActivityFixture(t, "main")
@@ -1668,6 +1694,8 @@ func (m *mockClient) ApplyReviewSuggestions(
 }
 
 func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	startLine := 10
@@ -1716,6 +1744,8 @@ func TestGitHubProviderPublishDiffReviewDraftMapsReviewComments(t *testing.T) {
 }
 
 func TestGitHubProviderPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockClient{}
@@ -1749,6 +1779,8 @@ func TestGitHubProviderPublishDiffReviewDraftApproveSubmitsReview(t *testing.T) 
 }
 
 func TestGitHubProviderViewerAuthoredMergeRequestRefreshesExpiredCache(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	logins := []string{"marius", "octocat"}
@@ -1784,6 +1816,8 @@ func TestGitHubProviderViewerAuthoredMergeRequestRefreshesExpiredCache(t *testin
 }
 
 func TestGitHubProviderApplyReviewSuggestionsDelegatesToClient(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockClient{}
@@ -1809,6 +1843,8 @@ func TestGitHubProviderApplyReviewSuggestionsDelegatesToClient(t *testing.T) {
 }
 
 func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	provider := newTestGitHubProvider(t, "github.com", &mockClient{})
 
@@ -1823,6 +1859,8 @@ func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
 }
 
 func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	startLine := 10
@@ -1905,6 +1943,8 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsGraphQLThreads(t *testin
 }
 
 func TestGitHubProviderListMergeRequestReviewThreadsMapsFileSubject(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	createdAt := time.Date(2026, 5, 27, 16, 1, 31, 0, time.UTC)
@@ -1945,6 +1985,8 @@ func TestGitHubProviderListMergeRequestReviewThreadsMapsFileSubject(t *testing.T
 }
 
 func TestGitHubProviderPublishDiffReviewDraftHandlesMissingSubmittedAt(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockClient{
@@ -2154,12 +2196,16 @@ func buildGitHubLabel(id int64, name, description, color string, isDefault bool)
 }
 
 func TestSyncerStopIsIdempotent(t *testing.T) {
+	t.Parallel()
+
 	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{}}, nil, nil, nil, time.Minute, nil, nil)
 	syncer.Stop()
 	syncer.Stop() // must not panic
 }
 
 func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2218,6 +2264,8 @@ func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
 }
 
 func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
@@ -2288,6 +2336,8 @@ func TestSyncNotificationsContinuesAfterRepoErrorOnSameHost(t *testing.T) {
 }
 
 func TestSyncNotificationsSkipsArchivedRepos(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
@@ -2339,6 +2389,8 @@ func TestSyncNotificationsSkipsArchivedRepos(t *testing.T) {
 }
 
 func TestAckRepoBucketsIncludesArchivedTrackedRepos(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -2375,6 +2427,8 @@ func TestAckRepoBucketsIncludesArchivedTrackedRepos(t *testing.T) {
 }
 
 func TestSyncNotificationsSkipsUnroutedRepoAndAdvancesRoutedSibling(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
@@ -2440,6 +2494,8 @@ func TestSyncNotificationsSkipsUnroutedRepoAndAdvancesRoutedSibling(t *testing.T
 }
 
 func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesReserve(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2495,6 +2551,8 @@ func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesRe
 }
 
 func TestSyncNotificationsStopsBeforeListingWhenSharedReadRateReserveExhausted(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2541,6 +2599,8 @@ func TestSyncNotificationsStopsBeforeListingWhenSharedReadRateReserveExhausted(t
 }
 
 func TestSyncNotificationsStopsBeforeListingWhenSyncBudgetExhausted(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2572,6 +2632,8 @@ func TestSyncNotificationsStopsBeforeListingWhenSyncBudgetExhausted(t *testing.T
 }
 
 func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2610,6 +2672,8 @@ func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 }
 
 func TestSyncNotificationsReadsAllRepositoryNotificationPages(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2682,6 +2746,8 @@ func TestSyncNotificationsReadsAllRepositoryNotificationPages(t *testing.T) {
 }
 
 func TestSyncNotificationsReadsAllParticipatingNotificationPages(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2740,6 +2806,8 @@ func TestSyncNotificationsReadsAllParticipatingNotificationPages(t *testing.T) {
 }
 
 func TestSyncMRMarksLinkedNotificationDone(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2859,6 +2927,8 @@ func TestSyncMRMarksLinkedNotificationDone(t *testing.T) {
 }
 
 func TestSyncIssueMarksLinkedNotificationDone(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2966,6 +3036,8 @@ func TestSyncIssueMarksLinkedNotificationDone(t *testing.T) {
 }
 
 func TestSyncNotificationsEnrichesItemAuthorFromLinkedItems(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3067,6 +3139,8 @@ func TestSyncNotificationsEnrichesItemAuthorFromLinkedItems(t *testing.T) {
 }
 
 func TestSyncNotificationsEnrichesItemAuthorFromProviderScopedRepo(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3171,6 +3245,8 @@ func TestSyncNotificationsEnrichesItemAuthorFromProviderScopedRepo(t *testing.T)
 }
 
 func TestSyncNotificationsMarksParticipatingThreads(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3238,6 +3314,8 @@ func TestSyncNotificationsMarksParticipatingThreads(t *testing.T) {
 }
 
 func TestSyncNotificationsSkipsNonPRIssueSubjects(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3317,6 +3395,8 @@ func TestSyncNotificationsSkipsNonPRIssueSubjects(t *testing.T) {
 }
 
 func TestProcessQueuedNotificationReadsStopsRetryMetadataAtMaxAttempts(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3369,6 +3449,8 @@ func TestProcessQueuedNotificationReadsStopsRetryMetadataAtMaxAttempts(t *testin
 }
 
 func TestProcessQueuedNotificationReadsPausesOnRateLimitWithoutConsumingAttempts(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3449,6 +3531,8 @@ func TestProcessQueuedNotificationReadsPausesOnRateLimitWithoutConsumingAttempts
 }
 
 func TestProcessQueuedNotificationReadsDefersWhenRefetchRateLimited(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3533,6 +3617,8 @@ func TestProcessQueuedNotificationReadsDefersWhenRefetchRateLimited(t *testing.T
 }
 
 func TestRunNotificationSyncFiresCompletionHook(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3550,6 +3636,8 @@ func TestRunNotificationSyncFiresCompletionHook(t *testing.T) {
 }
 
 func TestProcessQueuedNotificationReadsPreservesUpstreamReadOnPreAckRefetch(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3608,6 +3696,8 @@ func TestProcessQueuedNotificationReadsPreservesUpstreamReadOnPreAckRefetch(t *t
 }
 
 func TestQueuedNotificationRefreshPreservesDoneAckAfterRouteChange(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -3724,6 +3814,8 @@ func TestQueuedNotificationRefreshPreservesDoneAckAfterRouteChange(t *testing.T)
 }
 
 func TestQueuedNotificationRefreshLinksLegacyUnownedRow(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -3791,6 +3883,8 @@ func TestQueuedNotificationRefreshLinksLegacyUnownedRow(t *testing.T) {
 }
 
 func TestProcessQueuedNotificationReadsBacksOffRowAndContinuesOnRefetchError(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3860,6 +3954,8 @@ func TestProcessQueuedNotificationReadsBacksOffRowAndContinuesOnRefetchError(t *
 }
 
 func TestProcessQueuedNotificationReadsReopensRemoteActivityAfterPatchRace(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3928,6 +4024,8 @@ func TestProcessQueuedNotificationReadsReopensRemoteActivityAfterPatchRace(t *te
 }
 
 func TestProcessQueuedNotificationReadsReopensAfterPostAckRefetchError(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -3994,6 +4092,8 @@ func TestProcessQueuedNotificationReadsReopensAfterPostAckRefetchError(t *testin
 }
 
 func TestSyncNotificationsSkipsHostsWithoutTrackedRepos(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	var calls atomic.Int32
@@ -4019,6 +4119,8 @@ func TestSyncNotificationsSkipsHostsWithoutTrackedRepos(t *testing.T) {
 }
 
 func TestSyncNotificationsCatalogsRepoBeforeFetching(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -4060,6 +4162,8 @@ func TestSyncNotificationsCatalogsRepoBeforeFetching(t *testing.T) {
 }
 
 func TestSyncNotificationsReconcilesOccupiedRouteBeforeFetching(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -4118,6 +4222,8 @@ func TestSyncNotificationsReconcilesOccupiedRouteBeforeFetching(t *testing.T) {
 }
 
 func TestSyncNotificationsReportsReconciledRepoSettingsPersistenceFailure(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -4158,6 +4264,8 @@ func TestSyncNotificationsReportsReconciledRepoSettingsPersistenceFailure(t *tes
 }
 
 func TestGitHubPlatformRepositoryTreatsIncompleteMergeSettingsAsUnknown(t *testing.T) {
+	t.Parallel()
+
 	repo := platformgithub.GitHubPlatformRepository("github.com", "acme", &gh.Repository{
 		NodeID: new("repo-1"), Name: new("widget"),
 		Owner:            &gh.User{Login: new("acme")},
@@ -4168,6 +4276,8 @@ func TestGitHubPlatformRepositoryTreatsIncompleteMergeSettingsAsUnknown(t *testi
 }
 
 func TestGitHubPlatformRepositoryPreservesExplicitAllDisabledMergeSettings(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	repo := platformgithub.GitHubPlatformRepository("github.com", "acme", &gh.Repository{
 		NodeID: new("repo-1"), Name: new("widget"),
@@ -4183,6 +4293,8 @@ func TestGitHubPlatformRepositoryPreservesExplicitAllDisabledMergeSettings(t *te
 }
 
 func TestRepoProviderObservationRetainsUnknownSettingsAndRepairsFromCompleteSnapshot(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4237,6 +4349,8 @@ func TestRepoProviderObservationRetainsUnknownSettingsAndRepairsFromCompleteSnap
 }
 
 func TestSyncNotificationsRetriesSettingsAfterABARouteReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -4301,6 +4415,8 @@ func TestSyncNotificationsRetriesSettingsAfterABARouteReuse(t *testing.T) {
 }
 
 func TestEnsureCloneForRouteRemovesFetchedCloneAfterABARouteReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4351,6 +4467,8 @@ func TestEnsureCloneForRouteRemovesFetchedCloneAfterABARouteReuse(t *testing.T) 
 }
 
 func TestSyncMRDiffRejectsCloneFetchedAcrossABARouteReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4408,6 +4526,8 @@ func TestSyncMRDiffRejectsCloneFetchedAcrossABARouteReuse(t *testing.T) {
 }
 
 func TestSyncNotificationsRetriesSettingsAfterNewerSameRouteObservation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -4476,6 +4596,8 @@ func TestSyncNotificationsRetriesSettingsAfterNewerSameRouteObservation(t *testi
 }
 
 func TestSyncNotificationsRetriesBeforeListingWhenRepositoryObservationIsStale(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -4536,6 +4658,8 @@ func TestSyncNotificationsRetriesBeforeListingWhenRepositoryObservationIsStale(t
 }
 
 func TestSyncNotificationsUsesPersistedSinceWatermark(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -4583,6 +4707,8 @@ func TestSyncNotificationsUsesPersistedSinceWatermark(t *testing.T) {
 }
 
 func TestSyncNotificationsFullSyncsAfterConflictingProviderIDAtPath(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -4633,6 +4759,8 @@ func TestSyncNotificationsFullSyncsAfterConflictingProviderIDAtPath(t *testing.T
 }
 
 func TestSyncNotificationsRetriesAfterRepositoryReplacement(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -4732,6 +4860,8 @@ func TestSyncNotificationsRetriesAfterRepositoryReplacement(t *testing.T) {
 }
 
 func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -4775,6 +4905,8 @@ func TestSyncNotificationsDoesPeriodicFullSyncForReadState(t *testing.T) {
 }
 
 func TestSyncNotificationsNewRepoFullSyncSharesOneListing(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -4830,6 +4962,8 @@ func TestSyncNotificationsNewRepoFullSyncSharesOneListing(t *testing.T) {
 }
 
 func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -4924,6 +5058,8 @@ func TestRepoSyncMarksClosedLinkedNotificationsDone(t *testing.T) {
 }
 
 func TestSyncIssueOnProviderMarksClosedLinkedNotificationsDone(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -5007,6 +5143,8 @@ func TestSyncIssueOnProviderMarksClosedLinkedNotificationsDone(t *testing.T) {
 }
 
 func TestDiffSyncErrorUserMessageSanitized(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	// A representative leak: clone path, ref, SHA, and command stderr.
 	leaky := errors.New("rev-parse refs/pull/42/head for merged PR #42: " +
@@ -5046,6 +5184,8 @@ func TestDiffSyncErrorUserMessageSanitized(t *testing.T) {
 }
 
 func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5106,6 +5246,8 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 }
 
 func TestSyncRepoOverviewPreservesTimelineWhenCloneUnavailable(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5184,6 +5326,8 @@ func TestSyncRepoOverviewPreservesTimelineWhenCloneUnavailable(t *testing.T) {
 }
 
 func TestSyncRepoOverviewUsesTagsWhenRepoHasNoReleases(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5236,6 +5380,8 @@ func TestSyncRepoOverviewUsesTagsWhenRepoHasNoReleases(t *testing.T) {
 }
 
 func TestSyncRepoOverviewClearsReleasesWhenTagFallbackFails(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5301,6 +5447,8 @@ func TestSyncRepoOverviewClearsReleasesWhenTagFallbackFails(t *testing.T) {
 }
 
 func TestSyncStoresForcePushEvent(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5362,6 +5510,8 @@ func TestSyncStoresForcePushEvent(t *testing.T) {
 }
 
 func TestRefreshTimelineDoesNotRewriteProviderPullRequestActivity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5422,6 +5572,8 @@ func TestRefreshTimelineDoesNotRewriteProviderPullRequestActivity(t *testing.T) 
 }
 
 func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5483,6 +5635,8 @@ func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t 
 }
 
 func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5585,6 +5739,8 @@ func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T
 }
 
 func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -5661,6 +5817,8 @@ func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
 }
 
 func TestSyncIgnoresPullRequestTimelineFetchFailures(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -5695,6 +5853,8 @@ func TestSyncIgnoresPullRequestTimelineFetchFailures(t *testing.T) {
 }
 
 func TestSyncStoresPRLabels(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -5728,6 +5888,8 @@ func TestSyncStoresPRLabels(t *testing.T) {
 }
 
 func TestSyncRefreshesRepoLabelCatalog(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -5760,6 +5922,8 @@ func TestSyncRefreshesRepoLabelCatalog(t *testing.T) {
 }
 
 func TestRefreshRepoLabelCatalogRejectsABARoutePayload(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -5801,6 +5965,8 @@ func TestRefreshRepoLabelCatalogRejectsABARoutePayload(t *testing.T) {
 }
 
 func TestSyncMRReplacesLabelsOnResync(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -5835,6 +6001,8 @@ func TestSyncMRReplacesLabelsOnResync(t *testing.T) {
 }
 
 func TestSyncIssueReplacesLabelsOnResync(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -5890,6 +6058,8 @@ func TestSyncIssueReplacesLabelsOnResync(t *testing.T) {
 // the nil guard this panicked the sync goroutine when GitHub
 // occasionally returned missing timestamps.
 func TestSyncIssueNilUpdatedAt(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -5963,6 +6133,8 @@ func TestSyncIssueNilUpdatedAt(t *testing.T) {
 // Without the fallback, lastActivity would be zero time and
 // the issue would sort incorrectly in activity views.
 func TestSyncIssueNilUpdatedAtNoComments(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -6023,6 +6195,8 @@ func TestSyncIssueNilUpdatedAtNoComments(t *testing.T) {
 // so a future refactor that reintroduces unsynchronized access
 // on any branch is caught.
 func TestSyncerOwnsConstructorRepositorySlice(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	repos := []RepoRef{{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
@@ -6042,6 +6216,8 @@ func TestSyncerOwnsConstructorRepositorySlice(t *testing.T) {
 }
 
 func TestHostForConcurrentSetRepos(t *testing.T) {
+	t.Parallel()
+
 	syncer := NewSyncer(
 		map[string]Client{"github.com": &mockClient{}}, nil, nil,
 		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
@@ -6096,6 +6272,8 @@ func TestHostForConcurrentSetRepos(t *testing.T) {
 // which mutates elements of the tracked slice in place rather than
 // swapping the slice like SetRepos. Run under go test -race.
 func TestIsTrackedRepoConcurrentPublishResolvedRepository(t *testing.T) {
+	t.Parallel()
+
 	orig := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
@@ -6137,6 +6315,8 @@ func TestIsTrackedRepoConcurrentPublishResolvedRepository(t *testing.T) {
 // unchanged. The rejected snapshot's provider metadata must be
 // discarded, not published over the newer catalog state.
 func TestReconcileRepoIdentityDiscardsStaleSameRouteMetadata(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6214,6 +6394,8 @@ func (r staleMetadataRepositoryReader) ListRepositories(
 }
 
 func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6277,6 +6459,8 @@ func TestSyncIgnoresForcePushFetchFailures(t *testing.T) {
 }
 
 func TestSyncSingleFlight(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -6303,6 +6487,8 @@ func TestSyncSingleFlight(t *testing.T) {
 }
 
 func TestSyncPreservesMergeableState(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6362,6 +6548,8 @@ func TestSyncPreservesMergeableState(t *testing.T) {
 }
 
 func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6406,6 +6594,8 @@ func TestIndexUpsertMergeRequestUpdatesKnownMergeableState(t *testing.T) {
 }
 
 func TestIndexUpsertMergeRequestUpdatesKnownDiffMetricsAcrossSyncs(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6476,6 +6666,8 @@ func TestIndexUpsertMergeRequestUpdatesKnownDiffMetricsAcrossSyncs(t *testing.T)
 }
 
 func TestIndexUpsertMergeRequestPreservesCachedCIForSameHead(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6533,6 +6725,8 @@ func TestIndexUpsertMergeRequestPreservesCachedCIForSameHead(t *testing.T) {
 }
 
 func TestIndexUpsertMergeRequestPreservesReviewDecisionWhenOmitted(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6588,6 +6782,8 @@ func TestIndexUpsertMergeRequestPreservesReviewDecisionWhenOmitted(t *testing.T)
 }
 
 func TestIndexUpsertMergeRequestReclassifiesWorkspaceHeadRepoOnForkRetarget(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6651,6 +6847,8 @@ func TestIndexUpsertMergeRequestReclassifiesWorkspaceHeadRepoOnForkRetarget(t *t
 }
 
 func TestIndexUpsertMergeRequestKeepsKnownWorkspaceHeadRepoOnUnknownSnapshot(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6729,6 +6927,8 @@ func TestIndexUpsertMergeRequestKeepsKnownWorkspaceHeadRepoOnUnknownSnapshot(t *
 // a fork retarget discovered through any of those paths reclassifies a
 // tracking workspace exactly like a plain list sync does.
 func TestCommitMergeRequestParentSnapshotReclassifiesWorkspaceHeadRepo(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6785,6 +6985,8 @@ func TestCommitMergeRequestParentSnapshotReclassifiesWorkspaceHeadRepo(t *testin
 func TestCommitMergeRequestParentSnapshotKeepsHistoryBoundDuringReconciliation(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6887,6 +7089,8 @@ func TestCommitMergeRequestParentSnapshotKeepsHistoryBoundDuringReconciliation(
 }
 
 func TestReclassifyWorkspaceHeadRepoTrustRetriesAfterRevisionChange(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -6949,6 +7153,8 @@ func TestReclassifyWorkspaceHeadRepoTrustRetriesAfterRevisionChange(t *testing.T
 }
 
 func TestReclassifyWorkspaceHeadRepoTrustIgnoresAssociatedWorkspace(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -7000,6 +7206,8 @@ func TestReclassifyWorkspaceHeadRepoTrustIgnoresAssociatedWorkspace(t *testing.T
 }
 
 func TestReclassifyWorkspaceHeadRepoTrustKeepsHistoryBoundDuringReconciliation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -7126,6 +7334,8 @@ func TestReclassifyWorkspaceHeadRepoTrustKeepsHistoryBoundDuringReconciliation(t
 }
 
 func TestPreserveMergeableStateSkipsChangedOrUnknownHeadOrBase(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	tests := []struct {
 		name       string
@@ -7173,6 +7383,8 @@ func TestPreserveMergeableStateSkipsChangedOrUnknownHeadOrBase(t *testing.T) {
 }
 
 func TestPreserveCIStateSkipsChangedOrUnknownHead(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	tests := []struct {
 		name       string
@@ -7206,6 +7418,8 @@ func TestPreserveCIStateSkipsChangedOrUnknownHead(t *testing.T) {
 }
 
 func TestPreserveCIStateKeepsOmittedStateForMatchingHead(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	normalized := db.MergeRequest{PlatformHeadSHA: "same-head"}
 	existing := db.MergeRequest{
@@ -7221,6 +7435,8 @@ func TestPreserveCIStateKeepsOmittedStateForMatchingHead(t *testing.T) {
 }
 
 func TestPreserveReviewDecisionKeepsOmittedDecisionForMatchingHead(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	normalized := db.MergeRequest{PlatformHeadSHA: "same-head"}
 	existing := db.MergeRequest{
@@ -7234,6 +7450,8 @@ func TestPreserveReviewDecisionKeepsOmittedDecisionForMatchingHead(t *testing.T)
 }
 
 func TestPreserveReviewDecisionSkipsChangedHead(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	normalized := db.MergeRequest{PlatformHeadSHA: "new-head"}
 	existing := db.MergeRequest{
@@ -7247,6 +7465,8 @@ func TestPreserveReviewDecisionSkipsChangedHead(t *testing.T) {
 }
 
 func TestPreserveCIStateClearsCachedChecksWhenStatusChanges(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	normalized := db.MergeRequest{
 		PlatformHeadSHA: "same-head",
@@ -7266,6 +7486,8 @@ func TestPreserveCIStateClearsCachedChecksWhenStatusChanges(t *testing.T) {
 }
 
 func TestPreserveMergeableStateKeepsOmittedStateForMatchingKnownIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	normalized := db.MergeRequest{
 		PlatformHeadSHA: "same-head",
@@ -7283,6 +7505,8 @@ func TestPreserveMergeableStateKeepsOmittedStateForMatchingKnownIdentity(t *test
 }
 
 func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -7334,6 +7558,8 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 }
 
 func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -7387,6 +7613,8 @@ func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
 }
 
 func TestSyncStatusUpdated(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -7413,6 +7641,8 @@ func TestSyncStatusUpdated(t *testing.T) {
 }
 
 func TestRunOncePreservesLocalCeilingStatusAcrossLaterRepoFailure(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 	ceilingRecorded := make(chan struct{})
@@ -7458,6 +7688,8 @@ func TestRunOncePreservesLocalCeilingStatusAcrossLaterRepoFailure(t *testing.T) 
 }
 
 func TestRunOncePreservesItemCeilingStatusAcrossLaterHardRepoFailure(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -7507,6 +7739,8 @@ func TestRunOncePreservesItemCeilingStatusAcrossLaterHardRepoFailure(t *testing.
 }
 
 func TestSyncStatusUpdatedUsesUTC(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	mc := &mockClient{
 		openPRs:  []*gh.PullRequest{},
@@ -7553,6 +7787,8 @@ func captureDefaultLogs(t *testing.T) *bytes.Buffer {
 // a clear error when a Client returns (nil, nil) from
 // GetPullRequest, instead of dereferencing nil in NormalizePR.
 func TestSyncMRReturnsErrorOnNilPullRequest(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -7577,6 +7813,8 @@ func TestSyncMRReturnsErrorOnNilPullRequest(t *testing.T) {
 // during syncOpenMR's full-PR fetch. It must fall back to the
 // list-derived data and complete the sync.
 func TestRunOnceSyncOpenMRSurvivesNilFullPR(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -7634,7 +7872,7 @@ func (c *trackingClient) ListOpenPullRequests(
 // canceled ctx. With the worker-side check the function returns
 // without invoking the client; without the check it would log
 // "syncing repo" and increment the completed counter.
-func TestRunWorkerBailsOnCanceledCtx(t *testing.T) {
+func TestRunWorkerBailsOnCanceledCtx(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -7742,6 +7980,8 @@ func (c *dedupGetUserClient) GetUser(
 }
 
 func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -7814,6 +8054,8 @@ func TestResolveDisplayNameDedupsConcurrentLookups(t *testing.T) {
 }
 
 func TestIsTrackedRepo(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 	mc := &mockClient{}
@@ -7831,6 +8073,8 @@ func TestIsTrackedRepo(t *testing.T) {
 }
 
 func TestClientForRepoMatchesCaseInsensitively(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	mc := &mockClient{}
@@ -7845,6 +8089,8 @@ func TestClientForRepoMatchesCaseInsensitively(t *testing.T) {
 }
 
 func TestDirectClientForHostReportsMissingProvider(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	syncer := NewSyncer(nil, openTestDB(t), nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
@@ -7861,6 +8107,8 @@ func TestDirectClientForHostReportsMissingProvider(t *testing.T) {
 }
 
 func TestSyncerClientLookupReportsMissingProvider(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	syncer := NewSyncer(nil, openTestDB(t), nil, []RepoRef{{
 		Platform:     platform.KindGitLab,
@@ -7885,6 +8133,8 @@ func TestSyncerClientLookupReportsMissingProvider(t *testing.T) {
 }
 
 func TestSyncerClientLookupReportsMissingOptionalReader(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	syncer := NewSyncer(nil, openTestDB(t), nil, []RepoRef{{
 		Platform:     platform.KindGitLab,
@@ -7914,6 +8164,8 @@ func TestSyncerClientLookupReportsMissingOptionalReader(t *testing.T) {
 }
 
 func TestSyncItemByNumber_Issue(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -7959,6 +8211,8 @@ func TestSyncItemByNumber_Issue(t *testing.T) {
 }
 
 func TestSyncItemByNumber_PR(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -8020,6 +8274,8 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 }
 
 func TestRepoFailKeyIncludesProvider(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	githubRepo := RepoRef{
 		Platform:     platform.KindGitHub,
@@ -8040,6 +8296,8 @@ func TestRepoFailKeyIncludesProvider(t *testing.T) {
 }
 
 func TestPlatformRepoRefPreservesFullProviderRef(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	repo := RepoRef{
 		Platform:           platform.KindGitLab,
@@ -8069,6 +8327,8 @@ func TestPlatformRepoRefPreservesFullProviderRef(t *testing.T) {
 }
 
 func TestCloneRemoteURLUsesProviderCloneURLAndRepoPath(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	gitlabRepo := RepoRef{
@@ -8100,6 +8360,8 @@ func TestCloneRemoteURLUsesProviderCloneURLAndRepoPath(t *testing.T) {
 }
 
 func TestFetcherForSkipsNonGitHubRepoOnSameHost(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	fetcher := NewGraphQLFetcher(testTokenSource("token"), "code.example.com", nil, nil)
@@ -8123,6 +8385,8 @@ func TestFetcherForSkipsNonGitHubRepoOnSameHost(t *testing.T) {
 }
 
 func TestSyncRepoUsesProviderIDToPreserveRenamedRepo(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8172,6 +8436,8 @@ func TestSyncRepoUsesProviderIDToPreserveRenamedRepo(t *testing.T) {
 }
 
 func TestSyncRepoPublishesProviderResolvedRenameForBackgroundAndTargetedSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8230,6 +8496,8 @@ func TestSyncRepoPublishesProviderResolvedRenameForBackgroundAndTargetedSync(t *
 }
 
 func TestConcurrentSyncRepoKeepsNewerProviderObservation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8288,6 +8556,8 @@ func TestConcurrentSyncRepoKeepsNewerProviderObservation(t *testing.T) {
 }
 
 func TestSyncRepoKeepsHistoryWhenNewIDReusesRoute(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8363,6 +8633,8 @@ func TestSyncRepoKeepsHistoryWhenNewIDReusesRoute(t *testing.T) {
 }
 
 func TestSyncRepoUpdatesViewerCanMergeWithoutMergeSettings(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8402,6 +8674,8 @@ func TestSyncRepoUpdatesViewerCanMergeWithoutMergeSettings(t *testing.T) {
 }
 
 func TestSyncRepoPersistsGitHubProviderMetadataWhenIdentityPrefilled(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8448,6 +8722,8 @@ func TestSyncRepoPersistsGitHubProviderMetadataWhenIdentityPrefilled(t *testing.
 }
 
 func TestRefreshRepoSettingsPreservesViewerCanMergeWhenGitHubOmitsPermissions(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8506,6 +8782,8 @@ func TestRefreshRepoSettingsPreservesViewerCanMergeWhenGitHubOmitsPermissions(t 
 }
 
 func TestSyncRepoPreservesViewerCanMergeWhenMergeSettingsOmitPermission(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8548,6 +8826,8 @@ func TestSyncRepoPreservesViewerCanMergeWhenMergeSettingsOmitPermission(t *testi
 }
 
 func TestSyncRepoRefreshesProviderRepoSettingsWhenIdentityKnown(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8598,6 +8878,8 @@ func TestSyncRepoRefreshesProviderRepoSettingsWhenIdentityKnown(t *testing.T) {
 }
 
 func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -8630,6 +8912,8 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 }
 
 func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8708,6 +8992,8 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 }
 
 func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -8799,6 +9085,8 @@ func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 }
 
 func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -8851,6 +9139,8 @@ func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {
 }
 
 func TestSyncItemByNumberRejectsNonGitHubProviderWithoutForcingGitHub(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -8886,6 +9176,8 @@ func TestSyncItemByNumberRejectsNonGitHubProviderWithoutForcingGitHub(t *testing
 }
 
 func TestSyncMRRejectsAmbiguousProviderIdentity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -8927,6 +9219,8 @@ func TestSyncMRRejectsAmbiguousProviderIdentity(t *testing.T) {
 }
 
 func TestIndexUpsertMRReadsExistingByRepoID(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -8992,6 +9286,8 @@ func TestIndexUpsertMRReadsExistingByRepoID(t *testing.T) {
 }
 
 func TestIndexUpsertMRPersistsMergedActorEventFromPullRequest(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -9037,6 +9333,8 @@ func TestIndexUpsertMRPersistsMergedActorEventFromPullRequest(t *testing.T) {
 }
 
 func TestFetchMRDetailUsesRepoIDForPendingAndCallback(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -9121,6 +9419,8 @@ func TestFetchMRDetailUsesRepoIDForPendingAndCallback(t *testing.T) {
 // button would stay hidden for any PR whose detail came in through
 // the queue rather than an explicit POST /sync.
 func TestFetchMRDetailPersistsWorkflowApproval(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -9175,6 +9475,8 @@ func TestFetchMRDetailPersistsWorkflowApproval(t *testing.T) {
 }
 
 func TestFetchMRDetailPersistsMergedActorEventFromPullRequest(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -9232,6 +9534,8 @@ func TestFetchMRDetailPersistsMergedActorEventFromPullRequest(t *testing.T) {
 }
 
 func TestFetchProviderMRDetailPersistsMergedActorEventFromMergeRequest(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -9295,6 +9599,8 @@ func TestFetchProviderMRDetailPersistsMergedActorEventFromMergeRequest(t *testin
 }
 
 func TestFetchMRDetailDoesNotDuplicateMergedTimelineEvent(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -9359,6 +9665,8 @@ func TestFetchMRDetailDoesNotDuplicateMergedTimelineEvent(t *testing.T) {
 }
 
 func TestRefreshTimelineSkipsMergedEventWhenAuthoredMergedEventAlreadyExists(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -9430,6 +9738,8 @@ func TestRefreshTimelineSkipsMergedEventWhenAuthoredMergedEventAlreadyExists(t *
 }
 
 func TestSyncOpenMRFromBulkPersistsMergedActorEventFromPullRequest(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -9491,6 +9801,8 @@ func TestSyncOpenMRFromBulkPersistsMergedActorEventFromPullRequest(t *testing.T)
 }
 
 func TestSyncOpenMRFromBulkPreservesReviewDecisionWhenReviewsConnectionReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -9545,6 +9857,8 @@ func TestSyncOpenMRFromBulkPreservesReviewDecisionWhenReviewsConnectionReturnsEm
 }
 
 func TestSyncOpenMRFromBulkResolvesReviewDecisionIndependentOfNestedCompleteness(t *testing.T) {
+	t.Parallel()
+
 	reviewPtr := func(id int64, login, state string) *gh.PullRequestReview {
 		return &gh.PullRequestReview{
 			ID: &id, User: &gh.User{Login: &login}, State: &state,
@@ -9669,6 +9983,8 @@ func TestSyncOpenMRFromBulkResolvesReviewDecisionIndependentOfNestedCompleteness
 }
 
 func TestSyncOpenMRFromBulkSkipsMergedActorFallbackWhenAuthoredMergedEventExists(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -9752,6 +10068,8 @@ func TestSyncOpenMRFromBulkSkipsMergedActorFallbackWhenAuthoredMergedEventExists
 }
 
 func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -9867,6 +10185,8 @@ func TestFetchProviderMRDetailSyncsReviewThreads(t *testing.T) {
 }
 
 func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -9991,6 +10311,8 @@ func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
 }
 
 func TestSyncOpenIssueReadsExistingByRepoID(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -10071,6 +10393,8 @@ func TestSyncOpenIssueReadsExistingByRepoID(t *testing.T) {
 }
 
 func TestSyncMRReturnsErrorWhenClientReturnsNilPR(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -10094,6 +10418,8 @@ func TestSyncMRReturnsErrorWhenClientReturnsNilPR(t *testing.T) {
 }
 
 func TestSyncIssueReturnsErrorWhenClientReturnsNilIssue(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -10117,6 +10443,8 @@ func TestSyncIssueReturnsErrorWhenClientReturnsNilIssue(t *testing.T) {
 }
 
 func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -10132,6 +10460,8 @@ func TestSyncItemByNumber_UntrackedRepo(t *testing.T) {
 }
 
 func TestSyncerMultiHostClientDispatch(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -10167,6 +10497,8 @@ func TestSyncerMultiHostClientDispatch(t *testing.T) {
 }
 
 func TestSyncRunUsesProviderReadersForIndexSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -10231,6 +10563,8 @@ func TestSyncRunUsesProviderReadersForIndexSync(t *testing.T) {
 }
 
 func TestSyncRunAllowsMergeRequestOnlyProvider(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -10286,6 +10620,8 @@ func TestSyncRunAllowsMergeRequestOnlyProvider(t *testing.T) {
 }
 
 func TestSyncRunAllowsIssueOnlyProvider(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -10337,6 +10673,8 @@ func TestSyncRunAllowsIssueOnlyProvider(t *testing.T) {
 }
 
 func TestSyncMRUsesProviderMergeRequestReader(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -10384,6 +10722,8 @@ func TestSyncMRUsesProviderMergeRequestReader(t *testing.T) {
 }
 
 func TestSyncIssueUsesProviderIssueReader(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -10449,6 +10789,8 @@ func TestSyncIssueUsesProviderIssueReader(t *testing.T) {
 }
 
 func TestDirectMRSyncReplacesConflictingPathOccupant(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -10496,6 +10838,8 @@ func TestDirectMRSyncReplacesConflictingPathOccupant(t *testing.T) {
 }
 
 func TestDirectIssueSyncReplacesConflictingPathOccupant(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -10543,6 +10887,8 @@ func TestDirectIssueSyncReplacesConflictingPathOccupant(t *testing.T) {
 }
 
 func TestSyncIssueProviderCommentReplacementRollsBack(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -10623,6 +10969,8 @@ func TestSyncIssueProviderCommentReplacementRollsBack(t *testing.T) {
 }
 
 func TestOnMRSyncedCalledDuringSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -10670,6 +11018,8 @@ func TestOnMRSyncedCalledDuringSync(t *testing.T) {
 }
 
 func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -10716,6 +11066,8 @@ func TestOnMRSyncedIncludesCIChecksJSON(t *testing.T) {
 }
 
 func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -10757,6 +11109,8 @@ func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 }
 
 func TestNilHooksNoOp(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -10777,6 +11131,8 @@ func TestNilHooksNoOp(t *testing.T) {
 }
 
 func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -10835,6 +11191,8 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 }
 
 func TestEmptyWatchListNoOp(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 
 	mc := &mockClient{
@@ -10863,6 +11221,8 @@ func TestEmptyWatchListNoOp(t *testing.T) {
 }
 
 func TestSetWatchedMRsReplacesList(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -10941,6 +11301,8 @@ func TestSetWatchedMRsReplacesList(t *testing.T) {
 }
 
 func TestWatchedMRsForFastSyncSkipsArchivedRepos(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -10988,6 +11350,8 @@ func TestWatchedMRsForFastSyncSkipsArchivedRepos(t *testing.T) {
 }
 
 func TestWatchedMRsIncludeRecentlyActiveOpenPRs(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11058,6 +11422,8 @@ func TestWatchedMRsIncludeRecentlyActiveOpenPRs(t *testing.T) {
 }
 
 func TestWatchedMRsUsePersistedHotAndWarmCadences(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11138,6 +11504,8 @@ func TestWatchedMRsUsePersistedHotAndWarmCadences(t *testing.T) {
 }
 
 func TestWatchedMRsUseConfiguredActivityTiers(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -11258,6 +11626,8 @@ func TestWatchedMRsUseConfiguredActivityTiers(t *testing.T) {
 }
 
 func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11334,6 +11704,8 @@ func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
 }
 
 func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -11368,6 +11740,8 @@ func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {
 }
 
 func TestSyncWatchedMRsSerializesConcurrentPasses(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11455,6 +11829,8 @@ func TestSyncWatchedMRsSerializesConcurrentPasses(t *testing.T) {
 }
 
 func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -11508,6 +11884,8 @@ func TestWatchedMRsSkipRateLimitedHost(t *testing.T) {
 }
 
 func TestWatchedMROnGHEHost(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11567,6 +11945,8 @@ func TestWatchedMROnGHEHost(t *testing.T) {
 }
 
 func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -11610,6 +11990,8 @@ func TestWatchedMRRejectsUnmatchedHost(t *testing.T) {
 }
 
 func TestRunOnceSkipsThrottledHosts(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11684,6 +12066,8 @@ func TestRunOnceSkipsThrottledHosts(t *testing.T) {
 }
 
 func TestRunOnceSkipsArchivedRepos(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11732,6 +12116,8 @@ func TestRunOnceSkipsArchivedRepos(t *testing.T) {
 }
 
 func TestRunOnceRestoresLiveSyncForUnarchivedRepo(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11771,6 +12157,8 @@ func TestRunOnceRestoresLiveSyncForUnarchivedRepo(t *testing.T) {
 }
 
 func TestRunOnceDefersArchivedRefreshForThrottledBucket(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11824,6 +12212,8 @@ func TestRunOnceDefersArchivedRefreshForThrottledBucket(t *testing.T) {
 }
 
 func TestRunOnceAdvancesCadenceForArchivedOnlyBucket(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11876,6 +12266,8 @@ func TestRunOnceAdvancesCadenceForArchivedOnlyBucket(t *testing.T) {
 }
 
 func TestRunOnceRegistersProviderWorkForArchivedRefresh(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 
@@ -11920,6 +12312,8 @@ func TestRunOnceRegistersProviderWorkForArchivedRefresh(t *testing.T) {
 }
 
 func TestReconcileRepoIdentityObservationReturnsMidflightArchivedFlip(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11955,6 +12349,8 @@ func TestReconcileRepoIdentityObservationReturnsMidflightArchivedFlip(t *testing
 }
 
 func TestPublishResolvedRepositoryEmptySnapshotIDKeepsSuccessorArchivedState(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -11986,6 +12382,8 @@ func TestPublishResolvedRepositoryEmptySnapshotIDKeepsSuccessorArchivedState(t *
 }
 
 func TestDetailDrainSkipsRepoArchivedMidPass(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -12050,6 +12448,8 @@ func TestDetailDrainSkipsRepoArchivedMidPass(t *testing.T) {
 }
 
 func TestDetailDrainRechecksRemovedUpstreamAfterQueueConstruction(t *testing.T) {
+	t.Parallel()
+
 	for _, itemType := range []db.ArchiveItemType{
 		db.ArchiveItemTypeMergeRequest,
 		db.ArchiveItemTypeIssue,
@@ -12135,6 +12535,8 @@ func TestDetailDrainRechecksRemovedUpstreamAfterQueueConstruction(t *testing.T) 
 }
 
 func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -12187,6 +12589,8 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 }
 
 func TestSyncWatchedMRsSkipsRemovedUpstreamPR(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -12231,6 +12635,8 @@ func TestSyncWatchedMRsSkipsRemovedUpstreamPR(t *testing.T) {
 }
 
 func TestSyncMRForRepoHydratesArchivedRepoUnderArchiveBudget(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -12277,6 +12683,8 @@ func TestSyncMRForRepoHydratesArchivedRepoUnderArchiveBudget(t *testing.T) {
 }
 
 func TestRunOnceStopsLiveSyncWhenRepoArchivesMidPass(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -12320,6 +12728,8 @@ func TestRunOnceStopsLiveSyncWhenRepoArchivesMidPass(t *testing.T) {
 }
 
 func TestRepoRefFromCatalogKeepsArchived(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	previous := RepoRef{
 		Owner: "acme", Name: "frozen",
@@ -12344,6 +12754,8 @@ func TestRepoRefFromCatalogKeepsArchived(t *testing.T) {
 }
 
 func TestRepoRefFromCatalogKeepsConfiguredRepoPath(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	previous := RepoRef{
 		Owner: "acme", Name: "tools-new",
@@ -12364,6 +12776,8 @@ func TestRepoRefFromCatalogKeepsConfiguredRepoPath(t *testing.T) {
 }
 
 func TestPublishResolvedRepositoryPreservesNewerArchivedState(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	tracked := RepoRef{
@@ -12391,6 +12805,8 @@ func TestPublishResolvedRepositoryPreservesNewerArchivedState(t *testing.T) {
 }
 
 func TestPublishResolvedRepositoryPreservesMidflightArchivedFlip(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	tracked := RepoRef{
@@ -12413,6 +12829,8 @@ func TestPublishResolvedRepositoryPreservesMidflightArchivedFlip(t *testing.T) {
 }
 
 func TestPublishResolvedRepositoryMatchesByStableIdentityFirst(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	tracked := RepoRef{
@@ -12438,6 +12856,8 @@ func TestPublishResolvedRepositoryMatchesByStableIdentityFirst(t *testing.T) {
 }
 
 func TestPublishResolvedRepositoryDoesNotOverwriteRouteSuccessor(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	successor := RepoRef{
@@ -12466,6 +12886,8 @@ func TestPublishResolvedRepositoryDoesNotOverwriteRouteSuccessor(t *testing.T) {
 }
 
 func TestPublishResolvedRepositoryLandsCrossIdentityLookupOnSuccessor(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	renamed := RepoRef{
@@ -12504,6 +12926,8 @@ func TestPublishResolvedRepositoryLandsCrossIdentityLookupOnSuccessor(t *testing
 }
 
 func TestPublishResolvedRepositoryCrossIdentityUsesAuthoritativeArchived(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	renamed := RepoRef{
@@ -12549,6 +12973,8 @@ func TestPublishResolvedRepositoryCrossIdentityUsesAuthoritativeArchived(t *test
 }
 
 func TestPublishResolvedRepositoryReplacementIgnoresDisplacedArchivedFlip(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	// The configured route's occupant was archived after this operation
@@ -12578,6 +13004,8 @@ func TestPublishResolvedRepositoryReplacementIgnoresDisplacedArchivedFlip(t *tes
 }
 
 func TestPublishResolvedRepositoryPreservesNewerConfiguredRepoPath(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	tracked := RepoRef{
@@ -12600,6 +13028,8 @@ func TestPublishResolvedRepositoryPreservesNewerConfiguredRepoPath(t *testing.T)
 }
 
 func TestRunOnceScopesGitHubProviderReserveToRepoCredential(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -12703,6 +13133,8 @@ func (c *ignoresCancelClient) ListOpenIssues(
 // cancel flag must catch this case and route through the cancel
 // status path instead.
 func TestRunOnceLatchesCancelWhenSyncRepoIgnoresCtx(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -12833,6 +13265,8 @@ func (c *conditionalIssueTrackingClient) GetIssueIfChanged(
 }
 
 func TestRunOnceIndexOnly(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -12888,6 +13322,8 @@ func TestRunOnceIndexOnly(t *testing.T) {
 }
 
 func TestRunOnceDetailDrain(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -12938,6 +13374,8 @@ func TestRunOnceDetailDrain(t *testing.T) {
 }
 
 func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13061,6 +13499,8 @@ func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 }
 
 func TestFetchMRDetailDoesNotBackfillMergedActorOn304(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13127,6 +13567,8 @@ func TestFetchMRDetailDoesNotBackfillMergedActorOn304(t *testing.T) {
 }
 
 func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13196,6 +13638,8 @@ func TestWatchedSyncMRUsesPersistedPullRequestETag(t *testing.T) {
 }
 
 func TestWatchedSyncMRDoesNotBackfillMergedActorOn304(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13262,6 +13706,8 @@ func TestWatchedSyncMRDoesNotBackfillMergedActorOn304(t *testing.T) {
 }
 
 func TestSyncMRBypassesPersistedPullRequestETag(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13314,6 +13760,8 @@ func TestSyncMRBypassesPersistedPullRequestETag(t *testing.T) {
 }
 
 func TestFetchMRDetailPersistsPullRequestETag(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13348,6 +13796,8 @@ func TestFetchMRDetailPersistsPullRequestETag(t *testing.T) {
 }
 
 func TestFetchMRDetailDoesNotPersistPullRequestETagWhenDetailRefreshFails(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13383,6 +13833,8 @@ func TestFetchMRDetailDoesNotPersistPullRequestETagWhenDetailRefreshFails(t *tes
 }
 
 func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13459,6 +13911,8 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 }
 
 func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13523,6 +13977,8 @@ func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T)
 }
 
 func TestSyncArchiveMRRepairsMetricsFromMergedAtOnlyRejectedSnapshot(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13610,6 +14066,8 @@ func TestSyncArchiveMRRepairsMetricsFromMergedAtOnlyRejectedSnapshot(t *testing.
 }
 
 func TestSyncArchiveMRRetriesWhenMergedResponseCannotRepairNewerOpenSnapshot(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -13669,6 +14127,8 @@ func TestSyncArchiveMRRetriesWhenMergedResponseCannotRepairNewerOpenSnapshot(t *
 }
 
 func TestSyncArchiveMRChecksMetricsByResolvedRepositoryIDAfterRename(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -13729,6 +14189,8 @@ func TestSyncArchiveMRChecksMetricsByResolvedRepositoryIDAfterRename(t *testing.
 }
 
 func TestSyncArchiveMRPreservesStoredMergedAtWhenAcceptedResponseOmitsIt(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -13804,6 +14266,8 @@ func TestSyncArchiveMRPreservesStoredMergedAtWhenAcceptedResponseOmitsIt(t *test
 }
 
 func TestSyncArchiveMRRetriesWhenAcceptedSnapshotLosesRouteFenceBeforeActor(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -13904,6 +14368,8 @@ func TestSyncArchiveMRRetriesWhenAcceptedSnapshotLosesRouteFenceBeforeActor(t *t
 }
 
 func TestSyncArchiveMRRetriesWhenRejectedRepairLosesRouteFence(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -13992,6 +14458,8 @@ func TestSyncArchiveMRRetriesWhenRejectedRepairLosesRouteFence(t *testing.T) {
 }
 
 func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name              string
 		storedMergeSHA    string
@@ -14092,6 +14560,8 @@ func TestSyncArchiveMRRejectsMissingMergedMetrics(t *testing.T) {
 }
 
 func TestSyncArchiveMRRejectsCanonicalUnmergedStoredMergedDisagreement(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -14150,6 +14620,8 @@ func TestSyncArchiveMRRejectsCanonicalUnmergedStoredMergedDisagreement(t *testin
 }
 
 func TestRequireGitHubArchiveMergedMRMetricsRejectsMismatchedFilesChanged(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -14177,6 +14649,8 @@ func TestRequireGitHubArchiveMergedMRMetricsRejectsMismatchedFilesChanged(t *tes
 }
 
 func TestSyncArchiveMROpenPullRequestDoesNotRequireMergeMetrics(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -14217,6 +14691,8 @@ func TestSyncArchiveMROpenPullRequestDoesNotRequireMergeMetrics(t *testing.T) {
 }
 
 func TestSyncArchiveIssuePropagatesTimelineFailure(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14251,6 +14727,8 @@ func TestSyncArchiveIssuePropagatesTimelineFailure(t *testing.T) {
 }
 
 func TestFetchIssueDetailPersistsIssueETag(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14297,6 +14775,8 @@ func TestFetchIssueDetailPersistsIssueETag(t *testing.T) {
 }
 
 func TestFetchIssueDetailDoesNotPersistIssueETagWhenDetailRefreshFails(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14348,6 +14828,8 @@ func TestFetchIssueDetailDoesNotPersistIssueETagWhenDetailRefreshFails(t *testin
 }
 
 func TestBulkGraphQLGateUsesLocalMergeRequestCount(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14381,6 +14863,8 @@ func TestBulkGraphQLGateUsesLocalMergeRequestCount(t *testing.T) {
 }
 
 func TestBulkGraphQLGateUsesLocalIssueCount(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14414,6 +14898,8 @@ func TestBulkGraphQLGateUsesLocalIssueCount(t *testing.T) {
 }
 
 func TestRunOnceLargeExistingRepoSkipsBulkGraphQLAndFetchesChangedPRDetail(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14509,6 +14995,8 @@ func TestRunOnceLargeExistingRepoSkipsBulkGraphQLAndFetchesChangedPRDetail(t *te
 }
 
 func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14610,6 +15098,8 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 }
 
 func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14699,6 +15189,8 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 }
 
 func TestDetailQueueWatchedKeyIncludesProviderIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14761,6 +15253,8 @@ func TestDetailQueueWatchedKeyIncludesProviderIdentity(t *testing.T) {
 }
 
 func TestDetailQueueDerivesPendingCIFromCachedChecks(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14806,6 +15300,8 @@ func TestDetailQueueDerivesPendingCIFromCachedChecks(t *testing.T) {
 }
 
 func TestDetailDrainRespectsBudget(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -14876,6 +15372,8 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 }
 
 func TestScopedRunDrainsDetailsOnlyForSelectedRepos(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -14943,6 +15441,8 @@ func TestScopedRunDrainsDetailsOnlyForSelectedRepos(t *testing.T) {
 // If queued repo intents follow only a mutable route, a rename drops the
 // intended repository and route reuse can select an unrelated successor.
 func TestRepoIntentMatchingUsesStableProviderIdentity(t *testing.T) {
+	t.Parallel()
+
 	renamed := RepoRef{
 		Platform:           platform.KindGitHub,
 		Owner:              "new-owner",
@@ -14976,6 +15476,8 @@ func TestRepoIntentMatchingUsesStableProviderIdentity(t *testing.T) {
 }
 
 func TestScopedRunDoesNotDelayNextFullRunOnSameHost(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 	bucket := RateBucketKey("github", "github.com", "host")
@@ -15011,6 +15513,8 @@ func TestScopedRunDoesNotDelayNextFullRunOnSameHost(t *testing.T) {
 }
 
 func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name                string
 		cadenceGated        bool
@@ -15104,6 +15608,8 @@ func TestScheduledFullRunRetriesAfterOverlappingScopedRun(t *testing.T) {
 // If an asynchronous trigger returns before taking the admission lock, the
 // server can return 202 before the request is retained by the active run.
 func TestTriggerRunForReposReturnsOnlyAfterAdmission(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	repo := RepoRef{
 		Owner: "owner", Name: "selected", PlatformHost: "github.com",
@@ -15133,6 +15639,8 @@ func TestTriggerRunForReposReturnsOnlyAfterAdmission(t *testing.T) {
 // If a scoped refresh turns a queued cadence-respecting full pass into a
 // global bypass, the provider is called for unrelated repositories too.
 func TestQueuedScopedRefreshDoesNotBypassFullRunCadence(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	bucket := RateBucketKey("github", "github.com", "host")
@@ -15228,6 +15736,8 @@ func TestQueuedScopedRefreshDoesNotBypassFullRunCadence(t *testing.T) {
 // run can publish Running:true before the completed run overwrites it with
 // Running:false.
 func TestTerminalStatusPublicationKeepsRunSlotUntilOrdered(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	providerEntered := make(chan struct{})
@@ -15321,6 +15831,8 @@ func TestTerminalStatusPublicationKeepsRunSlotUntilOrdered(t *testing.T) {
 // If a queued pass loses the single-flight handoff to another run, the
 // accepted work is dropped and provider data can remain stale.
 func TestQueuedRunSurvivesSingleFlightHandoff(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	repos := []RepoRef{{
@@ -15451,6 +15963,8 @@ func TestQueuedRunSurvivesSingleFlightHandoff(t *testing.T) {
 // If an explicit empty scope is widened to a full pass while queued, every
 // configured provider repository is fetched unexpectedly.
 func TestQueuedEmptyRepoScopeRemainsEmpty(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	repos := []RepoRef{{
@@ -15520,6 +16034,8 @@ func TestQueuedEmptyRepoScopeRemainsEmpty(t *testing.T) {
 }
 
 func TestBudgetResetOnRateWindowReset(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -15566,6 +16082,8 @@ func TestBudgetResetOnRateWindowReset(t *testing.T) {
 }
 
 func TestSyncMRSkipsGetUserWhenDisplayNameCached(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -15618,6 +16136,8 @@ func TestSyncMRSkipsGetUserWhenDisplayNameCached(t *testing.T) {
 }
 
 func TestRefreshCIStatusAlwaysFetchesCombined(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -15659,6 +16179,8 @@ func TestRefreshCIStatusAlwaysFetchesCombined(t *testing.T) {
 }
 
 func TestRefreshCIStatusPreservesExistingStatusWhenChecksFail(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -15707,6 +16229,8 @@ func TestRefreshCIStatusPreservesExistingStatusWhenChecksFail(t *testing.T) {
 }
 
 func TestRefreshCIStatusForHeadRetainsMixedPendingChecks(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -15760,6 +16284,8 @@ func TestRefreshCIStatusForHeadRetainsMixedPendingChecks(t *testing.T) {
 }
 
 func TestRefreshCIStatusFallsBackToCombinedWhenNoCheckRuns(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -15799,6 +16325,8 @@ func TestRefreshCIStatusFallsBackToCombinedWhenNoCheckRuns(t *testing.T) {
 // callback fires for each status transition during RunOnce. The
 // SSE server uses this to broadcast live sync state.
 func TestSyncer_OnStatusChangeCallback(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	mock := &mockClient{openPRs: []*gh.PullRequest{}}
 	d := openTestDB(t)
@@ -15831,6 +16359,8 @@ func TestSyncer_OnStatusChangeCallback(t *testing.T) {
 }
 
 func TestFormatRateLimitWaitUsesSecondsOnlyBelowOneMinute(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	tests := []struct {
@@ -15853,6 +16383,8 @@ func TestFormatRateLimitWaitUsesSecondsOnlyBelowOneMinute(t *testing.T) {
 }
 
 func TestSyncerRateLimitProgressUsesMinuteScaleWaits(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -15928,6 +16460,8 @@ func notModifiedErr() error {
 // was unused at the call site and the wrapped 304 was returned
 // as "list open PRs: ...", failing the repo sync entirely.
 func TestSyncerHandles304OnPRList(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -15965,6 +16499,8 @@ func TestSyncerHandles304OnPRList(t *testing.T) {
 }
 
 func TestSyncerReconcilesMergedActorOnPRList304(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -16024,6 +16560,8 @@ func TestSyncerReconcilesMergedActorOnPRList304(t *testing.T) {
 // fix, the function explicitly returns nil on 304 and the
 // happy-path PR sync still completes cleanly.
 func TestSyncerHandles304OnIssueList(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -16066,6 +16604,8 @@ func TestSyncerHandles304OnIssueList(t *testing.T) {
 // CI freshness for unchanged PRs is handled by the detail drain's
 // priority scoring (ci_had_pending items get expedited refetches).
 func TestSyncerPRList304MakesNoAPICalls(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -16141,6 +16681,8 @@ func (c *callCountingClient) GetCombinedStatus(
 // ETag and their own open-list endpoint, so a PR-list 304 must not
 // prevent new issues from being picked up.
 func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -16185,6 +16727,8 @@ func TestSyncerSyncsIssuesOnPRList304(t *testing.T) {
 }
 
 func TestSyncRepoSkipsRemovedUpstreamPeriodicCandidates(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -16268,6 +16812,8 @@ func TestSyncRepoSkipsRemovedUpstreamPeriodicCandidates(t *testing.T) {
 }
 
 func TestSyncStoresIssueLabels(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -16317,6 +16863,8 @@ func TestSyncStoresIssueLabels(t *testing.T) {
 }
 
 func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -16359,6 +16907,8 @@ func TestFetchAndUpdateClosedRefreshesPRLabels(t *testing.T) {
 }
 
 func TestFetchAndUpdateClosedPersistsMergedActorEvent(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -16402,6 +16952,8 @@ func TestFetchAndUpdateClosedPersistsMergedActorEvent(t *testing.T) {
 }
 
 func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -16473,6 +17025,8 @@ func TestFetchAndUpdateClosedRefreshesPRLabelsWithSameRepoOnAnotherHost(t *testi
 }
 
 func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -16512,6 +17066,8 @@ func TestFetchAndUpdateClosedRefreshesIssueLabels(t *testing.T) {
 }
 
 func TestFetchAndUpdateClosedRefreshesIssueLabelsWithSameRepoOnAnotherHost(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -16686,6 +17242,8 @@ func (m *partialFailureMock) InvalidateListETagsForRepo(_, _ string, endpoints .
 // markFailure, and the next cycle forces a timeline refresh via
 // forceRefresh even though UpdatedAt hasn't changed.
 func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -16785,6 +17343,8 @@ func TestSyncerSyncOpenIssueFailureMarksRepoFailed(t *testing.T) {
 // syncIssues returns an error, doSyncRepo marks the repo failed,
 // and the next cycle retries after ETag invalidation.
 func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -16899,6 +17459,8 @@ func TestSyncerClosedIssueFailureMarksRepoFailed(t *testing.T) {
 }
 
 func TestDisabledIssuesStopClosureDetectionAfterFirstLookup(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -16955,6 +17517,8 @@ func TestDisabledIssuesStopClosureDetectionAfterFirstLookup(t *testing.T) {
 }
 
 func TestSyncIssuesFromListStopsAfterWrappedRawDisabledResponse(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -16992,6 +17556,8 @@ func TestSyncIssuesFromListStopsAfterWrappedRawDisabledResponse(t *testing.T) {
 }
 
 func TestSyncIssuesFromListStopsAfterWrappedRawDisabledTimelineResponse(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17026,6 +17592,8 @@ func TestSyncIssuesFromListStopsAfterWrappedRawDisabledTimelineResponse(t *testi
 }
 
 func TestSyncIssuesFromListRetainsBestEffortTimelineErrors(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -17058,6 +17626,8 @@ func TestSyncIssuesFromListRetainsBestEffortTimelineErrors(t *testing.T) {
 // invalidates the ETag and retries. Also verifies issue path is NOT
 // force-refreshed when only MR path failed (scoped failure tracking).
 func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17133,6 +17703,8 @@ func TestSyncerMRListFailureMarksRepoFailed(t *testing.T) {
 // the pulls 404 aborts the repo sync before the issue phase, so an
 // issues-only tracker never syncs the one thing it exists for.
 func TestSyncerIssuesOnlyRepoDisablesMergeRequestFeature(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17215,6 +17787,8 @@ func TestSyncerIssuesOnlyRepoDisablesMergeRequestFeature(t *testing.T) {
 // open" forever: every cycle re-fetches it, fails the repo, and spends a
 // lookup plus repository probe on an item that can never resolve.
 func TestSyncerRemovedIssueTombstonedInsteadOfFailing(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17292,6 +17866,8 @@ func TestSyncerRemovedIssueTombstonedInsteadOfFailing(t *testing.T) {
 // Issues API back into an issue. Without the tombstone, the stale open row
 // remains eligible for the same lookup on every repository sync.
 func TestFetchAndUpdateClosedIssueTombstonesPRShapedResponse(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17338,6 +17914,8 @@ func TestFetchAndUpdateClosedIssueTombstonesPRShapedResponse(t *testing.T) {
 // cycle must reuse them instead of forcing an unconditional refetch that
 // spends budget the refusal just proved is unavailable.
 func TestSyncerBudgetRefusedPRListSkipsETagEviction(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17391,6 +17969,8 @@ func TestSyncerBudgetRefusedPRListSkipsETagEviction(t *testing.T) {
 }
 
 func TestSyncerBudgetCauseSurvivesLaterIssueListFailure(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17430,6 +18010,8 @@ func TestSyncerBudgetCauseSurvivesLaterIssueListFailure(t *testing.T) {
 // no-eviction rule for the open-issue list: a budget refusal fails the
 // cycle but leaves the issue list validators warm for the next cycle.
 func TestSyncerBudgetRefusedIssueListSkipsETagEviction(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17480,6 +18062,8 @@ func TestSyncerBudgetRefusedIssueListSkipsETagEviction(t *testing.T) {
 // — run under the essential sync-budget context so they can spend the
 // reserved headroom, while per-item detail fetches stay optional.
 func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17533,6 +18117,8 @@ func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
 // detail_fetched_at stays nil so the detail queue picks it up again
 // on the next cycle.
 func TestSyncerMRDetailFailureRetries(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17601,6 +18187,8 @@ func TestSyncerMRDetailFailureRetries(t *testing.T) {
 }
 
 func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17678,6 +18266,8 @@ func TestSyncerRefreshesEditedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 }
 
 func TestSyncerRemovesDeletedPRCommentWhenPRListIsUnchanged(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17748,6 +18338,8 @@ func TestSyncerRemovesDeletedPRCommentWhenPRListIsUnchanged(t *testing.T) {
 }
 
 func TestSyncerRemovesDeletedIssueCommentWhenIssueListIsUnchanged(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17825,6 +18417,8 @@ func TestSyncerRemovesDeletedIssueCommentWhenIssueListIsUnchanged(t *testing.T) 
 }
 
 func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17901,6 +18495,8 @@ func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 }
 
 func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -17991,6 +18587,8 @@ func TestFetchIssueDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 }
 
 func TestFetchMRDetailRejectsABARoutePayload(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -18044,6 +18642,8 @@ func TestFetchMRDetailRejectsABARoutePayload(t *testing.T) {
 }
 
 func TestFetchMRDetailRejectsChildSnapshotAfterABARouteReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -18116,6 +18716,8 @@ func TestFetchMRDetailRejectsChildSnapshotAfterABARouteReuse(t *testing.T) {
 }
 
 func TestFetchIssueDetailRejectsABARoutePayload(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -18169,6 +18771,8 @@ func TestFetchIssueDetailRejectsABARoutePayload(t *testing.T) {
 }
 
 func TestFetchIssueDetailRejectsChildSnapshotAfterABARouteReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -18236,6 +18840,8 @@ func TestFetchIssueDetailRejectsChildSnapshotAfterABARouteReuse(t *testing.T) {
 }
 
 func TestDeferredCommentRefreshRejectsABARoutePayload(t *testing.T) {
+	t.Parallel()
+
 	t.Run("pull request", func(t *testing.T) {
 		require := require.New(t)
 		database := openTestDB(t)
@@ -18365,6 +18971,8 @@ func TestDeferredCommentRefreshRejectsABARoutePayload(t *testing.T) {
 }
 
 func TestDeferredCommentRefreshSkipsRemovedUpstreamItems(t *testing.T) {
+	t.Parallel()
+
 	for _, itemType := range []db.ArchiveItemType{
 		db.ArchiveItemTypeMergeRequest,
 		db.ArchiveItemTypeIssue,
@@ -18452,6 +19060,8 @@ func TestDeferredCommentRefreshSkipsRemovedUpstreamItems(t *testing.T) {
 }
 
 func TestFetchMRDetailRejectsABAOnNotModified(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -18509,6 +19119,8 @@ func TestFetchMRDetailRejectsABAOnNotModified(t *testing.T) {
 }
 
 func TestFetchMRDetailRejectsCIFromABAOnNotModified(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -18572,6 +19184,8 @@ func TestFetchMRDetailRejectsCIFromABAOnNotModified(t *testing.T) {
 }
 
 func TestFetchIssueDetailRejectsABAOnNotModified(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -18629,6 +19243,8 @@ func TestFetchIssueDetailRejectsABAOnNotModified(t *testing.T) {
 }
 
 func TestSyncRepoRejectsListSnapshotAfterABARouteReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -18729,6 +19345,8 @@ func reconcileRepositoryRouteABA(
 }
 
 func TestSyncClosedMROnProviderDropsSnapshotAcrossABARouteReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -18827,6 +19445,8 @@ func currentCommentVisibilityServer(
 }
 
 func TestFetchMRDetailUsesCurrentCommentVisibility(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -18876,6 +19496,8 @@ func TestFetchMRDetailUsesCurrentCommentVisibility(t *testing.T) {
 }
 
 func TestFetchIssueDetailUsesCurrentCommentVisibility(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -18929,6 +19551,8 @@ func TestFetchIssueDetailUsesCurrentCommentVisibility(t *testing.T) {
 }
 
 func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19008,6 +19632,8 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 }
 
 func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19076,6 +19702,8 @@ func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *te
 // detail-fetched while leaving workflow_approval_checked_at nil, so
 // the DB-only GET would hide the Approve workflows button.
 func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19131,6 +19759,8 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 }
 
 func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19186,6 +19816,8 @@ func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T
 // workflow approval snapshot. Such PRs stay eligible for REST detail
 // drain, which is the path that refreshes the snapshot.
 func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenIncomplete(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19239,6 +19871,8 @@ func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenIncomplete(t *testing.T) {
 }
 
 func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19310,6 +19944,8 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 }
 
 func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19398,6 +20034,8 @@ func buildOpenPRWithSHA(number int, updatedAt time.Time, headSHA string) *gh.Pul
 }
 
 func TestSyncOpenMRFromBulkClearsCIWhenHeadSHAChanges(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -19458,6 +20096,8 @@ func TestSyncOpenMRFromBulkClearsCIWhenHeadSHAChanges(t *testing.T) {
 }
 
 func TestSyncOpenMRFromBulkPreservesCIWhenHeadSHAUnchanged(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -19518,6 +20158,8 @@ func TestSyncOpenMRFromBulkPreservesCIWhenHeadSHAUnchanged(t *testing.T) {
 }
 
 func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19616,6 +20258,8 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 }
 
 func TestSyncOpenIssueFromBulkMergesPartialCommentVisibilityWithStoredState(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19715,6 +20359,8 @@ func TestSyncOpenIssueFromBulkMergesPartialCommentVisibilityWithStoredState(t *t
 }
 
 func TestSyncOpenIssueFromBulkStoresTimelineEvents(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -19815,7 +20461,7 @@ func TestSyncOpenIssueFromBulkStoresTimelineEvents(t *testing.T) {
 	assert.Equal("timeline-RE_issue_1", reopened.DedupeKey)
 }
 
-func TestListFetchProgressLogger(t *testing.T) {
+func TestListFetchProgressLogger(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	for _, tc := range []struct {
 		name       string
 		item       string
@@ -19852,7 +20498,7 @@ func TestListFetchProgressLogger(t *testing.T) {
 	}
 }
 
-func TestSyncIssuesFromListLogsProgressForLargeIssueSets(t *testing.T) {
+func TestSyncIssuesFromListLogsProgressForLargeIssueSets(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -19894,6 +20540,8 @@ func TestSyncIssuesFromListLogsProgressForLargeIssueSets(t *testing.T) {
 }
 
 func TestSyncRepoGraphQLIssues(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -19993,6 +20641,8 @@ var displayNameTestRepo = RepoRef{
 }
 
 func TestResolveDisplayName(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 
 	tests := []struct {
@@ -20078,6 +20728,8 @@ func TestResolveDisplayName(t *testing.T) {
 }
 
 func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	ctx := t.Context()
 
@@ -20107,6 +20759,8 @@ func TestResolveDisplayName_CachesNegativeResult(t *testing.T) {
 }
 
 func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	ctx := t.Context()
 
@@ -20136,6 +20790,8 @@ func TestResolveDisplayName_CachesSuccessfulEmptyName(t *testing.T) {
 }
 
 func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20214,6 +20870,8 @@ func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 }
 
 func TestSyncRepoGraphQLIssuesStopsAfterWrappedRawDisabledFallback(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -20250,6 +20908,8 @@ func TestSyncRepoGraphQLIssuesStopsAfterWrappedRawDisabledFallback(t *testing.T)
 }
 
 func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20323,6 +20983,8 @@ func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 }
 
 func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20402,6 +21064,8 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 }
 
 func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20481,6 +21145,8 @@ func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T
 }
 
 func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -20548,6 +21214,8 @@ func TestSyncRepoGraphQLIssuesFallbackToREST(t *testing.T) {
 // NormalizeIssue → UpsertIssue. Validates that struct tags, adapter
 // mapping, and the full data flow work together.
 func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20649,6 +21317,8 @@ func TestSyncRepoGraphQLIssuesFullFlow(t *testing.T) {
 }
 
 func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
+	t.Parallel()
+
 	t.Run("pull request", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -20723,6 +21393,8 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 }
 
 func TestQueuedRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20775,6 +21447,8 @@ func TestQueuedRepoPRCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 }
 
 func TestQueuedRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -20827,6 +21501,8 @@ func TestQueuedRepoIssueCommentsUsesFullFetchForLargeThreads(t *testing.T) {
 }
 
 func TestDrainPendingCommentSyncsReadsQueuedItemsByProviderIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -20960,6 +21636,8 @@ func TestDrainPendingCommentSyncsReadsQueuedItemsByProviderIdentity(t *testing.T
 }
 
 func TestQueuedRepoCommentsFiltersByHost(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -21088,6 +21766,8 @@ func TestQueuedRepoCommentsFiltersByHost(t *testing.T) {
 }
 
 func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -21195,6 +21875,8 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 }
 
 func TestSyncerGQLRateTrackers(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -21219,6 +21901,8 @@ func TestSyncerGQLRateTrackers(t *testing.T) {
 }
 
 func TestRunOnceRefreshesGitHubRateLimitSnapshotOutsideSyncBudget(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -21295,6 +21979,8 @@ func (m *failingSnapshotClient) GetRateLimitSnapshot(
 func TestRefreshRateLimitSnapshotsSpendsOneRequestPerCredentialWhenRefreshFails(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -21351,6 +22037,8 @@ func TestRefreshRateLimitSnapshotsSpendsOneRequestPerCredentialWhenRefreshFails(
 }
 
 func TestRefreshRateLimitSnapshotsReconcilesEachCredentialEveryThreeMinutes(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -21420,6 +22108,8 @@ func TestRefreshRateLimitSnapshotsReconcilesEachCredentialEveryThreeMinutes(t *t
 }
 
 func TestRunOnceSnapshotWindowResetResetsSyncBudget(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -21470,6 +22160,8 @@ func TestRunOnceSnapshotWindowResetResetsSyncBudget(t *testing.T) {
 }
 
 func TestRunOnceRecoveredRateLimitSnapshotClearsStaleThrottleGate(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -21517,6 +22209,8 @@ func TestRunOnceRecoveredRateLimitSnapshotClearsStaleThrottleGate(t *testing.T) 
 }
 
 func TestSyncerGQLRateTrackersSkipsNil(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -21538,6 +22232,8 @@ func TestSyncerGQLRateTrackersSkipsNil(t *testing.T) {
 }
 
 func TestSyncerGQLRateTrackersMixed(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -21570,6 +22266,8 @@ func TestSyncerGQLRateTrackersMixed(t *testing.T) {
 // the TTL cache, the second RunOnce sees a fresh cache hit
 // and makes zero /users calls.
 func TestDisplayNameCacheSurvivesRunOnce(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -21643,6 +22341,8 @@ func TestDisplayNameCacheSurvivesRunOnce(t *testing.T) {
 // Without the backoff step 2, every subsequent sync would hit
 // /users while the outage persists, defeating the cache.
 func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	ctx := t.Context()
 
@@ -21714,6 +22414,8 @@ func TestResolveDisplayName_StaleWhileErrorBacksOff(t *testing.T) {
 }
 
 func TestGitHubProviderApproveSubmitsReviewForReviewedHead(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &mockClient{}
@@ -21731,6 +22433,8 @@ func TestGitHubProviderApproveSubmitsReviewForReviewedHead(t *testing.T) {
 }
 
 func TestIsGitHubHeadModified(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	mismatch := func(status int, message string) error {
 		return &gh.ErrorResponse{
@@ -21752,6 +22456,8 @@ var errOther = errors.New("transport down")
 // exhausted owner's queued acks defer, while the healthy owner's ack still
 // propagates in the same pass.
 func TestProcessQueuedNotificationReadsDefersOnlyRateLimitedIdentity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -21865,6 +22571,8 @@ func TestProcessQueuedNotificationReadsDefersOnlyRateLimitedIdentity(t *testing.
 // must stay due: a host-wide deferral would push it out by the exhausted
 // credential's reset window even though its own PAT has quota.
 func TestProcessQueuedNotificationReadsLeavesOtherIdentityQueuedRowsDue(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -21970,6 +22678,8 @@ func TestProcessQueuedNotificationReadsLeavesOtherIdentityQueuedRowsDue(t *testi
 // acks defer, while the healthy owner's queued row must still be reached and
 // propagated in the same pass.
 func TestProcessQueuedNotificationReadsScopesPostAckRefetchRateLimit(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -22118,6 +22828,8 @@ func TestProcessQueuedNotificationReadsScopesPostAckRefetchRateLimit(t *testing.
 // quota registry is the only thing standing between background notification
 // work and the reserve held for foreground mutations.
 func TestSyncNotificationsStopsWhenUserRESTPoolAtReserve(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -22162,6 +22874,8 @@ func TestSyncNotificationsStopsWhenUserRESTPoolAtReserve(t *testing.T) {
 // An unknown pool must not pause notification work: ordinary response headers
 // are what populate the registry in the first place.
 func TestSyncNotificationsProceedsWhenUserRESTPoolUnknown(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -22198,6 +22912,8 @@ func TestSyncNotificationsProceedsWhenUserRESTPoolUnknown(t *testing.T) {
 // belonging to a healthy credential on the same host, matching how an actual
 // rate-limit response is handled.
 func TestProcessQueuedNotificationReadsReserveStopsOnlyItsOwnCredential(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -22310,6 +23026,8 @@ func TestProcessQueuedNotificationReadsReserveStopsOnlyItsOwnCredential(t *testi
 }
 
 func TestProcessQueuedNotificationReadsStopsWhenUserRESTPoolAtReserve(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -22360,6 +23078,8 @@ func TestProcessQueuedNotificationReadsStopsWhenUserRESTPoolAtReserve(t *testing
 // only one must not admit it: starting with two units above the reserve would
 // cross the reserve partway through, after the mark-read already landed.
 func TestProcessQueuedNotificationReadsRequiresWorstCaseHeadroom(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -22412,6 +23132,8 @@ func TestProcessQueuedNotificationReadsRequiresWorstCaseHeadroom(t *testing.T) {
 // installation sitting at zero cannot suppress bulk GraphQL for a PAT-backed
 // repository on the same host (or the reverse).
 func TestGraphQLReadAllowedIsolatesCredentialGraphQLPools(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	appRepo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -22462,6 +23184,8 @@ func TestGraphQLReadAllowedIsolatesCredentialGraphQLPools(t *testing.T) {
 }
 
 func TestGraphQLReadAllowedUsesArchiveCredentialPool(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -22505,6 +23229,8 @@ func TestGraphQLReadAllowedUsesArchiveCredentialPool(t *testing.T) {
 // credential whose GraphQL pool is exhausted must keep syncing over REST
 // instead of being held out of background scheduling entirely.
 func TestRepoEligibilityIgnoresExhaustedGraphQLWhenRESTHasCapacity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -22542,6 +23268,8 @@ func TestRepoEligibilityIgnoresExhaustedGraphQLWhenRESTHasCapacity(t *testing.T)
 // An exhausted REST pool still stops background scheduling even when the
 // GraphQL pool has never been observed: unknown quota must not mask it.
 func TestRepoEligibilityStopsOnExhaustedRESTWithUnobservedGraphQL(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -22579,6 +23307,8 @@ func TestRepoEligibilityStopsOnExhaustedRESTWithUnobservedGraphQL(t *testing.T) 
 // capacity held for foreground work, while the same pool stays usable for an
 // explicit foreground sync.
 func TestGraphQLReadAllowedAppliesReserveOnlyToBackgroundSyncs(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -22613,6 +23343,8 @@ func TestGraphQLReadAllowedAppliesReserveOnlyToBackgroundSyncs(t *testing.T) {
 }
 
 func TestCurrentCommentVisibilitySkipsGraphQLInsideBackgroundReserve(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -22660,6 +23392,8 @@ func TestCurrentCommentVisibilitySkipsGraphQLInsideBackgroundReserve(t *testing.
 // and persist its results. The eligibility unit tests above cover the decision;
 // this covers the outcome the decision exists for.
 func TestRunOnceSyncsOverRESTWhenOnlyGraphQLIsExhausted(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -22710,6 +23444,8 @@ func TestRunOnceSyncsOverRESTWhenOnlyGraphQLIsExhausted(t *testing.T) {
 // Issue comment refreshes spend the same credential as pull-request refreshes,
 // so an issue-only queue must stop at the reserve too.
 func TestCommentDrainStopsIssueRefreshesAtTheReserve(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -22771,6 +23507,8 @@ func TestCommentDrainStopsIssueRefreshesAtTheReserve(t *testing.T) {
 // remembers the notification credential's pool. A three-request acknowledgement
 // must not start on 201 remaining just because the registry is silent.
 func TestNotificationBudgetUsesPersistedWriteTrackerAfterRestart(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -22804,6 +23542,8 @@ func TestNotificationBudgetUsesPersistedWriteTrackerAfterRestart(t *testing.T) {
 }
 
 func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -22846,6 +23586,8 @@ func TestRunOnceSkipsSyncWhenRESTPoolExhausted(t *testing.T) {
 
 // Without a registry the host-wide tracker remains authoritative.
 func TestGraphQLReadAllowedFallsBackToHostTracker(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -22863,6 +23605,8 @@ func TestGraphQLReadAllowedFallsBackToHostTracker(t *testing.T) {
 }
 
 func TestPublishResolvedRepositoryAliasesCredentialRoute(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	configured := RepoRef{
@@ -22902,6 +23646,8 @@ func TestPublishResolvedRepositoryAliasesCredentialRoute(t *testing.T) {
 // must abort rather than publish that entry and fetch the reused route's
 // content into the preserved repository's history.
 func TestReconcileRepoIdentityAbortsWhenRejectedObservationIsInactive(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -22964,6 +23710,8 @@ func seedDisplacedRepository(t *testing.T, database *db.DB) int64 {
 }
 
 func TestCommitMergeRequestParentSnapshotRejectsDisplacedRepository(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	displacedID := seedDisplacedRepository(t, database)
@@ -22989,6 +23737,8 @@ func TestCommitMergeRequestParentSnapshotRejectsDisplacedRepository(t *testing.T
 }
 
 func TestCommitIssueParentSnapshotRejectsDisplacedRepository(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	displacedID := seedDisplacedRepository(t, database)
@@ -23013,6 +23763,8 @@ func TestCommitIssueParentSnapshotRejectsDisplacedRepository(t *testing.T) {
 }
 
 func TestCommitIssueCommentsSnapshotBindsToParentID(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -23076,6 +23828,8 @@ func TestCommitIssueCommentsSnapshotBindsToParentID(t *testing.T) {
 }
 
 func TestCommitMergeRequestDatasetsBindsToParentID(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -23139,6 +23893,8 @@ func TestCommitMergeRequestDatasetsBindsToParentID(t *testing.T) {
 }
 
 func TestReconcileMergedActorEventsBackfillsForgeMergedMR(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -23189,6 +23945,8 @@ func TestReconcileMergedActorEventsBackfillsForgeMergedMR(t *testing.T) {
 }
 
 func TestReconcileMergedActorEventsEnrichesActorlessMergedEvent(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -23248,6 +24006,8 @@ func TestReconcileMergedActorEventsEnrichesActorlessMergedEvent(t *testing.T) {
 }
 
 func TestBackfillMergedActorRejectsReusedRepositoryRoute(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -23293,6 +24053,8 @@ func TestBackfillMergedActorRejectsReusedRepositoryRoute(t *testing.T) {
 }
 
 func TestBackfillMergedActorUsesProviderMatchedRouteAfterRename(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -23352,6 +24114,8 @@ func TestBackfillMergedActorUsesProviderMatchedRouteAfterRename(t *testing.T) {
 }
 
 func TestBackfillMergedActorRevalidatesProviderIdentityBeforePersisting(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -23411,6 +24175,8 @@ func TestBackfillMergedActorRevalidatesProviderIdentityBeforePersisting(t *testi
 }
 
 func TestBackfillMergedActorVerifiesRouteWhenTrackedProviderIDMissing(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -23447,6 +24213,8 @@ func TestBackfillMergedActorVerifiesRouteWhenTrackedProviderIDMissing(t *testing
 }
 
 func TestReconcileMergedActorEventsSweepsPastPersistentlyMissingActors(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -23516,6 +24284,8 @@ func TestReconcileMergedActorEventsSweepsPastPersistentlyMissingActors(t *testin
 }
 
 func TestReconcileMergedActorEventsCoolsDownAfterSweepExhaustion(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -23565,6 +24335,8 @@ func TestReconcileMergedActorEventsCoolsDownAfterSweepExhaustion(t *testing.T) {
 }
 
 func TestWithObsoleteMetadata(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name     string
 		in       string
@@ -23593,6 +24365,8 @@ func TestWithObsoleteMetadata(t *testing.T) {
 }
 
 func TestWithCommitOrderMetadataPreservesCommitAuthor(t *testing.T) {
+	t.Parallel()
+
 	withOrder := platformgithub.WithCommitOrderMetadata(`{"commit_author":"original-author"}`, 2, 4)
 	assert.JSONEq(t, `{"commit_author":"original-author","commit_order":2,"commit_order_key":4}`, withOrder)
 
@@ -23608,6 +24382,8 @@ func TestWithCommitOrderMetadataPreservesCommitAuthor(t *testing.T) {
 // settings; the route generation cannot catch this because same-route
 // observations do not advance it.
 func TestSyncRepoDropsStaleSettingsSnapshotBehindNewerObservation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -23703,6 +24479,8 @@ func TestSyncRepoDropsStaleSettingsSnapshotBehindNewerObservation(t *testing.T) 
 // verified provider snapshot so the row does not advertise the permissive
 // schema defaults (all merge methods allowed, viewer can merge).
 func TestSyncMRForRepoPersistsSettingsForReplacementRepository(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -23778,6 +24556,8 @@ func TestSyncMRForRepoPersistsSettingsForReplacementRepository(t *testing.T) {
 // analog of the direct MR sync case: the replacement repository row created
 // during a direct issue sync must carry the provider's verified settings.
 func TestSyncIssueForRepoPersistsSettingsForReplacementRepository(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -23852,6 +24632,8 @@ func TestSyncIssueForRepoPersistsSettingsForReplacementRepository(t *testing.T) 
 // stop on, while a snapshot that merely lost to a newer observation reports
 // applied=false with no error so syncs continue on the fresher data.
 func TestPersistRepoSettingsObservationDistinguishesFenceErrorFromStale(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -23954,6 +24736,8 @@ func (watermarkAdvancingArchiveLifecycle) RetryAuthentication(
 // The sync must re-resolve and persist instead of populating the replacement
 // row while it still advertises the permissive schema defaults.
 func TestSyncMRForRepoPersistsSettingsDespiteArchiveWatermarkAdvance(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -24033,6 +24817,8 @@ func TestSyncMRForRepoPersistsSettingsDespiteArchiveWatermarkAdvance(t *testing.
 // as a provider without repository reading — instead of syncing the item
 // against potentially default merge availability.
 func TestSyncMRForRepoErrsWhenSettingsObservationKeepsLosing(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -24094,6 +24880,8 @@ func TestSyncMRForRepoErrsWhenSettingsObservationKeepsLosing(t *testing.T) {
 // settings remain unverified and indexing must not proceed as if they were
 // committed.
 func TestSyncRepoErrsWhenSettingsObservationKeepsLosing(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -24160,6 +24948,8 @@ func (c *conditionalNotificationClient) ListNotificationPage(
 }
 
 func TestSyncNotificationsListsOncePerIdentityAndSkipsUnchangedInbox(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)

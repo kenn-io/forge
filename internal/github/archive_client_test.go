@@ -53,6 +53,8 @@ func readHistoricalMergeRequestPage(
 }
 
 func TestGitHubArchiveDiscoveryParityUsesOldestFirstIssueOnlyConnection(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	requests := 0
@@ -105,6 +107,8 @@ func TestGitHubArchiveDiscoveryParityUsesOldestFirstIssueOnlyConnection(t *testi
 }
 
 func TestGitHubArchiveUpdatedIssuesUseInclusiveWatermarkAndStableContinuation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	watermark := time.Date(2026, 7, 1, 2, 3, 4, 0, time.UTC)
@@ -241,6 +245,8 @@ func TestGitHubArchiveGraphQLErrorsCarryProviderClassification(t *testing.T) {
 }
 
 func TestGitHubArchiveCapabilitiesRequireBoundedClient(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	live := newArchiveTestGitHubProvider(t, newEmptyArchiveServer(t).URL)

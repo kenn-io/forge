@@ -112,6 +112,8 @@ func insertMergedPR(t *testing.T, ctx context.Context, d *db.DB, repoID int64, n
 }
 
 func TestIntegrationComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -154,6 +156,8 @@ func TestIntegrationComputeMergedPRDiffSHAs_MergeCommit(t *testing.T) {
 }
 
 func TestIntegrationComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -200,6 +204,8 @@ func TestIntegrationComputeMergedPRDiffSHAs_ForceOverwritesIncorrectSHAs(t *test
 }
 
 func TestIntegrationComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -240,6 +246,8 @@ func TestIntegrationComputeMergedPRDiffSHAs_SquashMerge(t *testing.T) {
 }
 
 func TestIntegrationComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -297,6 +305,8 @@ func TestIntegrationComputeMergedPRDiffSHAs_RebaseMerge(t *testing.T) {
 // (before merge); second sync discovers it missing from ListOpenPullRequests,
 // calls fetchAndUpdateClosed, and computes diff SHAs via the merged-PR path.
 func TestIntegrationSyncOpenToMergedTransition(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -431,6 +441,8 @@ func TestIntegrationSyncOpenToMergedTransition(t *testing.T) {
 // computed), then on the second sync (with clone manager) it transitions to
 // merged and computeMergedMRDiffSHAs must fill in the diff SHAs.
 func TestIntegrationSyncFirstSeenMergedPR(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -530,6 +542,8 @@ func TestIntegrationSyncFirstSeenMergedPR(t *testing.T) {
 }
 
 func TestIntegrationSyncClosedMROnProviderRepairsDiffFromStableIdentityClone(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -613,6 +627,8 @@ func TestIntegrationSyncClosedMROnProviderRepairsDiffFromStableIdentityClone(t *
 // returns the failure as a *DiffSyncError. The handler distinguishes this
 // from hard sync failures so the user sees a warning instead of a 502.
 func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -724,6 +740,8 @@ func TestIntegrationSyncMRWrapsDiffFailureAsDiffSyncError(t *testing.T) {
 // PR detail view. The diff failure is preserved in the returned error so
 // the caller can surface it as a warning if it cares.
 func TestIntegrationSyncItemByNumberReturnsTypeOnDiffSyncError(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 

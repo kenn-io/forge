@@ -22,6 +22,8 @@ import (
 )
 
 func TestAdaptPR(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -77,6 +79,8 @@ func TestAdaptPR(t *testing.T) {
 }
 
 func TestConvertGQLCommentsPreservesMinimizedVisibility(t *testing.T) {
+	t.Parallel()
+
 	reason := githubv4.ReportedContentClassifiersOffTopic
 	fullDatabaseID := int64(3714845345)
 	comment := platformgithub.GraphQLComment{
@@ -118,6 +122,8 @@ func TestConvertGQLCommentsPreservesMinimizedVisibility(t *testing.T) {
 }
 
 func TestConvertGQLCommentsRecordsObservedVisibleComments(t *testing.T) {
+	t.Parallel()
+
 	comment := platformgithub.GraphQLComment{DatabaseId: 74}
 
 	tests := []struct {
@@ -152,6 +158,8 @@ func TestConvertGQLCommentsRecordsObservedVisibleComments(t *testing.T) {
 }
 
 func TestConvertGQLPRIncludesReviewThreads(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	reason := githubv4.ReportedContentClassifiersAbuse
@@ -190,6 +198,8 @@ func TestConvertGQLPRIncludesReviewThreads(t *testing.T) {
 }
 
 func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		responseData string
@@ -254,6 +264,8 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 }
 
 func TestGraphQLFetcherFetchesCurrentCommentVisibility(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		queryKey string
@@ -299,6 +311,8 @@ func TestGraphQLFetcherFetchesCurrentCommentVisibility(t *testing.T) {
 }
 
 func TestAdaptComment(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -321,6 +335,8 @@ func TestAdaptComment(t *testing.T) {
 }
 
 func TestAdaptReview(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -341,6 +357,8 @@ func TestAdaptReview(t *testing.T) {
 }
 
 func TestAdaptCommit(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Now().UTC().Truncate(time.Second)
 
@@ -375,6 +393,8 @@ func TestAdaptCommit(t *testing.T) {
 }
 
 func TestAdaptCheckContext(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	now := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
@@ -416,6 +436,8 @@ func TestAdaptCheckContext(t *testing.T) {
 }
 
 func TestNormalizeGraphQLChecksBreaksSuiteTieByRunID(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -453,6 +475,8 @@ func TestNormalizeGraphQLChecksBreaksSuiteTieByRunID(t *testing.T) {
 }
 
 func TestAdaptCheckRunURLSanitization(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	safe := adaptCheckRun(&platformgithub.GraphQLCheckRunFields{
@@ -473,6 +497,8 @@ func TestAdaptCheckRunURLSanitization(t *testing.T) {
 }
 
 func TestGraphqlRateTransport(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	rt := NewRateTracker(d, "github.com", "host", "graphql")
@@ -505,6 +531,8 @@ func TestGraphqlRateTransport(t *testing.T) {
 }
 
 func TestGraphQLFetcherRateTracker(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	rt := NewRateTracker(d, "github.com", "host", "graphql")
 	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", rt, nil)
@@ -512,16 +540,22 @@ func TestGraphQLFetcherRateTracker(t *testing.T) {
 }
 
 func TestGraphQLFetcherRateTrackerNil(t *testing.T) {
+	t.Parallel()
+
 	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", nil, nil)
 	require.Nil(t, f.RateTracker())
 }
 
 func TestGraphQLFetcherRateTrackerNilReceiver(t *testing.T) {
+	t.Parallel()
+
 	var f *GraphQLFetcher
 	require.Nil(t, f.RateTracker())
 }
 
 func TestConvertGQLPRCompleteness(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	gql := platformgithub.GraphQLPR{
@@ -552,6 +586,8 @@ func TestConvertGQLPRCompleteness(t *testing.T) {
 }
 
 func TestConvertGQLPRNativeStackHint(t *testing.T) {
+	t.Parallel()
+
 	gql := platformgithub.GraphQLPRWithNativeStacks{
 		Number: 42,
 		Stack: &platformgithub.GraphQLNativeStack{
@@ -568,6 +604,8 @@ func TestConvertGQLPRNativeStackHint(t *testing.T) {
 }
 
 func TestGraphQLFetcherOmitsNativeStackFieldsWhenDisabled(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	var requestBody []byte
@@ -594,6 +632,8 @@ func TestGraphQLFetcherOmitsNativeStackFieldsWhenDisabled(t *testing.T) {
 }
 
 func TestGraphQLFetcherDropsNativeStackFieldsRejectedBySchema(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	var mu sync.Mutex
@@ -637,6 +677,8 @@ func TestGraphQLFetcherDropsNativeStackFieldsRejectedBySchema(t *testing.T) {
 }
 
 func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2024, 6, 3, 15, 0, 0, 0, time.UTC).Format(time.RFC3339)
@@ -783,6 +825,8 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 }
 
 func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2024, 6, 3, 15, 0, 0, 0, time.UTC).Format(time.RFC3339)
@@ -875,6 +919,8 @@ func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
 }
 
 func TestGraphQLFetcherFetchRepoIssuesPreservesBotAuthor(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
@@ -911,7 +957,7 @@ func TestGraphQLFetcherFetchRepoIssuesPreservesBotAuthor(t *testing.T) {
 	assert.Equal("renovate[bot]", result.Issues[0].Issue.GetUser().GetLogin())
 }
 
-func TestGraphQLFetcherFetchRepoIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) {
+func TestGraphQLFetcherFetchRepoIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	require := require.New(t)
 	logs := captureDefaultLogs(t)
 
@@ -954,7 +1000,7 @@ func testGQLIssueNodes(number int) []map[string]any {
 	}}
 }
 
-func TestGraphQLFetcherFetchRepoPRsLogsFetchProgressForPaginatedPullRequestSet(t *testing.T) {
+func TestGraphQLFetcherFetchRepoPRsLogsFetchProgressForPaginatedPullRequestSet(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	require := require.New(t)
 	logs := captureDefaultLogs(t)
 
@@ -1005,6 +1051,8 @@ func testGQLPRNodes(number int) []map[string]any {
 }
 
 func TestNormalizeBulkCI(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	nameTest := "test"
@@ -1044,6 +1092,8 @@ func TestNormalizeBulkCI(t *testing.T) {
 }
 
 func TestAdaptPRNilFields(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	gql := platformgithub.GraphQLPR{
@@ -1061,6 +1111,8 @@ func TestAdaptPRNilFields(t *testing.T) {
 }
 
 func TestAdaptIssue(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -1116,6 +1168,8 @@ func TestAdaptIssue(t *testing.T) {
 }
 
 func TestAdaptIssueNilFields(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	gql := platformgithub.GraphQLIssue{
@@ -1137,6 +1191,8 @@ func TestAdaptIssueNilFields(t *testing.T) {
 // repos using bulk GraphQL sync would persist assignees as [] and overwrite
 // any values set by a prior REST detail fetch (roborev finding on 2b9ca4d).
 func TestAdaptIssueAssignees(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	gql := platformgithub.GraphQLIssue{
@@ -1158,6 +1214,8 @@ func TestAdaptIssueAssignees(t *testing.T) {
 }
 
 func TestConvertGQLIssue(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	now := time.Now()
@@ -1211,6 +1269,8 @@ func TestConvertGQLIssue(t *testing.T) {
 }
 
 func TestStateConversion(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	assert.Equal("open", platformgithub.StateToREST("OPEN"))
 	assert.Equal("closed", platformgithub.StateToREST("CLOSED"))
@@ -1218,6 +1278,8 @@ func TestStateConversion(t *testing.T) {
 }
 
 func TestMergeableConversion(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	assert.Equal("clean", platformgithub.MergeableToREST("MERGEABLE"))
 	assert.Equal("dirty", platformgithub.MergeableToREST("CONFLICTING"))
@@ -1225,6 +1287,8 @@ func TestMergeableConversion(t *testing.T) {
 }
 
 func TestNormalizeBulkCIPendingStatus(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	contextDeploy := "ci/deploy"
@@ -1249,6 +1313,8 @@ func TestNormalizeBulkCIPendingStatus(t *testing.T) {
 }
 
 func TestNormalizeBulkCI_SortsByCasefoldedName(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	buildName := "build"
@@ -1275,6 +1341,8 @@ func TestNormalizeBulkCI_SortsByCasefoldedName(t *testing.T) {
 }
 
 func TestNormalizeBulkCI_LatestCheckRunPerNameWins(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	older := gh.Timestamp{Time: time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)}

@@ -13,6 +13,8 @@ import (
 var testNow = time.Date(2026, 4, 8, 12, 0, 0, 0, time.UTC)
 
 func TestQueueItemWorstCaseCost(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	tests := []struct {
 		name string
@@ -32,6 +34,8 @@ func TestQueueItemWorstCaseCost(t *testing.T) {
 }
 
 func TestBuildQueueNeverFetchedOpenPR(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	items := []QueueItem{{
@@ -50,6 +54,8 @@ func TestBuildQueueNeverFetchedOpenPR(t *testing.T) {
 }
 
 func TestBuildQueueStarredUpdatedPR(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	fetched := testNow.Add(-20 * time.Minute)
@@ -70,6 +76,8 @@ func TestBuildQueueStarredUpdatedPR(t *testing.T) {
 }
 
 func TestBuildQueueRecentlyFetchedUnchangedExcluded(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	// Fetched 10min ago, updated_at before fetch, not
@@ -88,6 +96,8 @@ func TestBuildQueueRecentlyFetchedUnchangedExcluded(t *testing.T) {
 }
 
 func TestBuildQueueStarredStalenessEligible(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	// Starred, fetched 20min ago (>15min threshold),
@@ -107,6 +117,8 @@ func TestBuildQueueStarredStalenessEligible(t *testing.T) {
 }
 
 func TestBuildQueueClosedOldItemExcluded(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	sixMonthsAgo := testNow.Add(-180 * 24 * time.Hour)
@@ -124,6 +136,8 @@ func TestBuildQueueClosedOldItemExcluded(t *testing.T) {
 }
 
 func TestBuildQueueSortedByScoreDescending(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	fetched := testNow.Add(-1 * time.Hour)
@@ -166,6 +180,8 @@ func TestBuildQueueSortedByScoreDescending(t *testing.T) {
 }
 
 func TestBuildQueueCIHadPendingMakesEligible(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	// Fetched 10min ago, unchanged — normally ineligible.
@@ -187,6 +203,8 @@ func TestBuildQueueCIHadPendingMakesEligible(t *testing.T) {
 }
 
 func TestBuildQueueCIHadPendingBypassesLargeRepoGate(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	fetched := testNow.Add(-10 * time.Minute)
@@ -206,6 +224,8 @@ func TestBuildQueueCIHadPendingBypassesLargeRepoGate(t *testing.T) {
 }
 
 func TestBuildQueueClosedRecentlyFetchedExcluded(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	// Closed item fetched 12h ago (<24h) — should be
@@ -224,6 +244,8 @@ func TestBuildQueueClosedRecentlyFetchedExcluded(t *testing.T) {
 }
 
 func TestBuildQueueWatchedStalenessEligible(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	fetched := testNow.Add(-20 * time.Minute)
@@ -241,11 +263,15 @@ func TestBuildQueueWatchedStalenessEligible(t *testing.T) {
 }
 
 func TestBuildQueueEmptyInput(t *testing.T) {
+	t.Parallel()
+
 	q := BuildQueue(nil, testNow)
 	assert.Empty(t, q)
 }
 
 func TestBuildQueueDormantOpenItemsRefreshDaily(t *testing.T) {
+	t.Parallel()
+
 	for _, large := range []bool{false, true} {
 		for _, kind := range []QueueItemType{QueueItemPR, QueueItemIssue} {
 			item := QueueItem{
@@ -261,6 +287,8 @@ func TestBuildQueueDormantOpenItemsRefreshDaily(t *testing.T) {
 }
 
 func TestBuildQueueDailyCoverageCannotStarveBehindActiveWork(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	items := []QueueItem{
 		{
@@ -284,6 +312,8 @@ func TestBuildQueueDailyCoverageCannotStarveBehindActiveWork(t *testing.T) {
 }
 
 func TestDailyCoverageIncludesNeverFetchedItemsWithLimitedCapacity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	items := []QueueItem{
 		{

@@ -8,6 +8,8 @@ import (
 )
 
 func TestGetOrCreateAppMetadataValueCreatesAndReusesValue(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -33,6 +35,8 @@ func TestGetOrCreateAppMetadataValueCreatesAndReusesValue(t *testing.T) {
 }
 
 func TestAppMetadataValueReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 

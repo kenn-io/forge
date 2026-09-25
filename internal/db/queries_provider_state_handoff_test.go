@@ -33,6 +33,8 @@ func providerReviewDraftForTest(body string) ProviderStateReviewDraftPayload {
 }
 
 func TestProviderStateHandoffReviewDraftIsIdempotentAndConflictSafe(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -68,6 +70,8 @@ func TestProviderStateHandoffReviewDraftIsIdempotentAndConflictSafe(t *testing.T
 }
 
 func TestProviderStateHandoffWorkflowStateIsIdempotentAndConflictSafe(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -100,6 +104,8 @@ func TestProviderStateHandoffWorkflowStateIsIdempotentAndConflictSafe(t *testing
 }
 
 func TestProviderStateHandoffInventoryUsesStableIdentityAndSemanticPayload(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -126,6 +132,8 @@ func TestProviderStateHandoffInventoryUsesStableIdentityAndSemanticPayload(t *te
 }
 
 func TestProviderStateHandoffInventorySkipsUntouchedWorkflowDefaults(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	repoID := seedProviderStateTargetForTest(t, database)
@@ -147,6 +155,8 @@ func TestProviderStateHandoffInventorySkipsUntouchedWorkflowDefaults(t *testing.
 }
 
 func TestProviderStateHandoffDigestUsesStableRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	original := providerReviewDraftForTest("portable draft")
@@ -166,6 +176,8 @@ func TestProviderStateHandoffDigestUsesStableRepositoryIdentity(t *testing.T) {
 }
 
 func TestProviderStateHandoffAcceptsReviewCommentWithoutCommitSHA(t *testing.T) {
+	t.Parallel()
+
 	payload := providerReviewDraftForTest("portable draft")
 	payload.Comments[0].CommitSHA = ""
 

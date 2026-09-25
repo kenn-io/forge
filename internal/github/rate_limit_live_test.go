@@ -13,6 +13,8 @@ import (
 )
 
 func TestLiveGitHubRateLimitSnapshotUsesGoGitHub(t *testing.T) {
+	t.Parallel()
+
 	skipUnlessLiveGitHubTests(t)
 	require := require.New(t)
 	assert := assert.New(t)

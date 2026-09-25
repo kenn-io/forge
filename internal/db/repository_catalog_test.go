@@ -49,6 +49,8 @@ func seedRepositoryCatalogCollision(t *testing.T, d *DB) (int64, int64) {
 }
 
 func TestResolveActiveRepositoryRouteReturnsOnlyCurrentOccupant(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -66,6 +68,8 @@ func TestResolveActiveRepositoryRouteReturnsOnlyCurrentOccupant(t *testing.T) {
 }
 
 func TestGetRepositoryByProviderIDReturnsInactiveRepository(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -82,6 +86,8 @@ func TestGetRepositoryByProviderIDReturnsInactiveRepository(t *testing.T) {
 }
 
 func TestListRepositoryCatalogFindsHistoricalNameCollisions(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	oldID, newID := seedRepositoryCatalogCollision(t, d)
 	entries, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{
@@ -98,6 +104,8 @@ func TestListRepositoryCatalogFindsHistoricalNameCollisions(t *testing.T) {
 }
 
 func TestOperationalRepositoryReadsUseCurrentIncarnation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -157,6 +165,8 @@ func TestOperationalRepositoryReadsUseCurrentIncarnation(t *testing.T) {
 }
 
 func TestOperationalAssociationsDoNotCrossRepositoryIncarnations(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -217,6 +227,8 @@ func TestOperationalAssociationsDoNotCrossRepositoryIncarnations(t *testing.T) {
 }
 
 func TestWorkspaceRouteLookupBindsCurrentRepositoryAfterReplacement(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -270,6 +282,8 @@ func TestWorkspaceRouteLookupBindsCurrentRepositoryAfterReplacement(t *testing.T
 }
 
 func TestInsertWorkspaceRejectsChangedExplicitRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	originalID, _ := seedRepositoryCatalogCollision(t, d)
@@ -287,6 +301,8 @@ func TestInsertWorkspaceRejectsChangedExplicitRepositoryIdentity(t *testing.T) {
 }
 
 func TestInactiveWorkspaceRepositoryKeepsPersistedRoute(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	observedAt := baseTime()
@@ -329,6 +345,8 @@ func TestInactiveWorkspaceRepositoryKeepsPersistedRoute(t *testing.T) {
 }
 
 func TestInsertWorkspaceWithoutActiveRepositoryRetainsHistoricalRouteFence(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	observedAt := baseTime()
@@ -353,6 +371,8 @@ func TestInsertWorkspaceWithoutActiveRepositoryRetainsHistoricalRouteFence(t *te
 }
 
 func TestRepositoryCatalogLookupNeverFallsBackFromProviderID(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	seedRepositoryCatalogCollision(t, d)
 	entry, err := d.GetRepositoryByProviderID(
@@ -363,6 +383,8 @@ func TestRepositoryCatalogLookupNeverFallsBackFromProviderID(t *testing.T) {
 }
 
 func TestListRepositoryCatalogRejectsUnqualifiedProviderID(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	_, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{
 		PlatformRepoID: "provider-old",
@@ -371,6 +393,8 @@ func TestListRepositoryCatalogRejectsUnqualifiedProviderID(t *testing.T) {
 }
 
 func TestListRepositoryCatalogFiltersLifecycle(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	_, newID := seedRepositoryCatalogCollision(t, d)
@@ -388,6 +412,8 @@ func TestListRepositoryCatalogFiltersLifecycle(t *testing.T) {
 }
 
 func TestGetRepositoryByProviderIDOrdersRoutesByFirstSeen(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -439,6 +465,8 @@ func reconcileCatalogRepository(
 }
 
 func TestReconcileRepositoryObservationIsIdempotent(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -463,6 +491,8 @@ func TestReconcileRepositoryObservationIsIdempotent(t *testing.T) {
 }
 
 func TestReconcileRepositoryObservationIgnoresStaleRename(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -497,6 +527,8 @@ func TestReconcileRepositoryObservationIgnoresStaleRename(t *testing.T) {
 // observation whose route is currently free: without a repository-level
 // watermark it would reactivate the inactive repository with stale data.
 func TestReconcileRepositoryObservationRejectsStaleReactivation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -530,6 +562,8 @@ func TestReconcileRepositoryObservationRejectsStaleReactivation(t *testing.T) {
 }
 
 func TestDeactivateRepositoryObservationIgnoresStaleAbsence(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -554,6 +588,8 @@ func TestDeactivateRepositoryObservationIgnoresStaleAbsence(t *testing.T) {
 // the reconciliation read lock, then binds the repository that owns the route
 // after a pending replacement finishes.
 func TestInsertWorkspaceWaitsForReconciliation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	reconcileCatalogRepository(
@@ -623,6 +659,8 @@ func TestInsertWorkspaceWaitsForReconciliation(t *testing.T) {
 }
 
 func TestReconcileRepositoryObservationRejectsStaleReplacement(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -656,6 +694,8 @@ func TestReconcileRepositoryObservationRejectsStaleReplacement(t *testing.T) {
 }
 
 func TestReconcileRepositoryObservationRejectsStaleKnownRepositoryAfterReplacement(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -699,6 +739,8 @@ func TestReconcileRepositoryObservationRejectsStaleKnownRepositoryAfterReplaceme
 }
 
 func TestReconcileRepositoryObservationRenamesSameProviderID(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -746,6 +788,8 @@ func TestReconcileRepositoryObservationRenamesSameProviderID(t *testing.T) {
 }
 
 func TestReconcileRepositoryObservationReplacesAndReactivates(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -797,6 +841,8 @@ func TestReconcileRepositoryObservationReplacesAndReactivates(t *testing.T) {
 }
 
 func TestRepositoryObservationPreservesAToBToARouteHistory(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
@@ -832,6 +878,8 @@ func TestRepositoryObservationPreservesAToBToARouteHistory(t *testing.T) {
 }
 
 func TestReconcileRepositoryObservationAdoptionKeepsLegacyContent(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -876,6 +924,8 @@ func TestReconcileRepositoryObservationAdoptionKeepsLegacyContent(t *testing.T) 
 }
 
 func TestReconcileRepositoryObservationRollsBackOnRouteWriteFailure(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -925,6 +975,8 @@ func TestReconcileRepositoryObservationRollsBackOnRouteWriteFailure(t *testing.T
 }
 
 func TestReconcileRepositoryObservationMovesIntoOccupiedRoute(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -958,6 +1010,8 @@ func TestReconcileRepositoryObservationMovesIntoOccupiedRoute(t *testing.T) {
 }
 
 func TestReconcileRepositoryObservationRejectsIncompleteIdentity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	for _, identity := range []RepoIdentity{
@@ -983,6 +1037,8 @@ func TestReconcileRepositoryObservationRejectsIncompleteIdentity(t *testing.T) {
 }
 
 func TestReconcileRepositoryObservationRefreshesCaseOnlyDisplayMetadata(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1024,6 +1080,8 @@ func TestReconcileRepositoryObservationRefreshesCaseOnlyDisplayMetadata(t *testi
 }
 
 func TestRepositoryCatalogReadWaitsForReconciliation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1084,6 +1142,8 @@ func TestRepositoryCatalogReadWaitsForReconciliation(t *testing.T) {
 }
 
 func TestDeactivateRepositoryObservationPreservesHistory(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1140,6 +1200,8 @@ func TestDeactivateRepositoryObservationPreservesHistory(t *testing.T) {
 }
 
 func TestLegacyRepositoryWritersMaintainCatalogState(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1181,6 +1243,8 @@ func TestLegacyRepositoryWritersMaintainCatalogState(t *testing.T) {
 }
 
 func TestUpsertRepoByProviderIDDoesNotMergeRouteReplacement(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1217,6 +1281,8 @@ func TestUpsertRepoByProviderIDDoesNotMergeRouteReplacement(t *testing.T) {
 }
 
 func TestUpdateRepoProviderMetadataRejectsStableIDChange(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	repository := reconcileCatalogRepository(
@@ -1236,6 +1302,8 @@ func TestUpdateRepoProviderMetadataRejectsStableIDChange(t *testing.T) {
 }
 
 func TestUpdateRepoProviderObservationRejectsOlderSameRouteSettings(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -1300,6 +1368,8 @@ func TestUpdateRepoProviderObservationRejectsOlderSameRouteSettings(t *testing.T
 // merge-method settings (for example a GitLab snapshot). The permission must
 // persist on its own; the merge methods keep their stored values.
 func TestUpdateRepoProviderObservationPersistsViewerOnlySnapshot(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -1345,6 +1415,8 @@ func TestUpdateRepoProviderObservationPersistsViewerOnlySnapshot(t *testing.T) {
 // payloads and test fixtures): known stored metadata must survive, while the
 // snapshot's merge settings still commit.
 func TestUpdateRepoProviderObservationPreservesMetadataOnEmptyFields(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -1390,6 +1462,8 @@ func TestUpdateRepoProviderObservationPreservesMetadataOnEmptyFields(t *testing.
 }
 
 func TestUpdateRepoProviderObservationFailsClosedForReplacementOnReusedRoute(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -1423,6 +1497,8 @@ func TestUpdateRepoProviderObservationFailsClosedForReplacementOnReusedRoute(t *
 }
 
 func TestUpdateRepoProviderObservationPreservesKnownViewerPermissionWhenOmitted(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -1451,6 +1527,8 @@ func TestUpdateRepoProviderObservationPreservesKnownViewerPermissionWhenOmitted(
 // cached write: it carries no provider verification, so it must resolve by
 // stable ID without stealing back a route another repository now holds.
 func TestUpsertRepoCachedIdentityDoesNotReclaimReusedRoute(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1487,6 +1565,8 @@ func TestUpsertRepoCachedIdentityDoesNotReclaimReusedRoute(t *testing.T) {
 }
 
 func TestDeactivateRepositoryObservationAdvancesWatermarkWhenAlreadyInactive(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1521,6 +1601,8 @@ func TestDeactivateRepositoryObservationAdvancesWatermarkWhenAlreadyInactive(t *
 }
 
 func TestWorkspaceRouteWithOnlyHistoricalOccupantsIsAmbiguous(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1559,6 +1641,8 @@ func TestWorkspaceRouteWithOnlyHistoricalOccupantsIsAmbiguous(t *testing.T) {
 }
 
 func TestReconcileRepositoryObservationAdoptsLegacyRouteOnlyRepository(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1585,6 +1669,8 @@ func TestReconcileRepositoryObservationAdoptsLegacyRouteOnlyRepository(t *testin
 }
 
 func TestReconcileRepositoryObservationFailsClosedWhenAdoptingLegacyRepository(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	legacyID, err := d.UpsertRepo(t.Context(), RepoIdentity{
@@ -1607,6 +1693,8 @@ func TestReconcileRepositoryObservationFailsClosedWhenAdoptingLegacyRepository(t
 }
 
 func TestAdoptLegacyClonesIfSafeRequiresUnreusedVerifiedRoute(t *testing.T) {
+	t.Parallel()
+
 	t.Run("verified route with one owner", func(t *testing.T) {
 		d := openTestDB(t)
 		entry := reconcileCatalogRepository(
@@ -1695,6 +1783,8 @@ func TestAdoptLegacyClonesIfSafeRequiresUnreusedVerifiedRoute(t *testing.T) {
 }
 
 func TestAdoptLegacyClonesIfSafeHoldsRouteGuardThroughAdoption(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	entry := reconcileCatalogRepository(
@@ -1747,6 +1837,8 @@ func TestAdoptLegacyClonesIfSafeHoldsRouteGuardThroughAdoption(t *testing.T) {
 }
 
 func TestReconcileRepositoryObservationClearsVacatedRouteSyncState(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1812,6 +1904,8 @@ func TestReconcileRepositoryObservationClearsVacatedRouteSyncState(t *testing.T)
 }
 
 func TestReconcileRepositoryObservationClearsHistoricalRouteStateBeforeReuse(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1865,6 +1959,8 @@ func TestReconcileRepositoryObservationClearsHistoricalRouteStateBeforeReuse(t *
 }
 
 func TestReconcileRepositoryObservationClearsLegacyHistoricalRouteStateBeforeReuse(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1920,6 +2016,8 @@ func TestReconcileRepositoryObservationClearsLegacyHistoricalRouteStateBeforeReu
 }
 
 func TestRepositoryRouteGuardRejectsWriteAfterABAReuse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)

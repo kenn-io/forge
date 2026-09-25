@@ -222,6 +222,8 @@ func (m *mockClient) MarkNotificationThreadRead(context.Context, string) error {
 func (m *mockClient) InvalidateListETagsForRepo(string, string, ...string)     {}
 
 func TestSyncerStopIsIdempotent(t *testing.T) {
+	t.Parallel()
+
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockClient{}},
 		nil, nil, nil, time.Minute, nil, nil,
@@ -250,6 +252,8 @@ func (b *blockingMockClient) ListOpenPullRequests(
 }
 
 func TestSyncerStopWaitsForRunOnce(t *testing.T) {
+	t.Parallel()
+
 	entered := make(chan struct{})
 	blocked := make(chan struct{})
 	mock := &blockingMockClient{
@@ -322,6 +326,8 @@ func (p *parallelMockClient) ListOpenPullRequests(
 }
 
 func TestRunOnceSyncesReposInParallel(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -380,6 +386,8 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 }
 
 func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -440,6 +448,8 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 }
 
 func TestRunOnceCancelAfterCompleteReportsSuccess(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -496,6 +506,8 @@ func (c *cancelDuringSyncMockClient) GetRepository(
 }
 
 func TestRunOnceCancelDuringSyncRepoDoesNotReportSuccess(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -555,6 +567,8 @@ func (c *deadlineExceededMockClient) ListOpenPullRequests(
 }
 
 func TestRunOncePerRequestDeadlineRecordsError(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -594,7 +608,7 @@ func (sw *syncedWriter) Write(p []byte) (int, error) {
 	return sw.w.Write(p)
 }
 
-func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) {
+func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -639,6 +653,8 @@ func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) {
 }
 
 func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	mock := &mockClient{openPRs: []*gh.PullRequest{}}
 	d := openTestDB(t)
@@ -673,6 +689,8 @@ func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
 }
 
 func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	const completionTimeout = 30 * time.Second
@@ -754,6 +772,8 @@ func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
 }
 
 func TestSyncerTriggerRunForReposSyncsOnlySelectedRepos(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -832,6 +852,8 @@ func TestSyncerTriggerRunForReposSyncsOnlySelectedRepos(t *testing.T) {
 // If an accepted trigger is dropped behind an in-flight provider snapshot,
 // data changed after that snapshot stays stale until an unrelated later run.
 func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		trigger func(*ghclient.Syncer, context.Context, []ghclient.RepoRef)
@@ -978,6 +1000,8 @@ func (b *blockingCtxMockClient) ListOpenPullRequests(
 }
 
 func TestSyncerStopCancelsTriggerRun(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 

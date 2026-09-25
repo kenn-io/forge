@@ -32,6 +32,8 @@ func (c *countingRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 }
 
 func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &countingRoundTripper{status: http.StatusInternalServerError}
@@ -65,6 +67,8 @@ func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
 }
 
 func TestArchiveAttemptAllowanceBoundsAuthRetries(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &countingRoundTripper{status: http.StatusUnauthorized}
@@ -95,6 +99,8 @@ func TestArchiveAttemptAllowanceBoundsAuthRetries(t *testing.T) {
 }
 
 func TestArchiveAttemptAllowanceLeavesLiveContextsUnbounded(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &countingRoundTripper{status: http.StatusInternalServerError}
@@ -120,6 +126,8 @@ func TestArchiveAttemptAllowanceLeavesLiveContextsUnbounded(t *testing.T) {
 }
 
 func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	registry := NewQuotaRegistry()
@@ -183,6 +191,8 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 }
 
 func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -263,6 +273,8 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 }
 
 func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -322,6 +334,8 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 }
 
 func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()
@@ -389,6 +403,8 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 }
 
 func TestArchiveProviderAttemptAllowanceSeedsCostAcrossQuotaWindowReset(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -452,6 +468,8 @@ func TestArchiveProviderAttemptAllowanceSeedsCostAcrossQuotaWindowReset(t *testi
 }
 
 func TestArchiveProviderAttemptAllowanceRechecksEveryRequiredPool(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()

@@ -15,6 +15,8 @@ import (
 )
 
 func TestBudgetTransport_CountsSyncContext(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -40,6 +42,8 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 }
 
 func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	budget := NewSyncBudget(1)
@@ -94,6 +98,8 @@ func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
 }
 
 func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	budget := NewSyncBudget(1)
@@ -122,6 +128,8 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 }
 
 func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	budget := NewSyncBudget(100)
 	bt := &budgetTransport{
@@ -150,6 +158,8 @@ func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
 }
 
 func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -192,6 +202,8 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 }
 
 func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -219,6 +231,8 @@ func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
 }
 
 func TestBudgetTransport_SkipsNonSyncContext(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -244,6 +258,8 @@ func TestBudgetTransport_SkipsNonSyncContext(t *testing.T) {
 }
 
 func TestBudgetTransport_CountsMultipleRequests(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -271,6 +287,8 @@ func TestBudgetTransport_CountsMultipleRequests(t *testing.T) {
 }
 
 func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -296,6 +314,8 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 }
 
 func TestWithSyncBudget_PreservesExistingValues(t *testing.T) {
+	t.Parallel()
+
 	type customKey struct{}
 	base := context.WithValue(
 		t.Context(), customKey{}, "hello",
@@ -311,6 +331,8 @@ func TestWithSyncBudget_PreservesExistingValues(t *testing.T) {
 // provider response can never arrive to release an exhausted budget. Recovery
 // must therefore come from the budget's own window rollover.
 func TestBudgetTransportRecoversAfterWindowWithoutProviderResponse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	budget := NewSyncBudget(1)
@@ -356,6 +378,8 @@ func TestBudgetTransportRecoversAfterWindowWithoutProviderResponse(t *testing.T)
 // the quota registry alone: the local sync budget keeps metering live sync
 // and must not debit for it.
 func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	budget := NewSyncBudget(100)

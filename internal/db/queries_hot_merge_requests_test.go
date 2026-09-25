@@ -57,6 +57,8 @@ func TestRecordHotMergeRequestViewMaintainsPersistedMRU(t *testing.T) {
 }
 
 func TestHotMergeRequestTerminalEviction(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)

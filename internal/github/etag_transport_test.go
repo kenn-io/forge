@@ -21,6 +21,8 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestETagTransport_StoresETagOn200(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -61,6 +63,8 @@ func TestETagTransport_StoresETagOn200(t *testing.T) {
 // transport issues an unconditional fetch that detects list growth
 // beyond page 1.
 func TestETagTransport_304PreservesCachedAt(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -90,6 +94,8 @@ func TestETagTransport_304PreservesCachedAt(t *testing.T) {
 }
 
 func TestETagTransport_DifferentURLsIndependent(t *testing.T) {
+	t.Parallel()
+
 	callCount := 0
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		callCount++
@@ -116,6 +122,8 @@ func TestETagTransport_DifferentURLsIndependent(t *testing.T) {
 }
 
 func TestETagTransport_PageGt1BypassesETag(t *testing.T) {
+	t.Parallel()
+
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		assert.Empty(t, r.Header.Get("If-None-Match"), "page>1 should not send If-None-Match")
 		rec := httptest.NewRecorder()
@@ -136,6 +144,8 @@ func TestETagTransport_PageGt1BypassesETag(t *testing.T) {
 }
 
 func TestETagTransport_EmptyETagEvictsCachedEntry(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	url := "https://api.github.com/repos/o/n/pulls"
@@ -175,6 +185,8 @@ func TestETagTransport_EmptyETagEvictsCachedEntry(t *testing.T) {
 }
 
 func TestETagTransport_MultiPageEvictsPageOneETag(t *testing.T) {
+	t.Parallel()
+
 	// First request: single page, cache ETag
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
@@ -213,6 +225,8 @@ func TestETagTransport_MultiPageEvictsPageOneETag(t *testing.T) {
 }
 
 func TestETagTransport_MultiHeaderLinkEvictsETag(t *testing.T) {
+	t.Parallel()
+
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.Header().Set("ETag", `"multi-header"`)
@@ -235,6 +249,8 @@ func TestETagTransport_MultiHeaderLinkEvictsETag(t *testing.T) {
 }
 
 func TestETagTransport_FinalPageLinkEvictsETag(t *testing.T) {
+	t.Parallel()
+
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.Header().Set("ETag", `"final-page"`)
@@ -256,6 +272,8 @@ func TestETagTransport_FinalPageLinkEvictsETag(t *testing.T) {
 }
 
 func TestETagTransport_NonGETBypassesCache(t *testing.T) {
+	t.Parallel()
+
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		assert.Empty(t, r.Header.Get("If-None-Match"))
 		rec := httptest.NewRecorder()
@@ -280,6 +298,8 @@ func TestETagTransport_NonGETBypassesCache(t *testing.T) {
 }
 
 func TestETagTransport_NonAllowlistedPathBypassesCache(t *testing.T) {
+	t.Parallel()
+
 	// Pre-populate cache with the URL to prove gate blocks it
 	url := "https://api.github.com/repos/o/n/commits/abc123/status"
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -300,6 +320,8 @@ func TestETagTransport_NonAllowlistedPathBypassesCache(t *testing.T) {
 }
 
 func TestETagTransport_AllowlistedPathPositiveControl(t *testing.T) {
+	t.Parallel()
+
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.Header().Set("ETag", `"allowed"`)
@@ -319,6 +341,8 @@ func TestETagTransport_AllowlistedPathPositiveControl(t *testing.T) {
 }
 
 func TestETagTransport_SingleMultiSingleTransition(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	url := "https://api.github.com/repos/o/n/pulls"
@@ -373,6 +397,8 @@ func TestETagTransport_SingleMultiSingleTransition(t *testing.T) {
 }
 
 func TestETagTransport_TTLDrivenMultiPageDetection(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -429,6 +455,8 @@ func TestETagTransport_TTLDrivenMultiPageDetection(t *testing.T) {
 }
 
 func TestETagTransport_ExpiredEntryTreatedAsUncached(t *testing.T) {
+	t.Parallel()
+
 	url := "https://api.github.com/repos/o/n/pulls"
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		assert.Empty(t, r.Header.Get("If-None-Match"), "expired entry should not send If-None-Match")
@@ -453,6 +481,8 @@ func TestETagTransport_ExpiredEntryTreatedAsUncached(t *testing.T) {
 }
 
 func TestETagTransport_DetailEndpointBypassesCache(t *testing.T) {
+	t.Parallel()
+
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		assert.Empty(t, r.Header.Get("If-None-Match"), "detail endpoints must bypass cache")
 		rec := httptest.NewRecorder()
@@ -478,6 +508,8 @@ func TestETagTransport_DetailEndpointBypassesCache(t *testing.T) {
 }
 
 func TestETagTransport_IssueCommentsUseCache(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -516,6 +548,8 @@ func TestETagTransport_IssueCommentsUseCache(t *testing.T) {
 // forces an unconditional fetch. This is the safety net for
 // detecting list growth beyond page 1.
 func TestETagTransport_304DoesNotExtendCacheLifetime(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -572,6 +606,8 @@ func TestETagTransport_304DoesNotExtendCacheLifetime(t *testing.T) {
 // silently skipped the cache entirely because the regex was anchored
 // at /repos/... and GHE requests arrive as /api/v3/repos/....
 func TestETagTransport_GHEPathCaches(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	url := "https://ghe.example.com/api/v3/repos/o/n/pulls"
 	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -632,6 +668,8 @@ func TestETagTransport_GHEPathCaches(t *testing.T) {
 // covering both public github.com and GHE /api/v3 paths, and
 // leaves unrelated entries intact.
 func TestETagTransport_InvalidateRepo(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	seed := func(et *etagTransport) {
@@ -718,6 +756,8 @@ func TestETagTransport_InvalidateRepo(t *testing.T) {
 }
 
 func TestIsNotModified(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	resp304 := &http.Response{StatusCode: http.StatusNotModified}

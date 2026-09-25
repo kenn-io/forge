@@ -148,6 +148,7 @@ describe("WorkspaceTerminalView layout flip", () => {
           ),
       ).toBe(true);
 
+      await screen.getByRole("button", { name: "Workspace controls", exact: true }).click();
       await presets.click();
       const narrowMenu = screen
         .getByRole("dialog", { name: "Workflow presets", exact: true })

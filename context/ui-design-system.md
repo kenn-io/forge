@@ -465,6 +465,10 @@ Popover surface chrome (background, border, radius, shadow) comes from `kit-popo
 
 A popover that lowers its own min-content width (`overflow-wrap: anywhere`, so an unbreakable branch name cannot stretch `WorkspacePaneControls` past its max-width) leaks that to every surface nested inside it, where flex rows then shrink buttons below their labels and break them mid-word. Reset `overflow-wrap`/`word-break` at the nested popover's root instead of hardening each child (`frontend/src/lib/components/terminal/TerminalOptionsMenu.svelte`).
 
+Narrow workspace headers keep identity and Launch visible; secondary controls belong
+in the shared workspace controls popover so toolbar wrapping does not consume the
+terminal (`frontend/src/lib/components/terminal/WorkspacePaneControls.svelte`).
+
 ### GitHubLabels
 
 Use `GitHubLabels` for actual GitHub labels.

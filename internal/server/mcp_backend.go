@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/platform"
 )
 
 func (s *Server) MCPBackend() mcpserver.Backend {
@@ -851,7 +852,7 @@ func (b mcpBackend) resolveRepository(
 			Message: "repository identity no longer matches this route",
 		}
 	}
-	return repo, nil
+	return repo.Row(), nil
 }
 
 func validateMCPRepositoryIdentity(identity mcpserver.RepositoryIdentity) error {
@@ -873,11 +874,11 @@ func validateMCPRepositoryIdentity(identity mcpserver.RepositoryIdentity) error 
 func mcpRepositoryStableIdentityMatches(
 	repo db.Repo, identity mcpserver.RepositoryIdentity,
 ) bool {
-	actual := providerplane.RepositoryIdentity{
+	actual := platform.RepositoryIdentity{
 		Provider: repo.Platform, PlatformHost: repo.PlatformHost,
 		PlatformRepoID: repo.PlatformRepoID,
 	}.Canonical()
-	expected := providerplane.RepositoryIdentity{
+	expected := platform.RepositoryIdentity{
 		Provider: identity.Provider, PlatformHost: identity.PlatformHost,
 		PlatformRepoID: identity.PlatformRepoID,
 	}.Canonical()

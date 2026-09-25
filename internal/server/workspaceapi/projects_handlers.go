@@ -726,7 +726,7 @@ func (s *Handler) createProjectWorktreeFromMergeRequest(
 		return nil, providerRouteLookupError(err)
 	}
 	facts, err := s.resolveMergeRequestWorktreeFacts(
-		ctx, *repo, *identity, input.Body.Number,
+		ctx, repo.Repo, *identity, input.Body.Number,
 	)
 	if err != nil {
 		return nil, err

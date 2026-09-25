@@ -35,7 +35,7 @@ func expandHomeCWD(cwd string) string {
 
 func (s *Handler) lookupRepoByProviderRoute(
 	ctx context.Context, provider, platformHost, owner, name string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	if s.lookupRepo != nil {
 		return s.lookupRepo(ctx, provider, platformHost, owner, name)
 	}

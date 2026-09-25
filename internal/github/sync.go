@@ -2439,6 +2439,14 @@ func (s *Syncer) launchClaimedRun(
 	return true
 }
 
+// Identity returns the ref's canonical identity; see platform.RepoRef.Identity.
+func (r RepoRef) Identity() platform.RepositoryIdentity {
+	return platform.RepositoryIdentity{
+		Provider: string(repoPlatform(r)), PlatformHost: repoHost(r),
+		PlatformRepoID: r.PlatformExternalID,
+	}.Canonical()
+}
+
 func repoPlatform(repo RepoRef) platform.Kind {
 	if repo.Platform != "" {
 		return repo.Platform

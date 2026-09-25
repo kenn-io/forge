@@ -83,7 +83,7 @@ func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {
 
 	repo, err := resolver.Lookup(t.Context(), "gitlab", "gitlab.example.com", "group/subgroup/widget")
 	require.NoError(err)
-	ref := resolver.Ref(*repo)
+	ref := resolver.Ref(repo.Repo)
 
 	assert.Equal("gitlab", ref.Provider)
 	assert.Equal("gitlab.example.com", ref.PlatformHost)

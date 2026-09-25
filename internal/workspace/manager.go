@@ -726,7 +726,7 @@ func (m *Manager) repositoryForLaunchSpec(
 			spec.Repository.Owner, spec.Repository.Name,
 		)
 	}
-	return repo, nil
+	return repo.Row(), nil
 }
 
 func (m *Manager) validateExistingWorkspaceDirectory(
@@ -923,7 +923,7 @@ func (m *Manager) CreateAdHoc(
 	repoRef := workspaceRepoRef{
 		ID: repo.ID, Platform: repo.Platform, PlatformHost: platformHost,
 		ProviderID: repo.PlatformRepoID, Owner: owner, Name: name,
-		RemoteURL: workspaceCloneRemoteURL(repo, platformHost, owner, name),
+		RemoteURL: workspaceCloneRemoteURL(repo.Row(), platformHost, owner, name),
 	}
 	repoDir, err := m.workspaceRepoDir(ctx, repoRef)
 	if err != nil {
@@ -1735,7 +1735,7 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 		if m.beforeHeadRepoSnapshotRepoLookup != nil {
 			m.beforeHeadRepoSnapshotRepoLookup()
 		}
-		var repo *db.Repo
+		var repo *db.ActiveRepo
 		if ws.RepoID != 0 {
 			repo, err = m.db.GetActiveRepoByID(ctx, ws.RepoID)
 		} else {
@@ -2536,7 +2536,7 @@ func (m *Manager) workspaceSetupRemoteURL(
 	if err != nil {
 		return "", fmt.Errorf("look up repo clone URL: %w", err)
 	}
-	return workspaceCloneRemoteURL(repo, platformHost, owner, name), nil
+	return workspaceCloneRemoteURL(repo.Row(), platformHost, owner, name), nil
 }
 
 func (m *Manager) localWorktreeBaseDir(
@@ -2674,7 +2674,7 @@ func (m *Manager) allowsInsecureHTTP(platform, platformHost string) bool {
 func (m *Manager) workspaceRepo(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	identity, err := workspaceRepoIdentity(provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
@@ -2687,7 +2687,7 @@ func (m *Manager) workspaceRepo(
 func (m *Manager) workspaceRepoUnderReconciliationRead(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	identity, err := workspaceRepoIdentity(provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err

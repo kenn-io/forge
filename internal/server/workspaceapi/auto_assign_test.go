@@ -170,13 +170,13 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), *repo, tt.number, tt.issue, false))
+			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), repo.Repo, tt.number, tt.issue, false))
 			assert.Equal([]string{"reviewer", "maintainer"}, tt.assigned())
 			assert.Equal([]string{"reviewer", "maintainer"}, tt.stored())
 
 			provider.pullAssigned = nil
 			provider.issueAssigned = nil
-			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), *repo, tt.number, tt.issue, true))
+			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), repo.Repo, tt.number, tt.issue, true))
 			assert.Nil(tt.assigned())
 		})
 	}
@@ -211,9 +211,9 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	provider.pullAssigned = nil
 	provider.issueAssigned = nil
 
-	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 7, false, false)
+	err = handler.autoAssignWorkspaceItem(t.Context(), repo.Repo, 7, false, false)
 	require.ErrorContains(err, "not visible")
-	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 8, true, false)
+	err = handler.autoAssignWorkspaceItem(t.Context(), repo.Repo, 8, true, false)
 	require.ErrorContains(err, "not visible")
 	assert.Empty(provider.pullAssigned)
 	assert.Empty(provider.issueAssigned)

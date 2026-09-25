@@ -28,6 +28,11 @@ combining repository-owned history
   `internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`).
 - Rows without a verified provider ID remain inactive legacy records. Never
   infer their identity from a matching route.
+- Active-route lookups return `db.ActiveRepo`, whose identity is always
+  complete. Compare repositories with `platform.RepositoryIdentity` equality
+  through `Identity()` methods, never field by field, and do not re-check an
+  active repository's provider ID for emptiness
+  (`internal/db/types.go::ActiveRepo`, `platform/repository_identity.go`).
 - Timestamp provider observations before the identity lookup starts; a delayed
   response must not supersede a newer route observation
   (`internal/github/sync.go::Syncer.syncRepoIdentity`).

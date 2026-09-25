@@ -126,32 +126,32 @@ func (s *Handler) createIssue(ctx context.Context, input *createIssueInput) (*cr
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityIssueMutation); err != nil {
+	if err := s.requireSyncerCapability(repo.Repo, capabilityIssueMutation); err != nil {
 		return nil, err
 	}
-	mutator, err := s.syncer.IssueMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
+	mutator, err := s.syncer.IssueMutator(httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo))
 	if err != nil {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityIssueMutation)
+		return nil, httpapi.UnsupportedCapability(repo.Repo, capabilityIssueMutation)
 	}
-	providerIssue, err := mutator.CreateIssue(ctx, httpapi.PlatformRepoRef(*repo), title, input.Body.Body)
+	providerIssue, err := mutator.CreateIssue(ctx, httpapi.PlatformRepoRef(repo.Repo), title, input.Body.Body)
 	if err != nil {
-		return nil, httpapi.ProviderMutationProblem(err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo))
+		return nil, httpapi.ProviderMutationProblem(err, string(httpapi.ProviderKind(repo.Repo)), httpapi.ProviderHost(repo.Repo))
 	}
 	issue := platformdb.DBIssue(repo.ID, providerIssue)
 	issueID, err := s.db.UpsertIssue(ctx, issue)
 	if err != nil {
-		return nil, createIssuePersistenceProblem(*repo)
+		return nil, createIssuePersistenceProblem(repo.Repo)
 	}
 	if err := s.db.ReplaceIssueLabels(ctx, repo.ID, issueID, issue.Labels); err != nil {
-		return nil, createIssuePersistenceProblem(*repo)
+		return nil, createIssuePersistenceProblem(repo.Repo)
 	}
 	saved, err := s.db.GetIssueByRepoIDAndNumber(ctx, repo.ID, issue.Number)
 	if err != nil || saved == nil {
-		return nil, createIssuePersistenceProblem(*repo)
+		return nil, createIssuePersistenceProblem(repo.Repo)
 	}
 	saved.ID = issueID
 	response := IssueResponse{
-		Issue: issueResponseModel(*saved), Repo: s.resolver.Ref(*repo),
+		Issue: issueResponseModel(*saved), Repo: s.resolver.Ref(repo.Repo),
 		PlatformHost: repo.PlatformHost, RepoOwner: repo.Owner, RepoName: repo.Name,
 		DetailLoaded: saved.DetailFetchedAt != nil,
 	}
@@ -199,7 +199,7 @@ func (s *Handler) getIssueRouteCore(ctx context.Context, input *issueRepoNumberI
 	if issue == nil {
 		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found", nil)
 	}
-	response, err := s.BuildDetail(ctx, repo, issue)
+	response, err := s.BuildDetail(ctx, repo.Row(), issue)
 	if err != nil {
 		return nil, err
 	}
@@ -277,20 +277,20 @@ func (s *Handler) editIssueContent(ctx context.Context, input *editIssueContentI
 	if err != nil {
 		return nil, err
 	}
-	issue, err := s.requireVisibleIssue(ctx, repo, input.Number)
+	issue, err := s.requireVisibleIssue(ctx, repo.Row(), input.Number)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityStateMutation); err != nil {
+	if err := s.requireSyncerCapability(repo.Repo, capabilityStateMutation); err != nil {
 		return nil, err
 	}
-	mutator, err := s.syncer.IssueContentMutator(httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo))
+	mutator, err := s.syncer.IssueContentMutator(httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo))
 	if err != nil {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityStateMutation)
+		return nil, httpapi.UnsupportedCapability(repo.Repo, capabilityStateMutation)
 	}
-	updated, err := mutator.EditIssueContent(ctx, httpapi.PlatformRepoRef(*repo), input.Number, input.Body.Title, input.Body.Body)
+	updated, err := mutator.EditIssueContent(ctx, httpapi.PlatformRepoRef(repo.Repo), input.Number, input.Body.Title, input.Body.Body)
 	if err != nil {
-		return nil, httpapi.ProviderCallProblemWithDetail(err, string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo), "provider API error: "+err.Error())
+		return nil, httpapi.ProviderCallProblemWithDetail(err, string(httpapi.ProviderKind(repo.Repo)), httpapi.ProviderHost(repo.Repo), "provider API error: "+err.Error())
 	}
 	newTitle := issue.Title
 	if updated.Title != "" {
@@ -315,7 +315,7 @@ func (s *Handler) editIssueContent(ctx context.Context, input *editIssueContentI
 	if err != nil || issue == nil {
 		return nil, httpapi.Internal("re-read issue failed")
 	}
-	response, err := s.BuildDetail(ctx, repo, issue)
+	response, err := s.BuildDetail(ctx, repo.Row(), issue)
 	if err != nil {
 		return nil, err
 	}

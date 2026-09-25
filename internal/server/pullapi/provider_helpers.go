@@ -38,14 +38,14 @@ func providerRouteLookupError(err error) error {
 func (s *Handler) lookupRepoByProviderRoute(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	return s.resolver.LookupRoute(ctx, provider, platformHost, owner, name)
 }
 
 func (s *Handler) requireRepoRouteCapability(
 	ctx context.Context,
 	provider, platformHost, owner, name, capability string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	return s.resolver.RequireRouteCapability(
 		ctx, provider, platformHost, owner, name, capability,
 	)

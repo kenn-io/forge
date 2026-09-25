@@ -9,6 +9,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/platform"
 )
 
 type federationUnassignedActivitySubjectsRequest struct {
@@ -50,7 +51,7 @@ func federationActivitySubjectIdentityFromProvider(
 
 func (identity federationActivitySubjectIdentity) provider() providerplane.ItemIdentity {
 	return providerplane.ItemIdentity{
-		Repository: providerplane.RepositoryIdentity{
+		Repository: platform.RepositoryIdentity{
 			Provider:       identity.Repository.Provider,
 			PlatformHost:   identity.Repository.PlatformHost,
 			PlatformRepoID: identity.Repository.PlatformRepoID,
@@ -99,7 +100,7 @@ func (s *Server) federationFilterUnassignedActivitySubjects(
 
 	keys := make([]db.WorkspaceSubjectKey, 0, len(identities))
 	identityByKey := make(map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, len(identities))
-	repositoryIDs := make(map[providerplane.RepositoryIdentity]int64)
+	repositoryIDs := make(map[platform.RepositoryIdentity]int64)
 	for _, identity := range identities {
 		repositoryIdentity := identity.Repository.Canonical()
 		repositoryID, resolved := repositoryIDs[repositoryIdentity]
@@ -151,13 +152,13 @@ func (s *Server) federationFilterUnassignedActivitySubjects(
 
 func workspaceActivitySubjectIdentities(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
-	repositories map[int64]providerplane.RepositoryIdentity,
+	repositories map[int64]platform.RepositoryIdentity,
 ) (map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, []providerplane.ItemIdentity) {
 	capacity := len(snapshot.Subjects) + len(snapshot.OwnReferences)
 	byKey := make(map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, capacity)
 	identities := make([]providerplane.ItemIdentity, 0, capacity)
 	seen := make(map[providerplane.ItemIdentity]struct{}, capacity)
-	appendIdentity := func(key db.WorkspaceSubjectKey, repository providerplane.RepositoryIdentity) {
+	appendIdentity := func(key db.WorkspaceSubjectKey, repository platform.RepositoryIdentity) {
 		itemType := "pr"
 		if key.ItemType == db.WorkspaceItemTypeIssue {
 			itemType = "issue"
@@ -191,10 +192,10 @@ func workspaceActivitySubjectIdentities(
 
 func (s *Server) workspaceActivityRepositoryIdentities(
 	ctx context.Context, snapshot workspaceapi.WorkspaceSubjectSnapshot,
-) (map[int64]providerplane.RepositoryIdentity, error) {
-	repositories := make(map[int64]providerplane.RepositoryIdentity, len(snapshot.Subjects))
+) (map[int64]platform.RepositoryIdentity, error) {
+	repositories := make(map[int64]platform.RepositoryIdentity, len(snapshot.Subjects))
 	for key, activity := range snapshot.Subjects {
-		repositories[key.RepoID] = providerplane.RepositoryIdentity{
+		repositories[key.RepoID] = platform.RepositoryIdentity{
 			Provider:       activity.Subject.Platform,
 			PlatformHost:   activity.Subject.PlatformHost,
 			PlatformRepoID: activity.Subject.PlatformRepoID,
@@ -211,7 +212,7 @@ func (s *Server) workspaceActivityRepositoryIdentities(
 		if repository == nil {
 			continue
 		}
-		repositories[key.RepoID] = providerplane.RepositoryIdentity{
+		repositories[key.RepoID] = platform.RepositoryIdentity{
 			Provider:       repository.Platform,
 			PlatformHost:   repository.PlatformHost,
 			PlatformRepoID: repository.PlatformRepoID,

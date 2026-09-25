@@ -549,23 +549,23 @@ func (h *Handler) ensureRepoBrowserClone(
 			ctx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
 		); err != nil {
 			return nil, gitclone.RepoBrowserRepoRef{}, repoBrowserCredentialProblem(
-				err, *repo,
+				err, repo.Repo,
 			)
 		}
 	}
-	repoRef, err := h.repoBrowserRepoRef(ctx, *repo)
+	repoRef, err := h.repoBrowserRepoRef(ctx, repo.Repo)
 	if err != nil {
 		return nil, gitclone.RepoBrowserRepoRef{}, err
 	}
 	if err := h.clones.EnsureRepoBrowserClone(ctx, repoRef); err != nil {
 		if errors.Is(err, gitclone.ErrCredentialUnavailable) {
 			return nil, gitclone.RepoBrowserRepoRef{}, repoBrowserCredentialProblem(
-				err, *repo,
+				err, repo.Repo,
 			)
 		}
 		return nil, gitclone.RepoBrowserRepoRef{}, err
 	}
-	return repo, repoRef, nil
+	return repo.Row(), repoRef, nil
 }
 
 func repoBrowserCredentialProblem(err error, repo db.Repo) error {

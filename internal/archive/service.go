@@ -296,9 +296,13 @@ func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRe
 		if err != nil {
 			return 0, fmt.Errorf("resolve stored archive repository %s: %w", archiveRepoIdentityKey(ref), err)
 		}
-		if stored != nil && stored.Repository.PlatformRepoID != "" {
-			identity.PlatformRepoID = stored.Repository.PlatformRepoID
-			storedID = stored.Repository.ID
+		if stored != nil {
+			active, err := stored.ActiveRepo()
+			if err != nil {
+				return 0, fmt.Errorf("resolve stored archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+			}
+			identity.PlatformRepoID = active.Identity().PlatformRepoID
+			storedID = active.ID
 		} else {
 			reader, err := s.registry.RepositoryReader(ref.Platform, ref.Host)
 			if err != nil {

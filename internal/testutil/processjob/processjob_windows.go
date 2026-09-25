@@ -12,7 +12,7 @@ import (
 
 var (
 	containOnce sync.Once
-	containErr  error
+	errContain  error
 )
 
 // ContainCurrentProcessTree assigns the current process to a Windows Job
@@ -23,7 +23,7 @@ func ContainCurrentProcessTree() error {
 	containOnce.Do(func() {
 		job, err := windows.CreateJobObject(nil, nil)
 		if err != nil {
-			containErr = fmt.Errorf("create process job: %w", err)
+			errContain = fmt.Errorf("create process job: %w", err)
 			return
 		}
 
@@ -37,16 +37,16 @@ func ContainCurrentProcessTree() error {
 		)
 		if err != nil {
 			_ = windows.CloseHandle(job)
-			containErr = fmt.Errorf("configure process job: %w", err)
+			errContain = fmt.Errorf("configure process job: %w", err)
 			return
 		}
 		if err := windows.AssignProcessToJobObject(
 			job, windows.CurrentProcess(),
 		); err != nil {
 			_ = windows.CloseHandle(job)
-			containErr = fmt.Errorf("assign current process to job: %w", err)
+			errContain = fmt.Errorf("assign current process to job: %w", err)
 			return
 		}
 	})
-	return containErr
+	return errContain
 }

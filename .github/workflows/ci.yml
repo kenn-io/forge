@@ -265,6 +265,11 @@ jobs:
       - name: Run Go linters
         run: make lint-check
 
+      - name: Run Go linters for Windows
+        run: ./custom-gcl run ./...
+        env:
+          GOOS: windows
+
       - name: Install NilAway
         run: |
           go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a

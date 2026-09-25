@@ -960,6 +960,66 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByRole("dialog", { name: "Last push" })).toBeNull();
   });
 
+  it("unfreezes the workspace when a refresh drops push identity", async () => {
+    const eventSources = installEventSourceRecorder();
+    const attribution = {
+      status: "matched",
+      message: "GitHub confirms your author and committer identity.",
+      repository: "acme/widget",
+      branch: "feature/session-exit",
+      oid: "0123456789abcdef0123456789abcdef01234567",
+      pushed: true,
+      expected_github_user_id: 123,
+      author_id: 123,
+      committer_id: 123,
+      author_name: "Alex Example",
+      author_email: "alex@example.test",
+      committer_name: "Sam Example",
+      committer_email: "sam@example.test",
+    };
+    let includeAttribution = true;
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
+      const pathname = fetchPath(input);
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(
+          Response.json({
+            ...workspaceResponse,
+            ...(includeAttribution ? { commit_attribution: attribution } : {}),
+          }),
+        );
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Last push" }));
+    expect(screen.getByRole("dialog", { name: "Last push" })).toBeTruthy();
+    await waitFor(() => expect(document.querySelector<HTMLElement>(".terminal-view")?.inert).toBe(true));
+
+    includeAttribution = false;
+    await waitFor(() => expect(latestWorkspaceEventListeners(eventSources).workspace_status).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(eventSources).workspace_status?.(
+      new MessageEvent("workspace_status", { data: JSON.stringify({ id: "ws-1" }) }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Last push" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "Last push" })).toBeNull();
+    expect(document.querySelector<HTMLElement>(".terminal-view")?.inert).toBe(false);
+
+    includeAttribution = true;
+    latestWorkspaceEventListeners(eventSources).workspace_status?.(
+      new MessageEvent("workspace_status", { data: JSON.stringify({ id: "ws-1" }) }),
+    );
+
+    await screen.findByRole("button", { name: "Last push" });
+    expect(screen.queryByRole("dialog", { name: "Last push" })).toBeNull();
+    expect(document.querySelector<HTMLElement>(".terminal-view")?.inert).toBe(false);
+  });
+
   it("persists toolbar font zoom through shared settings", async () => {
     render(WorkspaceTerminalView, {
       props: {

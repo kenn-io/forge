@@ -1501,15 +1501,23 @@
   const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
   const inlineDockExpandBlocked = $derived(getStackDepth() > 0);
   let attributionOpen = $state(false);
+  // The dialog and the inert lock must use one predicate. A refresh can drop
+  // commit_attribution while attributionOpen is still true; locking on the flag
+  // alone then leaves the workspace inert with no dialog to dismiss.
+  const attributionDialogOpen = $derived(
+    attributionOpen && interactionVisible && workspace?.commit_attribution != null,
+  );
   $effect(() => {
-    if (!interactionVisible || actionsBlocked) attributionOpen = false;
+    if (!interactionVisible || actionsBlocked || workspace?.commit_attribution == null) {
+      attributionOpen = false;
+    }
   });
   const modalOpen = $derived(
     forcePromptMessage !== null ||
       stopPromptSession !== null ||
       deletePromptOpen ||
       renamePrompt !== null ||
-      attributionOpen,
+      attributionDialogOpen,
   );
 
   $effect(() => {
@@ -4769,7 +4777,7 @@
   />
 {/if}
 
-{#if attributionOpen && interactionVisible && workspace?.commit_attribution}
+{#if attributionDialogOpen && workspace?.commit_attribution}
   {@const attribution = workspace.commit_attribution}
   <Modal
     open

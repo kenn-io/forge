@@ -2867,7 +2867,7 @@ func TestMigration59PreservesRowsWithoutInventingAuthorAssociations(t *testing.T
 	require := require.New(t)
 	path := filepath.Join(t.TempDir(), "author-association.db")
 	openAtVersionForTest(t, path, 58, func(raw *sql.DB) {
-		_, err := raw.Exec(`
+		_, err := raw.ExecContext(t.Context(), `
    INSERT INTO forge_repos (id, platform, platform_host, platform_repo_id, owner, name, repo_path, owner_key, name_key, repo_path_key, lifecycle_state, created_at)
    VALUES (1, 'github', 'github.com', 'repo-1', 'acme', 'project', 'acme/project', 'acme', 'project', 'acme/project', 'active', datetime('now'));
    INSERT INTO forge_merge_requests (id, repo_id, platform_id, number, author, created_at, updated_at, last_activity_at) VALUES (1, 1, 7, 7, 'author', datetime('now'), datetime('now'), datetime('now'));

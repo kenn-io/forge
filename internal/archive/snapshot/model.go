@@ -63,7 +63,7 @@ type SnapshotPullRequest struct {
 	HeadSHA              string           `json:"head_sha"`
 	HeadBranch           string           `json:"head_branch"`
 	BaseBranch           string           `json:"base_branch"`
-	HeadInSameRepository bool             `json:"head_in_same_repository"`
+	HeadInSameRepository *bool            `json:"head_in_same_repository" doc:"Null when either repository identity is unavailable or the head identity is stale; false means a known different repository."`
 	Additions            *int             `json:"additions"`
 	Deletions            *int             `json:"deletions"`
 	ChangedFiles         *int             `json:"changed_files"`

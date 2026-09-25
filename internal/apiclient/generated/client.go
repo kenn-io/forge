@@ -56482,11 +56482,13 @@ type SnapshotPullRequest struct {
 	Deletions         *int64          `json:"deletions,omitempty"`
 
 	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
-	DetailFetchedAt      *time.Time       `json:"detail_fetched_at,omitempty"`
-	Draft                bool             `json:"draft"`
-	Gaps                 []string         `json:"gaps"`
-	HeadBranch           string           `json:"head_branch"`
-	HeadInSameRepository bool             `json:"head_in_same_repository"`
+	DetailFetchedAt *time.Time `json:"detail_fetched_at,omitempty"`
+	Draft           bool       `json:"draft"`
+	Gaps            []string   `json:"gaps"`
+	HeadBranch      string     `json:"head_branch"`
+
+	// HeadInSameRepository Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
+	HeadInSameRepository *bool            `json:"head_in_same_repository,omitempty"`
 	HeadSha              string           `json:"head_sha"`
 	ID                   string           `json:"id"`
 	Labels               []string         `json:"labels"`

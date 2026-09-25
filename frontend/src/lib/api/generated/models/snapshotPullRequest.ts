@@ -28,7 +28,11 @@ export interface SnapshotPullRequest {
   draft: boolean;
   gaps: string[];
   head_branch: string;
-  head_in_same_repository: boolean;
+  /**
+   * Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
+   * @nullable
+   */
+  head_in_same_repository: boolean | null;
   head_sha: string;
   id: string;
   labels: string[];

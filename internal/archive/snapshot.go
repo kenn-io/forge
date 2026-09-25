@@ -141,7 +141,10 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		mrIDs = append(mrIDs, row.ID)
 		pullPositions[row.ID] = len(result.PullRequests)
-		pull := snapshot.SnapshotPullRequest{SnapshotItem: item, Draft: row.Draft, HeadSHA: row.HeadSHA, HeadBranch: row.HeadBranch, BaseBranch: row.BaseBranch, HeadInSameRepository: !row.HeadRepoIdentityStale && repo.CloneURL != "" && repo.CloneURL == row.HeadRepoCloneURL, ChangedFiles: row.FilesChanged, ReviewState: row.ReviewDecision, CheckState: row.CIStatus, MergeableState: row.MergeableState, Checks: []snapshot.SnapshotCheck{}, Reviews: []snapshot.SnapshotReview{}, Gaps: []string{"readiness_observation_time_unknown"}}
+		pull := snapshot.SnapshotPullRequest{SnapshotItem: item, Draft: row.Draft, HeadSHA: row.HeadSHA, HeadBranch: row.HeadBranch, BaseBranch: row.BaseBranch, ChangedFiles: row.FilesChanged, ReviewState: row.ReviewDecision, CheckState: row.CIStatus, MergeableState: row.MergeableState, Checks: []snapshot.SnapshotCheck{}, Reviews: []snapshot.SnapshotReview{}, Gaps: []string{"readiness_observation_time_unknown"}}
+		if !row.HeadRepoIdentityStale && repo.CloneURL != "" && row.HeadRepoCloneURL != "" {
+			pull.HeadInSameRepository = new(repo.CloneURL == row.HeadRepoCloneURL)
+		}
 		// Older storage cannot distinguish an observed zero from an omitted size.
 		// Export positive observations and leave ambiguous zero counts unknown.
 		if row.Additions > 0 {

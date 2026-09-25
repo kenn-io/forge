@@ -64,6 +64,43 @@ func TestSnapshotReadsConfiguredCachedWork(t *testing.T) {
 	assert.Equal(now, result.ObservedAt)
 }
 
+func TestSnapshotDistinguishesUnknownHeadRepository(t *testing.T) {
+	for _, test := range []struct {
+		name, head string
+		stale      bool
+		want       *bool
+	}{
+		{name: "same", head: "https://github.test/owner/project.git", want: new(true)},
+		{name: "fork", head: "https://github.test/contributor/project.git", want: new(false)},
+		{name: "missing"},
+		{name: "stale", head: "https://github.test/owner/project.git", stale: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require := require.New(t)
+			database := dbtest.Open(t)
+			now := archiveTestTime()
+			ref := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+			ref.CloneURL = "https://github.test/owner/project.git"
+			repoID := archiveServiceSeedRepo(t, database, ref)
+			_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_repos SET clone_url=? WHERE id=?`, ref.CloneURL, repoID)
+			require.NoError(err)
+			registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+			require.NoError(err)
+			service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+			mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, Number: 1, Title: "Cached work", State: db.MergeRequestStateOpen, HeadRepoCloneURL: test.head, CreatedAt: now, UpdatedAt: now})
+			require.NoError(err)
+			if test.stale {
+				_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET head_repo_identity_stale=1 WHERE id=?`, mrID)
+				require.NoError(err)
+			}
+			result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+			require.NoError(err)
+			require.Len(result.PullRequests, 1)
+			assert.Equal(t, test.want, result.PullRequests[0].HeadInSameRepository)
+		})
+	}
+}
+
 func TestSnapshotRetainsStableIdentityAndOneReadView(t *testing.T) {
 	for _, kind := range []platform.Kind{platform.KindGitHub, platform.KindGitLab, platform.KindForgejo, platform.KindGitea} {
 		t.Run(string(kind), func(t *testing.T) {

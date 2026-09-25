@@ -9010,7 +9010,10 @@ components:
         head_branch:
           type: string
         head_in_same_repository:
-          type: boolean
+          description: Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
+          type:
+            - boolean
+            - "null"
         head_sha:
           type: string
         id:

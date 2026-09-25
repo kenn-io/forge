@@ -329,8 +329,13 @@ func refreshManagedCloneExclude(ctx context.Context, workspacePath string) error
 		return fmt.Errorf("resolve worktree Git directory: %w", err)
 	}
 	excludePath := filepath.Join(canonicalGitDir, "forge-roborev-exclude")
+	// Read the worktree config file directly: `git config --worktree` fails
+	// in a repository with linked worktrees unless extensions.worktreeConfig
+	// is on, which only setup of the generated file enables.
 	configured, err := gitCombinedOutput(
-		ctx, workspacePath, "config", "--worktree", "--path", "--get", "core.excludesFile",
+		ctx, workspacePath, "config", "--file",
+		filepath.Join(canonicalGitDir, "config.worktree"),
+		"--path", "--get", "core.excludesFile",
 	)
 	if err != nil {
 		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {

@@ -385,7 +385,8 @@ After branch persistence, `repository_hooks` holds a fresh repository lock while
 requiring Roborev to use common-directory hooks, resolving the trusted default only
 from fetched remote refs, and configuring a worktree-specific snapshot exclude
 without replacing explicit or implicit user exclusion rules. That exclude copies
-the user's rules, so each agent launch rebuilds it from the current rules
+the user's rules, so each agent launch rebuilds it from the current rules; the
+refresh is best-effort and never blocks the launch
 (`internal/workspace/repository_hooks.go::refreshManagedCloneExclude`). A custom effective
 hooks directory is a setup error; shared hook changes roll back unless
 registration succeeds.

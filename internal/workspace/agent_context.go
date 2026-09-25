@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,8 +230,9 @@ func (m *Manager) PrepareAgentLaunchContext(
 		return ErrWorkspaceNotFound
 	}
 	// Pick up exclusion rules the user added since the workspace was set up.
+	// A stale exclude file is cosmetic, so it must not block the launch.
 	if err := refreshManagedCloneExclude(ctx, summary.WorktreePath); err != nil {
-		return err
+		slog.Warn("refresh workspace exclude file", "workspace_id", workspace.ID, "err", err)
 	}
 
 	relPath := agentContextRelPath(opts.TargetKey)

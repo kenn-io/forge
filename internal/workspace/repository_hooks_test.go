@@ -289,3 +289,21 @@ func TestRefreshManagedCloneExcludeLeavesAnUnmanagedWorktreeAlone(t *testing.T) 
 	assert.Equal(t, "/cache/\n", string(content))
 	assertGitIgnored(t, repo, "cache/file")
 }
+
+func TestRefreshManagedCloneExcludeSkipsALinkedWorktreeWithoutWorktreeConfig(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	commonDir := filepath.Join(root, "managed.git")
+	worktree := filepath.Join(root, "worktree")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	runWorkspaceTestGit(t, root, "init", "--initial-branch=main", source)
+	runWorkspaceTestGit(t, source, "config", "user.email", "test@example.com")
+	runWorkspaceTestGit(t, source, "config", "user.name", "Test")
+	runWorkspaceTestGit(t, source, "commit", "--allow-empty", "-m", "initial")
+	runWorkspaceTestGit(t, root, "clone", "--bare", source, commonDir)
+	runWorkspaceTestGit(t, commonDir, "worktree", "add", "-b", "first", worktree, "main")
+
+	require.NoError(t, refreshManagedCloneExclude(t.Context(), worktree))
+}

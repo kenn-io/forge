@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/ghshim"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/pullapi"
@@ -97,5 +98,38 @@ func TestGHShimHubRequiresConfiguredProviderIdentity(t *testing.T) {
 			assert.Equal(tc.handled, result.Handled)
 			assert.Equal(tc.reason, result.Reason)
 		})
+	}
+}
+
+func TestGHShimTreatsStoredMergeTimeAsMerged(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 7)
+	mergedAt := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	seedPR(t, database, "acme", "widget", 8, func(pr *db.MergeRequest) { pr.MergedAt = &mergedAt })
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateRepoSyncCompleted(t.Context(), repo.ID, time.Now().UTC(), ""))
+	for _, tc := range []struct {
+		command string
+		number  int
+		fields  []string
+		output  string
+	}{
+		{"list", 0, []string{"number"}, `[{"number":7}]`},
+		{"view", 8, []string{"state"}, `{"state":"MERGED"}`},
+	} {
+		response := testutil.DoJSON(t, hub, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: tc.command, Host: "github.com", Owner: "acme", Repo: "widget", Number: tc.number, State: "open", Limit: 30, Fields: tc.fields})
+		require.Equal(http.StatusOK, response.Code, response.Body.String())
+		var result struct {
+			Handled bool
+			Output  string
+			Reason  string
+		}
+		require.NoError(json.Unmarshal(response.Body.Bytes(), &result))
+		require.True(result.Handled, result.Reason)
+		assert.JSONEq(tc.output, result.Output)
 	}
 }

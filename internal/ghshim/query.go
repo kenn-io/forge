@@ -105,7 +105,7 @@ func Encode(q Query, pulls []db.MergeRequest) ([]byte, error) {
 
 	rows := make([]map[string]any, 0, len(pulls))
 	for _, pr := range pulls {
-		state := strings.ToUpper(string(pr.State))
+		state := strings.ToUpper(string(pullState(pr)))
 		values := map[string]any{
 			"number": pr.Number, "title": pr.Title, "body": pr.Body, "state": state, "url": pr.URL,
 			"isDraft": pr.IsDraft, "headRefName": pr.HeadBranch, "headRefOid": pr.PlatformHeadSHA, "baseRefName": pr.BaseBranch,
@@ -129,4 +129,13 @@ func Encode(q Query, pulls []db.MergeRequest) ([]byte, error) {
 		return nil, err
 	}
 	return append(data, '\n'), nil
+}
+
+// pullState treats a stored merge time as merged, as the rest of Forge does:
+// rows normalized without the provider's merged flag keep a closed state.
+func pullState(pr db.MergeRequest) db.MergeRequestState {
+	if pr.MergedAt != nil {
+		return db.MergeRequestStateMerged
+	}
+	return pr.State
 }

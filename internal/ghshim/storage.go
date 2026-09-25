@@ -42,7 +42,8 @@ func Read(ctx context.Context, database *db.DB, repo db.Repo, q Query) ([]byte, 
 			return nil, err
 		}
 		for _, pr := range stored {
-			matchesState := q.State == "all" || string(pr.State) == q.State || (q.State == "closed" && pr.State == db.MergeRequestStateMerged)
+			state := pullState(pr)
+			matchesState := q.State == "all" || string(state) == q.State || (q.State == "closed" && state == db.MergeRequestStateMerged)
 			if !matchesState {
 				continue
 			}

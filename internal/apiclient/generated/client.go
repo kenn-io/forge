@@ -56507,15 +56507,15 @@ type SnapshotRelation struct {
 }
 
 type SnapshotRepository struct {
-	Coverage      SnapshotCoverage `json:"coverage"`
-	DefaultBranch string           `json:"default_branch"`
-	Host          string           `json:"host"`
-	ID            string           `json:"id"`
-	LastSyncAt    *time.Time       `json:"last_sync_at,omitempty"`
-	Path          string           `json:"path"`
-	Provider      string           `json:"provider"`
-	ProviderID    string           `json:"provider_id"`
-	SyncError     string           `json:"sync_error"`
+	Coverage      *SnapshotCoverage `json:"coverage,omitempty"`
+	DefaultBranch string            `json:"default_branch"`
+	Host          string            `json:"host"`
+	ID            string            `json:"id"`
+	LastSyncAt    *time.Time        `json:"last_sync_at,omitempty"`
+	Path          string            `json:"path"`
+	Provider      string            `json:"provider"`
+	ProviderID    string            `json:"provider_id"`
+	SyncError     string            `json:"sync_error"`
 }
 
 type SnapshotReview struct {

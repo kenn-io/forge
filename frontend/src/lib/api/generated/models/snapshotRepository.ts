@@ -4,7 +4,7 @@
 import type { SnapshotCoverage } from "./snapshotCoverage.ts";
 
 export interface SnapshotRepository {
-  coverage: SnapshotCoverage;
+  coverage: SnapshotCoverage | null;
   default_branch: string;
   host: string;
   id: string;

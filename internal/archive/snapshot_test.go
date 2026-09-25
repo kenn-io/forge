@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"encoding/json/v2"
 	"strings"
 	"testing"
 	"time"
@@ -146,10 +147,15 @@ func TestSnapshotPreflightsReviewVolume(t *testing.T) {
 	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, Number: 1, Title: "Long review history", State: db.MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now})
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
-		WITH RECURSIVE sequence(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM sequence WHERE n<10001)
+		WITH RECURSIVE sequence(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM sequence WHERE n<9998)
 		INSERT INTO forge_mr_events (merge_request_id,event_type,dedupe_key,created_at)
 		SELECT ?, 'review', 'review-' || n, ? FROM sequence`, mrID, now)
 	require.NoError(err)
+	boundary, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	require.NoError(err, "two PRs plus 9,998 reviews fit the 10,000-record limit")
+	require.Len(boundary.PullRequests, 2)
+	assert.Equal(9998, len(boundary.PullRequests[0].Reviews)+len(boundary.PullRequests[1].Reviews))
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: mrID, EventType: "review", DedupeKey: "one-over", CreatedAt: now}}))
 	_, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
 	require.ErrorIs(err, snapshot.ErrTooLarge)
 	scoped, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, Repositories: []platform.RepoRef{small}})
@@ -165,4 +171,39 @@ func TestSnapshotPreflightsReviewVolume(t *testing.T) {
 	require.NoError(err)
 	_, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
 	require.ErrorIs(err, snapshot.ErrTooLarge)
+}
+
+func TestSnapshotResponseByteBoundary(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, Number: 1, Title: "x", State: db.MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now})
+	require.NoError(err)
+	opts := SnapshotOptions{Start: now.Add(-time.Hour), End: now}
+	baseline, err := service.Snapshot(t.Context(), opts)
+	require.NoError(err)
+	encoded, err := json.Marshal(baseline)
+	require.NoError(err)
+	// Pad an untruncated ASCII field to the response budget, including JSON overhead.
+	title := strings.Repeat("x", (32<<20)-len(encoded)+1)
+	_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET title=? WHERE id=?`, title, mrID)
+	require.NoError(err)
+	boundary, err := service.Snapshot(t.Context(), opts)
+	require.NoError(err)
+	encoded, err = json.Marshal(boundary)
+	require.NoError(err)
+	assert.Len(encoded, 32<<20)
+	require.Len(boundary.PullRequests, 1)
+	assert.Equal(title, boundary.PullRequests[0].Title)
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET title=title || 'x' WHERE id=?`, mrID)
+	require.NoError(err)
+	_, err = service.Snapshot(t.Context(), opts)
+	require.ErrorIs(err, snapshot.ErrTooLarge, "one byte above the response budget must fail")
 }

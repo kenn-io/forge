@@ -2,9 +2,9 @@ package archive
 
 import (
 	"context"
-	"go.kenn.io/forge/internal/archive/snapshot"
 
 	"go.kenn.io/forge/internal/archive/report"
+	"go.kenn.io/forge/internal/archive/snapshot"
 	"go.kenn.io/forge/platform"
 )
 

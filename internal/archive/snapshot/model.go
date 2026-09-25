@@ -3,13 +3,17 @@ package snapshot
 
 import (
 	"errors"
-	"go.kenn.io/forge/internal/archive/report"
 	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/forge/internal/archive/report"
 )
 
-const Schema = "kenn-forge-archive-snapshot/1"
-const MaxBytes = 32 << 20
-const MaxRecords = 10_000
+const (
+	Schema     = "kenn-forge-archive-snapshot/1"
+	MaxBytes   = 32 << 20
+	MaxRecords = 10_000
+)
 
 var ErrTooLarge = errors.New("cached archive snapshot exceeds the 10,000-record or 32 MiB text/response budget; narrow the repo scope; no items were dropped")
 
@@ -100,3 +104,9 @@ type SnapshotRelation struct {
 }
 
 type SnapshotCoverage report.Coverage
+
+// Coverage is unknown until archive state exists for the repository.
+func (*SnapshotCoverage) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Nullable = true
+	return schema
+}

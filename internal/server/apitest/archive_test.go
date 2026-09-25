@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.kenn.io/forge/internal/platformdb"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/archive/report"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -128,12 +128,12 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 		reportResponse.JSON200.Repositories[0].Coverage.MergeRequests)
 	require.NotNil(reportResponse.JSON200.Activity)
 	require.Len(reportResponse.JSON200.Activity, 3)
-	assert.Equal("issue-7", (reportResponse.JSON200.Activity)[0].ProviderExternalID)
+	assert.Equal("issue-7", reportResponse.JSON200.Activity[0].ProviderExternalID)
 	assert.Equal(generated.ArchiveReportActivityResponseKindIssueClosed,
-		(reportResponse.JSON200.Activity)[1].Kind)
-	require.NotNil((reportResponse.JSON200.Activity)[1].Actor)
-	assert.Equal("closer", *(reportResponse.JSON200.Activity)[1].Actor)
-	merged := (reportResponse.JSON200.Activity)[2]
+		reportResponse.JSON200.Activity[1].Kind)
+	require.NotNil(reportResponse.JSON200.Activity[1].Actor)
+	assert.Equal("closer", *reportResponse.JSON200.Activity[1].Actor)
+	merged := reportResponse.JSON200.Activity[2]
 	assert.Equal(generated.ArchiveReportActivityResponseKindMergeRequestMerged, merged.Kind)
 	require.NotNil(merged.Actor)
 	assert.Equal("merger", *merged.Actor)
@@ -441,6 +441,7 @@ func (p *archiveAPITestProvider) ListIssuesPage(context.Context, platform.RepoRe
 	p.pageCall()
 	return platform.Page[platform.Issue]{Exhausted: true}, nil
 }
+
 func (p *archiveAPITestProvider) ListMergeRequestsPage(context.Context, platform.RepoRef, platform.ItemPageQuery) (platform.Page[platform.MergeRequest], error) {
 	p.pageCall()
 	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
@@ -695,13 +696,23 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repo.ID, Number: 1, Title: "Open repair", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-90 * 24 * time.Hour), UpdatedAt: now})
 	require.NoError(err)
-	query := generated.GetArchiveSnapshotQuery{Start: "2026-09-13T12:00:00Z", End: "2026-09-20T12:00:00Z", Repo: []string{fmt.Sprintf("%s|%s/%s", ref.Platform, ref.Host, ref.RepoPath)}}
+	query := generated.GetArchiveSnapshotQuery{Start: "2026-09-13T12:00:00Z", End: "2026-09-20T12:00:00Z", Repo: []string{string(ref.Platform) + "|" + ref.Host + "/" + ref.RepoPath}}
 	response, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
 	require.NoError(err)
 	require.NotNil(response.JSON200)
 	assert.Equal("kenn-forge-archive-snapshot/1", response.JSON200.Schema1)
 	require.Len(response.JSON200.PullRequests, 1)
 	assert.Equal("Open repair", response.JSON200.PullRequests[0].Title)
+	require.Len(response.JSON200.Repositories, 1)
+	assert.NotNil(response.JSON200.Repositories[0].Coverage)
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `DELETE FROM forge_archive_repos WHERE repo_id=?`, repo.ID)
+	require.NoError(err)
+	unknown, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.NoError(err)
+	require.NotNil(unknown.JSON200)
+	require.Len(unknown.JSON200.Repositories, 1)
+	assert.Nil(unknown.JSON200.Repositories[0].Coverage, "missing archive state must remain unknown to API clients")
 
 	outside := ref
 	outside.Name = "not-configured"
@@ -709,7 +720,7 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	outside.PlatformExternalID = "other-id"
 	_, err = database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(outside))
 	require.NoError(err)
-	query.Repo = []string{fmt.Sprintf("%s|%s/%s", outside.Platform, outside.Host, outside.RepoPath)}
+	query.Repo = []string{string(outside.Platform) + "|" + outside.Host + "/" + outside.RepoPath}
 	rejected, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
 	require.Error(err)
 	require.NotNil(rejected.Error)

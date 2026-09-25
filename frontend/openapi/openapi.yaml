@@ -8895,7 +8895,9 @@ components:
         - archived_items
         - unsupported_items
         - inaccessible_items
-      type: object
+      type:
+        - object
+        - "null"
     SnapshotItem:
       additionalProperties: false
       properties:

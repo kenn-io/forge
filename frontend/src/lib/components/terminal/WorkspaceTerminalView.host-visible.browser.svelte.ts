@@ -303,6 +303,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     // main subtree cannot mount without a settings store on STORES_KEY.
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
+      getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
     };
@@ -376,6 +377,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
 
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
+      getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
     };
@@ -469,6 +471,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
 
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
+      getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
     };
@@ -539,6 +542,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     // back through the store — so the stub needs a setter too.
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
+      getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setTerminalSettings: () => {},
@@ -628,6 +632,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
 
     const settingsStore = {
       getTerminalFontSize: () => terminalSettings.font_size,
+      getQuickActions: () => [],
       getTerminalSettings: () => terminalSettings,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setTerminalSettings: (settings: typeof DEFAULT_TERMINAL_SETTINGS) => {
@@ -695,6 +700,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
 
     const settingsStore = {
       getTerminalFontSize: () => terminalSettings.font_size,
+      getQuickActions: () => [],
       getTerminalSettings: () => terminalSettings,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
       setTerminalSettings: (settings: typeof DEFAULT_TERMINAL_SETTINGS) => {
@@ -747,6 +753,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
 
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
+      getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
     };

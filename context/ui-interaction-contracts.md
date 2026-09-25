@@ -1086,6 +1086,12 @@ Not every visibility control means "remove this entity entirely."
 - Progressive Activity mounting must retain its already-visible row window across routine
   projection updates; collapsing it during refresh makes the side pane flash
   (`frontend/src/lib/components/ActivityThreaded.svelte::mountedEntryCount`).
+- PR and issue sidebar lists mount rows through a scroll-driven budget that always
+  includes the selected row and resets only when the query, local filters, or grouping
+  change, never on polls. The list stores hold responses as raw state and keep unchanged
+  row objects across refetches so polls re-render only changed rows
+  (`frontend/src/lib/utils/render-budget.ts::applyGroupRenderBudget`,
+  `frontend/src/lib/utils/reuse-unchanged.ts::reuseUnchanged`).
 - Thread and bulk event pages belong to the repository, range, filter, and projection
   generation that started them. Scope changes discard late pages and prevent older
   requests from clearing newer loading or error ownership

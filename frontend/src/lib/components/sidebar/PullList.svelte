@@ -22,6 +22,13 @@
   import type { PullAttributeFilter } from "../../stores/pulls.svelte.js";
   import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import {
+    INITIAL_RENDER_BUDGET,
+    RENDER_BUDGET_STEP,
+    applyGroupRenderBudget,
+    effectiveRenderBudget,
+    revealWhenNear,
+  } from "../../utils/render-budget.js";
+  import {
     buildPullRequestFilesRoute,
     buildPullRequestRoute,
     type PullRequestRouteRef,
@@ -401,6 +408,59 @@
       && selectedVisiblePR === null,
   );
 
+  // Mount rows progressively: large result sets (thousands of closed PRs)
+  // otherwise block the main thread for seconds on every filter change.
+  // The budget resets whenever the query or grouping changes.
+  const renderViewKey = $derived(JSON.stringify([
+    pulls.getFilterState(),
+    pulls.getSearchQuery(),
+    pulls.getFilterStarred(),
+    pulls.getInvolvesMe(),
+    pulls.getUnassigned(),
+    pulls.getAttributeFilters(),
+    pulls.getKanbanStatusFilters(),
+    groupingMode,
+  ]));
+  let renderBudget = $derived.by(() => {
+    void renderViewKey;
+    return INITIAL_RENDER_BUDGET;
+  });
+
+  function isGroupCollapsed(group: PullGroup): boolean {
+    const hasSelectedPR = keepSelectedGroupExpanded && selectedPRGroup?.key === group.key;
+    return collapsedRepos.isCollapsed("pulls", group.collapseKey) && !hasSelectedPR;
+  }
+
+  const displayGroups = $derived(
+    groupedPulls?.map((group) => ({
+      ...group,
+      count: group.items.length,
+      collapsed: isGroupCollapsed(group),
+    })) ?? null,
+  );
+
+  const selectedDisplayIndex = $derived.by(() => {
+    const sel = pulls.getSelectedPR();
+    if (sel === null) return -1;
+    const ordered = displayGroups === null
+      ? visiblePulls
+      : displayGroups.flatMap((group) => (group.collapsed ? [] : group.items));
+    return ordered.findIndex((pr) => pullMatchesSelection(pr, sel));
+  });
+
+  const mountBudget = $derived(effectiveRenderBudget(renderBudget, selectedDisplayIndex));
+  const renderedGroups = $derived(
+    displayGroups === null ? null : applyGroupRenderBudget(displayGroups, mountBudget),
+  );
+  const renderedFlatPulls = $derived(visiblePulls.slice(0, mountBudget));
+  const hasUnmountedRows = $derived(
+    renderedGroups === null ? visiblePulls.length > mountBudget : renderedGroups.truncated,
+  );
+
+  function revealMoreRows(): void {
+    renderBudget = mountBudget + RENDER_BUDGET_STEP;
+  }
+
   const isSelectedActiveWorktree = $derived.by(() => {
     const key = activeWorktreeKey;
     const pr = selectedVisiblePR;
@@ -528,15 +588,12 @@
     {:else if visiblePulls.length === 0}
       <p class="state-message">No pull requests found.</p>
     {:else}
-      {#if groupedPulls !== null}
-        {#each groupedPulls as group (group.key)}
-          {@const userCollapsed = collapsedRepos.isCollapsed("pulls", group.collapseKey)}
-          {@const hasSelectedPR = keepSelectedGroupExpanded && selectedPRGroup?.key === group.key}
-          {@const collapsed = userCollapsed && !hasSelectedPR}
+      {#if renderedGroups !== null}
+        {#each renderedGroups.groups as group (group.key)}
           <GroupedSidebarSection
             label={group.label}
-            count={group.items.length}
-            {collapsed}
+            count={group.count}
+            collapsed={group.collapsed}
             onclick={() => collapsedRepos.toggle("pulls", group.collapseKey)}
           >
               {#each group.items as pr (pr.ID)}
@@ -564,7 +621,7 @@
           </GroupedSidebarSection>
         {/each}
       {:else}
-        {#each visiblePulls as pr (pr.ID)}
+        {#each renderedFlatPulls as pr (pr.ID)}
           {@const prRef = routeRefForPull(pr)}
           {@const prSelected = isSelected(prRef)}
           <PullItem
@@ -586,6 +643,11 @@
             </div>
           {/if}
         {/each}
+      {/if}
+      {#if hasUnmountedRows}
+        {#key mountBudget}
+          <div class="render-sentinel" aria-hidden="true" {@attach revealWhenNear(revealMoreRows)}></div>
+        {/key}
       {/if}
     {/if}
   </ScrollBox>
@@ -880,6 +942,10 @@
     .filter-bar--compact .compact-filter-menu {
       animation: none;
     }
+  }
+
+  .render-sentinel {
+    height: 1px;
   }
 
   .diff-files-wrap {

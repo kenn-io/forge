@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { reuseUnchanged } from "../utils/reuse-unchanged.js";
 import { executeGeneratedApiRequest, GeneratedApi } from "../api/generated-api.js";
 import { TransientTransportError, type ApiProblemError } from "../api/effect-errors.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
@@ -62,7 +63,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   // --- state ---
 
-  let pulls = $state<PullRequest[]>([]);
+  // List responses are only ever replaced, never mutated, so skip deep proxies.
+  let pulls = $state.raw<PullRequest[]>([]);
   let loading = $state(false);
   let listCapped = $state(false);
   let storeError = $state<string | null>(null);
@@ -83,8 +85,14 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return pulls;
   }
 
+  const filteredPulls = $derived(
+    attributeFilters.length === 0 && kanbanStatusFilters.length === 0
+      ? pulls
+      : pulls.filter((pr) => matchesAttributeFilters(pr) && matchesKanbanStatusFilters(pr)),
+  );
+
   function getFilteredPulls(): PullRequest[] {
-    return pulls.filter((pr) => matchesAttributeFilters(pr) && matchesKanbanStatusFilters(pr));
+    return filteredPulls;
   }
 
   function isLoading(): boolean {
@@ -138,10 +146,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return host;
   }
 
-  /** Groups pulls by full provider identity into a Map. */
-  function pullsByRepo(): Map<string, PullRequest[]> {
+  const filteredPullsByRepo = $derived.by(() => {
     const map = new Map<string, PullRequest[]>();
-    for (const pr of getFilteredPulls()) {
+    for (const pr of filteredPulls) {
       const key = pullIdentityKey(pullRef(pr));
       const existing = map.get(key);
       if (existing !== undefined) {
@@ -151,6 +158,11 @@ export function createPullsStore(opts: PullsStoreOptions) {
       }
     }
     return map;
+  });
+
+  /** Groups pulls by full provider identity into a Map. */
+  function pullsByRepo(): Map<string, PullRequest[]> {
+    return filteredPullsByRepo;
   }
 
   function getFilterKanban(): KanbanStatus | undefined {
@@ -204,16 +216,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   /** Returns PRs in display order: grouped by repo or flat chronological. */
+  const repoOrderedPulls = $derived([...filteredPullsByRepo.values()].flat());
+
   function getDisplayOrderPRs(): PullRequest[] {
-    if (getGroupByRepo()) {
-      const grouped = pullsByRepo();
-      const ordered: PullRequest[] = [];
-      for (const prs of grouped.values()) {
-        ordered.push(...prs);
-      }
-      return ordered;
-    }
-    return getFilteredPulls();
+    return getGroupByRepo() ? repoOrderedPulls : filteredPulls;
   }
 
   function selectNextPR(): void {
@@ -506,7 +512,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ),
       Effect.tap((result) =>
         Effect.sync(() => {
-          pulls = result;
+          pulls = reuseUnchanged(pulls, result, (item) => item.ID);
           listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),
@@ -543,7 +549,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         const workflow = yield* PullsWorkflow;
         yield* workflow.reconcile(read, (result) =>
           Effect.sync(() => {
-            pulls = [...result];
+            pulls = reuseUnchanged(pulls, result, (item) => item.ID);
             listCapped = query.limit !== undefined && result.length === query.limit;
           }),
         );

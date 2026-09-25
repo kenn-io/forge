@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { reuseUnchanged } from "../utils/reuse-unchanged.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { TransientTransportError } from "../api/effect-errors.js";
 import type { ApiProblemError } from "../api/effect-errors.js";
@@ -139,7 +140,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   // --- list state ---
 
-  let issues = $state<Issue[]>([]);
+  // List responses are only ever replaced, never mutated, so skip deep proxies.
+  let issues = $state.raw<Issue[]>([]);
   let hideBots = $state(false);
   let confirmedHideBots = false;
   let hideBotsMutationGeneration = 0;
@@ -201,9 +203,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   // --- list reads ---
 
+  const visibleIssues = $derived(hideBots ? issues.filter((issue) => !isBotAuthor(issue)) : issues);
+
   function getIssues(): Issue[] {
-    if (!hideBots) return issues;
-    return issues.filter((issue) => !isBotAuthor(issue));
+    return visibleIssues;
   }
 
   function getHideBots(): boolean {
@@ -240,15 +243,20 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return searchQuery;
   }
 
-  function issuesByRepo(): Map<string, Issue[]> {
+  const visibleIssuesByRepo = $derived.by(() => {
     const map = new Map<string, Issue[]>();
-    for (const issue of getIssues()) {
+    for (const issue of visibleIssues) {
       const key = issueIdentityKey(issueRef(issue));
       const existing = map.get(key);
       if (existing) existing.push(issue);
       else map.set(key, [issue]);
     }
     return map;
+  });
+  const repoOrderedIssues = $derived([...visibleIssuesByRepo.values()].flat());
+
+  function issuesByRepo(): Map<string, Issue[]> {
+    return visibleIssuesByRepo;
   }
 
   // --- detail reads ---
@@ -445,7 +453,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ),
       Effect.tap((result) =>
         Effect.sync(() => {
-          issues = result;
+          issues = reuseUnchanged(issues, result, (item) => item.ID);
           listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),
@@ -482,7 +490,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         const workflow = yield* IssuesWorkflow;
         yield* workflow.reconcile(read, (result) =>
           Effect.sync(() => {
-            issues = [...result];
+            issues = reuseUnchanged(issues, result, (item) => item.ID);
             listCapped = query.limit !== undefined && result.length === query.limit;
           }),
         );
@@ -1939,15 +1947,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // --- navigation ---
 
   function getDisplayOrderIssues(): Issue[] {
-    if (getGroupByRepo()) {
-      const grouped = issuesByRepo();
-      const ordered: Issue[] = [];
-      for (const items of grouped.values()) {
-        ordered.push(...items);
-      }
-      return ordered;
-    }
-    return getIssues();
+    return getGroupByRepo() ? repoOrderedIssues : visibleIssues;
   }
 
   function selectNextIssue(): void {

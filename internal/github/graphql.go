@@ -125,12 +125,13 @@ func adaptComment(gql *platformgithub.GraphQLComment) *gh.IssueComment {
 	created := gh.Timestamp{Time: gql.CreatedAt}
 	updated := gh.Timestamp{Time: gql.UpdatedAt}
 	return &gh.IssueComment{
-		ID:        new(platformgithub.FirstPositiveInt64(int64(gql.FullDatabaseId), gql.DatabaseId)),
-		Body:      new(gql.Body),
-		HTMLURL:   new(gql.URL),
-		User:      &gh.User{Login: new(gql.Author.Login)},
-		CreatedAt: &created,
-		UpdatedAt: &updated,
+		ID:                new(platformgithub.FirstPositiveInt64(int64(gql.FullDatabaseId), gql.DatabaseId)),
+		Body:              new(gql.Body),
+		HTMLURL:           new(gql.URL),
+		User:              &gh.User{Login: new(gql.Author.Login)},
+		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from GraphQL.
+		CreatedAt:         &created,
+		UpdatedAt:         &updated,
 	}
 }
 

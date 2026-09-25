@@ -676,7 +676,10 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 			"stackEntry":{"position":1},
 			"headRepository":{"url":"https://github.com/owner/repo"},
 			"labels":{"nodes":[]},
-			"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
+			"comments":{"nodes":[
+				{"databaseId":101,"author":{"login":"reviewer"},"authorAssociation":"MEMBER","body":"Please preserve provenance."},
+				{"databaseId":102,"author":{"login":"contributor"},"authorAssociation":null,"body":"Association unavailable."}
+			],"pageInfo":{"hasNextPage":false,"endCursor":""}},
 			"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
 			"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}},
 			"lastCommit":{"nodes":[]},
@@ -735,6 +738,9 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(result)
 	require.Len(result.PullRequests, 1)
+	require.Len(result.PullRequests[0].Comments, 2)
+	assert.Equal("MEMBER", result.PullRequests[0].Comments[0].GetAuthorAssociation()) //nolint:staticcheck // Fixture represents GraphQL, not an Events payload.
+	assert.Nil(result.PullRequests[0].Comments[1].AuthorAssociation)                  //nolint:staticcheck // Fixture represents GraphQL, not an Events payload.
 	require.True(sawTimelineItems)
 	require.True(sawNativeStackFields)
 	require.Len(result.PullRequests[0].TimelineEvents, 7)

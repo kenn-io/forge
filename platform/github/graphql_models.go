@@ -118,15 +118,16 @@ func (r GraphQLReviewRequest) Login() string {
 }
 
 type GraphQLComment struct {
-	DatabaseId      int64
-	FullDatabaseId  GraphQLInt64
-	Author          struct{ Login string }
-	Body            string
-	URL             string `graphql:"url"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	IsMinimized     bool
-	MinimizedReason *githubv4.ReportedContentClassifiers
+	DatabaseId        int64
+	FullDatabaseId    GraphQLInt64
+	Author            struct{ Login string }
+	AuthorAssociation *string
+	Body              string
+	URL               string `graphql:"url"`
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	IsMinimized       bool
+	MinimizedReason   *githubv4.ReportedContentClassifiers
 }
 
 type GraphQLCommentVisibilityNode struct {

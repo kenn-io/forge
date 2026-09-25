@@ -55,17 +55,15 @@ describe("MergeModal modal frame integration", () => {
     expect(getStackDepth()).toBe(0);
   });
 
-  it("warns when the override permits a mid-stack merge", () => {
+  it("shows stack context when merging", () => {
     render(MergeModal, {
       props: {
         ...baseProps,
-        midStackWarning: "This is stack position 2 of 3. Branch #1 below it has not been merged.",
+        stackNote: "Stack position 2 of 3.",
       },
     });
 
-    const warning = screen.getByRole("alert");
-    expect(warning.textContent).toContain("Warning: this is a mid-stack merge.");
-    expect(warning.textContent).toContain("Branch #1 below it has not been merged.");
+    expect(screen.getByText("Stack position 2 of 3.").tagName).toBe("P");
   });
 });
 

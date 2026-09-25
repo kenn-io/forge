@@ -3245,8 +3245,8 @@
           ciFailed={ciStatusHasFailed(p.CIStatus)}
           alreadyQueued={deferredMergePending}
           workspaceId={d.workspace?.id}
-          midStackWarning={midStackBlocker
-            ? `This is stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}. Branch #${midStackBlocker.number} below it has not been merged.`
+          stackNote={midStackBlocker
+            ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`
             : undefined}
           onstateconflict={handleStateConflict}
           onclose={() => { showMergeModal = false; }}

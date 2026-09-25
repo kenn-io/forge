@@ -50,8 +50,8 @@
     alreadyQueued?: boolean;
     /** Exact workspace to delete after a successful merge. */
     workspaceId?: string | undefined;
-    /** Warning shown when the configured override permits a mid-stack merge. */
-    midStackWarning?: string | undefined;
+    /** Stack context shown when merging a pull request. */
+    stackNote?: string | undefined;
     onclose: () => void;
     onmerged: (cleanupWarning?: string) => void;
     /** Called when a deferred merge was accepted and now waits on CI. */
@@ -73,7 +73,7 @@
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
     ciFailed = false,
-    alreadyQueued = false, workspaceId, midStackWarning,
+    alreadyQueued = false, workspaceId, stackNote,
     onclose, onmerged, onqueued, onstateconflict,
   }: Props = $props();
 
@@ -233,11 +233,8 @@
   {onclose}
 >
   <div class="merge-body">
-      {#if midStackWarning}
-        <div class="mid-stack-warning" role="alert">
-          <strong>Warning: this is a mid-stack merge.</strong>
-          <span>{midStackWarning} Merging now can leave the remaining stack based on an unexpected branch.</span>
-        </div>
+      {#if stackNote}
+        <p class="stack-note">{stackNote}</p>
       {/if}
       {#if methods.length > 1}
         <div class="field" role="group" aria-label="Merge method">
@@ -357,21 +354,11 @@
 </Modal>
 
 <style>
-  .mid-stack-warning {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 10px 12px;
-    border: 1px solid var(--accent-amber-soft, rgba(217, 119, 6, 0.45));
-    border-radius: var(--radius-sm);
-    background: var(--accent-amber-soft, rgba(217, 119, 6, 0.12));
+  .stack-note {
+    margin: 0;
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.4;
-  }
-
-  .mid-stack-warning strong {
-    color: var(--text-primary);
   }
 
   .ci-defer-note {

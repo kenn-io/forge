@@ -82,8 +82,9 @@ func TestJSONMatchesRealGH(t *testing.T) {
 				stored.ClosedAt = &pr.ClosedAt.Time
 			}
 			if pr.MergedAt != nil {
+				// Keep REST's closed state: the stored merge time alone must
+				// produce gh's MERGED output.
 				stored.MergedAt = &pr.MergedAt.Time
-				stored.State = db.MergeRequestStateMerged
 			}
 			actual, err := Encode(q, []db.MergeRequest{stored})
 			require.NoError(err)

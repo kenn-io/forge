@@ -237,3 +237,73 @@ func TestValidateManagedCloneHooksDirRejectsExistingEffectiveHooks(t *testing.T)
 	require.NoError(readErr)
 	assert.Equal(t, hookContent, content)
 }
+
+func TestRefreshManagedCloneExcludePicksUpALaterGlobalIgnore(t *testing.T) {
+	require := require.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	commonDir := filepath.Join(root, "managed.git")
+	worktree := filepath.Join(root, "worktree")
+	userHome := t.TempDir()
+	t.Setenv("HOME", userHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	runWorkspaceTestGit(t, root, "init", "--initial-branch=main", source)
+	runWorkspaceTestGit(t, source, "config", "user.email", "test@example.com")
+	runWorkspaceTestGit(t, source, "config", "user.name", "Test")
+	runWorkspaceTestGit(t, source, "commit", "--allow-empty", "-m", "initial")
+	runWorkspaceTestGit(t, root, "clone", "--bare", source, commonDir)
+	runWorkspaceTestGit(t, commonDir, "worktree", "add", "-b", "first", worktree, "main")
+	require.NoError(ensureManagedCloneExclude(t.Context(), commonDir, worktree, "reviews"))
+
+	// The user adds a global rule after the workspace was set up.
+	ignorePath := filepath.Join(userHome, ".config", "git", "ignore")
+	require.NoError(os.MkdirAll(filepath.Dir(ignorePath), 0o755))
+	require.NoError(os.WriteFile(ignorePath, []byte("**/.claude/settings.local.json\n"), 0o644))
+	assertGitNotIgnored(t, worktree, ".claude/settings.local.json")
+
+	require.NoError(refreshManagedCloneExclude(t.Context(), worktree))
+	assertGitIgnored(t, worktree, ".claude/settings.local.json")
+	assertGitIgnored(t, worktree, "reviews/snapshot.json")
+
+	// A second refresh with no change leaves the file as it is.
+	require.NoError(refreshManagedCloneExclude(t.Context(), worktree))
+	assertGitIgnored(t, worktree, ".claude/settings.local.json")
+	assertGitIgnored(t, worktree, "reviews/snapshot.json")
+}
+
+func TestRefreshManagedCloneExcludeLeavesAnUnmanagedWorktreeAlone(t *testing.T) {
+	require := require.New(t)
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	runWorkspaceTestGit(t, root, "init", "--initial-branch=main", "repo")
+	repo := filepath.Join(root, "repo")
+	userExclude := filepath.Join(root, "user-exclude")
+	require.NoError(os.WriteFile(userExclude, []byte("/cache/\n"), 0o644))
+	runWorkspaceTestGit(t, repo, "config", "core.excludesFile", userExclude)
+
+	require.NoError(refreshManagedCloneExclude(t.Context(), repo))
+	content, err := os.ReadFile(userExclude)
+	require.NoError(err)
+	assert.Equal(t, "/cache/\n", string(content))
+	assertGitIgnored(t, repo, "cache/file")
+}
+
+func TestRefreshManagedCloneExcludeSkipsALinkedWorktreeWithoutWorktreeConfig(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	commonDir := filepath.Join(root, "managed.git")
+	worktree := filepath.Join(root, "worktree")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	runWorkspaceTestGit(t, root, "init", "--initial-branch=main", source)
+	runWorkspaceTestGit(t, source, "config", "user.email", "test@example.com")
+	runWorkspaceTestGit(t, source, "config", "user.name", "Test")
+	runWorkspaceTestGit(t, source, "commit", "--allow-empty", "-m", "initial")
+	runWorkspaceTestGit(t, root, "clone", "--bare", source, commonDir)
+	runWorkspaceTestGit(t, commonDir, "worktree", "add", "-b", "first", worktree, "main")
+
+	require.NoError(t, refreshManagedCloneExclude(t.Context(), worktree))
+}

@@ -34,6 +34,8 @@ export interface SettingsResponse {
   mcp: McpSettingsResponse;
   modes?: ModeVisibility;
   notifications: NotificationsSettingsResponse;
+  /** Whether hub-owned fields (repositories, presets, activity, detail, sync, pull requests, issues, notifications) hold the effective values. False on a spoke when the hub's settings were not loaded; those fields cannot be edited until they are. */
+  provider_settings_loaded: boolean;
   pull_requests: PullRequests;
   quick_actions: QuickAction[];
   repo_presets: RepoPreset[];

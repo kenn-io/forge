@@ -430,6 +430,7 @@ command = ["codex", "--full-auto"]
 	require.Len(resp.Agents, 1)
 	assert.Equal("codex", resp.Agents[0].Key)
 	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
+	assert.True(resp.ProviderSettingsLoaded, "a Forge that owns its provider settings always has them loaded")
 }
 
 func TestHandleGetSettingsReportsMCPDesiredAndActiveState(t *testing.T) {
@@ -4396,6 +4397,7 @@ base_url = %q
 	assert.Equal(25, settings.Detail.InitialTimelineEntryLimit)
 	assert.True(settings.Workspaces.AutoAssignOnCreate)
 	assert.Equal(config.FleetRoleSpoke, settings.Fleet.Role)
+	assert.False(settings.ProviderSettingsLoaded)
 }
 
 func TestNodeWorktreeBaseOverrideFollowsHubRepositoryIdentity(t *testing.T) {
@@ -4486,6 +4488,7 @@ port = 8091
 	require.Len(settings.Repos, 1)
 	assert.Equal("repo-late", settings.Repos[0].PlatformRepoID)
 	assert.Empty(settings.Repos[0].WorktreeBasePath)
+	assert.True(settings.ProviderSettingsLoaded)
 }
 
 func TestNodeLocalSettingsCommitWhileHubIsUnavailable(t *testing.T) {
@@ -4515,6 +4518,44 @@ auto_assign_on_create = false
 	var settings settingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	assert.True(settings.Workspaces.AutoAssignOnCreate)
+	assert.False(settings.ProviderSettingsLoaded)
+	persisted, err := config.Load(configPath)
+	require.NoError(err)
+	assert.True(persisted.Workspaces.AutoAssignOnCreate)
+}
+
+func TestNodeLocalSettingsSaveStopsWaitingForHubAtPeerTimeout(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, configPath := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+
+[fleet]
+peer_timeout = "50ms"
+`, &mockGH{})
+	srv.providerSource = &hubProviderSource{
+		client: providerPlaneClientFunc(func(
+			ctx context.Context, _ federationauth.Scope, _ *http.Request,
+		) (*http.Response, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}),
+	}
+	callerContext, cancelCaller := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancelCaller()
+	autoAssign := true
+	started := time.Now()
+
+	output, err := srv.updateSettings(callerContext, &updateSettingsInput{Body: updateSettingsRequest{
+		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	}})
+
+	require.NoError(err)
+	assert.Less(time.Since(started), 5*time.Second,
+		"a committed spoke-local save must not wait on the hub past the peer timeout")
+	assert.True(output.Body.Workspaces.AutoAssignOnCreate)
+	assert.False(output.Body.ProviderSettingsLoaded)
 	persisted, err := config.Load(configPath)
 	require.NoError(err)
 	assert.True(persisted.Workspaces.AutoAssignOnCreate)
@@ -4541,6 +4582,8 @@ func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
 	var settings settingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.False(settings.Fleet.Enabled)
+	require.False(settings.ProviderSettingsLoaded,
+		"a spoke without its hub's settings must not present local values as hub-owned")
 }
 
 func TestInactiveSpokeSettingsStayLocal(t *testing.T) {

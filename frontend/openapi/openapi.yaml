@@ -8680,6 +8680,9 @@ components:
           $ref: "#/components/schemas/ModeVisibility"
         notifications:
           $ref: "#/components/schemas/NotificationsSettingsResponse"
+        provider_settings_loaded:
+          description: Whether hub-owned fields (repositories, presets, activity, detail, sync, pull requests, issues, notifications) hold the effective values. False on a spoke when the hub's settings were not loaded; those fields cannot be edited until they are.
+          type: boolean
         pull_requests:
           $ref: "#/components/schemas/PullRequests"
         quick_actions:
@@ -8720,6 +8723,7 @@ components:
         - fleet
         - mcp
         - roborev
+        - provider_settings_loaded
       type: object
     Snapshot:
       additionalProperties: false

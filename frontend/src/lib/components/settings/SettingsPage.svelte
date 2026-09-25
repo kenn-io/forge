@@ -106,7 +106,7 @@
             settingsStore.setQuickActions(loaded.quick_actions ?? []);
             hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
             hydrateRoborevSettings(roborevHydration, loaded.roborev);
-            providerReady = loaded.fleet.role !== "spoke";
+            providerReady = loaded.provider_settings_loaded;
             loading = false;
           });
         }
@@ -135,6 +135,7 @@
                 issues: loaded.issues,
                 notifications: loaded.notifications,
                 sync: loaded.sync,
+                provider_settings_loaded: loaded.provider_settings_loaded,
               }
             : loaded;
           if (loaded.fleet.role !== "spoke") {
@@ -151,8 +152,10 @@
           settingsStore.setRepoPresets(loaded.repo_presets);
           settingsStore.setPullRequestSettings(loaded.pull_requests);
           settingsStore.setDetailSettings(loaded.detail);
-          providerReady = true;
-          providerError = null;
+          providerReady = loaded.provider_settings_loaded;
+          providerError = loaded.provider_settings_loaded
+            ? null
+            : "Hub-owned settings are unavailable until this spoke is connected to its hub.";
           loading = false;
         });
       }),

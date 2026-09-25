@@ -40,6 +40,9 @@ type settingsResponse struct {
 	Fleet         fleetSettingsResponse           `json:"fleet"`
 	MCP           mcpSettingsResponse             `json:"mcp"`
 	Roborev       roborevSettingsResponse         `json:"roborev"`
+	// ProviderSettingsLoaded is false on a spoke whose response lacks the hub's
+	// settings; its hub-owned fields then hold spoke-local values.
+	ProviderSettingsLoaded bool `json:"provider_settings_loaded" doc:"Whether hub-owned fields (repositories, presets, activity, detail, sync, pull requests, issues, notifications) hold the effective values. False on a spoke when the hub's settings were not loaded; those fields cannot be edited until they are."`
 }
 
 // syncSettingsResponse reports the effective hourly sync ceiling. The schema
@@ -994,6 +997,7 @@ func (s *Server) settingsOutputResponseWithProvider(
 	if provider != nil {
 		body.applyProviderSettings(provider.Settings)
 	}
+	body.ProviderSettingsLoaded = s.providerSource == nil || provider != nil
 	return &settingsOutput{Body: body}, nil
 }
 
@@ -1078,8 +1082,13 @@ func (s *Server) updateLocalSettings(
 		return nil, err
 	}
 	// A spoke's hub-owned fields are optional here: the local change is already
-	// committed, so a hub outage must not turn it into a reported failure.
-	provider, err := s.fetchProviderSettings(ctx)
+	// committed, so a slow or unavailable hub must not delay or fail the response.
+	s.cfgMu.Lock()
+	fleet := s.cfg.Fleet
+	s.cfgMu.Unlock()
+	providerContext, cancel := context.WithTimeout(ctx, fleet.PeerTimeoutOrDefault())
+	defer cancel()
+	provider, err := s.fetchProviderSettings(providerContext)
 	if err != nil {
 		slog.Warn("load hub settings after spoke-local settings save", "err", err)
 		provider = nil

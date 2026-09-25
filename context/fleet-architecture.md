@@ -61,8 +61,9 @@ or remote workspace and session operations.
   re-enable it; hub-owned settings may be absent while disabled
   (`internal/server/settings_handlers.go::Server.getSettings`).
 - Spoke Settings loads node-local controls without hub I/O; hub-owned controls
-  may load later or remain unavailable during an outage
-  (`frontend/src/lib/components/settings/SettingsPage.svelte`).
+  stay unavailable until a settings response reports `provider_settings_loaded`
+  (`frontend/src/lib/components/settings/SettingsPage.svelte`,
+  `internal/server/settings_handlers.go::Server.settingsOutputResponseWithProvider`).
 - Raw snapshots contain only producer-local facts; they never contain fetched
   aggregates or observer permissions (`internal/server/fleetapi/fleet_adapter.go::Handler.buildLocalRaw`).
 - Hub provider enrichment keys by stable repository identity and item

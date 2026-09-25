@@ -163,9 +163,9 @@ describe("SettingsPage", () => {
   });
 
   it("keeps hub-owned spoke settings when an airplane mode save omits them", async () => {
-    const local = makeSettings();
+    const local = { ...makeSettings(), provider_settings_loaded: false };
     local.fleet.role = "spoke";
-    const hub = { ...local, sync: { budget_per_hour: 2400 } };
+    const hub = { ...local, sync: { budget_per_hour: 2400 }, provider_settings_loaded: true };
     loadLocalSettings.mockReturnValue(Effect.succeed(local));
     loadSettings.mockReturnValue(Effect.succeed(hub));
     persistSettings.mockReturnValue(Effect.succeed({ ...local, airplane_mode: true }));
@@ -179,6 +179,22 @@ describe("SettingsPage", () => {
 
     await waitFor(() => expect(setAirplaneMode).toHaveBeenLastCalledWith(true));
     expect((screen.getByLabelText("Hourly sync budget") as HTMLInputElement).value).toBe("2400");
+  });
+
+  it("keeps hub-owned panels unavailable when a spoke's settings lack the hub's values", async () => {
+    const local = { ...makeSettings(), provider_settings_loaded: false };
+    local.fleet.role = "spoke";
+    loadLocalSettings.mockReturnValue(Effect.succeed(local));
+    loadSettings.mockReturnValue(Effect.succeed(local));
+
+    render(SettingsRuntimeHarness, { props: { component: SettingsPage, componentProps: {} } });
+    await fireEvent.click(await screen.findByRole("button", { name: /^Sync/ }));
+
+    await waitFor(() => expect(
+      screen.getAllByText("Hub-owned settings are unavailable until this spoke is connected to its hub.").length,
+    ).toBeGreaterThan(0));
+    expect(screen.queryByLabelText("Hourly sync budget")).toBeNull();
+    expect(screen.getByRole("switch", { name: "Airplane mode" })).toBeTruthy();
   });
 
   it("keeps airplane mode off when saving fails", async () => {
@@ -276,7 +292,7 @@ describe("SettingsPage", () => {
   });
 
   it("shows local spoke settings while hub settings are unavailable", async () => {
-    const local = makeSettings();
+    const local = { ...makeSettings(), provider_settings_loaded: false };
     local.fleet.role = "spoke";
     loadLocalSettings.mockReturnValue(Effect.succeed(local));
     loadSettings.mockReturnValue(

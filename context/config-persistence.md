@@ -33,8 +33,9 @@ back to TOML.
 - A spoke's settings response composes hub-owned provider policy with
   spoke-owned execution policy. Each spoke settings write must target exactly one
   owner; mixed-owner requests fail before either side changes. Spoke-local writes
-  commit without hub I/O; a hub outage after the commit only omits hub-owned
-  fields from the response, never reports the committed write as failed
+  commit without hub I/O; the response's hub fetch is bounded by
+  `fleet.peer_timeout`, and a slow or failed hub only omits hub-owned fields,
+  never reports the committed write as failed
   (`internal/server/settings_handlers.go::Server.updateSettings`,
   `internal/server/settings_handlers.go::Server.updateLocalSettings`).
 - Fleet preference writes never accept role, hub, or member state;

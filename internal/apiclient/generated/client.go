@@ -56331,14 +56331,17 @@ type SettingsResponse struct {
 	Mcp           McpSettingsResponse           `json:"mcp"`
 	Modes         *ModeVisibility               `json:"modes,omitempty"`
 	Notifications NotificationsSettingsResponse `json:"notifications"`
-	PullRequests  PullRequests                  `json:"pull_requests"`
-	QuickActions  []QuickAction                 `json:"quick_actions"`
-	RepoPresets   []RepoPreset                  `json:"repo_presets"`
-	Repos         []ConfiguredRepoStatus        `json:"repos"`
-	Roborev       RoborevSettingsResponse       `json:"roborev"`
-	Sync          SyncSettingsResponse          `json:"sync"`
-	Terminal      Terminal                      `json:"terminal"`
-	Workspaces    Workspaces                    `json:"workspaces"`
+
+	// ProviderSettingsLoaded Whether hub-owned fields (repositories, presets, activity, detail, sync, pull requests, issues, notifications) hold the effective values. False on a spoke when the hub's settings were not loaded; those fields cannot be edited until they are.
+	ProviderSettingsLoaded bool                    `json:"provider_settings_loaded"`
+	PullRequests           PullRequests            `json:"pull_requests"`
+	QuickActions           []QuickAction           `json:"quick_actions"`
+	RepoPresets            []RepoPreset            `json:"repo_presets"`
+	Repos                  []ConfiguredRepoStatus  `json:"repos"`
+	Roborev                RoborevSettingsResponse `json:"roborev"`
+	Sync                   SyncSettingsResponse    `json:"sync"`
+	Terminal               Terminal                `json:"terminal"`
+	Workspaces             Workspaces              `json:"workspaces"`
 }
 
 type Snapshot struct {

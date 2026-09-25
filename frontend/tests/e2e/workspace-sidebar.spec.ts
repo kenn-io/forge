@@ -3719,10 +3719,12 @@ test.describe("sidebar toggle behavior", () => {
     const listSidebar = page.locator(".workspace-list-sidebar");
     await expect(listSidebar).toBeVisible();
 
-    const prBtn = page.locator(".panel-toggle-btn", {
+    await page.getByRole("button", { name: "Workspace controls", exact: true }).click();
+    const prBtn = page.getByRole("dialog", { name: "Workspace controls" }).locator(".panel-toggle-btn", {
       hasText: "PR",
     });
     await prBtn.click();
+    await page.keyboard.press("Escape");
     const rightSidebar = page.locator(".right-sidebar");
     await expect(rightSidebar).toBeVisible();
 

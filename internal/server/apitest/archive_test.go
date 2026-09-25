@@ -3,13 +3,15 @@ package apitest
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/internal/platformdb"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +21,6 @@ import (
 	"go.kenn.io/forge/internal/archive/report"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -206,8 +207,8 @@ func TestAPIArchiveReportExcludesOnlyRemovedUpstreamParents(t *testing.T) {
 				state, body, created_at, updated_at, last_activity_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 'body', ?, ?, ?)`,
 			repo.ID, number, externalID, number,
-			"https://github.test/owner/repo/issues/"+fmt.Sprint(number),
-			"Synthetic issue "+fmt.Sprint(number), "issue-author", now, now, now,
+			"https://github.test/owner/repo/issues/"+strconv.Itoa(number),
+			"Synthetic issue "+strconv.Itoa(number), "issue-author", now, now, now,
 		)
 		require.NoError(insertErr)
 		id, insertErr := result.LastInsertId()
@@ -225,8 +226,8 @@ func TestAPIArchiveReportExcludesOnlyRemovedUpstreamParents(t *testing.T) {
 	insertMR := func(number int, externalID, lifecycle string) int64 {
 		id, insertErr := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 			RepoID: repo.ID, PlatformID: int64(number), PlatformExternalID: externalID,
-			Number: number, URL: "https://github.test/owner/repo/pull/" + fmt.Sprint(number),
-			Title: "Synthetic merge request " + fmt.Sprint(number), Author: "pr-author",
+			Number: number, URL: "https://github.test/owner/repo/pull/" + strconv.Itoa(number),
+			Title: "Synthetic merge request " + strconv.Itoa(number), Author: "pr-author",
 			State: db.MergeRequestStateOpen, Body: "body",
 			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		})

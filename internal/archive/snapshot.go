@@ -133,7 +133,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			return result, fmt.Errorf("decode cached labels: %w", err)
 		}
 		slices.Sort(labels)
-		item := snapshot.SnapshotItem{ID: snapshotRepositoryID(repo) + ":" + row.Kind + ":" + strconv.Itoa(row.Number), RepositoryID: snapshotRepositoryID(repo), Number: row.Number, URL: row.URL, Title: row.Title, Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, State: row.State, Labels: labels, CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), DetailFirstFetchedAt: row.DetailFetchedAt}
+		item := snapshot.SnapshotItem{ID: snapshotRepositoryID(repo) + ":" + row.Kind + ":" + strconv.Itoa(row.Number), RepositoryID: snapshotRepositoryID(repo), Number: row.Number, URL: row.URL, Title: row.Title, Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, State: row.State, Labels: labels, CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), DetailFetchedAt: row.DetailFetchedAt}
 		if row.Kind == "issue" {
 			issueIDs[row.ID] = item.ID
 			result.Issues = append(result.Issues, item)

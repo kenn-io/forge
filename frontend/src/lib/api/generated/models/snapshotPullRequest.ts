@@ -20,8 +20,11 @@ export interface SnapshotPullRequest {
   created_at: string;
   /** @nullable */
   deletions: number | null;
-  /** @nullable */
-  detail_first_fetched_at: string | null;
+  /**
+   * Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
+   * @nullable
+   */
+  detail_fetched_at: string | null;
   draft: boolean;
   gaps: string[];
   head_branch: string;

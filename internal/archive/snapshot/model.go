@@ -41,21 +41,20 @@ type SnapshotRepository struct {
 }
 
 type SnapshotItem struct {
-	ID                string    `json:"id"`
-	RepositoryID      string    `json:"repository_id"`
-	Number            int       `json:"number"`
-	URL               string    `json:"url"`
-	Title             string    `json:"title"`
-	Author            string    `json:"author"`
-	AuthorAssociation *string   `json:"author_association"`
-	Body              string    `json:"body"`
-	BodyTruncated     bool      `json:"body_truncated"`
-	State             string    `json:"state"`
-	Labels            []string  `json:"labels"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-	// This is the first detail fetch, not proof of current readiness freshness.
-	DetailFirstFetchedAt *time.Time `json:"detail_first_fetched_at"`
+	ID                string     `json:"id"`
+	RepositoryID      string     `json:"repository_id"`
+	Number            int        `json:"number"`
+	URL               string     `json:"url"`
+	Title             string     `json:"title"`
+	Author            string     `json:"author"`
+	AuthorAssociation *string    `json:"author_association"`
+	Body              string     `json:"body"`
+	BodyTruncated     bool       `json:"body_truncated"`
+	State             string     `json:"state"`
+	Labels            []string   `json:"labels"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	DetailFetchedAt   *time.Time `json:"detail_fetched_at" doc:"Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact."`
 }
 
 type SnapshotPullRequest struct {

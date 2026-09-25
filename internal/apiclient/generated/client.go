@@ -56450,35 +56450,39 @@ type SnapshotCoverage struct {
 }
 
 type SnapshotItem struct {
-	Author               string     `json:"author"`
-	AuthorAssociation    *string    `json:"author_association,omitempty"`
-	Body                 string     `json:"body"`
-	BodyTruncated        bool       `json:"body_truncated"`
-	CreatedAt            time.Time  `json:"created_at"`
-	DetailFirstFetchedAt *time.Time `json:"detail_first_fetched_at,omitempty"`
-	ID                   string     `json:"id"`
-	Labels               []string   `json:"labels"`
-	Number               int64      `json:"number"`
-	RepositoryID         string     `json:"repository_id"`
-	State                string     `json:"state"`
-	Title                string     `json:"title"`
-	UpdatedAt            time.Time  `json:"updated_at"`
-	URL                  string     `json:"url"`
+	Author            string    `json:"author"`
+	AuthorAssociation *string   `json:"author_association,omitempty"`
+	Body              string    `json:"body"`
+	BodyTruncated     bool      `json:"body_truncated"`
+	CreatedAt         time.Time `json:"created_at"`
+
+	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
+	DetailFetchedAt *time.Time `json:"detail_fetched_at,omitempty"`
+	ID              string     `json:"id"`
+	Labels          []string   `json:"labels"`
+	Number          int64      `json:"number"`
+	RepositoryID    string     `json:"repository_id"`
+	State           string     `json:"state"`
+	Title           string     `json:"title"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	URL             string     `json:"url"`
 }
 
 type SnapshotPullRequest struct {
-	Additions            *int64           `json:"additions,omitempty"`
-	Author               string           `json:"author"`
-	AuthorAssociation    *string          `json:"author_association,omitempty"`
-	BaseBranch           string           `json:"base_branch"`
-	Body                 string           `json:"body"`
-	BodyTruncated        bool             `json:"body_truncated"`
-	ChangedFiles         *int64           `json:"changed_files,omitempty"`
-	CheckState           string           `json:"check_state"`
-	Checks               []SnapshotCheck  `json:"checks"`
-	CreatedAt            time.Time        `json:"created_at"`
-	Deletions            *int64           `json:"deletions,omitempty"`
-	DetailFirstFetchedAt *time.Time       `json:"detail_first_fetched_at,omitempty"`
+	Additions         *int64          `json:"additions,omitempty"`
+	Author            string          `json:"author"`
+	AuthorAssociation *string         `json:"author_association,omitempty"`
+	BaseBranch        string          `json:"base_branch"`
+	Body              string          `json:"body"`
+	BodyTruncated     bool            `json:"body_truncated"`
+	ChangedFiles      *int64          `json:"changed_files,omitempty"`
+	CheckState        string          `json:"check_state"`
+	Checks            []SnapshotCheck `json:"checks"`
+	CreatedAt         time.Time       `json:"created_at"`
+	Deletions         *int64          `json:"deletions,omitempty"`
+
+	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
+	DetailFetchedAt      *time.Time       `json:"detail_fetched_at,omitempty"`
 	Draft                bool             `json:"draft"`
 	Gaps                 []string         `json:"gaps"`
 	HeadBranch           string           `json:"head_branch"`

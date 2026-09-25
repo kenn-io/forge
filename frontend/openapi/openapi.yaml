@@ -8914,7 +8914,8 @@ components:
         created_at:
           format: date-time
           type: string
-        detail_first_fetched_at:
+        detail_fetched_at:
+          description: Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
           format: date-time
           type:
             - string
@@ -8953,7 +8954,7 @@ components:
         - labels
         - created_at
         - updated_at
-        - detail_first_fetched_at
+        - detail_fetched_at
       type: object
     SnapshotPullRequest:
       additionalProperties: false
@@ -8994,7 +8995,8 @@ components:
           type:
             - integer
             - "null"
-        detail_first_fetched_at:
+        detail_fetched_at:
+          description: Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
           format: date-time
           type:
             - string
@@ -9067,7 +9069,7 @@ components:
         - labels
         - created_at
         - updated_at
-        - detail_first_fetched_at
+        - detail_fetched_at
       type: object
     SnapshotRelation:
       additionalProperties: false

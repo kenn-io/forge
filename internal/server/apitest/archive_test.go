@@ -695,7 +695,7 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(repo)
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
-	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repo.ID, Number: 1, Title: "Open repair", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-90 * 24 * time.Hour), UpdatedAt: now})
+	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repo.ID, Number: 1, Title: "Open repair", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-90 * 24 * time.Hour), UpdatedAt: now, DetailFetchedAt: &now})
 	require.NoError(err)
 	query := generated.GetArchiveSnapshotQuery{Start: "2026-09-13T12:00:00Z", End: "2026-09-20T12:00:00Z", Repo: []string{string(ref.Platform) + "|" + ref.Host + "/" + ref.RepoPath}}
 	response, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
@@ -704,6 +704,12 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	assert.Equal("kenn-forge-archive-snapshot/1", response.JSON200.Schema1)
 	require.Len(response.JSON200.PullRequests, 1)
 	assert.Equal("Open repair", response.JSON200.PullRequests[0].Title)
+	var payload struct {
+		PullRequests []map[string]any `json:"pull_requests"`
+	}
+	require.NoError(json.Unmarshal(response.Body, &payload))
+	require.Len(payload.PullRequests, 1)
+	assert.Equal("2026-09-20T12:00:00Z", payload.PullRequests[0]["detail_fetched_at"])
 	require.Len(response.JSON200.Repositories, 1)
 	assert.NotNil(response.JSON200.Repositories[0].Coverage)
 

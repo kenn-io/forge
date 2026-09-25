@@ -2536,6 +2536,9 @@ func (m *Manager) workspaceSetupRemoteURL(
 	if err != nil {
 		return "", fmt.Errorf("look up repo clone URL: %w", err)
 	}
+	if repo == nil {
+		return workspaceCloneRemoteURL(nil, platformHost, owner, name), nil
+	}
 	return workspaceCloneRemoteURL(repo.Row(), platformHost, owner, name), nil
 }
 

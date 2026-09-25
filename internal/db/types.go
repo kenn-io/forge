@@ -74,16 +74,12 @@ type ActiveRepo struct {
 }
 
 // Identity returns the repository's provider-verified identity.
-func (r ActiveRepo) Identity() platform.RepositoryIdentity {
+func (r *ActiveRepo) Identity() platform.RepositoryIdentity {
 	return r.identity
 }
 
-// Row returns the repository row, or nil for a nil ActiveRepo, so a "not
-// found" result passes through code that works with *Repo.
+// Row returns the repository row for code that works with *Repo.
 func (r *ActiveRepo) Row() *Repo {
-	if r == nil {
-		return nil
-	}
 	return &r.Repo
 }
 

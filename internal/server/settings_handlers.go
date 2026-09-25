@@ -1897,7 +1897,7 @@ func (s *Server) applyVisibilityUnderReconciliationRead(
 	defer release()
 	repo, err := s.resolveVisibilityRepoLocked(ctx, identity)
 	if err != nil || repo == nil {
-		return repo.Row(), err
+		return nil, err
 	}
 	if err := s.db.SetRepoHiddenFromUI(ctx, repo.ID, hidden); err != nil {
 		return nil, err

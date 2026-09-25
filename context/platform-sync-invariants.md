@@ -33,6 +33,8 @@ combining repository-owned history
   through `Identity()` methods, never field by field, and do not re-check an
   active repository's provider ID for emptiness
   (`internal/db/types.go::ActiveRepo`, `platform/repository_identity.go`).
+  `Row()` is not nil-safe: handle a `nil, nil` "not found" lookup before
+  calling it, or `make nilaway` flags every downstream dereference.
 - Timestamp provider observations before the identity lookup starts; a delayed
   response must not supersede a newer route observation
   (`internal/github/sync.go::Syncer.syncRepoIdentity`).

@@ -1500,11 +1500,24 @@
   });
   const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
   const inlineDockExpandBlocked = $derived(getStackDepth() > 0);
+  let attributionOpen = $state(false);
+  // The dialog and the inert lock must use one predicate. A refresh can drop
+  // commit_attribution while attributionOpen is still true; locking on the flag
+  // alone then leaves the workspace inert with no dialog to dismiss.
+  const attributionDialogOpen = $derived(
+    attributionOpen && interactionVisible && workspace?.commit_attribution != null,
+  );
+  $effect(() => {
+    if (!interactionVisible || actionsBlocked || workspace?.commit_attribution == null) {
+      attributionOpen = false;
+    }
+  });
   const modalOpen = $derived(
     forcePromptMessage !== null ||
       stopPromptSession !== null ||
       deletePromptOpen ||
-      renamePrompt !== null,
+      renamePrompt !== null ||
+      attributionDialogOpen,
   );
 
   $effect(() => {
@@ -3921,6 +3934,7 @@
     stopPromptSession = null;
     stopSessionStopping = false;
     renamePrompt = null;
+    attributionOpen = false;
     renameInputValue = "";
     renameSaving = false;
     mountedSessionKeys = restoredActiveTab.startsWith("session:")
@@ -4502,15 +4516,6 @@
         >
           <div class="terminal-area">
             <div class="workspace-surface">
-              {#if workspace?.commit_attribution}
-                {@const attribution = workspace.commit_attribution}
-                <details class="commit-attribution" class:attribution-warning={attribution.status === "mismatch" || attribution.status === "unverified"}>
-                  <summary>{attribution.message}</summary>
-                  <p>{attribution.repository} · {attribution.branch} · {attribution.oid.slice(0, 12)}</p>
-                  <p>Author: {attribution.author_name} &lt;{attribution.author_email}&gt; (GitHub ID {attribution.author_id || "unresolved"})</p>
-                  <p>Committer: {attribution.committer_name} &lt;{attribution.committer_email}&gt; (GitHub ID {attribution.committer_id || "unresolved"})</p>
-                </details>
-              {/if}
               {#if runtimeError}
                 <div class="runtime-error">{runtimeError}</div>
               {/if}
@@ -4778,6 +4783,35 @@
   />
 {/if}
 
+{#if attributionDialogOpen && workspace?.commit_attribution}
+  {@const attribution = workspace.commit_attribution}
+  <Modal
+    open
+    title="Last push"
+    showClose
+    onClose={() => { attributionOpen = false; }}
+  >
+    <div class="push-details">
+      <p>{attribution.message}</p>
+      <dl>
+        <dt>Author</dt>
+        <dd>
+          {attribution.author_name || "Not verified"}
+          {#if attribution.author_email}<span>{attribution.author_email}</span>{/if}
+        </dd>
+        <dt>Committer</dt>
+        <dd>
+          {attribution.committer_name || "Not verified"}
+          {#if attribution.committer_email}<span>{attribution.committer_email}</span>{/if}
+        </dd>
+        <dt>Commit</dt><dd><code>{attribution.oid.slice(0, 12)}</code></dd>
+        <dt>Branch</dt><dd>{attribution.branch}</dd>
+        <dt>Repository</dt><dd>{attribution.repository}</dd>
+      </dl>
+    </div>
+  </Modal>
+{/if}
+
 {#if renamePrompt !== null && interactionVisible}
   <Modal
     open={renamePrompt !== null && interactionVisible}
@@ -4939,6 +4973,20 @@
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
 {#snippet workspaceControls()}
+  {#if workspace?.commit_attribution}
+    {@const status = workspace.commit_attribution.status}
+    <Button
+      size="sm"
+      surface="soft"
+      tone={status === "mismatch" ? "danger" : status === "unverified" ? "info" : "neutral"}
+      label={status === "mismatch" ? "Check push identity" : status === "unverified" ? "Verify push identity" : "Last push"}
+      disabled={actionsBlocked}
+      onclick={(event) => {
+        previouslyFocusedEl = event.currentTarget as HTMLElement;
+        attributionOpen = true;
+      }}
+    />
+  {/if}
   {#if controlsInPane && inlineDock && inlineDockMode !== null && workspaceLive && workspace?.status === "ready"}
     <!-- The dock's own modes, which the header bar carries everywhere it still
          renders - so this copy is gated on exactly the case that hides it. A detail
@@ -5389,8 +5437,23 @@
     background: var(--bg-primary);
   }
 
-  .commit-attribution { padding: 8px 12px; font-size: var(--font-size-sm); }
-  .attribution-warning { color: var(--color-danger); }
+  .push-details {
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .push-details p { margin: 0 0 var(--space-5); }
+
+  .push-details dl {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-4) var(--space-5);
+    margin: 0;
+  }
+
+  .push-details dt, .push-details dd span { color: var(--text-secondary); }
+  .push-details dd { margin: 0; }
+  .push-details dd span { display: block; }
 
   .workspace-actions {
     display: flex;

@@ -228,6 +228,10 @@ func (m *Manager) PrepareAgentLaunchContext(
 	if summary == nil {
 		return ErrWorkspaceNotFound
 	}
+	// Pick up exclusion rules the user added since the workspace was set up.
+	if err := refreshManagedCloneExclude(ctx, summary.WorktreePath); err != nil {
+		return err
+	}
 
 	relPath := agentContextRelPath(opts.TargetKey)
 	if relPath == "" {

@@ -122,9 +122,9 @@ Interactive surfaces must agree on which item is selected.
   their automatically opened empty fallback while the launch intent is pending and may discard only unclaimed intents
   (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`,
   `frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::reconcileAcceptedLaunch`).
-- Quick actions keep the automatic session picker closed for that workspace during the browser session,
-  regardless of launch outcome or session exit. Opening it remains an explicit user action
-  (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaces`).
+- Quick actions keep the automatic session picker closed for that workspace, local or devbox, during the
+  browser session, regardless of launch outcome or session exit. Opening it remains an explicit user action
+  (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaceKey`).
 - Every quick-action list is ordered by action title, ignoring case, not by settings order
   (`frontend/src/lib/stores/workspace-quick-actions.ts::sortQuickActionsByLabel`).
 - Inline surface claims come only from live selection effects (the list

@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { quickActionWorkspaces, runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
+  import {
+    quickActionWorkspaceKey,
+    quickActionWorkspaces,
+    runWorkspaceQuickAction,
+  } from "../../stores/workspace-quick-actions.js";
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
@@ -951,7 +955,8 @@
   }
 
   const automaticLauncherBlocked = $derived(
-    explicitLaunchIntentPending() || (workspaceHostKey === undefined && quickActionWorkspaces.has(workspaceId)),
+    explicitLaunchIntentPending() ||
+      quickActionWorkspaces.has(quickActionWorkspaceKey(workspaceId, workspaceHostKey)),
   );
   const launcherOverlayAllowed = $derived(
     launcherState?.auto !== true || !automaticLauncherBlocked,

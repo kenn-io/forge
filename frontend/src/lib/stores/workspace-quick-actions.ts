@@ -11,7 +11,13 @@ export function sortQuickActionsByLabel(actions: readonly QuickAction[]): QuickA
 }
 
 // Choosing a quick action replaces the automatic session picker for this workspace.
+// Entries are keyed by quickActionWorkspaceKey.
 export const quickActionWorkspaces = new SvelteSet<string>();
+
+/** Identifies a workspace in quickActionWorkspaces; devbox workspace IDs are only unique per host. */
+export function quickActionWorkspaceKey(workspaceId: string, hostKey?: string): string {
+  return hostKey ? `${hostKey}\0${workspaceId}` : workspaceId;
+}
 
 /**
  * Runs a configured quick action against a workspace that was just created (or
@@ -26,7 +32,7 @@ export function runWorkspaceQuickAction(
   action: QuickAction,
   hostKey?: string,
 ): void {
-  quickActionWorkspaces.add(hostKey ? `${hostKey}\0${workspaceId}` : workspaceId);
+  quickActionWorkspaces.add(quickActionWorkspaceKey(workspaceId, hostKey));
   const program = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
     hostKey?.startsWith("devbox:")
       ? client.DevboxesService.launchDevboxHandoff(

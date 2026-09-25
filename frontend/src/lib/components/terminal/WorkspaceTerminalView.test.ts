@@ -3719,6 +3719,52 @@ describe("WorkspaceTerminalView", () => {
     expect(pendingWorkspaceLaunch("ws-1", undefined)?.targetKey).toBe("codex");
   });
 
+  it.each([false, true])(
+    "keeps the automatic launcher closed for a devbox quick action (quick action: %s)",
+    async (withQuickAction) => {
+      const handoff = deferred<Response>();
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+          const path = fetchPath(input);
+          if (path.endsWith("/devboxes/box-1/workspaces/ws-1/runtime/agent-handoffs")) return handoff.promise;
+          if (path.endsWith("/devboxes/box-1/workspaces/ws-1/runtime")) {
+            return Promise.resolve(Response.json(runtimeWithLaunchTargetsOnly()));
+          }
+          if (path.endsWith("/devboxes/box-1/workspaces/ws-1")) {
+            return Promise.resolve(Response.json(workspaceResponse));
+          }
+          if (path.endsWith("/api/v1/workspaces")) return Promise.resolve(Response.json({ workspaces: [] }));
+          if (path.includes("/devboxes/")) return Promise.resolve(Response.json({}));
+          return originalFetch(input, init);
+        }),
+      );
+      if (withQuickAction) {
+        runWorkspaceQuickAction(
+          mocks.runtime,
+          "ws-1",
+          { label: "Review", agent: "helper", prompt: "Review this change" },
+          "devbox:box-1",
+        );
+      }
+      claimForPrs();
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", workspaceHostKey: "devbox:box-1", paneSurface: "prs" as const },
+      });
+
+      if (!withQuickAction) {
+        expect(await screen.findByRole("dialog", { name: "Launch a session" })).toBeTruthy();
+        return;
+      }
+      await screen.findByRole("region", { name: "Workflow panes" });
+      await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+      flushSync();
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+      handoff.resolve(Response.json({ title: "Launch failed", status: 400 }, { status: 400 }));
+    },
+  );
+
   it("publishes an accepted launch for its workspace after navigating during launch", async () => {
     const launchRequest = deferred<typeof runningSession>();
     const workspaceB = { ...workspaceResponse, id: "ws-2", status: "provisioning" };

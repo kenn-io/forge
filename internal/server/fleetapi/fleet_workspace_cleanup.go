@@ -36,7 +36,8 @@ func (s *Handler) RequestWorkspaceCleanup(
 	if !ok || target.self {
 		return fmt.Errorf("fleet host %q is unavailable", hostKey)
 	}
-	requestContext, cancel := context.WithTimeout(ctx, s.configSnapshot().Fleet.PeerTimeoutOrDefault())
+	fleet := s.configSnapshot().Fleet
+	requestContext, cancel := context.WithTimeout(ctx, fleet.PeerTimeoutOrDefault())
 	defer cancel()
 	request, err := generated.NewQueueFederationWorkspaceCleanupRequest(requestContext, strings.TrimRight(target.member.BaseURL, "/")+"/api/v1", &generated.QueueFederationWorkspaceCleanupRequestOptions{PathParams: &generated.QueueFederationWorkspaceCleanupPath{ID: workspaceID}})
 	if err != nil {

@@ -295,7 +295,7 @@ func (o *PushedHeadObserver) workspaceRepository(
 	if ws.RepoID != 0 {
 		repo, err := o.db.GetActiveRepoByID(ctx, ws.RepoID)
 		if err != nil || repo == nil {
-			return repo, err
+			return repo.Row(), err
 		}
 		if launchSpec != nil {
 			if repo.PlatformRepoID != launchSpec.Repository.PlatformRepoID {
@@ -309,7 +309,7 @@ func (o *PushedHeadObserver) workspaceRepository(
 			repo.CloneURL = launchSpec.Repository.CloneURL
 			repo.DefaultBranch = launchSpec.Repository.DefaultBranch
 		}
-		return repo, nil
+		return repo.Row(), nil
 	}
 	if launchSpec != nil {
 		return &db.Repo{
@@ -338,7 +338,7 @@ func (o *PushedHeadObserver) workspaceRepository(
 	if err != nil {
 		return nil, fmt.Errorf("get repo: %w", err)
 	}
-	return repo, nil
+	return repo.Row(), nil
 }
 
 type trackingLookup struct {

@@ -33,10 +33,14 @@ func (r databaseLaunchSpecResolver) ResolveWorkspaceLaunchSpec(
 			repo = &resolved
 		}
 	} else {
-		repo, err = r.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		active, lookupErr := r.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 			Platform: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost,
 			Owner: request.Repository.Owner, Name: request.Repository.Name,
 		})
+		err = lookupErr
+		if active != nil {
+			repo = active.Row()
+		}
 	}
 	if err != nil {
 		return db.WorkspaceLaunchSpec{}, err

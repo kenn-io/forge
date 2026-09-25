@@ -173,16 +173,16 @@ func (s *Handler) applyReviewSuggestions(
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityReviewSuggestionApplication); err != nil {
+	if err := s.requireSyncerCapability(repo.Repo, capabilityReviewSuggestionApplication); err != nil {
 		return nil, err
 	}
-	if err := s.requireReviewSuggestionCapabilities(*repo); err != nil {
+	if err := s.requireReviewSuggestionCapabilities(repo.Repo); err != nil {
 		return nil, err
 	}
 	if len(input.Body.Suggestions) == 0 {
 		return nil, httpapi.Validation("body.suggestions", "at least one suggestion is required")
 	}
-	caps := s.capabilitiesForRepo(*repo)
+	caps := s.capabilitiesForRepo(repo.Repo)
 	expectedHeadSHA := strings.TrimSpace(input.Body.ExpectedHeadSHA)
 	if expectedHeadSHA == "" && caps.MutationHeadBinding {
 		return nil, httpapi.Validation(
@@ -191,14 +191,14 @@ func (s *Handler) applyReviewSuggestions(
 		)
 	}
 	applier, err := s.syncer.ReviewSuggestionApplier(
-		repoProviderKind(*repo), repoProviderHost(*repo),
+		repoProviderKind(repo.Repo), repoProviderHost(repo.Repo),
 	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
-	if availability := s.operations(*repo).ApplyReviewSuggestion; !availability.Available &&
+	if availability := s.operations(repo.Repo).ApplyReviewSuggestion; !availability.Available &&
 		availability.Code == "rate_limited" {
-		return nil, operationRateLimitedProblem(*repo, availability)
+		return nil, operationRateLimitedProblem(repo.Repo, availability)
 	}
 	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -214,7 +214,7 @@ func (s *Handler) applyReviewSuggestions(
 			map[string]any{"reason": "not_open"},
 		)
 	}
-	if repoProviderKind(*repo) == platform.KindGitHub && platformgithub.ParseHeadRepoFullName(mr.HeadRepoCloneURL) == "" {
+	if repoProviderKind(repo.Repo) == platform.KindGitHub && platformgithub.ParseHeadRepoFullName(mr.HeadRepoCloneURL) == "" {
 		return nil, httpapi.Conflict(
 			httpapi.CodeConflict,
 			"pull request head repository is unknown",
@@ -265,7 +265,7 @@ func (s *Handler) applyReviewSuggestions(
 	}
 	result, err := applier.ApplyReviewSuggestions(
 		ctx,
-		platformRepoRefFromDB(*repo),
+		platformRepoRefFromDB(repo.Repo),
 		input.Number,
 		platform.ApplyReviewSuggestionsInput{
 			HeadBranch:       mr.HeadBranch,
@@ -275,12 +275,12 @@ func (s *Handler) applyReviewSuggestions(
 			Suggestions:      suggestions,
 		},
 	)
-	s.syncAfterReviewSuggestionApply(*repo, input.Number)
+	s.syncAfterReviewSuggestionApply(repo.Repo, input.Number)
 	if err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)),
-			repoProviderHost(*repo),
+			string(repoProviderKind(repo.Repo)),
+			repoProviderHost(repo.Repo),
 			"apply review suggestions on provider failed",
 		)
 	}
@@ -521,12 +521,12 @@ func (s *Handler) publishDiffReviewDraft(
 	if err != nil {
 		return nil, err
 	}
-	caps := s.capabilitiesForRepo(*repo)
+	caps := s.capabilitiesForRepo(repo.Repo)
 	if !reviewActionSupported(caps, action) {
-		return nil, httpapi.UnsupportedCapability(*repo, "review_action_"+string(action))
+		return nil, httpapi.UnsupportedCapability(repo.Repo, "review_action_"+string(action))
 	}
-	if action == platform.ReviewActionApprove && s.mergeRequestAuthoredByViewer(ctx, *repo, *mr) {
-		return nil, selfApprovalProblem(*repo)
+	if action == platform.ReviewActionApprove && s.mergeRequestAuthoredByViewer(ctx, repo.Repo, *mr) {
+		return nil, selfApprovalProblem(repo.Repo)
 	}
 	draft, err := s.db.GetMRReviewDraft(ctx, mr.ID)
 	if err != nil {
@@ -547,7 +547,7 @@ func (s *Handler) publishDiffReviewDraft(
 	// below only compares DiffHeadSHA, so a stale base would otherwise let
 	// an approval land on an out-of-date diff.
 	if action == platform.ReviewActionApprove && caps.MutationHeadBinding {
-		gatedHead, gateErr := s.reviewedHeadSHA(repo, mr)
+		gatedHead, gateErr := s.reviewedHeadSHA(repo.Row(), mr)
 		if gateErr != nil {
 			return nil, gateErr
 		}
@@ -565,7 +565,7 @@ func (s *Handler) publishDiffReviewDraft(
 		}
 	}
 	mutator, err := s.syncer.DiffReviewDraftMutator(
-		repoProviderKind(*repo), repoProviderHost(*repo),
+		repoProviderKind(repo.Repo), repoProviderHost(repo.Repo),
 	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
@@ -583,7 +583,7 @@ func (s *Handler) publishDiffReviewDraft(
 			UpdatedAt: comment.UpdatedAt,
 		})
 	}
-	if _, err := mutator.PublishDiffReviewDraft(ctx, platformRepoRefFromDB(*repo), input.Number, platform.PublishDiffReviewDraftInput{
+	if _, err := mutator.PublishDiffReviewDraft(ctx, platformRepoRefFromDB(repo.Repo), input.Number, platform.PublishDiffReviewDraftInput{
 		Body:     strings.TrimSpace(input.Body.Body),
 		Action:   action,
 		HeadSHA:  reviewHeadSHA,
@@ -595,30 +595,30 @@ func (s *Handler) publishDiffReviewDraft(
 					return nil, huma.Error500InternalServerError("discard partially published review draft comments failed")
 				}
 			}
-			ingestErr := s.tryIngestPublishedReviewThreads(ctx, *repo, *mr)
+			ingestErr := s.tryIngestPublishedReviewThreads(ctx, repo.Repo, *mr)
 			if errors.Is(partialErr, platform.ErrStaleState) || ingestErr != nil {
-				s.syncAfterReviewDraftPublish(*repo, input.Number)
+				s.syncAfterReviewDraftPublish(repo.Repo, input.Number)
 			}
-			if mapped := diffReviewPartialPublishProblem(partialErr, *repo); mapped != nil {
+			if mapped := diffReviewPartialPublishProblem(partialErr, repo.Repo); mapped != nil {
 				return nil, mapped
 			}
 			return &actionStatusOutput{Body: ActionStatusBody{Status: "partially_published"}}, nil
 		}
 		if errors.Is(err, platform.ErrStaleState) {
-			s.syncAfterReviewDraftPublish(*repo, input.Number)
+			s.syncAfterReviewDraftPublish(repo.Repo, input.Number)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(repoProviderKind(*repo)),
-			repoProviderHost(*repo),
+			string(repoProviderKind(repo.Repo)),
+			repoProviderHost(repo.Repo),
 			"publish review draft on provider failed",
 		)
 	}
 	if err := s.db.DeleteMRReviewDraft(ctx, mr.ID); err != nil {
 		return nil, huma.Error500InternalServerError("discard published review draft failed")
 	}
-	if err := s.tryIngestPublishedReviewThreads(ctx, *repo, *mr); err != nil {
-		s.syncAfterReviewDraftPublish(*repo, input.Number)
+	if err := s.tryIngestPublishedReviewThreads(ctx, repo.Repo, *mr); err != nil {
+		s.syncAfterReviewDraftPublish(repo.Repo, input.Number)
 	}
 	return &actionStatusOutput{Body: ActionStatusBody{Status: "published"}}, nil
 }
@@ -747,18 +747,18 @@ func (s *Handler) setDiffReviewThreadResolved(
 		return nil, huma.Error404NotFound("review thread not found")
 	}
 	resolver, err := s.syncer.DiffReviewThreadResolver(
-		repoProviderKind(*repo), repoProviderHost(*repo),
+		repoProviderKind(repo.Repo), repoProviderHost(repo.Repo),
 	)
 	if err != nil {
 		return nil, huma.Error404NotFound(err.Error())
 	}
 	if resolved {
 		err = resolver.ResolveDiffReviewThread(
-			ctx, platformRepoRefFromDB(*repo), input.Number, thread.ProviderThreadID,
+			ctx, platformRepoRefFromDB(repo.Repo), input.Number, thread.ProviderThreadID,
 		)
 	} else {
 		err = resolver.UnresolveDiffReviewThread(
-			ctx, platformRepoRefFromDB(*repo), input.Number, thread.ProviderThreadID,
+			ctx, platformRepoRefFromDB(repo.Repo), input.Number, thread.ProviderThreadID,
 		)
 	}
 	if err != nil {
@@ -791,7 +791,7 @@ func (s *Handler) lookupReviewDraftTarget(
 	if mr == nil {
 		return nil, nil, huma.Error404NotFound("pull request not found")
 	}
-	return repo, mr, nil
+	return repo.Row(), mr, nil
 }
 
 func (s *Handler) lookupReviewDraftMutationTarget(
@@ -814,7 +814,7 @@ func (s *Handler) lookupReviewDraftMutationTarget(
 	if mr == nil {
 		return nil, nil, huma.Error404NotFound("pull request not found")
 	}
-	return repo, mr, nil
+	return repo.Row(), mr, nil
 }
 
 func (s *Handler) ingestDiffReviewThreads(

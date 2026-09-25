@@ -395,7 +395,7 @@ func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
 	subjects := make([]providerplane.ItemIdentity, subjectCount)
 	for i := range subjects {
 		subjects[i] = providerplane.ItemIdentity{
-			Repository: providerplane.RepositoryIdentity{
+			Repository: platform.RepositoryIdentity{
 				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
 			},
 			ItemType: "pr", ItemNumber: i + 1,

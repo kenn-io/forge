@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/platform"
 )
 
 func seedRepositoryCatalogCollision(t *testing.T, d *DB) (int64, int64) {
@@ -83,6 +84,56 @@ func TestGetRepositoryByProviderIDReturnsInactiveRepository(t *testing.T) {
 	assert.Equal(RepositoryLifecycleInactive, entry.Lifecycle)
 	require.Len(entry.Routes, 1)
 	assert.False(entry.Routes[0].Current)
+}
+
+func TestActiveRepoCarriesProviderIdentity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	oldID, newID := seedRepositoryCatalogCollision(t, d)
+	want := platform.RepositoryIdentity{Provider: "github", PlatformHost: "github.com", PlatformRepoID: "provider-new"}
+
+	active, err := d.GetRepoByIdentity(t.Context(), RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "org-a", Name: "project-a",
+	})
+	require.NoError(err)
+	require.NotNil(active)
+	assert.Equal(newID, active.ID)
+	assert.Equal(want, active.Identity())
+	// The identity is fixed when the row is read; editing the row copy
+	// cannot redirect comparisons to another repository.
+	active.PlatformRepoID = "provider-old"
+	assert.Equal(want, active.Identity())
+
+	byID, err := d.GetActiveRepoByID(t.Context(), oldID)
+	require.NoError(err)
+	assert.Nil(byID)
+	inactive, err := d.GetRepositoryByProviderID(t.Context(), "github", "github.com", "provider-old")
+	require.NoError(err)
+	require.NotNil(inactive)
+	fromInactive, err := inactive.ActiveRepo()
+	require.NoError(err)
+	assert.Nil(fromInactive)
+}
+
+func TestActiveRepoRejectsActiveRowWithoutProviderIdentity(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	// Normal writes cannot produce this row; a corrupted store must fail
+	// loudly instead of yielding an empty identity that compares equal to
+	// other unresolved references.
+	result, err := d.WriteDB().Exec(`
+		INSERT INTO forge_repos (
+			platform, platform_host, platform_repo_id,
+			owner, name, repo_path, owner_key, name_key, repo_path_key,
+			lifecycle_state
+		) VALUES ('github', 'github.com', '', 'org-a', 'project-b', 'org-a/project-b',
+			'org-a', 'project-b', 'org-a/project-b', 'active')`)
+	require.NoError(err)
+	id, err := result.LastInsertId()
+	require.NoError(err)
+	_, err = d.GetActiveRepoByID(t.Context(), id)
+	require.ErrorContains(err, "no provider identity")
 }
 
 func TestListRepositoryCatalogFindsHistoricalNameCollisions(t *testing.T) {

@@ -136,7 +136,7 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 		)
 	}
 	request.Repository = route
-	var repo *db.Repo
+	var repo *db.ActiveRepo
 	if platformRepoID := strings.TrimSpace(request.PlatformRepoID); platformRepoID != "" {
 		entry, lookupErr := s.db.GetRepositoryByProviderID(
 			ctx, route.Provider, route.PlatformHost, platformRepoID,
@@ -144,8 +144,10 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 		if lookupErr != nil {
 			return db.WorkspaceLaunchSpec{}, httpapi.ProviderRouteLookupError(lookupErr)
 		}
-		if entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive {
-			repo = &entry.Repository
+		if entry != nil {
+			if repo, err = entry.ActiveRepo(); err != nil {
+				return db.WorkspaceLaunchSpec{}, httpapi.Internal("resolve repository failed")
+			}
 		}
 	} else {
 		repo, err = s.repoResolver.LookupRoute(
@@ -155,8 +157,7 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 			return db.WorkspaceLaunchSpec{}, httpapi.ProviderRouteLookupError(err)
 		}
 	}
-	if repo == nil || strings.TrimSpace(repo.PlatformRepoID) == "" ||
-		strings.TrimSpace(repo.CloneURL) == "" ||
+	if repo == nil || strings.TrimSpace(repo.CloneURL) == "" ||
 		strings.TrimSpace(repo.DefaultBranch) == "" {
 		return db.WorkspaceLaunchSpec{}, httpapi.NotFound(
 			httpapi.CodeRepoNotFound,

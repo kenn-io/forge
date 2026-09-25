@@ -5,6 +5,7 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/platform"
 )
 
 func overlayFleetActivityWorkspaces(response *activityResponse, workspaces []fleet.WorkspaceSummary) {
@@ -14,7 +15,7 @@ func overlayFleetActivityWorkspaces(response *activityResponse, workspaces []fle
 			continue
 		}
 		identity := providerplane.ItemIdentity{
-			Repository: providerplane.RepositoryIdentity{
+			Repository: platform.RepositoryIdentity{
 				Provider: workspace.Repo.Provider, PlatformHost: workspace.Repo.PlatformHost,
 				PlatformRepoID: workspace.Repo.PlatformRepoID,
 			},

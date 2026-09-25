@@ -49,6 +49,15 @@ type RepositoryCatalogEntry struct {
 	Routes     []RepositoryRoute
 }
 
+// ActiveRepo returns the entry's repository when the catalog reports it as
+// active, or nil when it is inactive.
+func (e RepositoryCatalogEntry) ActiveRepo() (*ActiveRepo, error) {
+	if e.Lifecycle != RepositoryLifecycleActive {
+		return nil, nil
+	}
+	return newActiveRepo(e.Repository)
+}
+
 type RepositoryCatalogFilter struct {
 	Platform       string
 	PlatformHost   string

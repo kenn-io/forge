@@ -865,7 +865,7 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 	branch := strings.TrimSpace(derefString(input.Body.Branch))
 	itemKey := db.AdHocWorkspaceItemKey(branch)
 	if itemKey != "" {
-		existing, err := s.adHocWorkspaceForBranch(ctx, repo, itemKey)
+		existing, err := s.adHocWorkspaceForBranch(ctx, repo.Row(), itemKey)
 		if err != nil {
 			return nil, err
 		}
@@ -886,7 +886,7 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 		},
 	)
 	if err != nil {
-		return s.adHocWorkspaceCreateError(ctx, repo, itemKey, err)
+		return s.adHocWorkspaceCreateError(ctx, repo.Row(), itemKey, err)
 	}
 
 	createdBranch := ws.WorkspaceBranch != ""
@@ -1125,8 +1125,8 @@ func (s *Handler) refreshWorkspace(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	kind := repoProviderKind(*repo)
-	host := repoProviderHost(*repo)
+	kind := repoProviderKind(repo.Repo)
+	host := repoProviderHost(repo.Repo)
 
 	switch summary.ItemType {
 	case db.WorkspaceItemTypeIssue:

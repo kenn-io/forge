@@ -52,13 +52,13 @@ func (s *Server) getMarkdownImageFor(
 	if err != nil {
 		return nil, err
 	}
-	kind := httpapi.ProviderKind(*repo)
-	host := httpapi.ProviderHost(*repo)
+	kind := httpapi.ProviderKind(repo.Repo)
+	host := httpapi.ProviderHost(repo.Repo)
 	reader, err := s.syncer.Registry().MarkdownImageReader(kind, host)
 	if err != nil {
 		return nil, markdownImageError(ctx, err, kind, host)
 	}
-	ref := httpapi.PlatformRepoRef(*repo)
+	ref := httpapi.PlatformRepoRef(repo.Repo)
 	image, err := s.markdownImages.load(ctx, markdownImageCacheKey(ref, source), func(fetchCtx context.Context) (platform.MarkdownImage, error) {
 		return reader.GetMarkdownImage(fetchCtx, ref, source)
 	})

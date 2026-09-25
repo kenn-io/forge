@@ -31,7 +31,7 @@ type Hub struct {
 }
 
 // RepositoryRoute identifies a repository by its current provider route.
-// Unlike RepositoryIdentity, it is suitable for requests whose caller does
+// Unlike platform.RepositoryIdentity, it is suitable for requests whose caller does
 // not yet know the provider's stable repository ID.
 type RepositoryRoute struct {
 	Provider     string `json:"provider"`
@@ -142,8 +142,8 @@ func (d RepositoryDescriptor) Route() RepositoryRoute {
 }
 
 // Identity returns the descriptor's stable cross-spoke identity.
-func (d RepositoryDescriptor) Identity() RepositoryIdentity {
-	return RepositoryIdentity{
+func (d RepositoryDescriptor) Identity() platform.RepositoryIdentity {
+	return platform.RepositoryIdentity{
 		Provider: d.Provider, PlatformHost: d.PlatformHost,
 		PlatformRepoID: d.PlatformRepoID,
 	}
@@ -318,34 +318,11 @@ func (c Hub) validate() (Hub, error) {
 	return c, nil
 }
 
-// RepositoryIdentity is the stable cross-spoke key for provider repository
-// data. Local numeric database IDs are intentionally absent.
-type RepositoryIdentity struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
-}
-
-// Canonical returns the comparable cross-spoke form of a repository identity.
-// Provider repository IDs remain case-sensitive.
-func (r RepositoryIdentity) Canonical() RepositoryIdentity {
-	r.Provider = strings.ToLower(strings.TrimSpace(r.Provider))
-	r.PlatformHost = strings.ToLower(strings.TrimSpace(r.PlatformHost))
-	r.PlatformRepoID = strings.TrimSpace(r.PlatformRepoID)
-	return r
-}
-
-// Valid reports whether the stable cross-spoke identity is complete.
-func (r RepositoryIdentity) Valid() bool {
-	r = r.Canonical()
-	return r.Provider != "" && r.PlatformHost != "" && r.PlatformRepoID != ""
-}
-
 // ItemIdentity identifies one provider item without a spoke-local row ID.
 type ItemIdentity struct {
-	Repository RepositoryIdentity `json:"repository"`
-	ItemType   string             `json:"item_type"`
-	ItemNumber int                `json:"item_number"`
+	Repository platform.RepositoryIdentity `json:"repository"`
+	ItemType   string                      `json:"item_type"`
+	ItemNumber int                         `json:"item_number"`
 }
 
 // Canonical returns the comparable cross-spoke form of an item identity.

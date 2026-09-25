@@ -567,13 +567,13 @@ func (s *Server) getRepoCommitDiff(
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 
-	host := httpapi.ProviderHost(*repo)
+	host := httpapi.ProviderHost(repo.Repo)
 	ctx = gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
 	if !isFullGitObjectID(input.SHA) {
 		return nil, httpapi.Validation("path.sha", "commit SHA must be a full object ID")
 	}
 
-	sha, err := s.clones.ResolveCommit(ctx, string(httpapi.ProviderKind(*repo)), host, repo.Owner, repo.Name, input.SHA)
+	sha, err := s.clones.ResolveCommit(ctx, string(httpapi.ProviderKind(repo.Repo)), host, repo.Owner, repo.Name, input.SHA)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -582,7 +582,7 @@ func (s *Server) getRepoCommitDiff(
 		return nil, httpapi.Upstream("failed to compute diff", "", "")
 	}
 
-	parent, err := s.clones.ParentOf(ctx, string(httpapi.ProviderKind(*repo)), host, repo.Owner, repo.Name, sha)
+	parent, err := s.clones.ParentOf(ctx, string(httpapi.ProviderKind(repo.Repo)), host, repo.Owner, repo.Name, sha)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -592,7 +592,7 @@ func (s *Server) getRepoCommitDiff(
 	}
 
 	hideWhitespace := input.Whitespace == "hide"
-	result, err := s.clones.Diff(ctx, string(httpapi.ProviderKind(*repo)), host, repo.Owner, repo.Name, parent, sha, hideWhitespace)
+	result, err := s.clones.Diff(ctx, string(httpapi.ProviderKind(repo.Repo)), host, repo.Owner, repo.Name, parent, sha, hideWhitespace)
 	if err != nil {
 		if errors.Is(err, gitclone.ErrNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, "diff not available: referenced commit not found", nil)
@@ -681,7 +681,7 @@ func (s *Server) getRepo(ctx context.Context, input *getRepoInput) (*getRepoOutp
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	return &getRepoOutput{Body: s.repoResponse(*repo)}, nil
+	return &getRepoOutput{Body: s.repoResponse(repo.Repo)}, nil
 }
 
 func (s *Server) getCommentAutocomplete(
@@ -736,7 +736,7 @@ func (s *Server) getCommentAutocomplete(
 		return &commentAutocompleteOutput{Body: commentAutocompleteResponse{Users: users}}, nil
 	case "#", "!":
 		itemKind := ""
-		if httpapi.ProviderKind(*repo) == platform.KindGitLab {
+		if httpapi.ProviderKind(repo.Repo) == platform.KindGitLab {
 			itemKind = "issue"
 			if input.Trigger == "!" {
 				itemKind = "pull"
@@ -1180,10 +1180,10 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
 		ghclient.RepoRef{
-			Platform:           httpapi.ProviderKind(*repo),
+			Platform:           httpapi.ProviderKind(repo.Repo),
 			Owner:              repo.Owner,
 			Name:               repo.Name,
-			PlatformHost:       httpapi.ProviderHost(*repo),
+			PlatformHost:       httpapi.ProviderHost(repo.Repo),
 			RepoPath:           repo.RepoPath,
 			PlatformExternalID: repo.PlatformRepoID,
 			WebURL:             repo.WebURL,
@@ -1197,7 +1197,7 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 	if err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
+			string(httpapi.ProviderKind(repo.Repo)), httpapi.ProviderHost(repo.Repo),
 			"refresh PR CI: "+err.Error(),
 		)
 	}
@@ -1241,7 +1241,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 	// the diff problem as a warning so the UI can explain why the diff view
 	// is stale or empty.
 	syncErr := s.syncer.SyncMROnProvider(
-		ctx, httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
+		ctx, httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo),
 		repo.Owner, repo.Name, input.Number,
 	)
 	diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](syncErr)
@@ -1251,7 +1251,7 @@ func (s *Server) syncPR(ctx context.Context, input *repoNumberInput) (*syncPROut
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			syncErr,
-			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
+			string(httpapi.ProviderKind(repo.Repo)), httpapi.ProviderHost(repo.Repo),
 			"sync PR: "+syncErr.Error(),
 		)
 	}
@@ -1303,8 +1303,8 @@ func (s *Server) enqueuePRSync(ctx context.Context, input *repoNumberInput) (*ac
 			httpapi.CodePullNotFound, "pull request not found", nil,
 		)
 	}
-	kind := httpapi.ProviderKind(*repo)
-	host := httpapi.ProviderHost(*repo)
+	kind := httpapi.ProviderKind(repo.Repo)
+	host := httpapi.ProviderHost(repo.Repo)
 	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
 		"#" + strconv.Itoa(input.Number)
 	s.enqueueDetailSyncOrRerun(
@@ -1355,7 +1355,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		)
 	}
 	err = s.syncer.SyncIssueOnProvider(
-		ctx, httpapi.ProviderKind(*repo), httpapi.ProviderHost(*repo),
+		ctx, httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo),
 		repo.Owner, repo.Name, input.Number,
 	)
 	if err != nil {
@@ -1364,7 +1364,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
-			string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
+			string(httpapi.ProviderKind(repo.Repo)), httpapi.ProviderHost(repo.Repo),
 			"sync issue: "+err.Error(),
 		)
 	}
@@ -1377,7 +1377,7 @@ func (s *Server) syncIssue(ctx context.Context, input *issueRepoNumberInput) (*s
 		return nil, httpapi.NotFound(httpapi.CodeIssueNotFound, "issue not found after sync", nil)
 	}
 
-	syncIssueResp, err := s.issueAPI.BuildDetail(ctx, repo, issue)
+	syncIssueResp, err := s.issueAPI.BuildDetail(ctx, repo.Row(), issue)
 	if err != nil {
 		return nil, err
 	}
@@ -1402,8 +1402,8 @@ func (s *Server) enqueueIssueSync(ctx context.Context, input *issueRepoNumberInp
 			httpapi.CodeIssueNotFound, "issue not found", nil,
 		)
 	}
-	kind := httpapi.ProviderKind(*repo)
-	host := httpapi.ProviderHost(*repo)
+	kind := httpapi.ProviderKind(repo.Repo)
+	host := httpapi.ProviderHost(repo.Repo)
 	key := "issue:" + string(kind) + ":" + host + ":" + repo.RepoPath +
 		"#" + strconv.Itoa(input.Number)
 	s.enqueueDetailSync(
@@ -1562,7 +1562,7 @@ func localWorkspaceActivityOptions(input *listActivityInput, now time.Time) (db.
 
 func activityWorkspaceOverlays(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
-	repositories map[int64]providerplane.RepositoryIdentity,
+	repositories map[int64]platform.RepositoryIdentity,
 ) map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef {
 	overlays := make(map[providerplane.ItemIdentity]workspaceapi.WorkspaceRef)
 	for key, activity := range snapshot.Subjects {
@@ -1582,7 +1582,7 @@ func activityWorkspaceOverlays(
 			continue
 		}
 		identity := providerplane.ItemIdentity{
-			Repository: providerplane.RepositoryIdentity{
+			Repository: platform.RepositoryIdentity{
 				Provider:       activity.Subject.Platform,
 				PlatformHost:   activity.Subject.PlatformHost,
 				PlatformRepoID: activity.Subject.PlatformRepoID,
@@ -1620,7 +1620,7 @@ func activityWorkspaceOverlays(
 
 func activityItemIdentity(item activityItemResponse) providerplane.ItemIdentity {
 	return providerplane.ItemIdentity{
-		Repository: providerplane.RepositoryIdentity{
+		Repository: platform.RepositoryIdentity{
 			Provider: item.Repo.Provider, PlatformHost: item.Repo.PlatformHost,
 			PlatformRepoID: item.Repo.PlatformRepoID,
 		},
@@ -1630,7 +1630,7 @@ func activityItemIdentity(item activityItemResponse) providerplane.ItemIdentity 
 
 func activitySubjectIdentity(item activitySubjectResponse) providerplane.ItemIdentity {
 	return providerplane.ItemIdentity{
-		Repository: providerplane.RepositoryIdentity{
+		Repository: platform.RepositoryIdentity{
 			Provider: item.Repo.Provider, PlatformHost: item.Repo.PlatformHost,
 			PlatformRepoID: item.Repo.PlatformRepoID,
 		},
@@ -2494,13 +2494,13 @@ func (s *Server) resolveItem(
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	providerKind := httpapi.ProviderKind(*repo)
-	providerHost := httpapi.ProviderHost(*repo)
+	providerKind := httpapi.ProviderKind(repo.Repo)
+	providerHost := httpapi.ProviderHost(repo.Repo)
 	itemTypeHint := requestedItemType
 	if providerKind != platform.KindGitLab {
 		itemTypeHint = ""
 	}
-	if !s.isConfiguredRepoTracked(*repo) {
+	if !s.isConfiguredRepoTracked(repo.Repo) {
 		return &resolveItemOutput{
 			Body: resolveItemResponse{
 				Number:      number,
@@ -2633,7 +2633,7 @@ func (s *Server) resolveItem(
 			}
 			return nil, httpapi.Upstream(
 				"GitHub API error: "+err.Error(),
-				string(httpapi.ProviderKind(*repo)), httpapi.ProviderHost(*repo),
+				string(httpapi.ProviderKind(repo.Repo)), httpapi.ProviderHost(repo.Repo),
 			)
 		}
 		return nil, httpapi.Internal("resolve item: " + err.Error())

@@ -16,6 +16,9 @@ schema migrations.
 - Keep `.down.sql` honest. If the data cleanup is one-way, say that in the down migration and only undo reversible schema artifacts such as triggers or indexes.
 - Validate migrations through `db.Open()` and application-level tests. Do not test `golang-migrate` internals.
 - For SQLite, remember that adding constraints to existing columns usually requires a table rebuild. Do not add fill, repair, or validation triggers as a shortcut around fixing current write paths or rebuilding a table when a real schema invariant is required.
+- Do not add SQL `CHECK` constraints to enforce application invariants;
+  express them in Go types and write-path validation (maintainer decision,
+  `internal/db/types.go::ActiveRepo`).
 - SQLite `CHECK` expressions accept a `NULL` result; when a nullable value is
   conditionally required, assert `IS NOT NULL` before validating its content
   (`internal/db/migrations/000048_kata_issue_links.up.sql:16`).

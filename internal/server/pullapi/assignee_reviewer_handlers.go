@@ -174,11 +174,11 @@ func (s *Handler) resolveUserMutationRequest(
 	if err != nil {
 		return nil, nil, providerRouteLookupError(err)
 	}
-	if !capabilityEnabled(s.capabilitiesForRepo(*repo), capability) {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capability)
+	if !capabilityEnabled(s.capabilitiesForRepo(repo.Repo), capability) {
+		return nil, nil, unsupportedCapabilityProblem(repo.Repo, capability)
 	}
 	if s.syncer == nil {
-		return nil, nil, unsupportedCapabilityProblem(*repo, capability)
+		return nil, nil, unsupportedCapabilityProblem(repo.Repo, capability)
 	}
 	if raw == nil {
 		return nil, nil, httpapi.Validation(field, "value must be an array of usernames")
@@ -198,7 +198,7 @@ func (s *Handler) resolveUserMutationRequest(
 		seen[key] = struct{}{}
 		resolved = append(resolved, username)
 	}
-	return repo, resolved, nil
+	return repo.Row(), resolved, nil
 }
 
 // diffUserNames returns the entries of want that are absent from have,

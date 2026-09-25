@@ -1897,12 +1897,12 @@ func (s *Server) applyVisibilityUnderReconciliationRead(
 	defer release()
 	repo, err := s.resolveVisibilityRepoLocked(ctx, identity)
 	if err != nil || repo == nil {
-		return repo, err
+		return repo.Row(), err
 	}
 	if err := s.db.SetRepoHiddenFromUI(ctx, repo.ID, hidden); err != nil {
 		return nil, err
 	}
-	return repo, nil
+	return repo.Row(), nil
 }
 
 // resolveVisibilityRepoLocked resolves the catalog row a visibility mutation
@@ -1915,7 +1915,7 @@ func (s *Server) applyVisibilityUnderReconciliationRead(
 // leave the active replacement visible while consuming the request.
 func (s *Server) resolveVisibilityRepoLocked(
 	ctx context.Context, identity db.RepoIdentity,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	if strings.TrimSpace(identity.PlatformRepoID) == "" {
 		return s.db.GetRepoByIdentityUnderRepositoryReconciliationRead(ctx, identity)
 	}
@@ -1925,11 +1925,10 @@ func (s *Server) resolveVisibilityRepoLocked(
 	if err != nil {
 		return nil, err
 	}
-	if entry == nil || entry.Lifecycle != db.RepositoryLifecycleActive {
+	if entry == nil {
 		return nil, nil
 	}
-	repo := entry.Repository
-	return &repo, nil
+	return entry.ActiveRepo()
 }
 
 // visibilityLookupIdentity names the catalog repository an exact configured
@@ -2098,7 +2097,11 @@ func (s *Server) lookupRepoForVisibilityRelease(
 	ctx context.Context, identity db.RepoIdentity,
 ) (*db.Repo, error) {
 	if strings.TrimSpace(identity.PlatformRepoID) == "" {
-		return s.db.GetRepoByIdentity(ctx, identity)
+		repo, err := s.db.GetRepoByIdentity(ctx, identity)
+		if err != nil || repo == nil {
+			return nil, err
+		}
+		return repo.Row(), nil
 	}
 	entry, err := s.db.GetRepositoryByProviderID(
 		ctx, identity.Platform, identity.PlatformHost, identity.PlatformRepoID,

@@ -49,14 +49,14 @@ func (h *Handler) resolve(ctx context.Context, provider, host, owner, name, capa
 	if err != nil {
 		return resolvedRepository{}, err
 	}
-	fence, found, err := h.resolver.CaptureRepositoryRouteFence(ctx, *repo)
+	fence, found, err := h.resolver.CaptureRepositoryRouteFence(ctx, repo.Repo)
 	if err != nil {
 		return resolvedRepository{}, httpapi.Internal("capture repository identity failed")
 	}
 	if !found {
 		return resolvedRepository{}, repositoryIdentityChangedProblem()
 	}
-	return resolvedRepository{repo: repo, fence: fence}, nil
+	return resolvedRepository{repo: repo.Row(), fence: fence}, nil
 }
 
 func (h *Handler) confirm(ctx context.Context, resolved resolvedRepository) error {

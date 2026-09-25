@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/platform"
 )
 
 type Label struct {
@@ -60,6 +62,40 @@ type Repo struct {
 
 func (r Repo) FullName() string {
 	return r.Owner + "/" + r.Name
+}
+
+// ActiveRepo is a repository the catalog reports as active. Every active
+// repository has a provider-verified identity, so callers never check it
+// for emptiness. Only this package builds ActiveRepo values; Identity reads
+// a private copy, so editing the embedded Repo cannot change it.
+type ActiveRepo struct {
+	Repo
+	identity platform.RepositoryIdentity
+}
+
+// Identity returns the repository's provider-verified identity.
+func (r ActiveRepo) Identity() platform.RepositoryIdentity {
+	return r.identity
+}
+
+// Row returns the repository row, or nil for a nil ActiveRepo, so a "not
+// found" result passes through code that works with *Repo.
+func (r *ActiveRepo) Row() *Repo {
+	if r == nil {
+		return nil
+	}
+	return &r.Repo
+}
+
+func newActiveRepo(repo Repo) (*ActiveRepo, error) {
+	identity := platform.RepositoryIdentity{
+		Provider: repo.Platform, PlatformHost: repo.PlatformHost,
+		PlatformRepoID: repo.PlatformRepoID,
+	}.Canonical()
+	if !identity.Valid() {
+		return nil, fmt.Errorf("active repository %d has no provider identity", repo.ID)
+	}
+	return &ActiveRepo{Repo: repo, identity: identity}, nil
 }
 
 type RepoIdentity struct {

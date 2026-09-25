@@ -294,9 +294,9 @@ func (s *Handler) lookupPushedHeadMR(ctx context.Context, change workspace.Pushe
 	}
 	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, change.Number)
 	if err != nil {
-		return repo, nil
+		return repo.Row(), nil
 	}
-	return repo, mr
+	return repo.Row(), mr
 }
 
 func pushedHeadMRNeedsCIRefresh(status string, hadPending, approvalRequired bool) bool {

@@ -1370,7 +1370,7 @@ func (d *DB) UpdateRepoProviderMetadata(
 
 // GetRepoByIdentity returns the repo for the provider-qualified identity,
 // or nil if not found.
-func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Repo, error) {
+func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*ActiveRepo, error) {
 	entry, err := d.ResolveActiveRepositoryRoute(ctx, identity)
 	return repoFromCatalogEntry(entry, err)
 }
@@ -1380,20 +1380,23 @@ func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Rep
 // lock again deadlocks behind a queued reconciliation writer.
 func (d *DB) GetRepoByIdentityUnderRepositoryReconciliationRead(
 	ctx context.Context, identity RepoIdentity,
-) (*Repo, error) {
+) (*ActiveRepo, error) {
 	entry, err := d.resolveActiveRepositoryRoute(ctx, identity)
 	return repoFromCatalogEntry(entry, err)
 }
 
-func repoFromCatalogEntry(entry *RepositoryCatalogEntry, err error) (*Repo, error) {
+func repoFromCatalogEntry(entry *RepositoryCatalogEntry, err error) (*ActiveRepo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get repo by identity: %w", err)
 	}
 	if entry == nil {
 		return nil, nil
 	}
-	repo := entry.Repository
-	return &repo, nil
+	repo, err := entry.ActiveRepo()
+	if err != nil {
+		return nil, fmt.Errorf("get repo by identity: %w", err)
+	}
+	return repo, nil
 }
 
 // GetRepoByID returns the repo with the given ID, or nil if not found.
@@ -1403,8 +1406,12 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 
 // GetActiveRepoByID returns the active repo with the given ID, or nil if the
 // repo does not exist or is inactive.
-func (d *DB) GetActiveRepoByID(ctx context.Context, id int64) (*Repo, error) {
-	return d.getRepoByID(ctx, id, true)
+func (d *DB) GetActiveRepoByID(ctx context.Context, id int64) (*ActiveRepo, error) {
+	repo, err := d.getRepoByID(ctx, id, true)
+	if err != nil || repo == nil {
+		return nil, err
+	}
+	return newActiveRepo(*repo)
 }
 
 func (d *DB) getRepoByID(ctx context.Context, id int64, activeOnly bool) (*Repo, error) {

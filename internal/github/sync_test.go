@@ -498,7 +498,7 @@ func requireSyncActivityRepoRow(t *testing.T, d *db.DB) db.Repo {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, repoRow)
-	return *repoRow
+	return repoRow.Repo
 }
 
 // recordingCloneRoutes records the platform every managed-Git credential

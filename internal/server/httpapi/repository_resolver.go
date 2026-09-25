@@ -29,7 +29,7 @@ type RepositoryResolver struct {
 func (r *RepositoryResolver) LookupRoute(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	owner = strings.Trim(owner, "/ ")
 	name = strings.Trim(name, "/ ")
 	if owner == "" || name == "" {
@@ -43,13 +43,13 @@ func (r *RepositoryResolver) LookupRoute(
 func (r *RepositoryResolver) RequireRouteCapability(
 	ctx context.Context,
 	provider, platformHost, owner, name, capability string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	repo, err := r.LookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, ProviderRouteLookupError(err)
 	}
-	if !CapabilityEnabled(r.Ref(*repo).Capabilities, capability) {
-		return nil, UnsupportedCapability(*repo, capability)
+	if !CapabilityEnabled(r.Ref(repo.Repo).Capabilities, capability) {
+		return nil, UnsupportedCapability(repo.Repo, capability)
 	}
 	return repo, nil
 }
@@ -175,7 +175,7 @@ func NewRepositoryResolver(deps RepositoryResolverDeps) *RepositoryResolver {
 func (r *RepositoryResolver) Lookup(
 	ctx context.Context,
 	provider, platformHost, repoPath string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	if r == nil || r.db == nil {
 		return nil, ErrRepositoryStoreUnavailable
 	}

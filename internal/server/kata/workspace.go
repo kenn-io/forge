@@ -477,7 +477,7 @@ func (h *Handler) kataManualWorkspaceTarget(
 		if err != nil {
 			return kataResolvedWorkspaceRepo{}, false, false, err
 		}
-		return target, true, repo != nil && h.kataTrackedRepoMatchesAnyConfig(*repo, repos), nil
+		return target, true, repo != nil && h.kataTrackedRepoMatchesAnyConfig(repo.Repo, repos), nil
 	}
 	return kataResolvedWorkspaceRepo{}, false, false, nil
 }

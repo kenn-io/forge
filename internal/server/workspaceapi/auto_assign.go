@@ -144,7 +144,7 @@ func (s *Handler) AutoAssignProviderWorkspaceItem(
 		return providerRouteLookupError(err)
 	}
 	return s.applyWorkspaceAutoAssignment(
-		ctx, *repo, request.ItemNumber, issue,
+		ctx, repo.Repo, request.ItemNumber, issue,
 	)
 }
 

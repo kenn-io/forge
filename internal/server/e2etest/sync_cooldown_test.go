@@ -571,7 +571,7 @@ func waitForRepoSynced(
 			!got.LastSyncCompletedAt.After(*after) {
 			return false
 		}
-		repo = got
+		repo = got.Row()
 		return true
 	}, 5*time.Second, 10*time.Millisecond)
 

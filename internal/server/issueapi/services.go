@@ -8,6 +8,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/platform"
 )
 
 // ProviderSource supplies hub-owned issue data without spoke-local
@@ -148,7 +149,7 @@ func (s *Handler) overlayLocalIssueDetail(
 		return detail
 	}
 	identity := providerplane.ItemIdentity{
-		Repository: providerplane.RepositoryIdentity{
+		Repository: platform.RepositoryIdentity{
 			Provider: detail.Repo.Provider, PlatformHost: detail.Repo.PlatformHost,
 			PlatformRepoID: detail.Repo.PlatformRepoID,
 		},
@@ -174,7 +175,7 @@ func issueWorkspaceOverlays(
 			continue
 		}
 		identity := providerplane.ItemIdentity{
-			Repository: providerplane.RepositoryIdentity{
+			Repository: platform.RepositoryIdentity{
 				Provider:       activity.Subject.Platform,
 				PlatformHost:   activity.Subject.PlatformHost,
 				PlatformRepoID: activity.Subject.PlatformRepoID,
@@ -191,7 +192,7 @@ func issueWorkspaceOverlays(
 
 func issueResponseIdentity(row IssueResponse) providerplane.ItemIdentity {
 	return providerplane.ItemIdentity{
-		Repository: providerplane.RepositoryIdentity{
+		Repository: platform.RepositoryIdentity{
 			Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost,
 			PlatformRepoID: row.Repo.PlatformRepoID,
 		},

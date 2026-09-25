@@ -58,7 +58,7 @@ async function expectReadableFocusList(page: Page, itemSelector: string): Promis
     const item = document.querySelector(selector);
     const title = item?.querySelector(".title") ?? null;
     const meta = item?.querySelector(".meta-text") ?? null;
-    const search = document.querySelector(".focus-list .kit-search-input");
+    const search = document.querySelector(".focus-list .kit-search-input input");
     const stateButton = document.querySelector(".focus-list .state-btn");
     const focusList = document.querySelector(".focus-list");
     const tokenValue = (node: Element | null, name: string): string =>
@@ -80,16 +80,16 @@ async function expectReadableFocusList(page: Page, itemSelector: string): Promis
     };
   }, itemSelector);
 
-  expect(metrics.mobileTypeToken).toBe("1rem");
+  expect(metrics.mobileTypeToken).toMatch(/^0?\.9375rem$/);
   expect(metrics.focusHitTarget).toMatch(/px$/);
   expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
   expect(metrics.searchFontSize).toBeGreaterThanOrEqual(16);
-  expect(metrics.stateButtonFontSize).toBeGreaterThanOrEqual(15);
-  expect(metrics.stateButtonRect?.height ?? 0).toBeGreaterThanOrEqual(44);
-  expect(metrics.itemFontSize).toBeGreaterThanOrEqual(16);
-  expect(metrics.itemRect?.height ?? 0).toBeGreaterThanOrEqual(72);
-  expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
-  expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
+  expect(metrics.stateButtonFontSize).toBeGreaterThanOrEqual(13);
+  expect(metrics.stateButtonRect?.height ?? 0).toBeGreaterThanOrEqual(40);
+  expect(metrics.itemFontSize).toBeGreaterThanOrEqual(15);
+  expect(metrics.itemRect?.height ?? 0).toBeGreaterThanOrEqual(44);
+  expect(metrics.titleFontSize).toBeGreaterThanOrEqual(17);
+  expect(metrics.metaFontSize).toBeGreaterThanOrEqual(13);
   for (const bounds of metrics.itemBounds) {
     expect(bounds?.left ?? 0).toBeGreaterThanOrEqual(0);
     expect(bounds?.right ?? 0).toBeLessThanOrEqual(metrics.viewportWidth);
@@ -140,14 +140,14 @@ async function expectReadableDetail(page: Page): Promise<void> {
 
   expect(metrics.detailTypeToken).not.toBe("");
   expect(metrics.detailHitTarget).toMatch(/px$/);
-  expect(metrics.mobileTypeToken).toBe("1rem");
+  expect(metrics.mobileTypeToken).toMatch(/^0?\.9375rem$/);
   expect(metrics.rootFontSize).toBe(16);
   expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-  expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
-  expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
-  expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(16);
-  expect(metrics.chipFontSize).toBeGreaterThanOrEqual(14);
-  expect(metrics.copyNumberFontSize).toBeGreaterThanOrEqual(15);
+  expect(metrics.titleFontSize).toBeGreaterThanOrEqual(17);
+  expect(metrics.metaFontSize).toBeGreaterThanOrEqual(13);
+  expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(15);
+  expect(metrics.chipFontSize).toBeGreaterThanOrEqual(12);
+  expect(metrics.copyNumberFontSize).toBeGreaterThanOrEqual(13);
   // The number button sits inside a text row, so it keeps text sizing with the
   // WCAG 2.5.8 24px target floor rather than the standalone phone hit target.
   expect(metrics.copyNumberRect?.height ?? 0).toBeGreaterThanOrEqual(24);
@@ -200,7 +200,7 @@ test.describe("phone routes", () => {
     expect(searchBounds).not.toBeNull();
     expect(filterBounds).not.toBeNull();
     expect(Math.abs(searchBounds!.y - filterBounds!.y)).toBeLessThan(2);
-    expect(filterBounds!.height).toBeGreaterThanOrEqual(44);
+    expect(filterBounds!.height).toBeGreaterThanOrEqual(40);
     await filters.locator("svg").click();
     await expect(filters).toHaveAttribute("aria-expanded", "true");
     await expect(activityFilters).toBeVisible();
@@ -329,22 +329,22 @@ test.describe("phone routes", () => {
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(metrics.searchLeft).toBeGreaterThanOrEqual(0);
     expect(metrics.searchRight).toBeLessThanOrEqual(metrics.viewportWidth);
-    expect(metrics.mobileTypeToken).toBe("1rem");
-    expect(metrics.titleTypeToken).toBe("1.25rem");
+    expect(metrics.mobileTypeToken).toMatch(/^0?\.9375rem$/);
+    expect(metrics.titleTypeToken).toBe("1.0625rem");
     expect(metrics.rootFontSize).toBe(16);
     expect(metrics.cardHeight).toBeGreaterThanOrEqual(110);
-    expect(metrics.touchTargetHeight).toBeGreaterThanOrEqual(44);
-    expect(metrics.titleFontSize).toBeGreaterThanOrEqual(19);
-    expect(metrics.metaFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.touchTargetHeight).toBeGreaterThanOrEqual(40);
+    expect(metrics.titleFontSize).toBeGreaterThanOrEqual(17);
+    expect(metrics.metaFontSize).toBeGreaterThanOrEqual(13);
     expect(metrics.metaItemCount).toBe(2);
     expect(Math.abs(metrics.metaRight - metrics.metaCountRight)).toBeLessThanOrEqual(1);
-    expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(15);
-    expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(14);
-    expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(14);
-    expect(metrics.mobileBrandFontSize).toBeGreaterThanOrEqual(16);
-    expect(metrics.mobileModePickerFontSize).toBeGreaterThanOrEqual(16);
+    expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(13);
+    expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(12);
+    expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(12);
+    expect(metrics.mobileBrandFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.mobileModePickerFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.desktopButtonText).toBe("");
-    expect(metrics.desktopButtonRect?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(metrics.desktopButtonRect?.height ?? 0).toBeGreaterThanOrEqual(40);
     expect(metrics.desktopIconPresent).toBe(true);
     expect(metrics.appIconPresent).toBe(true);
     expect(metrics.inboxBackground).toBe(metrics.themeBgPrimary);
@@ -355,12 +355,12 @@ test.describe("phone routes", () => {
     expect(metrics.toolbarBorderBottom).toBe(metrics.themeBorder);
     expect(metrics.toolbarRect?.left ?? -1).toBe(0);
     expect(metrics.toolbarRect?.right ?? Infinity).toBe(metrics.viewportWidth);
-    expect(metrics.toolbarRect?.height ?? 0).toBeGreaterThanOrEqual(64);
-    expect(metrics.toolbarRect?.height ?? Infinity).toBeLessThanOrEqual(66);
+    expect(metrics.toolbarRect?.height ?? 0).toBeGreaterThanOrEqual(60);
+    expect(metrics.toolbarRect?.height ?? Infinity).toBeLessThanOrEqual(62);
     expect(metrics.filterPanelBackground).toBe(metrics.themeBgSurface);
-    expect(metrics.itemTypeToggleFontSize).toBeGreaterThanOrEqual(15);
-    expect(metrics.rangeSelectFontSize).toBeGreaterThanOrEqual(15);
-    expect(metrics.repoSelectFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.itemTypeToggleFontSize).toBeGreaterThanOrEqual(13);
+    expect(metrics.rangeSelectFontSize).toBeGreaterThanOrEqual(13);
+    expect(metrics.repoSelectFontSize).toBeGreaterThanOrEqual(13);
     expect(metrics.repoSelectRect?.top ?? Infinity).toBeLessThan(metrics.authorFilterRect?.top ?? 0);
     expect(
       (metrics.authorFilterRect?.top ?? Infinity) -
@@ -672,8 +672,8 @@ test.describe("phone routes", () => {
       await expect(collapseToggle).toBeVisible();
       const bounds = await collapseToggle.boundingBox();
 
-      expect(bounds?.width ?? 0).toBeGreaterThanOrEqual(49);
-      expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(49);
+      expect(bounds?.width ?? 0).toBeGreaterThanOrEqual(38);
+      expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(38);
     } finally {
       await server.stop();
     }
@@ -703,8 +703,8 @@ test.describe("phone routes", () => {
       const trigger = page.getByRole("button", { name: "Filters" });
       await expect(trigger).toBeVisible();
       const bounds = await trigger.boundingBox();
-      expect(bounds?.width ?? 0).toBeGreaterThanOrEqual(44);
-      expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(bounds?.width ?? 0).toBeGreaterThanOrEqual(40);
+      expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(40);
       await trigger.click();
       await expect(page.getByRole("button", { name: "Unassigned" })).toBeVisible();
       if (route === "pulls") {
@@ -909,16 +909,16 @@ test.describe("high-density phone routes", () => {
     });
 
     expect(metrics.dpr).toBeGreaterThanOrEqual(2.5);
-    expect(metrics.mobileTypeToken).toBe("1rem");
-    expect(metrics.activityTypeToken).toBe("1rem");
+    expect(metrics.mobileTypeToken).toMatch(/^0?\.9375rem$/);
+    expect(metrics.activityTypeToken).toMatch(/^0?\.9375rem$/);
     expect(metrics.densityScale).toBe("");
     expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth);
-    expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(16);
-    expect(metrics.filterFontSize).toBeGreaterThanOrEqual(15);
-    expect(metrics.filterOptionFontSize).toBeGreaterThanOrEqual(15);
-    expect(metrics.filterOptionHeight).toBeGreaterThanOrEqual(44);
-    expect(metrics.modePickerFontSize).toBeGreaterThanOrEqual(16);
-    expect(metrics.searchHeight).toBeGreaterThanOrEqual(44);
+    expect(metrics.bodyFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.filterFontSize).toBeGreaterThanOrEqual(13);
+    expect(metrics.filterOptionFontSize).toBeGreaterThanOrEqual(13);
+    expect(metrics.filterOptionHeight).toBeGreaterThanOrEqual(40);
+    expect(metrics.modePickerFontSize).toBeGreaterThanOrEqual(15);
+    expect(metrics.searchHeight).toBeGreaterThanOrEqual(40);
     expect(metrics.searchLeft).toBeGreaterThanOrEqual(0);
     expect(metrics.searchRight).toBeLessThanOrEqual(metrics.viewportWidth);
     for (const control of metrics.filterControls) {

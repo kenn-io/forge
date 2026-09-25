@@ -97,25 +97,25 @@
   }
 
   :global(.mobile-main) .mobile-triage-search-bar__filter :global(.kit-icon-button) {
-    width: 44px;
+    width: 40px;
     height: 100%;
-    min-height: 44px;
+    min-height: 40px;
     border: thin solid var(--border-default);
     border-radius: 8.5px;
     background: var(--bg-inset);
   }
 
   :global(.mobile-main) .mobile-triage-search-bar__filter :global(.kit-filter-dropdown__btn) {
-    width: 44px;
+    width: 40px;
     height: 100%;
-    min-width: 44px;
-    min-height: 44px;
+    min-width: 40px;
+    min-height: 40px;
     justify-content: center;
     border-radius: 8.5px;
   }
 
   :global(.mobile-main) .mobile-triage-search-bar__search :global(.kit-search-input) {
-    min-height: 44px;
+    min-height: 40px;
     border-radius: 8.5px;
     font-size: var(--font-size-md);
   }

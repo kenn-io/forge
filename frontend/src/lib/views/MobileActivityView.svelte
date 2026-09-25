@@ -1029,7 +1029,7 @@
     --mobile-space-lg: 17.5px;
     --mobile-radius-sm: var(--radius-md);
     --mobile-radius-md: var(--radius-lg);
-    --mobile-hit-target: 45.5px;
+    --mobile-hit-target: 40px;
     container-type: inline-size;
     font-size: var(--font-size-md);
     display: flex;

@@ -873,7 +873,8 @@ func sanitizeConfigError(err error, cfgPath string) string {
 }
 
 // InitializeProviderRepositories discovers the current configuration after HTTP
-// readiness. Serialize with reloads so startup cannot restore an older repo set.
+// readiness. Serialize with reloads and repository mutation handlers so startup
+// cannot restore an older repo set.
 func (s *Server) InitializeProviderRepositories(
 	ctx context.Context,
 	resolve func(context.Context, *config.Config) []ghclient.RepoRef,

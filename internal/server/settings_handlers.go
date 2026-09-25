@@ -1457,10 +1457,12 @@ func (s *Server) addConfiguredRepo(
 
 	// Re-acquire lock and apply the addition to current state
 	// so concurrent activity/settings changes are not lost.
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	for _, rp := range s.cfg.Repos {
 		if sameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
+			s.configReloadMu.Unlock()
 			return nil, httpapi.BadRequest(httpapi.CodeBadRequest,
 				input.Body.Owner+"/"+input.Body.Name+
 					" is already configured", nil)
@@ -1470,16 +1472,19 @@ func (s *Server) addConfiguredRepo(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.mergeTrackedRepos(expanded)
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
 
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	return s.settingsOutputResponse(ctx)
@@ -1538,6 +1543,7 @@ func (s *Server) refreshConfiguredRepo(
 	// Without this, a concurrent DELETE on the same glob
 	// could run between the unlock above and the helper below,
 	// and the stale expansion would resurrect removed repos.
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	stillExists := false
 	currentRepos := slices.Clone(s.cfg.Repos)
@@ -1552,15 +1558,18 @@ func (s *Server) refreshConfiguredRepo(
 	}
 	if !stillExists {
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is no longer configured", nil)
 	}
 	if err := s.persistResolvedRepos(ctx, expanded); err != nil {
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("persist resolved repos: " + err.Error())
 	}
 	s.replaceGlobRepos(*target, expanded, currentRepos)
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
 
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	return s.settingsOutputResponse(ctx)
@@ -1947,6 +1956,7 @@ func (s *Server) deleteConfiguredRepo(
 		Name:         name,
 	}
 
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	idx := -1
 	for i, rp := range s.cfg.Repos {
@@ -1960,6 +1970,7 @@ func (s *Server) deleteConfiguredRepo(
 	}
 	if idx == -1 {
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is not configured", nil)
 	}
@@ -1972,11 +1983,13 @@ func (s *Server) deleteConfiguredRepo(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = prevRepos
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.removeConfigRepos(s.cfg.Repos)
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
 
 	// The hidden-from-UI preference belongs to an exact entry. Without one, a
 	// glob can keep the repository tracked and filtered while glob rows expose

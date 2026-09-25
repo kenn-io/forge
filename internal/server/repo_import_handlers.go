@@ -547,6 +547,7 @@ func (s *Server) applyBulkExactRepos(
 	ctx context.Context,
 	resolved []resolvedBulkRepo,
 ) (settingsResponse, error) {
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	existing := exactConfiguredRepoSet(s.cfg.Repos)
 	addConfigs := make([]config.Repo, 0, len(resolved))
@@ -562,6 +563,7 @@ func (s *Server) applyBulkExactRepos(
 	}
 	if len(addConfigs) == 0 {
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return settingsResponse{}, &bulkApplyError{problem: httpapi.BadRequest(
 			httpapi.CodeBadRequest,
 			"all selected repositories are already configured",
@@ -574,6 +576,7 @@ func (s *Server) applyBulkExactRepos(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return settingsResponse{}, &bulkApplyError{problem: httpapi.BadRequest(
 			httpapi.CodeBadRequest, err.Error(), nil,
 		)}
@@ -581,6 +584,7 @@ func (s *Server) applyBulkExactRepos(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return settingsResponse{}, &bulkApplyError{problem: httpapi.Internal(
 			"save config: " + err.Error(),
 		)}
@@ -588,11 +592,13 @@ func (s *Server) applyBulkExactRepos(
 	if err := s.persistResolvedRepos(ctx, addRefs); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return settingsResponse{}, &bulkApplyError{problem: httpapi.Internal(err.Error())}
 	}
 	s.mergeTrackedRepos(addRefs)
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
 
 	body, err := s.buildLocalSettingsResponse(ctx)
 	if err != nil {

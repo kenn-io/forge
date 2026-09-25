@@ -69,7 +69,11 @@ func (s *Handler) ghShim(ctx context.Context, input *ghShimInput) (*ghShimOutput
 	if err != nil && q.Command == "view" && s.providerSource != nil {
 		// Use the existing provider read path; the hub needs no shim endpoint.
 		detail, readErr := s.providerSource.GetPull(ctx, ItemIdentity{Provider: "github", PlatformHost: q.Host, Owner: q.Owner, Name: q.Repo, Number: q.Number})
-		if readErr == nil && detail.MergeRequest != nil {
+		// The hub resolves owner/name itself; serve only the repository this
+		// spoke verified as tracked.
+		sameRepo := strings.EqualFold(detail.Repo.Provider, "github") && strings.EqualFold(detail.Repo.PlatformHost, repo.PlatformHost) &&
+			detail.Repo.PlatformRepoID != "" && detail.Repo.PlatformRepoID == repo.PlatformRepoID
+		if readErr == nil && detail.MergeRequest != nil && sameRepo {
 			output, err = ghshim.Encode(q, []db.MergeRequest{*detail.MergeRequest})
 		}
 	}

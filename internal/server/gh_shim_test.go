@@ -31,7 +31,7 @@ func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
 		}
 		hubReads.Add(1)
 		assert.Equal(http.MethodGet, r.Method)
-		assert.Contains(r.URL.Path, "/pulls/github/acme/widget/8")
+		assert.Contains(r.URL.Path, "/pulls/github/acme/widget/")
 		r.Header.Del("Authorization")
 		hub.ServeHTTP(w, r)
 	}))
@@ -65,10 +65,22 @@ func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
 		assert.JSONEq(tc.output, result.Output)
 		assert.Equal(tc.hubReads, hubReads.Load())
 	}
+	// Reuse the hub's route for a different repository: the spoke must not
+	// serve that repository's pull request as its tracked one.
+	replacement := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	replacement.PlatformRepoID = "repo-replacement-widget"
+	replacementID, err := hubDB.UpsertRepo(t.Context(), replacement)
+	require.NoError(err)
+	seedPR(t, hubDB, "acme", "widget", 9, func(pr *db.MergeRequest) { pr.RepoID = replacementID })
+	_, err = hubDB.UpsertRepo(t.Context(), replacement)
+	require.NoError(err)
+	response := testutil.DoJSON(t, spoke, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: "view", Host: "github.com", Owner: "acme", Repo: "widget", Number: 9, State: "open", Limit: 30, Fields: []string{"number"}})
+	assert.Contains(response.Body.String(), `"reason":"data_unavailable"`)
+	assert.Equal(int64(2), hubReads.Load())
 	spoke.pullAPI.ApplyConfig(pullapi.ConfigSnapshot{Repositories: []config.Repo{{Owner: "acme", Name: "other"}}})
-	response := testutil.DoJSON(t, spoke, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: "view", Host: "github.com", Owner: "acme", Repo: "widget", Number: 7, State: "open", Limit: 30, Fields: []string{"number"}})
+	response = testutil.DoJSON(t, spoke, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: "view", Host: "github.com", Owner: "acme", Repo: "widget", Number: 7, State: "open", Limit: 30, Fields: []string{"number"}})
 	assert.Contains(response.Body.String(), `"reason":"untracked"`)
-	assert.Equal(int64(1), hubReads.Load())
+	assert.Equal(int64(2), hubReads.Load())
 }
 
 func TestGHShimHubRequiresConfiguredProviderIdentity(t *testing.T) {

@@ -567,6 +567,9 @@ Keyboard handlers must have one clear owner for each key press.
   clickable tab header. The URL wins over stored layout state on load: it
   activates the pane it names and drops a zoom held elsewhere
   (`frontend/src/lib/views/PRListView.svelte::routePanesSplitApart`).
+- Desktop PRs with a workspace keep their saved pane arrangement at narrow widths;
+  agent launch visibility, session tabs, and dragging must not change with viewport width
+  (`frontend/src/lib/views/PRListView.svelte::workspaceClaim`).
 - The stored pane tree is intent, not what is on screen: below the flatten width
   one pane renders however the tree is split, hidden panes stay in the tree, and
   a zoom covers every other leaf. Anything acting on the arrangement — palette

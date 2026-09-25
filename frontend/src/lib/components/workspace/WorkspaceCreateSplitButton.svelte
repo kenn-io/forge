@@ -14,6 +14,7 @@
   import type { LaunchTarget, QuickAction } from "../../api/types.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { sortQuickActionsByLabel } from "../../stores/workspace-quick-actions.js";
 
   interface Props {
     label: string;
@@ -64,6 +65,7 @@
   );
   const blocked = $derived(disabled || busy);
   const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
+  const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
 
   function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
     return launchTargets.find((target) => target.key === action.agent && target.kind === "agent");
@@ -282,7 +284,7 @@
       style={menuStyle}
       {@attach portalMenu}
     >
-      {#each quickActions as action (action.label)}
+      {#each sortedQuickActions as action (action.label)}
         {@const reason = quickActionDisabledReason(action)}
         <li role="none">
           <button

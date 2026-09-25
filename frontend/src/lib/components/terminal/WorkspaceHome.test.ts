@@ -164,6 +164,25 @@ describe("WorkspaceHome", () => {
     expect(onQuickAction).toHaveBeenCalledWith(review);
   });
 
+  it("lists quick actions by title, ignoring case", () => {
+    const codex = { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true };
+    render(WorkspaceHome, {
+      props: {
+        launchTargets: [codex],
+        sessions: [],
+        quickActions: [
+          { label: "rebase", agent: "codex", prompt: "rebase" },
+          { label: "Deep review", agent: "codex", prompt: "review" },
+          { label: "apply fixes", agent: "codex", prompt: "fix" },
+        ],
+        onQuickAction: vi.fn(),
+      },
+    });
+
+    const labels = Array.from(document.querySelectorAll(".quick-card"), (card) => card.getAttribute("aria-label"));
+    expect(labels).toEqual(["apply fixes", "Deep review", "rebase"]);
+  });
+
   it("omits the quick actions section when none are configured", () => {
     render(WorkspaceHome, {
       props: {

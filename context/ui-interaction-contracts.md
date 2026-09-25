@@ -125,6 +125,8 @@ Interactive surfaces must agree on which item is selected.
 - Quick actions keep the automatic session picker closed for that workspace during the browser session,
   regardless of launch outcome or session exit. Opening it remains an explicit user action
   (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaces`).
+- Every quick-action list is ordered by action title, ignoring case, not by settings order
+  (`frontend/src/lib/stores/workspace-quick-actions.ts::sortQuickActionsByLabel`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and

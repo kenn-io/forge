@@ -10,6 +10,7 @@
   import ZapIcon from "@lucide/svelte/icons/zap";
   import LaunchTargetName from "./LaunchTargetName.svelte";
   import { isVisibleLaunchTarget } from "./launchTargets";
+  import { sortQuickActionsByLabel } from "../../stores/workspace-quick-actions.js";
 
   interface WorkspaceHomeWorkspace {
     id: string;
@@ -51,6 +52,7 @@
   }: WorkspaceHomeProps = $props();
 
   const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
+  const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
   const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
 
   function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
@@ -148,7 +150,7 @@
         <span class="section-count">{quickActions.length}</span>
       </div>
       <div class="launch-grid">
-        {#each quickActions as action, index (`${index}:${action.label}`)}
+        {#each sortedQuickActions as action, index (`${index}:${action.label}`)}
           {@const target = quickActionTarget(action)}
           {@const disabledReason = quickActionDisabledReason(action)}
           <button

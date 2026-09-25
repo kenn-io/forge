@@ -5,6 +5,11 @@ import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { showFlash } from "./flash.svelte.js";
 
+/** Quick actions ordered by label, ignoring case; ties keep their settings order. */
+export function sortQuickActionsByLabel(actions: readonly QuickAction[]): QuickAction[] {
+  return actions.toSorted((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+}
+
 // Choosing a quick action replaces the automatic session picker for this workspace.
 export const quickActionWorkspaces = new SvelteSet<string>();
 

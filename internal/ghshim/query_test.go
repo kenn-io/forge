@@ -20,11 +20,16 @@ func TestUnsupportedInvocationsDelegate(t *testing.T) {
 	assert := assert.New(t)
 	t.Parallel()
 	for _, args := range [][]string{
-		{"auth", "token"}, {"pr", "checks", "1", "--json", "state"},
-		{"pr", "list", "--json", "author"}, {"pr", "list", "--json", "title", "--jq", ".[].title"},
-		{"pr", "list", "--json", "number", "--search", "draft:true"}, {"pr", "list", "--json", "number", "--limit", "0"},
-		{"pr", "view", "branch", "--json", "number"}, {"pr", "view", "1", "--json", "number", "--comments"},
-		{"pr", "list"}, {"pr", "list", "--json", "number", "extra"},
+		{"auth", "token"},
+		{"pr", "checks", "1", "--json", "state"},
+		{"pr", "list", "--json", "author"},
+		{"pr", "list", "--json", "title", "--jq", ".[].title"},
+		{"pr", "list", "--json", "number", "--search", "draft:true"},
+		{"pr", "list", "--json", "number", "--limit", "0"},
+		{"pr", "view", "branch", "--json", "number"},
+		{"pr", "view", "1", "--json", "number", "--comments"},
+		{"pr", "list"},
+		{"pr", "list", "--json", "number", "extra"},
 	} {
 		_, _, ok := Parse(args)
 		assert.False(ok, args)

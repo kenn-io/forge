@@ -196,10 +196,10 @@ func queryDaemon(q ghshim.Query) (string, bool, string) {
 // Record the full invocation and outcome so coverage gaps can be reproduced.
 func recordUsage(args []string, reason string) {
 	path := filepath.Join(filepath.Dir(config.DefaultConfigPath()), "forge-gh-usage.jsonl")
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return
 	}

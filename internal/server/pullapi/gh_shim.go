@@ -11,12 +11,14 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-type ghShimInput struct{ Body ghshim.Query }
-type ghShimResponse struct {
-	Handled bool   `json:"handled"`
-	Output  string `json:"output"`
-	Reason  string `json:"reason"`
-}
+type (
+	ghShimInput    struct{ Body ghshim.Query }
+	ghShimResponse struct {
+		Handled bool   `json:"handled"`
+		Output  string `json:"output"`
+		Reason  string `json:"reason"`
+	}
+)
 type ghShimOutput = httpapi.BodyOutput[ghShimResponse]
 
 func (s *Handler) ghShim(ctx context.Context, input *ghShimInput) (*ghShimOutput, error) {

@@ -3,6 +3,9 @@
 Use this document for changes to deferred merge queueing, cancellation,
 supersession, completion events, or pending-state presentation.
 
+- Stack position alone does not warrant a merge warning. With mid-stack merges
+  allowed, gh-stack users may queue merges at any position; show neutral stack
+  context rather than cautioning about merge order.
 - Queued deferred merges live only in the server process (`deferredMergeInFlight`
   in `internal/server/pullapi/deferred_merge.go`); a restart drops them. Detail responses
   expose the state as `deferred_merge_pending`.

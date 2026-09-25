@@ -4700,6 +4700,12 @@
                   refreshToken={sidebarRefreshToken}
                   {diffRefreshToken}
                   disabled={actionsBlocked}
+                  gitState={{
+                    worktreeDirty: workspace.worktree_dirty,
+                    commitsAhead: workspace.commits_ahead,
+                    commitsVsPRHead: workspace.commits_vs_pr_head,
+                    branchUpstreamMissing: workspace.branch_upstream_missing,
+                  }}
                 />
               {:else}
                 <div class="state-message">

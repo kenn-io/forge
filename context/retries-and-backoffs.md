@@ -67,6 +67,10 @@ Archive budget refusals are scheduling waits: retain pending work without new
 failure attempts, and preserve prior failures until successful collection
 (`internal/db/queries_dataset_progress.go::DB.FailArchiveItemSync`).
 
+Budget-wait status includes pending items with future retry times; failed
+items waiting for their own retry do not establish a budget wait
+(`internal/db/queries_archive.go::deriveArchiveProgress`).
+
 Do not wrap these paths in `backoff.Retry`, `RetryAfterError`, or any new retry
 abstraction unless a separate design explicitly changes rate-limit policy.
 

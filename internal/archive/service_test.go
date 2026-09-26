@@ -928,6 +928,10 @@ func TestArchiveHydrationBudgetDeferralKeepsWorkPending(t *testing.T) {
 	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
 	repoID := archiveServiceSeedRepo(t, database, ref)
 	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	// Leave only one hydration item, so no other due work masks its wait.
+	provider.historicalIssuePages = map[string]platform.Page[platform.Issue]{
+		"": {Exhausted: true},
+	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(t, err)
 	source := &archiveFailingItemSource{archiveTestSource{refs: []platform.RepoRef{ref}}, platform.ErrArchiveAttemptBudget}
@@ -940,7 +944,7 @@ func TestArchiveHydrationBudgetDeferralKeepsWorkPending(t *testing.T) {
 	require.NoError(t, service.RunEligible(t.Context()))
 	require.NoError(t, service.RunEligible(t.Context()))
 	require.NoError(t, service.RunEligible(t.Context()))
-	progress, err := database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup)
+	progress, err := database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveDatasetLookup)
 	require.NoError(t, err)
 	assert.Equal(db.ArchiveDatasetProgressPending, progress.Status)
 	assert.Zero(progress.AttemptCount)
@@ -950,7 +954,8 @@ func TestArchiveHydrationBudgetDeferralKeepsWorkPending(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, status, 1)
 	assert.Zero(status[0].Progress.Counts.FailedItemCount)
-	assert.Positive(status[0].Progress.Counts.PendingItemCount)
+	assert.Equal(1, status[0].Progress.Counts.PendingItemCount)
+	assert.Zero(status[0].Progress.Counts.DueItemCount)
 	assert.Equal(db.ArchiveStatusWaitingForBudget, status[0].Progress.Status)
 
 	// A later admission completes the same work without operator repair.
@@ -959,7 +964,7 @@ func TestArchiveHydrationBudgetDeferralKeepsWorkPending(t *testing.T) {
 	for range 4 {
 		require.NoError(t, service.RunEligible(t.Context()))
 	}
-	progress, err = database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup)
+	progress, err = database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveDatasetLookup)
 	require.NoError(t, err)
 	assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status)
 	assert.Nil(progress.NextRetryAt)

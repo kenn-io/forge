@@ -1132,8 +1132,9 @@ func deriveArchiveProgress(
 	budgetExhausted := archiveBudgetDeferred(state, now)
 	inventoryWork := !state.IssueInventory.Complete() || !state.MergeRequestInventory.Complete()
 	initialWork := !initialComplete || hasHydration
+	// Budget-deferred pending items are not due until their retry time.
 	budgetBlockedWork := inventoryWork || promptActive ||
-		(hasHydration && counts.DueItemCount > 0)
+		(hasHydration && (counts.PendingItemCount > 0 || counts.DueItemCount > 0))
 	if state.CollectionMode == ArchiveCollectionModeDiscovery {
 		if budgetExhausted && budgetBlockedWork {
 			progress.Status = ArchiveStatusWaitingForBudget

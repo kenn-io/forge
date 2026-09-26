@@ -1,4 +1,4 @@
-FROM golang:1.27.0
+FROM golang:1.27.1
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl git make openssh-client openssl socat tmux unzip && rm -rf /var/lib/apt/lists/*
 

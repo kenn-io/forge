@@ -14,7 +14,7 @@ import (
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	forgejoclient "go.kenn.io/forge/platform/forgejo"
@@ -22,17 +22,17 @@ import (
 	gitlabclient "go.kenn.io/forge/platform/gitlab"
 )
 
-func wireSyncStatus(syncer *github.Syncer, hub *server.EventHub) {
+func wireSyncStatus(syncer *github.Syncer, hub *syncevents.EventHub) {
 	// Syncer serializes status callbacks, including relay-only updates.
 	wasRunning := syncer.Status().Running
 	syncer.SetOnStatusChange(func(status *github.SyncStatus) {
-		hub.Broadcast(server.Event{Type: "sync_status", Data: status})
+		hub.Broadcast(syncevents.Event{Type: "sync_status", Data: status})
 		if wasRunning && !status.Running {
-			hub.Broadcast(server.Event{Type: "data_changed", Data: struct{}{}})
+			hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		}
 		wasRunning = status.Running
 	})
-	hub.Broadcast(server.Event{Type: "sync_status", Data: syncer.Status()})
+	hub.Broadcast(syncevents.Event{Type: "sync_status", Data: syncer.Status()})
 }
 
 type providerFactory func(context.Context, providerFactoryInput) (providerFactoryOutput, error)

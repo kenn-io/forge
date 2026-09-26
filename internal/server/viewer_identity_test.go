@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/platformdb"
+	"go.kenn.io/forge/internal/server/authapi"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -87,7 +88,7 @@ func newViewerIdentityTestServer(
 	}
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, refs, time.Hour, nil, nil)
 	t.Cleanup(syncer.Stop)
-	return &Server{db: database, syncer: syncer}, repoIDs
+	return wiredServer(&Server{db: database, syncer: syncer}), repoIDs
 }
 
 func TestResolveAuthenticatedViewerLoginsRestrictsProviderCallsToRepoFilters(t *testing.T) {
@@ -107,7 +108,7 @@ func TestResolveAuthenticatedViewerLoginsRestrictsProviderCallsToRepoFilters(t *
 		{Platform: platform.KindGitLab, Host: "gitlab.example.com", Owner: "other", Name: "tool", RepoPath: "other/tool", PlatformExternalID: "repo-tool"},
 	})
 
-	got, err := srv.resolveAuthenticatedViewerLogins(t.Context(), []db.RepoFilter{{
+	got, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), []db.RepoFilter{{
 		Platform: "github", PlatformHost: "github.com", RepoPath: "acme/widget",
 	}})
 	require.NoError(t, err)
@@ -135,24 +136,24 @@ func TestResolveAuthenticatedViewerLoginsRefreshesExpiredCredentialCacheInBackgr
 		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "gadget", RepoPath: "acme/gadget", PlatformExternalID: "repo-gadget"},
 	})
 
-	first, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	first, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(err)
 	require.Len(first, 2)
 	provider.setLogin("acme/widget", "bob")
 	provider.setLogin("acme/gadget", "bob")
 	srv.viewerLoginMu.Lock()
 	for key, entry := range srv.viewerLoginCache {
-		entry.fetchedAt = time.Now().Add(-authenticatedViewerLoginTTL - time.Minute)
+		entry.FetchedAt = time.Now().Add(-authapi.AuthenticatedViewerLoginTTL - time.Minute)
 		srv.viewerLoginCache[key] = entry
 	}
 	srv.viewerLoginMu.Unlock()
 
-	second, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	second, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(err)
 	assert.Equal(first, second)
 	require.Eventually(func() bool { return provider.callCount() == 2 }, time.Second, 10*time.Millisecond)
 
-	third, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	third, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(err)
 	assert.Equal([]db.RepoViewerLogin{
 		{RepoID: first[0].RepoID, Login: "bob"},
@@ -173,11 +174,11 @@ func TestResolveAuthenticatedViewerLoginsDoesNotCacheFailures(t *testing.T) {
 		Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformExternalID: "repo-widget",
 	}})
 
-	got, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	got, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(err)
 	assert.Empty(got)
 	delete(provider.errs, "acme/widget")
-	got, err = srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	got, err = srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(err)
 	assert.Len(got, 1)
 	assert.Equal(2, provider.callCount())
@@ -198,7 +199,7 @@ func TestResolveAuthenticatedViewerLoginsKeepsAvailableRepositories(t *testing.T
 		{Platform: platform.KindGitHub, Host: "github.com", Owner: "other", Name: "tool", RepoPath: "other/tool", PlatformExternalID: "repo-tool"},
 	})
 
-	got, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	got, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(t, err)
 	assert.Equal(t, []db.RepoViewerLogin{{RepoID: repoIDs["acme/widget"], Login: "alice"}}, got)
 }
@@ -246,9 +247,9 @@ func TestResolveAuthenticatedViewerLoginsKeepsUnkeyedGitHubReposSeparate(t *test
 	}
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, refs, time.Hour, nil, nil)
 	t.Cleanup(syncer.Stop)
-	srv := &Server{db: database, syncer: syncer}
+	srv := wiredServer(&Server{db: database, syncer: syncer})
 
-	got, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
+	got, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(err)
 	require.Len(got, 2)
 	assert.Equal(2, base.callCount())

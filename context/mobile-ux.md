@@ -102,7 +102,7 @@ Avoid by default:
 
 - Mobile Activity starts with 30 collapsed parents and autoloads one 30-parent chunk per
   end-of-list scroll gesture. The response limit counts distinct parents after event
-  matching, while event scans remain separately bounded (`internal/server/huma_routes.go::Server.listActivityRouteCore`).
+  matching, while event scans remain separately bounded (`internal/server/activityapi/huma_routes.go::Handlers.listActivityRouteCore`).
 - Phone PR and issue lists start with 30 items and autoload one 30-item chunk per
   end-of-list scroll gesture. Mutation reloads retain the active chunk size
   (`frontend/src/lib/stores/pulls.svelte.ts::createPullsStore`, `frontend/src/lib/stores/issues.svelte.ts::createIssuesStore`).

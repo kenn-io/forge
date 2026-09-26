@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestRemoveStaleWorktreeRouteStopsRuntimeSessions(t *testing.T) {
@@ -32,8 +33,8 @@ func TestRemoveStaleWorktreeRouteStopsRuntimeSessions(t *testing.T) {
 		t.Context(), projectID, db.ProjectInventory{}, time.Now(),
 	))
 
-	resp := httpDo(t, ts, http.MethodPost, "/api/v1/worktrees/remove-stale",
-		mustMarshal(t, map[string]any{"scopedKey": "worktree:" + worktree.Path}))
+	resp := serverfake.HttpDo(t, ts, http.MethodPost, "/api/v1/worktrees/remove-stale",
+		serverfake.MustMarshal(t, map[string]any{"scopedKey": "worktree:" + worktree.Path}))
 	require.Equal(http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 

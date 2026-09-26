@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/spokeapi"
 )
 
 func TestFleetPrepareSpokeReportsReadyWithoutPrintingSeal(t *testing.T) {
 	assert := assert.New(t)
 	const seal = "private-preparation-seal"
-	runner := &fakeFleetCommandRunner{prepareResult: server.SpokePreparationReport{
+	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
 		ReadyLaunchSpecs: 3, ReadyToActivate: true, PreparationSeal: seal,
 	}}
 	var stdout bytes.Buffer
@@ -31,7 +31,7 @@ func TestFleetPrepareSpokeReportsReadyWithoutPrintingSeal(t *testing.T) {
 }
 
 func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
-	runner := &fakeFleetCommandRunner{prepareResult: server.SpokePreparationReport{
+	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
 		Unprepared:             []db.UnpreparedWorkspace{{}, {}},
 		HandoffConflicts:       []db.ProviderStateConflict{{}},
 		HandoffErrors:          []string{"offline"},

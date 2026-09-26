@@ -1,8 +1,11 @@
 package server
 
 import (
-	jsonv2 "encoding/json/v2"
 	"testing"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
+	jsonv2 "encoding/json/v2"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,12 +17,12 @@ func TestRelayWorkflowActivitySignalsOnlyActions(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := newTestServer(t)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	repoID, err := srv.db.UpsertRepo(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_project", Owner: "team", Name: "project",
 	})
 	require.NoError(err)
-	srv.broadcastRelayRefresh(t.Context(), repoID, "workflow_runs", 0)
+	srv.syncevents.BroadcastRelayRefresh(t.Context(), repoID, "workflow_runs", 0)
 	events, _, stale := srv.Hub().ReplaySnapshotSince(0)
 	require.False(stale)
 	require.Len(events, 1)

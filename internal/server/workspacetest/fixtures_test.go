@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/servertest"
@@ -163,7 +164,7 @@ func setupWorkspaceServerFixtureWithTmuxInjection(
 	}
 	options.Clones = clones
 	options.WorktreeDir = worktreeDir
-	options.HostCheck = server.HostCheckOptions{
+	options.HostCheck = authapi.HostCheckOptions{
 		Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
 		Allowed: []config.HostKey{{Host: "forge.test", Port: ""}},
 	}

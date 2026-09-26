@@ -14,10 +14,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/providerapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
+
 	platformgithub "go.kenn.io/forge/platform/github"
+
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
@@ -36,9 +41,9 @@ func TestMarkdownImageRouteServesRepositorySVG(t *testing.T) {
 		Notifications: upstream.Client(), Clock: time.Now, APIBase: upstream.URL + "/",
 	})
 	require.NoError(err)
-	srv, database := setupTestServerWithMock(t, &mockGH{getMarkdownImageFn: client.GetMarkdownImage})
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{GetMarkdownImageFn: client.GetMarkdownImage})
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
+	_, err = database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	const source = "https://github.com/acme/widgets/raw/main/diagram.svg"
 	for range 2 {
@@ -70,7 +75,7 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 	const source = "https://github.com/user-attachments/assets/11111111-2222-3333-4444-555555555555"
 	var gotOwner, gotSource string
 	fetches := 0
-	mock := &mockGH{getMarkdownImageFn: func(
+	mock := &serverfake.MockGH{GetMarkdownImageFn: func(
 		_ context.Context,
 		owner, _, sourceURL string,
 	) (platform.MarkdownImage, error) {
@@ -78,9 +83,9 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 		gotOwner, gotSource = owner, sourceURL
 		return platform.MarkdownImage{Content: []byte("png-bytes"), ContentType: "image/png"}, nil
 	}}
-	srv, database := setupTestServerWithMock(t, mock)
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	srv, database, _ := setupTestServerWithMock(t, mock)
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
+	_, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	rr := repoBrowserRequest(t, srv, http.MethodGet,
@@ -101,7 +106,7 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 	require.Equal(http.StatusOK, cached.Code)
 	assert.Equal("png-bytes", cached.Body.String())
 	assert.Equal(1, fetches)
-	entries, err := os.ReadDir(srv.markdownImages.root)
+	entries, err := os.ReadDir(srv.markdownImages.Root)
 	require.NoError(err)
 	assert.Len(entries, 1)
 }
@@ -116,7 +121,7 @@ func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T
 	assert := assert.New(t)
 	const source = "https://github.com/user-attachments/assets/11111111-2222-3333-4444-555555555555"
 	var gotOwner, gotRepo string
-	mock := &mockGH{getMarkdownImageFn: func(
+	mock := &serverfake.MockGH{GetMarkdownImageFn: func(
 		_ context.Context,
 		owner, repo, _ string,
 	) (platform.MarkdownImage, error) {
@@ -136,14 +141,14 @@ func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": routed},
-		database, nil, defaultTestRepos, time.Minute, nil, nil,
+		database, nil, serverfake.DefaultTestRepos, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	_, err = database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 
@@ -159,7 +164,7 @@ func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T
 }
 
 func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
-	mock := &mockGH{getMarkdownImageFn: func(
+	mock := &serverfake.MockGH{GetMarkdownImageFn: func(
 		context.Context,
 		string,
 		string,
@@ -167,9 +172,9 @@ func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
 	) (platform.MarkdownImage, error) {
 		return platform.MarkdownImage{}, context.DeadlineExceeded
 	}}
-	srv, database := setupTestServerWithMock(t, mock)
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	srv, database, _ := setupTestServerWithMock(t, mock)
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
+	_, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 
 	rr := repoBrowserRequest(
@@ -194,7 +199,7 @@ func TestMarkdownImageRouteMapsGitLabServerErrorToUpstreamError(t *testing.T) {
 
 	provider, err := platformgitlab.NewClient(
 		"gitlab.example.com",
-		testTokenSource("gitlab-token"),
+		serverfake.TestTokenSource("gitlab-token"),
 		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
 		platformgitlab.WithoutRetriesForTesting(), platformgitlab.
 			WithTransport(http.DefaultTransport),
@@ -215,8 +220,8 @@ func TestMarkdownImageRouteMapsGitLabServerErrorToUpstreamError(t *testing.T) {
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 
 	rr := repoBrowserRequest(
 		t,
@@ -259,7 +264,7 @@ func TestMarkdownImageRouteResolvesOpaqueGitLabProjectID(t *testing.T) {
 
 	provider, err := platformgitlab.NewClient(
 		"gitlab.example.com",
-		testTokenSource("gitlab-token"),
+		serverfake.TestTokenSource("gitlab-token"),
 		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
 		platformgitlab.WithoutRetriesForTesting(), platformgitlab.
 			WithTransport(http.DefaultTransport),
@@ -280,8 +285,8 @@ func TestMarkdownImageRouteResolvesOpaqueGitLabProjectID(t *testing.T) {
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
 	source := gitlabServer.URL + "/group/project/uploads/secret/private.png"
 
 	rr := repoBrowserRequest(
@@ -307,7 +312,7 @@ func TestMarkdownImageCacheDoesNotFollowRouteReuse(t *testing.T) {
 	assert := assert.New(t)
 	const source = "https://github.com/acme/widget/blob/main/docs/images/search.png?raw=true"
 	fetches := 0
-	mock := &mockGH{getMarkdownImageFn: func(
+	mock := &serverfake.MockGH{GetMarkdownImageFn: func(
 		context.Context, string, string, string,
 	) (platform.MarkdownImage, error) {
 		fetches++
@@ -315,9 +320,9 @@ func TestMarkdownImageCacheDoesNotFollowRouteReuse(t *testing.T) {
 			Content: []byte(fmt.Sprintf("bytes-%d", fetches)), ContentType: "image/png",
 		}, nil
 	}}
-	srv, database := setupTestServerWithMock(t, mock)
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	srv, database, _ := setupTestServerWithMock(t, mock)
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
+	_, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	target := "/api/v1/repo/github/acme/widget/markdown-image?source=" + url.QueryEscape(source)
 
@@ -344,7 +349,7 @@ func TestMarkdownImageRouteCachesMutableImagesBriefly(t *testing.T) {
 	const mutableSource = "https://github.com/acme/widget/blob/main/docs/images/search.png?raw=true"
 	const immutableSource = "https://github.com/user-attachments/assets/11111111-2222-3333-4444-555555555555"
 	fetches := map[string]int{}
-	mock := &mockGH{getMarkdownImageFn: func(
+	mock := &serverfake.MockGH{GetMarkdownImageFn: func(
 		_ context.Context, _, _ string, sourceURL string,
 	) (platform.MarkdownImage, error) {
 		fetches[sourceURL]++
@@ -354,9 +359,9 @@ func TestMarkdownImageRouteCachesMutableImagesBriefly(t *testing.T) {
 			Mutable:     sourceURL == mutableSource,
 		}, nil
 	}}
-	srv, database := setupTestServerWithMock(t, mock)
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	srv, database, _ := setupTestServerWithMock(t, mock)
+	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
+	_, err := database.UpsertRepo(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	request := func(source string) *httptest.ResponseRecorder {
 		return repoBrowserRequest(t, srv, http.MethodGet,
@@ -370,12 +375,12 @@ func TestMarkdownImageRouteCachesMutableImagesBriefly(t *testing.T) {
 	require.Equal(http.StatusOK, immutable.Code, immutable.Body.String())
 	assert.Equal("private, max-age=31536000, immutable", immutable.Header().Get("Cache-Control"))
 
-	entries, err := os.ReadDir(srv.markdownImages.root)
+	entries, err := os.ReadDir(srv.markdownImages.Root)
 	require.NoError(err)
 	require.Len(entries, 2)
-	aged := time.Now().Add(-markdownImageMutableTTL - time.Minute)
+	aged := time.Now().Add(-providerapi.MarkdownImageMutableTTL - time.Minute)
 	for _, entry := range entries {
-		require.NoError(os.Chtimes(filepath.Join(srv.markdownImages.root, entry.Name()), aged, aged))
+		require.NoError(os.Chtimes(filepath.Join(srv.markdownImages.Root, entry.Name()), aged, aged))
 	}
 
 	require.Equal(http.StatusOK, request(mutableSource).Code)

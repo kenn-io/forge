@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -18,61 +17,24 @@ import (
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 func TestDaemonPingPublishesMCPURL(t *testing.T) {
-	srv := &Server{
+	srv := wiredServer(&Server{
 		options:   ServerOptions{MCPURL: "http://127.0.0.1:8092/mcp"},
 		buildInfo: BuildInfo{Version: "test"},
-	}
+	})
 
 	output, err := srv.daemonPing(t.Context(), &struct{}{})
 
 	require.NoError(t, err)
 	assert.Equal(t, "http://127.0.0.1:8092/mcp", output.Body.MCPURL)
-}
-
-func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	ctx := t.Context()
-	pullID := seedPR(t, database, "acme", "widget", 42)
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	require.NotNil(repo)
-	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
-	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
-		MergeRequestID: pullID, EventType: "issue_comment", Author: "reviewer",
-		Body: "review this", CreatedAt: base, DedupeKey: "mcp-item-filter-comment",
-	}}))
-	commits := make([]db.BranchCommit, activitySafetyCap+1)
-	for i := range commits {
-		at := base.Add(time.Duration(i+1) * time.Millisecond)
-		commits[i] = db.BranchCommit{
-			RepoID: repo.ID, BranchName: "main", CommitSHA: fmt.Sprintf("%040x", i+1),
-			AuthorName: "maintainer", AuthoredAt: at,
-			CommitterName: "maintainer", CommittedAt: at,
-			Subject: "repository activity", CreatedAt: at, UpdatedAt: at,
-		}
-	}
-	require.NoError(database.UpsertBranchCommits(ctx, commits))
-
-	page, err := srv.MCPBackend().ListActivity(ctx, mcpserver.ActivityQuery{
-		Since: base.Add(-time.Minute).Format(time.RFC3339), ItemTypes: []string{"pr"},
-	})
-
-	require.NoError(err)
-	require.NotEmpty(page.Items)
-	for _, item := range page.Items {
-		assert.Equal("pr", item.ItemType)
-		assert.Equal(repo.PlatformRepoID, item.Repository.PlatformRepoID)
-	}
-	assert.False(page.Capped)
 }
 
 func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
@@ -104,10 +66,10 @@ func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
 	t.Cleanup(runtime.Shutdown)
 	session, err := runtime.Launch(ctx, workspaceID, worktree, "codex")
 	require.NoError(err)
-	srv := &Server{workspaceAPI: workspaceapi.New(workspaceapi.Deps{
+	srv := wiredServer(&Server{workspaceAPI: workspaceapi.New(workspaceapi.Deps{
 		DB: database, Workspaces: workspace.NewManager(database, t.TempDir()),
 		Runtime: runtime,
-	})}
+	})})
 
 	_, err = srv.MCPBackend().SubmitInitialMessage(ctx, mcpserver.InitialMessageRequest{
 		WorkspaceID: workspaceID, RuntimeSessionKey: session.Key,
@@ -127,7 +89,7 @@ func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {
 	require := require.New(t)
 	_, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
 	ctx := t.Context()
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	item := mcpserver.ItemIdentity{
@@ -144,138 +106,6 @@ func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {
 	require.ErrorAs(err, &backendErr)
 	assert.Equal("conflict", backendErr.Kind)
 	assert.Equal(mcpserver.ErrorCodeWorkspaceAlreadyExists, backendErr.Code)
-}
-
-func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 42)
-
-	_, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: "replacement-repository",
-		Owner:          "acme", Name: "widget", Number: 42,
-	})
-
-	var backendErr *mcpserver.Error
-	require.ErrorAs(t, err, &backendErr)
-	assert.Equal(t, "not_found", backendErr.Kind)
-	assert.Equal(t, string(httpapi.CodeRepoNotFound), backendErr.Code)
-}
-
-func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 42, func(pr *db.MergeRequest) {
-		pr.MergeableState = "dirty"
-		pr.ReviewDecision = "CHANGES_REQUESTED"
-		pr.CIStatus = "success"
-		pr.PlatformHeadSHA = "head-one"
-		pr.CIChecksJSON = `[{"name":"unit","status":"completed","conclusion":"success"}]`
-	})
-	seedPR(t, database, "acme", "widget", 43, withSeedPRLifecycle("closed", nil, new(time.Now().UTC())))
-	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	identity := mcpserver.RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
-		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-	}
-	rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{Repository: identity, State: "open", Limit: 26})
-	require.NoError(err)
-	require.Len(rows, 1)
-	assert.Equal(42, rows[0].Number)
-	assert.Equal("dirty", rows[0].MergeableState)
-	assert.Equal("CHANGES_REQUESTED", rows[0].ReviewDecision)
-	assert.Equal("success", rows[0].CIStatus)
-	assert.Equal("head-one", rows[0].HeadSHA)
-	require.Len(rows[0].Checks, 1)
-	assert.Equal("success", rows[0].Checks[0].Conclusion)
-	detail, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
-		Owner: "acme", Name: "widget", Number: 42,
-	})
-	require.NoError(err)
-	require.NotNil(detail.Pull)
-	assert.Equal(rows[0].MergeableState, detail.Pull.MergeableState)
-	assert.Equal(rows[0].ReviewDecision, detail.Pull.ReviewDecision)
-	assert.Equal(rows[0].Checks, detail.Checks)
-	identity.PlatformRepoID = "replacement-repository"
-	_, err = srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{Repository: identity, State: "open"})
-	var backendErr *mcpserver.Error
-	require.ErrorAs(err, &backendErr)
-	assert.Equal("not_found", backendErr.Kind)
-}
-
-func TestMCPBackendFiltersPullLabelsBeforePagination(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	for number, name := range []string{"bug", "debug", "bug"} {
-		id := seedPR(t, database, "acme", "widget", number+1)
-		repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-		require.NoError(err)
-		require.NoError(database.ReplaceMergeRequestLabels(t.Context(), repo.ID, id, []db.Label{{Name: name}}))
-	}
-	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	identity := mcpserver.RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
-		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-	}
-	var numbers []int
-	for offset := range 2 {
-		rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{
-			Repository: identity, State: "open", Label: "bug", Limit: 1, Offset: offset,
-		})
-		require.NoError(err)
-		require.Len(rows, 1)
-		assert.Equal([]string{"bug"}, rows[0].Labels)
-		numbers = append(numbers, rows[0].Number)
-	}
-	assert.ElementsMatch([]int{1, 3}, numbers)
-	rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{Repository: identity, Label: "Bug"})
-	require.NoError(err)
-	assert.Empty(rows)
-	detail, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
-		Owner: "acme", Name: "widget", Number: 1,
-	})
-	require.NoError(err)
-	require.NotNil(detail.Pull)
-	assert.Equal([]string{"bug"}, detail.Pull.Labels)
-}
-
-func TestMCPBackendListsPullsWithMalformedCachedChecks(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 42, func(pr *db.MergeRequest) {
-		pr.CIChecksJSON = `[{"name":"unit","conclusion":"success"}]`
-	})
-	seedPR(t, database, "acme", "widget", 43, func(pr *db.MergeRequest) {
-		pr.MergeableState = "dirty"
-		pr.CIChecksJSON = `[{"name":"partial","conclusion":"success"},{"name":42}]`
-	})
-	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{
-		Repository: mcpserver.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
-			Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		}, State: "open", Limit: 25,
-	})
-	require.NoError(err)
-	require.Len(rows, 2)
-	byNumber := make(map[int]mcpserver.Pull)
-	for _, row := range rows {
-		byNumber[row.Number] = row
-	}
-	assert.Contains(byNumber, 42)
-	assert.Contains(byNumber, 43)
-	require.Len(byNumber[42].Checks, 1)
-	assert.Equal("success", byNumber[42].Checks[0].Conclusion)
-	assert.Empty(byNumber[43].Checks)
-	assert.Equal("dirty", byNumber[43].MergeableState)
 }
 
 func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
@@ -305,8 +135,8 @@ func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
 	srv := New(database, nil, nil, "/", nil, ServerOptions{
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	srv.providerSource = &hubProviderSource{client: client, db: database}
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	srv.providerSource = &spokeapi.HubProviderSource{Client: client, Db: database}
 	backend := mcpBackend{server: srv}
 	identity := mcpserver.RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
@@ -316,9 +146,9 @@ func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
 	resolved, err := backend.resolveWorkspaceRepositoryFence(t.Context(), identity)
 
 	require.NoError(err)
-	require.NotNil(resolved.repo)
-	assert.Equal(t, "repo-new", resolved.repo.PlatformRepoID)
-	assert.False(t, resolved.hub)
+	require.NotNil(resolved.Repo)
+	assert.Equal(t, "repo-new", resolved.Repo.PlatformRepoID)
+	assert.False(t, resolved.Hub)
 	observed, err := database.GetRepositoryByProviderID(
 		t.Context(), "github", "github.com", "repo-new",
 	)
@@ -329,10 +159,10 @@ func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
 func TestMCPBackendReadFailsClosedWhenRouteReassignedMidRead(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	srv, database := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
-	seedPR(t, database, "acme", "widget", 42)
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	serverfake.SeedPR(t, database, "acme", "widget", 42)
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
 	backend := mcpBackend{server: srv}
@@ -362,63 +192,12 @@ func TestMCPBackendReadFailsClosedWhenRouteReassignedMidRead(t *testing.T) {
 	assert.Equal(string(httpapi.CodeRepoNotFound), backendErr.Code)
 }
 
-func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	ctx := t.Context()
-	seedPR(t, database, "acme", "widget", 1)
-	seedPR(t, database, "acme", "widget", 2)
-	seedIssue(t, database, "acme", "widget", 3, "open")
-	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	require.NotNil(repo)
-	markArchiveItemRemovedUpstreamForServerTest(
-		t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 1,
-	)
-	markArchiveItemRemovedUpstreamForServerTest(
-		t, database, repo.ID, db.ArchiveItemTypeIssue, 3,
-	)
-	backend := srv.MCPBackend()
-	repository := mcpserver.RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: repo.PlatformRepoID,
-		RepoPath:       "acme/widget", Owner: "acme", Name: "widget",
-	}
-
-	page, err := backend.ListWorkflowStates(ctx, mcpserver.WorkflowQuery{
-		Repository: repository, IncludeClosed: true,
-	})
-
-	require.NoError(err)
-	require.Len(page.Items, 1)
-	assert.Equal(2, page.Items[0].Identity.Number)
-	assert.Equal(repo.PlatformRepoID, page.Items[0].Identity.PlatformRepoID)
-
-	_, err = backend.SetWorkflowState(ctx, mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: repo.PlatformRepoID,
-		Owner:          "acme", Name: "widget", Number: 1,
-	}, mcpserver.WorkflowUpdate{
-		Status: "reviewing", ExpectedStatus: "new", Source: "mcp",
-	})
-	var backendErr *mcpserver.Error
-	require.ErrorAs(err, &backendErr)
-	assert.Equal("not_found", backendErr.Kind)
-	assert.Equal(string(httpapi.CodePullNotFound), backendErr.Code)
-
-	stored, err := database.GetItemWorkflowState(ctx, repo.ID, db.ItemTypePR, 1)
-	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal("new", stored.Status)
-}
-
 func TestSpokePreparationBlocksMCPWorkflowMutation(t *testing.T) {
 	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 7)
+	srv, database, _ := setupTestServer(t)
+	serverfake.SeedPR(t, database, "acme", "widget", 7)
 	repo, err := database.GetRepoByIdentity(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	require.NotNil(repo)

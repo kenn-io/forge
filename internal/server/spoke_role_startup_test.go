@@ -9,11 +9,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
@@ -46,13 +46,12 @@ func TestInactiveFleetNodeKeepsLocalServicesWithoutProviderPlane(t *testing.T) {
 		HostCheckAllowLoopbackAnyPort:      true,
 		DisableWorkspaceBackgroundMonitors: true,
 	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-	assert.Nil(srv.syncer)
 	assert.Nil(srv.archive)
 	assert.Same(clones, srv.clones)
 	require.NotNil(srv.providerSource)
-	assert.Nil(srv.providerSource.client)
+	assert.Nil(srv.providerSource.Client)
 	assert.Nil(srv.providerProxy)
 	assert.Nil(srv.hubEvents)
 	assert.Equal(httpapi.ProviderCapabilitiesResponse{}, srv.repoResolver.Capabilities(

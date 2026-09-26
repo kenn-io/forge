@@ -11,7 +11,7 @@ import (
 )
 
 func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
@@ -21,7 +21,7 @@ func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
 		secondDone := make(chan struct{})
 		var calls atomic.Int64
 
-		started := srv.enqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, func(context.Context) error {
+		started := srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, func(context.Context) error {
 			calls.Add(1)
 			close(firstStarted)
 			<-releaseFirst
@@ -31,7 +31,7 @@ func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
 		synctest.Wait()
 		<-firstStarted
 
-		started = srv.enqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, func(context.Context) error {
+		started = srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, func(context.Context) error {
 			calls.Add(1)
 			close(secondDone)
 			return nil

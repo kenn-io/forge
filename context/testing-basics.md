@@ -18,6 +18,15 @@ fixtures, or changing shell-script coverage.
   native concurrency). Go hooks run uncapped and the read-only Go consumers run
   concurrently after `golangci-lint --fix`; `KENN_FORGE_HOOK_GO_CONCURRENCY`
   opts into a cap (`scripts/run-hook-go.sh`, `prek.toml`).
+- `internal/server` black-box tests live in sibling test-only packages
+  (`accesstest`, `pulltest`, ...), so they build and lint in parallel instead of
+  inside the package's single test unit. Put new tests that need only the
+  exported API there; whole-server tests go in the `*servertest` packages.
+  Tests keep the dependencies they pass to `server.New` (for example the
+  syncer) instead of reading them back from `Server` fields. Shared helpers
+  live once: root-independent mocks and seeders in `internal/testutil/serverfake`
+  (root tests import it too), server-building fixtures in
+  `internal/testutil/servertest`; never copy helpers into each test package.
 - CI bounds Go package/test fan-out with `-p` and `-parallel`; do not cap
   `GOMAXPROCS` globally, because test-launched servers inherit that CPU limit.
 - Do not overlap frontend/e2e asset builds with Go compilation; replacing embedded

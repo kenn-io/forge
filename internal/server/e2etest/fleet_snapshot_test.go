@@ -33,6 +33,7 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
@@ -99,7 +100,7 @@ func bootFleetServerWithNodeID(
 		FederationHTTPClient:               federationClient,
 		WorktreeDir:                        t.TempDir(),
 		DisableWorkspaceBackgroundMonitors: true,
-		HostCheck: server.HostCheckOptions{
+		HostCheck: authapi.HostCheckOptions{
 			Bind:                 config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			AllowLoopbackAnyPort: true,
 		},

@@ -2,7 +2,18 @@
 
 - Startup liveness and ready health probes expose the same running build identity
   without a workspace bearer. Builds without VCS metadata must stamp the full
-  commit (`internal/server/health_routes.go::healthyResponse`).
+  commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).
+
+## Package layout
+
+- `internal/server` keeps the `Server` type, its constructors, and route
+  wiring; handler areas live in sibling packages (`settingsapi`, `activityapi`,
+  `syncevents`, ...). A moved `Server` method becomes a method on that package's
+  `Handlers`, which `wireHandlers` builds right after allocating the server.
+  Mutable `Server` fields are shared by pointer, never copied, so reloads and
+  locks stay global (`internal/server/handler_wiring.go::Server.wireHandlers`).
+- A `Server` literal outside `newServer` must go through `wiredServer`, or its
+  handler fields stay nil (`internal/server/handler_wiring.go::wiredServer`).
 
 ## Frontend assets
 
@@ -14,7 +25,7 @@
   (`frontend/vite.config.ts::precompressAssets`).
 - Embed only Brotli asset copies to limit distribution size; other accepted
   encodings remain available through on-demand compression
-  (`internal/server/spa_handler.go::serveCompressedAsset`).
+  (`internal/server/compression/spa_handler.go::serveCompressedAsset`).
 
 ## Activity relay boundary
 
@@ -86,7 +97,7 @@ and the root event stream.
 - Provider API origins and cleartext acknowledgements are startup-bound. Config
   reload reports `restart_required` when either changes instead of claiming the
   boot-time client and clone policy were updated
-  (`internal/server/config_reload.go::startupPlatformTransports`).
+  (`internal/server/configreload/config_reload.go::startupPlatformTransports`).
 - Every role gets lazy Git routing; only hubs construct provider API,
   accounting, sync, archive, notification, and deferred-work machinery.
   `--disable-sync` suppresses hub refresh and never weakens spoke absence
@@ -175,7 +186,7 @@ and the root event stream.
 - The ready handler exposes standard identity at `GET /api/ping`; its private
   proof path binds the same identity to the published record and only accepts
   direct loopback requests
-  (`internal/server/daemon_access.go::daemonRequestPolicy.admit`).
+  (`internal/server/authapi/daemon_access.go::DaemonRequestPolicy.Admit`).
 - Spoke activation is part of startup readiness for federation, not for local
   execution. A sealed spoke that cannot activate still serves local workspaces,
   logs `action_required` or `incompatible` with a reason, and supplies that
@@ -187,7 +198,7 @@ and the root event stream.
 
 - Mutation identity must not depend on DELETE request bodies: the native desktop
   transport drops them before requests reach the daemon. Use path or query identity
-  instead (`internal/server/huma_routes.go::unsetStarred`).
+  instead (`internal/server/activityapi/huma_routes.go::Handlers.UnsetStarred`).
 - Loopback TCP is the required cross-platform transport; Unix sockets and
   named pipes are not lifecycle requirements. Background startup rejects
   non-loopback listeners before launching
@@ -197,9 +208,9 @@ and the root event stream.
   authority. Peer-issued `forge_session` cookies get the same origin check.
   The startup-bound mode trusts local processes and suits only trusted hosts;
   policy edits require restart and never change federation credentials
-  (`internal/server/api_auth.go::browserWebSocketOriginAllowed`,
+  (`internal/server/authapi/api_auth.go::BrowserWebSocketOriginAllowed`,
   `internal/config/config.go::Config.validate`,
-  `internal/server/daemon_access.go::daemonRequestPolicy.acceptsTailscaleServeUser`).
+  `internal/server/authapi/daemon_access.go::DaemonRequestPolicy.AcceptsTailscaleServeUser`).
 - `fleet setup` keeps Forge on loopback with API auth; `--tailscale` owns one
   Serve mapping, while `--origin` leaves ingress to the operator
   (`internal/fleetsetup/setup.go::configureCandidate`).
@@ -223,7 +234,7 @@ and the root event stream.
 - Only the startup-bound bearer with exact loopback authority/peer and no
   forwarding headers bypasses proxy Host interpretation; cookies never qualify,
   and the bearer remains available when general API auth is off
-  (`internal/server/daemon_access.go::daemonRequestPolicy.admit`).
+  (`internal/server/authapi/daemon_access.go::DaemonRequestPolicy.Admit`).
 - Discovery sends only a random challenge until the endpoint proves the daemon
   token and full runtime identity; the proof route requires the exact direct
   loopback authority without forwarding headers
@@ -237,13 +248,13 @@ and the root event stream.
   credentials first (`internal/server/server.go::Server.ServeHTTP`).
 - Mutation CSRF protection uses `http.CrossOriginProtection`; requests without browser
   origin metadata remain available to native and generated API clients, while Huma
-  operations enforce their own body media types (`internal/server/server.go::checkCrossOrigin`).
+  operations enforce their own body media types (`internal/server/streamapi/server.go::CheckCrossOrigin`).
 - Trusted forwarded-host support adds validation of the canonical forwarded
   authority; it never replaces validation of the raw backend `Host`
-  (`internal/server/host_check.go::checkHost`).
+  (`internal/server/hostapi/host_check.go::CheckHost`).
 - After trusted forwarded-host validation, mutation origin checks compare with
   that public authority rather than the reverse proxy's backend `Host`
-  (`internal/server/server.go::checkCrossOrigin`).
+  (`internal/server/streamapi/server.go::CheckCrossOrigin`).
 
 ## Event Replay
 
@@ -252,10 +263,10 @@ and the root event stream.
   (`internal/server/workflowapi/dispatch_follow.go::Handler.followDispatch`).
 - SSE event IDs are process-scoped replay cursors, not durable sequence
   numbers. Reconnects may replay only IDs retained by the current process's
-  ring (`internal/server/event_hub.go::EventHub.ReplaySnapshotSince`).
+  ring (`internal/server/syncevents/event_hub.go::EventHub.ReplaySnapshotSince`).
 - A cursor older than the ring or ahead of the current process head emits
   `reconnect.stale`; the client must discard incremental assumptions and perform
-  an authoritative refetch (`internal/server/server.go::Server.handleSSE`).
+  an authoritative refetch (`internal/server/streamapi/server.go::Handlers.HandleSSE`).
 - The frontend checkpoint advances only after an event's Effect consequences succeed;
   overlapping owners must keep it monotonic, and buffer pressure reconnects from the
   last accepted ID (`frontend/src/lib/stores/provider-events-workflow.ts::providerEventsProgram`).
@@ -268,15 +279,15 @@ and the root event stream.
   the browser's local replay floor; stale or undecodable remote state triggers
   an authoritative provider refresh instead
   (`internal/providerplane/events.go::EventClient`,
-  `internal/server/federation_events.go::Server.receiveHubEvent`).
+  `internal/server/syncevents/federation_events.go::Handlers.ReceiveHubEvent`).
 - A federation-only SSE comment marks the replay/live boundary. Spokes remain
   provider-unavailable while replay drains, then reconcile authoritative state
   before announcing the hub connection; replayed status cannot
   overwrite that recovery snapshot
-  (`internal/server/federation_events.go::writeFederationReplayComplete`).
+  (`internal/server/syncevents/federation_events.go::WriteFederationReplayComplete`).
 - `sync_status`, `config.changed`, and `hub_connection_changed` are
   latest-value events cached in local ID order for fresh browser subscribers
-  (`internal/server/event_hub.go::EventHub.enqueueCachedLocked`).
+  (`internal/server/syncevents/event_hub.go::EventHub.enqueueCachedLocked`).
 
 ## Long-Lived Transport Inventory
 

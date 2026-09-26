@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,12 +12,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
-	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/browserloginapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 const (
@@ -57,7 +57,7 @@ type browserLoginFixture struct {
 
 // newBrowserLoginHub builds an enabled hub whose spoke holds an active,
 // leased enrollment and the ordinary active spoke-to-hub grant.
-func newBrowserLoginHub(t *testing.T, hostCheck HostCheckOptions) *browserLoginFixture {
+func newBrowserLoginHub(t *testing.T, hostCheck authapi.HostCheckOptions) *browserLoginFixture {
 	t.Helper()
 	require := require.New(t)
 	clock := &browserLoginClock{now: time.Now().UTC()}
@@ -94,7 +94,7 @@ func newBrowserLoginHub(t *testing.T, hostCheck HostCheckOptions) *browserLoginF
 		}},
 	}}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
-		DaemonAccess: DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
 		},
 		FederationCredentials: credentials,
@@ -105,7 +105,7 @@ func newBrowserLoginHub(t *testing.T, hostCheck HostCheckOptions) *browserLoginF
 	srv.now = clock.Now
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	return &browserLoginFixture{
 		ts: ts, srv: srv, clock: clock, peerToken: token,
 		enrollments: enrollments, lease: lease,
@@ -133,12 +133,12 @@ func (f *browserLoginFixture) do(
 	return response
 }
 
-func (f *browserLoginFixture) issueTicket(t *testing.T) browserLoginTicketBody {
+func (f *browserLoginFixture) issueTicket(t *testing.T) browserloginapi.BrowserLoginTicketBody {
 	t.Helper()
 	response := f.do(t, http.MethodPost, "/api/v1/federation/browser-login-tickets",
 		func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+f.peerToken) })
 	require.Equal(t, http.StatusOK, response.StatusCode)
-	var ticket browserLoginTicketBody
+	var ticket browserloginapi.BrowserLoginTicketBody
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&ticket))
 	return ticket
 }
@@ -163,80 +163,17 @@ func (f *browserLoginFixture) snapshotStatus(t *testing.T, cookie *http.Cookie) 
 
 func browserSessionCookie(response *http.Response) *http.Cookie {
 	for _, cookie := range response.Cookies() {
-		if cookie.Name == browserSessionCookieName {
+		if cookie.Name == authapi.BrowserSessionCookieName {
 			return cookie
 		}
 	}
 	return nil
 }
 
-func decodeProblem(t *testing.T, response *http.Response) httpapi.ProblemError {
-	t.Helper()
-	var problem httpapi.ProblemError
-	require.NoError(t, json.NewDecoder(response.Body).Decode(&problem))
-	return problem
-}
-
-func TestBrowserLoginTicketRequiresActivePeerGrant(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		scopes []federationauth.Scope
-		status int
-	}{
-		{name: "active hub", scopes: federationauth.HubToSpokeScopes(), status: http.StatusOK},
-		{name: "active spoke", scopes: federationauth.SpokeToHubScopes(), status: http.StatusOK},
-		{name: "pending hub", scopes: federationauth.PendingHubToSpokeScopes(), status: http.StatusForbidden},
-		{name: "pending spoke", scopes: federationauth.PendingSpokeToHubScopes(), status: http.StatusForbidden},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			assert := assert.New(t)
-			require := require.New(t)
-			ts, _, token := newFederationAuthTestServer(t, test.scopes...)
-			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-				ts.URL+"/api/v1/federation/browser-login-tickets", nil)
-			require.NoError(err)
-			request.Header.Set("Authorization", "Bearer "+token)
-			issuedAfter := time.Now().UTC().Truncate(time.Second)
-			response, err := ts.Client().Do(request)
-			require.NoError(err)
-			defer response.Body.Close()
-			require.Equal(test.status, response.StatusCode)
-			if test.status != http.StatusOK {
-				problem := decodeProblem(t, response)
-				assert.Equal("federationScopeDenied", problem.Details["reason"])
-				assert.Equal(string(federationauth.ScopeBrowserLogin), problem.Details["required_scope"])
-				return
-			}
-			var ticket browserLoginTicketBody
-			require.NoError(json.NewDecoder(response.Body).Decode(&ticket))
-			raw, err := base64.RawURLEncoding.DecodeString(ticket.Ticket)
-			require.NoError(err)
-			assert.GreaterOrEqual(len(raw), 32)
-			assert.Equal(time.UTC, ticket.ExpiresAt.Location())
-			assert.False(ticket.ExpiresAt.Before(issuedAfter.Add(59 * time.Second)))
-			assert.False(ticket.ExpiresAt.After(time.Now().UTC().Add(time.Minute)))
-		})
-	}
-}
-
-func TestBrowserLoginTicketRejectsLocalCredentials(t *testing.T) {
-	require := require.New(t)
-	ts, _, _ := newFederationAuthTestServer(t, federationauth.ScopeBrowserLogin)
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		ts.URL+"/api/v1/federation/browser-login-tickets", nil)
-	require.NoError(err)
-	request.Header.Set("Authorization", "Bearer local-secret")
-	response, err := ts.Client().Do(request)
-	require.NoError(err)
-	defer response.Body.Close()
-	require.Equal(http.StatusForbidden, response.StatusCode)
-	assert.Equal(t, "federationPrincipalRequired", decodeProblem(t, response).Details["reason"])
-}
-
 func TestBrowserLoginTicketBootstrapsSession(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	hub := newBrowserLoginHub(t, HostCheckOptions{})
+	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
 
 	ticket := hub.issueTicket(t)
 	response := hub.do(t, http.MethodGet,
@@ -253,7 +190,7 @@ func TestBrowserLoginTicketBootstrapsSession(t *testing.T) {
 
 	assert.Equal(http.StatusOK, hub.snapshotStatus(t, cookie))
 	assert.Equal(http.StatusUnauthorized, hub.snapshotStatus(t, &http.Cookie{
-		Name: browserSessionCookieName, Value: ticket.Ticket,
+		Name: authapi.BrowserSessionCookieName, Value: ticket.Ticket,
 	}), "the ticket itself is not a session")
 
 	reused := hub.do(t, http.MethodGet, "/?login_ticket="+ticket.Ticket, nil)
@@ -274,7 +211,7 @@ func TestBrowserLoginTicketBootstrapsSession(t *testing.T) {
 func TestBrowserLoginRedirectStaysSameOrigin(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	hub := newBrowserLoginHub(t, HostCheckOptions{})
+	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
 	ticket := hub.issueTicket(t)
 	response := hub.do(t, http.MethodGet, "//evil.example/path?login_ticket="+ticket.Ticket, nil)
 	require.Equal(http.StatusSeeOther, response.StatusCode)
@@ -296,7 +233,7 @@ func TestBrowserSessionCookieSecureFollowsTrustedScheme(t *testing.T) {
 		{name: "untrusted forwarded proto", proto: "https"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			hostCheck := HostCheckOptions{
+			hostCheck := authapi.HostCheckOptions{
 				Bind:                 config.HostKey{Host: "127.0.0.1", Port: "8091"},
 				AllowLoopbackAnyPort: true,
 			}
@@ -324,7 +261,7 @@ func TestBrowserSessionCookieSecureFollowsTrustedScheme(t *testing.T) {
 func TestBrowserSessionEndsWithIssuingPeerEnrollment(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	hub := newBrowserLoginHub(t, HostCheckOptions{})
+	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
 	cookie := hub.signIn(t)
 	require.Equal(http.StatusOK, hub.snapshotStatus(t, cookie))
 
@@ -357,7 +294,7 @@ func TestBrowserSessionEndsWithIssuingPeerEnrollment(t *testing.T) {
 
 func TestBrowserSessionRejectsCrossOriginWebSocket(t *testing.T) {
 	assert := assert.New(t)
-	hub := newBrowserLoginHub(t, HostCheckOptions{})
+	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
 	cookie := hub.signIn(t)
 	upgrade := func(origin string) int {
 		return hub.do(t, http.MethodGet, "/ws/v1/workspaces/ws-1/terminal", func(r *http.Request) {

@@ -19,7 +19,7 @@ coherence, file history, previews, or refresh behavior.
   repository ID, current route, clone URL, default branch, route generation,
   and observation time; the spoke reconciles those facts into its repository
   catalog before selecting a clone. Descriptors never populate spoke-local pull
-  or issue tables (`internal/server/provider_sources.go::hubProviderSource.GetRepositoryDescriptor`).
+  or issue tables (`internal/server/spokeapi/provider_sources.go::HubProviderSource.GetRepositoryDescriptor`).
 
 ## Coherent Reads
 

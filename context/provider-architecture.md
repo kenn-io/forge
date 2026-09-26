@@ -172,7 +172,7 @@ Rules:
   state; the UI hides a confirmed deletion while ordinary sync converges. Authoritative
   replacement updates comment rows and the parent count in one transaction
   (`internal/server/pullapi/routes.go::Handler.deleteComment`,
-  `internal/server/huma_routes.go::deleteIssueComment`,
+  `internal/server/issueapi/mutation_handlers.go::Handler.deleteIssueComment`,
   `internal/db/queries.go::ReplaceMRCommentEvents`,
   `internal/db/queries.go::ReplaceIssueCommentEvents`).
 - Keep operation availability split by scope. `repoOperations` handles
@@ -187,8 +187,8 @@ Rules:
   the provider mutation remains authoritative. Server code must not shell out
   to provider CLIs or do provider-specific identity matching. Do not put
   item-level gates in repo settings or list summaries
-  (`internal/server/operation_availability.go::repoOperations`,
-  `internal/server/operation_availability.go::repoOperationsForMergeRequest`).
+  (`internal/server/operationapi/operation_availability.go::Handlers.RepoOperations`,
+  `internal/server/operationapi/operation_availability.go::Handlers.RepoOperationsForMergeRequest`).
 - Enforce item-level gates at every mutation entry point and every UI
   availability signal, not only the detail response. Self-approval both rejects
   (`selfApprovalProblem`: review-draft publish, direct `/approve`) and hides the
@@ -304,10 +304,10 @@ Repository label editing is provider-neutral:
 
 - Every documented operation is hub-only provider, provider with a
   spoke-local overlay, or spoke-local; live-registry coverage rejects gaps
-  (`internal/server/provider_route_policy.go::providerRouteDeclarations`).
+  (`internal/server/routepolicy/provider_route_policy.go::ProviderRouteDeclarations`).
 - Spokes proxy hub-only operations; mixed reads fetch provider rows and
   attach only the connected spoke's workspace references. Federation callers get
-  provider-only responses (`internal/server/huma_routes.go::Server.providerActivityResponse`).
+  provider-only responses (`internal/server/activityapi/huma_routes.go::providerActivityResponse`).
 - Mixed reads preserve hub membership, order, and cursors. Their local
   overlay joins by provider item identity, never numeric SQLite IDs
   (`internal/providerplane/descriptor.go::ItemIdentity`).
@@ -329,7 +329,7 @@ Repository label editing is provider-neutral:
   route, records the provider observation in the local repository catalog, and
   fetches the clone on the spoke. The hub sends metadata and SHAs, never
   Git file content; the spoke never creates a provider-item cache from a
-  descriptor (`internal/server/provider_descriptors.go`,
+  descriptor (`internal/server/providerapi/provider_descriptors.go`,
   `internal/server/pullapi/routes.go::Handler.resolvePullCloneSnapshot`).
 - Repository descriptors are route-generation snapshots. Diff descriptors add
   all platform, diff, and merge-base SHAs plus the pull snapshot revision from
@@ -339,12 +339,12 @@ Repository label editing is provider-neutral:
   `internal/db/repository_catalog.go::DB.GetPullDiffProviderSnapshot`).
 - Review drafts, MCP workflow state, notification state, and other
   provider-adjacent records share the hub's ownership and provider
-  scopes (`internal/server/provider_route_policy.go::providerRouteDeclarations`).
+  scopes (`internal/server/routepolicy/provider_route_policy.go::ProviderRouteDeclarations`).
 - Settings compose hub-owned provider policy with spoke-owned execution
   policy for local users. Federation peers use a provider-only settings DTO;
   the general settings route remains local-only, and peer mutations cannot
   carry hub-local execution policy
-  (`internal/server/federation_provider_settings.go::providerSettingsResponse`,
+  (`internal/server/spokeapi/federation_provider_settings.go::ProviderSettingsResponse`,
   `internal/server/settings_handlers.go::Server.updateSettings`).
 
 Repo-scoped REST routes are provider-aware. The default-host route shape omits

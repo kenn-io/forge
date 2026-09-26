@@ -26,8 +26,10 @@ import (
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/federationtest"
 	"go.kenn.io/forge/platform"
@@ -307,7 +309,7 @@ func newFederatedDaemonServer(
 		t.Cleanup(syncer.Stop)
 	}
 	srv := server.New(daemon.Database, syncer, nil, "/", cfg, server.ServerOptions{
-		DaemonAccess: server.DaemonAccessOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: daemon.LocalToken, RequireAPIAuth: true,
 		},
 		FederationSpokeID: daemon.NodeID, FederationSpokeActive: activeSpoke,
@@ -316,7 +318,7 @@ func newFederatedDaemonServer(
 		FederationHTTPClient:               client,
 		WorktreeDir:                        filepath.Join(t.TempDir(), "worktrees"),
 		DisableWorkspaceBackgroundMonitors: true,
-		HostCheck: server.HostCheckOptions{
+		HostCheck: authapi.HostCheckOptions{
 			Bind:                 config.HostKey{Host: "127.0.0.1", Port: "8091"},
 			AllowLoopbackAnyPort: true,
 		},
@@ -552,7 +554,7 @@ func TestFederatedForgesE2E(t *testing.T) {
 
 	require.Eventually(func() bool {
 		records, _ := fixture.NodeA.Server.Hub().RingSnapshotSince(0)
-		return slices.ContainsFunc(records, func(record server.RecordedEvent) bool {
+		return slices.ContainsFunc(records, func(record syncevents.RecordedEvent) bool {
 			return record.Event.Type == "hub_connection_changed"
 		})
 	}, 3*time.Second, 10*time.Millisecond)
@@ -573,11 +575,11 @@ func TestFederatedForgesE2E(t *testing.T) {
 	fixture.Hub.Switch.offline.Store(false)
 	localFloor := fixture.NodeA.Server.Hub().Generation()
 	require.Eventually(func() bool {
-		fixture.Hub.Server.Hub().Broadcast(server.Event{
+		fixture.Hub.Server.Hub().Broadcast(syncevents.Event{
 			Type: "data_changed", Data: map[string]string{"source": "hub"},
 		})
 		records, stale := fixture.NodeA.Server.Hub().RingSnapshotSince(localFloor)
-		return !stale && slices.ContainsFunc(records, func(record server.RecordedEvent) bool {
+		return !stale && slices.ContainsFunc(records, func(record syncevents.RecordedEvent) bool {
 			return record.ID > localFloor && record.Event.Type == "data_changed"
 		})
 	}, 8*time.Second, 200*time.Millisecond)

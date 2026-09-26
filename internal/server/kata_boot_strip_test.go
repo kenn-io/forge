@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 // TestServerBootAppliesInvalidCatalogTokenNames pins boot-time catalog
@@ -28,8 +29,8 @@ name = "prod"
 url = "https://kata2.example.com"
 `), 0o600))
 
-	srv, _, _ := setupTestServerWithConfigContentAndOptions(
-		t, validReloadConfig, &mockGH{}, ServerOptions{
+	srv, _, _, _ := setupTestServerWithConfigContentAndOptions(
+		t, validReloadConfig, &serverfake.MockGH{}, ServerOptions{
 			HostCheckAllowLoopbackAnyPort:      true,
 			WorktreeDir:                        t.TempDir(),
 			DisableWorkspaceBackgroundMonitors: true,

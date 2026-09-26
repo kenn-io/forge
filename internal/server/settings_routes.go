@@ -2,315 +2,22 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/http"
-	"slices"
 
-	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/federation"
-	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/settingsapi"
 
 	"github.com/danielgtaylor/huma/v2"
 )
-
-func (s *Server) persistFleetMember(
-	ctx context.Context, member config.FleetMember,
-) error {
-	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
-		for index := range fleet.Members {
-			if fleet.Members[index].NodeID == member.NodeID {
-				member.OutboundDisabled = fleet.Members[index].OutboundDisabled
-				fleet.Members[index] = member
-				return
-			}
-		}
-		fleet.Members = append(fleet.Members, member)
-	})
-}
-
-func (s *Server) persistHubBinding(
-	ctx context.Context, hub config.FleetHub,
-) error {
-	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
-		fleet.Hub = &hub
-	})
-}
-
-func (s *Server) resetPreparedSpokeBinding(ctx context.Context) error {
-	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
-		fleet.Role = config.FleetRoleHub
-		fleet.Hub = nil
-	})
-}
-
-func (s *Server) removeFleetMember(ctx context.Context, nodeID string) error {
-	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
-		fleet.Members = slices.DeleteFunc(
-			fleet.Members,
-			func(member config.FleetMember) bool { return member.NodeID == nodeID },
-		)
-	})
-}
-
-func (s *Server) mutatePersistedFleet(
-	ctx context.Context, mutate func(*config.Fleet),
-) error {
-	return s.mutatePersistedFleetChecked(ctx, func(fleet *config.Fleet) error {
-		mutate(fleet)
-		return nil
-	})
-}
-
-func (s *Server) mutatePersistedFleetChecked(
-	ctx context.Context, mutate func(*config.Fleet) error,
-) error {
-	return s.mutatePersistedFleetCandidateChecked(ctx, false, mutate)
-}
-
-func (s *Server) mutatePersistedEnrollmentFleetChecked(
-	ctx context.Context, mutate func(*config.Fleet) error,
-) error {
-	return s.mutatePersistedFleetCandidateChecked(ctx, true, mutate)
-}
-
-func (s *Server) mutatePersistedFleetCandidateChecked(
-	ctx context.Context,
-	keepEnrollmentHub bool,
-	mutate func(*config.Fleet) error,
-) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if s.cfgPath == "" || s.cfg == nil {
-		return errors.New("fleet settings persistence is unavailable")
-	}
-	s.configReloadMu.Lock()
-	defer s.configReloadMu.Unlock()
-	s.cfgMu.Lock()
-	defer s.cfgMu.Unlock()
-	candidate := cloneReloadedConfig(s.cfg)
-	active := s.activeFleetConfigSnapshotLocked().Fleet
-	candidate.Fleet.Role = active.Role
-	candidate.Fleet.BaseURL = active.BaseURL
-	if !keepEnrollmentHub {
-		candidate.Fleet.Hub = active.Hub
-	}
-	if err := mutate(&candidate.Fleet); err != nil {
-		return err
-	}
-	if err := candidate.Validate(); err != nil {
-		return err
-	}
-	if err := candidate.Save(s.cfgPath); err != nil {
-		return err
-	}
-	s.cfg.Fleet = candidate.Fleet
-	s.applyFleetConfigLocked()
-	return nil
-}
-
-type getSettingsOutput = httpapi.BodyOutput[settingsResponse]
-
-type updateSettingsInput struct {
-	Body updateSettingsRequest
-}
-
-type createRepoPresetInput struct {
-	Body config.RepoPreset
-}
-
-type updateRepoPresetInput struct {
-	Name string `path:"name"`
-	Body struct {
-		Repos []config.RepoPresetRepository `json:"repos" nullable:"false"`
-	}
-}
-
-type deleteRepoPresetInput struct {
-	Name string `path:"name"`
-}
-
-type addRepoInput struct {
-	Body struct {
-		Provider     string `json:"provider"`
-		Host         string `json:"host,omitempty"`
-		PlatformHost string `json:"platform_host,omitempty"`
-		Owner        string `json:"owner"`
-		Name         string `json:"name"`
-	}
-}
-
-type repoConfigInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-}
-
-type repoConfigHostInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string `path:"platform_host"`
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-}
-
-type repoWorktreeBaseRequest struct {
-	WorktreeBasePath string `json:"worktree_base_path"`
-}
-
-type repoWorktreeBaseInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Body         repoWorktreeBaseRequest
-}
-
-type repoWorktreeBaseHostInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string `path:"platform_host"`
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Body         repoWorktreeBaseRequest
-}
-
-type repoUIVisibilityRequest struct {
-	Hidden bool `json:"hidden"`
-}
-
-type repoUIVisibilityInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Body         repoUIVisibilityRequest
-}
-
-type repoUIVisibilityHostInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string `path:"platform_host"`
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Body         repoUIVisibilityRequest
-}
-
-type settingsOutput = httpapi.BodyOutput[settingsResponse]
-
-type setActiveWorktreeInput struct {
-	Body struct {
-		// Key is the focused worktree's scoped key; empty clears
-		// the focus.
-		Key string `json:"key"`
-	}
-}
 
 // setActiveWorktree records which worktree has focus in the client
 // driving this daemon (a native panel, an embedding shell). The SPA
 // reads the key from its served config to scope navigations to the
 // focused worktree's repository.
 func (s *Server) setActiveWorktree(
-	_ context.Context, in *setActiveWorktreeInput,
+	_ context.Context, in *settingsapi.SetActiveWorktreeInput,
 ) (*struct{}, error) {
 	s.SetActiveWorktreeKey(in.Body.Key)
 	return &struct{}{}, nil
-}
-
-type fleetSettingsResponse struct {
-	Enabled         bool                    `json:"enabled"`
-	Role            config.FleetRole        `json:"role"`
-	Hub             *config.FleetHub        `json:"hub,omitempty"`
-	Members         []config.FleetMember    `json:"members" nullable:"false"`
-	Enrollments     []federation.Enrollment `json:"enrollments" nullable:"false"`
-	PeerTimeout     string                  `json:"peer_timeout,omitempty"`
-	Sessions        config.FleetSessions    `json:"sessions"`
-	RestartRequired bool                    `json:"restart_required"`
-}
-
-type getFleetSettingsOutput = httpapi.BodyOutput[fleetSettingsResponse]
-
-type updateFleetSettingsInput struct {
-	Body struct {
-		Enabled     bool                 `json:"enabled"`
-		PeerTimeout string               `json:"peer_timeout,omitempty"`
-		Sessions    config.FleetSessions `json:"sessions"`
-	}
-}
-
-func (s *Server) buildFleetSettingsResponseLocked() fleetSettingsResponse {
-	fleet := s.cfg.Fleet
-	return fleetSettingsResponse{
-		Enabled:         fleet.Enabled,
-		Role:            fleet.RoleOrDefault(),
-		Hub:             cloneFleetHub(fleet.Hub),
-		Members:         append([]config.FleetMember{}, fleet.Members...),
-		Enrollments:     append([]federation.Enrollment{}, s.fleetAPI.Enrollments()...),
-		PeerTimeout:     fleet.PeerTimeout,
-		Sessions:        fleet.Sessions,
-		RestartRequired: s.fleetSettingsRestartRequiredLocked(fleet),
-	}
-}
-
-func (s *Server) fleetSettingsRestartRequiredLocked(fleet config.Fleet) bool {
-	candidate := cloneReloadedConfig(s.cfg)
-	candidate.Fleet = fleet
-	return s.bootCfgSnapshot.restartRequiredFor(&candidate)
-}
-
-// getFleetSettings returns the complete fleet federation settings shape.
-func (s *Server) getFleetSettings(
-	_ context.Context, _ *struct{},
-) (*getFleetSettingsOutput, error) {
-	if s.cfgPath == "" {
-		return nil, httpapi.NotFound(
-			httpapi.CodeSettingsUnavailable, "settings not available", nil,
-		)
-	}
-	s.cfgMu.Lock()
-	out := s.buildFleetSettingsResponseLocked()
-	s.cfgMu.Unlock()
-	return &getFleetSettingsOutput{Body: out}, nil
-}
-
-// updateFleetSettings changes only operator preferences. Enrollment owns role,
-// hub binding, and membership, so an ordinary settings save cannot
-// overwrite those lifecycle fields with a stale browser snapshot.
-func (s *Server) updateFleetSettings(
-	_ context.Context, input *updateFleetSettingsInput,
-) (*getFleetSettingsOutput, error) {
-	if s.cfgPath == "" {
-		return nil, httpapi.NotFound(
-			httpapi.CodeSettingsUnavailable, "settings not available", nil,
-		)
-	}
-	s.configReloadMu.Lock()
-	defer s.configReloadMu.Unlock()
-
-	s.cfgMu.Lock()
-	candidate := cloneReloadedConfig(s.cfg)
-	candidate.Fleet.Enabled = input.Body.Enabled
-	candidate.Fleet.PeerTimeout = input.Body.PeerTimeout
-	candidate.Fleet.Sessions = input.Body.Sessions
-	if err := candidate.Validate(); err != nil {
-		s.cfgMu.Unlock()
-		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
-	}
-	if err := candidate.Save(s.cfgPath); err != nil {
-		s.cfgMu.Unlock()
-		return nil, httpapi.Internal("save config: " + err.Error())
-	}
-	s.cfg.Fleet = candidate.Fleet
-	s.applyFleetConfigLocked()
-	out := s.buildFleetSettingsResponseLocked()
-	s.cfgMu.Unlock()
-	return &getFleetSettingsOutput{Body: out}, nil
-}
-
-func cloneFleetHub(in *config.FleetHub) *config.FleetHub {
-	if in == nil {
-		return nil
-	}
-	clone := *in
-	return &clone
 }
 
 func (s *Server) registerSettingsAPI(api huma.API) {
@@ -320,14 +27,14 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		Path:        "/settings/fleet",
 		Summary:     "Get fleet settings",
 		Tags:        []string{"Settings"},
-	}, s.getFleetSettings)
+	}, s.settingsapi.GetFleetSettings)
 	huma.Register(api, huma.Operation{
 		OperationID: "update-fleet-settings",
 		Method:      http.MethodPut,
 		Path:        "/settings/fleet",
 		Summary:     "Update fleet settings",
 		Tags:        []string{"Settings"},
-	}, s.updateFleetSettings)
+	}, s.settingsapi.UpdateFleetSettings)
 	huma.Register(api, huma.Operation{
 		OperationID:   "set-active-worktree",
 		Method:        http.MethodPut,
@@ -430,7 +137,7 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		DefaultStatus: http.StatusNoContent,
 		Summary:       "Delete repository",
 		Tags:          []string{"Settings"},
-	}, s.deleteConfiguredRepo)
+	}, s.settingsapi.DeleteConfiguredRepo)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-repo-on-host",
 		Method:        http.MethodDelete,
@@ -438,5 +145,5 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		DefaultStatus: http.StatusNoContent,
 		Summary:       "Delete repository",
 		Tags:          []string{"Settings"},
-	}, s.deleteConfiguredRepoOnHost)
+	}, s.settingsapi.DeleteConfiguredRepoOnHost)
 }

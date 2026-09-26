@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+
 	dbpkg "go.kenn.io/forge/internal/db"
 )
 
@@ -35,7 +37,7 @@ func TestInspectProjectWorktreeCountsStoredTmuxSessionsWithRuntime(t *testing.T)
 		},
 	))
 
-	resp := httpDo(t, ts, http.MethodGet,
+	resp := serverfake.HttpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/inspect", nil)
 	t.Cleanup(func() {
 		if resp != nil && resp.Body != nil {

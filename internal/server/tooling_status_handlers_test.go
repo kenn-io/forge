@@ -11,8 +11,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/repoapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 // recordingToolingRunner simulates probe subprocesses. Each call is
@@ -37,12 +38,12 @@ func (r *recordingToolingRunner) run(
 
 func decodeToolingStatus(
 	t *testing.T, ts *httptest.Server,
-) toolingStatusBody {
+) repoapi.ToolingStatusBody {
 	t.Helper()
-	resp := httpDo(t, ts, http.MethodGet, "/api/v1/tooling-status", nil)
+	resp := serverfake.HttpDo(t, ts, http.MethodGet, "/api/v1/tooling-status", nil)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	var body toolingStatusBody
+	var body repoapi.ToolingStatusBody
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	return body
 }
@@ -53,7 +54,7 @@ func decodeToolingStatus(
 func TestToolingStatusHappyPath(t *testing.T) {
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{
 		outputs: map[string]string{
 			"git --version": "git version 2.44.0 (Apple Git-170)",
@@ -85,7 +86,7 @@ func TestToolingStatusHappyPath(t *testing.T) {
 func TestToolingStatusMissingGh(t *testing.T) {
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{
 		outputs: map[string]string{
 			"git --version": "git version 2.44.0",
@@ -120,7 +121,7 @@ func TestToolingStatusMissingGh(t *testing.T) {
 func TestToolingStatusCachesProbes(t *testing.T) {
 	assert := assert.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	runner := &recordingToolingRunner{}
 	srv.toolingRun = runner.run
 	ts := httptest.NewServer(srv)
@@ -142,7 +143,7 @@ func TestToolingStatusProbesConfiguredHosts(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	srv, _ := setupTestServer(t)
+	srv, _, _ := setupTestServer(t)
 	srv.cfgMu.Lock()
 	srv.cfg = &config.Config{
 		Platforms: []config.PlatformConfig{

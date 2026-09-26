@@ -28,6 +28,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/hostapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -259,7 +260,7 @@ func TestRunBoundedShutdownHonorsDeadline(t *testing.T) {
 }
 
 func TestMCPStartupHandlerStaysUnavailableUntilFullServerSwap(t *testing.T) {
-	switcher := server.NewSwitchHandler(newMCPStartupHandler())
+	switcher := hostapi.NewSwitchHandler(newMCPStartupHandler())
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://127.0.0.1:8092/mcp", nil)
 	startup := httptest.NewRecorder()
 

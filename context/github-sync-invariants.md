@@ -121,7 +121,7 @@ For pull requests, that means:
   refreshes must bypass that PR ETag gate so rerun checks, workflow approval,
   comments, reviews, and commits can refresh even when GitHub's PR resource is
   unchanged (`internal/github/sync.go::SyncMR`,
-  `internal/server/huma_routes.go::syncPR`). Cadence control is still required
+  `internal/server/itemapi/huma_routes.go::Handlers.SyncPR`). Cadence control is still required
   because changed PRs correctly fall through to comments, reviews, commits, CI,
   and workflow approval refreshes.
 - MR snapshot publication and workspace head-repository reclassification share
@@ -270,7 +270,7 @@ fallback repository listing.
   still serves its stored pull requests and no sync will revisit it. Boot with
   the preference off reconciles the same way, since the setting can change while
   the daemon is stopped.
-  (`internal/server/native_stack_settings.go::reconcileGitHubNativeStackProjection`,
+  (`internal/server/syncevents/native_stack_settings.go::Handlers.ReconcileGitHubNativeStackProjection`,
   `internal/github/sync.go::SetPreferGitHubNativeStacks`)
 - The preview must not widen the blast radius of the list it rides on. The REST
   hint decodes separately from the pull request, so a changed field shape costs
@@ -325,14 +325,14 @@ fallback repository listing.
   without a daemon restart even when exact and glob entries overlap.
   (`internal/github/notifications_sync.go::SyncNotifications`,
   `internal/github/sync.go::watchedMRsForFastSync`,
-  `internal/server/settings_handlers.go::mergeTrackedRepos`,
-  `internal/server/settings_handlers.go::replaceGlobRepos`)
+  `internal/server/settingsapi/settings_handlers.go::Handlers.MergeTrackedRepos`,
+  `internal/server/settingsapi/settings_handlers.go::Handlers.ReplaceGlobRepos`)
 - Tracked-set deduplication reconciles by stable provider id when one is
   present, falling back to the route key: a renamed route must collapse onto
   the same tracked entry, never sync or archive-seed the repository twice.
   Provider-resolved refs replace fallback-derived duplicates; fallback refs
   never overwrite resolved ones. (`internal/github/repo_config_resolver.go::ExpandedRepoSet`,
-  `internal/server/settings_handlers.go::trackedRepoIndex`)
+  `internal/server/settingsapi/settings_handlers.go::trackedRepoIndex`)
 - Exact-resolved refs record the config-entry path they came from
   (`RepoRef.ConfiguredRepoPath`); glob refs carry none — a pattern identifies
   no single entry, and stamping it would displace exact provenance on
@@ -374,7 +374,7 @@ fallback repository listing.
   `internal/github/repo_config_resolver.go::ExpandedRepoSet`,
   `internal/github/sync.go::repoRefFromCatalog`,
   `internal/github/sync.go::publishResolvedRepository`,
-  `internal/server/settings_handlers.go::trackedRepoProvenance`,
+  `internal/server/settingsapi/settings_handlers.go::trackedRepoProvenance`,
   `cmd/kenn-forge/main.go::fallbackExactFromDB`)
 - Catalog republication without fresh provider metadata preserves the
   currently tracked archived flag: a sync that began before a newer archived
@@ -556,7 +556,7 @@ must share one runtime; App reads use their installation identity.
 - A configured router with no exact, owner, or fallback route is a routing
   failure; operation availability must fail closed instead of treating it as an
   unrouted legacy host (`internal/github/auth_router.go::MissingRouteError`,
-  `internal/server/operation_availability.go::writeCredentialGateForRepo`).
+  `internal/server/operation_availability.go::Server.WriteCredentialGateForRepo`).
 - Background requests on the write credential (viewer-permission overlay,
   notifications, queued read propagation) charge the write identity's sync
   budget — the transport's context gate keeps foreground mutations uncharged —

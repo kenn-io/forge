@@ -56,7 +56,7 @@ or remote workspace and session operations.
   cannot move the override to another repository (`internal/config/config.go::Repo`,
   `internal/server/settings_handlers.go::Server.updateConfiguredRepoWorktreeBasePath`).
 - Settings-carried repository observations use hub catalog timestamps;
-  spoke clocks never advance route freshness (`internal/server/federation_provider_settings.go::Server.buildProviderSettingsProjection`).
+  spoke clocks never advance route freshness (`internal/server/syncevents/federation_provider_settings.go::Handlers.BuildProviderSettingsProjection`).
 - Disabling federation must leave local settings readable so the operator can
   re-enable it; hub-owned settings may be absent while disabled
   (`internal/server/settings_handlers.go::Server.getSettings`).
@@ -107,7 +107,7 @@ or remote workspace and session operations.
 - Every projected host publishes `configKey == nodeID`, its topology role, and its canonical HTTPS origin. Self uses validated `fleet.base_url`; remote origins come from enrollment, never self-reporting
   (`internal/fleet/enrich.go::buildHost`, `internal/server/fleetapi/fleet_hub.go::Handler.fetchMemberRaw`).
 - Enrolled identity is immutable until revocation: reload keeps the boot role, hub binding, and origin active, while setup and restart reject an origin mismatch
-  (`internal/server/server.go::Server.activeFleetConfigSnapshotLocked`, `cmd/kenn-forge/spoke_startup.go::validateFederationHubOrigin`).
+  (`internal/server/streamapi/server.go::Handlers.ActiveFleetConfigSnapshotLocked`, `cmd/kenn-forge/spoke_startup.go::validateFederationHubOrigin`).
 - A failed, incompatible, or unauthenticated member degrades only that member to
   an unreachable summary; it must not fail local or other member results
   (`internal/server/fleetapi/fleet_hub.go::Handler.fetchMemberRaw`).
@@ -125,7 +125,7 @@ or remote workspace and session operations.
   (`internal/fleet/enrich.go::ProjectForObserver`).
 - Hub Activity workspace indicators include the fleet; peer provider responses
   omit them so spokes can apply their local workspace ownership
-  (`internal/server/huma_routes.go::Server.listActivityService`).
+  (`internal/server/activityapi/huma_routes.go::Handlers.ListActivityService`).
 - Workspace lists consume inline projected summaries without per-host fan-out;
   remote actions require the owning host's projected operation availability.
   Explicitly incomplete aggregates retain absent-host rows; authoritative views
@@ -196,17 +196,17 @@ change-driven and idle-cheap:
   domain. A compromised active peer is equivalent to compromised fleet
   administration and is outside the federation isolation model. Route scopes
   enforce ownership and lifecycle boundaries; they are not a hostile-peer or
-  multi-tenant sandbox (`internal/server/provider_route_policy.go::providerRouteDeclarations`).
+  multi-tenant sandbox (`internal/server/routepolicy/provider_route_policy.go::ProviderRouteDeclarations`).
 - Pending spokes are not active peers. Pending hub bearers have only
   enrollment access; pending spoke bearers have preparation projections,
   handoff, and enrollment access. Generic provider reads require activation
-  (`internal/server/api_auth.go::pendingProviderRouteAllowed`).
+  (`internal/server/authapi/api_auth.go::PendingProviderRouteAllowed`).
 - A federation principal may revoke only its own enrollment; local daemon
   authentication remains the hub operator path for revoking any member
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.revokeEnrollment`).
 - Preparation access is operation-scoped, not repository-isolated: a one-time
   token approves eventual active membership, so transfer it only to a machine
-  trusted with fleet provider data (`internal/server/api_auth.go::pendingProviderRouteAllowed`).
+  trusted with fleet provider data (`internal/server/authapi/api_auth.go::PendingProviderRouteAllowed`).
 - A valid federation bearer takes precedence over optional ingress user
   identity so proxied peer requests retain their scoped spoke principal
   (`internal/server/api_auth.go::Server.authorizeAPIRequest`).
@@ -248,7 +248,7 @@ change-driven and idle-cheap:
   (`internal/server/api_auth.go::Server.authorizeFederationRequest`).
 - Match authorization against the escaped request path; decoding `%2F` before
   scope lookup splits nested provider owners into extra route segments
-  (`internal/server/api_auth.go::Server.canonicalAPIPath`).
+  (`internal/server/authapi/api_auth.go::Handlers.CanonicalAPIPath`).
 - Enrollment reserves a digest-only inbound credential before the remote
   subject is known; it cannot authenticate until atomically bound to that
   subject
@@ -280,29 +280,29 @@ change-driven and idle-cheap:
   (`internal/federationauth/scope.go::HubToSpokeScopes`).
 - Hub-supplied durable Git facts require spoke-side federation validation,
   including during preparation before the spoke role is saved
-  (`internal/server/spoke_preparation.go::Server.refreshSpokePreparationLaunchSpecs`).
+  (`internal/server/spokeapi/spoke_preparation.go::Handlers.RefreshSpokePreparationLaunchSpecs`).
 
 ## Provider Facts For Local Execution
 
 - The hub is the only authority for provider-backed workspace launch
   facts. A spoke resolves PR and issue launch specifications through the
   authenticated provider plane; it does not require local repository, pull, or
-  issue replicas (`internal/server/provider_sources.go::hubProviderSource.ResolveWorkspaceLaunchSpec`).
+  issue replicas (`internal/server/spokeapi/provider_sources.go::HubProviderSource.ResolveWorkspaceLaunchSpec`).
 - Manual provider refresh, automatic assignment, and merge-request worktree
   facts cross the same provider plane. The hub performs provider API
   work; the spoke persists validated launch facts and performs only spoke-local
   Git and workspace work
   (`internal/server/provider_state_handoff.go::Server.federationRefreshWorkspaceLaunchSpec`,
-  `internal/server/federation_provider_workspace.go::Server.federationAutoAssignWorkspaceItem`,
-  `internal/server/provider_sources.go::hubProviderSource.ResolveMergeRequestWorktreeFacts`).
+  `internal/server/syncevents/federation_provider_workspace.go::Handlers.federationAutoAssignWorkspaceItem`,
+  `internal/server/spokeapi/provider_sources.go::HubProviderSource.ResolveMergeRequestWorktreeFacts`).
 - Clone-backed GitLab merge-request reads fetch only that merge request's
   provider-owned head ref before reading its descriptor SHA; the managed clone
   has no wildcard MR refspec (`internal/gitclone/clone.go::Manager.FetchMergeRequestHead`).
 - Hub activity responses exclude its local workspace overlays and carry
   the hub-owned workspace-recency policy. Spokes apply that policy while
   rebuilding local activity and authors; provider markdown images remain
-  hub-owned (`internal/server/huma_routes.go::Server.overlayLocalActivityWorkspaces`,
-  `internal/server/provider_route_policy.go::providerRouteDeclarations`).
+  hub-owned (`internal/server/activityapi/huma_routes.go::Handlers.overlayLocalActivityWorkspaces`,
+  `internal/server/routepolicy/provider_route_policy.go::ProviderRouteDeclarations`).
 - A resolved specification is bound to the exact request and carries stable
   repository identity, base clone/default-branch facts, PR head-repository
   semantics, and source visibility. Stable identity permits owner/name refresh
@@ -310,13 +310,13 @@ change-driven and idle-cheap:
   a spoke validates that binding and hosted clone URL, requires an exact Git
   credential route, rejects a historically occupied mutable route, and records
   only repository routing metadata in its spoke catalog (`internal/providerplane/client.go::ValidateFederationWorkspaceLaunchSpecResponse`,
-  `internal/server/provider_sources.go::hubProviderSource.ResolveWorkspaceLaunchSpec`).
+  `internal/server/spokeapi/provider_sources.go::HubProviderSource.ResolveWorkspaceLaunchSpec`).
 - Federated ad-hoc and MCP workspace creation resolve a hub repository descriptor
   before local lookup or route fencing, so newly discovered repositories do not
-  require a settings refresh (`internal/server/provider_sources.go::hubProviderSource.ResolveRepositoryRoute`).
+  require a settings refresh (`internal/server/spokeapi/provider_sources.go::HubProviderSource.ResolveRepositoryRoute`).
 - Registered spoke projects resolve stable hub repository identity during
   preparation and future registration; raw fleet snapshots remain read-only
-  (`internal/server/spoke_preparation.go::Server.reconcileSpokePreparationProjects`).
+  (`internal/server/spokeapi/spoke_preparation.go::Handlers.ReconcileSpokePreparationProjects`).
 - Base and fork clone URLs must resolve to canonical provider repository routes;
   network URL syntax alone is not an authorization boundary
   (`internal/providerplane/client.go::federationRemoteRepositoryRoute`).
@@ -343,7 +343,7 @@ change-driven and idle-cheap:
 - `fleet.enabled` is live. Disabling it stops hub-backed provider work
   and cancels the inbound event stream; enabling it opens a fresh stream whose
   replay barrier performs authoritative refresh
-  (`internal/server/federation_events.go::hubEventLifecycle`).
+  (`internal/server/spokeapi/federation_events.go::HubEventLifecycle`).
 - Spokes open one authenticated `events.read` SSE stream to the hub.
   The exact federation protocol header is required, redirects are refused, and
   the hub emits only its provider-owned event vocabulary
@@ -352,7 +352,7 @@ change-driven and idle-cheap:
 - Hub event IDs are private to that inbound stream. Each spoke
   re-stamps accepted events with its own `EventHub.Broadcast`, so browsers keep
   one spoke-local checkpoint and hub restart cannot move that checkpoint
-  backward or forward (`internal/server/federation_events.go::Server.receiveHubEvent`).
+  backward or forward (`internal/server/syncevents/federation_events.go::Handlers.ReceiveHubEvent`).
 - Stream open, replay staleness, and poison-frame recovery refresh provider
   projections and `sync_status` before the spoke announces the hub as
   connected. Initial connection does not announce an outage before its first
@@ -362,7 +362,7 @@ change-driven and idle-cheap:
   durable provider cache. The frontend refreshes its selected projection before
   removing the banner; an independent successful sync-status probe may restore
   hub availability while a projection-specific refresh error remains visible
-  (`internal/server/federation_events.go::Server.resynchronizeHubProviderState`,
+  (`internal/server/syncevents/federation_events.go::Handlers.ResynchronizeHubProviderState`,
   `frontend/src/lib/app-stores.svelte.ts::createAppStores`).
 - An initial pull-detail read that finds a tracked repository but no cached pull
   performs one synchronous item sync through the hub. This repairs a
@@ -377,7 +377,7 @@ change-driven and idle-cheap:
 - The inbound stream worker starts after Workspace and participates in the same
   dependent wait group as other Workspace consumers. Hub shutdown
   closes its event hub before draining HTTP so long-lived federation streams
-  exit cleanly (`internal/server/server.go::Server.runWorkspaceDependent`,
+  exit cleanly (`internal/server/streamapi/server.go::Handlers.RunWorkspaceDependent`,
   `internal/server/server.go::Server.Shutdown`).
 
 ## Configuration And Lifecycle
@@ -405,7 +405,7 @@ change-driven and idle-cheap:
 - Enrollment secrets are printed once and enter `fleet join` only through a
   hidden prompt, stdin, or `--token-file`. The sole pre-auth route is the exact
   enrollment POST (`cmd/kenn-forge/fleet_cli.go`,
-  `internal/server/api_auth.go::Server.isPreEnrollmentRequest`).
+  `internal/server/authapi/api_auth.go::Handlers.IsPreEnrollmentRequest`).
 - The token deadline governs only starting enrollment. Both peers enforce it for
   unstarted pending principals; preparation pins the enrollment until activation,
   abort, or revocation. Joining never changes `fleet.role` or restarts Forge
@@ -459,7 +459,7 @@ change-driven and idle-cheap:
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.revokeEnrollment`).
 - Ordinary fleet settings update only operator preferences; enrollment owns
   role, hub binding, and membership, so a stale browser save cannot
-  replace them (`internal/server/settings_routes.go::Server.updateFleetSettings`).
+  replace them (`internal/server/settingsapi/settings_routes.go::Handlers.UpdateFleetSettings`).
 - Leaving requires a revoked enrollment and a stopped daemon; preserve current local execution
   state, not a pre-enrollment database. Hub-owned provider state and credentials stay on the hub
   (`cmd/kenn-forge/fleet_leave.go::leaveFleet`).
@@ -470,11 +470,11 @@ change-driven and idle-cheap:
   Role, local and hub origins, API authentication, and
   session-monitor policy report `restart_required` until the running process
   matches persisted config
-  (`internal/server/config_reload.go::startupConfigSnapshot.restartRequiredFor`).
+  (`internal/server/configreload/config_reload.go::startupConfigSnapshot.RestartRequiredFor`).
 - A daemon that booted with fleet disabled cannot activate federation by
   reload unless API authentication was already active. Reload persists the
   intent, but federation waits for restart when both are enabled together
-  (`internal/server/server.go::Server.activeFleetConfigSnapshotLocked`).
+  (`internal/server/streamapi/server.go::Handlers.ActiveFleetConfigSnapshotLocked`).
 - Fleet workers start after Workspace and shut down before Workspace. Detailed
   shutdown rules live in
   [`workspace-runtime-lifecycle.md`](./workspace-runtime-lifecycle.md).

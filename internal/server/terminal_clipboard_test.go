@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,8 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"go.kenn.io/forge/internal/config"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 type recordingTerminalClipboard struct {
@@ -63,7 +61,7 @@ func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			clipboard := &recordingTerminalClipboard{}
 			srv := New(
-				openTestDB(t), nil, nil, "/", nil,
+				serverfake.OpenTestDB(t), nil, nil, "/", nil,
 				ServerOptions{TerminalClipboard: clipboard},
 			)
 			body, err := json.Marshal(map[string]string{
@@ -93,7 +91,7 @@ func TestTerminalClipboardWritePreservesUnicode(t *testing.T) {
 	const text = "clipboard — Unicode\u00a0text"
 	clipboard := &recordingTerminalClipboard{}
 	srv := New(
-		openTestDB(t), nil, nil, "/", nil,
+		serverfake.OpenTestDB(t), nil, nil, "/", nil,
 		ServerOptions{TerminalClipboard: clipboard},
 	)
 	body, err := json.Marshal(map[string]string{"text": text})
@@ -115,123 +113,10 @@ func TestTerminalClipboardWritePreservesUnicode(t *testing.T) {
 	assert.Equal(t, []string{text}, clipboard.texts)
 }
 
-func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
-	t *testing.T,
-) {
-	tests := []struct {
-		name         string
-		remoteAddr   string
-		forwardedFor string
-		wantStatus   int
-		wantTexts    []string
-	}{
-		{
-			name:         "local client",
-			remoteAddr:   "127.0.0.1:54321",
-			forwardedFor: "127.0.0.1",
-			wantStatus:   http.StatusNoContent,
-			wantTexts:    []string{"proxied copy"},
-		},
-		{
-			name:         "spoofed local client from remote peer",
-			remoteAddr:   "203.0.113.8:54321",
-			forwardedFor: "127.0.0.1",
-			wantStatus:   http.StatusForbidden,
-		},
-		{
-			name:         "remote client",
-			remoteAddr:   "127.0.0.1:54321",
-			forwardedFor: "203.0.113.7",
-			wantStatus:   http.StatusForbidden,
-		},
-		{
-			name:       "missing forwarded client",
-			remoteAddr: "127.0.0.1:54321",
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name:         "multiple forwarded clients",
-			remoteAddr:   "127.0.0.1:54321",
-			forwardedFor: "127.0.0.1, 203.0.113.7",
-			wantStatus:   http.StatusForbidden,
-		},
-		{
-			name:         "malformed forwarded client",
-			remoteAddr:   "127.0.0.1:54321",
-			forwardedFor: "not-an-ip",
-			wantStatus:   http.StatusForbidden,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			clipboard := &recordingTerminalClipboard{}
-			srv := New(
-				openTestDB(t), nil, nil, "/", nil,
-				ServerOptions{
-					TerminalClipboard: clipboard,
-					HostCheck: HostCheckOptions{
-						Bind: config.HostKey{
-							Host: "127.0.0.1",
-							Port: "8091",
-						},
-						Allowed: []config.HostKey{
-							{Host: "forge.example"},
-						},
-						TrustReverseProxy: true,
-					},
-				},
-			)
-			body := strings.NewReader(`{"text":"proxied copy"}`)
-			req := httptest.NewRequestWithContext(t.Context(),
-				http.MethodPost,
-				"/api/v1/terminal/clipboard",
-				body,
-			)
-			req.Host = "127.0.0.1:8091"
-			req.RemoteAddr = tt.remoteAddr
-			req.Header.Set("X-Forwarded-Host", "forge.example")
-			if tt.forwardedFor != "" {
-				req.Header.Set("X-Forwarded-For", tt.forwardedFor)
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Sec-Fetch-Site", "same-origin")
-			rr := httptest.NewRecorder()
-
-			srv.ServeHTTP(rr, req)
-
-			assert.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())
-			assert.Equal(t, tt.wantTexts, clipboard.texts)
-		})
-	}
-}
-
-func TestLocalTerminalClipboardRequestRecognizesNonLoopbackInterface(
-	t *testing.T,
-) {
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/terminal/clipboard", nil)
-	req.RemoteAddr = "127.0.0.1:54321"
-	req.Header.Set("X-Forwarded-For", "192.0.2.10")
-	interfaceAddrs := func() ([]net.Addr, error) {
-		return []net.Addr{
-			&net.IPNet{
-				IP:   net.ParseIP("192.0.2.10"),
-				Mask: net.CIDRMask(24, 32),
-			},
-		}, nil
-	}
-
-	assert.True(t, isLocalTerminalClipboardRequestWithAddrs(
-		req,
-		true,
-		interfaceAddrs,
-	))
-}
-
 func TestTerminalClipboardWriteRejectsOversizedText(t *testing.T) {
 	clipboard := &recordingTerminalClipboard{}
 	srv := New(
-		openTestDB(t), nil, nil, "/", nil,
+		serverfake.OpenTestDB(t), nil, nil, "/", nil,
 		ServerOptions{TerminalClipboard: clipboard},
 	)
 	body, err := json.Marshal(map[string]string{
@@ -260,7 +145,7 @@ func TestTerminalClipboardWriteReportsNativeFailure(t *testing.T) {
 		err: errors.New("clipboard unavailable"),
 	}
 	srv := New(
-		openTestDB(t), nil, nil, "/", nil,
+		serverfake.OpenTestDB(t), nil, nil, "/", nil,
 		ServerOptions{TerminalClipboard: clipboard},
 	)
 	body := strings.NewReader(`{"text":"copy me"}`)

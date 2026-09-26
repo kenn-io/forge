@@ -1,5 +1,7 @@
 package server
 
+import "go.kenn.io/forge/internal/server/streamapi"
+
 func init() {
-	allowUnvalidatedConfigHostCheckFallbackForTests = true
+	streamapi.AllowUnvalidatedConfigHostCheckFallbackForTests = true
 }

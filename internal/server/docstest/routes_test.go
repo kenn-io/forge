@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/docs"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -287,7 +288,7 @@ func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *
 	}
 	badPath := filepath.Join(t.TempDir(), "config.toml")
 	failSrv := servertest.NewWithConfig(t, dbtest.Open(t), nil, nil, nil, cfg, badPath, server.ServerOptions{
-		HostCheck: server.HostCheckOptions{
+		HostCheck: authapi.HostCheckOptions{
 			Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 		},
 		HostCheckAllowLoopbackAnyPort: true,

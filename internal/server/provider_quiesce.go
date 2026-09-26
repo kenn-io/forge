@@ -8,16 +8,9 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/providerapi"
+	"go.kenn.io/forge/internal/server/routepolicy"
 )
-
-func spokePreparationProblem() *httpapi.ProblemError {
-	return httpapi.NewProblem(
-		http.StatusConflict,
-		httpapi.CodeSpokePreparationInProgress,
-		"provider writes are sealed while this daemon is being prepared as a federation spoke",
-		map[string]any{"reason": "spokePreparationInProgress"},
-	)
-}
 
 func (s *Server) admitProviderWrite(
 	w http.ResponseWriter,
@@ -26,7 +19,7 @@ func (s *Server) admitProviderWrite(
 	if s.providerRouteSpoke || s.providerWriteGate == nil {
 		return nil, false
 	}
-	rule, ok := providerRouteRuleForRequest(r.Method, s.canonicalAPIPath(r))
+	rule, ok := providerRouteRuleForRequest(r.Method, s.authapi.CanonicalAPIPath(r))
 	if !ok || rule.PeerScope != federationauth.ScopeProviderWrite {
 		return nil, false
 	}
@@ -38,9 +31,9 @@ func (s *Server) admitProviderWrite(
 		return release, false
 	}
 	if errors.Is(err, providerplane.ErrSpokePreparationInProgress) {
-		writeProblemResponse(w, spokePreparationProblem())
+		routepolicy.WriteProblemResponse(w, providerapi.SpokePreparationProblem())
 	} else {
-		writeProblemResponse(w, httpapi.NewProblem(
+		routepolicy.WriteProblemResponse(w, httpapi.NewProblem(
 			http.StatusInternalServerError, httpapi.CodeInternalError,
 			"admit provider write: "+err.Error(), nil,
 		))

@@ -17,8 +17,8 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 
 	"github.com/danielgtaylor/huma/v2"
-	gh "github.com/google/go-github/v91/github"
-	gitlabapi "gitlab.com/gitlab-org/api/client-go/v2"
+	gh "github.com/google/go-github/v92/github"
+	gitlabapi "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"

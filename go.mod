@@ -19,7 +19,7 @@ require (
 	github.com/go-git/go-git/v6 v6.0.0-alpha.5
 	github.com/gofrs/flock v0.13.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
-	github.com/google/go-github/v91 v91.0.0
+	github.com/google/go-github/v92 v92.0.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
@@ -37,7 +37,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.44.0
 	github.com/yuin/goldmark/v2 v2.0.1
-	gitlab.com/gitlab-org/api/client-go/v2 v2.64.0
+	gitlab.com/gitlab-org/api/client-go/v3 v3.12.0
 	go.kenn.io/kata v0.16.0
 	go.kenn.io/kit v0.26.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
@@ -50,7 +50,6 @@ require (
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.45.0
 	golang.org/x/text v0.41.0
-	golang.org/x/tools v0.49.0
 	modernc.org/sqlite v1.58.0
 )
 
@@ -261,6 +260,7 @@ require (
 	golang.org/x/mod v0.39.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260706201446-f0a921348800 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
 	google.golang.org/grpc v1.82.1 // indirect

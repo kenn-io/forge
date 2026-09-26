@@ -533,7 +533,7 @@ func (d *DB) CompleteGitHubRepositoryConversion(
 		if platformRepoID == 0 {
 			return nil
 		}
-		// Migration 59 zeroed the node IDs launch specifications embedded;
+		// Migration 60 zeroed the node IDs launch specifications embedded;
 		// the workspace's repository row says which ones this ID replaces.
 		for _, path := range []string{"$.repository.platform_repo_id", "$.pull.base_repo_id"} {
 			if _, err := tx.ExecContext(ctx, `

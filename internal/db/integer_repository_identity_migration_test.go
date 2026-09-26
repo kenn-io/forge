@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIntegerRepositoryIdentityMigration59(t *testing.T) {
+func TestIntegerRepositoryIdentityMigration60(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	dbPath := filepath.Join(t.TempDir(), "repository-identity-v58.db")
+	dbPath := filepath.Join(t.TempDir(), "repository-identity-v59.db")
 
-	openAtVersionForTest(t, dbPath, 58, func(raw *sql.DB) {
+	openAtVersionForTest(t, dbPath, 59, func(raw *sql.DB) {
 		_, err := raw.ExecContext(t.Context(), `
 			INSERT INTO forge_repos (
 				id, platform, platform_host, platform_repo_id,
@@ -66,6 +66,27 @@ func TestIntegerRepositoryIdentityMigration59(t *testing.T) {
 				 'org-d', 'project-d', 'org-d/project-d', 4,
 				 'issue', 6, '6', 'work/issue-6',
 				 'work/issue-6', '/tmp/ws-legacy', 'ws-legacy', 'ready');
+			INSERT INTO forge_issues (
+				id, repo_id, platform_id, number,
+				created_at, updated_at, last_activity_at
+			) VALUES (20, 2, 9101, 9, datetime('now'), datetime('now'), datetime('now'));
+			INSERT INTO forge_repo_routes (
+				repo_id, platform, platform_host, owner, name, repo_path,
+				owner_key, name_key, repo_path_key, is_current,
+				first_seen_at, last_seen_at
+			) VALUES
+				(2, 'gitlab', 'gitlab.com', 'Group-B', 'Project-B', 'Group-B/Project-B',
+				 'group-b', 'project-b', 'group-b/project-b', 1,
+				 datetime('now'), datetime('now'));
+			INSERT INTO forge_issue_pr_references (
+				issue_id, source_provider, source_platform_host,
+				source_owner, source_repo, source_number, source_url,
+				observed_event_key, observed_at
+			) VALUES
+				(20, 'gitlab', 'gitlab.com', 'Group-B', 'Project-B', 4,
+				 'https://gitlab.com/Group-B/Project-B/-/merge_requests/4', 'ref-owned', datetime('now')),
+				(20, 'gitlab', 'gitlab.com', 'group-x', 'unknown', 4,
+				 'https://gitlab.com/group-x/unknown/-/merge_requests/4', 'ref-untracked', datetime('now'));
 			INSERT INTO forge_workspace_launch_specs (
 				workspace_id, version, spec_json, source_visible_until, created_at
 			) VALUES (
@@ -156,6 +177,22 @@ func TestIntegerRepositoryIdentityMigration59(t *testing.T) {
 	repoIDType, baseRepoIDType = specIDTypes("ws-github")
 	assert.Equal("integer", repoIDType, "GitHub node IDs become 0 until their repository converts")
 	assert.Equal("integer", baseRepoIDType)
+
+	sourceRepoIDs := map[string]sql.NullInt64{}
+	refRows, err := read.QueryContext(t.Context(), `
+		SELECT observed_event_key, source_repo_id FROM forge_issue_pr_references`)
+	require.NoError(err)
+	defer refRows.Close()
+	for refRows.Next() {
+		var key string
+		var sourceRepoID sql.NullInt64
+		require.NoError(refRows.Scan(&key, &sourceRepoID))
+		sourceRepoIDs[key] = sourceRepoID
+	}
+	require.NoError(refRows.Err())
+	assert.Equal(sql.NullInt64{Int64: 2, Valid: true}, sourceRepoIDs["ref-owned"],
+		"a reference records the only repository that ever held its route")
+	assert.False(sourceRepoIDs["ref-untracked"].Valid)
 
 	var routeTables int
 	require.NoError(read.QueryRowContext(t.Context(), `

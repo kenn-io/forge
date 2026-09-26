@@ -9131,7 +9131,8 @@ components:
         provider:
           type: string
         provider_id:
-          type: string
+          format: int64
+          type: integer
         sync_error:
           type: string
       required:

@@ -3588,12 +3588,18 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 		INSERT INTO forge_issue_pr_references (
 			issue_id, source_provider, source_platform_host,
 			source_owner, source_repo, source_number, source_url,
-			observed_event_key, observed_at
+			observed_event_key, observed_at, source_repo_id
 		)
 		SELECT
-			i.id, r.platform, r.platform_host, ?, ?, ?, ?, ?, ?
+			i.id, r.platform, r.platform_host, ref.owner, ref.name, ?, ?, ?, ?,
+			(SELECT source.id FROM forge_repos source
+			 WHERE source.lifecycle_state = 'active'
+			   AND source.platform = r.platform
+			   AND source.platform_host = r.platform_host
+			   AND source.repo_path_key = lower(ref.owner || '/' || ref.name))
 		FROM forge_issues i
 		JOIN forge_repos r ON r.id = i.repo_id
+		CROSS JOIN (SELECT ? AS owner, ? AS name) ref
 		WHERE i.id = ?
 		ON CONFLICT (
 			issue_id, source_provider, source_platform_host,
@@ -3601,7 +3607,8 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 		) DO UPDATE SET
 			source_url = excluded.source_url,
 			observed_event_key = excluded.observed_event_key,
-			observed_at = MAX(observed_at, excluded.observed_at)`)
+			observed_at = MAX(observed_at, excluded.observed_at),
+			source_repo_id = COALESCE(source_repo_id, excluded.source_repo_id)`)
 	if err != nil {
 		return fmt.Errorf("prepare materialize issue PR references: %w", err)
 	}
@@ -3622,8 +3629,8 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 			continue
 		}
 		if _, err := refStmt.ExecContext(
-			ctx, ref.SourceOwner, ref.SourceRepo, ref.SourceNumber,
-			ref.SourceURL, e.DedupeKey, e.CreatedAt, e.IssueID,
+			ctx, ref.SourceNumber, ref.SourceURL, e.DedupeKey, e.CreatedAt,
+			ref.SourceOwner, ref.SourceRepo, e.IssueID,
 		); err != nil {
 			return fmt.Errorf("materialize issue PR reference (dedupe_key=%s): %w", e.DedupeKey, err)
 		}

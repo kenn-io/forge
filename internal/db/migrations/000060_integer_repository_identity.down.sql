@@ -57,3 +57,5 @@ SELECT id, platform, platform_host, owner, name, repo_path,
        CASE WHEN lifecycle_state = 'active' THEN 1 ELSE 0 END,
        created_at, created_at
 FROM forge_repos;
+
+ALTER TABLE forge_issue_pr_references DROP COLUMN source_repo_id;

@@ -519,7 +519,7 @@ func TestWorkspaceRepositoryIdentityMigration55BackfillsOnlyUnambiguousRoutes(
 		require.NoError(err)
 	})
 
-	// Migrate to 55 only: migration 59 later removes repositories that
+	// Migrate to 55 only: migration 60 later removes repositories that
 	// never had a provider ID, which would detach the route-only workspace.
 	migrated := migrateToVersionForTest(t, dbPath, 55)
 
@@ -1702,9 +1702,9 @@ func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
 	defer func() { require.NoError(raw.Close()) }()
 	seedLegacyIssueForTest(t, raw, 1, 1, 101, 7, `[{"name":"bug","color":"d73a4a"}]`)
 
-	// These legacy repositories never had provider IDs, so migration 59
+	// These legacy repositories never had provider IDs, so migration 60
 	// removes them; stop just before it to observe this migration's result.
-	d := migrateToVersionForTest(t, path, 58)
+	d := migrateToVersionForTest(t, path, 59)
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	var issueLabelCount int
@@ -1766,9 +1766,9 @@ func TestOpenBackfillsDuplicateLegacyIssueLabelsDeterministically(t *testing.T) 
 	seedLegacyIssueForTest(t, raw, 1, 1, 101, 7, `[{"name":"bug","color":"ff0000"}]`)
 	seedLegacyIssueForTest(t, raw, 2, 1, 102, 8, `[{"name":"bug","color":"00ff00"}]`)
 
-	// These legacy repositories never had provider IDs, so migration 59
+	// These legacy repositories never had provider IDs, so migration 60
 	// removes them; stop just before it to observe this migration's result.
-	d := migrateToVersionForTest(t, path, 58)
+	d := migrateToVersionForTest(t, path, 59)
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	var labelCount int
@@ -1919,9 +1919,9 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.NoError(err)
 	require.NoError(raw.Close())
 
-	// These legacy repositories never had provider IDs, so migration 59
+	// These legacy repositories never had provider IDs, so migration 60
 	// removes them; stop just before it to observe this migration's result.
-	d := migrateToVersionForTest(t, path, 58)
+	d := migrateToVersionForTest(t, path, 59)
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	var repoCount int

@@ -642,7 +642,7 @@ func TestUpdateRepoProviderObservationPreservesOmittedFields(t *testing.T) {
 }
 
 // insertPendingGitHubRepository writes a GitHub repository in the shape
-// migration 59 leaves it: inactive, keyed only by its GraphQL node ID.
+// migration 60 leaves it: inactive, keyed only by its GraphQL node ID.
 func insertPendingGitHubRepository(t *testing.T, d *DB, nodeID, owner, name string) int64 {
 	t.Helper()
 	result, err := d.WriteDB().ExecContext(t.Context(), `
@@ -717,7 +717,7 @@ func TestCompleteGitHubRepositoryConversionRecordsIntegerID(t *testing.T) {
 	ctx := t.Context()
 	pendingID := insertPendingGitHubRepository(t, d, "R_kgDOexample", "org-a", "project-a")
 	otherID := insertPendingGitHubRepository(t, d, "R_kgDOother", "org-a", "project-b")
-	// Migration 59 zeroes the node IDs launch specifications embedded.
+	// Migration 60 zeroes the node IDs launch specifications embedded.
 	insertLaunchSpecForTest(t, d, "ws-converted", pendingID, `{
 		"repository":{"provider":"github","platform_host":"github.com","platform_repo_id":0},
 		"pull":{"base_repo_id":0}}`)

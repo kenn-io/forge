@@ -12,6 +12,6 @@ export interface SnapshotRepository {
   last_sync_at: string | null;
   path: string;
   provider: string;
-  provider_id: string;
+  provider_id: number;
   sync_error: string;
 }

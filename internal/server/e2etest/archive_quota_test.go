@@ -185,8 +185,9 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 		Exhausted:      true, Coverage: db.ArchiveCoverageSupported, Now: now,
 	}))
 
-	runErr := archiveService.RunEligible(t.Context())
-	require.ErrorIs(runErr, platform.ErrArchiveAttemptBudget)
+	// Exhausting admitted capacity is a normal wait, while the transport
+	// must still refuse the next upstream attempt.
+	require.NoError(archiveService.RunEligible(t.Context()))
 	assert.Equal(int32(1), upstreamCalls.Load())
 	// Provider-reserved attempts are metered by the quota registry, not the
 	// local sync budget.
@@ -198,7 +199,12 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
 	)
 	require.NoError(err)
-	assert.Equal(db.ArchiveDatasetProgressFailed, progress.Status)
+	assert.Equal(db.ArchiveDatasetProgressPending, progress.Status)
+	assert.Zero(progress.AttemptCount)
+	require.NotNil(progress.NextRetryAt)
+	assert.True(progress.NextRetryAt.After(now))
+	require.NotNil(progress.LastErrorCode)
+	assert.Equal(string(db.ArchiveErrorCodeBudgetExhausted), *progress.LastErrorCode)
 }
 
 // A large pool sitting at its own limit/5 reserve must stop hydration end to

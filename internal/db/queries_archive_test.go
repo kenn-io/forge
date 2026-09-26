@@ -1581,6 +1581,23 @@ func TestClaimArchiveItemCarriesAttemptCount(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(claim)
 	assert.Equal(2, claim.AttemptCount)
+
+	// A retry that runs out of capacity has not established recovery.
+	retryAt := now.Add(time.Minute)
+	require.NoError(d.FailArchiveItemSync(ctx, ArchiveItemSyncCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 1,
+		ScanGeneration: progress.ScanGeneration, ErrorDetail: "budget wait", Now: now,
+	}, ArchiveErrorCodeBudgetExhausted, &retryAt, true))
+	deferred, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup)
+	require.NoError(err)
+	assert.Equal(ArchiveDatasetProgressFailed, deferred.Status)
+	assert.Equal(2, deferred.AttemptCount)
+	require.NotNil(deferred.LastErrorCode)
+	assert.Equal(string(ArchiveErrorCodeTransient), *deferred.LastErrorCode)
+	require.NotNil(deferred.LastErrorDetail)
+	assert.Equal("boom", *deferred.LastErrorDetail)
+	require.NotNil(deferred.NextRetryAt)
+	assert.Equal(retryAt, *deferred.NextRetryAt)
 }
 
 func TestScanScopedRepositoryFailureIsClaimFenced(t *testing.T) {

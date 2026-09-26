@@ -187,6 +187,9 @@ func (s *Service) recordScanFailure(
 	); err != nil {
 		return errors.Join(cause, err)
 	}
+	if decision.Code == db.ArchiveErrorCodeBudgetExhausted {
+		return errAdmissionDeferred
+	}
 	return cause
 }
 
@@ -204,6 +207,9 @@ func (s *Service) recordInventoryFailure(ctx context.Context, repoID int64, caus
 		ctx, repoID, decision.Code, cause.Error(), decision.RetryAt, s.now(),
 	); err != nil {
 		return errors.Join(cause, err)
+	}
+	if decision.Code == db.ArchiveErrorCodeBudgetExhausted {
+		return errAdmissionDeferred
 	}
 	return cause
 }

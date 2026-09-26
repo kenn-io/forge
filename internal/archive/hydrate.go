@@ -118,11 +118,14 @@ func (s *Service) recordItemSyncFailure(
 	}
 	commit.ErrorDetail = cause.Error()
 	repositoryFailure := decision.Code == db.ArchiveErrorCodeAuthentication ||
-		decision.Code == db.ArchiveErrorCodeRepoBlocked
+		decision.Code == db.ArchiveErrorCodeRepoBlocked || decision.Code == db.ArchiveErrorCodeBudgetExhausted
 	if err := s.db.FailArchiveItemSync(
 		ctx, commit, decision.Code, decision.RetryAt, repositoryFailure,
 	); err != nil {
 		return errors.Join(cause, err)
+	}
+	if decision.Code == db.ArchiveErrorCodeBudgetExhausted {
+		return errAdmissionDeferred
 	}
 	return fmt.Errorf("sync archive %s %d: %w", commit.ItemType, commit.ItemNumber, cause)
 }

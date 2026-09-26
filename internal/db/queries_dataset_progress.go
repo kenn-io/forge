@@ -276,13 +276,23 @@ func (d *DB) FailArchiveItemSync(
 		if retryAt != nil {
 			retry = formatDatasetProgressTime(*retryAt)
 		}
+		status, increment := ArchiveDatasetProgressFailed, 1
+		deferred := code == ArchiveErrorCodeBudgetExhausted
+		if deferred {
+			status, increment = ArchiveDatasetProgressPending, 0
+		}
+		// Waiting for capacity must not erase an earlier failure before recovery.
 		result, err := tx.ExecContext(ctx, `
 			UPDATE forge_archive_dataset_progress
-			SET status = 'failed', attempt_count = attempt_count + 1,
-				next_retry_at = ?, last_error_code = ?, last_error_detail = ?, updated_at = ?
+			SET status = CASE WHEN ? AND status = 'failed' THEN status ELSE ? END,
+				attempt_count = attempt_count + ?, next_retry_at = ?,
+				last_error_code = CASE WHEN ? AND status = 'failed' THEN last_error_code ELSE ? END,
+				last_error_detail = CASE WHEN ? AND status = 'failed' THEN last_error_detail ELSE ? END,
+				updated_at = ?
 			WHERE repo_id = ? AND item_type = ? AND item_number = ?
 			  AND status IN ('pending', 'running', 'failed')`,
-			retry, code, sanitizeArchiveErrorDetail(commit.ErrorDetail),
+			deferred, status, increment, retry, deferred, code,
+			deferred, sanitizeArchiveErrorDetail(commit.ErrorDetail),
 			formatDatasetProgressTime(commit.Now),
 			commit.RepoID, commit.ItemType, commit.ItemNumber,
 		)

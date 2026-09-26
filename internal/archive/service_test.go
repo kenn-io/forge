@@ -18,25 +18,26 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsTransient(t *testing.T) {
+func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsDeferral(t *testing.T) {
 	assert := assert.New(t)
 	now := archiveTestTime()
 	// A budget-transport refusal may reach the classifier bare or wrapped by a
 	// provider error mapper. GitLab maps unclassified transport errors to its
 	// default invalid_repo_ref code, which would otherwise classify as a
-	// repository-blocking contract error. The refusal must stay a transient
+	// repository-blocking contract error. The refusal must stay a
 	// budget deferral in every form.
 	wrapped := &platform.Error{
 		Code: platform.ErrCodeInvalidRepoRef, Err: platform.ErrArchiveAttemptBudget,
 	}
 	for name, cause := range map[string]error{
 		"bare":              platform.ErrArchiveAttemptBudget,
+		"sync-ceiling":      platform.ErrSyncBudgetExhausted,
 		"provider-contract": wrapped,
 		"deeply-wrapped":    errors.Join(errors.New("list historical issues"), wrapped),
 	} {
 		t.Run(name, func(t *testing.T) {
 			decision := defaultArchiveRetryDecision(cause, 0, now)
-			assert.Equal(db.ArchiveErrorCodeTransient, decision.Code)
+			assert.Equal(db.ArchiveErrorCodeBudgetExhausted, decision.Code)
 			assert.NotNil(decision.RetryAt)
 		})
 	}
@@ -878,7 +879,7 @@ func TestArchiveHydrationRetryClassifierReceivesStoredAttemptCount(t *testing.T)
 	classifier := &recordingRetryClassifier{}
 	service, err := NewService(
 		database, registry, nil,
-		archiveFailingItemSource{archiveTestSource{refs: []platform.RepoRef{ref}}},
+		archiveFailingItemSource{archiveTestSource{refs: []platform.RepoRef{ref}}, errors.New("transient provider failure")},
 		classifier, fixedClock{value: now},
 	)
 	require.NoError(err)
@@ -920,15 +921,63 @@ func (c *recordingRetryClassifier) recorded() []int {
 	return append([]int(nil), c.attempts...)
 }
 
-type archiveFailingItemSource struct{ archiveTestSource }
+func TestArchiveHydrationBudgetDeferralKeepsWorkPending(t *testing.T) {
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	source := &archiveFailingItemSource{archiveTestSource{refs: []platform.RepoRef{ref}}, platform.ErrArchiveAttemptBudget}
+	service, err := NewService(database, registry, nil, source, nil, fixedClock{value: now})
+	require.NoError(t, err)
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(t, err)
+	// The first two passes discover the issue and PR inventories.
+	require.NoError(t, service.RunEligible(t.Context()))
+	require.NoError(t, service.RunEligible(t.Context()))
+	require.NoError(t, service.RunEligible(t.Context()))
+	progress, err := database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup)
+	require.NoError(t, err)
+	assert.Equal(db.ArchiveDatasetProgressPending, progress.Status)
+	assert.Zero(progress.AttemptCount)
+	require.NotNil(t, progress.NextRetryAt)
+	assert.Equal(now.Add(time.Minute), *progress.NextRetryAt)
+	status, err := service.Status(t.Context(), []platform.RepoRef{ref})
+	require.NoError(t, err)
+	require.Len(t, status, 1)
+	assert.Zero(status[0].Progress.Counts.FailedItemCount)
+	assert.Positive(status[0].Progress.Counts.PendingItemCount)
+	assert.Equal(db.ArchiveStatusWaitingForBudget, status[0].Progress.Status)
 
-func (archiveFailingItemSource) SyncArchiveItem(
+	// A later admission completes the same work without operator repair.
+	source.cause = nil
+	service.clock = fixedClock{value: now.Add(time.Minute)}
+	for range 4 {
+		require.NoError(t, service.RunEligible(t.Context()))
+	}
+	progress, err = database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup)
+	require.NoError(t, err)
+	assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status)
+	assert.Nil(progress.NextRetryAt)
+	assert.Zero(progress.AttemptCount)
+}
+
+type archiveFailingItemSource struct {
+	archiveTestSource
+	cause error
+}
+
+func (s archiveFailingItemSource) SyncArchiveItem(
 	context.Context,
 	platform.RepoRef,
 	db.ArchiveItemType,
 	int,
 ) (ItemSyncResult, error) {
-	return ItemSyncResult{ProviderAttempted: true}, errors.New("transient provider failure")
+	return ItemSyncResult{ProviderAttempted: true}, s.cause
 }
 
 type archiveTestSource struct{ refs []platform.RepoRef }

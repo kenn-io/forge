@@ -11,6 +11,10 @@ export interface Terminal {
   hide_tmux_status: boolean;
   letter_spacing: number;
   line_height: number;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
   retained_sessions: number;
   scrollback: number;
   tmux_mouse: boolean;

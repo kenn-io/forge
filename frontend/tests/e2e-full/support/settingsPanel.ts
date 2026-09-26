@@ -8,5 +8,10 @@ import type { Page } from "@playwright/test";
  */
 export async function openSettingsPanel(page: Page, label: string): Promise<void> {
   await page.locator(".settings-page").waitFor({ state: "visible", timeout: 10_000 });
-  await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: label }).click();
+  // Category summaries also contribute to the button's accessible name.
+  await page
+    .getByRole("navigation", { name: "Settings" })
+    .getByRole("button")
+    .filter({ has: page.getByText(label, { exact: true }) })
+    .click();
 }

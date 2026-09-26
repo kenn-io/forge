@@ -2007,7 +2007,7 @@ describe("WorkspaceTerminalView", () => {
     const firstHostKey = mountedSessions()[0]!.hostKey;
     const firstWrapper = document.querySelector(`[data-session-host="${firstHostKey}"]`);
 
-    for (let index = 2; index <= 6; index += 1) {
+    for (let index = 2; index <= 12; index += 1) {
       await rerender({ workspaceId: `ws-${index}` });
       await screen.findByRole("tab", { name: "Home" });
       await waitFor(() => expect(isSessionClaimed(firstHostKey)).toBe(false));

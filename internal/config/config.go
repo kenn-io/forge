@@ -767,7 +767,7 @@ const (
 	DefaultTerminalCursorBlink      = true
 	DefaultTerminalGraphics         = true
 	DefaultTerminalTmuxMouse        = true
-	DefaultTerminalRetainedSessions = 10
+	DefaultTerminalRetainedSessions = 50
 )
 
 type Terminal struct {
@@ -781,7 +781,7 @@ type Terminal struct {
 	HideTmuxStatus   bool    `toml:"hide_tmux_status,omitempty" json:"hide_tmux_status"`
 	Graphics         *bool   `toml:"graphics,omitempty" json:"graphics" nullable:"false"`
 	TmuxMouse        *bool   `toml:"tmux_mouse,omitempty" json:"tmux_mouse" nullable:"false"`
-	RetainedSessions *int    `toml:"retained_sessions,omitempty" json:"retained_sessions" nullable:"false"`
+	RetainedSessions *int    `toml:"retained_sessions,omitempty" json:"retained_sessions" nullable:"false" minimum:"0" maximum:"100"`
 }
 
 type Agent struct {
@@ -1739,9 +1739,9 @@ func (c *Config) validate() error {
 		retainedSessions := DefaultTerminalRetainedSessions
 		c.Terminal.RetainedSessions = &retainedSessions
 	}
-	if *c.Terminal.RetainedSessions < 0 || *c.Terminal.RetainedSessions > 20 {
+	if *c.Terminal.RetainedSessions < 0 || *c.Terminal.RetainedSessions > 100 {
 		return fmt.Errorf(
-			"config: invalid terminal.retained_sessions %d: must be between 0 and 20",
+			"config: invalid terminal.retained_sessions %d: must be between 0 and 100",
 			*c.Terminal.RetainedSessions,
 		)
 	}

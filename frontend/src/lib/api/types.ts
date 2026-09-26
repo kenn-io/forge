@@ -155,7 +155,7 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   hide_tmux_status: false,
   graphics: true,
   tmux_mouse: true,
-  retained_sessions: 10,
+  retained_sessions: 50,
 };
 
 export const DEFAULT_MODE_VISIBILITY: ModeVisibility = {

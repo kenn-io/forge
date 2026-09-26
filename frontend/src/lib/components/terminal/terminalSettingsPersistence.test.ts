@@ -134,7 +134,7 @@ describe("terminal settings persistence", () => {
     });
 
     expect(store.getTerminalSettings().font_size).toBe(20);
-    expect(store.getTerminalSettings().retained_sessions).toBe(10);
+    expect(store.getTerminalSettings().retained_sessions).toBe(50);
     expect(isSessionMounted(hostKey)).toBe(true);
 
     restoreTerminalSettingsPreview(store);
@@ -158,13 +158,13 @@ describe("terminal settings persistence", () => {
     });
     await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
 
-    expect(store.getTerminalSettings().retained_sessions).toBe(10);
+    expect(store.getTerminalSettings().retained_sessions).toBe(50);
     expect(isSessionMounted(hostKey)).toBe(true);
 
     failedSave.reject(new Error("settings unavailable"));
     await expect(save).rejects.toMatchObject({ _tag: "TransientTransportError" });
 
-    expect(store.getTerminalSettings().retained_sessions).toBe(10);
+    expect(store.getTerminalSettings().retained_sessions).toBe(50);
     expect(isSessionMounted(hostKey)).toBe(true);
   });
 
@@ -217,7 +217,7 @@ describe("terminal settings persistence", () => {
     await firstRetention;
     await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(2));
 
-    expect(store.getTerminalSettings().retained_sessions).toBe(10);
+    expect(store.getTerminalSettings().retained_sessions).toBe(50);
     secondSave.reject(new Error("settings unavailable"));
     await expect(secondRetention).rejects.toMatchObject({ _tag: "TransientTransportError" });
 

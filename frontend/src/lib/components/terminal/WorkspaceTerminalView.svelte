@@ -392,7 +392,7 @@
   let runtimeForHostKey = $state<string | undefined>(undefined);
   let runtimeSnapshotAuthoritative = $state(false);
   let restoredSessionKeys = $state.raw<Set<SessionHostKey> | null>(null);
-  const recentWorkspaces = createRecentDetails<{ workspace: Workspace; runtime: WorkspaceRuntimeState }>();
+  const recentWorkspaces = createRecentDetails<{ workspace: Workspace; runtime: WorkspaceRuntimeState }>(100);
   let loadError = $state<string | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);

@@ -82,15 +82,17 @@ describe("terminal settings response races", () => {
         },
       ],
     });
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(13), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(12), WAIT);
 
-    const terminalButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".kit-settings__nav-item")).find(
-      (button) => button.textContent?.includes("Terminal"),
+    const workspacesButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".kit-settings__nav-item")).find(
+      (button) => button.textContent?.includes("Workspaces"),
     );
-    terminalButton!.click();
+    workspacesButton!.click();
     const terminalPanel = await vi.waitFor(() => {
-      const panel = document.querySelector<HTMLElement>(".settings-panel:not([hidden])");
-      expect(panel?.textContent).toContain("Workspace terminal");
+      const panel = document.querySelector<HTMLElement>(
+        ".settings-panel:not([hidden]) section[aria-labelledby=workspace-terminal-title]",
+      );
+      expect(panel?.textContent).toContain("Terminal");
       return panel!;
     }, WAIT);
     const fontInput = terminalPanel.querySelector<HTMLInputElement>("#terminal-font-family")!;

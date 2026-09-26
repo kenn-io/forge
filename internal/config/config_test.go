@@ -2974,7 +2974,7 @@ name = "b"
 }
 
 func TestTerminalRetainedSessionsValidation(t *testing.T) {
-	for _, retainedSessions := range []int{-1, 21} {
+	for _, retainedSessions := range []int{-1, 101} {
 		t.Run(fmt.Sprintf("value_%d", retainedSessions), func(t *testing.T) {
 			_, err := Load(writeConfig(t, fmt.Sprintf(`
 [[repos]]

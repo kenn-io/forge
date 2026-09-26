@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getStores } from "../../context.js";
+  import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
   import {
     getSessionSlotElement,
     isSessionClaimed,
@@ -30,7 +31,7 @@
   });
 
   $effect(() => {
-    setRetainedSessionLimit(settingsStore.getTerminalSettings().retained_sessions ?? 10);
+    setRetainedSessionLimit(settingsStore.getTerminalSettings().retained_sessions ?? DEFAULT_TERMINAL_SETTINGS.retained_sessions);
   });
 
   function slotFor(hostKey: SessionHostKey): HTMLElement | null {

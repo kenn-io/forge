@@ -934,7 +934,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 		HideTmuxStatus:   true,
 		Graphics:         new(true),
 		TmuxMouse:        new(false),
-		RetainedSessions: new(4),
+		RetainedSessions: new(50),
 	}
 	body := updateSettingsRequest{
 		Activity:   &activity,
@@ -967,7 +967,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 	require.NotNil(cfg2.Terminal.Graphics)
 	assert.True(*cfg2.Terminal.Graphics)
 	require.NotNil(cfg2.Terminal.RetainedSessions)
-	assert.Equal(4, *cfg2.Terminal.RetainedSessions)
+	assert.Equal(50, *cfg2.Terminal.RetainedSessions)
 }
 
 func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {

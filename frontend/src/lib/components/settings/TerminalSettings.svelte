@@ -4,6 +4,7 @@
   import Modal from "../shared/Modal.svelte";
   import { onDestroy, untrack } from "svelte";
   import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
+  import { schemaConstraints } from "../../api/generated/schema-constraints.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { TerminalSettings as TerminalSettingsType } from "../../api/types.js";
@@ -211,7 +212,14 @@
       pendingTerminal.retained_sessions ===
         DEFAULT_TERMINAL_SETTINGS.retained_sessions
   );
-  const canSave = $derived(!saving && isDirty);
+  const retentionBounds = schemaConstraints.Terminal.retained_sessions;
+  const retentionValid = $derived(
+    retainedSessionsDraft !== null &&
+      Number.isInteger(retainedSessionsDraft) &&
+      retainedSessionsDraft >= retentionBounds.minimum &&
+      retainedSessionsDraft <= retentionBounds.maximum,
+  );
+  const canSave = $derived(!saving && isDirty && retentionValid);
   const normalizedFontFilter = $derived(fontFilterDraft.trim().toLowerCase());
   const filteredCommonMonospaceFonts = $derived(
     normalizedFontFilter === ""
@@ -343,7 +351,7 @@
   }
 
   function save(): void {
-    if (!isDirty) return;
+    if (!canSave) return;
 
     saving = true;
     onSavingChange?.(true);
@@ -475,15 +483,23 @@
         id="terminal-retained-sessions"
         class="number-input"
         type="number"
-        min="0"
-        max="20"
+        min={retentionBounds.minimum}
+        max={retentionBounds.maximum}
         step="1"
         bind:value={retainedSessionsDraft}
         disabled={saving}
+        aria-invalid={!retentionValid}
+        aria-describedby={retentionValid ? undefined : "terminal-retained-sessions-error"}
       />
+      {#if !retentionValid}
+        <span id="terminal-retained-sessions-error" class="field-help" role="alert">
+          Enter a whole number from {retentionBounds.minimum} to {retentionBounds.maximum}.
+        </span>
+      {/if}
       <span class="field-help">
         Keep recently viewed terminal sessions ready for faster workspace
-        switching. Higher values use more memory. Use 0 to disable retention.
+        switching. Each terminal or agent pane counts as one session. Higher
+        values use more memory and keep receiving terminal output. Use 0 to disable retention.
       </span>
     </label>
 

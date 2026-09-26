@@ -377,6 +377,9 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/components/detail/PullDetail.svelte::submitWorkflow`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
+- Terminal appearance and retention belong under Workspaces settings; keep them
+  searchable there rather than introducing a separate terminal category
+  (`frontend/src/lib/components/settings/SettingsPage.svelte`).
 - Settings controls persist on change. Do not add a Save button, a dirty draft,
   or a saving state that disables sibling controls; queue saves serially and
   build each payload from the latest persisted values

@@ -53,6 +53,18 @@ The follow-up addresses additional browser work and waits:
   read-only cached actions, and updates after revalidation. No additional
   detail cache was needed: preserving the server's identity enables the existing
   cache for workspace responses.
+- **Recently visited workspace shows setup again.** The workspace presentation
+  cache held only ten entries. A regression visits twelve workspaces, then holds
+  both refresh responses on return to the first: it displayed "Setting up
+  workspace" even though the first terminal's socket remained connected. Keeping
+  100 workspace presentations restores the existing pane and socket immediately.
+  The heavier PR/issue/diff caches retain their existing limits. Terminal
+  retention now defaults to 50 sessions and accepts 0–100 in Settings; saved
+  explicit values remain unchanged. Each agent or terminal pane counts separately,
+  and retained connections keep receiving output as well as consuming memory.
+- **Terminal preferences separated from workspace preferences.** Terminal
+  appearance and retention now live under Workspaces in Settings. Search keywords
+  select that category, and switching categories preserves terminal drafts.
 
 ## Existing behavior verified or traced
 
@@ -73,7 +85,7 @@ The follow-up addresses additional browser work and waits:
 
 | Path | Source-backed cost | Next discriminating check |
 | --- | --- | --- |
-| Terminal cache miss | Fresh runtime precedes a new WebSocket attachment. Presentation retains 10 workspaces, while socket retention defaults to 10 **sessions**, configurable from 0–20. Several panes per workspace can exhaust socket retention first. | Compare retained and evicted switches using `workspace-switch:*` timing entries under controlled RTT and bandwidth. |
+| Terminal cache miss | Fresh runtime precedes a new WebSocket attachment. Presentation retains 100 workspaces, while socket retention defaults to 50 **sessions**, configurable from 0–100. Several panes per workspace can exhaust socket retention first; disconnected sockets still require a fresh attachment. | Compare retained and evicted switches using `workspace-switch:*` timing entries under controlled RTT and bandwidth. |
 | Agent launch | The mutation workflow reads a runtime baseline before its launch POST, even when the view just read runtime. That baseline supports uncertain-outcome reconciliation. | Measure this read separately; assess baseline reuse or server-owned launch identity before removing it. |
 | Fleet directory | The header still receives a full `/snapshot?include_peers=true` when it needs host names. Concurrent reads are now shared. | Measure payload bytes and assess whether a smaller directory response would materially reduce transfer. |
 | Expanded Activity threads | Refreshing a collapsed snapshot can trigger thread-history reads, with pages fetched sequentially. | Compare collapsed rows with individually expanded histories and record time to the last page. |
@@ -123,3 +135,25 @@ currently impose a slow-link profile.
 - The repository-identity regression failed before the backend fix in all 12
   combinations of workspace kind and response path. After the fix, it and the
   full workspace API Go package passed with shuffled test order.
+
+## Working-set and settings verification
+
+- The held-response workspace revisit regression now covers twelve workspaces;
+  it failed with the ten-entry cache and passes with the larger cache, retaining
+  the original terminal subtree and socket. The session pool regression keeps
+  50 connected sessions and evicts the oldest when a 51st is released.
+- The navigation browser suite passes all ten cases, including Settings to
+  Workspaces with a blocked refresh: cached rows stay visible without a loading
+  placeholder and update when the response arrives.
+- All 142 full-stack browser cases in the affected settings, workspace,
+  federation, actions, and autocomplete suites pass in Chromium and Firefox.
+  All 12 settings viewport cases also pass. The first full-stack run exposed an
+  ambiguous category selector, which was corrected before this complete rerun.
+- The full config package and focused settings API tests pass. The API regression
+  verifies that saving 50 retained sessions survives configuration reload.
+  Frontend bounds are generated from the server schema; invalid drafts remain
+  local until corrected.
+- The final full Vitest run passed 4,265 tests and skipped one. Six test-server
+  lifecycle cases timed out; their full file then passed separately (26 tests)
+  without code changes. No entirely green full Vitest run is claimed. Frontend
+  formatting, lint, type and Effect checks, Go lint, formatting, and nilaway pass.

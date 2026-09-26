@@ -455,6 +455,8 @@ stale tabs.
 
 ## Released Terminal Retention
 
+- Workspace presentation and terminal retention have separate limits; a retained socket alone cannot restore an evicted workspace view. Keep workspace snapshots generous without enlarging heavier PR/issue/diff caches
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::recentWorkspaces`).
 - Repeat visits restore host-scoped workspace/runtime presentation before revalidation; cached runtime may reclaim retained sessions but cannot decide queued launches, authorize new attachments, or discard absent peers
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoredSessionKeys`).
 - Parked workspace hosts stop periodic runtime reads unless a promoted pane remains visible; this must not stop

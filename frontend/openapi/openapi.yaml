@@ -9710,6 +9710,8 @@ components:
           type: number
         retained_sessions:
           format: int64
+          maximum: 100
+          minimum: 0
           type: integer
         scrollback:
           format: int64

@@ -219,7 +219,7 @@ describe("view navigation", () => {
     expect(window.location.search).toContain("selected=pr%3A");
   });
 
-  it("shows cached Activity and Workspaces while navigation refreshes are held open", async () => {
+  it("shows cached Activity and Workspaces across Settings while navigation refreshes are held open", async () => {
     const workspace = {
       id: "ws-cached",
       repo: repoRef("acme", "widgets"),
@@ -279,6 +279,13 @@ describe("view navigation", () => {
       await page.elementLocator(viewTab("Workspaces")).click();
       await vi.waitFor(() => expect(heldPaths.has("/api/v1/snapshot")).toBe(true));
       await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
+
+      await page.getByTitle("Settings").click();
+      await vi.waitFor(() => expect(window.location.pathname).toBe("/settings"), WAIT);
+      await page.elementLocator(viewTab("Workspaces")).click();
+      await vi.waitFor(() => expect(window.location.pathname).toBe("/workspaces"), WAIT);
+      await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
+      expect(page.getByText("Loading workspaces...", { exact: true }).query()).toBeNull();
     } finally {
       holdRefreshes = false;
       releases.forEach((release) => release());

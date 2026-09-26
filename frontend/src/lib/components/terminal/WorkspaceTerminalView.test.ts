@@ -2401,6 +2401,27 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true));
   });
 
+  it("opens an acknowledged terminal before its runtime refresh returns", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+    const launch = deferred<typeof runningShellSession>();
+    mocks.launchWorkspaceSession.mockReturnValue(launch.promise);
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: /Helper/ });
+    await fireEvent.click(screen.getByRole("button", { name: "Open terminal panel" }));
+    await waitFor(() =>
+      expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "plain_shell", { region: "terminal" }),
+    );
+    const runtimeRefresh = deferred<ReturnType<typeof runtimeWithTerminalSession>>();
+    mocks.getWorkspaceRuntime.mockReturnValue(runtimeRefresh.promise);
+
+    launch.resolve(runningShellSession);
+
+    await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(true));
+    expect((screen.getByRole("button", { name: "New terminal" }) as HTMLButtonElement).disabled).toBe(false);
+    runtimeRefresh.resolve(runtimeWithTerminalSession());
+  });
+
   it("renders a split terminal immediately after launching its session", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
@@ -2514,6 +2535,8 @@ describe("WorkspaceTerminalView", () => {
     mocks.getWorkspaceRuntime
       .mockReturnValueOnce(initialRuntime.promise)
       .mockReturnValueOnce(staleRefresh.promise)
+      // The launch reads its baseline before the post-launch refresh.
+      .mockResolvedValueOnce({ launch_targets: [], sessions: [] })
       .mockReturnValueOnce(freshRefresh.promise);
     mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
 
@@ -5712,6 +5735,31 @@ describe("WorkspaceTerminalView", () => {
   });
 
   describe("promoted sessions", () => {
+    it("keeps runtime polling active for a promoted pane while its workspace host is parked", async () => {
+      const intervals: Array<{ callback: () => void; delay: number | undefined }> = [];
+      capturePollingIntervals(intervals);
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+      claimForPrs();
+      const paneKey = promoteSession("prs", "ws-1:helper");
+      getPaneLayoutStore("prs").notePaneRender({
+        activeInputTabKey: paneKey,
+        editableTabs: [paneKey, "workspace"],
+        onScreenTabs: [paneKey],
+        flattened: false,
+        soloChromeTabs: [],
+      });
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", paneSurface: "prs" as const, hostVisible: false },
+      });
+      await screen.findByRole("tab", { name: /Reviewer/ });
+      await waitFor(() => expect(intervals).toHaveLength(1));
+      const readsBeforePoll = mocks.getWorkspaceRuntime.mock.calls.length;
+
+      intervals[0]!.callback();
+
+      await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(readsBeforePoll + 1));
+    });
+
     it("leaves a connected focused workflow terminal to the pool during promotion", async () => {
       localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
       localStorage.setItem(

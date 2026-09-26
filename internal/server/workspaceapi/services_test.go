@@ -26,6 +26,64 @@ type recordingWorkspaceAutomation struct {
 	release  <-chan struct{}
 }
 
+func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+	for _, itemType := range []string{
+		db.WorkspaceItemTypePullRequest, db.WorkspaceItemTypeIssue, db.WorkspaceItemTypeAdHoc,
+	} {
+		t.Run(itemType, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			assert := assert.New(t)
+			database := dbtest.Open(t)
+			repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+			})
+			require.NoError(err)
+			ws := &db.Workspace{
+				ID: "ws-identity", Platform: "github", PlatformHost: "github.com",
+				RepoID: repoID, RepoOwner: "acme", RepoName: "widget",
+				ItemType: itemType, ItemNumber: 42, GitHeadRef: "feature/identity",
+				WorktreePath: t.TempDir(), Status: "creating",
+			}
+			if itemType == db.WorkspaceItemTypeAdHoc {
+				ws.ItemNumber = 0
+				ws.ItemKey = "adhoc:feature/identity"
+				ws.AssociatedPRNumber = new(42)
+			}
+			require.NoError(database.InsertWorkspace(t.Context(), ws))
+			manager := workspace.NewManager(database, t.TempDir())
+			handler := New(Deps{
+				DB: database, Workspaces: manager, EnrichmentDisabled: true,
+			})
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+				defer cancel()
+				require.NoError(handler.Shutdown(ctx))
+			})
+			summary, err := manager.GetSummary(t.Context(), ws.ID)
+			require.NoError(err)
+			require.NotNil(summary)
+			require.Equal("repo-acme-widget", summary.RepoPlatformID)
+			if itemType == db.WorkspaceItemTypeAdHoc {
+				require.True(summary.AssociatedPRVisible)
+			}
+
+			result, err := handler.GetWorkspaceService(t.Context(), ws.ID)
+			require.NoError(err)
+			for name, response := range map[string]WorkspaceResponse{
+				"get without enrichment": result.Workspace,
+				"cached enrichment":      handler.workspaceResponseFromEnrichmentCacheEntry(summary, nil),
+				"full enrichment":        handler.Response(t.Context(), summary),
+				"tmux enrichment":        handler.workspaceResponseWithTmuxEnrichment(t.Context(), summary).response,
+			} {
+				assert.Equal("repo-acme-widget", response.Repo.PlatformRepoID, name)
+			}
+		})
+	}
+}
+
 func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

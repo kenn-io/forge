@@ -2065,6 +2065,7 @@ func (s *Handler) probeWorkspaceEnrichment(
 	resp := toWorkspaceResponse(summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
+		summary.RepoPlatformID,
 	)
 	if s.workspaces == nil ||
 		summary.Status != "ready" {
@@ -2113,6 +2114,7 @@ func (s *Handler) workspaceResponseWithTmuxEnrichment(
 	resp := toWorkspaceResponse(summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
+		summary.RepoPlatformID,
 	)
 	if s.workspaces == nil || summary.Status != "ready" {
 		return workspaceEnrichmentProbeResult{response: resp, kind: workspaceEnrichmentTmux}

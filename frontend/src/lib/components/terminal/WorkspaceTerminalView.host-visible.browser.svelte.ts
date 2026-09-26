@@ -229,6 +229,62 @@ describe("WorkspaceTerminalView hostVisible", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  it("pauses runtime polling while parked and resumes when revealed", async () => {
+    let runtimeReads = 0;
+    const api = createMockApiFetch([
+      (request) => {
+        if (request.url.pathname !== "/api/v1/workspaces/ws-1/runtime" || request.method !== "GET") return null;
+        runtimeReads += 1;
+        return jsonResponse(emptyRuntime);
+      },
+      workspaceRoutes(),
+    ]);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = api.fetch;
+    let hostVisible = $state(true);
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    vi.useFakeTimers();
+    const instance = mount(WorkspaceTerminalView, {
+      target,
+      props: {
+        runtime,
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+        hideRightSidebar: true,
+        get hostVisible() {
+          return hostVisible;
+        },
+      },
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: createSettingsStore() }]]),
+    });
+
+    try {
+      flushSync();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(runtimeReads).toBe(1);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(runtimeReads).toBe(2);
+
+      flushSync(() => {
+        hostVisible = false;
+      });
+      await vi.advanceTimersByTimeAsync(9000);
+      expect(runtimeReads).toBe(2);
+
+      flushSync(() => {
+        hostVisible = true;
+      });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(runtimeReads).toBe(3);
+    } finally {
+      flushSync(() => unmount(instance));
+      target.remove();
+      globalThis.fetch = originalFetch;
+      vi.useRealTimers();
+    }
+  });
+
   it("clears workflow focus ownership when the host is parked", async () => {
     const api = createMockApiFetch([
       (request) =>

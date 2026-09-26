@@ -59,6 +59,8 @@ Interactive surfaces must agree on which item is selected.
 - Workspace lists retain their last successful snapshot across view changes, including empty lists;
   restore it before revalidation without keeping hidden sidebar polling alive
   (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflowService`).
+- Workspace sidebars show cached details for the selected PR or issue during revalidation;
+  a cache miss must hide the previous item's details (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
 - Restore recent details only with a verified provider/host/repository ID; an unknown
   ID requires a fresh response because owner/name routes can be reused
   (`frontend/src/lib/stores/detail.svelte.ts::loadDetail`).

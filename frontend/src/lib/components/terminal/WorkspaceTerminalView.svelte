@@ -111,6 +111,7 @@
   import { watchFleetWorkspaceDiff } from "./fleet-diff-watch.js";
   import { workspaceEventStream } from "./workspace-event-stream.js";
   import { decodeWorkspaceDetail, type WorkspaceDetail } from "./workspace-detail.js";
+  import { pollWhileVisible } from "../../effect/poll-while-visible.js";
   import { createRecentDetails } from "../../stores/recent-details.js";
   import { reconnectSchedule } from "../../api/retry-policy.js";
   import { Button, CollapsibleSidebar, SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
@@ -1419,6 +1420,14 @@
   // prevents Focus Terminal from completing the reveal on Firefox.
   const interactionVisible = $derived(hostVisible || externalControlsVisible);
 
+  $effect(() => {
+    if (!interactionVisible) return;
+    untrack(() => {
+      if (workspaceLive && workspace?.status === "ready") startRuntimePolling();
+    });
+    return stopRuntimePolling;
+  });
+
   // Handed to the detail pane's controls popover, which is where the controls live
   // once this view is embedded. Registered with the workspace it acts on, because
   // one embedded view serves every selection on its surface: the snippet is the
@@ -2589,32 +2598,30 @@
           });
         }
         const placement = state.request.placement;
-        return Effect.gen(function* () {
-          yield* fetchRuntimeProgram({ force: true });
+        return Effect.sync(() => {
           if (!isCurrentWorkspace(id, hostKey)) return false;
-          yield* Effect.sync(() => {
-            const session = state.session;
-            clearClosedSession(session);
-            if (placement.insertIntoTree) {
-              const sessionsWithLaunch = upsertRuntimeSession(session);
-              const groups = addTerminalGroup(terminalLayout.terminalGroups, session.key);
-              const activeGroupID = groups.at(-1)?.id ?? terminalLayout.activeTerminalGroupID;
-              terminalLayout = normalizeLayoutForSessions(
-                sessionsWithLaunch,
-                layoutWithTerminalGroups(
-                  {
-                    ...terminalLayout,
-                    open: true,
-                    sessionRegions: { ...terminalLayout.sessionRegions, [session.key]: "terminal" },
-                  },
-                  groups,
-                  activeGroupID,
-                ),
-              );
-            }
-            if (terminalLayout.dock === "top") selectWorkspaceTab("terminal");
-            clearRuntimeMutationPending(state);
-          });
+          const session = state.session;
+          clearClosedSession(session);
+          const sessionsWithLaunch = upsertRuntimeSession(session);
+          if (placement.insertIntoTree) {
+            const groups = addTerminalGroup(terminalLayout.terminalGroups, session.key);
+            const activeGroupID = groups.at(-1)?.id ?? terminalLayout.activeTerminalGroupID;
+            terminalLayout = normalizeLayoutForSessions(
+              sessionsWithLaunch,
+              layoutWithTerminalGroups(
+                {
+                  ...terminalLayout,
+                  open: true,
+                  sessionRegions: { ...terminalLayout.sessionRegions, [session.key]: "terminal" },
+                },
+                groups,
+                activeGroupID,
+              ),
+            );
+          }
+          if (terminalLayout.dock === "top") selectWorkspaceTab("terminal");
+          clearRuntimeMutationPending(state);
+          requestRuntime({ force: true });
           return true;
         });
       }
@@ -3590,19 +3597,20 @@
   }
 
   function startRuntimePolling(): void {
-    if (!workspaceId) return;
+    if (!workspaceId || !interactionVisible) return;
     const key = JSON.stringify([workspaceHostKey ?? null, workspaceId]);
     if (runtimePolling?.key === key) return;
     stopRuntimePolling();
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     const execution = appRuntime.runCommand(
-      Stream.fromSchedule(Schedule.spaced("3 seconds")).pipe(
-        Stream.runForEach(() =>
+      pollWhileVisible(
+        Effect.suspend(() =>
           isCurrentWorkspace(id, hostKey)
             ? fetchRuntimeProgram().pipe(Effect.asVoid)
             : Effect.void,
         ),
+        "3 seconds",
       ),
       {
         operation: "workspace.runtime.poll",

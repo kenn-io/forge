@@ -395,7 +395,7 @@ stale tabs.
 - Manual stop settlement must bound every awaited stage and publish confirmed local absence before any
   best-effort refresh; no stalled transport, authority read, or presenter may retain the pending control
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::makeWorkspaceRuntimeWorkflow`).
-- Publish confirmed workflow sessions before best-effort reloads, but keep those additions provisional: only a successful
+- Publish confirmed workflow and terminal sessions before best-effort reloads, but keep those additions provisional: only a successful
   runtime read may tombstone absent peers. Reject only definite failures; reconciliation decides uncertain launches
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::presentRuntimeMutation`).
 - Workspace terminals use xterm.js exclusively; there is no renderer setting
@@ -457,6 +457,8 @@ stale tabs.
 
 - Repeat visits restore host-scoped workspace/runtime presentation before revalidation; cached runtime may reclaim retained sessions but cannot decide queued launches, authorize new attachments, or discard absent peers
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoredSessionKeys`).
+- Parked workspace hosts stop periodic runtime reads unless a promoted pane remains visible; this must not stop
+  application-owned launch reconciliation (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::startRuntimePolling`).
 - A live view's desired set claims its sessions even when a tab is hidden; only unclaimed sessions enter the bounded, release-ordered LRU, and a zero limit disables retention (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionReleased`).
 - While a workspace switch awaits destination runtime reconciliation, cache trimming must protect that destination prefix; otherwise releasing the previous workspace can evict the pending cache hit at capacity (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::releaseOwnedSessions`).
 - Retention keeps the parsed xterm subtree and connected socket but relinquishes interaction, resize, and WebGL resources; reclaim reparents the same subtree without reconnect or replay (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`, `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::syncRendererState`).

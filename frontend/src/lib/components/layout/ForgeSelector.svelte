@@ -25,6 +25,7 @@
   const runtime = getAppRuntime();
   let hosts = $state.raw<HostSummary[]>([]);
   let loadExecution: AppExecution<void, never> | undefined;
+  let refreshing = false;
   let selectorEl = $state<HTMLDetailsElement>();
   let selectorOpen = $state(false);
   // The host whose sign-in link is being requested or opened. It stays set
@@ -64,7 +65,8 @@
   }
 
   function refresh(): void {
-    loadExecution?.interrupt();
+    if (refreshing) return;
+    refreshing = true;
     loadExecution = runtime.runCommand(
       loadSnapshotHosts().pipe(
         Effect.matchEffect({
@@ -73,6 +75,7 @@
             hosts = nextHosts;
           }),
         }),
+        Effect.ensuring(Effect.sync(() => { refreshing = false; })),
       ),
       {
         operation: "load Forge fleet directory",

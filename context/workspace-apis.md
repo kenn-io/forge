@@ -14,6 +14,8 @@ embedder protocol for arbitrary host state.
 - Materialize that entry as a local Git worktree plus tmux session.
 - Let the UI reopen the same workspace from `/workspaces` or `/terminal/:id`.
 - Carry enough item metadata to render the correct sidebar behavior.
+- Workspace response enrichment must preserve `repo.platform_repo_id` from the catalog summary;
+  frontend detail caches require that permanent identity (`internal/server/workspaceapi/helpers.go::repoRefFromParts`).
 - Persist provider workspaces by the internal repository catalog ID. Route
   requests resolve their current occupant before lookup or creation; a rename
   follows the same repository, while route reuse creates a separate workspace

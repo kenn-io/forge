@@ -50,6 +50,9 @@ func (s *Service) promptMaintenance(
 	if !mrScan.Complete() && !mrScan.Blocked() {
 		if err := s.promptPages(ctx, repo, db.ArchiveItemTypeMergeRequest, state.PromptSince.UTC(), mrScan); err != nil {
 			if !featureDeferredBeforeProvider(err) {
+				if providerWorkCompleted && errors.Is(err, errAdmissionDeferred) {
+					return &admissionDeferredError{providerAttempted: true}
+				}
 				return err
 			}
 			deferred = err
@@ -89,6 +92,7 @@ func (s *Service) promptPages(
 		kind = db.ArchiveScanMaintenanceMergeRequests
 	}
 	cursor := scan.Cursor()
+	providerWorkCompleted := false
 	for {
 		commit := db.ArchiveInventoryCommit{
 			RepoID: repo.ID, ItemType: itemType,
@@ -101,10 +105,13 @@ func (s *Service) promptPages(
 			archiveFeatureReadAttemptCost(repo.Ref.Platform, itemType),
 		)
 		if err != nil {
-			if errors.Is(err, errAdmissionDeferred) {
-				return err
+			if !errors.Is(err, errAdmissionDeferred) {
+				err = s.recordInventoryFailure(ctx, repo.ID, err)
 			}
-			return s.recordInventoryFailure(ctx, repo.ID, err)
+			if providerWorkCompleted && errors.Is(err, errAdmissionDeferred) {
+				return &admissionDeferredError{providerAttempted: true}
+			}
+			return err
 		}
 		query := platform.ItemPageQuery{
 			Order:        platform.ItemOrderUpdated,
@@ -178,6 +185,7 @@ func (s *Service) promptPages(
 		if halted || commit.Exhausted {
 			return nil
 		}
+		providerWorkCompleted = true
 		cursor = commit.NextCursor
 	}
 }

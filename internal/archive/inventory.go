@@ -188,7 +188,7 @@ func (s *Service) recordScanFailure(
 		return errors.Join(cause, err)
 	}
 	if decision.Code == db.ArchiveErrorCodeBudgetExhausted {
-		return &budgetDeferredError{providerAttempted: true}
+		return &admissionDeferredError{providerAttempted: true}
 	}
 	return cause
 }

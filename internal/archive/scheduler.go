@@ -70,13 +70,13 @@ var errAdmissionDeferred = errors.New("archive request deferred by admission")
 // provider was reached, so the pass counts as work.
 var errRequestPreempted = fmt.Errorf("archive request preempted by live work: %w", errAdmissionDeferred)
 
-// A quota refusal may stop an item after earlier provider requests succeeded.
-type budgetDeferredError struct {
+// An admission denial may follow earlier provider work in the same pass.
+type admissionDeferredError struct {
 	providerAttempted bool
 }
 
-func (e *budgetDeferredError) Error() string { return "archive request deferred by budget" }
-func (e *budgetDeferredError) Unwrap() error { return errAdmissionDeferred }
+func (e *admissionDeferredError) Error() string { return errAdmissionDeferred.Error() }
+func (e *admissionDeferredError) Unwrap() error { return errAdmissionDeferred }
 
 type featureDeferredError struct {
 	FeatureDeferral
@@ -272,7 +272,7 @@ func (s *Service) runNextInventoryWork(
 // admission denial before any provider request is idle: nothing was attempted
 // and the deferral names when to look again, so the worker may back off.
 func (s *Service) finishWork(err error) (bool, error) {
-	if deferred, ok := errors.AsType[*budgetDeferredError](err); ok {
+	if deferred, ok := errors.AsType[*admissionDeferredError](err); ok {
 		return deferred.providerAttempted, nil
 	}
 	deferred, deferredOK := errors.AsType[*featureDeferredError](err)

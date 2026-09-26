@@ -126,7 +126,7 @@ func (s *Service) recordItemSyncFailure(
 		return errors.Join(cause, err)
 	}
 	if decision.Code == db.ArchiveErrorCodeBudgetExhausted {
-		return &budgetDeferredError{providerAttempted: providerAttempted}
+		return &admissionDeferredError{providerAttempted: providerAttempted}
 	}
 	return fmt.Errorf("sync archive %s %d: %w", commit.ItemType, commit.ItemNumber, cause)
 }

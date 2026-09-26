@@ -96,40 +96,62 @@ func TestPromptMaintenanceFailureRetainsPriorWatermarkAndCommittedPages(t *testi
 }
 
 func TestPromptMaintenanceResumesDurableCursorAfterBudgetDeferral(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := dbtest.Open(t)
-	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
-	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
-	repoID := archiveServiceSeedRepo(t, database, ref)
-	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
-	service := archiveMaintenanceService(t, database, provider, ref, now)
-	completeArchiveInitial(t, service)
-	provider.updatedIssuePages = map[string]platform.Page[platform.Issue]{
-		"":   {Items: []platform.Issue{archiveTestIssue(ref)}, NextCursor: "u2"},
-		"u2": {Exhausted: true},
+	for _, tc := range []struct {
+		name       string
+		deny       bool
+		denyAfter  int
+		wantWork   bool
+		wantCursor string
+		resumeCall string
+	}{
+		{name: "before any request", deny: true, resumeCall: "updated_issues:"},
+		{name: "between pages", denyAfter: 1, wantWork: true, wantCursor: "u2", resumeCall: "updated_issues:u2"},
+		{name: "between streams", denyAfter: 2, wantWork: true, resumeCall: "updated_mrs:"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			database := dbtest.Open(t)
+			now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+			ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+			repoID := archiveServiceSeedRepo(t, database, ref)
+			provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+			service := archiveMaintenanceService(t, database, provider, ref, now)
+			completeArchiveInitial(t, service)
+			provider.updatedIssuePages = map[string]platform.Page[platform.Issue]{
+				"":   {Items: []platform.Issue{archiveTestIssue(ref)}, NextCursor: "u2"},
+				"u2": {Exhausted: true},
+			}
+			retryAt := now.Add(time.Hour)
+			service.admission = &archiveTestAdmission{deny: tc.deny, denyAfter: tc.denyAfter, retryAt: retryAt}
+
+			worked, err := service.RunPass(t.Context())
+			require.NoError(err)
+			assert.Equal(tc.wantWork, worked, "a later denial must retain earlier provider work")
+			states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+			require.NoError(err)
+			if tc.wantCursor == "" {
+				assert.Nil(states[0].MaintenanceIssues.NextCursor)
+			} else {
+				require.NotNil(states[0].MaintenanceIssues.NextCursor)
+				assert.Equal(tc.wantCursor, *states[0].MaintenanceIssues.NextCursor)
+			}
+			require.NotNil(states[0].PromptScanStartedAt)
+			assert.Nil(states[0].MaintenanceSucceededAt)
+
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(err)
+			service = newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, retryAt.Add(time.Minute))
+			provider.calls = nil
+			require.NoError(service.RunEligible(t.Context()))
+			assert.Contains(provider.calls, tc.resumeCall)
+			states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+			require.NoError(err)
+			assert.Nil(states[0].PromptScanStartedAt)
+			assert.Nil(states[0].MaintenanceIssues.NextCursor)
+			require.NotNil(states[0].MaintenanceSucceededAt)
+		})
 	}
-	retryAt := now.Add(time.Hour)
-	service.admission = &archiveTestAdmission{denyAfter: 1, retryAt: retryAt}
-
-	require.NoError(service.RunEligible(t.Context()))
-	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
-	require.NoError(err)
-	require.NotNil(states[0].MaintenanceIssues.NextCursor)
-	assert.Equal("u2", *states[0].MaintenanceIssues.NextCursor)
-	require.NotNil(states[0].PromptScanStartedAt)
-	assert.Nil(states[0].MaintenanceSucceededAt)
-
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(err)
-	service = newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, retryAt.Add(time.Minute))
-	require.NoError(service.RunEligible(t.Context()))
-	assert.Contains(provider.calls, "updated_issues:u2")
-	states, err = database.ListArchiveRepoStates(t.Context(), []int64{repoID})
-	require.NoError(err)
-	assert.Nil(states[0].PromptScanStartedAt)
-	assert.Nil(states[0].MaintenanceIssues.NextCursor)
-	require.NotNil(states[0].MaintenanceSucceededAt)
 }
 
 func TestPromptMaintenanceAdmissionReservesProviderConfirmationAttempts(t *testing.T) {

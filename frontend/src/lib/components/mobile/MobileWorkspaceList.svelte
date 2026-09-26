@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { copyToClipboard, DiffStats, formatRelativeTime, formatTimestamp, Modal, SearchInput, Spinner, StatusDot, Toggle, type StatusDotStatus } from "@kenn-io/kit-ui";
+  import QuerySearchInput from "../shared/QuerySearchInput.svelte";
+  import { copyToClipboard, DiffStats, formatRelativeTime, formatTimestamp, Modal, Spinner, StatusDot, Toggle, type StatusDotStatus } from "@kenn-io/kit-ui";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { Effect, Schedule, Stream } from "effect";
@@ -464,7 +465,7 @@
         New
       </button>
     </div>
-    <SearchInput
+    <QuerySearchInput
       value={searchQuery}
       block
       placeholder="Filter workspaces"

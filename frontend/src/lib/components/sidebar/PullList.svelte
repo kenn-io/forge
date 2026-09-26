@@ -1,4 +1,5 @@
 <script lang="ts">
+  import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import { Effect } from "effect";
   import { pollWhileVisible } from "../../effect/poll-while-visible.js";
   import { onDestroy, untrack } from "svelte";
@@ -10,7 +11,6 @@
     Chip,
     FilterDropdown,
     ScrollBox,
-    SearchInput,
     SidebarToggle,
     StatusDot,
   } from "@kenn-io/kit-ui";
@@ -468,7 +468,7 @@
   </div>
   <div class="search-bar">
     <div class="search-wrap">
-      <SearchInput
+      <QuerySearchInput
         bind:value={searchInput}
         size="sm"
         block

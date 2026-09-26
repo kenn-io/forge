@@ -1,10 +1,10 @@
 <script lang="ts">
+  import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import {
     copyToClipboard,
     formatRelativeTime,
     formatTimestamp,
     IconButton,
-    SearchInput,
     StatusDot,
     type StatusDotStatus,
   } from "@kenn-io/kit-ui";
@@ -1277,7 +1277,7 @@
     {/if}
   </div>
   <div class="workspace-filter">
-    <SearchInput
+    <QuerySearchInput
       value={searchQuery}
       size="sm"
       block

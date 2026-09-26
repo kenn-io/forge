@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { matchesSearchQuery, parseSearchQuery } from "./search-query.js";
+import { matchesSearchQuery, parseSearchQuery, searchQueryOperators } from "./search-query.js";
 
 describe("parseSearchQuery", () => {
   it.each([
@@ -28,5 +28,26 @@ describe("matchesSearchQuery", () => {
     expect(matchesSearchQuery(parseSearchQuery("fix NOT ALICE"), fields)).toBe(false);
     expect(matchesSearchQuery(parseSearchQuery("!bob"), fields)).toBe(true);
     expect(matchesSearchQuery(parseSearchQuery("fix missing"), fields)).toBe(false);
+  });
+});
+
+describe("searchQueryOperators", () => {
+  const operatorText = (search: string) =>
+    searchQueryOperators(search).map(({ start, end }) => search.slice(start, end));
+
+  it.each([
+    ["fix NOT alice !bob", ["NOT", "!"]],
+    ["! alice", ["!"]],
+    ['!"needs review"', ["!"]],
+    ["fix NOT", ["NOT"]],
+    ["do not merge", []],
+    ['"NOT" "!" wow!', []],
+    ["!NOT", ["!"]],
+  ])("marks operators in %s", (search, want) => {
+    expect(operatorText(search)).toEqual(want);
+  });
+
+  it("reports offsets past multi-unit characters", () => {
+    expect(searchQueryOperators("🚀 NOT x")).toEqual([{ start: 3, end: 6 }]);
   });
 });

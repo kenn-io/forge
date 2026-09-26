@@ -1,7 +1,7 @@
 <script lang="ts">
+  import QuerySearchInput from "./shared/QuerySearchInput.svelte";
   import {
     EmptyState,
-    SearchInput,
     Spinner,
     Toggle,
     type TypeaheadOption,
@@ -727,7 +727,7 @@
     {/if}
 
     <div class="search-wrap">
-      <SearchInput
+      <QuerySearchInput
         bind:value={searchInput}
         size="sm"
         block

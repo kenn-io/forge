@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { IconButton, SearchInput } from "@kenn-io/kit-ui";
+  import QuerySearchInput from "../shared/QuerySearchInput.svelte";
+  import { IconButton } from "@kenn-io/kit-ui";
   import FunnelIcon from "@lucide/svelte/icons/funnel";
   import type { Snippet } from "svelte";
 
@@ -32,7 +33,7 @@
 
 <div class="mobile-triage-search-bar">
   <div class="mobile-triage-search-bar__search">
-    <SearchInput
+    <QuerySearchInput
       bind:value
       size="sm"
       block

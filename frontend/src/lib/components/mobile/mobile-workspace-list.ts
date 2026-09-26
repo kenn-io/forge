@@ -1,4 +1,5 @@
 import { createRepoLabelFormatter, repoIdentityKey } from "../../utils/repo-label.js";
+import { isEmptySearchQuery, matchesSearchQuery, parseSearchQuery } from "../../utils/search-query.js";
 import type { WorkspaceListItem } from "../terminal/workspace-list-schema.js";
 import {
   workspaceAgentStatePriority,
@@ -53,8 +54,8 @@ export function mobileWorkspaceItemNumber(workspace: WorkspaceListItem): number 
 }
 
 export function workspaceMatchesMobileSearch(workspace: WorkspaceListItem, rawQuery: string): boolean {
-  const query = rawQuery.trim().toLowerCase();
-  if (!query) return true;
+  const query = parseSearchQuery(rawQuery);
+  if (isEmptySearchQuery(query)) return true;
   const number = mobileWorkspaceItemNumber(workspace);
   const values = [
     mobileWorkspaceDisplayName(workspace),
@@ -73,7 +74,7 @@ export function workspaceMatchesMobileSearch(workspace: WorkspaceListItem, rawQu
     number === null ? undefined : String(number),
     number === null ? undefined : `#${number}`,
   ];
-  return values.some((value) => value?.toLowerCase().includes(query));
+  return matchesSearchQuery(query, values);
 }
 
 export function sortMobileWorkspaces(

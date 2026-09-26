@@ -92,6 +92,8 @@ describe("mobile workspace list model", () => {
     expect(workspaceMatchesMobileSearch(items[1]!, "#42")).toBe(true);
     expect(workspaceMatchesMobileSearch(remote, "phone-dev")).toBe(true);
     expect(workspaceMatchesMobileSearch(items[1]!, "unrelated")).toBe(false);
+    expect(workspaceMatchesMobileSearch(items[1]!, "NOT feature")).toBe(false);
+    expect(workspaceMatchesMobileSearch(items[1]!, "#42 !unrelated")).toBe(true);
   });
 
   it("links an issue workspace to the PR it produced once one exists", () => {

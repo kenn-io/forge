@@ -1543,7 +1543,7 @@ func localWorkspaceActivityOptions(input *listActivityInput, now time.Time) (db.
 	opts := db.ListActivityOpts{
 		RepoFilters: parseRepoFilters(input.Repo),
 		ItemTypes:   input.ItemTypes,
-		Search:      strings.ToLower(strings.TrimSpace(input.Search)),
+		Search:      strings.TrimSpace(input.Search),
 		Author:      strings.TrimSpace(input.Author),
 		Unassigned:  input.Unassigned,
 	}
@@ -1648,7 +1648,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		RepoFilters: parseRepoFilters(input.Repo),
 		Types:       input.Types,
 		ItemTypes:   input.ItemTypes,
-		Search:      strings.ToLower(strings.TrimSpace(input.Search)),
+		Search:      strings.TrimSpace(input.Search),
 		Author:      strings.TrimSpace(input.Author),
 		Unassigned:  input.Unassigned,
 		// Notifications are always on; this only drops notification rows in
@@ -1775,8 +1775,11 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		}
 	}
 	workspaceEventItems := items
+	// Only included terms can surface a parent through its events; excluded
+	// terms filter parents by their own fields in ListActivitySubjects.
+	searchHasIncludes := len(db.ParseSearchQuery(opts.Search).Include) > 0
 	hasFullWorkspaceEventItems := projection != "events" &&
-		opts.Search != "" && (opts.AfterTime != nil || projection == "collapsed")
+		searchHasIncludes && (opts.AfterTime != nil || projection == "collapsed")
 	if hasFullWorkspaceEventItems {
 		workspaceOpts := opts
 		workspaceOpts.AfterTime = nil
@@ -1792,9 +1795,9 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 	// Search-matched parents are derived from the bounded event read, so an
 	// event page that overflowed can hide parents whose only matches fell off
 	// it; report that as parent truncation rather than a complete snapshot.
-	searchMatchesTruncated := opts.Search != "" && len(workspaceEventItems) > activitySafetyCap
+	searchMatchesTruncated := searchHasIncludes && len(workspaceEventItems) > activitySafetyCap
 	var searchMatchedSubjectKeys []db.WorkspaceSubjectKey
-	if opts.Search != "" {
+	if searchHasIncludes {
 		searchMatchedSubjectKeys = make([]db.WorkspaceSubjectKey, 0, len(workspaceEventItems))
 		for _, item := range workspaceEventItems {
 			if item.ItemType != "pr" && item.ItemType != "issue" {
@@ -2112,8 +2115,9 @@ func (s *Server) workspaceActivityResponse(
 	for _, repoID := range opts.AllowedRepoIDs {
 		allowedRepoIDs[repoID] = struct{}{}
 	}
+	searchQuery := db.ParseSearchQuery(opts.Search)
 	matchedSubjects := make(map[db.WorkspaceSubjectKey]struct{})
-	if opts.Search != "" {
+	if len(searchQuery.Include) > 0 {
 		for _, item := range providerItems {
 			itemType := workspaceItemTypeFromActivity(item.ItemType)
 			if itemType == "" {
@@ -2151,12 +2155,16 @@ func (s *Server) workspaceActivityResponse(
 		if opts.Author != "" && !strings.EqualFold(subject.Author, opts.Author) {
 			continue
 		}
-		if opts.Search != "" {
-			haystack := strings.ToLower(strings.Join([]string{
+		if !searchQuery.Empty() {
+			fields := []string{
 				subject.Title, subject.Author, subject.RepoOwner + "/" + subject.RepoName,
 				subject.RepoPath, "#" + strconv.Itoa(key.ItemNumber),
-			}, " "))
-			if !matchedProviderEvent && !strings.Contains(haystack, opts.Search) {
+			}
+			// Excluded terms always apply to the subject's own fields; a
+			// matching provider event only satisfies the included terms.
+			included := matchedProviderEvent ||
+				(db.SearchQuery{Include: searchQuery.Include}).Matches(fields...)
+			if !included || !(db.SearchQuery{Exclude: searchQuery.Exclude}).Matches(fields...) {
 				continue
 			}
 		}

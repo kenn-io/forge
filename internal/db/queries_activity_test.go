@@ -1497,6 +1497,64 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 	})
 }
 
+func TestListActivitySearchExcludesNegatedItemAuthor(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "example", "negation")
+	excludedID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
+		withMRTitle("Excluded author's pull"), withMRAuthor("excluded-author"), withMRActivity(base)))
+	insertTestMRWithOptions(t, d, testMR(repoID, 2,
+		withMRTitle("Kept pull"), withMRAuthor("kept-author"), withMRActivity(base)))
+	// A comment by someone else still belongs to the excluded author's pull.
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: excludedID,
+		EventType:      "issue_comment",
+		Author:         "commenter",
+		Body:           "Looks ready",
+		CreatedAt:      base.Add(time.Minute),
+		DedupeKey:      "negation-comment",
+	}}))
+
+	for _, search := range []string{"NOT excluded-author", "!excluded-author"} {
+		items, err := d.ListActivity(ctx, ListActivityOpts{Search: search, Limit: 50})
+		require.NoError(err)
+		require.NotEmpty(items)
+		for _, item := range items {
+			assert.Equal(2, item.ItemNumber, "search %q", search)
+		}
+	}
+}
+
+func TestListActivitySubjectsExcludedTermOverridesMatchedEvents(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "alice", "alpha")
+	insertTestMRWithOptions(t, d, testMR(repoID, 1,
+		withMRTitle("Needle work"), withMRAuthor("excluded-author"), withMRActivity(now.Add(-time.Hour))))
+	insertTestMRWithOptions(t, d, testMR(repoID, 2,
+		withMRTitle("Needle work"), withMRAuthor("kept-author"), withMRActivity(now.Add(-2*time.Hour))))
+
+	subjects, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{
+		Search: "needle NOT excluded-author",
+		SearchMatchedSubjectKeys: []WorkspaceSubjectKey{
+			{RepoID: repoID, ItemType: "pr", ItemNumber: 1},
+		},
+		Limit: 50,
+	})
+	require.NoError(err)
+	require.Len(subjects, 1)
+	assert.Equal(2, subjects[0].Subject.Key.ItemNumber)
+}
+
 func testBranchCommit(
 	repoID int64,
 	branch string,

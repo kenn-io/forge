@@ -275,6 +275,14 @@ Persisted controls must state their scope clearly.
 - Workspace item search opens on demand from the toolbar; occasional navigation
   must not reserve a permanent row above the details
   (`frontend/src/lib/components/workspace/WorkspaceItemSearch.svelte::mountSearchPopover`).
+- Pulls, Issues, Activity, and Workspaces search share one grammar: ANDed terms, quoted
+  phrases, and `!term` or uppercase standalone `NOT`/`!` exclusions; Go and TypeScript
+  parsers must stay in step (`internal/db/search_query.go::ParseSearchQuery`).
+- Those search boxes render through `QuerySearchInput`, which tints operators from the
+  parser's own ranges beneath the transparent native input so text never misaligns
+  (`frontend/src/lib/components/shared/QuerySearchInput.svelte`).
+- Activity excludes parents by their own fields; only included terms may match through
+  child events (`internal/db/queries_activity.go::listActivitySubjectsWithQueryer`).
 - Zero-padded PR searches such as `0001` opt into exact number matching before
   pagination, so newer substring matches cannot hide old PRs
   (`internal/db/queries.go::ListMergeRequests`).

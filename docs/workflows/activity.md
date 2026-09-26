@@ -18,6 +18,13 @@ The filters can narrow the queue by:
 - open or closed state
 - human or bot activity
 
+Text search matches every word you type. Put `!` or `NOT` before a word to
+exclude it: `fix NOT alice` finds items that match "fix" and hides anything
+that matches "alice", including items alice opened. Quote a phrase to keep it together, as in
+`!"needs review"`. The search box highlights `!` and `NOT` when they act as
+operators. The Pulls, Issues, and Workspaces search boxes read queries the same
+way.
+
 Filter choices stay in the Activity URL. You can bookmark a useful queue or
 send the link to another Kenn Forge user with access to the same repositories.
 Refreshing preserves the selected time range and **Hide closed/merged** choice,

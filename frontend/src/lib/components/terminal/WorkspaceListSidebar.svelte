@@ -1,10 +1,10 @@
 <script lang="ts">
+  import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import {
     copyToClipboard,
     formatRelativeTime,
     formatTimestamp,
     IconButton,
-    SearchInput,
     StatusDot,
     type StatusDotStatus,
   } from "@kenn-io/kit-ui";
@@ -67,6 +67,12 @@
     type WorkspaceListItem,
   } from "./workspace-list-schema.js";
   import { parseRepoFilterValue } from "../../stores/filter.svelte.js";
+  import {
+    isEmptySearchQuery,
+    matchesSearchQuery,
+    parseSearchQuery,
+    type SearchQuery,
+  } from "../../utils/search-query.js";
   import {
     canonicalRepoFilterValue,
     type RepoFilterIdentity,
@@ -206,9 +212,8 @@
     items: Workspace[];
   };
 
-  const normalizedSearchQuery = $derived(
-    searchQuery.trim().toLowerCase(),
-  );
+  const parsedSearchQuery = $derived(parseSearchQuery(searchQuery));
+  const hasSearchQuery = $derived(!isEmptySearchQuery(parsedSearchQuery));
   const selectedRepoValues = $derived(new Set(parseRepoFilterValue(selectedRepos)));
   const deleteConfirmBusy = $derived(
     deleteConfirmWorkspace !== null &&
@@ -226,12 +231,12 @@
           );
           return value !== null && selectedRepoValues.has(value);
         });
-    if (!normalizedSearchQuery) return scoped;
-    return scoped.filter((ws) => workspaceMatchesSearch(ws, normalizedSearchQuery));
+    if (!hasSearchQuery) return scoped;
+    return scoped.filter((ws) => workspaceMatchesSearch(ws, parsedSearchQuery));
   });
 
   const sidebarCountLabel = $derived(
-    normalizedSearchQuery || selectedRepoValues.size > 0
+    hasSearchQuery || selectedRepoValues.size > 0
       ? `${visibleWorkspaces.length}/${workspaces.length}`
       : `${workspaces.length}`,
   );
@@ -544,7 +549,7 @@
 
   function workspaceMatchesSearch(
     ws: Workspace,
-    query: string,
+    query: SearchQuery,
   ): boolean {
       const haystack: Array<string | undefined> = [
       displayName(ws),
@@ -597,9 +602,7 @@
       );
     }
 
-    return haystack.some((value) =>
-      value?.toLowerCase().includes(query),
-    );
+    return matchesSearchQuery(query, haystack);
   }
 
   function workspaceStatus(ws: Workspace): StatusDotStatus {
@@ -1274,7 +1277,7 @@
     {/if}
   </div>
   <div class="workspace-filter">
-    <SearchInput
+    <QuerySearchInput
       value={searchQuery}
       size="sm"
       block
@@ -1305,7 +1308,7 @@
     {#if sortMode === "repo"}
     {#each grouped as { key: repoKey, items } (repoKey)}
       {@const collapsed =
-        !normalizedSearchQuery && collapsedGroups.includes(repoKey)}
+        !hasSearchQuery && collapsedGroups.includes(repoKey)}
       <GroupedSidebarSection
         label={repoLabel(items[0]!)}
         count={items.length}
@@ -1548,7 +1551,7 @@
       <p class="filter-empty">Loading workspaces...</p>
     {:else if workspaceListStatus === "retrying" && workspaces.length === 0}
       <p class="filter-empty">Still loading workspaces. Retrying...</p>
-    {:else if visibleWorkspaces.length === 0 && normalizedSearchQuery}
+    {:else if visibleWorkspaces.length === 0 && hasSearchQuery}
       <p class="filter-empty">No workspaces match.</p>
     {:else if visibleWorkspaces.length === 0}
       <p class="filter-empty">No workspaces yet.</p>

@@ -1269,6 +1269,12 @@ describe("WorkspaceListSidebar", () => {
     });
     expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
     expect(screen.getByText("Add notification inbox triage")).toBeTruthy();
+
+    await fireEvent.input(filter, {
+      target: { value: "kenn-io NOT huma !#224" },
+    });
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(1);
+    expect(screen.getByText("Hosted code fetch and caching strategy")).toBeTruthy();
   });
 
   it("shows matching workspaces in collapsed groups while filtering", async () => {

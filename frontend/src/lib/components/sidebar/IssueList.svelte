@@ -18,6 +18,13 @@
   import type { Issue } from "../../api/types.js";
   import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import {
+    INITIAL_RENDER_BUDGET,
+    RENDER_BUDGET_STEP,
+    applyGroupRenderBudget,
+    effectiveRenderBudget,
+    revealWhenNear,
+  } from "../../utils/render-budget.js";
+  import {
     buildIssueRoute,
     type IssueRouteRef,
   } from "../../routes.js";
@@ -237,6 +244,55 @@
       && sel.provider === ref.provider
       && sel.platformHost === ref.platformHost;
   }
+
+  // Mount rows progressively so large result sets do not block the main
+  // thread on every filter change. The budget resets when the query changes.
+  const renderViewKey = $derived(JSON.stringify([
+    issues.getIssueFilterState(),
+    issues.getIssueSearchQuery(),
+    issues.getIssueFilterStarred(),
+    issues.getInvolvesMe(),
+    issues.getUnassigned(),
+    issues.getReferencedByPR(),
+    issues.getHideBots(),
+    grouping.getGroupByRepo(),
+  ]));
+  let renderBudget = $derived.by(() => {
+    void renderViewKey;
+    return INITIAL_RENDER_BUDGET;
+  });
+
+  const displayGroups = $derived(
+    grouping.getGroupByRepo()
+      ? [...issues.issuesByRepo().entries()].map(([repo, items]) => ({
+        repo,
+        items,
+        count: items.length,
+        collapsed: collapsedRepos.isCollapsed("issues", repo),
+      }))
+      : null,
+  );
+
+  const selectedDisplayIndex = $derived.by(() => {
+    if (issues.getSelectedIssue() === null) return -1;
+    const ordered = displayGroups === null
+      ? issues.getIssues()
+      : displayGroups.flatMap((group) => (group.collapsed ? [] : group.items));
+    return ordered.findIndex((issue) => isSelected(routeRefForIssue(issue)));
+  });
+
+  const mountBudget = $derived(effectiveRenderBudget(renderBudget, selectedDisplayIndex));
+  const renderedGroups = $derived(
+    displayGroups === null ? null : applyGroupRenderBudget(displayGroups, mountBudget),
+  );
+  const renderedFlatIssues = $derived(issues.getIssues().slice(0, mountBudget));
+  const hasUnmountedRows = $derived(
+    renderedGroups === null ? issues.getIssues().length > mountBudget : renderedGroups.truncated,
+  );
+
+  function revealMoreRows(): void {
+    renderBudget = mountBudget + RENDER_BUDGET_STEP;
+  }
 </script>
 
 <div class="issue-list">
@@ -348,9 +404,8 @@
     {:else if issues.getIssues().length === 0}
       <p class="state-message">No issues found.</p>
     {:else}
-      {#if grouping.getGroupByRepo()}
-        {#each [...issues.issuesByRepo().entries()] as [repo, repoIssues] (repo)}
-          {@const collapsed = collapsedRepos.isCollapsed("issues", repo)}
+      {#if renderedGroups !== null}
+        {#each renderedGroups.groups as { repo, items: repoIssues, count, collapsed } (repo)}
           {@const repoLabel = repoIssues[0] ? repoLabelFormatter.format({
             provider: repoIssues[0].repo.provider,
             platformHost: repoIssues[0].repo.platform_host,
@@ -360,7 +415,7 @@
           }) : repo}
           <GroupedSidebarSection
             label={repoLabel}
-            count={repoIssues.length}
+            {count}
             {collapsed}
             onclick={() => collapsedRepos.toggle("issues", repo)}
           >
@@ -383,7 +438,7 @@
           </GroupedSidebarSection>
         {/each}
       {:else}
-        {#each issues.getIssues() as issue (issue.ID)}
+        {#each renderedFlatIssues as issue (issue.ID)}
           {@const issueRef = routeRefForIssue(issue)}
           <IssueItem
             {issue}
@@ -400,6 +455,11 @@
           />
         {/each}
       {/if}
+      {#if hasUnmountedRows}
+        {#key mountBudget}
+          <div class="render-sentinel" aria-hidden="true" {@attach revealWhenNear(revealMoreRows)}></div>
+        {/key}
+      {/if}
     {/if}
   </ScrollBox>
   <div class="sidebar-footer">
@@ -412,6 +472,10 @@
 </div>
 
 <style>
+  .render-sentinel {
+    height: 1px;
+  }
+
   .issue-list {
     display: flex;
     flex-direction: column;

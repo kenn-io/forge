@@ -226,6 +226,9 @@ test.describe("PR list view", () => {
     await expect(page.locator(".pull-detail .sync-indicator")).toBeVisible();
     await expect(page.locator(".pull-detail .refresh-banner")).toHaveCount(0);
     await expect(page.getByText("Refreshing...", { exact: true })).toHaveCount(0);
+    // The stale detail triggers a background sync and refetch that can still
+    // be inside route.fetch when the test ends.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 });
 

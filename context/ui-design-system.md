@@ -317,6 +317,11 @@ is actually truncated, measured at show time
 
 Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap large always-visible vertical scroll panes (list rails, diff area, pull/issue detail, activity views) in `ScrollBox` for consistent flex sizing, native vertical scrolling, and a labelled focusable region; bind `viewport` when a host needs imperative scroll logic, and note the scrolling element is the viewport, not the host's content wrapper class. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`frontend/src/lib/components/shared/GroupedSidebarSection.svelte`, `ScrollBox` from `@kenn-io/kit-ui` — see kit-ui's `docs/components/scroll-box.md`, `frontend/src/app.css:39`)
 
+Long lists use kit-ui `VirtualList`; missing list capabilities belong in kit-ui, not a
+forge-only windowing helper, and forge does not re-test kit-owned virtualization. The PR
+and issue sidebars' scroll budget is a stopgap until `VirtualList` supports grouped rows
+with sticky headers (`frontend/src/lib/utils/render-budget.ts::revealWhenNear`).
+
 ### SplitResizeHandle and BottomDock
 
 Use kit-ui `SplitResizeHandle` for horizontal and vertical pane dividers,

@@ -695,6 +695,7 @@ export * from "./repoBrowserRef.ts";
 export * from "./repoBrowserRefsResponse.ts";
 export * from "./repoBrowserTreeEntry.ts";
 export * from "./repoBrowserTreeResponse.ts";
+export * from "./repoCatalogResponse.ts";
 export * from "./repoLabelsResponse.ts";
 export * from "./repoOperations.ts";
 export * from "./repoPreset.ts";

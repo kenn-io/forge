@@ -15076,15 +15076,6 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 	assert.Equal(false, summaryCaps["issue_mutation"])
 	assert.Equal(false, summaryCaps["read_review_threads"])
 
-	rawRepos := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
-	require.Equal(http.StatusOK, rawRepos.Code, rawRepos.Body.String())
-	var repos []map[string]any
-	require.NoError(json.NewDecoder(rawRepos.Body).Decode(&repos))
-	require.Len(repos, 1)
-	repoCaps := repos[0]["capabilities"].(map[string]any)
-	assert.Equal(true, repoCaps["read_repositories"])
-	assert.Equal(false, repoCaps["comment_mutation"])
-
 	repo, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     "gitlab",
 		PlatformHost: "gitlab.example.com",

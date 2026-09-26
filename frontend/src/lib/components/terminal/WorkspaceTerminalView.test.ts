@@ -3531,13 +3531,16 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/workspaces"));
   });
   it("launches an explicitly queued target without a confirmation modal", async () => {
+    const admission = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
+    const launched = deferred<typeof runningSession>();
     queueWorkspaceLaunch("ws-1", "codex", undefined);
-    mocks.getWorkspaceRuntime
-      .mockResolvedValueOnce(runtimeWithCodexTarget())
-      .mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
-    mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
+    mocks.getWorkspaceRuntime.mockReturnValueOnce(admission.promise).mockReturnValue(new Promise(() => {}));
+    mocks.launchWorkspaceSession.mockReturnValue(launched.promise);
 
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1));
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    admission.resolve(runtimeWithCodexTarget());
 
     await waitFor(() => {
       expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", {
@@ -3545,11 +3548,65 @@ describe("WorkspaceTerminalView", () => {
         region: "workflow",
       });
     });
+    expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1);
+    launched.resolve(runningSession);
     expect(
       screen.queryByRole("dialog", {
         name: /Launch default agent/,
       }),
     ).toBeNull();
+  });
+
+  it("uses local ready events to launch before a held detail refresh, with one fresh admission read", async () => {
+    const events = installEventSourceRecorder();
+    const setupPolling: Array<{ callback: () => void; delay: number | undefined }> = [];
+    capturePollingIntervals(setupPolling);
+    const detailRefresh = deferred<Response>();
+    const admission = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
+    let details = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (new URL(url, "http://localhost").pathname.endsWith("/workspaces/ws-1")) {
+          details += 1;
+          return details === 1 ? Response.json({ ...workspaceResponse, status: "creating" }) : detailRefresh.promise;
+        }
+        return Response.json({ workspaces: [] });
+      }),
+    );
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockReturnValueOnce(admission.promise).mockReturnValue(new Promise(() => {}));
+    mocks.launchWorkspaceSession.mockReturnValue(new Promise(() => {}));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(setupPolling.some((timer) => timer.delay === 3000)).toBe(true));
+    await waitFor(() => expect(latestWorkspaceEventListeners(events).workspace_status).toBeTypeOf("function"));
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    latestWorkspaceEventListeners(events).workspace_status?.(
+      new MessageEvent("workspace_status", { data: JSON.stringify({ id: "ws-1", status: "ready" }) }),
+    );
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1));
+    admission.resolve(runtimeWithCodexTarget());
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries failed queued admission through the next fresh runtime poll", async () => {
+    const polls: Array<{ callback: () => void; delay: number | undefined }> = [];
+    capturePollingIntervals(polls);
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime
+      .mockRejectedValueOnce(new Error("admission unavailable"))
+      .mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockReturnValue(new Promise(() => {}));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByText("admission unavailable");
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    expect(pendingWorkspaceLaunch("ws-1", undefined)?.phase).toBe("queued");
+    await waitFor(() => expect(polls).toHaveLength(1));
+    polls[0]!.callback();
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2);
   });
 
   it("routes an agent session wheel gesture through the workspace terminal", async () => {
@@ -3941,17 +3998,20 @@ describe("WorkspaceTerminalView", () => {
     expect(tab.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("reacts when intent is queued after an already-ready workspace renders", async () => {
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
-    mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
+  it("reads fresh admission when intent is queued after an already-ready workspace renders", async () => {
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(false));
+    mocks.launchWorkspaceSession.mockReturnValue(new Promise(() => {}));
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await screen.findByRole("tab", { name: "Home" });
-
+    const admission = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
+    mocks.getWorkspaceRuntime.mockReturnValue(admission.promise);
     queueWorkspaceLaunch("ws-1", "codex", undefined);
-
-    await waitFor(() => {
-      expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+    admission.resolve(runtimeWithCodexTarget());
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2);
   });
 
   it("allows an explicit fork-workspace launch", async () => {

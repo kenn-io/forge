@@ -160,6 +160,46 @@ it("offers Reconnect for an unreachable devbox", async () => {
   expect(screen.queryByText(/No devboxes are assigned/)).toBeNull();
 });
 
+it("lets saved machines and local preference save while registry discovery is pending", async () => {
+  const discovered = Promise.withResolvers<Response>();
+  const savedPreference = Promise.withResolvers<Response>();
+  const writes: unknown[] = [];
+  let saved = structuredClone(mockSettings);
+  vi.stubGlobal(
+    "fetch",
+    createMockApiFetch([
+      ({ method, url, bodyText }) => {
+        if (url.pathname === "/api/v1/devboxes") return Response.json([connection]);
+        if (url.pathname === "/api/v1/devboxes/discovery") return discovered.promise;
+        if (url.pathname === "/api/v1/settings") {
+          if (method === "PUT") {
+            const body = JSON.parse(bodyText);
+            writes.push(body.workspaces.default_execution_target);
+            saved = { ...saved, workspaces: { ...saved.workspaces, ...body.workspaces } };
+            return writes.length === 1 ? savedPreference.promise : Response.json(saved);
+          }
+          return Response.json(saved);
+        }
+      },
+    ]).fetch,
+  );
+  render(SettingsRuntimeHarness, { component: DevboxSettings, componentProps: {} });
+  const remote = (await screen.findByRole("radio", { name: "Run new workspaces on Build A" })) as HTMLInputElement;
+  const local = screen.getByRole("radio", { name: "Run new workspaces on this Forge machine" }) as HTMLInputElement;
+  expect(remote.disabled).toBe(false);
+  expect(local.disabled).toBe(false);
+  await fireEvent.click(remote);
+  await waitFor(() => expect(writes).toEqual(["devbox:connection-a"]));
+  discovered.resolve(Response.json(discovery));
+  await screen.findByText("https://registry.example.test");
+  expect(local.disabled).toBe(true);
+  savedPreference.resolve(Response.json(saved));
+  await waitFor(() => expect(local.disabled).toBe(false));
+  expect(remote.checked).toBe(true);
+  await fireEvent.click(local);
+  await waitFor(() => expect(writes).toEqual(["devbox:connection-a", ""]));
+});
+
 it("keeps saved machines visible when discovery fails, then explains an empty assignment list", async () => {
   let fail = true;
   const api = createMockApiFetch([

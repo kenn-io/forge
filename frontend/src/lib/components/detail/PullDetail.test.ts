@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { tick, type ComponentProps } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import type { DiffResult, Label, PullDetail } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { NAVIGATE_KEY, STORES_KEY } from "../../context.js";
@@ -89,6 +89,7 @@ vi.mock("../../utils/markdown.js", async (importOriginal) => {
 
 import PullDetailComponent from "./PullDetail.svelte";
 import PullDetailTestHarness from "./PullDetailTestHarness.svelte";
+import { getCommentDraftKey, setCommentDraft } from "./comment-drafts.svelte.js";
 
 const capabilities = {
   read_repositories: true,
@@ -235,6 +236,7 @@ function renderPullDetail(
     onOpenWorkspace?: (workspaceId: string) => void;
     hideTabs?: boolean;
     detailLoading?: boolean;
+    detailFromCache?: boolean;
     detailSyncing?: boolean;
     deferRefresh?: boolean;
     refreshFailure?: string;
@@ -294,7 +296,7 @@ function renderPullDetail(
     stopDetailPolling: vi.fn(),
     getDetail: () => detail,
     getDetailEnvelopeTick: () => envelopeTick,
-    isDetailFromCache: () => false,
+    isDetailFromCache: () => options.detailFromCache ?? false,
     isDetailLoading: () => options.detailLoading ?? false,
     getDetailError: () => null,
     isDetailSyncing: () => options.detailSyncing ?? false,
@@ -346,6 +348,7 @@ function renderPullDetail(
         runMergeAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
     ),
     editComment: vi.fn(),
+    submitComment: vi.fn(),
     savePRBodyInBackground: vi.fn(),
     setLocalPRBody: vi.fn(),
     applyReviewSuggestions: vi.fn(
@@ -1030,6 +1033,38 @@ describe("PullDetail provider workflow actions", () => {
 });
 
 describe("PullDetail activity refresh", () => {
+  it.each([false, true])("allows a cached pull draft only for the selected item (mismatch=%s)", async (mismatch) => {
+    const detail = pullDetail();
+    detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };
+    detail.repo.operations = { add_comment: { available: true } };
+    const number = detail.merge_request.Number + (mismatch ? 1 : 0);
+    const draftKey = getCommentDraftKey("pull", {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number,
+      platformRepoId: detail.repo.platform_repo_id,
+    });
+    setCommentDraft(draftKey, "Draft while refreshing");
+    onTestFinished(() => setCommentDraft(draftKey, ""));
+    const { container, detailStore } = renderPullDetail(detail, undefined, undefined, {
+      detailFromCache: true,
+      detailLoading: true,
+      detailProps: { number },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector(".comment-editor-input")?.textContent).toBe("Draft while refreshing"),
+    );
+    expect(container.querySelector(".comment-editor-input")?.getAttribute("contenteditable")).toBe(String(!mismatch));
+    const submit = screen.getByRole("button", { name: "Comment", exact: true }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    await fireEvent.click(submit);
+    expect(detailStore.submitComment).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     cleanup();
     for (const item of getFlashes()) dismissFlash(item.id);
@@ -2734,18 +2769,23 @@ describe("PullDetail inline workspace handoff", () => {
     const detail = pullDetail();
     detail.platform_host = platformHost;
     Object.assign(detail.repo, { Host: platformHost, PlatformHost: platformHost, platform_host: platformHost });
+    const snapshot = Promise.withResolvers<unknown>();
     const apiClient = {
-      GET: vi.fn().mockResolvedValue({
-        data: {
-          hosts: [
-            {
-              configKey: "devbox:compute-a",
-              kind: "devbox",
-              operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
-            },
-          ],
-        },
-      }),
+      GET: vi.fn().mockImplementation(() =>
+        reason
+          ? Promise.resolve({
+              data: {
+                hosts: [
+                  {
+                    configKey: "devbox:compute-a",
+                    kind: "devbox",
+                    operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
+                  },
+                ],
+              },
+            })
+          : snapshot.promise,
+      ),
       POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
     };
     renderPullDetail(detail, undefined, apiClient, {
@@ -2769,6 +2809,7 @@ describe("PullDetail inline workspace handoff", () => {
         ),
       );
     }
+    snapshot.resolve({ data: { hosts: [] } });
   });
 
   function deferredWorkspaceApiClient() {
@@ -3216,6 +3257,7 @@ describe("PullDetail inline workspace handoff", () => {
 
   it("phone presentation renders the actions as one kit action grid instead of fit stages", async () => {
     const detail = pullDetail();
+    detail.repo.capabilities = { ...detail.repo.capabilities, review_mutation: true };
     detail.workspace = { id: "ws-1", status: "ready" };
 
     const { navigate } = renderPullDetail(detail, undefined, undefined, {

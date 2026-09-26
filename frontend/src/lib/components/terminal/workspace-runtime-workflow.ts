@@ -141,6 +141,7 @@ interface WorkspaceRuntimeLaunchRequest extends WorkspaceRuntimeMutationRequestB
   readonly targetKey: string;
   readonly region: "workflow" | "terminal";
   readonly placement: WorkspaceRuntimeLaunchPlacement;
+  readonly admissionRuntime?: WorkspaceRuntimeState | undefined;
 }
 
 interface WorkspaceRuntimeStopRequest extends WorkspaceRuntimeMutationRequestBase {
@@ -364,6 +365,9 @@ export interface WorkspaceRuntimeWorkflowService {
     targetKey: string,
     region: "workflow" | "terminal",
     placement: WorkspaceRuntimeLaunchPlacement,
+    // Only pass the fresh read performed for this queued launch's admission,
+    // immediately before submission. Presentation snapshots are not authority.
+    admissionRuntime?: WorkspaceRuntimeState,
   ) => Effect.Effect<void>;
   readonly rename: (target: WorkspaceRuntimeTarget, sessionKey: string, label: string) => Effect.Effect<void>;
   readonly stop: (target: WorkspaceRuntimeTarget, sessionKey: string) => Effect.Effect<void>;
@@ -981,7 +985,11 @@ export function makeWorkspaceRuntimeWorkflow(
     ) {
       switch (request._tag) {
         case "Launch": {
-          yield* port.read(request.target).pipe(
+          yield* (
+            request.admissionRuntime === undefined
+              ? port.read(request.target)
+              : Effect.succeed(request.admissionRuntime)
+          ).pipe(
             Effect.matchEffect({
               onFailure: (error) => storeAndPresentMutation(failedMutationState(request, error)),
               onSuccess: (baseline) => {
@@ -1255,8 +1263,8 @@ export function makeWorkspaceRuntimeWorkflow(
 
     return {
       read,
-      launch: (target, targetKey, region, placement) =>
-        submitMutation({ _tag: "Launch", target, targetKey, region, placement }),
+      launch: (target, targetKey, region, placement, admissionRuntime) =>
+        submitMutation({ _tag: "Launch", target, targetKey, region, placement, admissionRuntime }),
       rename: (target, sessionKey, label) => submitMutation({ _tag: "Rename", target, sessionKey, label }),
       stop: (target, sessionKey) => submitMutation({ _tag: "Stop", target, sessionKey }),
       applyPreset: (target, preset) => submitMutation({ _tag: "ApplyPreset", target, preset }),

@@ -1569,6 +1569,7 @@
           platformRepoId={detail.repo.platform_repo_id}
           repoPath={detail.repo.repo_path}
           disabled={staleIssue || !capabilities.comment_mutation || addCommentGate.unavailable}
+          editorDisabled={detailMismatch || !capabilities.comment_mutation || addCommentGate.unavailable}
           disabledReason={addCommentGate.unavailable ? addCommentGate.reason : undefined}
         />
       </div>

@@ -16,18 +16,35 @@ const fetchFleetSnapshot = Effect.fn("FleetSnapshot.fetch")(function* () {
 
 export class FleetSnapshotReads extends Context.Service<
   FleetSnapshotReads,
-  { readonly load: Effect.Effect<FleetSnapshot, ApiProblemError | TransientTransportError> }
+  {
+    readonly hosts: HostSummary[] | undefined;
+    readonly load: Effect.Effect<FleetSnapshot, ApiProblemError | TransientTransportError>;
+  }
 >()("kenn-forge/FleetSnapshotReads") {}
 
 export const FleetSnapshotReadsLive = Layer.effect(FleetSnapshotReads)(
   Effect.gen(function* () {
+    // Keep directory rows for pickers without replaying stale workspace data.
+    let hosts: HostSummary[] | undefined;
     // Share only pending reads. A later event or mutation refresh must read fresh authority.
     const pending = yield* Cache.make({
       capacity: 1,
       timeToLive: "0 millis",
-      lookup: (_key: string) => fetchFleetSnapshot(),
+      lookup: (_key: string) =>
+        fetchFleetSnapshot().pipe(
+          Effect.tap((snapshot) =>
+            Effect.sync(() => {
+              hosts = snapshot.hosts ?? [];
+            }),
+          ),
+        ),
     });
-    return { load: Cache.get(pending, "snapshot") };
+    return {
+      get hosts() {
+        return hosts;
+      },
+      load: Cache.get(pending, "snapshot"),
+    };
   }),
 );
 

@@ -442,6 +442,181 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/devbox%3Acompute-a/ws-new");
   });
 
+  it("submits the preferred devbox before fleet discovery and retains its submitted destination", async () => {
+    preferredTarget = "devbox:compute-a";
+    const snapshot = Promise.withResolvers<unknown>();
+    const created = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: [repoFixture("acme", "widget")] }),
+    );
+    mockPost.mockReturnValue(created.promise);
+    const onCreated = vi.fn();
+    const view = await renderDialog({ onCreated });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    expect(screen.getByRole("combobox", { name: /Workspace machine:.*checking/i })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace options" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces",
+        expect.objectContaining({
+          params: { path: { connection_id: "compute-a" } },
+          body: { provider: "github", platform_host: "github.com", owner: "acme", name: "widget" },
+        }),
+      ),
+    );
+    await view.rerender({ open: false });
+    preferredTarget = "";
+    await view.rerender({ open: true });
+    created.resolve({ data: { id: "ws-devbox" } });
+    await waitFor(() => expect(discardWorkspaceLaunch("ws-devbox", "devbox:compute-a")).toBe("codex"));
+    expect(onCreated).not.toHaveBeenCalled();
+    snapshot.resolve({ data: { hosts: [] } });
+  });
+
+  it("keeps an explicit local choice when the delayed preferred-machine lookup completes", async () => {
+    preferredTarget = "devbox:compute-a";
+    const snapshot = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: [repoFixture("acme", "widget")] }),
+    );
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await fireEvent.click(screen.getByRole("combobox", { name: /Workspace machine:/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "This Forge machine" }));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    snapshot.resolve({
+      data: {
+        hosts: [
+          {
+            configKey: "hub",
+            kind: "self",
+            federationRole: "hub",
+            name: "Studio",
+            operationAvailability: { workspaceWrite: { available: true } },
+          },
+          {
+            configKey: "devbox:compute-a",
+            kind: "devbox",
+            name: "Compute A",
+            operationAvailability: { workspaceWrite: { available: true } },
+          },
+        ],
+      },
+    });
+    await screen.findByRole("combobox", { name: "Workspace machine: Studio (this machine)" });
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({ params: { path: { provider: "github", owner: "acme", name: "widget" } } }),
+      ),
+    );
+  });
+
+  it("restores known machines across modal remounts while refreshing and blocks a removed choice", async () => {
+    const snapshot = Promise.withResolvers<unknown>();
+    let refreshing = false;
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot"
+        ? refreshing
+          ? snapshot.promise
+          : Promise.resolve({
+              data: {
+                hosts: [
+                  {
+                    configKey: "hub",
+                    kind: "self",
+                    federationRole: "hub",
+                    name: "Studio",
+                    operationAvailability: { workspaceWrite: { available: true } },
+                  },
+                  {
+                    configKey: "devbox:compute-a",
+                    kind: "devbox",
+                    name: "Compute A",
+                    operationAvailability: { workspaceWrite: { available: true } },
+                  },
+                ],
+              },
+            })
+        : Promise.resolve({ data: [repoFixture("acme", "widget")] }),
+    );
+    const view = await renderDialog();
+    await screen.findByRole("combobox", { name: "Workspace machine: Studio (this machine)" });
+    view.unmount();
+    refreshing = true;
+    await renderDialog();
+    await fireEvent.click(await screen.findByRole("combobox", { name: "Workspace machine: Studio (this machine)" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Compute A (devbox)" }));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    snapshot.resolve({
+      data: {
+        hosts: [
+          {
+            configKey: "hub",
+            kind: "self",
+            federationRole: "hub",
+            name: "Studio",
+            operationAvailability: { workspaceWrite: { available: true } },
+          },
+        ],
+      },
+    });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+    await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("blocks an unsupported repository on the preferred devbox before discovery completes", async () => {
+    preferredTarget = "devbox:compute-a";
+    const snapshot = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot"
+        ? snapshot.promise
+        : Promise.resolve({ data: [repoFixture("acme", "widget", "gitlab.com", "gitlab")] }),
+    );
+    await renderDialog();
+    await screen.findByText(/Devboxes currently support only github.com/);
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
+    expect(mockPost).not.toHaveBeenCalled();
+    snapshot.resolve({ data: { hosts: [] } });
+  });
+
+  it("uses a newly saved devbox absent from cached hosts while refresh is pending or fails", async () => {
+    const snapshot = Promise.withResolvers<unknown>();
+    let refreshing = false;
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot"
+        ? refreshing
+          ? snapshot.promise
+          : Promise.resolve({ data: { hosts: [] } })
+        : Promise.resolve({ data: [repoFixture("acme", "widget")] }),
+    );
+    const view = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    view.unmount();
+    preferredTarget = "devbox:added";
+    refreshing = true;
+    await renderDialog();
+    await screen.findByRole("combobox", { name: /Workspace machine:.*checking/i });
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    snapshot.reject(new Error("snapshot unavailable"));
+    await screen.findByRole("combobox", { name: /Workspace machine:.*status unavailable/i });
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces",
+        expect.objectContaining({ params: { path: { connection_id: "added" } } }),
+      ),
+    );
+  });
+
   it.each([
     ["github", "github.com", false, "Devbox is in maintenance"],
     ["github", "github.example.com", true, "Devboxes currently support only github.com"],
@@ -491,7 +666,7 @@ describe("NewWorkspaceDialog", () => {
     await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
     expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/Your preferred machine is unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Your selected machine is unavailable/)).toBeTruthy();
     expect(mockPost).not.toHaveBeenCalled();
   });
 

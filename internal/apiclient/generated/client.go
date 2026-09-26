@@ -50698,7 +50698,7 @@ type UpdateRepoWorktreeBaseResponse = SettingsResponse
 
 type UpdateRepoWorktreeBaseErrorResponse = ProblemError
 
-type ListReposResponse []RepoResponse
+type ListReposResponse []RepoCatalogResponse
 
 type ListReposErrorResponse = ProblemError
 
@@ -56989,6 +56989,23 @@ type RepoBrowserTreeResponse struct {
 	Ref       RepoBrowserRef         `json:"ref"`
 	Repo      RepoRefResponse        `json:"repo"`
 	Truncated bool                   `json:"truncated"`
+}
+
+type RepoCatalogResponse struct {
+	AllowMergeCommit    bool       `json:"AllowMergeCommit"`
+	AllowRebaseMerge    bool       `json:"AllowRebaseMerge"`
+	AllowSquashMerge    bool       `json:"AllowSquashMerge"`
+	CreatedAt           time.Time  `json:"CreatedAt"`
+	ID                  int64      `json:"ID"`
+	LastSyncCompletedAt *time.Time `json:"LastSyncCompletedAt,omitempty"`
+	LastSyncError       string     `json:"LastSyncError"`
+	LastSyncStartedAt   *time.Time `json:"LastSyncStartedAt,omitempty"`
+	Name                string     `json:"Name"`
+	Owner               string     `json:"Owner"`
+	Platform            string     `json:"Platform"`
+	PlatformHost        string     `json:"PlatformHost"`
+	PlatformRepoID      string     `json:"PlatformRepoID"`
+	ViewerCanMerge      bool       `json:"ViewerCanMerge"`
 }
 
 type RepoLabelsResponse struct {

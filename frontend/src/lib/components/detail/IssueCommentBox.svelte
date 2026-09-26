@@ -22,6 +22,7 @@
     platformRepoId?: number | undefined;
     repoPath: string;
     disabled?: boolean;
+    editorDisabled?: boolean;
     /** Shown under the editor when the box is disabled for a reason
      * the user can act on (e.g. missing write credential). */
     disabledReason?: string | undefined;
@@ -36,6 +37,7 @@
     platformRepoId,
     repoPath,
     disabled = false,
+    editorDisabled = disabled,
     disabledReason = undefined,
   }: Props = $props();
 
@@ -82,7 +84,7 @@
         itemType="issue"
         itemNumber={number}
         value={body}
-        disabled={isPostingCurrent || disabled}
+        disabled={isPostingCurrent || editorDisabled}
         oninput={(nextBody) => {
           setCommentDraft(currentDraftKey, nextBody);
         }}

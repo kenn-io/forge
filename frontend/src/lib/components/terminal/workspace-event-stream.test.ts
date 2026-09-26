@@ -5,6 +5,23 @@ import type { WorkspaceEventsNotification } from "../../stores/events.svelte.js"
 import { workspaceEventStream } from "./workspace-event-stream.js";
 
 describe("workspaceEventStream", () => {
+  it("preserves an explicit workspace status for readiness without inventing a status", async () => {
+    const signals = await Effect.runPromise(
+      workspaceEventStream((next) => {
+        queueMicrotask(() => {
+          next({ type: "workspace_status", payload: { id: "ws-1", status: "ready" } });
+          next({ type: "workspace_status", payload: { id: "ws-1" } });
+        });
+        return () => {};
+      }).pipe(Stream.take(2), Stream.runCollect, Effect.timeout("1 second")),
+    );
+
+    expect(signals).toEqual([
+      { _tag: "Status", workspaceId: "ws-1", status: "ready" },
+      { _tag: "Status", workspaceId: "ws-1", status: undefined },
+    ]);
+  });
+
   it("maps workspace events and unsubscribes when the stream ends", async () => {
     const unsubscribe = vi.fn();
 

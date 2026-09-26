@@ -13,7 +13,7 @@
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import SpaceIcon from "@lucide/svelte/icons/space";
   import SquareIcon from "@lucide/svelte/icons/square";
-  import { Effect, Option } from "effect";
+  import { Effect, Option, Stream } from "effect";
   import { tick, untrack } from "svelte";
   import type { RuntimeSession, TerminalSettings as TerminalSettingsType } from "../../api/types.js";
   import { apiErrorMessage } from "../../api/runtime.js";
@@ -32,6 +32,8 @@
     completeAcceptedWorkspaceLaunch,
     discardWorkspaceLaunch,
     failWorkspaceLaunch,
+    isWorkspaceDeletionPending,
+    isWorkspaceIdDeleted,
     pendingWorkspaceLaunch,
     type WorkspaceLaunchClaim,
   } from "../../stores/workspace-create-pending.svelte.js";
@@ -53,6 +55,7 @@
   import type { TerminalKey } from "../terminal/terminal-key.js";
   import TerminalSettings from "../settings/TerminalSettings.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
+  import { workspaceEventStream } from "../terminal/workspace-event-stream.js";
   import type { WorkspaceDetail } from "../terminal/workspace-detail.js";
   import {
     makeWorkspaceRuntimeOwner,
@@ -93,9 +96,10 @@
 
   let { workspaceId, hostKey = undefined, visible = true, onBack, onMissing, onOpenItem }: Props = $props();
   const appRuntime = getAppRuntime();
-  const { settings: settingsStore } = getStores();
+  const { events: eventsStore, settings: settingsStore } = getStores();
   const runtimeOwner = makeWorkspaceRuntimeOwner("mobile-workspace");
   const presenterID = makeWorkspaceRuntimePresenterID();
+  let queuedLaunchRead: symbol | undefined;
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
@@ -285,12 +289,15 @@
         completeAcceptedWorkspaceLaunch(workspaceId, hostKey, session.key);
       }
     }
-    reconcileQueuedWorkspaceLaunch(next);
   }
 
   function reconcileQueuedWorkspaceLaunch(next: WorkspaceRuntimeState): void {
     const pending = pendingWorkspaceLaunch(workspaceId, hostKey);
-    if (!pending || pending.phase === "awaiting_session") return;
+    if (
+      workspace?.id !== workspaceId || workspace.fleet_host_key !== hostKey || workspace.status !== "ready" ||
+      pending?.phase !== "queued" || isWorkspaceDeletionPending(workspaceId, hostKey) ||
+      (hostKey === undefined && isWorkspaceIdDeleted(workspaceId))
+    ) return;
     if (next.sessions.length > 0) {
       discardWorkspaceLaunch(workspaceId, hostKey);
       return;
@@ -306,7 +313,7 @@
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, hostKey);
-    if (claim) launch(claim.targetKey, claim);
+    if (claim) launch(claim.targetKey, claim, next);
   }
 
   function requestSessionFocusForSelection(): void {
@@ -315,15 +322,26 @@
   }
 
   function readRuntime(force = false) {
+    const id = workspaceId;
+    const activeHostKey = hostKey;
+    const admission =
+      workspace?.id === id && workspace.fleet_host_key === activeHostKey && workspace.status === "ready" &&
+      pendingWorkspaceLaunch(id, activeHostKey)?.phase === "queued"
+        ? Symbol("queued-launch-read") : undefined;
     return Effect.gen(function* () {
+      if (admission !== undefined) queuedLaunchRead = admission;
       const workflow = yield* WorkspaceRuntimeWorkflow;
-      const result = yield* workflow.read(runtimeOwner, workspaceId, hostKey, { force });
-      if (Option.isSome(result)) {
-        yield* Effect.sync(() => applyRuntime(result.value));
+      const result = yield* workflow.read(runtimeOwner, id, activeHostKey, { force });
+      if (Option.isSome(result) && workspaceId === id && hostKey === activeHostKey) {
+        yield* Effect.sync(() => {
+          applyRuntime(result.value);
+          if (admission !== undefined) reconcileQueuedWorkspaceLaunch(result.value);
+        });
       }
     }).pipe(
       Effect.catch((failure) =>
         Effect.sync(() => {
+          if (workspaceId !== id || hostKey !== activeHostKey) return;
           if (failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.workspaceNotFound) {
             handleWorkspaceMissing();
             return;
@@ -331,20 +349,26 @@
           runtimeError = failureMessage(failure, "Runtime unavailable");
         }),
       ),
+      Effect.ensuring(Effect.sync(() => {
+        if (queuedLaunchRead === admission) queuedLaunchRead = undefined;
+      })),
     );
   }
 
-  function loadWorkspaceAndRuntime() {
+  function loadWorkspace() {
+    const id = workspaceId;
+    const activeHostKey = hostKey;
     return Effect.gen(function* () {
-      const detail = yield* loadMobileWorkspaceDetail(workspaceId, hostKey);
+      const detail = yield* loadMobileWorkspaceDetail(id, activeHostKey);
       yield* Effect.sync(() => {
+        if (workspaceId !== id || hostKey !== activeHostKey) return;
         applyWorkspace(detail);
         loadError = null;
       });
-      if (detail.status === "ready") yield* readRuntime(true);
     }).pipe(
       Effect.catch((failure) =>
         Effect.sync(() => {
+          if (workspaceId !== id || hostKey !== activeHostKey) return;
           if (failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.workspaceNotFound) {
             handleWorkspaceMissing();
             return;
@@ -353,6 +377,15 @@
         }),
       ),
     );
+  }
+
+  function loadWorkspaceAndRuntime() {
+    return Effect.all([
+      loadWorkspace(),
+      // A queued launch needs its runtime read after setup is ready. That same
+      // response supplies admission and the workflow's lost-response baseline.
+      pendingWorkspaceLaunch(workspaceId, hostKey)?.phase === "queued" ? Effect.void : readRuntime(),
+    ], { concurrency: "unbounded", discard: true });
   }
 
   function observeMutation(state: WorkspaceRuntimeMutationState): Effect.Effect<boolean> {
@@ -434,7 +467,7 @@
 
   function refreshWorkspaceState() {
     return Effect.suspend(() =>
-      workspace?.status === "ready" ? readRuntime(true) : loadWorkspaceAndRuntime(),
+      workspace?.status === "ready" ? readRuntime() : loadWorkspaceAndRuntime(),
     );
   }
 
@@ -544,7 +577,7 @@
     if (direction === "close" && distance > 24) closeComposer();
   }
 
-  function launch(targetKey: string, launchClaim?: WorkspaceLaunchClaim): void {
+  function launch(targetKey: string, launchClaim?: WorkspaceLaunchClaim, admissionRuntime?: WorkspaceRuntimeState): void {
     if (launchingTarget || stoppingSession || (!launchClaim && pendingLaunch)) return;
     appRuntime.runCommand(
       Effect.gen(function* () {
@@ -572,7 +605,7 @@
                 },
               }
             : {}),
-        });
+        }, admissionRuntime);
       }),
       {
         operation: "launch mobile workspace session",
@@ -665,6 +698,18 @@
   }
 
   $effect(() => {
+    if (
+      workspace?.id !== workspaceId || workspace.fleet_host_key !== hostKey || workspace.status !== "ready" ||
+      pendingLaunch?.phase !== "queued" || launchingTarget || stoppingSession
+    ) return;
+    if (isWorkspaceDeletionPending(workspaceId, hostKey) ||
+      (hostKey === undefined && isWorkspaceIdDeleted(workspaceId))) return;
+    untrack(() => {
+      if (queuedLaunchRead === undefined) requestRuntimeRefresh();
+    });
+  });
+
+  $effect(() => {
     if (!terminalOptionsOpen) return;
     return untrack(() => pushModalFrame("mobile-workspace-terminal-options", []));
   });
@@ -710,6 +755,37 @@
               workflow.releasePresenter(activeTarget, presenterID).pipe(
                 Effect.andThen(workflow.release(runtimeOwner)),
               ),
+            );
+            yield* Effect.forkChild(
+              workspaceEventStream((subscriber) => {
+                // A connected subscription reports Open synchronously; the
+                // initial load below already covers that notification.
+                let subscribing = true;
+                const unsubscribe = eventsStore.subscribeWorkspaceEvents((event) => {
+                  if (!subscribing || event.type !== "open") subscriber(event);
+                });
+                subscribing = false;
+                return unsubscribe;
+              }).pipe(Stream.runForEach((event) => {
+                if (event._tag === "Status" && (event.workspaceId === undefined || event.workspaceId === activeWorkspaceId)) {
+                  return Effect.sync(() => {
+                    if (
+                      activeHostKey === undefined && event.workspaceId === activeWorkspaceId && event.status === "ready" &&
+                      workspace?.id === activeWorkspaceId && workspace.status === "creating" &&
+                      !isWorkspaceDeletionPending(activeWorkspaceId, activeHostKey) && !isWorkspaceIdDeleted(activeWorkspaceId)
+                    ) {
+                      applyWorkspace({ ...workspace, status: "ready" });
+                      if (pendingWorkspaceLaunch(activeWorkspaceId, activeHostKey)?.phase !== "queued") {
+                        requestRuntimeRefresh();
+                      }
+                    }
+                  }).pipe(Effect.andThen(loadWorkspace()), Effect.forkChild, Effect.asVoid);
+                }
+                return event._tag === "Open" || event._tag === "ReconnectStale"
+                  ? loadWorkspaceAndRuntime().pipe(Effect.forkChild, Effect.asVoid)
+                  : Effect.void;
+              })),
+              { startImmediately: true },
             );
             yield* loadWorkspaceAndRuntime();
             yield* Effect.forever(

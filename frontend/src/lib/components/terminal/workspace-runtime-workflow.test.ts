@@ -1146,7 +1146,7 @@ describe("WorkspaceRuntimeWorkflow", () => {
     ),
   );
 
-  it.effect("recovers a launched session from runtime authority after its response is lost", () =>
+  it.effect("reuses fresh admission as the lost-response baseline without a second pre-launch read", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const recovered = yield* Deferred.make<WorkspaceRuntimeMutationState>();
@@ -1165,7 +1165,7 @@ describe("WorkspaceRuntimeWorkflow", () => {
         const port: WorkspaceRuntimePort = {
           read: () => {
             reads += 1;
-            return Effect.succeed(reads === 1 ? emptyRuntime : { ...emptyRuntime, sessions: [session] });
+            return Effect.succeed({ ...emptyRuntime, sessions: [session] });
           },
           launch: () => {
             launches += 1;
@@ -1185,9 +1185,10 @@ describe("WorkspaceRuntimeWorkflow", () => {
           state.kind === "succeeded" ? Deferred.succeed(recovered, state).pipe(Effect.as(true)) : Effect.succeed(false),
         );
 
-        yield* workflow.launch(target, "helper", "workflow", { _tag: "Workflow" });
+        yield* workflow.launch(target, "helper", "workflow", { _tag: "Workflow" }, emptyRuntime);
         const state = yield* Deferred.await(recovered);
 
+        assert.strictEqual(reads, 1);
         assert.strictEqual(launches, 1);
         assert.strictEqual(state.kind, "succeeded");
         if (state.kind === "succeeded" && state.operation === "Launch") {
@@ -1217,8 +1218,7 @@ describe("WorkspaceRuntimeWorkflow", () => {
         const port: WorkspaceRuntimePort = {
           read: () => {
             reads += 1;
-            if (reads === 1) return Effect.succeed(emptyRuntime);
-            if (reads === 2) {
+            if (reads === 1) {
               return Effect.fail(
                 TransientTransportError.make({ operation: "load workspace runtime", cause: "offline" }),
               );
@@ -1248,7 +1248,7 @@ describe("WorkspaceRuntimeWorkflow", () => {
           }),
         );
 
-        yield* workflow.launch(target, "helper", "workflow", { _tag: "Workflow" });
+        yield* workflow.launch(target, "helper", "workflow", { _tag: "Workflow" }, emptyRuntime);
         yield* Deferred.await(firstOutcome);
         yield* workflow.launch(target, "helper", "workflow", { _tag: "Workflow" });
         yield* Deferred.await(recovered);

@@ -392,6 +392,8 @@ stale tabs.
 
 - Runtime lists returned by `/workspaces/{id}/runtime` are the authoritative
   backend view of live launched sessions.
+- Queued launch admission must read runtime after workspace readiness; that same fresh response may supply the reconciliation baseline, but presentation caches may not
+  (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::executeMutation`).
 - Manual stop settlement must bound every awaited stage and publish confirmed local absence before any
   best-effort refresh; no stalled transport, authority read, or presenter may retain the pending control
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::makeWorkspaceRuntimeWorkflow`).
@@ -455,7 +457,7 @@ stale tabs.
 
 ## Released Terminal Retention
 
-- Workspace presentation and terminal retention have separate limits; a retained socket alone cannot restore an evicted workspace view. Keep workspace snapshots generous without enlarging heavier PR/issue/diff caches
+- Workspace presentation and terminal retention have separate limits; a retained socket alone cannot restore an evicted workspace view. Size detail and workspace caches independently of connected terminal retention
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::recentWorkspaces`).
 - Repeat visits restore host-scoped workspace/runtime presentation before revalidation; cached runtime may reclaim retained sessions but cannot decide queued launches, authorize new attachments, or discard absent peers
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoredSessionKeys`).

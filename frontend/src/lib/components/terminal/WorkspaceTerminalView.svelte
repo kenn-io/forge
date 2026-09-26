@@ -156,6 +156,7 @@
     discardWorkspaceLaunch,
     failWorkspaceLaunch,
     isWorkspaceDeletionPending,
+    isWorkspaceIdDeleted,
     pendingWorkspaceCreateLaunch,
     pendingWorkspaceLaunch,
     type WorkspaceLaunchClaim,
@@ -243,6 +244,7 @@
   const appRuntime = getAppRuntime();
   const runtimeOwner = makeWorkspaceRuntimeOwner("workspace-view");
   const runtimePresenterID = makeWorkspaceRuntimePresenterID();
+  let queuedLaunchRead: symbol | undefined;
 
   function runtimeTarget(workspaceId: string, hostKey: string | undefined): WorkspaceRuntimeTarget {
     return { workspaceId, ...(hostKey === undefined ? {} : { hostKey }) };
@@ -254,6 +256,7 @@
     targetKey: string,
     region: "workflow" | "terminal",
     placement: WorkspaceRuntimeLaunchPlacement,
+    admissionRuntime?: WorkspaceRuntimeState,
   ) {
     return Effect.gen(function* () {
       const workflow = yield* WorkspaceRuntimeWorkflow;
@@ -262,6 +265,7 @@
         targetKey,
         region,
         placement,
+        admissionRuntime,
       );
     });
   }
@@ -2300,7 +2304,7 @@
         }
         if (nextWorkspace.status === "ready") {
           startRuntimePolling();
-          if (!hasAppliedRuntimeFor(id, hostKey)) {
+          if (!hasAppliedRuntimeFor(id, hostKey) && pendingWorkspaceLaunch(id, hostKey)?.phase !== "queued") {
             requestRuntime();
           }
         } else {
@@ -2341,7 +2345,10 @@
     if (!workspaceId) return Effect.succeed<WorkspaceRuntimeState | null>(null);
     const id = workspaceId;
     const hostKey = workspaceHostKey;
+    const admission = workspaceLive && workspace?.status === "ready" && pendingWorkspaceLaunch(id, hostKey)?.phase === "queued"
+      ? Symbol("queued-launch-read") : undefined;
     return Effect.gen(function* () {
+      if (admission !== undefined) queuedLaunchRead = admission;
       recordWorkspaceSwitchPhase("runtime-request-start", id, hostKey);
       const workflow = yield* WorkspaceRuntimeWorkflow;
       const result = yield* workflow.read(runtimeOwner, id, hostKey, options);
@@ -2368,6 +2375,7 @@
           appliedRuntimeState?.fingerprint === fingerprint
         ) {
           runtimeError = null;
+          if (admission !== undefined) reconcileQueuedWorkspaceLaunch(data);
           return data;
         }
         runtime = data;
@@ -2389,6 +2397,7 @@
         mountedSessionKeys = mountedSessionKeys.filter(
           (key) => data.sessions.some((session) => session.key === key),
         );
+        if (admission !== undefined) reconcileQueuedWorkspaceLaunch(data);
         return data;
       });
     }).pipe(
@@ -2405,6 +2414,9 @@
           return null;
         }),
       ),
+      Effect.ensuring(Effect.sync(() => {
+        if (queuedLaunchRead === admission) queuedLaunchRead = undefined;
+      })),
     );
   }
 
@@ -2761,6 +2773,7 @@
     targetKey: string,
     launchClaim?: WorkspaceLaunchClaim,
     leaf?: WorkspaceRuntimeLaunchLeaf,
+    admissionRuntime?: WorkspaceRuntimeState,
   ): void {
     if (!workspaceId || launchingKey || actionsBlocked) return;
     const id = workspaceId;
@@ -2792,7 +2805,7 @@
                 }
               },
             }),
-      }),
+      }, admissionRuntime),
       {
         operation: "workspace.session.launch",
         safeContext: { surface: "workspace" },
@@ -4071,9 +4084,21 @@
                   ),
                 );
               case "Status":
-                return signal.workspaceId === undefined || signal.workspaceId === id
-                  ? fetchWorkspaceProgram(id, hostKey).pipe(Effect.asVoid)
-                  : Effect.void;
+                if (signal.workspaceId !== undefined && signal.workspaceId !== id) return Effect.void;
+                return Effect.sync(() => {
+                  // Browser workspace events are local authority, never a Fleet
+                  // peer's. Only advance the live setup, not a deletion or cache.
+                  if (
+                    hostKey === undefined && signal.workspaceId === id && signal.status === "ready" &&
+                    isCurrentWorkspace(id, hostKey) && workspaceLive && workspace?.status === "creating" &&
+                    !actionsBlocked && !isWorkspaceIdDeleted(id)
+                  ) {
+                    workspace = { ...workspace, status: "ready" };
+                    stopPolling();
+                    startRuntimePolling();
+                    if (pendingWorkspaceLaunch(id, hostKey)?.phase !== "queued") requestRuntime({ force: true });
+                  }
+                }).pipe(Effect.andThen(fetchWorkspaceProgram(id, hostKey)), Effect.asVoid);
               case "Associated":
                 return signal.workspaceId === id
                   ? fetchWorkspaceProgram(id, hostKey).pipe(Effect.asVoid)
@@ -4117,7 +4142,9 @@
           },
         ).pipe(Effect.retry({ schedule: reconnectSchedule }));
         const eventFiber = yield* Effect.forkChild(events, { startImmediately: true });
-        yield* Effect.forkChild(fetchRuntimeProgram(), { startImmediately: true });
+        if (untrack(() => pendingWorkspaceLaunch(id, hostKey)?.phase) !== "queued") {
+          yield* Effect.forkChild(untrack(() => fetchRuntimeProgram()), { startImmediately: true });
+        }
         const loaded = yield* fetchWorkspaceProgram(id, hostKey);
         yield* Deferred.succeed(initialWorkspace, loaded);
         yield* Effect.sync(() => {
@@ -4190,32 +4217,31 @@
     void loadEmptyLaunchTargets();
   });
 
-  $effect(() => {
-    if (!workspaceId || !runtimeLive || !runtimeSnapshotAuthoritative || workspace?.status !== "ready") return;
-    if (actionsBlocked || launchingKey !== null) return;
-    const pendingLaunch = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
-    const targetKey = pendingLaunch?.targetKey ?? null;
-    if (targetKey === null) return;
-    if (pendingLaunch?.phase === "awaiting_session") return;
-    if (runtimeSessions.length > 0) {
+  function reconcileQueuedWorkspaceLaunch(admissionRuntime: WorkspaceRuntimeState): void {
+    if (!workspaceLive || workspace?.status !== "ready" || actionsBlocked ||
+      (workspaceHostKey === undefined && isWorkspaceIdDeleted(workspaceId))) return;
+    const pending = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
+    if (pending?.phase !== "queued") return;
+    if (admissionRuntime.sessions.length > 0) {
       discardWorkspaceLaunch(workspaceId, workspaceHostKey);
       return;
     }
-    const target = launchTargets.find(
-      (candidate) => candidate.key === targetKey,
-    );
+    const target = admissionRuntime.launch_targets.find((candidate) => candidate.key === pending.targetKey);
     if (!target || (target.kind !== "agent" && target.kind !== "acp") || !target.available) {
       if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
-      const reason =
-        target?.disabled_reason ?? "is not available in this workspace";
-      showFlash(`Agent "${targetKey}" could not launch: ${reason}`, {
-        tone: "danger",
-      });
+      showFlash(`Agent "${pending.targetKey}" could not launch: ${target?.disabled_reason ?? "is not available in this workspace"}`, { tone: "danger" });
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);
-    if (claim === null) return;
-    handleLaunch(claim.targetKey, claim);
+    if (claim !== null) handleLaunch(claim.targetKey, claim, undefined, admissionRuntime);
+  }
+
+  $effect(() => {
+    if (!workspaceLive || workspace?.status !== "ready" || actionsBlocked || launchingKey !== null) return;
+    if (pendingWorkspaceLaunch(workspaceId, workspaceHostKey)?.phase !== "queued") return;
+    untrack(() => {
+      if (queuedLaunchRead === undefined) requestRuntime({ force: true });
+    });
   });
 </script>
 

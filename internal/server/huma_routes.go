@@ -116,7 +116,7 @@ type commentAutocompleteInput struct {
 
 type commentAutocompleteOutput = httpapi.BodyOutput[commentAutocompleteResponse]
 
-type listReposOutput = httpapi.BodyOutput[[]repoResponse]
+type listReposOutput = httpapi.BodyOutput[[]RepoCatalogResponse]
 
 type listRepoSummariesOutput = httpapi.BodyOutput[[]repoSummaryResponse]
 
@@ -786,9 +786,9 @@ func (s *Server) listRepos(ctx context.Context, _ *struct{}) (*listReposOutput, 
 		return nil, httpapi.Internal(err.Error())
 	}
 
-	out := make([]repoResponse, 0, len(repos))
+	out := make([]RepoCatalogResponse, 0, len(repos))
 	for _, repo := range repos {
-		out = append(out, s.repoResponse(repo))
+		out = append(out, repoCatalog(repo))
 	}
 
 	return &listReposOutput{Body: out}, nil

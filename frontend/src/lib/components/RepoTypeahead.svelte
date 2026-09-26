@@ -10,7 +10,7 @@
   import { RepositoryReads } from "../api/repository-reads.js";
   import { canonicalRepoFilterValue, displayRepoFilterValue, normalizeRepoFilterSelection } from "../utils/repo-filter-values.js";
   import { getStores } from "../context.js";
-  import type { ConfigRepo, Repo, RepoPreset } from "../api/types.js";
+  import type { ConfigRepo, RepoCatalog, RepoPreset } from "../api/types.js";
   import { canonicalProvider } from "../api/provider-routes.js";
   import type { RepoTreeOption } from "./repoTree.js";
   import RepoTreeNode from "./RepoTreeNode.svelte";
@@ -106,7 +106,7 @@
     ]);
   });
 
-  let fetchedRepos = $state.raw<Repo[]>([]);
+  let fetchedRepos = $state.raw<RepoCatalog[]>([]);
   let reposLoading = $state(false);
   let query = $state("");
   let open = $state(false);
@@ -169,7 +169,7 @@
     stores?.settings?.getRepoPresets?.() ?? [],
   );
 
-  function optionFromRepo(repo: Repo): RepoOption {
+  function optionFromRepo(repo: RepoCatalog): RepoOption {
     const repoPath = `${repo.Owner}/${repo.Name}`;
     return {
       value: `${repo.PlatformHost}/${repoPath}`,
@@ -203,7 +203,7 @@
 
   function mergeOptions(
     configured: ConfigRepo[],
-    fetched: Repo[],
+    fetched: RepoCatalog[],
     workspace: readonly RepoPresetCatalogEntry[],
   ): RepoOption[] {
     const merged: RepoOption[] = [];

@@ -21,12 +21,14 @@
   let hosts = $state.raw<HostSummary[] | null>(null);
   let discoveredRegistry = "";
   let pending = $state("");
+  let discovering = $state(false);
   let checkingHosts = $state(false);
   let registryOpen = $state(false);
   let discoveryError = $state("");
   let error = $state("");
   let message = $state("");
-  const busy = $derived(pending !== "");
+  const mutating = $derived(pending !== "");
+  const busy = $derived(mutating || discovering);
   const available = $derived((discovery?.devboxes ?? []).filter((assignment) =>
     !connections.some((connection) => connection.registry_id === discovery?.registry_id
       && connection.host_id === assignment.host_id && connection.github_user_id === assignment.github_user_id),
@@ -72,7 +74,7 @@
   });
 
   function discover() {
-    pending = "discover";
+    discovering = true;
     error = "";
     message = "";
     discoveryError = "";
@@ -88,7 +90,7 @@
           })),
         )),
         Effect.asVoid,
-        Effect.ensuring(Effect.sync(() => { pending = ""; })),
+        Effect.ensuring(Effect.sync(() => { discovering = false; })),
       ),
       { operation: "discover devboxes", safeContext: {}, onFailure: (failure) => { error = failure._tag === "ApiProblemError" ? (failure.problem.detail ?? failure.problem.title ?? "Could not load saved devboxes.") : failure.message; } },
     );
@@ -160,7 +162,7 @@
     </div>
     <Button size="sm" disabled={busy} onclick={() => discover()} ariaLabel="Refresh devboxes">
       <RefreshCwIcon size={14} aria-hidden="true" />
-      {pending === "discover" ? "Searching…" : "Refresh"}
+      {discovering ? "Searching…" : "Refresh"}
     </Button>
   </div>
   {#if preferredMissing && !busy}
@@ -169,7 +171,7 @@
 
   <ul class="machine-list" aria-label="Workspace machines">
     <li class="machine-row">
-      <input type="radio" name="workspace-machine" value="" bind:group={choice} disabled={busy} aria-label="Run new workspaces on this Forge machine" onchange={() => select("")} />
+      <input type="radio" name="workspace-machine" value="" bind:group={choice} disabled={mutating} aria-label="Run new workspaces on this Forge machine" onchange={() => select("")} />
       <MonitorIcon size={18} aria-hidden="true" />
       <div class="copy machine">
         <div class="machine-heading"><strong>This Forge machine</strong>{#if selfHost?.name.trim()}<span class="state">{selfHost.name.trim()}</span>{/if}</div>
@@ -179,7 +181,7 @@
     {#each connections as connection (connection.id)}
       {@const current = status(connection)}
       <li class="machine-row">
-        <input type="radio" name="workspace-machine" value={`devbox:${connection.id}`} bind:group={choice} disabled={busy || connection.maintenance} aria-label={`Run new workspaces on ${connection.name}`} onchange={() => select(`devbox:${connection.id}`)} />
+        <input type="radio" name="workspace-machine" value={`devbox:${connection.id}`} bind:group={choice} disabled={mutating || connection.maintenance} aria-label={`Run new workspaces on ${connection.name}`} onchange={() => select(`devbox:${connection.id}`)} />
         <ServerIcon size={18} aria-hidden="true" />
         <div class="copy machine">
           <div class="machine-heading">
@@ -216,7 +218,7 @@
       </li>
     {/each}
   </ul>
-  {#if pending === "discover"}<p class="list-message" role="status">Looking for your devboxes…</p>
+  {#if discovering}<p class="list-message" role="status">Looking for your devboxes…</p>
   {:else if discovery && connections.length === 0 && available.length === 0}
     <p class="list-message">No devboxes are assigned to you yet. Ask your administrator for access, then refresh.</p>
   {/if}

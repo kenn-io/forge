@@ -8,7 +8,8 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
-type repoResponse struct {
+// RepoCatalogResponse contains stored repository data without provider lookups.
+type RepoCatalogResponse struct {
 	ID                  int64
 	Platform            string
 	PlatformHost        string
@@ -23,8 +24,12 @@ type repoResponse struct {
 	AllowRebaseMerge    bool
 	ViewerCanMerge      bool
 	CreatedAt           time.Time
-	Capabilities        httpapi.ProviderCapabilitiesResponse `json:"capabilities"`
-	Operations          httpapi.RepoOperations               `json:"operations"`
+}
+
+type repoResponse struct {
+	RepoCatalogResponse
+	Capabilities httpapi.ProviderCapabilitiesResponse `json:"capabilities"`
+	Operations   httpapi.RepoOperations               `json:"operations"`
 }
 
 type repoSummaryAuthorResponse struct {

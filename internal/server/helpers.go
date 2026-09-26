@@ -170,6 +170,14 @@ func configuredDBRepoKey(repo db.Repo) string {
 
 func (s *Server) repoResponse(repo db.Repo) repoResponse {
 	return repoResponse{
+		RepoCatalogResponse: repoCatalog(repo),
+		Capabilities:        s.repoResolver.CapabilitiesForRepo(repo),
+		Operations:          s.repoOperations(repo),
+	}
+}
+
+func repoCatalog(repo db.Repo) RepoCatalogResponse {
+	return RepoCatalogResponse{
 		ID:                  repo.ID,
 		Platform:            repo.Platform,
 		PlatformHost:        repo.PlatformHost,
@@ -184,8 +192,6 @@ func (s *Server) repoResponse(repo db.Repo) repoResponse {
 		AllowRebaseMerge:    repo.AllowRebaseMerge,
 		ViewerCanMerge:      repo.ViewerCanMerge,
 		CreatedAt:           repo.CreatedAt,
-		Capabilities:        s.repoResolver.CapabilitiesForRepo(repo),
-		Operations:          s.repoOperations(repo),
 	}
 }
 

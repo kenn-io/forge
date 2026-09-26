@@ -14,7 +14,7 @@
   } from "@kenn-io/kit-ui";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import { canonicalProvider, providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../../api/provider-routes.js";
-  import type { Repo } from "../../api/types.js";
+  import type { RepoCatalog } from "../../api/types.js";
   import {
     ApiProblemError,
     InvalidExternalPayload,
@@ -23,8 +23,8 @@
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { RepositoryReads } from "../../api/repository-reads.js";
   import { executeOpaqueGeneratedApiRequest } from "../../api/generated-api.js";
-  import { loadFleetSnapshot, type HostSummary } from "../../api/fleet-snapshot.js";
-  import { workspaceTargetUnavailableReason } from "../../stores/workspace-target.svelte.js";
+  import { FleetSnapshotReads, type HostSummary } from "../../api/fleet-snapshot.js";
+  import { devboxRepositoryUnavailableReason, workspaceTargetUnavailableReason } from "../../stores/workspace-target.svelte.js";
   import type { ProblemBody } from "../../api/problems.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -101,6 +101,8 @@
   let suggestedBranch = $state<string | null>(null);
   let pendingLaunchTargetKey = $state<string | null>(null);
   let workspaceHosts = $state.raw<HostSummary[]>([]);
+  let workspaceHostsLoaded = $state(false);
+  let workspaceHostsError = $state("");
   let selectedWorkspaceHostKey = $state("");
   let source = $state<NewWorkspaceSource>("repository");
   const kataDaemons = createKataDaemonsStore();
@@ -126,37 +128,35 @@
 
   function loadWorkspaceHosts(session: object): void {
     fleetLoadExecution?.interrupt();
-    const execution = runtime.runCommand(
-      loadFleetSnapshot().pipe(
-        Effect.tap((snapshot) =>
-          Effect.sync(() => {
-            if (activeSession !== session) return;
-            const hosts = snapshot.hosts ?? [];
-            const self = hosts.find((host) => host.kind === "self");
-            workspaceHosts = self?.federationRole === "hub"
-              ? hosts
-              : self
-                ? [self]
-                : hosts.filter((host) => host.operationAvailability.workspaceWrite?.available === true);
-            selectedWorkspaceHostKey =
-              settings.getWorkspaceSettings().default_execution_target || (workspaceHosts.find((host) => host.kind === "self")?.configKey ??
-              workspaceHosts[0]?.configKey ??
-              "");
-          }),
-        ),
-        Effect.asVoid,
-      ),
+    workspaceHostsLoaded = false;
+    workspaceHostsError = "";
+    function receiveHosts(hosts: HostSummary[]): void {
+      if (activeSession !== session) return;
+      const self = hosts.find((host) => host.kind === "self");
+      workspaceHosts = self && self.federationRole !== "hub" ? [self] : hosts;
+    }
+    fleetLoadExecution = untrack(() => runtime.runCommand(
+      Effect.gen(function* () {
+        const reads = yield* FleetSnapshotReads;
+        yield* Effect.sync(() => {
+          if (reads.hosts !== undefined) receiveHosts(reads.hosts);
+        });
+        const snapshot = yield* reads.load;
+        yield* Effect.sync(() => {
+          if (activeSession !== session) return;
+          receiveHosts(snapshot.hosts ?? []);
+          workspaceHostsLoaded = true;
+        });
+      }),
       {
         operation: "load workspace execution hosts",
         safeContext: {},
         onFailure: () => {
           if (activeSession !== session) return;
-          workspaceHosts = [];
-          selectedWorkspaceHostKey = "";
+          workspaceHostsError = "Preferred devbox — status unavailable";
         },
       },
-    );
-    fleetLoadExecution = execution;
+    ));
   }
 
   function cancelKataSearch(): void {
@@ -180,7 +180,7 @@
     kataSearching = false;
   }
 
-  function repoOption(repo: Repo): RepoOption {
+  function repoOption(repo: RepoCatalog): RepoOption {
     const provider = canonicalProvider(repo.Platform);
     return {
       key: `${provider}/${repo.PlatformHost}/${repo.Owner}/${repo.Name}`,
@@ -278,7 +278,9 @@
     suggestedBranch = null;
     pendingLaunchTargetKey = null;
     workspaceHosts = [];
-    selectedWorkspaceHostKey = "";
+    workspaceHostsLoaded = false;
+    workspaceHostsError = "";
+    selectedWorkspaceHostKey = untrack(() => settings.getWorkspaceSettings().default_execution_target ?? "");
     submitting = false;
     repos = [];
     selectedKey = "";
@@ -302,8 +304,10 @@
     loadWorkspaceHosts(session);
     loadRepositories(session);
     const execution = repoLoadExecution;
+    const fleetExecution = fleetLoadExecution;
     return () => {
       execution?.interrupt();
+      fleetExecution?.interrupt();
       if (repoLoadExecution === execution) repoLoadExecution = null;
       if (activeSession === session) activeSession = null;
     };
@@ -347,31 +351,32 @@
 
   const selected = $derived(repos.find((repo) => repo.key === selectedKey) ?? null);
   const selectedWorkspaceHost = $derived(
-    workspaceHosts.find((host) => host.configKey === selectedWorkspaceHostKey) ?? null,
+    workspaceHosts.find((host) => selectedWorkspaceHostKey ? host.configKey === selectedWorkspaceHostKey : host.kind === "self") ?? null,
   );
-  const remoteWorkspaceHostKey = $derived(
-    source !== "repository" || selectedWorkspaceHost?.kind === "self"
-      ? undefined
-      : selectedWorkspaceHost?.configKey,
-  );
-  const workspaceTargetReason = $derived(
-    selected && selectedWorkspaceHost
-      ? workspaceTargetUnavailableReason(selectedWorkspaceHost, selected)
-      : settings.getWorkspaceSettings().default_execution_target && !selectedWorkspaceHost
-        ? "Your preferred machine is unavailable. Choose another machine or reconnect it in Settings → Workspaces."
-        : "",
-  );
+  const workspaceTargetReason = $derived.by(() => {
+    if (!selected) return "";
+    if (selectedWorkspaceHostKey.startsWith("devbox:")) {
+      const reason = devboxRepositoryUnavailableReason(selected);
+      if (reason) return reason;
+    }
+    if (selectedWorkspaceHost) return workspaceTargetUnavailableReason(selectedWorkspaceHost, selected);
+    if (!selectedWorkspaceHostKey) return "";
+    return workspaceHostsLoaded
+      ? "Your selected machine is unavailable. Choose another machine or reconnect it in Settings → Workspaces."
+      : "";
+  });
   const workspaceHostOptions = $derived<SelectDropdownOption[]>(
     [
     ...(selectedWorkspaceHostKey && !selectedWorkspaceHost
-      ? [{ value: selectedWorkspaceHostKey, label: "Unavailable machine — choose another", disabled: true }]
+      ? [{ value: selectedWorkspaceHostKey, label: workspaceHostsLoaded ? "Unavailable machine — choose another" : workspaceHostsError || "Preferred devbox — checking…", disabled: workspaceTargetReason !== "" }]
       : []),
+    ...(!workspaceHosts.some((host) => host.kind === "self") ? [{ value: "", label: "This Forge machine" }] : []),
     ...workspaceHosts.map((host) => {
       const unavailableReason = selected
         ? workspaceTargetUnavailableReason(host, selected)
         : "Pick a repository first.";
       return {
-        value: host.configKey,
+        value: host.kind === "self" ? "" : host.configKey,
         label: `${host.name.trim() || host.hostname?.trim() || host.configKey}${host.kind === "self" ? " (this machine)" : host.kind === "devbox" ? " (devbox)" : ""}`,
         disabled: unavailableReason !== "",
         ...(unavailableReason === ""
@@ -484,6 +489,7 @@
     const repo = selected;
     const kataReference = selectedKataReference;
     const requestedSource = source;
+    const remoteWorkspaceHostKey = requestedSource === "repository" && selectedWorkspaceHostKey ? selectedWorkspaceHostKey : undefined;
     const daemonID = selectedDaemonID;
     if (requestedSource === "repository" && workspaceTargetReason) {
       error = workspaceTargetReason;

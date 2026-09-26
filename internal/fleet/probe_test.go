@@ -78,17 +78,22 @@ func TestTmuxCommandOrDefault(t *testing.T) {
 // exercising both the executable and the prefix args.
 func TestProbeHonorsConfiguredTmuxCommand(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "faketmux.sh")
-	require.NoError(t, os.WriteFile(
+	calls := filepath.Join(dir, "calls")
+	require.NoError(os.WriteFile(
 		script,
-		[]byte("#!/bin/sh\nif [ \"$1\" = \"-V\" ]; then echo \"tmux 9.9\"; exit 0; fi\nexit 1\n"),
+		[]byte("#!/bin/sh\nprintf '%s\\n' \"$2\" >> \"$1\"\nif [ \"$2\" = \"-V\" ]; then echo \"tmux 9.9\"; exit 0; fi\nexit 1\n"),
 		0o755,
 	))
 
-	caps := Probe(t.Context(), []string{"/bin/sh", script})
+	caps := Probe(t.Context(), []string{"/bin/sh", script, calls})
 	assert.True(caps.Dependencies.Tmux, "configured tmux command must drive availability")
 	assert.Equal("9.9", caps.Features.TmuxVersion, "version must come from the configured command")
 	assert.True(caps.Commands.SessionEnsure, "tmux-gated commands follow the configured command")
 	assert.True(caps.Commands.SessionKill, "tmux-gated commands follow the configured command")
+	invocations, err := os.ReadFile(calls)
+	require.NoError(err)
+	assert.Equal("-V\n", string(invocations), "availability and version must share one subprocess")
 }

@@ -65,6 +65,43 @@ func TestBuildFleetSnapshotMergesMemberAndDegrades(t *testing.T) {
 	assert.Equal(1, down, "want 1 unreachable (epyc)")
 }
 
+func TestBuildFleetSnapshotFetchesMembersAndExecutionTargetsTogether(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	targetStarted := make(chan struct{})
+	peer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-targetStarted:
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"protocolVersion":` + strconv.Itoa(federation.ProtocolVersion) + `,"nodeID":"` + testMemberNodeID + `","host":{"hostname":"member","platform":"linux"}}`))
+	}))
+	t.Cleanup(peer.Close)
+	server := New(Deps{
+		DB: dbtest.Open(t),
+		ExecutionTargets: func(context.Context, time.Duration) []fleet.PeerResult {
+			close(targetStarted)
+			return []fleet.PeerResult{{
+				NodeID: "devbox:compute-a", Name: "Compute A", Role: fleet.RoleDevbox, Reachable: true,
+				Raw: &fleet.RawSnapshot{NodeID: "devbox:compute-a", Host: fleet.RawHost{Hostname: "worker", Platform: "linux"}},
+			}}
+		},
+	})
+	configureTestMembers(t, server, testTLSClient(t, peer), config.FleetMember{
+		NodeID: testMemberNodeID, Name: "member", BaseURL: peer.URL,
+	})
+
+	snapshot, err := server.buildFleetSnapshot(t.Context(), true)
+	require.NoError(err)
+	require.Len(snapshot.Hosts, 3)
+	for _, host := range snapshot.Hosts {
+		assert.True(host.Reachable, "host %s must not time out waiting for the other batch to start", host.ConfigKey)
+	}
+}
+
 func TestBuildFleetSnapshotExplainsInactivePeerFederation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

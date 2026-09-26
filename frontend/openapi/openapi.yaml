@@ -7742,6 +7742,61 @@ components:
         - entries
         - truncated
       type: object
+    RepoCatalogResponse:
+      additionalProperties: false
+      properties:
+        AllowMergeCommit:
+          type: boolean
+        AllowRebaseMerge:
+          type: boolean
+        AllowSquashMerge:
+          type: boolean
+        CreatedAt:
+          format: date-time
+          type: string
+        ID:
+          format: int64
+          type: integer
+        LastSyncCompletedAt:
+          format: date-time
+          type:
+            - string
+            - "null"
+        LastSyncError:
+          type: string
+        LastSyncStartedAt:
+          format: date-time
+          type:
+            - string
+            - "null"
+        Name:
+          type: string
+        Owner:
+          type: string
+        Platform:
+          type: string
+        PlatformHost:
+          type: string
+        PlatformRepoID:
+          type: string
+        ViewerCanMerge:
+          type: boolean
+      required:
+        - ID
+        - Platform
+        - PlatformHost
+        - PlatformRepoID
+        - Owner
+        - Name
+        - LastSyncStartedAt
+        - LastSyncCompletedAt
+        - LastSyncError
+        - AllowSquashMerge
+        - AllowMergeCommit
+        - AllowRebaseMerge
+        - ViewerCanMerge
+        - CreatedAt
+      type: object
     RepoLabelsResponse:
       additionalProperties: false
       properties:
@@ -8059,6 +8114,8 @@ components:
         operations:
           $ref: "#/components/schemas/RepoOperations"
       required:
+        - capabilities
+        - operations
         - ID
         - Platform
         - PlatformHost
@@ -8073,8 +8130,6 @@ components:
         - AllowRebaseMerge
         - ViewerCanMerge
         - CreatedAt
-        - capabilities
-        - operations
       type: object
     RepoSummaryAuthorResponse:
       additionalProperties: false
@@ -24822,7 +24877,7 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: "#/components/schemas/RepoResponse"
+                  $ref: "#/components/schemas/RepoCatalogResponse"
                 type: array
           description: OK
         default:

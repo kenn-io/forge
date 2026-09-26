@@ -3,7 +3,7 @@ import type { WorkspaceEventsNotification } from "../../stores/events.svelte.js"
 
 export type WorkspaceEventSignal =
   | { readonly _tag: "Open" }
-  | { readonly _tag: "Status"; readonly workspaceId?: string | undefined }
+  | { readonly _tag: "Status"; readonly workspaceId?: string | undefined; readonly status?: string | undefined }
   | { readonly _tag: "Associated"; readonly workspaceId?: string | undefined }
   | { readonly _tag: "ReconnectStale" }
   | {
@@ -19,7 +19,7 @@ function workspaceEventSignal(event: WorkspaceEventsNotification): WorkspaceEven
     case "open":
       return { _tag: "Open" };
     case "workspace_status":
-      return { _tag: "Status", workspaceId: event.payload.id };
+      return { _tag: "Status", workspaceId: event.payload.id, status: event.payload.status };
     case "workspace_pr_associated":
       return { _tag: "Associated", workspaceId: event.payload.workspace_id };
     case "reconnect.stale":

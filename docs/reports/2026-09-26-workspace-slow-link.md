@@ -95,98 +95,68 @@ The follow-up addresses additional browser work and waits:
   visits restore recent metadata/runtime, and retained terminals reuse their
   existing socket. Activity already retains populated rows while refreshing.
 
-## Usability gates audited
+## Follow-up usability fixes
 
 The audit follows each action until it becomes usable, not just until content
-appears. These remaining findings are ranked by relevance to the reported
-desktop workflow. They have not been changed by the cache-size adjustment.
+appears. Held-response regressions cover the dependencies removed below.
 
-1. **Cold repository choices depend on write credentials.** `listRepos` calls
-   `repoResponse` sequentially for every visible tracked repository; that
-   computes capabilities and mutation availability. A temporary test against
-   the real handler and fixture database held the credential boundary open:
-   `/repos` returned only after release. The two catalog consumers need identity
-   fields, not mutation checks. An identity-only catalog response should keep
-   tracked/hidden filtering but skip operation enrichment. No equivalent light
-   catalog endpoint was found; `/repos/summary` performs still more work.
-   Sources: `internal/server/huma_routes.go::listRepos`,
-   `internal/server/helpers.go::repoResponse`,
-   `internal/server/operation_availability.go::repoOperationsWithContext`.
-2. **A preferred machine makes even a warm workspace dialog wait for fleet.**
-   Every open clears host choices and requests the full snapshot. A held-response
-   probe confirmed that a configured preferred devbox disables Create and shows
-   it as unavailable while that read is pending. Without a preferred target,
-   local creation proceeds with the same read held. Restore the selected target
-   independently of status refresh and keep an explicit local choice usable.
-   A completed refresh must preserve any choice made while it was pending.
-   Simply deleting the gate is incorrect: destination routing currently derives
-   from the fetched host, so an unresolved choice would submit locally.
-   Source: `frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte`
-   (`workspaceTargetReason`, `remoteWorkspaceHostKey`, `submit`).
-3. **Cached PR/issue details also disable local comment drafting.** Source
-   inspection shows that `stalePR`/`staleIssue` covers both a different item and
-   a verified cached item. That flag disables both submission and the editor;
-   local drafts already persist by item identity. Separate local draft entry
-   for the matching cached item from provider submission authority. Do not
-   remove the identity checks or mutation freshness contract globally.
-   Sources: `frontend/src/lib/components/detail/PullDetail.svelte`,
-   `IssueDetail.svelte`, `CommentBox.svelte`, `IssueCommentBox.svelte`.
-4. **Queued agent launch reads runtime twice before posting.** Desktop and
-   phone establish runtime authority, then the shared workflow reads again to
-   capture its reconciliation baseline. Source inspection establishes the
-   additional request cycle. Consolidate fresh launch admission and baseline
-   capture; do not reuse arbitrary cached runtime. The current baseline is
-   necessary to recognize a newly created session after a lost launch response,
-   and desktop's initial runtime read can precede setup completion.
-   Sources: `frontend/src/lib/components/terminal/workspace-runtime-workflow.ts`
-   (`executeMutation`, `reconcileLaunch`), `WorkspaceTerminalView.svelte`.
-5. **Machine settings lock known choices while discovering more machines.**
-   A held-discovery probe showed local and saved-devbox radio buttons disabled
-   after saved connections and Online status had already arrived. Holding only
-   the status snapshot did not disable them. Separate discovery from mutation
-   busy state so registry discovery cannot prevent selecting a known target.
-   Source: `frontend/src/lib/components/settings/DevboxSettings.svelte::discover`.
-6. **Phone readiness has extra serial waits.** Source inspection found detail
-   GET followed by runtime GET, plus five-second readiness polling without the
-   workspace event subscription used by desktop. Parallel reads and the existing
-   event stream can reduce these waits while readiness still governs launch.
-   Desktop also drops the event's supplied status and waits for a new detail
-   response. Preserve explicit status through the event path before considering
-   a broader change to launch authority.
-   Sources: `frontend/src/lib/components/mobile/MobileWorkspaceTerminal.svelte`,
-   `frontend/src/lib/components/terminal/workspace-event-stream.ts`.
+1. **Repository choices no longer wait for write credentials.** `/repos` now
+   returns stored catalog data without calculating mutation capabilities or
+   operation availability. It preserves tracked/hidden filtering, stable provider
+   identity, sync health, and merge metadata. PR/issue detail responses still
+   provide mutation authority. A real-handler regression holds the credential
+   source open while catalog reads complete across all four providers.
+2. **Known machine choices remain usable during discovery.** The workspace
+   dialog restores the last successful host directory and keeps the selected
+   destination independent of it. An unresolved preferred devbox submits to that
+   exact devbox; it never falls back to local. Fresh removal, known maintenance,
+   and provider restrictions still block creation, and the backend admits every
+   request. Settings separates discovery from mutation busy state so saved and
+   local choices remain selectable.
+3. **Matching cached details allow local comment drafting.** PR and issue
+   editors accept drafts while the matching cached detail refreshes. Submission
+   still waits for fresh detail and operation permission. A different item's
+   detail cannot enable the editor or submit controls.
+4. **Queued launches use one fresh runtime admission read.** Desktop and mobile
+   wait for matching ready workspace metadata, then reuse that read as the
+   shared workflow's lost-response reconciliation baseline. Arbitrary cached
+   runtime cannot authorize launch. Existing polling retries a failed admission
+   read, and normal launches retain workflow-owned baseline reads.
+5. **Readiness events avoid another polling interval.** Desktop and mobile can
+   apply a local creating-to-ready event while detail refresh is pending.
+   Remote events and deleting workspaces cannot take that shortcut. Mobile
+   retains polling as a fallback and reads ordinary detail/runtime presentation
+   concurrently.
+6. **Independent fleet batches run together.** Member and devbox requests now
+   start concurrently. A regression holds the member response until the devbox
+   request starts and verifies both reachable hosts. Tool probing invokes
+   `tmux -V` once per probe instead of twice; other tool probes remain serial.
 
-For hub snapshots containing fleet members and devboxes, member requests finish
-before the devbox batch starts, although the two batches are independent.
-Each local snapshot probes tools serially; when tmux succeeds, it invokes
-`tmux -V` twice. Host-only consumers
-receive workspace, project, worktree, and session inventories too. Concurrent
-batches would remove one dependency; a smaller directory response would avoid
-unrelated inventory work. Sources:
-`internal/server/fleetapi/fleet_hub.go::fetchPeerResults`,
-`internal/server/fleetapi/fleet_adapter.go::buildLocalRaw`,
+Relevant sources are `internal/server/huma_routes.go::listRepos`,
+`internal/server/helpers.go::repoCatalog`, `NewWorkspaceDialog.svelte`,
+`DevboxSettings.svelte`, `PullDetail.svelte`, `IssueDetail.svelte`,
+`workspace-runtime-workflow.ts`, `WorkspaceTerminalView.svelte`,
+`MobileWorkspaceTerminal.svelte`,
+`internal/server/fleetapi/fleet_hub.go::fetchPeerResults`, and
 `internal/fleet/probe.go::Probe`.
 
-Two suspected waits are already independent: `WorkspaceFirstRunPanel` can
-register a project while its host snapshot remains pending, and an already
-mounted Forge selector keeps its links usable during refresh. Tests exercised
-the project-intake path with a held response; the selector behavior is established
-by source inspection. Fleet sign-in and devbox source-context preparation perform
-real admission work; they are not interchangeable with presentation refreshes.
+Two suspected waits were already independent: project registration can proceed
+while its host snapshot is pending, and an already mounted Forge selector keeps
+its links usable during refresh. Fleet sign-in and devbox source-context
+preparation perform real admission work and remain required.
 
-The pending-response probes establish dependency, not elapsed airplane latency.
-No production memory or network timing claim follows from these results.
+Held-response tests establish dependency, not elapsed airplane latency. No
+production memory or network timing claim follows from these results.
 
 ## Remaining costs to measure
 
-| Path | Source-backed cost | Next discriminating check |
-| --- | --- | --- |
-| Terminal cache miss | Fresh runtime precedes a new WebSocket attachment. Presentation retains 100 workspaces, while socket retention defaults to 50 **sessions**, configurable from 0–100. Several panes per workspace can exhaust socket retention first; disconnected sockets still require a fresh attachment. | Compare retained and evicted switches using `workspace-switch:*` timing entries under controlled RTT and bandwidth. |
-| PR/issue detail memory | Presentation now retains 100 items of each kind. Content size varies; the twenty-item held-response regressions establish useful retention, not memory consumption. | Measure retained heap with representative long discussions if memory becomes a concern. |
-| Agent launch | The duplicate baseline read and readiness waits are traced above. Devbox launch additionally refreshes source context before forwarding the POST. | Measure browser and server legs separately; preserve lost-response reconciliation and source-context authority. |
-| Fleet directory | Full inventory, serial member/devbox batches, and tool probes precede cold host choices and preferred-target validation. Concurrent callers share a pending snapshot, not a last-success directory. | Measure payload bytes and batch durations independently of rendering. |
-| Repository picker payload | The credential dependency is reproduced above. Cold or expired verdicts can add sequential work across distinct credential routes; each probe has a five-second context. | Compare an identity-only projection with the current response; actual contribution on the reported connection remains unmeasured. |
-| Expanded Activity threads | Refreshing a collapsed snapshot can trigger thread-history reads, with pages fetched sequentially. | Compare collapsed rows with individually expanded histories and record time to the last page. |
+| Path                      | Source-backed cost                                                                                                                                                                                                                                                                          | Next discriminating check                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Terminal cache miss       | Fresh runtime precedes a new WebSocket attachment. Presentation retains 100 workspaces, while socket retention defaults to 50 **sessions**, configurable from 0–100. Several panes per workspace can exhaust socket retention first; disconnected sockets still require a fresh attachment. | Compare retained and evicted switches using `workspace-switch:*` timing entries under controlled RTT and bandwidth. |
+| PR/issue detail memory    | Presentation now retains 100 items of each kind. Content size varies; the twenty-item held-response regressions establish useful retention, not memory consumption.                                                                                                                         | Measure retained heap with representative long discussions if memory becomes a concern.                             |
+| Agent launch              | Fresh post-readiness admission still precedes a queued POST. Devbox launch also refreshes source context before forwarding it.                                                                                                                                                              | Measure browser and server legs separately; preserve lost-response reconciliation and source-context authority.     |
+| Fleet directory           | Cold discovery still returns full inventories and probes tools. Cached host choices and exact saved-target routing now work during refresh; member/devbox batches overlap.                                                                                                                  | Measure payload bytes and batch durations independently of rendering before adding a separate directory endpoint.   |
+| Expanded Activity threads | Refreshing a collapsed snapshot can trigger thread-history reads, with pages fetched sequentially.                                                                                                                                                                                          | Compare collapsed rows with individually expanded histories and record time to the last page.                       |
 
 Relevant sources are `WorkspaceTerminalView.svelte`,
 `workspace-runtime-workflow.ts::executeMutation`, `session-host.svelte.ts`,
@@ -284,3 +254,35 @@ currently impose a slow-link profile.
   responses pending, plus the isolated real-handler credential probe. Existing
   repository-picker, machine-selection, launch-reconciliation, and fleet tests
   also passed. Temporary probes did not change repository files or live state.
+
+## Usability follow-up verification
+
+- Held-response regressions cover catalog reads with credential discovery blocked,
+  cached machine choices with discovery pending, exact destination capture,
+  editable cached drafts with submission disabled, and one fresh queued-launch
+  admission read. The four launch/event suites pass all 212 tests.
+- Independent review caught duplicate mobile hydration from the event stream's
+  synchronous initial Open notification. Both that request-count regression and
+  readiness behind a held reconnect refresh failed before the correction and
+  pass afterward. The final branch review has no open findings.
+- The full API test package, fleet packages, focused race checks, Go lint,
+  formatting, and nilaway pass. The full server package timed out in
+  `TestFederationEventEndpointReplaysFilteredEventsAndSignalsStale`. Twenty
+  focused repetitions reproduced the same response-body cleanup hang both on
+  this branch and with all pending Go changes restored to the starting commit
+  through an overlay. A single focused run passed. No clean full server run is
+  claimed.
+- After the final frontend edit, the full Vitest suite passed 4,294 tests and
+  skipped one across 393 passing files and one skipped file. Frontend formatting,
+  lint, Svelte/type checks, and Effect diagnostics pass.
+- All 102 full-stack cases in workspace creation/launch, workspace launcher,
+  inline continuity, comment editor, and terminal settings pass in Chromium and
+  Firefox. An isolated seeded-app capture also confirms the 50-session default
+  under Workspaces settings.
+- The broader Go run exposed an old catalog-capability assertion. The catalog
+  intentionally no longer authorizes mutations; its existing capability test
+  now covers only enriched responses. The focused test passes after removing
+  that obsolete block, and independent review found no issue with the change.
+- The final full server-package run passes with only the independently reproduced
+  federation cleanup hang excluded. The API package and focused capability
+  contract test also pass; the excluded test is the remaining verification limit.

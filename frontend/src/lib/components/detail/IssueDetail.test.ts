@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import type { ComponentProps } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { GeneratedClient } from "../../api/generated-api.js";
 import type { IssueDetail, Label, QuickAction } from "../../api/types.js";
@@ -51,6 +51,7 @@ vi.mock("@kenn-io/kit-ui", async (importOriginal) => {
 
 import IssueDetailComponent from "./IssueDetail.svelte";
 import IssueDetailTestHarness from "./IssueDetailTestHarness.svelte";
+import { getCommentDraftKey, setCommentDraft } from "./comment-drafts.svelte.js";
 
 let issueRuntime: OwnedAppRuntime | null = null;
 
@@ -182,6 +183,7 @@ function renderIssueDetail(
     staleRefreshing?: boolean;
     defaultExecutionTarget?: string;
     detailLoading?: boolean;
+    detailFromCache?: boolean;
     detailSyncing?: boolean;
     deferRefresh?: boolean;
     refreshFailure?: string;
@@ -204,7 +206,7 @@ function renderIssueDetail(
     stopIssueDetailPolling: vi.fn(),
     getIssueDetail: () => detail,
     getIssueDetailEnvelopeTick: () => envelopeTick,
-    isIssueDetailFromCache: () => false,
+    isIssueDetailFromCache: () => options.detailFromCache ?? false,
     isIssueDetailLoading: () => options.detailLoading ?? false,
     getIssueDetailError: () => null,
     isIssueStaleRefreshing: () => options.staleRefreshing ?? false,
@@ -227,6 +229,7 @@ function renderIssueDetail(
     toggleIssueStar: vi.fn(),
     setIssueState: vi.fn(),
     editIssueComment: vi.fn(),
+    submitIssueComment: vi.fn(),
     deleteIssueComment,
     setIssueLabels: vi.fn(),
     setIssueAssignees: vi.fn(),
@@ -300,6 +303,38 @@ function renderIssueDetail(
 }
 
 describe("IssueDetail activity view", () => {
+  it.each([false, true])("allows a cached issue draft only for the selected item (mismatch=%s)", async (mismatch) => {
+    const detail = issueDetail();
+    detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };
+    detail.repo.operations = { add_comment: { available: true } };
+    const number = detail.issue.Number + (mismatch ? 1 : 0);
+    const draftKey = getCommentDraftKey("issue", {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number,
+      platformRepoId: detail.repo.platform_repo_id,
+    });
+    setCommentDraft(draftKey, "Draft while refreshing");
+    onTestFinished(() => setCommentDraft(draftKey, ""));
+    const { container, issuesStore } = renderIssueDetail(detail, undefined, {
+      detailFromCache: true,
+      detailLoading: true,
+      detailProps: { number },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector(".comment-editor-input")?.textContent).toBe("Draft while refreshing"),
+    );
+    expect(container.querySelector(".comment-editor-input")?.getAttribute("contenteditable")).toBe(String(!mismatch));
+    const submit = screen.getByRole("button", { name: "Comment", exact: true }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    await fireEvent.click(submit);
+    expect(issuesStore.submitIssueComment).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     localStorage.clear();
   });
@@ -599,18 +634,23 @@ describe("IssueDetail inline workspace handoff", () => {
     const detail = issueDetail();
     detail.platform_host = platformHost;
     Object.assign(detail.repo, { Host: platformHost, PlatformHost: platformHost, platform_host: platformHost });
+    const snapshot = Promise.withResolvers<unknown>();
     const apiClient = {
-      GET: vi.fn().mockResolvedValue({
-        data: {
-          hosts: [
-            {
-              configKey: "devbox:compute-a",
-              kind: "devbox",
-              operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
-            },
-          ],
-        },
-      }),
+      GET: vi.fn().mockImplementation(() =>
+        reason
+          ? Promise.resolve({
+              data: {
+                hosts: [
+                  {
+                    configKey: "devbox:compute-a",
+                    kind: "devbox",
+                    operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
+                  },
+                ],
+              },
+            })
+          : snapshot.promise,
+      ),
       POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
     };
     renderIssueDetail(
@@ -638,6 +678,7 @@ describe("IssueDetail inline workspace handoff", () => {
         ),
       );
     }
+    snapshot.resolve({ data: { hosts: [] } });
   });
 
   function deferredWorkspaceApiClient() {

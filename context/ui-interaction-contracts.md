@@ -53,15 +53,17 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
-- Recent detail snapshots stay read-only until that visit's revalidation succeeds;
-  preserve the original workspace lifecycle tick. Settled mutations invalidate saved views
-  so hidden optimistic state cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
+- Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow local comment drafts.
+  Preserve the original workspace lifecycle tick; settled mutations invalidate saved views so hidden optimistic state
+  cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
 - Workspace lists retain their last successful snapshot across view changes, including empty lists;
   restore it before revalidation without keeping hidden sidebar polling alive
   (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflowService`).
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
   refreshed options must preserve the current choice or clear it, never silently select another repository
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
+- Repository catalogs use stored metadata; credential resolution and mutation availability belong to
+  action/detail reads, not picker readiness (`internal/server/huma_routes.go::listRepos`).
 - Treat backend latency as normal: gate each action only on the data it requires,
   and verify cached navigation and local choices with responses held pending
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).

@@ -1,6 +1,10 @@
 package server
 
 import (
+	"context"
+
+	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/activityapi"
 	"go.kenn.io/forge/internal/server/archiveapi"
 	"go.kenn.io/forge/internal/server/authapi"
@@ -273,4 +277,14 @@ func (s *Server) wireHandlers() {
 func wiredServer(s *Server) *Server {
 	s.wireHandlers()
 	return s
+}
+
+// InitializeProviderRepositories discovers the current configuration after HTTP
+// readiness. Serialize with reloads and repository mutation handlers so startup
+// cannot restore an older repo set.
+func (s *Server) InitializeProviderRepositories(
+	ctx context.Context,
+	resolve func(context.Context, *config.Config) []ghclient.RepoRef,
+) error {
+	return s.configreload.InitializeProviderRepositories(ctx, resolve)
 }

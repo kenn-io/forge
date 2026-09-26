@@ -2597,7 +2597,7 @@ name = "widget"
 
 func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.T) {
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
+	srv, _, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &serverfake.MockGH{})
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan error, 1)
@@ -2626,7 +2626,7 @@ func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.
 
 func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.T) {
 	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
+	srv, _, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &serverfake.MockGH{})
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan error, 1)

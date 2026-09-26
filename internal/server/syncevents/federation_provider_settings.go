@@ -12,7 +12,7 @@ import (
 	"go.kenn.io/forge/internal/server/spokeapi"
 )
 
-type providerSettingsUpdate struct {
+type ProviderSettingsUpdate struct {
 	Activity     *config.Activity             `json:"activity,omitempty"`
 	Detail       *config.Detail               `json:"detail,omitempty"`
 	PullRequests *config.PullRequests         `json:"pull_requests,omitempty"`
@@ -23,7 +23,7 @@ type providerSettingsUpdate struct {
 type FederationProviderSettingsOutput = httpapi.BodyOutput[spokeapi.ProviderSettingsResponse]
 
 type FederationUpdateProviderSettingsInput struct {
-	Body providerSettingsUpdate
+	Body ProviderSettingsUpdate
 }
 
 func providerSettingsFrom(settings spokeapi.SettingsResponse) spokeapi.ProviderSettingsResponse {
@@ -93,7 +93,7 @@ func (s *Handlers) BuildProviderSettingsProjection(
 	return projection, nil
 }
 
-func (update providerSettingsUpdate) SettingsUpdate() spokeapi.UpdateSettingsRequest {
+func (update ProviderSettingsUpdate) SettingsUpdate() spokeapi.UpdateSettingsRequest {
 	return spokeapi.UpdateSettingsRequest{
 		Activity: update.Activity, Detail: update.Detail,
 		PullRequests: update.PullRequests, Issues: update.Issues,

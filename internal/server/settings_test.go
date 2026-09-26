@@ -34,6 +34,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/settingsapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -1160,7 +1161,7 @@ auto_assign_on_create = false
 	})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	var settings settingsResponse
+	var settings spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	assert.True(settings.Workspaces.AutoAssignOnCreate)
 	assert.False(settings.ProviderSettingsLoaded)
@@ -1172,15 +1173,15 @@ auto_assign_on_create = false
 func TestNodeLocalSettingsSaveStopsWaitingForHubAtPeerTimeout(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, configPath := setupTestServerWithConfigContent(t, `
+	srv, _, configPath, _ := setupTestServerWithConfigContent(t, `
 host = "127.0.0.1"
 port = 8091
 
 [fleet]
 peer_timeout = "50ms"
-`, &mockGH{})
-	srv.providerSource = &hubProviderSource{
-		client: providerPlaneClientFunc(func(
+`, &serverfake.MockGH{})
+	srv.providerSource = &spokeapi.HubProviderSource{
+		Client: providerPlaneClientFunc(func(
 			ctx context.Context, _ federationauth.Scope, _ *http.Request,
 		) (*http.Response, error) {
 			<-ctx.Done()
@@ -1192,8 +1193,8 @@ peer_timeout = "50ms"
 	autoAssign := true
 	started := time.Now()
 
-	output, err := srv.updateSettings(callerContext, &updateSettingsInput{Body: updateSettingsRequest{
-		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	output, err := srv.updateSettings(callerContext, &settingsapi.UpdateSettingsInput{Body: spokeapi.UpdateSettingsRequest{
+		Workspaces: &spokeapi.WorkspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	}})
 
 	require.NoError(err)
@@ -1344,24 +1345,25 @@ prefer_github_native_stacks = true
 	assert.Equal([]int64{11, 10}, serverfake.StackMemberNumbers(after.JSON200.Members),
 		"a superseded disable must not overwrite the projection the current preference produced")
 }
+
 func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	srv, _, _ := setupTestServerWithConfigContent(t, `
+	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 host = "127.0.0.1"
 port = 8091
-`, &mockGH{})
+`, &serverfake.MockGH{})
 	srv.syncer = nil
 	srv.cfg.Fleet.Enabled = true
 	srv.fleetEnabledAtBoot = true
-	hubSettings := providerSettingsResponse{
+	hubSettings := spokeapi.ProviderSettingsResponse{
 		Repos: []ghclient.ConfiguredRepoStatus{}, RepoPresets: []config.RepoPreset{},
-		RepositoryObservations: []providerRepositoryObservation{},
-		Sync:                   syncSettingsResponse{BudgetPerHour: 2400},
+		RepositoryObservations: []spokeapi.ProviderRepositoryObservation{},
+		Sync:                   spokeapi.SyncSettingsResponse{BudgetPerHour: 2400},
 	}
-	var forwarded providerSettingsUpdate
-	srv.providerSource = &hubProviderSource{
-		client: providerPlaneClientFunc(func(
+	var forwarded syncevents.ProviderSettingsUpdate
+	srv.providerSource = &spokeapi.HubProviderSource{
+		Client: providerPlaneClientFunc(func(
 			_ context.Context, _ federationauth.Scope, request *http.Request,
 		) (*http.Response, error) {
 			if request.Method == http.MethodPut {
@@ -1381,13 +1383,13 @@ port = 8091
 
 	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	var settings settingsResponse
+	var settings spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	assert.Equal(2400, settings.Sync.BudgetPerHour)
 
 	budget := 1800
-	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
-		Sync: &syncSettingsUpdate{BudgetPerHour: &budget},
+	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		Sync: &spokeapi.SyncSettingsUpdate{BudgetPerHour: &budget},
 	})
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	require.NotNil(forwarded.Sync)
@@ -1399,7 +1401,7 @@ port = 8091
 
 func TestHubAppliesSyncBudgetFromSpoke(t *testing.T) {
 	require := require.New(t)
-	srv, _, configPath := setupTestServerWithConfig(t)
+	srv, _, configPath, _ := setupTestServerWithConfig(t)
 	srv.syncer = nil
 	ctx := federationauth.WithPrincipal(t.Context(), federationauth.Principal{
 		NodeID: proxyTestNodeID,
@@ -1407,8 +1409,8 @@ func TestHubAppliesSyncBudgetFromSpoke(t *testing.T) {
 	})
 	budget := 1800
 
-	output, err := srv.federationUpdateProviderSettings(ctx, &federationUpdateProviderSettingsInput{
-		Body: providerSettingsUpdate{Sync: &syncSettingsUpdate{BudgetPerHour: &budget}},
+	output, err := srv.federationUpdateProviderSettings(ctx, &syncevents.FederationUpdateProviderSettingsInput{
+		Body: syncevents.ProviderSettingsUpdate{Sync: &spokeapi.SyncSettingsUpdate{BudgetPerHour: &budget}},
 	})
 
 	require.NoError(err)

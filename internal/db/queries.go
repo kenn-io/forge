@@ -1699,7 +1699,7 @@ func upsertMergeRequestSnapshot(
 ) (int64, int64, bool, error) {
 	result, err := executor.ExecContext(ctx, `
 		INSERT INTO forge_merge_requests
-		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_display_name,
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_association, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
 		     platform_head_sha, platform_base_sha, head_repo_clone_url,
 		     additions, deletions, files_changed, merge_commit_sha, comment_count,
@@ -1709,13 +1709,14 @@ func upsertMergeRequestSnapshot(
 		     last_activity_at, merged_at, closed_at, mergeable_state,
 		     assignees_json, reviewers_json, head_repo_identity_stale,
 		     snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_merge_requests.platform_external_id),
 		    url                  = excluded.url,
 		    title                = excluded.title,
 		    author               = excluded.author,
+		    author_association = CASE WHEN forge_merge_requests.author = excluded.author THEN COALESCE(excluded.author_association, forge_merge_requests.author_association) ELSE excluded.author_association END,
 		    author_display_name  = excluded.author_display_name,
 		    state                = excluded.state,
 		    is_draft             = excluded.is_draft,
@@ -1762,7 +1763,7 @@ func upsertMergeRequestSnapshot(
 		    snapshot_revision    = forge_merge_requests.snapshot_revision + 1
 		WHERE excluded.updated_at >= forge_merge_requests.updated_at`,
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
-		mr.Author, mr.AuthorDisplayName,
+		mr.Author, mr.AuthorAssociation, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.IsLocked, mr.Body, mr.HeadBranch, mr.BaseBranch,
 		mr.PlatformHeadSHA, mr.PlatformBaseSHA, mr.HeadRepoCloneURL,
 		mr.Additions, mr.Deletions, mr.FilesChanged, mr.MergeCommitSHA,
@@ -2242,9 +2243,9 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	}
 	stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO forge_mr_events
-			    (merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
+			    (merge_request_id, platform_id, platform_external_id, event_type, author, author_association, summary, body,
 			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
 			    platform_external_id = excluded.platform_external_id,
@@ -2257,6 +2258,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 			        ELSE excluded.author
 			    END,
 			    summary       = excluded.summary,
+		    author_association = CASE WHEN forge_mr_events.author = excluded.author THEN COALESCE(excluded.author_association, forge_mr_events.author_association) ELSE excluded.author_association END,
 			    body          = excluded.body,
 			    metadata_json = excluded.metadata_json,
 			    created_at    = excluded.created_at,
@@ -2310,7 +2312,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 			}
 		}
 		if _, err := stmt.ExecContext(ctx,
-			e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.Summary, e.Body,
+			e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.AuthorAssociation, e.Summary, e.Body,
 			e.MetadataJSON, e.CreatedAt, e.DedupeKey, e.DirectURL, e.ThreadID, e.PositionJSON, e.Resolvable, e.Resolved,
 		); err != nil {
 			return fmt.Errorf("insert mr event (dedupe_key=%s): %w", e.DedupeKey, err)
@@ -3165,16 +3167,17 @@ func upsertIssueParentTx(
 	var issueID, revision int64
 	err := tx.QueryRowContext(ctx, `
 		INSERT INTO forge_issues
-		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_association, state,
 		     body, comment_count, labels_json, assignees_json, detail_fetched_at,
 		     created_at, updated_at, last_activity_at, closed_at, snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), '[]'), ?, ?, ?, ?, ?, 1)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), '[]'), ?, ?, ?, ?, ?, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id       = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_issues.platform_external_id),
 		    url               = excluded.url,
 		    title             = excluded.title,
 		    author            = excluded.author,
+		    author_association = CASE WHEN forge_issues.author = excluded.author THEN COALESCE(excluded.author_association, forge_issues.author_association) ELSE excluded.author_association END,
 		    state             = excluded.state,
 		    body              = excluded.body,
 		    comment_count     = excluded.comment_count,
@@ -3188,7 +3191,7 @@ func upsertIssueParentTx(
 		WHERE excluded.updated_at >= forge_issues.updated_at
 		RETURNING id, snapshot_revision`,
 		issue.RepoID, issue.PlatformID, issue.PlatformExternalID, issue.Number, issue.URL,
-		issue.Title, issue.Author, issue.State,
+		issue.Title, issue.Author, issue.AuthorAssociation, issue.State,
 		issue.Body, issue.CommentCount, issue.LabelsJSON, issue.AssigneesJSON,
 		issue.DetailFetchedAt,
 		issue.CreatedAt, issue.UpdatedAt, issue.LastActivityAt, issue.ClosedAt,

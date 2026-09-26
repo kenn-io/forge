@@ -922,6 +922,53 @@ components:
         - name
         - repo_path
       type: object
+    ArchiveSnapshot:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ArchiveSnapshot.json
+          format: uri
+          readOnly: true
+          type: string
+        end:
+          format: date-time
+          type: string
+        issues:
+          items:
+            $ref: "#/components/schemas/SnapshotItem"
+          type: array
+        observed_at:
+          format: date-time
+          type: string
+        pull_requests:
+          items:
+            $ref: "#/components/schemas/SnapshotPullRequest"
+          type: array
+        relations:
+          items:
+            $ref: "#/components/schemas/SnapshotRelation"
+          type: array
+        repositories:
+          items:
+            $ref: "#/components/schemas/SnapshotRepository"
+          type: array
+        schema:
+          type: string
+        start:
+          format: date-time
+          type: string
+      required:
+        - schema
+        - observed_at
+        - start
+        - end
+        - repositories
+        - pull_requests
+        - issues
+        - relations
+      type: object
     ArchiveStatusResponse:
       additionalProperties: false
       properties:
@@ -8786,6 +8833,347 @@ components:
         - sessions
         - workspaces
       type: object
+    SnapshotCheck:
+      additionalProperties: false
+      properties:
+        conclusion:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        url:
+          type: string
+      required:
+        - name
+        - status
+        - conclusion
+        - url
+      type: object
+    SnapshotCoverage:
+      additionalProperties: false
+      properties:
+        active_phases:
+          items:
+            type: string
+          type: array
+        archived_items:
+          format: int64
+          type: integer
+        budget_wait_until:
+          format: date-time
+          type: string
+        collection_mode:
+          type: string
+        comments:
+          type: string
+        inaccessible_items:
+          format: int64
+          type: integer
+        initial_completed_at:
+          format: date-time
+          type: string
+        inline_comments:
+          type: string
+        issues:
+          type: string
+        maintenance_succeeded_at:
+          format: date-time
+          type: string
+        merge_requests:
+          type: string
+        operator_state:
+          type: string
+        reviews:
+          type: string
+        status:
+          type: string
+        unsupported_items:
+          format: int64
+          type: integer
+      required:
+        - status
+        - active_phases
+        - collection_mode
+        - operator_state
+        - issues
+        - merge_requests
+        - comments
+        - reviews
+        - inline_comments
+        - archived_items
+        - unsupported_items
+        - inaccessible_items
+      type:
+        - object
+        - "null"
+    SnapshotItem:
+      additionalProperties: false
+      properties:
+        author:
+          type: string
+        author_association:
+          type:
+            - string
+            - "null"
+        body:
+          type: string
+        body_truncated:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        detail_fetched_at:
+          description: Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
+          format: date-time
+          type:
+            - string
+            - "null"
+        id:
+          type: string
+        labels:
+          items:
+            type: string
+          type: array
+        number:
+          format: int64
+          type: integer
+        repository_id:
+          type: string
+        state:
+          type: string
+        title:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        url:
+          type: string
+      required:
+        - id
+        - repository_id
+        - number
+        - url
+        - title
+        - author
+        - author_association
+        - body
+        - body_truncated
+        - state
+        - labels
+        - created_at
+        - updated_at
+        - detail_fetched_at
+      type: object
+    SnapshotPullRequest:
+      additionalProperties: false
+      properties:
+        additions:
+          format: int64
+          type:
+            - integer
+            - "null"
+        author:
+          type: string
+        author_association:
+          type:
+            - string
+            - "null"
+        base_branch:
+          type: string
+        body:
+          type: string
+        body_truncated:
+          type: boolean
+        changed_files:
+          format: int64
+          type:
+            - integer
+            - "null"
+        check_state:
+          type: string
+        checks:
+          items:
+            $ref: "#/components/schemas/SnapshotCheck"
+          type: array
+        created_at:
+          format: date-time
+          type: string
+        deletions:
+          format: int64
+          type:
+            - integer
+            - "null"
+        detail_fetched_at:
+          description: Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
+          format: date-time
+          type:
+            - string
+            - "null"
+        draft:
+          type: boolean
+        gaps:
+          items:
+            type: string
+          type: array
+        head_branch:
+          type: string
+        head_in_same_repository:
+          description: Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
+          type:
+            - boolean
+            - "null"
+        head_sha:
+          type: string
+        id:
+          type: string
+        labels:
+          items:
+            type: string
+          type: array
+        mergeable_state:
+          type: string
+        number:
+          format: int64
+          type: integer
+        repository_id:
+          type: string
+        review_state:
+          type: string
+        reviews:
+          items:
+            $ref: "#/components/schemas/SnapshotReview"
+          type: array
+        state:
+          type: string
+        title:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        url:
+          type: string
+      required:
+        - draft
+        - head_sha
+        - head_branch
+        - base_branch
+        - head_in_same_repository
+        - additions
+        - deletions
+        - changed_files
+        - review_state
+        - check_state
+        - mergeable_state
+        - checks
+        - reviews
+        - gaps
+        - id
+        - repository_id
+        - number
+        - url
+        - title
+        - author
+        - author_association
+        - body
+        - body_truncated
+        - state
+        - labels
+        - created_at
+        - updated_at
+        - detail_fetched_at
+      type: object
+    SnapshotRelation:
+      additionalProperties: false
+      properties:
+        evidence_id:
+          type: string
+        kind:
+          type: string
+        observed_at:
+          format: date-time
+          type: string
+        source_id:
+          type: string
+        target_id:
+          type: string
+        url:
+          type: string
+      required:
+        - source_id
+        - target_id
+        - kind
+        - evidence_id
+        - url
+        - observed_at
+      type: object
+    SnapshotRepository:
+      additionalProperties: false
+      properties:
+        coverage:
+          $ref: "#/components/schemas/SnapshotCoverage"
+        default_branch:
+          type: string
+        host:
+          type: string
+        id:
+          type: string
+        last_sync_at:
+          format: date-time
+          type:
+            - string
+            - "null"
+        path:
+          type: string
+        provider:
+          type: string
+        provider_id:
+          type: string
+        sync_error:
+          type: string
+      required:
+        - id
+        - provider
+        - host
+        - provider_id
+        - path
+        - default_branch
+        - last_sync_at
+        - sync_error
+        - coverage
+      type: object
+    SnapshotReview:
+      additionalProperties: false
+      properties:
+        author:
+          type: string
+        author_association:
+          type:
+            - string
+            - "null"
+        body:
+          type: string
+        body_truncated:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        state:
+          type: string
+        url:
+          type: string
+      required:
+        - id
+        - author
+        - author_association
+        - body
+        - body_truncated
+        - state
+        - url
+        - created_at
+      type: object
     SnippetRange:
       additionalProperties: false
       properties:
@@ -11365,6 +11753,51 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get historical archive activity report
+      tags:
+        - Archive
+  /archive/snapshot:
+    get:
+      operationId: get-archive-snapshot
+      parameters:
+        - description: "Optional configured repository subset. Repeat repo=provider|platform_host/repo_path to split large exports. Limits: 10,000 items/reviews/references and 32 MiB projected text or response; no items are dropped."
+          explode: true
+          in: query
+          name: repo
+          schema:
+            description: "Optional configured repository subset. Repeat repo=provider|platform_host/repo_path to split large exports. Limits: 10,000 items/reviews/references and 32 MiB projected text or response; no items are dropped."
+            items:
+              type: string
+            type: array
+        - description: Inclusive UTC RFC3339 issue-creation boundary.
+          explode: false
+          in: query
+          name: start
+          required: true
+          schema:
+            description: Inclusive UTC RFC3339 issue-creation boundary.
+            type: string
+        - description: Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit.
+          explode: false
+          in: query
+          name: end
+          required: true
+          schema:
+            description: Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit.
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArchiveSnapshot"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Export cached work and archive coverage
       tags:
         - Archive
   /archive/start:

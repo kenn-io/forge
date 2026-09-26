@@ -685,3 +685,63 @@ func requireEnsureConfigured(t *testing.T, s *archive.Service, refs []platform.R
 	_, err := s.EnsureConfigured(t.Context(), refs)
 	require.NoError(t, err)
 }
+
+func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, provider, _, ref := setupArchiveTestServer(t, nil)
+	client := setupTestClient(t, srv)
+	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repo.ID, Number: 1, Title: "Open repair", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-90 * 24 * time.Hour), UpdatedAt: now, DetailFetchedAt: &now})
+	require.NoError(err)
+	query := generated.GetArchiveSnapshotQuery{Start: "2026-09-13T12:00:00Z", End: "2026-09-20T12:00:00Z", Repo: []string{string(ref.Platform) + "|" + ref.Host + "/" + ref.RepoPath}}
+	response, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.NoError(err)
+	require.NotNil(response.JSON200)
+	assert.Equal("kenn-forge-archive-snapshot/1", response.JSON200.Schema1)
+	require.Len(response.JSON200.PullRequests, 1)
+	assert.Equal("Open repair", response.JSON200.PullRequests[0].Title)
+	var payload struct {
+		PullRequests []map[string]any `json:"pull_requests"`
+	}
+	require.NoError(json.Unmarshal(response.Body, &payload))
+	require.Len(payload.PullRequests, 1)
+	assert.Equal("2026-09-20T12:00:00Z", payload.PullRequests[0]["detail_fetched_at"])
+	require.Len(response.JSON200.Repositories, 1)
+	assert.NotNil(response.JSON200.Repositories[0].Coverage)
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `DELETE FROM forge_archive_repos WHERE repo_id=?`, repo.ID)
+	require.NoError(err)
+	unknown, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.NoError(err)
+	require.NotNil(unknown.JSON200)
+	require.Len(unknown.JSON200.Repositories, 1)
+	assert.Nil(unknown.JSON200.Repositories[0].Coverage, "missing archive state must remain unknown to API clients")
+
+	outside := ref
+	outside.Name = "not-configured"
+	outside.RepoPath = "owner/not-configured"
+	outside.PlatformExternalID = "other-id"
+	_, err = database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(outside))
+	require.NoError(err)
+	query.Repo = []string{string(outside.Platform) + "|" + outside.Host + "/" + outside.RepoPath}
+	rejected, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.Error(err)
+	require.NotNil(rejected.Error)
+	assert.Equal(generated.ProblemErrorCodeValidationError, rejected.Error.Code)
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+ WITH RECURSIVE sequence(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM sequence WHERE n<10001)
+ INSERT INTO forge_mr_events (merge_request_id,event_type,dedupe_key,created_at)
+ SELECT ?, 'review', 'review-' || n, ? FROM sequence`, mrID, now)
+	require.NoError(err)
+	query.Repo = nil
+	oversized, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.Error(err)
+	require.NotNil(oversized.Error)
+	assert.Equal(generated.ProblemErrorCodePayloadTooLarge, oversized.Error.Code)
+	assert.Zero(provider.calls.Load())
+}

@@ -5211,7 +5211,13 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 				},
 			},
 		},
-		reviews:  []*gh.PullRequestReview{},
+		reviews: []*gh.PullRequestReview{{
+			ID:                new(int64(123)),
+			User:              &gh.User{Login: new("reviewer")},
+			AuthorAssociation: new("FIRST_TIMER"),
+			State:             new("APPROVED"),
+			SubmittedAt:       makeTimestamp(now),
+		}},
 		comments: []*gh.IssueComment{},
 		ciStatus: &gh.CombinedStatus{State: &ciState},
 	}
@@ -5243,6 +5249,9 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 		}
 	}
 	assert.True(found)
+	var association *string
+	require.NoError(d.ReadDB().QueryRowContext(ctx, "SELECT author_association FROM forge_mr_events WHERE merge_request_id = ? AND event_type = 'review'", pr.ID).Scan(&association))
+	assert.Equal(new("FIRST_TIMER"), association)
 }
 
 func TestSyncRepoOverviewPreservesTimelineWhenCloneUnavailable(t *testing.T) {
@@ -8184,14 +8193,15 @@ func TestSyncItemByNumber_Issue(t *testing.T) {
 				return nil, fmt.Errorf("unexpected number %d", n)
 			}
 			return &gh.Issue{
-				ID:        new(int64(9999)),
-				Number:    &number,
-				Title:     &title,
-				State:     &state,
-				User:      &gh.User{Login: &author},
-				HTMLURL:   new("https://github.com/acme/widget/issues/42"),
-				CreatedAt: ghTime,
-				UpdatedAt: ghTime,
+				ID:                new(int64(9999)),
+				Number:            &number,
+				Title:             &title,
+				State:             &state,
+				User:              &gh.User{Login: &author},
+				AuthorAssociation: new("CONTRIBUTOR"), //nolint:staticcheck // Fixture represents a REST response, not an Events payload.
+				HTMLURL:           new("https://github.com/acme/widget/issues/42"),
+				CreatedAt:         ghTime,
+				UpdatedAt:         ghTime,
 			}, nil
 		},
 	}
@@ -8206,8 +8216,11 @@ func TestSyncItemByNumber_Issue(t *testing.T) {
 
 	issue, err := database.GetIssue(ctx, "github", "github.com", "acme", "widget", number)
 	require.NoError(err)
-	assert.NotNil(issue)
+	require.NotNil(issue)
 	assert.Equal(title, issue.Title)
+	var association *string
+	require.NoError(database.ReadDB().QueryRowContext(ctx, "SELECT author_association FROM forge_issues WHERE id = ?", issue.ID).Scan(&association))
+	assert.Equal(new("CONTRIBUTOR"), association)
 }
 
 func TestSyncItemByNumber_PR(t *testing.T) {
@@ -8243,12 +8256,13 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 			}, nil
 		},
 		singlePR: &gh.PullRequest{
-			ID:      new(int64(8888)),
-			Number:  &number,
-			Title:   &title,
-			State:   &state,
-			User:    &gh.User{Login: &author},
-			HTMLURL: &prURL,
+			AuthorAssociation: new("MEMBER"), //nolint:staticcheck // Fixture represents a REST response, not an Events payload.
+			ID:                new(int64(8888)),
+			Number:            &number,
+			Title:             &title,
+			State:             &state,
+			User:              &gh.User{Login: &author},
+			HTMLURL:           &prURL,
 			Head: &gh.PullRequestBranch{
 				Ref: new("feature"),
 				SHA: new("abc123"),
@@ -8269,8 +8283,11 @@ func TestSyncItemByNumber_PR(t *testing.T) {
 
 	pr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", number)
 	require.NoError(err)
-	assert.NotNil(pr)
+	require.NotNil(pr)
 	assert.Equal(title, pr.Title)
+	var association *string
+	require.NoError(database.ReadDB().QueryRowContext(ctx, "SELECT author_association FROM forge_merge_requests WHERE id = ?", pr.ID).Scan(&association))
+	assert.Equal(new("MEMBER"), association)
 }
 
 func TestRepoFailKeyIncludesProvider(t *testing.T) {

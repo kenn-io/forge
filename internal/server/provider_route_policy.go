@@ -167,6 +167,7 @@ var providerRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "federation-resolve-workspace-launch-spec", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-set-workflow-state", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "federation-update-provider-settings", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
+	{OperationID: "get-archive-snapshot", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-archive-report", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-comment-autocomplete", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-comment-autocomplete-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},

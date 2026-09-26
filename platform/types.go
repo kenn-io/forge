@@ -99,6 +99,7 @@ type MergeRequest struct {
 	URL                string
 	Title              string
 	Author             string
+	AuthorAssociation  *string
 	AuthorDisplayName  string
 	State              string
 	IsDraft            bool
@@ -152,6 +153,7 @@ type Issue struct {
 	URL                string
 	Title              string
 	Author             string
+	AuthorAssociation  *string
 	State              string
 	Body               string
 	CommentCount       int
@@ -180,6 +182,7 @@ type MergeRequestEvent struct {
 	MergeRequestNumber int
 	EventType          string
 	Author             string
+	AuthorAssociation  *string
 	Summary            string
 	Body               string
 	MetadataJSON       string
@@ -352,6 +355,7 @@ type MergeRequestReviewThread struct {
 	ProviderCommentID  string
 	Body               string
 	AuthorLogin        string
+	AuthorAssociation  *string
 	DirectURL          string
 	Range              DiffReviewLineRange
 	Resolved           bool

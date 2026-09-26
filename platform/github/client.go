@@ -33,23 +33,24 @@ type PullRequestReviewThread struct {
 }
 
 type PullRequestReviewThreadComment struct {
-	NodeID           string
-	DatabaseID       int64
-	ReviewDatabaseID int64
-	SubjectType      string
-	Body             string
-	AuthorLogin      string
-	Path             string
-	Line             int
-	OriginalLine     int
-	DiffHunk         string
-	URL              string
-	CommitID         string
-	OriginalCommitID string
-	IsMinimized      bool
-	MinimizedReason  string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	NodeID            string
+	DatabaseID        int64
+	ReviewDatabaseID  int64
+	SubjectType       string
+	Body              string
+	AuthorLogin       string
+	AuthorAssociation *string
+	Path              string
+	Line              int
+	OriginalLine      int
+	DiffHunk          string
+	URL               string
+	CommitID          string
+	OriginalCommitID  string
+	IsMinimized       bool
+	MinimizedReason   string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // EditPullRequestOpts holds optional fields for editing a pull request.
@@ -733,6 +734,7 @@ mutation($pullRequestId: ID!) {
       locked
       body
       url
+      authorAssociation
       author {
         login
       }
@@ -790,6 +792,7 @@ query($threadID: ID!, $cursor: String) {
           diffHunk
           url
           author { login }
+          authorAssociation
           commit { oid }
           originalCommit { oid }
           pullRequestReview { databaseId }
@@ -818,17 +821,18 @@ type graphQLError struct {
 }
 
 type graphQLReviewThreadComment struct {
-	NodeID         string       `json:"id"`
-	DatabaseID     GraphQLInt64 `json:"databaseId"`
-	FullDatabaseID GraphQLInt64 `json:"fullDatabaseId"`
-	Body           string       `json:"body"`
-	Path           string       `json:"path"`
-	Line           int          `json:"line"`
-	OriginalLine   int          `json:"originalLine"`
-	SubjectType    string       `json:"subjectType"`
-	DiffHunk       string       `json:"diffHunk"`
-	URL            string       `json:"url"`
-	Author         *struct {
+	AuthorAssociation *string      `json:"authorAssociation"`
+	NodeID            string       `json:"id"`
+	DatabaseID        GraphQLInt64 `json:"databaseId"`
+	FullDatabaseID    GraphQLInt64 `json:"fullDatabaseId"`
+	Body              string       `json:"body"`
+	Path              string       `json:"path"`
+	Line              int          `json:"line"`
+	OriginalLine      int          `json:"originalLine"`
+	SubjectType       string       `json:"subjectType"`
+	DiffHunk          string       `json:"diffHunk"`
+	URL               string       `json:"url"`
+	Author            *struct {
 		Login string `json:"login"`
 	} `json:"author"`
 	Commit *struct {
@@ -1455,19 +1459,20 @@ func githubReviewThreadCommentFromGraphQL(
 	comment graphQLReviewThreadComment,
 ) PullRequestReviewThreadComment {
 	next := PullRequestReviewThreadComment{
-		NodeID:          comment.NodeID,
-		DatabaseID:      FirstPositiveInt64(int64(comment.FullDatabaseID), int64(comment.DatabaseID)),
-		SubjectType:     comment.SubjectType,
-		Body:            comment.Body,
-		Path:            comment.Path,
-		Line:            comment.Line,
-		OriginalLine:    comment.OriginalLine,
-		DiffHunk:        comment.DiffHunk,
-		URL:             comment.URL,
-		IsMinimized:     comment.IsMinimized,
-		MinimizedReason: comment.MinimizedReason,
-		CreatedAt:       comment.CreatedAt,
-		UpdatedAt:       comment.UpdatedAt,
+		NodeID:            comment.NodeID,
+		DatabaseID:        FirstPositiveInt64(int64(comment.FullDatabaseID), int64(comment.DatabaseID)),
+		SubjectType:       comment.SubjectType,
+		Body:              comment.Body,
+		AuthorAssociation: comment.AuthorAssociation,
+		Path:              comment.Path,
+		Line:              comment.Line,
+		OriginalLine:      comment.OriginalLine,
+		DiffHunk:          comment.DiffHunk,
+		URL:               comment.URL,
+		IsMinimized:       comment.IsMinimized,
+		MinimizedReason:   comment.MinimizedReason,
+		CreatedAt:         comment.CreatedAt,
+		UpdatedAt:         comment.UpdatedAt,
 	}
 	if comment.Author != nil {
 		next.AuthorLogin = comment.Author.Login

@@ -227,7 +227,8 @@ func TestOpenBackfillsIssuePRReferences(t *testing.T) {
 		"github", "github.com", "acme", "widget",
 	))
 	require.NoError(err)
-	issueID, err := previous.UpsertIssue(t.Context(), testIssue(repoID, 7))
+	var issueID int64
+	err = previous.WriteDB().QueryRowContext(t.Context(), `INSERT INTO forge_issues (repo_id, platform_id, number, title, state, created_at, updated_at, last_activity_at) VALUES (?, 7, 7, 'Fixture issue', 'open', ?, ?, ?) RETURNING id`, repoID, baseTime(), baseTime(), baseTime()).Scan(&issueID)
 	require.NoError(err)
 	_, err = previous.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_issue_events (
@@ -2868,4 +2869,34 @@ func seedLegacyIssueForTest(
 		labelsJSON,
 	)
 	require.NoError(t, err)
+}
+
+func TestMigration59PreservesRowsWithoutInventingAuthorAssociations(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "author-association.db")
+	openAtVersionForTest(t, path, 58, func(raw *sql.DB) {
+		_, err := raw.ExecContext(t.Context(), `
+   INSERT INTO forge_repos (id, platform, platform_host, platform_repo_id, owner, name, repo_path, owner_key, name_key, repo_path_key, lifecycle_state, created_at)
+   VALUES (1, 'github', 'github.com', 'repo-1', 'acme', 'project', 'acme/project', 'acme', 'project', 'acme/project', 'active', datetime('now'));
+   INSERT INTO forge_merge_requests (id, repo_id, platform_id, number, author, created_at, updated_at, last_activity_at) VALUES (1, 1, 7, 7, 'author', datetime('now'), datetime('now'), datetime('now'));
+   INSERT INTO forge_issues (id, repo_id, platform_id, number, author, created_at, updated_at, last_activity_at) VALUES (1, 1, 8, 8, 'reporter', datetime('now'), datetime('now'), datetime('now'));
+   INSERT INTO forge_mr_events (id, merge_request_id, event_type, author, dedupe_key, created_at) VALUES (1, 1, 'review', 'reviewer', 'review-1', datetime('now'));
+  `)
+		require.NoError(err)
+	})
+	database, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(database.Close()) })
+	for _, table := range []string{"forge_merge_requests", "forge_issues", "forge_mr_events"} {
+		var association *string
+		require.NoError(database.ReadDB().QueryRowContext(t.Context(), "SELECT author_association FROM "+table+" WHERE id=1").Scan(&association))
+		assert.Nil(association, table)
+		_, err := database.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET author_association='FUTURE_PROVIDER_VALUE' WHERE id=1")
+		require.NoError(err)
+		require.NoError(database.ReadDB().QueryRowContext(t.Context(), "SELECT author_association FROM "+table+" WHERE id=1").Scan(&association))
+		assert.Equal(new("FUTURE_PROVIDER_VALUE"), association)
+	}
+	assertDatabaseIntegrityForTest(t, database.ReadDB())
 }

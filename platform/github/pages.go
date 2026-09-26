@@ -52,7 +52,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
           node {
             id isResolved isOutdated path line originalLine startLine originalStartLine diffSide
             comments(first: 100) {
-              nodes { id databaseId fullDatabaseId pullRequestReview { databaseId } subjectType body author { login } path line originalLine diffHunk url commit { oid } originalCommit { oid } isMinimized minimizedReason createdAt updatedAt }
+              nodes { id databaseId fullDatabaseId pullRequestReview { databaseId } subjectType body author { login } authorAssociation path line originalLine diffHunk url commit { oid } originalCommit { oid } isMinimized minimizedReason createdAt updatedAt }
               pageInfo { hasNextPage endCursor }
             }
           }
@@ -69,7 +69,7 @@ query($owner: String!, $repo: String!, $cursor: String, $orderField: IssueOrderF
     issues(first: 100, after: $cursor, states: [OPEN, CLOSED], filterBy: {since: $since}, orderBy: {field: $orderField, direction: ASC}) {
       nodes {
         id databaseId number title state body url createdAt updatedAt closedAt
-        author { login }
+        author { login } authorAssociation
         comments { totalCount }
         labels(first: 100) { nodes { name color description isDefault } }
         assignees(first: 100) { nodes { login } }
@@ -80,17 +80,18 @@ query($owner: String!, $repo: String!, $cursor: String, $orderField: IssueOrderF
 }`
 
 type githubArchiveIssueNode struct {
-	NodeID     string     `json:"id"`
-	DatabaseID int64      `json:"databaseId"`
-	Number     int        `json:"number"`
-	Title      string     `json:"title"`
-	State      string     `json:"state"`
-	Body       string     `json:"body"`
-	URL        string     `json:"url"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	UpdatedAt  time.Time  `json:"updatedAt"`
-	ClosedAt   *time.Time `json:"closedAt"`
-	Author     *struct {
+	AuthorAssociation *string    `json:"authorAssociation"`
+	NodeID            string     `json:"id"`
+	DatabaseID        int64      `json:"databaseId"`
+	Number            int        `json:"number"`
+	Title             string     `json:"title"`
+	State             string     `json:"state"`
+	Body              string     `json:"body"`
+	URL               string     `json:"url"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
+	ClosedAt          *time.Time `json:"closedAt"`
+	Author            *struct {
 		Login string `json:"login"`
 	} `json:"author"`
 	Comments struct {
@@ -186,8 +187,9 @@ func githubArchiveIssueFromGraphQL(node *githubArchiveIssueNode) *gh.Issue {
 	issue := &gh.Issue{
 		ID: new(node.DatabaseID), NodeID: new(node.NodeID), Number: new(node.Number),
 		Title: new(node.Title), State: new(state), Body: new(node.Body), HTMLURL: new(node.URL),
-		Comments:  new(node.Comments.TotalCount),
-		CreatedAt: &gh.Timestamp{Time: node.CreatedAt}, UpdatedAt: &gh.Timestamp{Time: node.UpdatedAt},
+		Comments:          new(node.Comments.TotalCount),
+		AuthorAssociation: node.AuthorAssociation, //nolint:staticcheck // GraphQL detail is unaffected by Events payload deprecation.
+		CreatedAt:         &gh.Timestamp{Time: node.CreatedAt}, UpdatedAt: &gh.Timestamp{Time: node.UpdatedAt},
 	}
 	if node.Author != nil {
 		issue.User = &gh.User{Login: new(node.Author.Login)}

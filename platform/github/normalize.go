@@ -27,6 +27,7 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		URL:                ghPR.GetHTMLURL(),
 		Title:              ghPR.GetTitle(),
 		Author:             loginOrEmpty(ghPR.GetUser()),
+		AuthorAssociation:  ghPR.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		AuthorDisplayName:  nameOrEmpty(ghPR.GetUser()),
 		State:              ghPR.GetState(),
 		IsDraft:            ghPR.GetDraft(),
@@ -115,6 +116,7 @@ func NormalizeIssue(repo platform.RepoRef, ghIssue *gh.Issue) (platform.Issue, e
 		URL:                ghIssue.GetHTMLURL(),
 		Title:              ghIssue.GetTitle(),
 		Author:             loginOrEmpty(ghIssue.GetUser()),
+		AuthorAssociation:  ghIssue.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		State:              ghIssue.GetState(),
 		Body:               ghIssue.GetBody(),
 		CommentCount:       ghIssue.GetComments(),
@@ -162,6 +164,7 @@ func NormalizeReviewEvent(
 		EventType:          "review",
 		DedupeKey:          fmt.Sprintf("review-%d", r.GetID()),
 		Author:             loginOrEmpty(r.GetUser()),
+		AuthorAssociation:  r.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Body:               r.GetBody(),
 		Summary:            r.GetState(),
 		DirectURL:          r.GetHTMLURL(),
@@ -185,6 +188,7 @@ func NormalizeReviewCommentEvent(
 		EventType:          "review_comment",
 		DedupeKey:          fmt.Sprintf("review_comment:%d", c.GetID()),
 		Author:             loginOrEmpty(c.GetUser()),
+		AuthorAssociation:  c.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Body:               c.GetBody(),
 		DirectURL:          c.GetHTMLURL(),
 	}
@@ -688,6 +692,7 @@ func normalizeIssueCommentBase(repo platform.RepoRef, c *gh.IssueComment) platfo
 		PlatformExternalID: c.GetNodeID(),
 		EventType:          "issue_comment",
 		Author:             loginOrEmpty(c.GetUser()),
+		AuthorAssociation:  c.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Body:               c.GetBody(),
 		DirectURL:          c.GetHTMLURL(),
 	}

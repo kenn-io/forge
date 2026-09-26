@@ -125,11 +125,16 @@ export function resolveItemReference(
   });
 }
 
-export function initItemRefHandler(runtime: AppRuntime, onNavigate?: (ref: RoutableItemRef) => void): () => void {
+export function initItemRefHandler(
+  runtime: AppRuntime,
+  onNavigate?: (ref: RoutableItemRef) => void,
+  target: HTMLElement | Document = document,
+): () => void {
   let execution: AppExecution<void, unknown> | null = null;
 
-  function handleClick(e: MouseEvent): void {
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+  function handleClick(e: Event): void {
+    if (!(e instanceof MouseEvent) || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0)
+      return;
 
     const anchor = findItemRef(e.target);
     if (!anchor) return;
@@ -163,9 +168,9 @@ export function initItemRefHandler(runtime: AppRuntime, onNavigate?: (ref: Routa
     );
   }
 
-  document.addEventListener("click", handleClick);
+  target.addEventListener("click", handleClick);
   return () => {
     execution?.interrupt();
-    document.removeEventListener("click", handleClick);
+    target.removeEventListener("click", handleClick);
   };
 }

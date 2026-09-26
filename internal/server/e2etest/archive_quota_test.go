@@ -187,7 +187,9 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 
 	// Exhausting admitted capacity is a normal wait, while the transport
 	// must still refuse the next upstream attempt.
-	require.NoError(archiveService.RunEligible(t.Context()))
+	worked, err := archiveService.RunPass(t.Context())
+	require.NoError(err)
+	assert.True(worked, "the completed provider request must prevent idle backoff")
 	assert.Equal(int32(1), upstreamCalls.Load())
 	// Provider-reserved attempts are metered by the quota registry, not the
 	// local sync budget.

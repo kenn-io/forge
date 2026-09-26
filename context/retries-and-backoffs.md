@@ -83,6 +83,8 @@ migrate ticker-driven sync or refresh loops into `backoff/v5`
 The archive worker uses the backoff schedule type only as an idle delay calculator,
 not as a retry wrapper: idle passes double up to a five-minute cap and any wake or
 worked pass resets it (`internal/github/sync.go::runArchiveLoop`).
+Count provider work even if a later quota refusal stops the pass
+(`internal/archive/scheduler.go::Service.finishWork`).
 
 - Manual workflow dispatch is never retried. Track only the run ID returned by
   dispatch, using direct reads until completion or thirty minutes; never infer

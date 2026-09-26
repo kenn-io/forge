@@ -172,23 +172,28 @@ func TestRunPassReportsProviderAttemptedDeferralsAsWork(t *testing.T) {
 	now := archiveTestTime()
 	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
 
-	t.Run("feature deferral after a provider request", func(t *testing.T) {
-		database := dbtest.Open(t)
-		archiveServiceSeedRepo(t, database, ref)
-		provider := newArchiveServiceProvider(ref.Platform, ref.Host)
-		provider.issueInventoryErr = errors.New("issues disabled for repository")
-		registry, err := platform.NewRegistry(provider)
-		require.NoError(err)
-		admission := &archiveTestAdmission{deferCompletedErrors: true, retryAt: now.Add(24 * time.Hour)}
-		service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, admission, now)
-		requireEnsureConfigured(t, service, []platform.RepoRef{ref})
-		_, err = service.Start(t.Context(), []platform.RepoRef{ref})
-		require.NoError(err)
+	for name, cause := range map[string]error{
+		"feature deferral": errors.New("issues disabled for repository"),
+		"budget deferral":  platform.ErrArchiveAttemptBudget,
+	} {
+		t.Run(name+" after a provider request", func(t *testing.T) {
+			database := dbtest.Open(t)
+			archiveServiceSeedRepo(t, database, ref)
+			provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+			provider.issueInventoryErr = cause
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(err)
+			admission := &archiveTestAdmission{deferCompletedErrors: name == "feature deferral", retryAt: now.Add(24 * time.Hour)}
+			service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, admission, now)
+			requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+			_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+			require.NoError(err)
 
-		worked, err := service.RunPass(t.Context())
-		require.NoError(err)
-		assert.True(worked, "the provider was contacted, so sibling work must not wait out a backoff")
-	})
+			worked, err := service.RunPass(t.Context())
+			require.NoError(err)
+			assert.True(worked, "the provider was contacted, so sibling work must not wait out a backoff")
+		})
+	}
 
 	t.Run("request preempted by live work", func(t *testing.T) {
 		database := dbtest.Open(t)

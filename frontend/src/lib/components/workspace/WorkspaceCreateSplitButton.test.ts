@@ -84,14 +84,23 @@ describe("WorkspaceCreateSplitButton", () => {
     expect(screen.getByRole("menuitem", { name: "Codex" }).getAttribute("aria-describedby")).toBeNull();
   });
 
-  it("offers only agents without a redundant visible heading and passes the chosen target", async () => {
+  it("sorts available agents by case-insensitive label and passes the chosen target", async () => {
     const onCreate = vi.fn();
     render(WorkspaceCreateSplitButton, {
-      props: { label: "Create Workspace", launchTargets: targets, onCreate },
+      props: {
+        label: "Create Workspace",
+        launchTargets: [...targets, { ...targets[0], key: "custom", label: "alpha agent" }],
+        onCreate,
+      },
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace options" }));
 
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent?.trim())).toEqual([
+      "alpha agent",
+      "Claude",
+      "Codex",
+    ]);
     expect(screen.queryByText("Create and launch")).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Shell" })).toBeNull();
 
@@ -157,7 +166,7 @@ describe("WorkspaceCreateSplitButton", () => {
     ).toBe(true);
   });
 
-  it("supports menu arrow, boundary, and keyboard activation", async () => {
+  it("supports menu arrow, boundary, and selection", async () => {
     const onCreate = vi.fn();
     render(WorkspaceCreateSplitButton, {
       props: { label: "Create Workspace", launchTargets: targets, onCreate },
@@ -168,29 +177,29 @@ describe("WorkspaceCreateSplitButton", () => {
 
     await fireEvent.keyDown(trigger, { key: "ArrowDown" });
 
-    const codex = screen.getByRole("menuitem", { name: "Codex" });
     const claude = screen.getByRole("menuitem", { name: "Claude" });
-    expect(document.activeElement).toBe(codex);
+    const codex = screen.getByRole("menuitem", { name: "Codex" });
+    expect(document.activeElement).toBe(claude);
 
-    await fireEvent.keyDown(codex, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(claude);
-    await fireEvent.keyDown(claude, { key: "ArrowUp" });
+    await fireEvent.keyDown(claude, { key: "ArrowDown" });
     expect(document.activeElement).toBe(codex);
-    await fireEvent.keyDown(codex, { key: "End" });
+    await fireEvent.keyDown(codex, { key: "ArrowUp" });
     expect(document.activeElement).toBe(claude);
-    await fireEvent.keyDown(claude, { key: "Home" });
+    await fireEvent.keyDown(claude, { key: "End" });
     expect(document.activeElement).toBe(codex);
-    await fireEvent.keyDown(codex, { key: "ArrowDown" });
+    await fireEvent.keyDown(codex, { key: "Home" });
     expect(document.activeElement).toBe(claude);
-    await fireEvent.keyDown(claude, { key: " " });
+    await fireEvent.keyDown(claude, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(codex);
+    await fireEvent.click(codex);
 
-    expect(onCreate).toHaveBeenCalledWith("claude");
+    expect(onCreate).toHaveBeenCalledWith("codex");
 
     await fireEvent.click(trigger);
-    await fireEvent.keyDown(screen.getByRole("menuitem", { name: "Codex" }), { key: "Enter" });
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Claude" }));
 
     expect(onCreate).toHaveBeenCalledTimes(2);
-    expect(onCreate).toHaveBeenLastCalledWith("codex");
+    expect(onCreate).toHaveBeenLastCalledWith("claude");
   });
 
   it("dismisses on Escape, Tab, and outside press", async () => {
@@ -215,7 +224,7 @@ describe("WorkspaceCreateSplitButton", () => {
     expect(screen.queryByRole("menu")).toBeNull();
 
     await fireEvent.click(trigger);
-    await fireEvent.pointerDown(document.body);
+    await fireEvent.mouseDown(document.body);
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
@@ -323,7 +332,7 @@ describe("WorkspaceCreateSplitButton quick actions", () => {
     const quickTrigger = screen.getByRole("button", { name: "Quick actions" });
 
     await fireEvent.keyDown(agentTrigger, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Codex" }));
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Claude" }));
     await fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(document.activeElement).toBe(agentTrigger);

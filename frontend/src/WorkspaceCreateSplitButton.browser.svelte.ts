@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import { cleanup, render } from "vitest-browser-svelte";
 import "./app.css";
 
@@ -83,7 +83,7 @@ describe("workspace create split button in the New workspace dialog", () => {
           STORES_KEY,
           {
             settings: {
-              getLaunchTargets: () => launchTargets,
+              getLaunchTargets: () => [...launchTargets, { ...launchTargets[0], key: "custom", label: "review_agent" }],
               getWorkspaceSettings: () => ({ default_execution_target: "" }),
             },
           },
@@ -112,7 +112,18 @@ describe("workspace create split button in the New workspace dialog", () => {
     const hit = document.elementFromPoint(itemRect.left + itemRect.width / 2, itemRect.top + itemRect.height / 2);
     expect(item.element() === hit || item.element().contains(hit)).toBe(true);
 
-    await item.click();
+    const custom = page.getByRole("menuitem", { name: "review_agent" });
+    await expect.element(custom).toBeVisible();
+    const labelPositions = [item.element(), custom.element()].map((element) => {
+      const text = [...element.childNodes].find((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
+      if (!text) throw new Error("Missing agent label");
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      return range.getBoundingClientRect().left;
+    });
+    expect(labelPositions[1]).toBe(labelPositions[0]);
+    item.element().focus();
+    await userEvent.keyboard("{Enter}");
     await vi.waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new", undefined));
   });
 

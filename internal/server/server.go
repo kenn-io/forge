@@ -23,6 +23,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/browserlogin"
@@ -57,7 +59,6 @@ import (
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var crossOriginProtection http.CrossOriginProtection
@@ -69,8 +70,10 @@ type BuildInfo struct {
 	BuildDate string `json:"buildDate"`
 }
 
-type versionOutputBody BuildInfo
-type versionOutput = httpapi.BodyOutput[versionOutputBody]
+type (
+	versionOutputBody BuildInfo
+	versionOutput     = httpapi.BodyOutput[versionOutputBody]
+)
 
 type ServerOptions struct {
 	Devboxes                           *devbox.Connections
@@ -216,7 +219,10 @@ type Server struct {
 	// hostOpts is atomic: Serve repoints an ephemeral (port-0) bind
 	// at the kernel-assigned port while requests may already be
 	// reading the options.
-	hostOpts               atomic.Pointer[HostCheckOptions]
+	hostOpts atomic.Pointer[HostCheckOptions]
+	// tailnetMCP serves /mcp on this listener for allowlisted Tailscale
+	// Serve users; nil until the MCP companion is initialized.
+	tailnetMCP             atomic.Pointer[http.Handler]
 	buildInfo              BuildInfo
 	now                    func() time.Time
 	handler                http.Handler
@@ -252,14 +258,8 @@ type Server struct {
 	spokeActivationLease   *hubEventLifecycle
 	providerRouteSpoke     bool
 	providerWriteGate      *providerplane.ProviderWriteGate
-	// activityAfterItemsForTest pauses Activity between its two identity reads
-	// so tests can prove the request-wide repository reconciliation fence.
-	activityAfterItemsForTest func()
-	// providerDescriptorBeforeSnapshotForTest marks descriptor admission before
-	// the reconciliation lease so tests can queue an identity writer first.
-	providerDescriptorBeforeSnapshotForTest func()
-	markdownImages                          *markdownImageCache
-	roborevRepositories                     *roborevRepositoryProbe
+	markdownImages         *markdownImageCache
+	roborevRepositories    *roborevRepositoryProbe
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -322,6 +322,7 @@ func (s *Server) trackHTTPConn(_ net.Conn, state http.ConnState) {
 		s.connWG.Add(1)
 	case http.StateHijacked, http.StateClosed:
 		s.connWG.Done()
+	case http.StateActive, http.StateIdle:
 	}
 }
 
@@ -636,7 +637,7 @@ func deriveHostCheckOptionsFromConfig(cfg *config.Config) (HostCheckOptions, err
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return HostCheckOptions{}, fmt.Errorf("port %d is outside 1-65535", cfg.Port)
 	}
-	bind, err := config.ParseHostKey(net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port)))
+	bind, err := config.ParseHostKey(net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
 	if err != nil {
 		return HostCheckOptions{}, fmt.Errorf("bind host %q: %w", cfg.ListenAddr(), err)
 	}
@@ -1650,6 +1651,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.checkHost(w, r) {
 		return
 	}
+	if s.serveTailnetMCP(w, r) {
+		return
+	}
 	if s.daemonRequests.requireAPIAuth {
 		if !s.options.ExecutionWorker &&
 			(s.handleAuthBootstrap(w, r) || s.handleLoginTicketBootstrap(w, r)) {
@@ -1887,7 +1891,7 @@ func checkCrossOrigin(w http.ResponseWriter, r *http.Request, trustReverseProxy 
 // ListenAndServe starts the HTTP server on addr. Returns
 // http.ErrServerClosed when stopped by Shutdown (matches net/http).
 func (s *Server) ListenAndServe(addr string) error {
-	ln, err := net.Listen("tcp", addr)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}
@@ -2123,7 +2127,6 @@ func serveSSESubscribedFromHubTransformed(
 	afterReplay func(io.Writer, sseController) bool,
 	preparedReplay *sseReplaySnapshot,
 ) {
-
 	if err := rc.Flush(); err != nil {
 		return
 	}
@@ -2133,7 +2136,9 @@ func serveSSESubscribedFromHubTransformed(
 	// live broadcasts and never out of order with them.
 	deliveredThrough := cursor
 	if hasCursor {
-		replay, synID, stale := []RecordedEvent(nil), uint64(0), false
+		var replay []RecordedEvent
+		var synID uint64
+		var stale bool
 		if preparedReplay == nil {
 			replay, synID, stale = hub.ReplaySnapshotSince(cursor)
 		} else {

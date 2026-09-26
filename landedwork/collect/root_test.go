@@ -26,7 +26,7 @@ func TestCollectFromRoot(t *testing.T) {
 	assert := assert.New(t)
 	require.NoError(err)
 	s := &script{t: t, steps: []step{
-		{key: "repository", value: platform.Repository{Ref: route, PlatformID: 12}},
+		{key: "repository", value: observedRepository(12)},
 		{key: "association/" + root + "/", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}},
 	}}
 	// The root query, repository and association page each consume one record.

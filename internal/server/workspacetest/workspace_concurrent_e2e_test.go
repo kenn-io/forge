@@ -1,7 +1,6 @@
 package workspacetest
 
 import (
-	"context"
 	"net/http"
 	"os"
 	"strings"
@@ -456,7 +455,7 @@ func TestWorkspaceConcurrentSameRepoOperationsE2E(t *testing.T) {
 	assert := assert.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	client := fixture.client
 
 	// Fixture already seeded PR #1; add PR #2 in the same repo so both

@@ -14,10 +14,11 @@ import (
 	"strings"
 	"time"
 
+	gitremote "go.kenn.io/kit/git/remote"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
-	gitremote "go.kenn.io/kit/git/remote"
 )
 
 const (
@@ -74,7 +75,7 @@ type WriteAdmitter interface {
 // supplied by a spoke.
 type WorkspaceLaunchRequest struct {
 	Repository      RepositoryRoute `json:"repository"`
-	PlatformRepoID  string          `json:"platform_repo_id,omitempty"`
+	PlatformRepoID  int64           `json:"platform_repo_id,omitempty"`
 	ItemType        string          `json:"item_type"`
 	ItemNumber      int             `json:"item_number"`
 	ItemKey         string          `json:"item_key,omitempty"`
@@ -120,15 +121,14 @@ func ValidateWorkspaceLaunchSpecResponse(
 	if specRoute != canonicalSpecRoute {
 		return errors.New("workspace launch repository route is not canonical")
 	}
-	stableRepoID := strings.TrimSpace(request.PlatformRepoID)
-	if stableRepoID != "" && spec.Repository.PlatformRepoID != stableRepoID {
+	if request.PlatformRepoID != 0 && spec.Repository.PlatformRepoID != request.PlatformRepoID {
 		return errors.New("workspace launch repository identity does not match the request")
 	}
 	if canonicalSpecRoute.Provider != requestedRoute.Provider ||
 		canonicalSpecRoute.PlatformHost != requestedRoute.PlatformHost {
 		return errors.New("workspace launch repository route does not match the request")
 	}
-	if (stableRepoID == "" &&
+	if (request.PlatformRepoID == 0 &&
 		(canonicalSpecRoute.Owner != requestedRoute.Owner ||
 			canonicalSpecRoute.Name != requestedRoute.Name)) ||
 		spec.ItemType != request.ItemType ||
@@ -297,7 +297,7 @@ type hubClient struct {
 func NewClient(options Options) (Client, error) {
 	localNodeID := strings.TrimSpace(options.LocalNodeID)
 	if !federation.ValidNodeID(localNodeID) {
-		return nil, fmt.Errorf("local node ID is invalid")
+		return nil, errors.New("local node ID is invalid")
 	}
 	hub, err := options.Hub.validate()
 	if err != nil {
@@ -337,7 +337,7 @@ func (c *hubClient) Do(
 		return nil, errors.New("provider request is required")
 	}
 	if !strings.HasPrefix(request.URL.Path, "/api/v1/") {
-		return nil, fmt.Errorf("provider request path must be under /api/v1")
+		return nil, errors.New("provider request path must be under /api/v1")
 	}
 	if c.credentials == nil {
 		return nil, ErrCredentialUnavailable
@@ -378,7 +378,7 @@ func (c *hubClient) Do(
 	}
 	response, err := httpClient.Do(proxied)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrHubUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrHubUnavailable, err)
 	}
 	return response, nil
 }

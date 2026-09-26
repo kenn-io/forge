@@ -9,14 +9,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestDormantCommentRefreshWaitsForDailyDeadline(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	now := time.Now().UTC()
 	updated := now.Add(-14 * 24 * time.Hour)
@@ -48,6 +51,8 @@ func TestDormantCommentRefreshWaitsForDailyDeadline(t *testing.T) {
 }
 
 func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T) {
+	t.Parallel()
+
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure stays overdue"}[fail], func(t *testing.T) {
 			require := require.New(t)
@@ -55,7 +60,7 @@ func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T)
 			ctx := t.Context()
 			d := openTestDB(t)
 			repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
-			repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+			repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 			require.NoError(err)
 			now := time.Now().UTC()
 			fetched := now.Add(-25 * time.Hour)
@@ -66,8 +71,10 @@ func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T)
 			})
 			require.NoError(err)
 			mock := &conditionalIssueTrackingClient{notModified: true}
-			mock.comments = []*gh.IssueComment{{ID: new(int64(5)), Body: new("changed comment"),
-				CreatedAt: makeTimestamp(now.Add(-48 * time.Hour)), UpdatedAt: makeTimestamp(now)}}
+			mock.comments = []*gh.IssueComment{{
+				ID: new(int64(5)), Body: new("changed comment"),
+				CreatedAt: makeTimestamp(now.Add(-48 * time.Hour)), UpdatedAt: makeTimestamp(now),
+			}}
 			if fail {
 				mock.listIssueCommentsErr = errors.New("unavailable")
 			}
@@ -90,6 +97,8 @@ func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T)
 }
 
 func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
+	t.Parallel()
+
 	for _, kind := range []string{"pull request", "issue"} {
 		for _, listUnchanged := range []bool{false, true} {
 			listResult := map[bool]string{false: "list 200", true: "list 304"}[listUnchanged]
@@ -99,7 +108,7 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 				ctx := t.Context()
 				d := openTestDB(t)
 				repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
-				repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+				repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 				require.NoError(err)
 				now := time.Now().UTC().Truncate(time.Second)
 				updated := now.Add(-2 * time.Hour)
@@ -116,9 +125,11 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 					prClient := &conditionalPRTrackingClient{notModified: true}
 					mock = &prClient.mockClient
 					client = prClient
-					mock.openPRs = []*gh.PullRequest{{ID: new(int64(101)), Number: new(1),
+					mock.openPRs = []*gh.PullRequest{{
+						ID: new(int64(101)), Number: new(1),
 						Title: new("Active PR"), State: new("open"), CreatedAt: makeTimestamp(updated),
-						UpdatedAt: makeTimestamp(updated)}}
+						UpdatedAt: makeTimestamp(updated),
+					}}
 					if listUnchanged {
 						mock.listOpenPRsErr = notModifiedErr()
 					}
@@ -131,15 +142,19 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 					issueClient := &conditionalIssueTrackingClient{notModified: true}
 					mock = &issueClient.mockClient
 					client = issueClient
-					mock.openIssues = []*gh.Issue{{ID: new(int64(101)), Number: new(1),
+					mock.openIssues = []*gh.Issue{{
+						ID: new(int64(101)), Number: new(1),
 						Title: new("Active issue"), State: new("open"), CreatedAt: makeTimestamp(updated),
-						UpdatedAt: makeTimestamp(updated)}}
+						UpdatedAt: makeTimestamp(updated),
+					}}
 					if listUnchanged {
 						mock.listOpenIssuesErr = notModifiedErr()
 					}
 				}
-				mock.comments = []*gh.IssueComment{{ID: new(int64(5)), Body: new("edited comment"),
-					CreatedAt: makeTimestamp(updated), UpdatedAt: makeTimestamp(now)}}
+				mock.comments = []*gh.IssueComment{{
+					ID: new(int64(5)), Body: new("edited comment"),
+					CreatedAt: makeTimestamp(updated), UpdatedAt: makeTimestamp(now),
+				}}
 				syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
 					[]RepoRef{repo}, time.Minute, nil, testBudget(1000))
 
@@ -171,10 +186,12 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 }
 
 func TestSyncReportsDailyBacklogWhenBudgetCannotCoverOpenItems(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(t, err)
 	now := time.Now().UTC()
 	for number, state := range []string{"open", "closed"} {
@@ -195,12 +212,14 @@ func TestSyncReportsDailyBacklogWhenBudgetCannotCoverOpenItems(t *testing.T) {
 }
 
 func TestDetailDrainHydratesRecentNeverFetchedBeforeActiveWork(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	fetched := now.Add(-2 * time.Hour)

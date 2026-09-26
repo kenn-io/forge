@@ -12,6 +12,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	gh "github.com/google/go-github/v91/github"
+
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -79,7 +80,7 @@ type resolvedBulkRepo struct {
 
 func normalizeImportPlatform(provider, host string) (platform.Kind, string, error) {
 	if strings.TrimSpace(provider) == "" {
-		return "", "", fmt.Errorf("provider is required")
+		return "", "", errors.New("provider is required")
 	}
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
@@ -106,16 +107,16 @@ func normalizeImportOwnerPattern(
 	owner = strings.TrimSpace(owner)
 	pattern = strings.TrimSpace(pattern)
 	if owner == "" || pattern == "" {
-		return "", "", fmt.Errorf("owner and pattern are required")
+		return "", "", errors.New("owner and pattern are required")
 	}
 	if !platform.AllowsNestedOwner(provider) && strings.Contains(owner, "/") {
-		return "", "", fmt.Errorf("owner must not contain /")
+		return "", "", errors.New("owner must not contain /")
 	}
 	if strings.ContainsAny(owner, "*?[]") {
-		return "", "", fmt.Errorf("glob syntax in owner is not supported")
+		return "", "", errors.New("glob syntax in owner is not supported")
 	}
 	if strings.Contains(pattern, "/") {
-		return "", "", fmt.Errorf("pattern must not contain /")
+		return "", "", errors.New("pattern must not contain /")
 	}
 	if _, err := path.Match(strings.ToLower(pattern), ""); err != nil {
 		return "", "", fmt.Errorf("invalid glob pattern: %w", err)
@@ -136,26 +137,26 @@ func normalizeExactRepoInput(raw bulkAddRepoRequest) (config.Repo, error) {
 	repoPath := strings.Trim(strings.TrimSpace(raw.RepoPath), "/")
 	if repoPath != "" {
 		if strings.ContainsAny(repoPath, "*?[]") {
-			return config.Repo{}, fmt.Errorf("bulk add only accepts exact repositories")
+			return config.Repo{}, errors.New("bulk add only accepts exact repositories")
 		}
 		if owner == "" || name == "" {
 			parts := strings.Split(repoPath, "/")
 			if len(parts) < 2 || parts[0] == "" || parts[len(parts)-1] == "" {
-				return config.Repo{}, fmt.Errorf("repo_path must include owner and name")
+				return config.Repo{}, errors.New("repo_path must include owner and name")
 			}
 			owner = strings.Join(parts[:len(parts)-1], "/")
 			name = parts[len(parts)-1]
 		}
 	}
 	if owner == "" || name == "" {
-		return config.Repo{}, fmt.Errorf("owner and name are required")
+		return config.Repo{}, errors.New("owner and name are required")
 	}
 	if !platform.AllowsNestedOwner(provider) && strings.Contains(owner, "/") {
-		return config.Repo{}, fmt.Errorf("bulk add only accepts exact owner/name repositories")
+		return config.Repo{}, errors.New("bulk add only accepts exact owner/name repositories")
 	}
 	if strings.Contains(name, "/") ||
 		strings.ContainsAny(owner, "*?[]") || strings.ContainsAny(name, "*?[]") {
-		return config.Repo{}, fmt.Errorf("bulk add only accepts exact owner/name repositories")
+		return config.Repo{}, errors.New("bulk add only accepts exact owner/name repositories")
 	}
 	if repoPath == "" {
 		repoPath = owner + "/" + name
@@ -547,6 +548,7 @@ func (s *Server) applyBulkExactRepos(
 	ctx context.Context,
 	resolved []resolvedBulkRepo,
 ) (settingsResponse, error) {
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	existing := exactConfiguredRepoSet(s.cfg.Repos)
 	addConfigs := make([]config.Repo, 0, len(resolved))
@@ -562,6 +564,7 @@ func (s *Server) applyBulkExactRepos(
 	}
 	if len(addConfigs) == 0 {
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return settingsResponse{}, &bulkApplyError{problem: httpapi.BadRequest(
 			httpapi.CodeBadRequest,
 			"all selected repositories are already configured",
@@ -574,6 +577,7 @@ func (s *Server) applyBulkExactRepos(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return settingsResponse{}, &bulkApplyError{problem: httpapi.BadRequest(
 			httpapi.CodeBadRequest, err.Error(), nil,
 		)}
@@ -581,6 +585,7 @@ func (s *Server) applyBulkExactRepos(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return settingsResponse{}, &bulkApplyError{problem: httpapi.Internal(
 			"save config: " + err.Error(),
 		)}
@@ -588,11 +593,13 @@ func (s *Server) applyBulkExactRepos(
 	if err := s.persistResolvedRepos(ctx, addRefs); err != nil {
 		s.cfg.Repos = prev
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return settingsResponse{}, &bulkApplyError{problem: httpapi.Internal(err.Error())}
 	}
 	s.mergeTrackedRepos(addRefs)
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
 
 	body, err := s.buildLocalSettingsResponse(ctx)
 	if err != nil {

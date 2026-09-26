@@ -5,12 +5,15 @@ import (
 	"encoding/hex"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"go.kenn.io/kit/atomicfile"
 )
 
 type SessionPaths struct {
@@ -87,7 +90,7 @@ func sessionSocketHash(session string) string {
 
 func validateSessionName(session string) error {
 	if session == "" {
-		return fmt.Errorf("pty owner session name is empty")
+		return errors.New("pty owner session name is empty")
 	}
 	if strings.Contains(session, "..") ||
 		strings.ContainsAny(session, `/\`) ||
@@ -107,7 +110,7 @@ func readState(paths SessionPaths) (ownerState, error) {
 		return ownerState{}, err
 	}
 	if state.Addr == "" || state.Token == "" {
-		return ownerState{}, fmt.Errorf("pty owner state is incomplete")
+		return ownerState{}, errors.New("pty owner state is incomplete")
 	}
 	return state, nil
 }
@@ -120,20 +123,13 @@ func writeState(paths SessionPaths, state ownerState) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(paths.Dir, ".owner-*.json")
-	if err != nil {
+	// Owner state is runtime-only, so skip fsync as before. ErrPublished
+	// means the state is already visible.
+	err = atomicfile.WriteFile(paths.StatePath, data, atomicfile.WithoutSync())
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, paths.StatePath)
+	return nil
 }
 
 func createPrivateDir(path string) error {

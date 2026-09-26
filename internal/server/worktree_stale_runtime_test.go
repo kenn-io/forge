@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -19,8 +19,7 @@ func TestRemoveStaleWorktreeRouteStopsRuntimeSessions(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, projectID, worktreeID, recordPath :=
-		setupProjectWorktreeCommandSessionTestWithRecord(t)
+	srv, projectID, worktreeID, recordPath := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -42,7 +41,7 @@ func TestRemoveStaleWorktreeRouteStopsRuntimeSessions(t *testing.T) {
 	assertFakeTmuxKilledSession(t, recordPath, tmuxSession)
 	assert.Empty(srv.runtime.ListSessions(workspaceapi.ProjectWorktreeRuntimeScope(worktreeID)))
 	rows, err := srv.db.ListProjectWorktreeTmuxSessions(
-		context.Background(), worktreeID,
+		t.Context(), worktreeID,
 	)
 	require.NoError(err)
 	assert.Empty(rows)

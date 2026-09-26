@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -27,6 +28,8 @@ func (p cooldownCapabilityOnlyProvider) Capabilities() platform.Capabilities {
 }
 
 func TestDisabledIssueScopeUsesDailyBackgroundProbeAndManualBypass(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -86,6 +89,8 @@ func TestDisabledIssueScopeUsesDailyBackgroundProbeAndManualBypass(t *testing.T)
 }
 
 func TestExplicitTransientIssueProbeClearsCooldownAndPreservesRetryScope(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -132,6 +137,8 @@ func TestExplicitTransientIssueProbeClearsCooldownAndPreservesRetryScope(t *test
 }
 
 func TestDisabledIssueAfterItemFailurePreservesRetryScope(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -175,6 +182,8 @@ func TestDisabledIssueAfterItemFailurePreservesRetryScope(t *testing.T) {
 }
 
 func TestCooldownSkippedIssueScopePreservesRetryUntilSuccessfulProbe(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -190,7 +199,7 @@ func TestCooldownSkippedIssueScopePreservesRetryUntilSuccessfulProbe(t *testing.
 		[]RepoRef{repo}, time.Minute, nil, nil,
 	)
 	syncer.now = func() time.Time { return now }
-	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	syncer.markRepoFailed(repo, failIssues)
 	require.True(syncer.recordRepositoryFeatureDisabled(
@@ -216,6 +225,8 @@ func TestCooldownSkippedIssueScopePreservesRetryUntilSuccessfulProbe(t *testing.
 }
 
 func TestIndexReaderResolutionFailureAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		feature      string
@@ -255,7 +266,7 @@ func TestIndexReaderResolutionFailureAbandonsExpiredFeatureProbeReservation(t *t
 				registry, database, nil, []RepoRef{repo}, time.Minute, nil, nil,
 			)
 			syncer.now = func() time.Time { return now }
-			repoID, err := database.UpsertRepo(t.Context(), verifiedDBRepoIdentity(platformRepoRef(repo)))
+			repoID, err := reposeed.Seed(t.Context(), database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 			require.NoError(err)
 			require.True(syncer.recordRepositoryFeatureDisabled(
 				repo,
@@ -280,6 +291,8 @@ func TestIndexReaderResolutionFailureAbandonsExpiredFeatureProbeReservation(t *t
 }
 
 func TestExpiredMergeRequestCooldownAllowsOneConcurrentBackgroundProbe(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -336,6 +349,8 @@ func TestExpiredMergeRequestCooldownAllowsOneConcurrentBackgroundProbe(t *testin
 }
 
 func TestSuccessfulProbeDoesNotClearConcurrentDisabledRenewal(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -392,6 +407,8 @@ func TestSuccessfulProbeDoesNotClearConcurrentDisabledRenewal(t *testing.T) {
 }
 
 func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -401,7 +418,7 @@ func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID: repoID, PlatformID: 1001, Number: 1,
@@ -432,6 +449,8 @@ func TestDisabledIssueCooldownSkipsDetailDrain(t *testing.T) {
 }
 
 func TestDetailBudgetDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -440,7 +459,7 @@ func TestDetailBudgetDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) 
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID: repoID, PlatformID: 1001, Number: 1,
@@ -481,6 +500,8 @@ func TestDetailBudgetDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) 
 }
 
 func TestWrappedRawDisabledIssueResponseStopsDetailDrainAndStartsCooldown(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -490,7 +511,7 @@ func TestWrappedRawDisabledIssueResponseStopsDetailDrainAndStartsCooldown(t *tes
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	for _, number := range []int{1, 2} {
 		_, err = database.UpsertIssue(ctx, &db.Issue{
@@ -533,6 +554,8 @@ func TestWrappedRawDisabledIssueResponseStopsDetailDrainAndStartsCooldown(t *tes
 }
 
 func TestWrappedRawDisabledMergeRequestTimelineStopsDetailDrainAndStartsCooldown(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -542,7 +565,7 @@ func TestWrappedRawDisabledMergeRequestTimelineStopsDetailDrainAndStartsCooldown
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	for _, number := range []int{1, 2} {
 		_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -585,6 +608,8 @@ func TestWrappedRawDisabledMergeRequestTimelineStopsDetailDrainAndStartsCooldown
 }
 
 func TestDisabledPRCooldownDoesNotExhaustIssueDetailBudget(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -594,7 +619,7 @@ func TestDisabledPRCooldownDoesNotExhaustIssueDetailBudget(t *testing.T) {
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, PlatformID: 1001, Number: 7,
@@ -646,6 +671,8 @@ func TestDisabledPRCooldownDoesNotExhaustIssueDetailBudget(t *testing.T) {
 }
 
 func TestDisabledMergeRequestCooldownSkipsWatchedSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -682,6 +709,8 @@ func TestDisabledMergeRequestCooldownSkipsWatchedSync(t *testing.T) {
 }
 
 func TestWatchedSyncLocalFailureAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
@@ -718,6 +747,8 @@ func TestWatchedSyncLocalFailureAbandonsExpiredFeatureProbeReservation(t *testin
 }
 
 func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservation(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		feature string
@@ -751,7 +782,7 @@ func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservat
 				Platform: platform.KindGitHub, PlatformHost: "github.com",
 				Owner: "acme", Name: "widget",
 			}
-			repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+			repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 			require.NoError(err)
 			if tc.feature == platform.RepositoryFeatureMergeRequests {
 				_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -789,6 +820,8 @@ func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservat
 }
 
 func TestGitHubCooldownCanonicalizesIndexAndWatchedRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -821,6 +854,8 @@ func TestGitHubCooldownCanonicalizesIndexAndWatchedRepositoryIdentity(t *testing
 }
 
 func TestWrappedRawDisabledResponseRenewsWatchedMergeRequestCooldown(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
@@ -855,6 +890,8 @@ func TestWrappedRawDisabledResponseRenewsWatchedMergeRequestCooldown(t *testing.
 }
 
 func TestConcurrentDisabledRenewalAfterNotModifiedListSkipsPRCommentRefresh(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -864,7 +901,7 @@ func TestConcurrentDisabledRenewalAfterNotModifiedListSkipsPRCommentRefresh(t *t
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, PlatformID: 1001, Number: 7,
@@ -911,6 +948,8 @@ func TestConcurrentDisabledRenewalAfterNotModifiedListSkipsPRCommentRefresh(t *t
 }
 
 func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -920,7 +959,7 @@ func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID: repoID, PlatformID: 1001, Number: 1,
@@ -958,6 +997,8 @@ func TestDisabledIssueCooldownSkipsQueuedComments(t *testing.T) {
 }
 
 func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -965,9 +1006,9 @@ func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	repo := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "acme", Name: "widget", PlatformExternalID: "repo-acme-widget",
+		Owner: "acme", Name: "widget", PlatformRepoID: testRepoID("acme", "widget"),
 	}
-	repoID, err := database.UpsertRepo(ctx, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID: repoID, PlatformID: 1001, Number: 1,
@@ -1012,6 +1053,8 @@ func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
 }
 
 func TestDisabledIssueCooldownDoesNotCrossProviderHostOrScope(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	syncer := &Syncer{now: func() time.Time { return now }}
@@ -1058,18 +1101,20 @@ func TestDisabledIssueCooldownDoesNotCrossProviderHostOrScope(t *testing.T) {
 // repository keeps its cooldown across a rename. Routes only identify
 // repositories that have never been provider-verified.
 func TestFeatureCooldownNotInheritedAcrossRouteReplacement(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	c := &repositoryFeatureCooldowns{}
 	oldRepo := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "R_old",
+		PlatformRepoID: 1001,
 	}
 	c.deferUntil(oldRepo, "issues", now.Add(24*time.Hour))
 
 	replacement := oldRepo
-	replacement.PlatformExternalID = "R_new"
+	replacement.PlatformRepoID = 1002
 	_, due := c.beginProbe(
 		replacement, "issues", now.Add(time.Minute),
 		repositoryFeatureCooldownBypass{}, false,

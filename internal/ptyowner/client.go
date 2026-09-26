@@ -505,8 +505,7 @@ func isStaleOwnerConnection(err error) bool {
 		errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	var netErr *net.OpError
-	if errors.As(err, &netErr) && netErr.Timeout() {
+	if netErr, ok := errors.AsType[*net.OpError](err); ok && netErr.Timeout() {
 		return false
 	}
 	return errors.Is(err, io.EOF) ||
@@ -597,7 +596,7 @@ func (c *Client) waitStopped(ctx context.Context, session, dir string) error {
 	if lastErr != nil {
 		return fmt.Errorf("pty owner did not stop: %w", lastErr)
 	}
-	return fmt.Errorf("pty owner did not stop")
+	return errors.New("pty owner did not stop")
 }
 
 func (c *Client) connect(
@@ -641,7 +640,7 @@ func ownerDialTarget(raw string) (string, string, error) {
 
 func (a *Attachment) Write(data []byte) error {
 	if a == nil || a.enc == nil {
-		return fmt.Errorf("pty owner attachment is closed")
+		return errors.New("pty owner attachment is closed")
 	}
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
@@ -652,7 +651,7 @@ func (a *Attachment) Write(data []byte) error {
 
 func (a *Attachment) Resize(geometry ptysize.Geometry) error {
 	if a == nil || a.enc == nil {
-		return fmt.Errorf("pty owner attachment is closed")
+		return errors.New("pty owner attachment is closed")
 	}
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()

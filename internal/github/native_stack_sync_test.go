@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -82,10 +83,12 @@ func (c *nativeStackSyncTestClient) ListNativeStacksPage(
 }
 
 func TestRefreshGitHubNativeStackCacheReusesConsistentCache(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
@@ -117,6 +120,8 @@ func TestRefreshGitHubNativeStackCacheReusesConsistentCache(t *testing.T) {
 }
 
 func TestRefreshGitHubNativeStackCacheStopsAfterTargetIsFoundOrPassed(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	stack := func(number int) platformgithub.NativeStack {
 		return platformgithub.NativeStack{
@@ -163,7 +168,7 @@ func TestRefreshGitHubNativeStackCacheStopsAfterTargetIsFoundOrPassed(t *testing
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)
-			repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+			repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 			require.NoError(err)
 			client := &nativeStackSyncTestClient{
 				mockClient: &mockClient{}, pages: map[int]platformgithub.NativeStackPage{1: tc.page},
@@ -193,9 +198,11 @@ func TestRefreshGitHubNativeStackCacheStopsAfterTargetIsFoundOrPassed(t *testing
 }
 
 func TestRefreshGitHubNativeStackCacheTreatsPreviewNotFoundAsFallback(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	client := &nativeStackSyncTestClient{
 		mockClient: &mockClient{},
@@ -213,9 +220,11 @@ func TestRefreshGitHubNativeStackCacheTreatsPreviewNotFoundAsFallback(t *testing
 }
 
 func TestRefreshGitHubNativeStackCacheDoesNotReconfirmSuspectCacheAfterNotModified(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
@@ -245,6 +254,8 @@ func TestRefreshGitHubNativeStackCacheDoesNotReconfirmSuspectCacheAfterNotModifi
 }
 
 func TestRefreshGitHubNativeStackCacheRefetchesUnobservableMembersOnSchedule(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
 		name           string
@@ -267,7 +278,7 @@ func TestRefreshGitHubNativeStackCacheRefetchesUnobservableMembersOnSchedule(t *
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)
-			repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+			repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 			require.NoError(err)
 			// PR 100 is merged, so no open-PR hint can attest to its position.
 			require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
@@ -305,6 +316,8 @@ func TestRefreshGitHubNativeStackCacheRefetchesUnobservableMembersOnSchedule(t *
 }
 
 func TestRefreshGitHubNativeStackCacheExpiresConfirmationsReusedByNotModified(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
 		name          string
@@ -326,7 +339,7 @@ func TestRefreshGitHubNativeStackCacheExpiresConfirmationsReusedByNotModified(t 
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)
-			repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+			repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 			require.NoError(err)
 			// PR 100 is merged, so the confirmation covers membership that an
 			// unchanged pull-request list can never contradict.
@@ -360,10 +373,12 @@ func TestRefreshGitHubNativeStackCacheExpiresConfirmationsReusedByNotModified(t 
 }
 
 func TestRefreshGitHubNativeStackCacheKeepsDeadlineTiedToStackObservation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	observed := time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)
 	// The row is already 11 hours old and still holds a merged member.
@@ -404,16 +419,17 @@ func TestRefreshGitHubNativeStackCacheKeepsDeadlineTiedToStackObservation(t *tes
 // sees what RunOnce publishes, so a deadline that survives the sync path is the
 // one that would keep a stale predecessor out of the merge safeguard.
 func TestRunOnceWithdrawsAgedNativeStacksFromProjectionInput(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
 	observed := time.Date(2026, time.July, 24, 0, 0, 0, 0, time.UTC)
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "repo-owner-repo",
-		Owner:          "owner",
-		Name:           "repo",
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Owner:        "owner",
+		Name:         "repo",
 	})
 	require.NoError(err)
 	// The cached stack claims a merged leading member, which no open-PR hint can
@@ -440,7 +456,6 @@ func TestRunOnceWithdrawsAgedNativeStacksFromProjectionInput(t *testing.T) {
 	}
 	repo := RepoRef{
 		Owner: "owner", Name: "repo", PlatformHost: "github.com",
-		PlatformExternalID: "repo-owner-repo",
 	}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil,
@@ -477,10 +492,12 @@ func TestRunOnceWithdrawsAgedNativeStacksFromProjectionInput(t *testing.T) {
 }
 
 func TestRefreshGitHubNativeStackCacheMarksFailedPersistenceIncomplete(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -515,10 +532,12 @@ func TestRefreshGitHubNativeStackCacheMarksFailedPersistenceIncomplete(t *testin
 }
 
 func TestRefreshGitHubNativeStackCacheRejectsMemberClaimedByAnotherStack(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	// Cached stack 42 still lists PR 103 from when it was closed.
@@ -558,10 +577,12 @@ func TestRefreshGitHubNativeStackCacheRejectsMemberClaimedByAnotherStack(t *test
 }
 
 func TestRefreshGitHubNativeStackCacheDoesNotReuseIncompleteRefreshAfterNotModified(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
 	require.NoError(database.ReplaceGitHubNativeStack(t.Context(), db.GitHubNativeStack{
@@ -604,6 +625,8 @@ func TestRefreshGitHubNativeStackCacheDoesNotReuseIncompleteRefreshAfterNotModif
 }
 
 func TestRunOnceDropsNativeStacksDisabledDuringSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -631,7 +654,6 @@ func TestRunOnceDropsNativeStacksDisabledDuringSync(t *testing.T) {
 	}
 	repo := RepoRef{
 		Owner: "owner", Name: "repo", PlatformHost: "github.com",
-		PlatformExternalID: "repo-owner-repo",
 	}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil,
@@ -651,6 +673,8 @@ func TestRunOnceDropsNativeStacksDisabledDuringSync(t *testing.T) {
 }
 
 func TestRunOnceKeepsRESTHintsWhenGraphQLRejectsNativeStackFields(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -694,7 +718,6 @@ func TestRunOnceKeepsRESTHintsWhenGraphQLRejectsNativeStackFields(t *testing.T) 
 	}
 	repo := RepoRef{
 		Owner: "owner", Name: "repo", PlatformHost: "github.com",
-		PlatformExternalID: "repo-owner-repo",
 	}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil,
@@ -718,6 +741,8 @@ func TestRunOnceKeepsRESTHintsWhenGraphQLRejectsNativeStackFields(t *testing.T) 
 }
 
 func TestSetPreferGitHubNativeStacksReportsTransitionToExactlyOneCaller(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 	syncer := NewSyncer(
@@ -749,6 +774,8 @@ func TestSetPreferGitHubNativeStacksReportsTransitionToExactlyOneCaller(t *testi
 }
 
 func TestSetPreferGitHubNativeStacksRefreshesHintsOnEnable(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 	client := &nativeStackSyncTestClient{mockClient: &mockClient{}}
@@ -769,6 +796,8 @@ func TestSetPreferGitHubNativeStacksRefreshesHintsOnEnable(t *testing.T) {
 }
 
 func TestRunOncePublishesConfirmedNativeStackNumbers(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -796,7 +825,6 @@ func TestRunOncePublishesConfirmedNativeStackNumbers(t *testing.T) {
 	}
 	repo := RepoRef{
 		Owner: "owner", Name: "repo", PlatformHost: "github.com",
-		PlatformExternalID: "repo-owner-repo",
 	}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil,
@@ -819,6 +847,8 @@ func TestRunOncePublishesConfirmedNativeStackNumbers(t *testing.T) {
 // held; otherwise an enable can slip in mid-reconciliation and the older
 // disable overwrites the projection it just published.
 func TestSetPreferGitHubNativeStacksWaitsForStackProjection(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 	syncer := NewSyncer(
@@ -863,6 +893,8 @@ func TestSetPreferGitHubNativeStacksWaitsForStackProjection(t *testing.T) {
 // so a shape change on GitHub's side must cost the hint for that pull request,
 // not the whole list and with it ordinary synchronization for the repository.
 func TestListOpenPullRequestsWithNativeStackHintsSurvivesUnreadableHint(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	mux := http.NewServeMux()
@@ -902,6 +934,8 @@ func TestListOpenPullRequestsWithNativeStackHintsSurvivesUnreadableHint(t *testi
 // unclassified it would be retried as a hard sync failure every cycle purely
 // because the preview is enabled.
 func TestNativeStackHintListingClassifiesDisabledPullRequests(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	disabled := &gh.ErrorResponse{
@@ -937,6 +971,8 @@ func TestNativeStackHintListingClassifiesDisabledPullRequests(t *testing.T) {
 // whose hint could not be read) must still be indexed and fall back to branch
 // inference, not be dropped along with its stack membership.
 func TestRunOncePersistsPullRequestsWhenHintIsUnclaimed(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -954,7 +990,6 @@ func TestRunOncePersistsPullRequestsWhenHintIsUnclaimed(t *testing.T) {
 	}
 	repo := RepoRef{
 		Owner: "owner", Name: "repo", PlatformHost: "github.com",
-		PlatformExternalID: "repo-owner-repo",
 	}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil,
@@ -971,7 +1006,7 @@ func TestRunOncePersistsPullRequestsWhenHintIsUnclaimed(t *testing.T) {
 	require.NotNil(results[0].GitHubNativeStacks)
 	assert.Empty(results[0].GitHubNativeStacks.ConfirmedNumbers,
 		"unclaimed pull requests confirm no stack")
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	for _, number := range []int{101, 102} {
 		mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
@@ -985,6 +1020,8 @@ func TestRunOncePersistsPullRequestsWhenHintIsUnclaimed(t *testing.T) {
 // disabled answers 410 on the hint listing; without classification the syncer
 // would treat that as a hard failure and re-list every cycle.
 func TestRunOncePutsDisabledPullRequestsIntoCooldownWithHintsEnabled(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 	now := time.Date(2026, time.July, 24, 12, 0, 0, 0, time.UTC)
@@ -996,7 +1033,7 @@ func TestRunOncePutsDisabledPullRequestsIntoCooldownWithHintsEnabled(t *testing.
 	client.listErrors = []error{disabled, disabled}
 	repo := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "owner", Name: "repo", PlatformExternalID: "repo-owner-repo",
+		Owner: "owner", Name: "repo",
 	}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil,

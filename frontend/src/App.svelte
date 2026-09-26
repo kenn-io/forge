@@ -465,6 +465,7 @@
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
       loadInitialLists: !shouldDeferInitialListsToActiveView(),
       onReady: () => {
+        startupStores.workspaceItemSearch.ensureLoaded();
         appReady = true;
       },
     });
@@ -1650,7 +1651,7 @@
     --mobile-chrome-space-xs: 6.5px;
     --mobile-chrome-space-sm: 10px;
     --mobile-chrome-space-md: 13px;
-    --mobile-chrome-hit-target: 45.5px;
+    --mobile-chrome-hit-target: 40px;
     container-type: inline-size;
     flex: 1;
     min-height: 0;
@@ -1760,7 +1761,9 @@
     --focus-detail-space-xs: 6px;
     --focus-detail-space-sm: 9px;
     --focus-detail-space-md: 12px;
-    --focus-detail-hit-target: 49px;
+    --focus-detail-hit-target: 38px;
+    --focus-detail-chip-height: 32px;
+    --font-size-phone-prose: 0.875rem;
     --detail-mobile-type-xs: var(--focus-detail-type-xs);
     --detail-mobile-type-sm: var(--focus-detail-type-sm);
     --detail-mobile-type-body: var(--focus-detail-type-body);
@@ -1859,13 +1862,17 @@
 
   .focus-layout--phone :global(.inset-box),
   .focus-layout--phone :global(.markdown-body),
-  .focus-layout--phone :global(.comment-editor-input),
-  .focus-layout--phone :global(.body-edit-textarea),
-  .focus-layout--phone :global(.title-edit-input),
   .focus-layout--phone :global(.add-description-btn),
   .focus-layout--phone :global(.detail-load-error) {
+    font-size: var(--font-size-phone-prose);
+    line-height: 1.5;
+  }
+
+  .focus-layout--phone :global(.comment-editor-input),
+  .focus-layout--phone :global(.body-edit-textarea),
+  .focus-layout--phone :global(.title-edit-input) {
     font-size: var(--font-size-md);
-    line-height: 1.58;
+    line-height: 1.5;
   }
 
   .focus-layout--phone :global(.inset-box) {
@@ -1920,7 +1927,7 @@
   .focus-layout--phone :global(.chips-row .kit-chip),
   .focus-layout--phone :global(.chips-row .kit-button),
   .focus-layout--phone :global(.chips-row .diff-summary-trigger) {
-    min-height: var(--detail-mobile-hit-target, 37px);
+    min-height: var(--focus-detail-chip-height);
     min-width: 0;
     padding: 0 12px;
     border-radius: var(--radius-sm);

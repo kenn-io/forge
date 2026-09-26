@@ -9,6 +9,8 @@ import (
 )
 
 func TestListWorkspaceSubjectMetadataReturnsPullRequestAndIssue(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -32,6 +34,8 @@ func TestListWorkspaceSubjectMetadataReturnsPullRequestAndIssue(t *testing.T) {
 }
 
 func TestListWorkspaceSubjectMetadataUsesLaunchSpecWithoutProviderReplica(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
@@ -60,6 +64,8 @@ func TestListWorkspaceSubjectMetadataUsesLaunchSpecWithoutProviderReplica(t *tes
 }
 
 func TestListWorkspaceSubjectMetadataUsesStableRepositoryAfterRename(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-renamed-overlay")
@@ -71,15 +77,14 @@ func TestListWorkspaceSubjectMetadataUsesStableRepositoryAfterRename(t *testing.
 	)
 	require.NoError(err)
 	require.NotNil(repo)
-	_, accepted, err := database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
 			PlatformRepoID: spec.Repository.PlatformRepoID,
 			Owner:          "acme-renamed", Name: "widget-renamed",
-		}, time.Now().UTC().Add(time.Hour),
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 	key := WorkspaceSubjectKey{
 		RepoID: repo.ID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
 	}
@@ -95,6 +100,8 @@ func TestListWorkspaceSubjectMetadataUsesStableRepositoryAfterRename(t *testing.
 }
 
 func TestListWorkspaceSubjectMetadataHidesOnlyRemovedUpstreamItems(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()

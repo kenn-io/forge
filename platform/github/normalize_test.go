@@ -360,3 +360,20 @@ func TestNormalizePullRequestExtractsAssigneesAndRequestedReviewers(t *testing.T
 		})
 	}
 }
+
+func TestNormalizeAuthorAssociations(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	for _, association := range []*string{nil, new("MEMBER"), new("FIRST_TIMER"), new("FUTURE_VALUE")} {
+		pr, err := NormalizePullRequest(platform.RepoRef{}, &gh.PullRequest{AuthorAssociation: association}) //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
+		require.NoError(err)
+		assert.Equal(association, pr.AuthorAssociation)
+		issue, err := NormalizeIssue(platform.RepoRef{}, &gh.Issue{AuthorAssociation: association}) //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
+		require.NoError(err)
+		assert.Equal(association, issue.AuthorAssociation)
+		review := NormalizeReviewEvent(platform.RepoRef{}, 1, &gh.PullRequestReview{AuthorAssociation: association}) //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
+		assert.Equal(association, review.AuthorAssociation)
+		comment := NormalizeReviewCommentEvent(platform.RepoRef{}, 1, &gh.PullRequestComment{AuthorAssociation: association}) //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
+		assert.Equal(association, comment.AuthorAssociation)
+	}
+}

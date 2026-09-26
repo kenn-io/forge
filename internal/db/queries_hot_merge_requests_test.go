@@ -17,10 +17,7 @@ func TestRecordHotMergeRequestViewMaintainsPersistedMRU(t *testing.T) {
 	database, err := Open(dbPath)
 	require.NoError(err)
 
-	repoID, err := database.UpsertRepo(
-		ctx,
-		GitHubRepoIdentity("github.com", "acme", "widget"),
-	)
+	repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	base := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
@@ -57,6 +54,8 @@ func TestRecordHotMergeRequestViewMaintainsPersistedMRU(t *testing.T) {
 }
 
 func TestHotMergeRequestTerminalEviction(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)

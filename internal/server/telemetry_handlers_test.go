@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -49,7 +48,7 @@ func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 	telemetry := &fakeTelemetry{enabled: true}
 	srv := newTelemetryTestServer(t, telemetry)
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/telemetry/events",
 		strings.NewReader(`{"event":"app_loaded","properties":{"view":"pulls","distinct_id":"ignored"}}`),
@@ -76,7 +75,7 @@ func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testin
 	require := require.New(t)
 
 	srv := newTelemetryTestServer(t, nil)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/telemetry/events",
 		strings.NewReader(`{"event":"app_loaded"}`),
@@ -98,11 +97,11 @@ func TestCaptureTelemetryEvent_RejectsMissingEvent(t *testing.T) {
 	assert := assert.New(t)
 
 	srv := newTelemetryTestServer(t, nil)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/telemetry/events",
 		strings.NewReader(`{"event":"   ","properties":{"view":"pulls"}}`),
-	).WithContext(context.Background())
+	).WithContext(t.Context())
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
@@ -116,7 +115,7 @@ func TestCaptureTelemetryEvent_RejectsUnsupportedEvent(t *testing.T) {
 	assert := assert.New(t)
 
 	srv := newTelemetryTestServer(t, nil)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/telemetry/events",
 		strings.NewReader(`{"event":"repo_opened","properties":{"view":"pulls"}}`),

@@ -22,12 +22,12 @@ func TestPublicClientKeepsReadAndViewerTransportsSeparate(t *testing.T) {
 	read := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		readCalls++
 		assert.Equal("https://api.github.com/repos/team-a/project-a", req.URL.String())
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":17,"name":"project-a","owner":{"login":"team-a"},"permissions":{"push":true}}`)), Request: req}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":17,"name":"project-a","owner":{"login":"team-a"},"permissions":{"push":true}}`)), Request: req}, nil
 	})}
 	write := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		writeCalls++
 		assert.Equal("https://api.github.com/repos/team-a/project-a", req.URL.String())
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":17,"permissions":{"push":false}}`)), Request: req}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":17,"permissions":{"push":false}}`)), Request: req}, nil
 	})}
 	client, err := github.NewClient(github.ClientConfig{
 		Host: "github.com", Read: read, Write: write, Notifications: write,
@@ -50,7 +50,7 @@ func TestPublicClientEmptyHostUsesGitHubDotCom(t *testing.T) {
 		requests++
 		assert.Equal("https://api.github.com/repos/team-a/project-a", req.URL.String())
 		return &http.Response{
-			StatusCode: 200,
+			StatusCode: http.StatusOK,
 			Header:     make(http.Header),
 			Body: io.NopCloser(strings.NewReader(
 				`{"id":17,"name":"project-a","owner":{"login":"team-a"}}`,

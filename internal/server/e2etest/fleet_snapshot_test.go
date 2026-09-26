@@ -33,7 +33,9 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -47,6 +49,7 @@ const (
 func bootFleetServer(
 	t *testing.T, cfg *config.Config, trusted ...*httptest.Server,
 ) (*httptest.Server, *dbpkg.DB) {
+	t.Helper()
 	return bootFleetServerWithNodeID(t, e2eHubNodeID, cfg, trusted...)
 }
 
@@ -116,7 +119,11 @@ const (
 
 func getJSON(t *testing.T, ts *httptest.Server, path string, out any) {
 	t.Helper()
-	resp, err := ts.Client().Get(ts.URL + path)
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+path, nil)
+	require.NoError(t, err)
+	httpClient := ts.Client()
+	httpClient.Timeout = 5 * time.Second
+	resp, err := httpClient.Do(respReq)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode, "GET %s", path)
@@ -125,7 +132,11 @@ func getJSON(t *testing.T, ts *httptest.Server, path string, out any) {
 
 func getRaw(t *testing.T, client *http.Client, url string) (int, string) {
 	t.Helper()
-	resp, err := client.Get(url)
+	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	require.NoError(t, err)
+	httpClient := client
+	httpClient.Timeout = 5 * time.Second
+	resp, err := httpClient.Do(respReq)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
@@ -135,7 +146,7 @@ func getRaw(t *testing.T, client *http.Client, url string) (int, string) {
 
 func deleteJSON(t *testing.T, client *http.Client, url string) (int, string) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodDelete, url, http.NoBody)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, url, http.NoBody)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
@@ -161,7 +172,7 @@ func patchJSON(
 		require.NoError(err)
 		payload = bytes.NewReader(buf)
 	}
-	req, err := http.NewRequest(http.MethodPatch, url, payload)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPatch, url, payload)
 	require.NoError(err)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
@@ -175,15 +186,15 @@ func patchJSON(
 func TestFleetSnapshotLocalE2E(t *testing.T) {
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := database.CreateProject(ctx, dbpkg.CreateProjectInput{
 		DisplayName: "widget", LocalPath: t.TempDir() + "/widget", DefaultBranch: "main",
 	})
 	require.NoError(err)
 	repoIdentity := dbpkg.GitHubRepoIdentity("github.com", "acme", "widget")
-	repoIdentity.PlatformRepoID = "repo-acme-widget"
-	_, err = database.UpsertRepo(ctx, repoIdentity)
+	repoIdentity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	_, err = reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	require.NoError(database.InsertWorkspace(ctx, &dbpkg.Workspace{
 		ID: "ws-1", Platform: "github", PlatformHost: "github.com",
@@ -234,8 +245,8 @@ func TestFleetSnapshotRetainsWorktreeWithoutRemovedPullMetadataE2E(t *testing.T)
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(
-		ctx, dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		ctx, database, dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -292,11 +303,11 @@ func TestFleetSnapshotRetainsWorktreeWithoutRemovedPullMetadataE2E(t *testing.T)
 func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoIdentity := dbpkg.GitHubRepoIdentity("github.com", "acme", "widget")
-	repoIdentity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(ctx, repoIdentity)
+	repoIdentity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoID, err := reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertIssue(ctx, &dbpkg.Issue{
@@ -340,7 +351,7 @@ func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {
 
 func TestFleetSnapshotFanOutE2E(t *testing.T) {
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// PEER: real server with its own seeded project.
 	peerTS, peerDB := bootFleetServerWithNodeID(t, e2eMemberNodeID, nil)
@@ -400,7 +411,7 @@ func TestFleetSnapshotFanOutE2E(t *testing.T) {
 func TestFleetDisabledBlocksRemoteSnapshotAndProxyE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var peerCalls int
 	var peerCallsMu sync.Mutex
@@ -469,7 +480,7 @@ func TestFleetSnapshotLiveTmuxEnrichmentE2E(t *testing.T) {
 		},
 	}
 	ts, database := bootFleetServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	createdAt := time.Date(2026, 5, 31, 9, 0, 0, 0, time.UTC)
 	worktreePath := filepath.Join(t.TempDir(), "ws")
 
@@ -539,7 +550,7 @@ func TestFleetSnapshotProjectWorktreeRuntimeE2E(t *testing.T) {
 		},
 	}
 	ts, database := bootFleetServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	projectPath := filepath.Join(t.TempDir(), "app")
 	worktreePath := filepath.Join(t.TempDir(), "app-runtime")
 	createdAt := time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC)
@@ -602,7 +613,7 @@ func TestFleetSnapshotEmptyTmuxServerE2E(t *testing.T) {
 		},
 	}
 	ts, database := bootFleetServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(database.InsertWorkspace(ctx, &dbpkg.Workspace{
 		ID: "ws-empty", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
@@ -643,7 +654,7 @@ func TestFleetSnapshotTmuxProbeFailureE2E(t *testing.T) {
 		},
 	}
 	ts, database := bootFleetServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(database.InsertWorkspace(ctx, &dbpkg.Workspace{
 		ID: "ws-failed", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
@@ -806,7 +817,7 @@ exit 0
 
 func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 	assert := assert.New(t)
-	req := require.New(t)
+	require := require.New(t)
 
 	type observedRequest struct {
 		Method string
@@ -909,23 +920,23 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 
 	status, body := getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces")
 	assert.Equal(http.StatusOK, status)
-	req.JSONEq(`{"workspaces":[{"id":"peer-ws","status":"ready"}]}`, body)
+	require.JSONEq(`{"workspaces":[{"id":"peer-ws","status":"ready"}]}`, body)
 
 	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws")
 	assert.Equal(http.StatusOK, status)
-	req.JSONEq(`{"id":"peer-ws","status":"ready"}`, body)
+	require.JSONEq(`{"id":"peer-ws","status":"ready"}`, body)
 
 	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/retry", nil)
 	assert.Equal(http.StatusAccepted, status)
-	req.JSONEq(`{"id":"peer-ws","status":"creating"}`, body)
+	require.JSONEq(`{"id":"peer-ws","status":"creating"}`, body)
 
 	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/refresh", nil)
 	assert.Equal(http.StatusOK, status)
-	req.JSONEq(`{"id":"peer-ws","status":"ready","refreshed":true}`, body)
+	require.JSONEq(`{"id":"peer-ws","status":"ready","refreshed":true}`, body)
 
 	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/runtime")
 	assert.Equal(http.StatusOK, status)
-	req.JSONEq(`{"launch_targets":[],"sessions":[]}`, body)
+	require.JSONEq(`{"launch_targets":[],"sessions":[]}`, body)
 
 	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces", map[string]any{
 		"platform_host": "github.com",
@@ -934,19 +945,19 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 		"mr_number":     7,
 	})
 	assert.Equal(http.StatusAccepted, status)
-	req.JSONEq(`{"id":"peer-ws","status":"queued"}`, body)
+	require.JSONEq(`{"id":"peer-ws","status":"queued"}`, body)
 
 	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/runtime/sessions", map[string]any{
 		"target_key": "helper",
 	})
 	assert.Equal(http.StatusOK, status)
-	req.JSONEq(`{"key":"peer-ws:helper","workspace_id":"peer-ws","target_key":"helper"}`, body)
+	require.JSONEq(`{"key":"peer-ws:helper","workspace_id":"peer-ws","target_key":"helper"}`, body)
 
 	status, body = patchJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/runtime/sessions/sess-1", map[string]any{
 		"label": "renamed",
 	})
 	assert.Equal(http.StatusOK, status)
-	req.JSONEq(`{"key":"sess-1","workspace_id":"peer-ws","label":"renamed"}`, body)
+	require.JSONEq(`{"key":"sess-1","workspace_id":"peer-ws","label":"renamed"}`, body)
 
 	status, body = deleteJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/workspaces/peer-ws/runtime/sessions/sess-1")
 	assert.Equal(http.StatusNoContent, status)
@@ -954,17 +965,17 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 
 	status, body = getRaw(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/projects/prj-peer/worktrees/wtr-peer/runtime")
 	assert.Equal(http.StatusOK, status)
-	req.JSONEq(`{"launch_targets":[],"sessions":[],"shell_session":null}`, body)
+	require.JSONEq(`{"launch_targets":[],"sessions":[],"shell_session":null}`, body)
 
 	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/projects/prj-peer/worktrees/wtr-peer/runtime/shell", nil)
 	assert.Equal(http.StatusOK, status)
-	req.JSONEq(`{"key":"shell-peer","project_id":"prj-peer","worktree_id":"wtr-peer","target_key":"plain_shell"}`, body)
+	require.JSONEq(`{"key":"shell-peer","project_id":"prj-peer","worktree_id":"wtr-peer","target_key":"plain_shell"}`, body)
 
 	status, body = postJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/projects/prj-peer/worktrees/wtr-peer/runtime/sessions", map[string]any{
 		"target_key": "helper",
 	})
 	assert.Equal(http.StatusOK, status)
-	req.JSONEq(`{"key":"agent-peer","project_id":"prj-peer","worktree_id":"wtr-peer","target_key":"helper"}`, body)
+	require.JSONEq(`{"key":"agent-peer","project_id":"prj-peer","worktree_id":"wtr-peer","target_key":"helper"}`, body)
 
 	status, body = deleteJSON(t, hubTS.Client(), hubTS.URL+"/api/v1/fleet/hosts/"+e2eMemberNodeID+"/projects/prj-peer/worktrees/wtr-peer/runtime/sessions/agent-peer")
 	assert.Equal(http.StatusNoContent, status)
@@ -979,7 +990,7 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 	gotHandlerErrors := append([]string(nil), handlerErrors...)
 	observedMu.Unlock()
 	assert.Empty(gotHandlerErrors)
-	req.Len(got, 14)
+	require.Len(got, 14)
 	assert.Equal(http.MethodGet, got[0].Method)
 	assert.Equal("/api/v1/workspaces", got[0].Path)
 	assert.Equal("/api/v1/workspaces/peer-ws", got[1].Path)
@@ -988,18 +999,18 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 	assert.Equal("/api/v1/workspaces/peer-ws/runtime", got[4].Path)
 	assert.Equal(http.MethodPost, got[5].Method)
 	assert.Equal("/api/v1/workspaces", got[5].Path)
-	req.JSONEq(`{"platform_host":"github.com","owner":"acme","name":"widget","mr_number":7}`, got[5].Body)
+	require.JSONEq(`{"platform_host":"github.com","owner":"acme","name":"widget","mr_number":7}`, got[5].Body)
 	assert.Equal("/api/v1/workspaces/peer-ws/runtime/sessions", got[6].Path)
-	req.JSONEq(`{"target_key":"helper"}`, got[6].Body)
+	require.JSONEq(`{"target_key":"helper"}`, got[6].Body)
 	assert.Equal(http.MethodPatch, got[7].Method)
 	assert.Equal("/api/v1/workspaces/peer-ws/runtime/sessions/sess-1", got[7].Path)
-	req.JSONEq(`{"label":"renamed"}`, got[7].Body)
+	require.JSONEq(`{"label":"renamed"}`, got[7].Body)
 	assert.Equal("/api/v1/workspaces/peer-ws/runtime/sessions/sess-1", got[8].Path)
 	assert.Equal(http.MethodGet, got[9].Method)
 	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime", got[9].Path)
 	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime/shell", got[10].Path)
 	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime/sessions", got[11].Path)
-	req.JSONEq(`{"target_key":"helper"}`, got[11].Body)
+	require.JSONEq(`{"target_key":"helper"}`, got[11].Body)
 	assert.Equal("/api/v1/projects/prj-peer/worktrees/wtr-peer/runtime/sessions/agent-peer", got[12].Path)
 	assert.Equal("/api/v1/workspaces/peer-ws", got[13].Path)
 	assert.Equal("force=true", got[13].Query)
@@ -1065,12 +1076,12 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 		},
 	}
 	hubTS, database := bootFleetServer(t, hubCfg)
-	ctx := context.Background()
+	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, dbpkg.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, dbpkg.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.com",
-		PlatformRepoID: "gid://gitlab/Project/7007",
+		PlatformRepoID: 7007,
 		Owner:          "group/subgroup",
 		Name:           "widget",
 	})
@@ -1174,14 +1185,21 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 	}
 	hubTS, _ := bootFleetServer(t, hubCfg, peerTS)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(hubTS.URL, "http") +
 		"/ws/v1/fleet/hosts/" + e2eMemberNodeID + "/workspaces/ws-1/runtime/sessions/sess-1/terminal" +
 		"?cols=80&rows=24" +
 		"&traceparent=00-11111111111111111111111111111111-2222222222222222-01" +
 		"&baggage=interaction%3Dworkspace-switch%2Chost.key%3D" + e2eMemberNodeID
-	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPClient: hubTS.Client()})
+	conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPClient: hubTS.Client()})
+	if wsHTTPResp != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "test done")
 
@@ -1231,7 +1249,7 @@ func TestFleetTerminalWebSocketProxyPeerDialFailureE2E(t *testing.T) {
 	}
 	hubTS, _ := bootFleetServer(t, hubCfg, peerTS)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(hubTS.URL, "http") +
 		"/ws/v1/fleet/hosts/" + e2eMemberNodeID + "/workspaces/ws-1/runtime/sessions/sess-1/terminal"
@@ -1375,9 +1393,9 @@ func worktreeByScopedKey(ws []fleet.WorktreeSummary, key string) *fleet.Worktree
 func TestFleetSnapshotDraftFoldE2E(t *testing.T) {
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, verifiedRepoIdentity(
+	repoID, err := reposeed.Seed(ctx, database, verifiedRepoIdentity(
 		dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
 	))
 	require.NoError(err)

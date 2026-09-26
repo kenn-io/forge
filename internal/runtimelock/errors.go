@@ -1,7 +1,5 @@
 package runtimelock
 
-import "fmt"
-
 // MetadataUnavailableReason explains why the runtime metadata file
 // could not be read when reporting a CollisionError or Status. The
 // banner and `kenn-forge daemon status` use it for the metadata-unavailable
@@ -47,5 +45,5 @@ type CollisionError struct {
 }
 
 func (e *CollisionError) Error() string {
-	return fmt.Sprintf("another kenn-forge is already running on %s", e.DataDir)
+	return "another kenn-forge is already running on " + e.DataDir
 }

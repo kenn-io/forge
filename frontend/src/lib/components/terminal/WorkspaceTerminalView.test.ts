@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { Effect } from "effect";
 import { flushSync } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { RuntimeSession } from "../../api/types.js";
+import type { QuickAction, RuntimeSession } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   mockOnData: vi.fn(),
   mockOpen: vi.fn(),
   mockSetTerminalSettings: vi.fn(),
+  quickActions: [] as QuickAction[],
   mockTerminalInstances: [] as Array<{
     buffer: { active: { baseY: number; type: "normal" | "alternate" } };
     focus: ReturnType<typeof vi.fn>;
@@ -161,6 +162,7 @@ vi.mock("../../context.js", async (importOriginal) => {
           retained_sessions: 10,
         }),
         setTerminalSettings: mocks.mockSetTerminalSettings,
+        getQuickActions: () => mocks.quickActions,
         getModeVisibility: () => ({
           activity: true,
           repos: true,
@@ -705,6 +707,7 @@ function fakeDataTransfer(): DataTransfer {
 describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
     quickActionWorkspaces.clear();
+    mocks.quickActions = [];
     mocks.runtime = makeAppRuntime();
     delete window.__BASE_PATH__;
     localStorage.clear();
@@ -909,6 +912,115 @@ describe("WorkspaceTerminalView", () => {
 
     const tab = await screen.findByRole("tab", { name: "Review Agent, Review Agent running" });
     expect(tab.querySelector(".kit-harness-icon--openai")).not.toBeNull();
+  });
+
+  it.each([
+    ["matched", "Last push", "GitHub confirms your author and committer identity."],
+    ["preserved_author", "Last push", "This commit preserves another author's identity."],
+    ["mismatch", "Check push identity", "Check the commit identity before continuing."],
+    ["unverified", "Verify push identity", "Push succeeded; GitHub attribution has not been verified."],
+  ])("keeps %s push details behind the workspace control", async (status, label, message) => {
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(
+          Response.json({
+            ...workspaceResponse,
+            commit_attribution: {
+              status,
+              message,
+              repository: "acme/widget",
+              branch: "feature/session-exit",
+              oid: "0123456789abcdef0123456789abcdef01234567",
+              pushed: true,
+              expected_github_user_id: 123,
+              author_id: 123,
+              committer_id: 123,
+              author_name: "Alex Example",
+              author_email: "alex@example.test",
+              committer_name: "Sam Example",
+              committer_email: "sam@example.test",
+            },
+          }),
+        );
+      }
+      return fallback(input, init);
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    const trigger = await screen.findByRole("button", { name: label });
+    expect(screen.queryByText(message)).toBeNull();
+    await fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Last push" });
+    expect(within(dialog).getByText(message)).toBeTruthy();
+    expect(within(dialog).getByText("Alex Example")).toBeTruthy();
+    expect(within(dialog).getByText("sam@example.test")).toBeTruthy();
+    expect(within(dialog).getByText("0123456789ab")).toBeTruthy();
+    await view.rerender({ workspaceId: "" });
+    expect(screen.queryByRole("dialog", { name: "Last push" })).toBeNull();
+    await view.rerender({ workspaceId: "ws-1" });
+    await screen.findByRole("button", { name: label });
+    expect(screen.queryByRole("dialog", { name: "Last push" })).toBeNull();
+  });
+
+  it("unfreezes the workspace when a refresh drops push identity", async () => {
+    const eventSources = installEventSourceRecorder();
+    const attribution = {
+      status: "matched",
+      message: "GitHub confirms your author and committer identity.",
+      repository: "acme/widget",
+      branch: "feature/session-exit",
+      oid: "0123456789abcdef0123456789abcdef01234567",
+      pushed: true,
+      expected_github_user_id: 123,
+      author_id: 123,
+      committer_id: 123,
+      author_name: "Alex Example",
+      author_email: "alex@example.test",
+      committer_name: "Sam Example",
+      committer_email: "sam@example.test",
+    };
+    let includeAttribution = true;
+    const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
+      const pathname = fetchPath(input);
+      if (pathname.endsWith("/workspaces/ws-1")) {
+        return Promise.resolve(
+          Response.json({
+            ...workspaceResponse,
+            ...(includeAttribution ? { commit_attribution: attribution } : {}),
+          }),
+        );
+      }
+      if (pathname.endsWith("/api/v1/workspaces")) {
+        return Promise.resolve(Response.json({ workspaces: [workspaceResponse] }));
+      }
+      return Promise.resolve(Response.json({}));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Last push" }));
+    expect(screen.getByRole("dialog", { name: "Last push" })).toBeTruthy();
+    await waitFor(() => expect(document.querySelector<HTMLElement>(".terminal-view")?.inert).toBe(true));
+
+    includeAttribution = false;
+    await waitFor(() => expect(latestWorkspaceEventListeners(eventSources).workspace_status).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(eventSources).workspace_status?.(
+      new MessageEvent("workspace_status", { data: JSON.stringify({ id: "ws-1" }) }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Last push" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "Last push" })).toBeNull();
+    expect(document.querySelector<HTMLElement>(".terminal-view")?.inert).toBe(false);
+
+    includeAttribution = true;
+    latestWorkspaceEventListeners(eventSources).workspace_status?.(
+      new MessageEvent("workspace_status", { data: JSON.stringify({ id: "ws-1" }) }),
+    );
+
+    await screen.findByRole("button", { name: "Last push" });
+    expect(screen.queryByRole("dialog", { name: "Last push" })).toBeNull();
+    expect(document.querySelector<HTMLElement>(".terminal-view")?.inert).toBe(false);
   });
 
   it("persists toolbar font zoom through shared settings", async () => {
@@ -1383,14 +1495,38 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
-  it("scopes only local workspace event streams for diff prewarming", async () => {
+  it("watches local diffs only while the Diff pane is open", async () => {
     const releaseSelection = vi.fn();
     mocks.selectWorkspace.mockReturnValue(releaseSelection);
     const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    const diffButton = await screen.findByRole("button", { name: "Diff" });
+    expect(mocks.selectWorkspace).not.toHaveBeenCalled();
+    await fireEvent.click(diffButton);
     await waitFor(() => expect(mocks.selectWorkspace).toHaveBeenCalledWith("ws-1"));
+    await fireEvent.click(diffButton);
+    await waitFor(() => expect(releaseSelection).toHaveBeenCalledOnce());
 
     await rerender({ workspaceId: "ws-1", workspaceHostKey: "member" });
-    await waitFor(() => expect(releaseSelection).toHaveBeenCalledOnce());
+    expect(mocks.selectWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the local diff lease for a saved Diff tab before workspace metadata arrives", async () => {
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "diff");
+    const metadata = deferred<Response>();
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: Request | URL | string, init?: RequestInit) =>
+        fetchPath(input) === "/api/v1/workspaces/ws-1" ? metadata.promise : originalFetch(input, init),
+      ),
+    );
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByText("Setting up workspace...");
+    await waitFor(() => expect(mocks.selectWorkspace).toHaveBeenCalledWith("ws-1"));
+
+    metadata.resolve(Response.json(workspaceResponse));
+    await screen.findByRole("tab", { name: "Home" });
     expect(mocks.selectWorkspace).toHaveBeenCalledTimes(1);
   });
 
@@ -1856,6 +1992,116 @@ describe("WorkspaceTerminalView", () => {
       expect(sockets.filter((socket) => socket.url.includes("/workspaces/ws-1/"))).toEqual([firstSocket]);
       expect(document.querySelector(`[data-session-host="${firstHostKey}"]`)).toBe(firstWrapper);
     });
+  });
+
+  it("shows a retained workspace before its repeat-visit HTTP reads finish", async () => {
+    serveAnyWorkspace();
+    mocks.getWorkspaceRuntime.mockImplementation(async (id: string) =>
+      id === "ws-1" ? runtimeWithStaleSession() : runtimeWithLaunchTargetsOnly(),
+    );
+    const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: /Helper/ });
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    sockets[0]!.onopen();
+    const firstSocket = sockets[0];
+    const firstHostKey = mountedSessions()[0]!.hostKey;
+    const firstWrapper = document.querySelector(`[data-session-host="${firstHostKey}"]`);
+
+    for (let index = 2; index <= 6; index += 1) {
+      await rerender({ workspaceId: `ws-${index}` });
+      await screen.findByRole("tab", { name: "Home" });
+      await waitFor(() => expect(isSessionClaimed(firstHostKey)).toBe(false));
+    }
+
+    const metadata = deferred<Response>();
+    const refreshedRuntime = deferred<ReturnType<typeof runtimeWithStaleSession>>();
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: Request | URL | string, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        return new URL(url, "http://localhost").pathname === "/api/v1/workspaces/ws-1"
+          ? metadata.promise
+          : originalFetch(input, init);
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockReturnValueOnce(refreshedRuntime.promise);
+    await rerender({ workspaceId: "ws-1" });
+
+    // Neither response is available: visibility must come from the previous
+    // visit, including the same terminal subtree and connected socket.
+    await screen.findByRole("tab", { name: /Helper/ });
+    expect(isSessionClaimed(firstHostKey)).toBe(true);
+    expect(document.querySelector(`[data-session-host="${firstHostKey}"]`)).toBe(firstWrapper);
+    expect(sockets).toEqual([firstSocket]);
+    expect(screen.queryByText("Setting up workspace...")).toBeNull();
+
+    refreshedRuntime.resolve({
+      ...runtimeWithStaleSession(),
+      sessions: [{ ...runningSession, label: "Updated helper" }],
+    });
+    metadata.resolve(Response.json(workspaceResponse));
+    await screen.findByRole("tab", { name: /Updated helper/ });
+    expect(sockets).toEqual([firstSocket]);
+  });
+
+  it("waits for fresh runtime authority before reattaching a disconnected cached session", async () => {
+    serveAnyWorkspace();
+    mocks.getWorkspaceRuntime.mockImplementation(async (id: string) =>
+      id === "ws-1" ? runtimeWithStaleSession() : runtimeWithLaunchTargetsOnly(),
+    );
+    const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: /Helper/ });
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    sockets[0]!.onopen();
+    await rerender({ workspaceId: "ws-2" });
+    await screen.findByRole("tab", { name: "Home" });
+    sockets[0]!.onclose(new CloseEvent("close"));
+    await waitFor(() => expect(mountedSessions()).toHaveLength(0));
+
+    const refreshedRuntime = deferred<ReturnType<typeof runtimeWithStaleSession>>();
+    mocks.getWorkspaceRuntime.mockReturnValue(refreshedRuntime.promise);
+    await rerender({ workspaceId: "ws-1" });
+    await screen.findByRole("tab", { name: /Helper/ });
+    expect(mountedSessions()).toHaveLength(0);
+    expect(sockets).toHaveLength(1);
+
+    refreshedRuntime.resolve(runtimeWithSession("2026-04-29T00:05:00Z"));
+    await waitFor(() => expect(sockets).toHaveLength(2));
+    expect(screen.getByRole("tab", { name: /Helper/ }).getAttribute("aria-selected")).toBe("true");
+    expect(mountedSessions()[0]?.hostKey).toContain("00%3A05%3A00Z");
+  });
+
+  it("forgets a restored workspace when the refresh reports it deleted", async () => {
+    serveAnyWorkspace();
+    mocks.getWorkspaceRuntime.mockImplementation(async (id: string) =>
+      id === "ws-1" ? runtimeWithStaleSession() : runtimeWithLaunchTargetsOnly(),
+    );
+    const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: /Helper/ });
+    await rerender({ workspaceId: "ws-2" });
+    await screen.findByRole("tab", { name: "Home" });
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: Request | URL | string, init?: RequestInit) =>
+        fetchPath(input) === "/api/v1/workspaces/ws-1"
+          ? Promise.resolve(
+              Response.json({ code: "notFound", status: 404, detail: "Workspace removed" }, { status: 404 }),
+            )
+          : originalFetch(input, init),
+      ),
+    );
+    await rerender({ workspaceId: "ws-1" });
+    await screen.findByText("Workspace removed");
+    expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
+
+    await rerender({ workspaceId: "ws-2" });
+    await screen.findByRole("tab", { name: "Home" });
+    vi.mocked(globalThis.fetch).mockImplementation(() => deferred<Response>().promise);
+    await rerender({ workspaceId: "ws-1" });
+    await screen.findByText("Setting up workspace...");
+    expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
   });
 
   it("releases its pooled terminals when the view itself goes away", async () => {
@@ -2537,6 +2783,46 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: label }).classList.contains("active")).toBe(true));
   });
+
+  it.each([undefined, "member"])(
+    "leaves unlinked workspace details closed until Diff is selected (host %s)",
+    async (hostKey) => {
+      localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+      mocks.workspaceSidebarPreference = "item";
+      const sourceWorkspace = {
+        ...workspaceResponse,
+        item_type: "adhoc",
+        associated_pr_number: null,
+        fleet_host_key: hostKey,
+      };
+      const fetchMock = vi.fn().mockImplementation((input: Request | URL | string) => {
+        const pathname = fetchPath(input);
+        if (pathname.endsWith("/workspaces/ws-1")) return Promise.resolve(Response.json(sourceWorkspace));
+        if (pathname.endsWith("/api/v1/workspaces"))
+          return Promise.resolve(Response.json({ workspaces: [sourceWorkspace] }));
+        return Promise.resolve(Response.json({}));
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", workspaceHostKey: hostKey } });
+      const diffButton = await screen.findByRole("button", { name: "Diff" });
+      expect(document.querySelector(".right-sidebar")).toBeNull();
+      expect(mocks.selectWorkspace).not.toHaveBeenCalled();
+      expect(fetchMock.mock.calls.some(([input]) => /\/(files|diff)(\/watch)?$/.test(fetchPath(input)))).toBe(false);
+
+      await fireEvent.click(diffButton);
+      await waitFor(() => expect(document.querySelector(".right-sidebar")).not.toBeNull());
+      await waitFor(() =>
+        expect(fetchMock.mock.calls.some(([input]) => fetchPath(input).endsWith("/files"))).toBe(true),
+      );
+      if (hostKey) {
+        await waitFor(() =>
+          expect(fetchMock.mock.calls.some(([input]) => fetchPath(input).endsWith("/diff/watch"))).toBe(true),
+        );
+      } else {
+        await waitFor(() => expect(mocks.selectWorkspace).toHaveBeenCalledWith("ws-1"));
+      }
+    },
+  );
 
   it("keeps a saved workspace tab ahead of the configured item default", async () => {
     localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
@@ -3433,6 +3719,52 @@ describe("WorkspaceTerminalView", () => {
     expect(pendingWorkspaceLaunch("ws-1", undefined)?.targetKey).toBe("codex");
   });
 
+  it.each([false, true])(
+    "keeps the automatic launcher closed for a devbox quick action (quick action: %s)",
+    async (withQuickAction) => {
+      const handoff = deferred<Response>();
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation((input: Request | URL | string, init?: RequestInit) => {
+          const path = fetchPath(input);
+          if (path.endsWith("/devboxes/box-1/workspaces/ws-1/runtime/agent-handoffs")) return handoff.promise;
+          if (path.endsWith("/devboxes/box-1/workspaces/ws-1/runtime")) {
+            return Promise.resolve(Response.json(runtimeWithLaunchTargetsOnly()));
+          }
+          if (path.endsWith("/devboxes/box-1/workspaces/ws-1")) {
+            return Promise.resolve(Response.json(workspaceResponse));
+          }
+          if (path.endsWith("/api/v1/workspaces")) return Promise.resolve(Response.json({ workspaces: [] }));
+          if (path.includes("/devboxes/")) return Promise.resolve(Response.json({}));
+          return originalFetch(input, init);
+        }),
+      );
+      if (withQuickAction) {
+        runWorkspaceQuickAction(
+          mocks.runtime,
+          "ws-1",
+          { label: "Review", agent: "helper", prompt: "Review this change" },
+          "devbox:box-1",
+        );
+      }
+      claimForPrs();
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", workspaceHostKey: "devbox:box-1", paneSurface: "prs" as const },
+      });
+
+      if (!withQuickAction) {
+        expect(await screen.findByRole("dialog", { name: "Launch a session" })).toBeTruthy();
+        return;
+      }
+      await screen.findByRole("region", { name: "Workflow panes" });
+      await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+      flushSync();
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+      handoff.resolve(Response.json({ title: "Launch failed", status: 400 }, { status: 400 }));
+    },
+  );
+
   it("publishes an accepted launch for its workspace after navigating during launch", async () => {
     const launchRequest = deferred<typeof runningSession>();
     const workspaceB = { ...workspaceResponse, id: "ws-2", status: "provisioning" };
@@ -3504,7 +3836,7 @@ describe("WorkspaceTerminalView", () => {
     mocks.getWorkspaceRuntime.mockClear();
     mocks.getWorkspaceRuntime.mockReturnValue(runtimeReload.promise);
     await view.rerender({ workspaceId: "ws-1" });
-    await screen.findByText("Setting up workspace...");
+    await waitFor(() => expect(document.querySelector(".header-branch")?.textContent).toBe("feature/session-exit"));
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledWith("ws-1", undefined));
 
     launchRequest.resolve(runningSession);
@@ -3519,6 +3851,29 @@ describe("WorkspaceTerminalView", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sessionTab.getAttribute("aria-selected")).toBe("true");
     expect(mocks.showFlash).not.toHaveBeenCalled();
+  });
+
+  it("waits for fresh runtime before consuming a queued launch on a cached revisit", async () => {
+    serveAnyWorkspace();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(false));
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: "Home" });
+    await view.rerender({ workspaceId: "ws-2" });
+    await screen.findByRole("tab", { name: "Home" });
+
+    const freshRuntime = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
+    mocks.getWorkspaceRuntime.mockReturnValue(freshRuntime.promise);
+    mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    await view.rerender({ workspaceId: "ws-1" });
+    await screen.findByRole("tab", { name: "Home" });
+    expect(pendingWorkspaceLaunch("ws-1", undefined)?.targetKey).toBe("codex");
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    freshRuntime.resolve(runtimeWithCodexTarget());
+    const tab = await screen.findByRole("tab", { name: /Helper/ });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
   });
 
   it("reacts when intent is queued after an already-ready workspace renders", async () => {
@@ -4295,20 +4650,58 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(workspaceControlsBusy()).toBe(false));
   });
 
-  it("keeps its own toolbar on the standalone Workspaces tab", async () => {
+  it.each([false, true])("keeps workspace controls in the title row (split: %s)", async (split) => {
+    if (split) {
+      localStorage.setItem(
+        "kenn-forge-workspace-terminal-layout:ws-1",
+        persistedSplitWorkflowLayout(runningSession.key),
+      );
+    }
     render(WorkspaceTerminalView, {
       props: {
         workspaceId: "ws-1",
       },
     });
 
-    // That tab's panes have no tab strip to hold the controls, so the bar stays
-    // and nothing is published for a detail pane to render.
-    await waitFor(() => expect(document.querySelector(".workspace-toolbar")).not.toBeNull());
+    await screen.findByRole("tab", { name: /Helper/ });
+    const header = screen.getByRole("button", { name: "Delete", exact: true }).closest(".header-bar")!;
+    expect(within(header as HTMLElement).getByRole("button", { name: "Launch", exact: true })).toBeTruthy();
+    expect(within(header as HTMLElement).getByRole("button", { name: "Workflow presets" })).toBeTruthy();
+    expect(screen.getAllByRole("tablist", { name: "Workflow group tabs" })).toHaveLength(split ? 2 : 1);
     expect(hostedWorkspaceControls()).toBeNull();
   });
 
   describe("launcher overlay", () => {
+    it("runs a configured quick action from the launcher and closes it", async () => {
+      const handoffBodies: unknown[] = [];
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: Request | URL | string, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(String(input), init);
+          if (request.url.includes("/workspaces/ws-1/runtime/agent-handoffs")) {
+            handoffBodies.push(await request.json());
+            return Response.json({
+              session: runningSession,
+              initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+            });
+          }
+          return originalFetch(input, init);
+        }),
+      );
+      mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+
+      const dialog = await screen.findByRole("dialog", { name: "Launch a session" });
+      await fireEvent.click(within(dialog).getByRole("button", { name: "Review" }));
+
+      await waitFor(() => expect(handoffBodies).toEqual([{ target_key: "helper", message: "Review this change" }]));
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+      expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    });
+
     it("keeps the launcher closed when a quick action fails", async () => {
       const handoff = deferred<Response>();
       const runCommand = vi.spyOn(mocks.runtime, "runCommand");
@@ -4895,10 +5288,10 @@ describe("WorkspaceTerminalView", () => {
       return launchRequest.promise;
     });
     const launchButton = screen.getByRole("button", { name: "Launch" });
-    const launchMenu = launchButton.closest(".launch-menu");
-    expect(launchMenu).not.toBeNull();
     await fireEvent.click(launchButton);
-    await fireEvent.click(within(launchMenu as HTMLElement).getByRole("button", { name: "Helper" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Run configurations" })).getByRole("button", { name: "Helper" }),
+    );
     await launchStarted.promise;
 
     firstView.unmount();
@@ -4936,7 +5329,7 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
-  it("keeps its toolbar when the detail surface is flattened", async () => {
+  it("keeps its controls in the title row when the detail surface is flattened", async () => {
     claimForPrs();
     // What a narrow detail surface reports: one strip for every pane, per-leaf
     // chrome suppressed, so the pane has nowhere to hang a controls button and no
@@ -4957,8 +5350,9 @@ describe("WorkspaceTerminalView", () => {
 
     // Even with a single session, dropping the chrome here would strip the only
     // route to presets, zoom, terminal options, launch and delete.
-    await waitFor(() => expect(document.querySelector(".workspace-toolbar")).not.toBeNull());
-    expect(document.querySelector(".header-bar")).not.toBeNull();
+    await screen.findByRole("button", { name: "Terminal options" });
+    const header = screen.getByRole("button", { name: "Delete", exact: true }).closest(".header-bar")!;
+    expect(within(header as HTMLElement).getByRole("button", { name: "Terminal options" })).toBeTruthy();
   });
 
   it("publishes the dock's session while the dock is open", async () => {

@@ -201,7 +201,7 @@ func newMCPTestServer(t *testing.T, backend Backend) *Server {
 func testRepository() RepositoryIdentity {
 	return RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget",
+		PlatformRepoID: 1001,
 		RepoPath:       "acme/widget", Owner: "acme", Name: "widget",
 	}
 }
@@ -209,7 +209,7 @@ func testRepository() RepositoryIdentity {
 func testItemIdentity(itemType string, number int) ItemIdentity {
 	return ItemIdentity{
 		Type: itemType, Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget",
+		PlatformRepoID: 1001,
 		Owner:          "acme", Name: "widget", Number: number,
 	}
 }

@@ -3,6 +3,7 @@ package testutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,7 +16,7 @@ import (
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.
 type DiffRepoResult struct {
-	PlatformRepoID string
+	PlatformRepoID int64
 	BaseSHA        string // merge-base / base branch tip
 	HeadSHA        string // PR head commit
 	AltHeadSHA     string // newer PR head commit used by E2E refresh tests
@@ -44,7 +45,7 @@ func SetupDiffRepo(
 	workDir := filepath.Join(tmpDir, "workrepo")
 	cloneBase := filepath.Join(tmpDir, "clones")
 	repoIdentity := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	repoIdentity.PlatformRepoID = "repo-acme-widgets"
+	repoIdentity.PlatformRepoID = FixtureRepoID("acme", "widgets")
 	mgr := gitclone.New(cloneBase, nil)
 	barePath, err := mgr.ClonePathForContext(
 		gitclone.WithRepositoryIdentity(ctx, repoIdentity.PlatformRepoID),
@@ -229,7 +230,7 @@ func SetupDiffRepo(
 	}
 
 	// Seed database with the real SHAs for acme/widgets PR #1.
-	repoID, err := d.UpsertRepo(ctx, repoIdentity)
+	repoID, err := upsertFixtureRepo(ctx, d, repoIdentity)
 	if err != nil {
 		return nil, fmt.Errorf("upsert repo: %w", err)
 	}
@@ -242,7 +243,7 @@ func SetupDiffRepo(
 		ctx, repoID, 1, headSHA, baseSHA); err != nil {
 		return nil, fmt.Errorf("update platform SHAs: %w", err)
 	}
-	if err := d.UpdateRepoProviderMetadata(
+	if err := d.UpdateRepoProviderObservation(
 		ctx,
 		repoID,
 		db.RepoProviderMetadata{
@@ -250,6 +251,7 @@ func SetupDiffRepo(
 			CloneURL:      barePath,
 			DefaultBranch: "main",
 		},
+		nil, nil,
 	); err != nil {
 		return nil, fmt.Errorf("update repo provider metadata: %w", err)
 	}
@@ -296,7 +298,7 @@ func diffContextFileContent(index int, changed bool) string {
 
 func git(ctx context.Context, dir string, args ...string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("git: no args")
+		return errors.New("git: no args")
 	}
 	cmd := gitcmd.New().Command(ctx, dir, args...)
 	// Strip inherited GIT_* variables before spawning git. When the

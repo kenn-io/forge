@@ -16,6 +16,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -54,7 +55,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 		srv := setupSPAAssetServer(t, "/app/", frontend, ServerOptions{})
 		srv.SetActiveWorktreeKey("wt-123")
 
-		req := httptest.NewRequest(http.MethodGet, "/app/", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/app/", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 
@@ -65,7 +66,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 
 	t.Run("no key means no served config", func(t *testing.T) {
 		srv := setupSPAAssetServer(t, "/app/", frontend, ServerOptions{})
-		req := httptest.NewRequest(http.MethodGet, "/app/", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/app/", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 
@@ -137,7 +138,7 @@ func TestSPACacheHeaders(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tc.path, nil)
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
 			assert := assert.New(t)
@@ -172,7 +173,7 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tc.path, nil)
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
 			assert := assert.New(t)
@@ -183,7 +184,7 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 	}
 
 	t.Run("asset", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/assets/index-DEADBEEF.js", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/assets/index-DEADBEEF.js", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 		assert := assert.New(t)
@@ -191,7 +192,6 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 		assert.Empty(rr.Header().Get("Content-Security-Policy"))
 		assert.Empty(rr.Header().Get("X-Frame-Options"))
 	})
-
 }
 
 func TestSPAAssetsCompressFullResponsesAndPreserveRanges(t *testing.T) {
@@ -204,7 +204,7 @@ func TestSPAAssetsCompressFullResponsesAndPreserveRanges(t *testing.T) {
 	}
 	handler := newSPAAssetHandler(fs.FS(frontend), "/", nil)
 
-	compressedRequest := httptest.NewRequest(http.MethodGet, "/assets/index.js", nil)
+	compressedRequest := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/assets/index.js", nil)
 	compressedRequest.Header.Set("Accept-Encoding", "br")
 	compressedResponse := httptest.NewRecorder()
 	handler.ServeHTTP(compressedResponse, compressedRequest)
@@ -216,7 +216,7 @@ func TestSPAAssetsCompressFullResponsesAndPreserveRanges(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(asset, decoded)
 
-	rangeRequest := httptest.NewRequest(http.MethodGet, "/assets/index.js", nil)
+	rangeRequest := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/assets/index.js", nil)
 	rangeRequest.Header.Set("Accept-Encoding", "br")
 	rangeRequest.Header.Set("Range", "bytes=0-5")
 	rangeResponse := httptest.NewRecorder()
@@ -261,7 +261,7 @@ func TestSPAAssetsServePrecompressedRepresentations(t *testing.T) {
 				{"range", http.MethodGet, "br", "bytes=0-5", "", http.StatusPartialContent, asset[:6], 6},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					req := httptest.NewRequest(tc.method, basePath+"assets/index-ABC123.js", nil)
+					req := httptest.NewRequestWithContext(t.Context(), tc.method, basePath+"assets/index-ABC123.js", nil)
 					req.Header.Set("Accept-Encoding", tc.acceptEncoding)
 					req.Header.Set("Range", tc.byteRange)
 					rr := httptest.NewRecorder()

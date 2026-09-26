@@ -435,6 +435,7 @@ func startSyncCooldownE2EServer(
 	cfgContent string,
 	mock *mockGH,
 ) (string, *http.Client, *db.DB) {
+	t.Helper()
 	baseURL, client, database, _ := startSyncCooldownE2EServerWithSyncer(
 		t, cfgContent, mock,
 	)
@@ -482,7 +483,7 @@ func startSyncCooldownE2EServerWithSyncer(
 		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 
 	serveErr := make(chan error, 1)
@@ -494,7 +495,11 @@ func startSyncCooldownE2EServerWithSyncer(
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	require.Eventually(func() bool {
-		resp, err := client.Get(baseURL + "/api/v1/version")
+		respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/api/v1/version", nil)
+		require.NoError(err)
+		httpClient := client
+		httpClient.Timeout = 5 * time.Second
+		resp, err := httpClient.Do(respReq)
 		if err != nil {
 			return false
 		}
@@ -532,7 +537,7 @@ func postJSON(
 		payload = bytes.NewReader(buf)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, payload)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, payload)
 	require.NoError(err)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -566,7 +571,7 @@ func waitForRepoSynced(
 			!got.LastSyncCompletedAt.After(*after) {
 			return false
 		}
-		repo = got
+		repo = got.Row()
 		return true
 	}, 5*time.Second, 10*time.Millisecond)
 
@@ -582,7 +587,11 @@ func waitForSyncIdle(t *testing.T, client *http.Client, baseURL string) {
 		LastRunAt *time.Time `json:"last_run_at"`
 	}
 	require.Eventually(func() bool {
-		resp, err := client.Get(baseURL + "/api/v1/sync/status")
+		respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/api/v1/sync/status", nil)
+		require.NoError(err)
+		httpClient := client
+		httpClient.Timeout = 5 * time.Second
+		resp, err := httpClient.Do(respReq)
 		if err != nil {
 			return false
 		}

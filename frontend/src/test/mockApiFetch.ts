@@ -357,6 +357,7 @@ export const mockSettings = {
   roborev: {
     init_managed_clones: false,
   },
+  provider_settings_loaded: true,
 } satisfies SettingsResponse;
 
 export function makeRateLimits() {

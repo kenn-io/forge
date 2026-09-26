@@ -131,8 +131,8 @@ func (e *Error) Unwrap() error {
 }
 
 func (e *Error) Is(target error) bool {
-	var targetErr *Error
-	if !errors.As(target, &targetErr) {
+	targetErr, ok := errors.AsType[*Error](target)
+	if !ok {
 		return false
 	}
 	return e != nil && e.Code == targetErr.Code

@@ -12,13 +12,18 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v91/github"
+
+	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-var errFixtureReadOnly = errors.New("fixture client: mutation not supported")
-var errFixtureNotFound = errors.New("fixture client: not found")
+var (
+	errFixtureReadOnly = errors.New("fixture client: mutation not supported")
+	errFixtureNotFound = errors.New("fixture client: not found")
+)
 
 type fixtureReadyForReviewStaleStateError struct {
 	message string
@@ -50,6 +55,7 @@ type FixtureClient struct {
 	MarkReadNotifications     []string
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
 	mu                        sync.RWMutex
+	servedRoutes              map[int64]string
 	nextID                    int64
 	mergePullRequestError     error
 	mergePullRequestResult    *gh.PullRequestMergeResult
@@ -211,18 +217,67 @@ func (c *FixtureClient) ListTags(
 func (c *FixtureClient) GetRepository(
 	_ context.Context, owner, repo string,
 ) (*gh.Repository, error) {
+	c.mu.Lock()
+	if c.servedRoutes == nil {
+		c.servedRoutes = make(map[int64]string)
+	}
+	c.servedRoutes[FixtureRepoID(owner, repo)] = repoKey(owner, repo)
+	c.mu.Unlock()
+	return fixtureRepository(owner, repo), nil
+}
+
+// GetRepositoryByID serves the fixture repository whose FixtureRepoID is id,
+// among the routes the client has served by name or seeded data for.
+func (c *FixtureClient) GetRepositoryByID(
+	_ context.Context, _ string, id int64,
+) (*gh.Repository, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if route, ok := c.servedRoutes[id]; ok {
+		owner, name, _ := strings.Cut(route, "/")
+		return fixtureRepository(owner, name), nil
+	}
+	routes := []string{"acme/widgets", "acme/tools", "acme/archived"}
+	for _, byRoute := range []map[string][]*gh.PullRequest{c.PRs, c.OpenPRs} {
+		for route := range byRoute {
+			routes = append(routes, route)
+		}
+	}
+	for _, byRoute := range []map[string][]*gh.Issue{c.Issues, c.OpenIssues} {
+		for route := range byRoute {
+			routes = append(routes, route)
+		}
+	}
+	for _, route := range routes {
+		owner, name, ok := strings.Cut(route, "/")
+		if ok && FixtureRepoID(owner, name) == id {
+			return fixtureRepository(owner, name), nil
+		}
+	}
+	return nil, errFixtureNotFound
+}
+
+func fixtureRepository(owner, repo string) *gh.Repository {
 	t := true
 	archived := repo == "archived"
-	nodeID := "repo-" + owner + "-" + repo
+	id := FixtureRepoID(owner, repo)
 	return &gh.Repository{
+		ID:               &id,
 		Name:             &repo,
-		NodeID:           &nodeID,
 		Owner:            &gh.User{Login: &owner},
 		Archived:         &archived,
 		AllowSquashMerge: &t,
 		AllowMergeCommit: &t,
 		AllowRebaseMerge: &t,
-	}, nil
+	}
+}
+
+// FixtureRepoID is the synthetic provider repository ID fixtures use for a
+// route, so seeded rows and the fixture provider agree on identity.
+func FixtureRepoID(owner, name string) int64 {
+	return reposeed.SyntheticID(db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: owner, Name: name,
+	})
 }
 
 // GetPullRequest looks up the PR by owner/repo and number from

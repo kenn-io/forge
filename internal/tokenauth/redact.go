@@ -10,8 +10,10 @@ import (
 
 const redacted = "[REDACTED]"
 
-const minRegisteredSecretLength = 8
-const maxRegisteredSecrets = 1024
+const (
+	minRegisteredSecretLength = 8
+	maxRegisteredSecrets      = 1024
+)
 
 var (
 	tokenLikePattern      = regexp.MustCompile(`\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_=-]{8,}|\bglpat-[A-Za-z0-9_-]{8,}`)

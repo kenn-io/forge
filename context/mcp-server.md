@@ -32,6 +32,12 @@
   forwarding headers, and optional same-origin HTTP Origin are required
   (`internal/mcpserver/server.go::Server.HTTPHandler`,
   `internal/server/mcp_http.go::NewMCPHTTPGuard`).
+- With `[api.tailscale_serve]` enabled, the main listener also serves `/mcp` to
+  allowlisted Serve users without a bearer. The identity header is ambient, so
+  a request whose Origin names another authority is rejected. Serve reaches the
+  loopback listener with the public Host, so this path uses the SDK handler
+  without its localhost rebinding guard after Forge's host check
+  (`internal/mcpserver/server.go::Server.TailnetHTTPHandler`).
 - Tool implementations call the typed in-process Forge backend and never the
   daemon's public HTTP API (`internal/mcpserver/backend.go::Backend`,
   `internal/server/mcp_backend.go::Server.MCPBackend`).
@@ -72,8 +78,9 @@
   defaults to 128 MiB through `[mcp].diff_cache_mb`. Stage replacements fully
   before mutating published state: a failed write never removes the same-name
   diff or evicts others; replacement is an atomic rename reusing the replaced
-  entry's budget. Returned diff paths may be replaced or evicted by any later
-  write. Represent files without text hunks using minimal Git-style headers,
+  entry's budget. An entry whose eviction fails stays counted for a later
+  retry and must not stop eviction of newer entries. Returned diff paths may
+  be replaced or evicted by any later write. Represent files without text hunks using minimal Git-style headers,
   including `/dev/null` markers for empty added/deleted files and binary
   difference evidence for binary renames and copies; one empty text patch must
   not discard the rest of the diff. Temporary diff identity case-folds

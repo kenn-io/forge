@@ -17,11 +17,10 @@ embedder protocol for arbitrary host state.
 - Persist provider workspaces by the internal repository catalog ID. Route
   requests resolve their current occupant before lookup or creation; a rename
   follows the same repository, while route reuse creates a separate workspace
-  identity. Migration backfills every unambiguous catalog route, including
-  route-only repositories. Provider lifecycle code retires legacy rows through
-  dirty-aware deletion and leaves failures stable for explicit user action; it
-  must neither discard uncommitted work nor resolve them through the current
-  occupant
+  identity. Workspaces whose repository row was deleted keep a null `repo_id`;
+  provider lifecycle code retires them through dirty-aware deletion and leaves
+  failures stable for explicit user action; it must neither discard uncommitted
+  work nor resolve them through the current occupant
   (`internal/server/workspaceapi/handler.go::New`,
   `internal/workspace/launch_spec.go::Manager.RequireWorkspaceLaunchSpec`).
 - A repository referenced by a workspace is a durable identity tombstone.
@@ -33,12 +32,10 @@ embedder protocol for arbitrary host state.
   and its owned state instead of adding another legacy path (`internal/db/migrations/000055_workspace_repository_identity.up.sql:15`).
 - Setup verifies the stable repository ID independently of its mutable route.
   Managed clones partition storage by that ID, and configured bases must match
-  it; route reuse must not share checkout state. Network Git work also captures
-  the route generation and fails closed if that route changes before setup
-  completes, restoring refs and retargeted origins after a rejected fetch.
-  Recovery and cleanup discover identity-scoped clones across every route
-  owned by that repository; network reuse retargets a historical origin to the
-  fenced current route
+  it; route reuse must not share checkout state. Setup re-verifies the
+  repository after cloning. Recovery and cleanup accept every bare clone in the
+  repository's identity namespace, whatever route it was cloned under; network
+  reuse retargets an earlier origin to the current route
   (`internal/workspace/manager.go::Manager.workspaceSetupGitDir`,
   `internal/gitclone/clone.go::Manager.EnsureCloneValidated`,
   `internal/server/settings_handlers.go::Server.worktreeBasePathForRepo`,
@@ -206,13 +203,8 @@ embedder protocol for arbitrary host state.
 - Activity events and parent summaries key that snapshot by stable repo ID and
   canonical item type; normalize wire `"pr"` to workspace `"pull_request"`
   before lookup so route reuse stays fail-closed (`internal/server/helpers.go::workspaceItemTypeFromActivity`).
-- The shared subject snapshot holds the repository-reconciliation read barrier
-  across both its workspace-summary and subject-metadata reads, so a route move
-  cannot split one response across repository identities
-  (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
-- Hub and standalone Activity reads hold one reconciliation barrier
-  across events and workspace subjects; spokes overlay a separate local snapshot
-  by stable identity (`internal/server/huma_routes.go::Server.listActivity`).
+- Spokes overlay their local workspace subject snapshot on hub Activity by
+  stable identity (`internal/server/huma_routes.go::Server.listActivity`).
 - Subject metadata and opt-in Issue/PR activity ordering use JSON-backed SQLite
   relations, so retained workspaces cannot exhaust bind variables. Lists always
   expose `last_workspace_activity_at`; provider activity is authoritative by default
@@ -325,7 +317,7 @@ embedder protocol for arbitrary host state.
   (`internal/db/queries.go::DB.GetWorkspaceLinkedToMRForProvider`).
 - Merge-request sync limits head-repo trust writes to direct PR workspaces;
   association-only rows are presentation links, not sync write targets
-  (`internal/github/sync.go::Syncer.reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead`).
+  (`internal/github/sync.go::Syncer.reclassifyWorkspaceHeadRepoTrust`).
 
 These fields exist so PR-backed workspaces show PR/Reviews sidebars, while
 issue-backed workspaces show the issue sidebar and disable the PR/reviews path.
@@ -384,7 +376,10 @@ through new and reused worktrees; never infer ownership from paths or run them f
 After branch persistence, `repository_hooks` holds a fresh repository lock while
 requiring Roborev to use common-directory hooks, resolving the trusted default only
 from fetched remote refs, and configuring a worktree-specific snapshot exclude
-without replacing explicit or implicit user exclusion rules. A custom effective
+without replacing explicit or implicit user exclusion rules. That exclude copies
+the user's rules, so each agent launch rebuilds it from the current rules; the
+refresh is best-effort and never blocks the launch
+(`internal/workspace/repository_hooks.go::refreshManagedCloneExclude`). A custom effective
 hooks directory is a setup error; shared hook changes roll back unless
 registration succeeds.
 Only regular root config files on that commit are trusted; a workspace Roborev
@@ -440,14 +435,12 @@ workspace rows from the post-upsert snapshot; an unknown-head snapshot cannot
 downgrade an already-known fork classification. This cache projection is
 best-effort, while the launch-specification lifecycle path is fail-closed
 (`internal/github/sync.go::CommitMergeRequestParentSnapshot`,
-`internal/github/sync.go::reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead`,
+`internal/github/sync.go::reclassifyWorkspaceHeadRepoTrust`,
 `internal/workspace/manager.go::WorkspaceHeadRepo`).
 
 Head-repo classification reads and writes stay on the workspace repository ID;
 persisted provider workspaces without one fail unresolved. Parent snapshot
-commits use the per-MR snapshot lock; repository-ID reconciliation holds the
-exclusive side of the stable barrier that every snapshot lock holds shared, so
-moving an MR cannot change its lock identity during a snapshot commit
+commits use the per-MR snapshot lock
 (`internal/workspace/manager.go::Manager.RefreshWorkspaceHeadRepoSnapshot`,
 `internal/db/queries.go::UpdateWorkspaceMRHeadRepoForSnapshot`).
 Launch-spec refresh preserves the workspace's stable repository and branch
@@ -478,7 +471,11 @@ shares the ordinary manual Launch-menu trust boundary
 (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`).
 Quick actions are the one exception to frontend-owned launches: after ordinary
 creation, the detail header posts the configured agent and prompt to
-`POST /workspaces/{id}/runtime/agent-handoffs`, which waits for the workspace to
+`POST /workspaces/{id}/runtime/agent-handoffs`; the workspace launch surface
+offers the same actions for an existing local or devbox workspace, but not for a
+fleet peer, which has no handoff route
+(`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceQuickActions`).
+The endpoint waits for the workspace to
 become ready, launches the agent in the workflow region, and delivers the prompt
 through the initial-message path, retrying only the typed input-mode-not-ready
 signal. The readiness wait, the retry-while-input-not-ready loop, and the
@@ -576,6 +573,12 @@ non-empty base branch on that row. When any of those is missing the API returns
 "workspace merge target branch not available" and treats it as the
 non-actionable state.
 
+The Diff panel opens on `HEAD` for a dirty worktree, the pushed branch for
+unpushed commits with an upstream, and otherwise the merge target when shown;
+a never-pushed branch reports no ahead count and opens on the target. An unknown
+dirty state keeps `HEAD`; a user's pick overrides the default for the panel's
+lifetime (`frontend/src/lib/components/workspace/workspace-diff-default.ts::defaultWorkspaceDiffBase`).
+
 The server is authoritative for availability. The sidebar hides the
 merge-target-dependent controls (both the Target scope control and the commit
 range picker) whenever the workspace has no PR identity, which is necessary but
@@ -588,6 +591,8 @@ server check exactly.
 
 ## Diff Snapshot Coherence
 
+- Repeat workspace visits restore bounded browser snapshots by host and complete diff query; retain files and patches only as a matching revision pair, and revalidate without blanking that pair
+  (`frontend/src/lib/stores/diff.svelte.ts::startWorkspaceDiff`).
 - Files and patches project from one immutable snapshot. Preview membership is
   revision-pinned too, but new-side bytes remain live and may move afterward
   (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache`).
@@ -601,9 +606,9 @@ server check exactly.
 - A workspace response is user-visibly stale only when a bounded, coalesced
   head-only probe confirms cached/current Git HEAD mismatch and queues refresh;
   cache age, probe timeout, and resolution failure do not warn (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache.Get`).
-- Local workspace selection reuses the singleton provider SSE connection;
-  workspace subscribers attach before `workspace_id` selection and release
-  with it (`frontend/src/lib/stores/events.svelte.ts::createEventsStore`).
+- Local diff selection reuses the singleton provider SSE connection. Local selection
+  leases and fleet diff watches run only while the Diff pane is visible; workspace
+  and provider updates remain subscribed independently (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::watchFleetWorkspaceDiff`).
 - Late workspace subscribers receive current connected state, so route mount
   does not depend on a future reconnect (`frontend/src/lib/stores/events.svelte.ts::subscribeWorkspaceEvents`).
 - Workspace event fan-out is lossless while subscribed; an event burst must not
@@ -624,7 +629,7 @@ server check exactly.
   retries it with the normal watch backoff; unsupported watch responses remain
   terminal and fall back to request-driven diff loading.
 - Workspace switching keeps runtime and shell reads on their own critical path.
-  The previous sidebar is replaced immediately by a neutral placeholder. The
+  A repeat visit restores its cached sidebar; a cold visit shows a neutral placeholder. The
   new diff panel mounts after matching workspace metadata and either matching
   runtime state or a terminal runtime error, so a runtime API failure cannot
   leave workspace details hidden forever. Panel cancellation uses a per-load
@@ -633,10 +638,12 @@ server check exactly.
 - Manual workspace refresh schedules asynchronous validation for every cached
   key belonging to that workspace, whether or not the workspace currently has
   a local selection lease, even when provider refresh later fails. Workspace
-  responses and runtime readiness never wait on Git. Failure preserves the
-  last-known-good snapshot; preserving browser refreshes retry with capped,
-  cancelable backoff only when retained files and diff share a snapshot version,
-  while cold loads expose blocking errors
+  responses and runtime readiness never wait on Git. Failed refreshes preserve
+  the last-known-good snapshot, including repeat visits, except when a missing
+  or rejected scope invalidates both visible and retained data. Temporary
+  commit-list errors stay in the commit picker and do not block diff refresh. Preserving
+  browser refreshes retry with capped, cancelable backoff only when retained
+  files and diff share a snapshot version; cold loads expose blocking errors
   (`frontend/src/lib/stores/diff.svelte.ts::loadWorkspaceDiff`).
   A changed fingerprint publishes through `workspace_diff_changed` when ready.
   Watcher hints validate selected keys even inside the freshness interval;

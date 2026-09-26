@@ -688,14 +688,13 @@ type Assignment struct {
 
 type Credential struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string   `json:"$schema,omitempty"`
-	DefaultBranch    string    `json:"default_branch"`
-	ExpiresAt        time.Time `json:"expires_at"`
-	GithubUserID     int64     `json:"github_user_id"`
-	RepositoryID     int64     `json:"repository_id"`
-	RepositoryNodeID string    `json:"repository_node_id"`
-	Token            string    `json:"token"`
-	Writable         bool      `json:"writable"`
+	Schema        *string   `json:"$schema,omitempty"`
+	DefaultBranch string    `json:"default_branch"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	GithubUserID  int64     `json:"github_user_id"`
+	RepositoryID  int64     `json:"repository_id"`
+	Token         string    `json:"token"`
+	Writable      bool      `json:"writable"`
 }
 
 type CredentialRequest struct {

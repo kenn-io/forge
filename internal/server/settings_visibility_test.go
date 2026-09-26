@@ -14,22 +14,21 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func seedVerifiedRepo(
 	t *testing.T, database *db.DB, identity db.RepoIdentity,
 ) {
 	t.Helper()
-	entry, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), identity, time.Now().UTC(),
-	)
+	_, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
-	require.NotNil(t, entry)
 }
 
 func settingsReposFromBody(t *testing.T, body []byte) []ghclient.ConfiguredRepoStatus {
@@ -64,7 +63,7 @@ func TestHandleUpdateRepoUIVisibilityHidesAndShows(t *testing.T) {
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "repo-acme-widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -111,7 +110,7 @@ func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme-renamed",
 		Name:           "widget-renamed",
 	})
@@ -119,7 +118,7 @@ func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
 		Owner:              "acme-renamed",
 		Name:               "widget-renamed",
 		PlatformHost:       "github.com",
-		PlatformExternalID: "R_widget",
+		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -147,7 +146,7 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_old",
+		PlatformRepoID: 1002,
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -155,7 +154,7 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformExternalID: "R_old",
+		PlatformRepoID:     1002,
 		ConfiguredRepoPath: "acme/widget",
 	}})
 	rr := testutil.DoJSON(t, srv, http.MethodPut,
@@ -167,14 +166,14 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 	// The provider deleted acme/widget and a different repository took over
 	// the route. The displaced row keeps its old display route without being
 	// the current occupant.
-	entry, _, err := database.ReconcileRepositoryObservation(
+	entry, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "R_new",
+			PlatformRepoID: 1003,
 			Owner:          "acme",
 			Name:           "widget",
-		}, time.Now().UTC().Add(time.Second),
+		},
 	)
 	require.NoError(err)
 	require.NotNil(entry)
@@ -182,7 +181,7 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformExternalID: "R_new",
+		PlatformRepoID:     1003,
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -203,11 +202,11 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	hidden, err := database.HiddenRepos(t.Context())
 	require.NoError(err)
-	hiddenIDs := make([]string, 0, len(hidden))
+	hiddenIDs := make([]int64, 0, len(hidden))
 	for _, repo := range hidden {
 		hiddenIDs = append(hiddenIDs, repo.PlatformRepoID)
 	}
-	assert.Contains(hiddenIDs, "R_new",
+	assert.Contains(hiddenIDs, int64(1003),
 		"mutation resolves the replacement by stable provider id")
 }
 
@@ -220,18 +219,18 @@ func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_old",
+		PlatformRepoID: 1002,
 		Owner:          "acme",
 		Name:           "widget",
 	})
-	entry, _, err := database.ReconcileRepositoryObservation(
+	entry, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "R_new",
+			PlatformRepoID: 1003,
 			Owner:          "acme",
 			Name:           "widget",
-		}, time.Now().UTC().Add(time.Second),
+		},
 	)
 	require.NoError(err)
 	require.NotNil(entry)
@@ -241,7 +240,7 @@ func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformExternalID: "R_old",
+		PlatformRepoID:     1002,
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -277,7 +276,7 @@ name = "wid*"
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
-				NodeID:   new("R_widget"),
+				ID:       new(testutil.FixtureRepoID("acme", "widget")),
 				Name:     new("widget"),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(false),
@@ -291,7 +290,7 @@ name = "wid*"
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -299,7 +298,7 @@ name = "wid*"
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformExternalID: "R_widget",
+		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -348,7 +347,7 @@ name = "wid*"
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -356,7 +355,7 @@ name = "wid*"
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformExternalID: "R_widget",
+		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -393,7 +392,7 @@ func TestConfigReloadClearsOrphanedVisibility(t *testing.T) {
 			_ context.Context, owner string,
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{{
-				NodeID:   new("R_widget"),
+				ID:       new(testutil.FixtureRepoID("acme", "widget")),
 				Name:     new("widget"),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(false),
@@ -418,7 +417,7 @@ name = "wid*"
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -426,7 +425,7 @@ name = "wid*"
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformExternalID: "R_widget",
+		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -469,25 +468,25 @@ func TestServerStartupClearsOrphanedVisibility(t *testing.T) {
 	// acme/gadget behind its own exact entry, then the maintainer removed the
 	// widget entry from the TOML file while the daemon was stopped.
 	database := dbtest.Open(t)
-	widget, _, err := database.ReconcileRepositoryObservation(
+	widget, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "R_widget",
+			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 			Owner:          "acme",
 			Name:           "widget",
-		}, time.Now().UTC(),
+		},
 	)
 	require.NoError(err)
 	require.NotNil(widget)
-	gadget, _, err := database.ReconcileRepositoryObservation(
+	gadget, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "R_gadget",
+			PlatformRepoID: testutil.FixtureRepoID("acme", "gadget"),
 			Owner:          "acme",
 			Name:           "gadget",
-		}, time.Now().UTC(),
+		},
 	)
 	require.NoError(err)
 	require.NotNil(gadget)
@@ -525,14 +524,14 @@ name = "gadget"
 				Owner:              "acme",
 				Name:               "widget",
 				PlatformHost:       "github.com",
-				PlatformExternalID: "R_widget",
+				PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
 				ConfiguredRepoPath: "acme/wid*",
 			},
 			{
 				Owner:              "acme",
 				Name:               "gadget",
 				PlatformHost:       "github.com",
-				PlatformExternalID: "R_gadget",
+				PlatformRepoID:     testutil.FixtureRepoID("acme", "gadget"),
 				ConfiguredRepoPath: "acme/gadget",
 			},
 		}, time.Minute, nil, nil,
@@ -546,11 +545,11 @@ name = "gadget"
 
 	hidden, err := database.HiddenRepos(t.Context())
 	require.NoError(err)
-	hiddenIDs := make([]string, 0, len(hidden))
+	hiddenIDs := make([]int64, 0, len(hidden))
 	for _, repo := range hidden {
 		hiddenIDs = append(hiddenIDs, repo.PlatformRepoID)
 	}
-	assert.Equal([]string{"R_gadget"}, hiddenIDs,
+	assert.Equal([]int64{testutil.FixtureRepoID("acme", "gadget")}, hiddenIDs,
 		"startup clears glob-only hidden state but keeps exact-owned state")
 }
 
@@ -565,7 +564,7 @@ func TestHandleUpdateRepoUIVisibilityWithoutSyncer(t *testing.T) {
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -601,7 +600,7 @@ name = "widget"
 	hidden, err := database.HiddenRepos(t.Context())
 	require.NoError(err)
 	require.Len(hidden, 1)
-	assert.Equal("R_widget", hidden[0].PlatformRepoID)
+	assert.Equal(testutil.FixtureRepoID("acme", "widget"), hidden[0].PlatformRepoID)
 }
 
 func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
@@ -612,7 +611,7 @@ func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -639,7 +638,7 @@ func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
 	hidden, err := database.HiddenRepos(t.Context())
 	require.NoError(err)
 	require.Len(hidden, 1)
-	assert.Equal("R_widget", hidden[0].PlatformRepoID)
+	assert.Equal(testutil.FixtureRepoID("acme", "widget"), hidden[0].PlatformRepoID)
 }
 
 func TestRepoUIVisibilityMutationSerializesWithOrphanSweep(t *testing.T) {
@@ -663,7 +662,7 @@ name = "wid*"
 	seedVerifiedRepo(t, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -671,7 +670,7 @@ name = "wid*"
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformExternalID: "R_widget",
+		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -685,7 +684,7 @@ name = "wid*"
 	go func() {
 		var buf bytes.Buffer
 		buf.WriteString(`{"hidden":true}`)
-		req := httptest.NewRequest(http.MethodPut,
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPut,
 			"/api/v1/repo/github/acme/widget/ui-visibility", &buf)
 		req.Host = "127.0.0.1:8091"
 		req.Header.Set("Content-Type", "application/json")
@@ -728,25 +727,25 @@ func TestStartupVisibilitySweepToleratesNilSyncer(t *testing.T) {
 	// then resolve exact entries by their configured route instead of
 	// panicking on tracked-repo lookup.
 	database := dbtest.Open(t)
-	widget, _, err := database.ReconcileRepositoryObservation(
+	widget, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "R_widget",
+			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 			Owner:          "acme",
 			Name:           "widget",
-		}, time.Now().UTC(),
+		},
 	)
 	require.NoError(err)
 	require.NotNil(widget)
-	gadget, _, err := database.ReconcileRepositoryObservation(
+	gadget, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "R_gadget",
+			PlatformRepoID: testutil.FixtureRepoID("acme", "gadget"),
 			Owner:          "acme",
 			Name:           "gadget",
-		}, time.Now().UTC(),
+		},
 	)
 	require.NoError(err)
 	require.NotNil(gadget)
@@ -779,11 +778,11 @@ name = "widget"
 
 	hidden, err := database.HiddenRepos(t.Context())
 	require.NoError(err)
-	hiddenIDs := make([]string, 0, len(hidden))
+	hiddenIDs := make([]int64, 0, len(hidden))
 	for _, repo := range hidden {
 		hiddenIDs = append(hiddenIDs, repo.PlatformRepoID)
 	}
-	assert.Equal([]string{"R_widget"}, hiddenIDs,
+	assert.Equal([]int64{testutil.FixtureRepoID("acme", "widget")}, hiddenIDs,
 		"the configured route keeps its preference; the unconfigured repo is swept")
 }
 

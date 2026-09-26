@@ -11,6 +11,6 @@ export interface WorkspaceLaunchRequest {
   item_key?: string;
   item_number: number;
   item_type: string;
-  platform_repo_id?: string;
+  platform_repo_id?: number;
   repository: RepositoryRoute;
 }

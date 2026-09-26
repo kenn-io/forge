@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"strconv"
 	"strings"
@@ -23,7 +22,7 @@ func seedCloseoutFixture(t *testing.T, d *DB) closeoutFixture {
 	t.Helper()
 	require := require.New(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	repoID, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	repoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", "github.com", "acme", "widget",
 	))
 	require.NoError(err)
@@ -97,6 +96,8 @@ func readCloseoutState(t *testing.T, d *DB, threadID string) closeoutState {
 }
 
 func TestMarkClosedLinkedNotificationsDoneSweep(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -105,7 +106,7 @@ func TestMarkClosedLinkedNotificationsDoneSweep(t *testing.T) {
 
 	// A second, inactive repository shares the route keys of nothing and owns
 	// its own closed PR #7; its notification must stay active.
-	inactiveRepoID, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	inactiveRepoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", "github.com", "acme", "retired",
 	))
 	require.NoError(err)
@@ -172,6 +173,8 @@ func TestMarkClosedLinkedNotificationsDoneSweep(t *testing.T) {
 }
 
 func TestMarkClosedLinkedItemNotificationsDoneScopesToOneItem(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -180,7 +183,7 @@ func TestMarkClosedLinkedItemNotificationsDoneScopesToOneItem(t *testing.T) {
 
 	// A sibling repository with the same numbers must never be touched by a
 	// call scoped to the fixture repository.
-	otherRepoID, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	otherRepoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", "github.com", "acme", "gadget",
 	))
 	require.NoError(err)
@@ -254,6 +257,8 @@ func TestMarkClosedLinkedItemNotificationsDoneScopesToOneItem(t *testing.T) {
 }
 
 func TestMarkClosedLinkedItemNotificationsDoneSkipsInactiveRepository(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -274,6 +279,8 @@ func TestMarkClosedLinkedItemNotificationsDoneSkipsInactiveRepository(t *testing
 // The previous single-statement form scanned the entire item table once per
 // active notification.
 func TestClosedLinkedNotificationStatementsUseItemIndexes(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	fx := seedCloseoutFixture(t, d)
 	now := fx.now
@@ -327,7 +334,7 @@ func TestClosedLinkedNotificationStatementsUseItemIndexes(t *testing.T) {
 
 func explainQueryPlan(t *testing.T, ro *sql.DB, query string, args ...any) []string {
 	t.Helper()
-	rows, err := ro.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+query, args...)
+	rows, err := ro.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+query, args...)
 	require.NoError(t, err)
 	defer rows.Close()
 	var details []string

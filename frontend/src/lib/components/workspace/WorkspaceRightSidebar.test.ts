@@ -4,8 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
+import { createAppStores } from "../../app-stores.svelte.js";
+import { createMockApiFetch } from "../../../test/mockApiFetch.js";
 import type { StoreInstances } from "../../types.js";
 import WorkspaceRightSidebarTestHarness from "./WorkspaceRightSidebarTestHarness.svelte";
+import type { WorkspaceDiffGitState } from "./workspace-diff-default.js";
 
 let runtime: OwnedAppRuntime;
 
@@ -26,8 +29,9 @@ function makeStores(): Pick<StoreInstances, "diff"> & Partial<StoreInstances> {
   };
 }
 
-function renderSidebar(refreshToken = 0) {
+function renderSidebar(refreshToken = 0, gitState: WorkspaceDiffGitState = {}) {
   const sidebarProps = {
+    gitState,
     activeTab: "diff" as "diff" | "reviews",
     workspaceHostKey: undefined as string | undefined,
     workspaceID: "ws-1",
@@ -135,11 +139,67 @@ function renderKataLinksSidebar(
   });
 }
 
+function mockEmptyWorkspaceDiff(): string[] {
+  const calls: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    calls.push(url);
+    if (url.includes("/api/roborev/api/repos")) {
+      return Response.json({ repos: [] });
+    }
+    if (url.includes("/api/v1/workspaces/ws-1/commits")) {
+      return Response.json({ commits: [] });
+    }
+    if (url.includes("/api/v1/workspaces/ws-1/files") || url.includes("/api/v1/workspaces/ws-1/diff")) {
+      return Response.json({ stale: false, whitespace_only_count: 0, files: [] });
+    }
+    return Response.json({}, { status: 404 });
+  });
+  return calls;
+}
+
 describe("WorkspaceRightSidebar", () => {
   afterEach(async () => {
     cleanup();
     vi.restoreAllMocks();
     await Effect.runPromise(runtime.disposeEffect);
+  });
+
+  it("displays a selected PR without changing the workspace's linked PR", async () => {
+    const api = createMockApiFetch();
+    vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);
+    const { stores } = createAppStores({ runtime });
+    const sidebarProps = {
+      activeTab: "pr" as const,
+      workspaceID: "ws-1",
+      worktreePath: "/tmp/worktrees/ws-1",
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widgets",
+      repoPath: "acme/widgets",
+      ownerItemType: "pull_request" as const,
+      ownerItemNumber: 42,
+      associatedPRNumber: 42,
+      viewedPR: {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+        number: 55,
+      },
+      branch: "feature/widgets",
+      roborevBaseUrl: "/api/roborev",
+    };
+    const view = render(WorkspaceRightSidebarTestHarness, {
+      props: { runtime, sidebarProps },
+      context: new Map([[STORES_KEY, stores]]),
+    });
+    await screen.findByRole("heading", { name: "Refactor theme system" });
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, viewedPR: null } });
+    await screen.findByRole("heading", { name: "Add browser regression coverage" });
+    expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
   });
 
   it.each(["pull_request", "issue", "kata_task", "adhoc"] as const)(
@@ -174,6 +234,50 @@ describe("WorkspaceRightSidebar", () => {
     expect(
       fetch.mock.calls.filter(([input]) => (input instanceof Request ? input.url : String(input)).includes("roborev")),
     ).toHaveLength(0);
+  });
+
+  it.each([
+    ["a dirty worktree", { worktreeDirty: true, commitsAhead: 2 }, "head", "Compare with HEAD"],
+    ["unpushed commits", { worktreeDirty: false, commitsAhead: 2 }, "pushed", "Compare with pushed branch"],
+    ["a fully pushed branch", { worktreeDirty: false, commitsAhead: 0 }, "merge-target", "Compare with merge target"],
+    ["a never-pushed branch", { worktreeDirty: false }, "merge-target", "Compare with merge target"],
+    [
+      "commits counted against a fork PR head",
+      { worktreeDirty: false, commitsAhead: 2, commitsVsPRHead: true },
+      "merge-target",
+      "Compare with merge target",
+    ],
+  ] as const)("opens the diff for %s on the matching base", async (_label, gitState, base, buttonName) => {
+    const calls = mockEmptyWorkspaceDiff();
+
+    renderSidebar(0, gitState);
+
+    await waitFor(() => {
+      expect(calls.some((url) => url.endsWith(`/api/v1/workspaces/ws-1/diff?base=${base}`))).toBe(true);
+    });
+    expect(calls.filter((url) => url.includes("/api/v1/workspaces/ws-1/diff?")).length).toBe(1);
+    expect(screen.getByRole("button", { name: buttonName }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps the user's diff base when the workspace git state changes", async () => {
+    const calls = mockEmptyWorkspaceDiff();
+
+    const { rerender } = renderSidebar(0, { worktreeDirty: true });
+    await waitFor(() => {
+      expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/diff?base=head"))).toBe(true);
+    });
+
+    await rerender({ gitState: { worktreeDirty: false, commitsAhead: 1 } });
+    await waitFor(() => {
+      expect(calls.some((url) => url.endsWith("/api/v1/workspaces/ws-1/diff?base=pushed"))).toBe(true);
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Compare with HEAD" }));
+    calls.length = 0;
+    await rerender({ gitState: { worktreeDirty: false, commitsAhead: 0 } });
+
+    expect(screen.getByRole("button", { name: "Compare with HEAD" }).getAttribute("aria-pressed")).toBe("true");
+    expect(calls.some((url) => url.includes("base=merge-target"))).toBe(false);
   });
 
   it("preserves the workspace diff base and selected commit across refreshes", async () => {

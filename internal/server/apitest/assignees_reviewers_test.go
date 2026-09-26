@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -65,7 +66,7 @@ func setupAssigneeTestServer(t *testing.T) (*server.Server, *db.DB, *testutil.Fi
 	t.Cleanup(syncer.Stop)
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -358,15 +359,15 @@ func TestAPIAssigneeAndReviewerMutationsAreCapabilityGated(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform:       "forgejo",
 		PlatformHost:   "codeberg.org",
-		PlatformRepoID: "repo-acme-widget",
+		PlatformRepoID: 1001,
 		Owner:          "acme",
 		Name:           "widget",
 	})

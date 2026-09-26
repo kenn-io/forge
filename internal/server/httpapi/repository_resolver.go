@@ -4,16 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
 
-var ErrRepoPathRequired = errors.New("repo_path is required")
-var ErrRepoNotFound = errors.New("repo not found")
-var ErrRepositoryStoreUnavailable = errors.New("repository store unavailable")
+var (
+	ErrRepoPathRequired           = errors.New("repo_path is required")
+	ErrRepoNotFound               = errors.New("repo not found")
+	ErrRepositoryStoreUnavailable = errors.New("repository store unavailable")
+	ErrPlatformHostRequired       = errors.New("platform_host is required")
+	ErrUnsupportedPlatform        = errors.New("unsupported platform")
+)
 
 type RepositoryResolver struct {
 	db                   *db.DB
@@ -25,7 +28,7 @@ type RepositoryResolver struct {
 func (r *RepositoryResolver) LookupRoute(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	owner = strings.Trim(owner, "/ ")
 	name = strings.Trim(name, "/ ")
 	if owner == "" || name == "" {
@@ -39,13 +42,13 @@ func (r *RepositoryResolver) LookupRoute(
 func (r *RepositoryResolver) RequireRouteCapability(
 	ctx context.Context,
 	provider, platformHost, owner, name, capability string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	repo, err := r.LookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, ProviderRouteLookupError(err)
 	}
-	if !CapabilityEnabled(r.Ref(*repo).Capabilities, capability) {
-		return nil, UnsupportedCapability(*repo, capability)
+	if !CapabilityEnabled(r.Ref(repo.Repo).Capabilities, capability) {
+		return nil, UnsupportedCapability(repo.Repo, capability)
 	}
 	return repo, nil
 }
@@ -57,8 +60,7 @@ func ProviderRouteLookupError(err error) error {
 	if errors.Is(err, ErrRepoNotFound) {
 		return NotFound(CodeRepoNotFound, "repo not found", nil)
 	}
-	if strings.Contains(err.Error(), "platform_host is required") ||
-		strings.Contains(err.Error(), "unsupported platform") {
+	if errors.Is(err, ErrPlatformHostRequired) || errors.Is(err, ErrUnsupportedPlatform) {
 		return BadRequest(CodeBadRequest, err.Error(), nil)
 	}
 	return Internal("get repo failed")
@@ -86,21 +88,16 @@ func PlatformRepoRef(repo db.Repo) platform.RepoRef {
 	if repoPath == "" {
 		repoPath = repo.Owner + "/" + repo.Name
 	}
-	numericID, err := strconv.ParseInt(strings.TrimSpace(repo.PlatformRepoID), 10, 64)
-	if err != nil || numericID <= 0 {
-		numericID = 0
-	}
 	return platform.RepoRef{
-		Platform:           ProviderKind(repo),
-		Host:               ProviderHost(repo),
-		Owner:              repo.Owner,
-		Name:               repo.Name,
-		RepoPath:           repoPath,
-		PlatformID:         numericID,
-		PlatformExternalID: repo.PlatformRepoID,
-		WebURL:             repo.WebURL,
-		CloneURL:           repo.CloneURL,
-		DefaultBranch:      repo.DefaultBranch,
+		Platform:      ProviderKind(repo),
+		Host:          ProviderHost(repo),
+		Owner:         repo.Owner,
+		Name:          repo.Name,
+		RepoPath:      repoPath,
+		PlatformID:    repo.PlatformRepoID,
+		WebURL:        repo.WebURL,
+		CloneURL:      repo.CloneURL,
+		DefaultBranch: repo.DefaultBranch,
 	}
 }
 
@@ -172,7 +169,7 @@ func NewRepositoryResolver(deps RepositoryResolverDeps) *RepositoryResolver {
 func (r *RepositoryResolver) Lookup(
 	ctx context.Context,
 	provider, platformHost, repoPath string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	if r == nil || r.db == nil {
 		return nil, ErrRepositoryStoreUnavailable
 	}
@@ -181,14 +178,14 @@ func (r *RepositoryResolver) Lookup(
 	repoPath = strings.Trim(repoPath, "/ ")
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrUnsupportedPlatform, err)
 	}
 	provider = string(kind)
 	if platformHost == "" {
 		var ok bool
 		platformHost, ok = platform.DefaultHost(kind)
 		if !ok {
-			return nil, fmt.Errorf("platform_host is required for provider %q", kind)
+			return nil, fmt.Errorf("%w for provider %q", ErrPlatformHostRequired, kind)
 		}
 	}
 	if repoPath == "" {
@@ -213,75 +210,6 @@ func (r *RepositoryResolver) List(ctx context.Context) ([]db.Repo, error) {
 		return nil, ErrRepositoryStoreUnavailable
 	}
 	return r.db.ListRepos(ctx)
-}
-
-func (r *RepositoryResolver) CaptureRepositoryRouteFence(
-	ctx context.Context, repo db.Repo,
-) (db.RepositoryRouteFence, bool, error) {
-	if r == nil || r.db == nil {
-		return db.RepositoryRouteFence{}, false, ErrRepositoryStoreUnavailable
-	}
-	return r.db.CurrentRepositoryRouteFence(ctx, repositoryRouteIdentity(repo), repo.ID)
-}
-
-func (r *RepositoryResolver) RepositoryRouteFenceMatches(
-	ctx context.Context, repo db.Repo, fence db.RepositoryRouteFence,
-) (bool, error) {
-	current, found, err := r.CaptureRepositoryRouteFence(ctx, repo)
-	if err != nil || !found {
-		return false, err
-	}
-	return current == fence, nil
-}
-
-// GuardRepositoryRouteFence holds repository reconciliation stable while a
-// caller publishes work derived from the exact captured route generation.
-func (r *RepositoryResolver) GuardRepositoryRouteFence(
-	ctx context.Context,
-	repo db.Repo,
-	fence db.RepositoryRouteFence,
-	publish func() error,
-) (bool, error) {
-	if r == nil || r.db == nil {
-		return false, ErrRepositoryStoreUnavailable
-	}
-	release, err := r.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer release()
-	matches, err := r.db.RepositoryRouteFenceMatchesUnderRepositoryReconciliationRead(
-		ctx, repositoryRouteIdentity(repo), fence,
-	)
-	if err != nil || !matches {
-		return false, err
-	}
-	if err := publish(); err != nil {
-		return true, err
-	}
-	return true, nil
-}
-
-func repositoryRouteIdentity(repo db.Repo) db.RepoIdentity {
-	return db.RepoIdentity{
-		Platform:       repo.Platform,
-		PlatformHost:   repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
-		Owner:          repo.Owner,
-		Name:           repo.Name,
-		RepoPath:       repo.RepoPath,
-	}
-}
-
-func (r *RepositoryResolver) AdoptLegacyClonesIfSafe(
-	ctx context.Context, repo db.Repo, adopt func() error,
-) (bool, error) {
-	if r == nil || r.db == nil {
-		return false, ErrRepositoryStoreUnavailable
-	}
-	return r.db.AdoptLegacyClonesIfSafe(
-		ctx, repositoryRouteIdentity(repo), repo.ID, adopt,
-	)
 }
 
 func (r *RepositoryResolver) Ref(repo db.Repo) RepoRefResponse {

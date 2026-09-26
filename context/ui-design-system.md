@@ -94,11 +94,14 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 - Chip: icons go in `children` (kit centers them), dropdown chevrons in
   `trailing`; no downstream `.kit-chip__label` overrides — repo chips
   depend on its ellipsis.
-- Agent launch targets draw their icon as a kit `HarnessIcon` via `LaunchTargetName`
+- Agent launch targets draw their icon as a kit `HarnessIcon` via `LaunchTargetName` or the shared agent-key resolver
   (key → glyph by shared leading segments of the glyph id or its agent product
   names, then a bare prefix of at least four characters;
   `frontend/src/lib/components/terminal/agentHarness.ts::harnessForAgentKey`).
   The glyph only replaces the generic kind icon; the target's own label always stays.
+- Agent menus use kit `MenuItem`'s icon slot even for unrecognized profiles;
+  empty icons must preserve label alignment, not collapse the column
+  (`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte`).
 - Theme resolution: kit's theme store owns dark/light/system resolution
   and persistence (`kenn-forge-theme` key); `theme.svelte.ts` adapts it.
   Relative timestamps use kit `formatRelativeTime`;
@@ -464,6 +467,10 @@ uncovered edge (`frontend/tests/e2e/workspace-sidebar.spec.ts`).
 Popover surface chrome (background, border, radius, shadow) comes from `kit-popover-card`; do not re-declare it in component-scoped styles. Scoped rules outrank the kit class, and a `var()` referencing an undefined token (there is no `--bg-elevated`) computes to transparent with no build-time error.
 
 A popover that lowers its own min-content width (`overflow-wrap: anywhere`, so an unbreakable branch name cannot stretch `WorkspacePaneControls` past its max-width) leaks that to every surface nested inside it, where flex rows then shrink buttons below their labels and break them mid-word. Reset `overflow-wrap`/`word-break` at the nested popover's root instead of hardening each child (`frontend/src/lib/components/terminal/TerminalOptionsMenu.svelte`).
+
+Narrow workspace headers keep identity and Launch visible; secondary controls belong
+in the shared workspace controls popover so toolbar wrapping does not consume the
+terminal (`frontend/src/lib/components/terminal/WorkspacePaneControls.svelte`).
 
 ### GitHubLabels
 

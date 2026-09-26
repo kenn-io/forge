@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -27,9 +28,9 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	worktree := t.TempDir()
-	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
@@ -79,7 +80,7 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 		t.Helper()
 		body, err := json.Marshal(payload)
 		require.NoError(err)
-		req := httptest.NewRequest(
+		req := httptest.NewRequestWithContext(t.Context(),
 			http.MethodPost, "/api/v1/agent-hooks/"+agent,
 			bytes.NewReader(body),
 		)

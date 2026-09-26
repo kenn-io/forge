@@ -9,29 +9,30 @@ import (
 )
 
 type GraphQLPR struct {
-	DatabaseId     int64 `graphql:"databaseId"`
-	Number         int
-	Title          string
-	State          string
-	IsDraft        bool
-	Locked         bool
-	Body           string
-	URL            string
-	Author         struct{ Login string }
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	MergedAt       *time.Time
-	MergedBy       *struct{ Login string }
-	ClosedAt       *time.Time
-	Additions      int
-	Deletions      int
-	Mergeable      string
-	ReviewDecision string
-	HeadRefName    string
-	BaseRefName    string
-	HeadRefOid     string `graphql:"headRefOid"`
-	BaseRefOid     string `graphql:"baseRefOid"`
-	HeadRepository *struct {
+	AuthorAssociation *string
+	DatabaseId        int64 `graphql:"databaseId"`
+	Number            int
+	Title             string
+	State             string
+	IsDraft           bool
+	Locked            bool
+	Body              string
+	URL               string
+	Author            struct{ Login string }
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	MergedAt          *time.Time
+	MergedBy          *struct{ Login string }
+	ClosedAt          *time.Time
+	Additions         int
+	Deletions         int
+	Mergeable         string
+	ReviewDecision    string
+	HeadRefName       string
+	BaseRefName       string
+	HeadRefOid        string `graphql:"headRefOid"`
+	BaseRefOid        string `graphql:"baseRefOid"`
+	HeadRepository    *struct {
 		URL string
 	}
 	Labels struct {
@@ -117,15 +118,16 @@ func (r GraphQLReviewRequest) Login() string {
 }
 
 type GraphQLComment struct {
-	DatabaseId      int64
-	FullDatabaseId  GraphQLInt64
-	Author          struct{ Login string }
-	Body            string
-	URL             string `graphql:"url"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	IsMinimized     bool
-	MinimizedReason *githubv4.ReportedContentClassifiers
+	DatabaseId        int64
+	FullDatabaseId    GraphQLInt64
+	Author            struct{ Login string }
+	AuthorAssociation *string
+	Body              string
+	URL               string `graphql:"url"`
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	IsMinimized       bool
+	MinimizedReason   *githubv4.ReportedContentClassifiers
 }
 
 type GraphQLCommentVisibilityNode struct {
@@ -152,18 +154,19 @@ type GraphQLReviewThread struct {
 }
 
 type GraphQLReviewThreadComment struct {
-	ID             githubv4.ID `graphql:"id"`
-	DatabaseId     int64
-	FullDatabaseId GraphQLInt64
-	Body           string
-	Path           string
-	Line           int
-	OriginalLine   int
-	SubjectType    string
-	DiffHunk       string
-	URL            string `graphql:"url"`
-	Author         struct{ Login string }
-	Commit         *struct {
+	AuthorAssociation *string
+	ID                githubv4.ID `graphql:"id"`
+	DatabaseId        int64
+	FullDatabaseId    GraphQLInt64
+	Body              string
+	Path              string
+	Line              int
+	OriginalLine      int
+	SubjectType       string
+	DiffHunk          string
+	URL               string `graphql:"url"`
+	Author            struct{ Login string }
+	Commit            *struct {
 		OID string `graphql:"oid"`
 	}
 	OriginalCommit *struct {
@@ -179,11 +182,12 @@ type GraphQLReviewThreadComment struct {
 }
 
 type GraphQLReview struct {
-	DatabaseId  int64
-	Author      struct{ Login string }
-	Body        string
-	State       string
-	SubmittedAt time.Time
+	AuthorAssociation *string
+	DatabaseId        int64
+	Author            struct{ Login string }
+	Body              string
+	State             string
+	SubmittedAt       time.Time
 }
 
 type GraphQLCommitNode struct {
@@ -337,17 +341,18 @@ func (a GraphQLAssignee) Login() string {
 }
 
 type GraphQLIssue struct {
-	DatabaseId int64 `graphql:"databaseId"`
-	Number     int
-	Title      string
-	State      string
-	Body       string
-	URL        string `graphql:"url"`
-	Author     GraphQLIssueAuthor
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	ClosedAt   *time.Time
-	Labels     struct {
+	AuthorAssociation *string
+	DatabaseId        int64 `graphql:"databaseId"`
+	Number            int
+	Title             string
+	State             string
+	Body              string
+	URL               string `graphql:"url"`
+	Author            GraphQLIssueAuthor
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ClosedAt          *time.Time
+	Labels            struct {
 		Nodes []GraphQLLabel
 	} `graphql:"labels(first: 100)"`
 	Comments struct {
@@ -383,6 +388,7 @@ type GraphQLCheckContext struct {
 }
 
 type GraphQLCheckRunFields struct {
+	DatabaseId  int64 `graphql:"databaseId"`
 	Name        string
 	Status      string
 	Conclusion  string
@@ -406,17 +412,18 @@ type GraphQLStatusContextFields struct {
 func AdaptPR(gql *GraphQLPR) *gh.PullRequest {
 	state := StateToREST(gql.State)
 	pr := &gh.PullRequest{
-		ID:        new(gql.DatabaseId),
-		Number:    new(gql.Number),
-		Title:     new(gql.Title),
-		State:     new(state),
-		Draft:     new(gql.IsDraft),
-		Locked:    new(gql.Locked),
-		Body:      new(gql.Body),
-		HTMLURL:   new(gql.URL),
-		Additions: new(gql.Additions),
-		Deletions: new(gql.Deletions),
-		User:      &gh.User{Login: new(gql.Author.Login)},
+		ID:                new(gql.DatabaseId),
+		Number:            new(gql.Number),
+		Title:             new(gql.Title),
+		State:             new(state),
+		Draft:             new(gql.IsDraft),
+		Locked:            new(gql.Locked),
+		Body:              new(gql.Body),
+		HTMLURL:           new(gql.URL),
+		Additions:         new(gql.Additions),
+		Deletions:         new(gql.Deletions),
+		User:              &gh.User{Login: new(gql.Author.Login)},
+		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Head: &gh.PullRequestBranch{
 			Ref: new(gql.HeadRefName),
 			SHA: new(gql.HeadRefOid),

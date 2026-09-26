@@ -38,7 +38,7 @@ func (c *Client) PublishDiffReviewDraft(
 		)
 		if err != nil {
 			if cleanupErr := c.deleteDraftNotes(ctx, pid, int64(number), createdDraftIDs); cleanupErr != nil {
-				return nil, fmt.Errorf("%w; cleanup failed: %v", c.mapGitLabError("create_draft_note", err), cleanupErr)
+				return nil, fmt.Errorf("%w; cleanup failed: %w", c.mapGitLabError("create_draft_note", err), cleanupErr)
 			}
 			return nil, c.mapGitLabError("create_draft_note", err)
 		}
@@ -52,7 +52,7 @@ func (c *Client) PublishDiffReviewDraft(
 			if publishedAnyDraft {
 				mappedErr := c.mapGitLabError("publish_draft_note", err)
 				if cleanupErr := c.deleteDraftNotes(ctx, pid, int64(number), createdDraftIDs[i:]); cleanupErr != nil {
-					mappedErr = fmt.Errorf("%w; cleanup failed: %v", mappedErr, cleanupErr)
+					mappedErr = fmt.Errorf("%w; cleanup failed: %w", mappedErr, cleanupErr)
 				}
 				return &platform.PublishedDiffReview{SubmittedAt: submittedAt}, &platform.DiffReviewPublishPartialError{
 					Err:                 mappedErr,
@@ -60,7 +60,7 @@ func (c *Client) PublishDiffReviewDraft(
 				}
 			}
 			if cleanupErr := c.deleteDraftNotes(ctx, pid, int64(number), createdDraftIDs); cleanupErr != nil {
-				return nil, fmt.Errorf("%w; cleanup failed: %v", c.mapGitLabError("publish_draft_note", err), cleanupErr)
+				return nil, fmt.Errorf("%w; cleanup failed: %w", c.mapGitLabError("publish_draft_note", err), cleanupErr)
 			}
 			return nil, c.mapGitLabError("publish_draft_note", err)
 		}
@@ -86,7 +86,7 @@ func (c *Client) PublishDiffReviewDraft(
 	if input.Action == platform.ReviewActionApprove {
 		sha := reviewHeadSHA(input)
 		if sha == "" {
-			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, fmt.Errorf("approve_merge_request: missing review head sha"))
+			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, errors.New("approve_merge_request: missing review head sha"))
 		}
 		_, _, err := c.api.MergeRequestApprovals.ApproveMergeRequest(
 			pid,
@@ -96,11 +96,11 @@ func (c *Client) PublishDiffReviewDraft(
 		)
 		if err != nil {
 			mappedErr := mapGitLabMutationError(c.host, "approve_merge_request", sha, err)
-			var platformErr *platform.Error
-			if publishedSummary &&
-				errors.As(mappedErr, &platformErr) &&
-				platformErr.Code == platform.ErrCodeStaleState {
-				platformErr.Hint = "the review summary was already posted; retrying will repeat it"
+			if publishedSummary {
+				if platformErr, ok := errors.AsType[*platform.Error](mappedErr); ok &&
+					platformErr.Code == platform.ErrCodeStaleState {
+					platformErr.Hint = "the review summary was already posted; retrying will repeat it"
+				}
 			}
 			return gitlabPublishFailure(submittedAt, publishedAny, publishedCommentIDs, mappedErr)
 		}

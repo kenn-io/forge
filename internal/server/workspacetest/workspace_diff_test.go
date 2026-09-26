@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -51,7 +52,7 @@ func TestWorkspaceDiffEndpointsReportHeadAndPushedE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
@@ -144,7 +145,7 @@ func TestWorkspaceFilePreviewEndpointReturnsRequestedDiffSideContentE2E(t *testi
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
@@ -199,15 +200,15 @@ func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
 
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	_, err := database.UpsertRepo(t.Context(), identity)
+	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	_, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{
 		WorktreeDir: filepath.Join(dir, "managed-worktrees"),
 	})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
 		ID:              "ws-file-order",
 		PlatformHost:    "github.com",
@@ -260,7 +261,7 @@ func TestWorkspaceCommitsEndpointListsBranchCommitsE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
@@ -299,7 +300,7 @@ func TestWorkspaceDiffEndpointsAcceptCommitAndRangeScopesE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
@@ -375,7 +376,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, remote, srv := fixture.client, fixture.remote, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	targetWork := filepath.Join(t.TempDir(), "target")
@@ -429,7 +430,7 @@ func TestWorkspaceDiffEndpointReportsMergeTargetForAssociatedKataWorkspaceE2E(t 
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, database, remote, srv := fixture.client, fixture.database, fixture.remote, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	targetWork := filepath.Join(t.TempDir(), "target")
@@ -492,10 +493,11 @@ func TestWorkspaceDiffEndpointRejectsOriginBaseE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	req := newWorkspaceFixtureRequest(
+		t,
 		http.MethodGet,
 		"/api/v1/workspaces/"+ws.ID+"/diff?base=origin",
 		nil,
@@ -520,7 +522,7 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	secretDir := t.TempDir()
@@ -547,7 +549,7 @@ func TestWorkspaceDiffEndpointHandlesUntrackedSymlinkAndLargeFileE2E(t *testing.
 	require.Len(symlink.Hunks, 1)
 	require.NotNil(symlink.Hunks[0].Lines)
 	require.Len(symlink.Hunks[0].Lines, 1)
-	line := (symlink.Hunks[0].Lines)[0]
+	line := symlink.Hunks[0].Lines[0]
 	assert.Equal(secretPath, line.Content)
 	assert.NotContains(line.Content, "do not expose")
 
@@ -567,7 +569,7 @@ func TestWorkspaceDiffEndpointMarksGeneratedFilesE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	require.NoError(os.WriteFile(
@@ -607,7 +609,7 @@ func TestWorkspaceDiffEndpointScopesPatchByPathE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ws := createReadyWorkspace(t, context.Background(), fixture.client)
+	ws := createReadyWorkspace(t, t.Context(), fixture.client)
 
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "first.go"), []byte("package first\n"), 0o644))
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "second.go"), []byte("package second\n"), 0o644))
@@ -631,7 +633,7 @@ func TestWorkspaceDiffPathPrefersCurrentPathOverEarlierRenameE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ws := createReadyWorkspace(t, context.Background(), fixture.client)
+	ws := createReadyWorkspace(t, t.Context(), fixture.client)
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "z.txt"), []byte("renamed content\n"), 0o644))
@@ -660,7 +662,7 @@ func TestWorkspaceDiffEndpointKeepsModifiedSourcePatchSeparateFromCopyE2E(t *tes
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ws := createReadyWorkspace(t, context.Background(), fixture.client)
+	ws := createReadyWorkspace(t, t.Context(), fixture.client)
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 
@@ -772,7 +774,7 @@ func requestWorkspaceFilesQuery(
 
 func requestWorkspaceFilesPath(t *testing.T, srv *server.Server, query string) generated.FilesResponse {
 	t.Helper()
-	req := newWorkspaceFixtureRequest(http.MethodGet, query, nil)
+	req := newWorkspaceFixtureRequest(t, http.MethodGet, query, nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	resp := rr.Result()
@@ -785,7 +787,7 @@ func requestWorkspaceFilesPath(t *testing.T, srv *server.Server, query string) g
 
 func requestWorkspaceCommits(t *testing.T, srv *server.Server, workspaceID string) generated.CommitsResponse {
 	t.Helper()
-	req := newWorkspaceFixtureRequest(http.MethodGet, "/api/v1/workspaces/"+workspaceID+"/commits", nil)
+	req := newWorkspaceFixtureRequest(t, http.MethodGet, "/api/v1/workspaces/"+workspaceID+"/commits", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	resp := rr.Result()
@@ -837,7 +839,7 @@ func requestWorkspaceDiffForPath(
 
 func requestWorkspaceDiffPath(t *testing.T, srv *server.Server, query string) generated.DiffResponse {
 	t.Helper()
-	req := newWorkspaceFixtureRequest(http.MethodGet, query, nil)
+	req := newWorkspaceFixtureRequest(t, http.MethodGet, query, nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	resp := rr.Result()
@@ -863,7 +865,7 @@ func requestWorkspaceFilePreview(
 	if side != "" {
 		query += "&side=" + url.QueryEscape(side)
 	}
-	req := newWorkspaceFixtureRequest(http.MethodGet, query, nil)
+	req := newWorkspaceFixtureRequest(t, http.MethodGet, query, nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 	resp := rr.Result()
@@ -874,8 +876,9 @@ func requestWorkspaceFilePreview(
 	return body
 }
 
-func newWorkspaceFixtureRequest(method, target string, body io.Reader) *http.Request {
-	req := httptest.NewRequest(method, target, body)
+func newWorkspaceFixtureRequest(t *testing.T, method, target string, body io.Reader) *http.Request {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), method, target, body)
 	req.Host = "forge.test"
 	return req
 }
@@ -895,7 +898,7 @@ func workspaceDiffPaths(files []generated.DiffFile) []string {
 
 func gracefulShutdown(t *testing.T, srv *server.Server) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 	defer cancel()
 	require.NoError(t, srv.Shutdown(ctx))
 }

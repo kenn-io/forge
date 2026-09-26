@@ -10,11 +10,26 @@ shell:
   shell_argument: "-c"
 
 processes:
+  git-fetch:
+    description: "Refresh remote refs every 15 minutes while on main"
+    namespace: dev
+    log_location: "tmp/logs/git-fetch-process-compose.log"
+    command: |
+      while true; do
+        if [ "$(git branch --show-current)" = "main" ]; then
+          git fetch || echo "git fetch failed; retrying in 15 minutes" >&2
+        fi
+        sleep 900
+      done
+
   backend:
     description: "Go backend with Air live reload on 127.0.0.1:8091"
     namespace: dev
     log_location: "tmp/logs/backend-process-compose.log"
     command: "make frontend && sh ./scripts/dev-stack-backend.sh"
+    # process-compose kills the backend when readiness exhausts its failures.
+    # The first start after a pull runs the frontend build and a cold Go build
+    # before the server listens, which can take several minutes.
     readiness_probe:
       http_get:
         host: 127.0.0.1
@@ -25,7 +40,7 @@ processes:
       period_seconds: 5
       timeout_seconds: 3
       success_threshold: 1
-      failure_threshold: 10
+      failure_threshold: 120
 
   frontend:
     description: "Vite frontend dev server on 127.0.0.1:5174"

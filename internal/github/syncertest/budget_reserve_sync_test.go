@@ -25,6 +25,8 @@ import (
 // essential reserve and must NOT discover the new merge request — proving
 // the test discriminates the reserve behavior rather than passing vacuously.
 func TestEssentialReserveKeepsDiscoveryAliveAfterOptionalExhaustion(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 

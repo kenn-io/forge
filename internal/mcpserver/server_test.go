@@ -160,7 +160,7 @@ func TestSpawnToolFailurePreservesPartialHandoffEvidenceThroughClientSession(t *
 					"type": "item",
 					"item": map[string]any{
 						"type": "pr", "provider": "github", "platform_host": "github.com",
-						"platform_repo_id": "repo-acme-widget",
+						"platform_repo_id": 1001,
 						"owner":            "acme", "name": "widget", "number": 42,
 					},
 				},
@@ -210,11 +210,11 @@ func TestHTTPHandlerServesOnlyStatelessMCPPath(t *testing.T) {
 	handler := s.HTTPHandler()
 
 	missing := httptest.NewRecorder()
-	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodPost, "http://localhost/other", nil))
+	handler.ServeHTTP(missing, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://localhost/other", nil))
 	assert.Equal(t, http.StatusNotFound, missing.Code)
 
 	mcpResponse := httptest.NewRecorder()
-	handler.ServeHTTP(mcpResponse, httptest.NewRequest(http.MethodGet, "http://localhost/mcp", nil))
+	handler.ServeHTTP(mcpResponse, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://localhost/mcp", nil))
 	assert.NotEqual(t, http.StatusNotFound, mcpResponse.Code)
 }
 

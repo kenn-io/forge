@@ -14,10 +14,12 @@ func fixtureEvidence(f fixture, p *landedwork.Interval, method string) landedwor
 	return landedwork.Evidence{
 		Query: p.Query(), Inventory: landedwork.Inventory{Supported: true, Complete: true},
 		Capabilities: landedwork.Capabilities{Merge: true, Squash: true},
-		Candidates: []landedwork.Candidate{{Repository: f.bounds().Repository, ID: "7",
+		Candidates: []landedwork.Candidate{{
+			Repository: f.bounds().Repository, ID: "7",
 			Terminal: f.head, SourceHead: f.source[len(f.source)-1], Source: f.source,
 			SourceComplete: true, Method: method,
-			MethodEvidence: "fixture-method", TerminalEvidence: "fixture-terminal"}},
+			MethodEvidence: "fixture-method", TerminalEvidence: "fixture-terminal",
+		}},
 	}
 }
 
@@ -28,23 +30,23 @@ func TestAnalyzeProofSideAncestry(t *testing.T) {
 	require := require.New(t)
 	require.NoError(err)
 	require.Len(r.Landings, 1)
-	a := assert.New(t)
+	assert := assert.New(t)
 	l := r.Landings[0]
-	a.Equal(f.source, l.Source)
-	a.ElementsMatch([]string{f.source[0], f.source[2], f.source[3]}, l.Introduced)
+	assert.Equal(f.source, l.Source)
+	assert.ElementsMatch([]string{f.source[0], f.source[2], f.source[3]}, l.Introduced)
 	var authored []string
 	for _, id := range l.Introduced {
 		if len(strings.Fields(f.repo.Run("rev-list", "--parents", "-n", "1", id))) <= 2 {
 			authored = append(authored, id)
 		}
 	}
-	a.ElementsMatch([]string{f.source[0], f.source[3]}, authored)
-	a.Equal("3\t1\twork.txt", f.repo.Run("diff", "--numstat", l.Before, l.Terminal, "--", "work.txt"))
-	a.Equal(f.bounds(), r.Coverage.Bounds)
-	a.True(r.Coverage.Complete)
-	a.Equal(f.head, r.Coverage.CertifiedHead)
-	a.Empty(r.Coverage.Gaps)
-	a.Empty(r.Unattributed)
+	assert.ElementsMatch([]string{f.source[0], f.source[3]}, authored)
+	assert.Equal("3\t1\twork.txt", f.repo.Run("diff", "--numstat", l.Before, l.Terminal, "--", "work.txt"))
+	assert.Equal(f.bounds(), r.Coverage.Bounds)
+	assert.True(r.Coverage.Complete)
+	assert.Equal(f.head, r.Coverage.CertifiedHead)
+	assert.Empty(r.Coverage.Gaps)
+	assert.Empty(r.Unattributed)
 }
 
 func TestAnalyzeProofIntermediateEditsDoNotChangeBoundary(t *testing.T) {

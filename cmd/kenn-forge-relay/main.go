@@ -41,12 +41,14 @@ func main() {
 		return
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	if pflag.NArg() != 0 || *configFile == "" {
 		fmt.Fprintln(os.Stderr, "usage: kenn-forge-relay --config PATH")
+		cancel()
 		os.Exit(2)
 	}
-	if err := run(ctx, *configFile, os.Stdout); err != nil {
+	err := run(ctx, *configFile, os.Stdout)
+	cancel()
+	if err != nil {
 		slog.Error("relay stopped", "error", err)
 		os.Exit(1)
 	}
@@ -83,12 +85,12 @@ func run(ctx context.Context, path string, ready io.Writer) error {
 		}
 		sources[name] = activityrelay.Source{Secret: bytes.TrimSpace(secret), RepositoryIDs: source.RepositoryIDs}
 	}
-	webhook, err := net.Listen("tcp", cfg.WebhookListen)
+	webhook, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", cfg.WebhookListen)
 	if err != nil {
 		return errors.New("could not bind webhook listener")
 	}
 	defer func() { _ = webhook.Close() }()
-	feed, err := net.Listen("tcp", cfg.FeedListen)
+	feed, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", cfg.FeedListen)
 	if err != nil {
 		return errors.New("could not bind feed listener")
 	}

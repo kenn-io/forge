@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -188,11 +189,11 @@ func doJSON(
 	t.Helper()
 	var req *http.Request
 	if body == nil {
-		req = httptest.NewRequest(method, path, nil)
+		req = httptest.NewRequestWithContext(t.Context(), method, path, nil)
 	} else {
 		raw, err := json.Marshal(body)
 		require.NoError(t, err)
-		req = httptest.NewRequest(method, path, bytes.NewReader(raw))
+		req = httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewReader(raw))
 		req.Header.Set("Content-Type", "application/json")
 	}
 	w := httptest.NewRecorder()
@@ -234,7 +235,8 @@ func (h *testEventHub) count(kind string) int {
 
 func workspaceSnapshotFromManager(manager interface {
 	ListSummaries(context.Context) ([]db.WorkspaceSummary, error)
-}) func(context.Context) (workspaceapi.FleetSnapshot, error) {
+},
+) func(context.Context) (workspaceapi.FleetSnapshot, error) {
 	return func(ctx context.Context) (workspaceapi.FleetSnapshot, error) {
 		summaries, err := manager.ListSummaries(ctx)
 		if err != nil {
@@ -301,12 +303,12 @@ func repoRoot(t *testing.T) string {
 
 func freeLoopbackPort(t *testing.T) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 	addr, ok := listener.Addr().(*net.TCPAddr)
 	require.True(t, ok)
-	return fmt.Sprint(addr.Port)
+	return strconv.Itoa(addr.Port)
 }
 
 func containerLogs(ctx context.Context, container testcontainers.Container) string {

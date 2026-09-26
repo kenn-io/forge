@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
@@ -580,7 +581,7 @@ func (s *Server) postHubEnrollmentJSON(
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("%w: %v", providerplane.ErrHubUnavailable, err)
+		return fmt.Errorf("%w: %w", providerplane.ErrHubUnavailable, err)
 	}
 	defer response.Body.Close()
 	encodedResponse, err := io.ReadAll(io.LimitReader(

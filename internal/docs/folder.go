@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/kit/atomicfile"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -100,11 +101,9 @@ var imageExts = map[string]string{
 // The `mu` RWMutex protects the folder list itself (folders + byID) so
 // readers like Folders / Lookup are wait-free against each other but
 // see consistent snapshots when a writer is mid-mutation. The
-// `writeMu` mutex serializes file mutations (Create/Delete/Rename/Write)
-// across all folders so the exists-check + write/rename pairs in
-// CreateFile and RenameFile are atomic against other in-process
-// callers - a per-process lock is sufficient since the docs server is
-// the only writer in the supported single-user deployment.
+// `writeMu` mutex serializes file mutations (Create/Rename/Write) across
+// all folders. No-overwrite itself is enforced by the kernel: CreateFile
+// and RenameFile publish with no-replace primitives.
 type Registry struct {
 	mu      sync.RWMutex
 	folders []config.DocFolder
@@ -130,8 +129,8 @@ func NewRegistry(folders []config.DocFolder, options ...RegistryOption) *Registr
 	resolved := make([]config.DocFolder, 0, len(folders))
 	byID := make(map[string]config.DocFolder, len(folders))
 	for _, v := range folders {
-		if real, err := filepath.EvalSymlinks(v.Path); err == nil {
-			v.Path = real
+		if resolved, err := filepath.EvalSymlinks(v.Path); err == nil {
+			v.Path = resolved
 		}
 		resolved = append(resolved, v)
 		byID[v.ID] = v
@@ -208,11 +207,11 @@ func (r *Registry) Add(v config.DocFolder) error {
 	r.mu.RUnlock()
 	expanded, err := expandTilde(v.Path)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidFolder, err)
+		return fmt.Errorf("%w: %w", ErrInvalidFolder, err)
 	}
 	abs, err := filepath.Abs(expanded)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidFolder, err)
+		return fmt.Errorf("%w: %w", ErrInvalidFolder, err)
 	}
 	v.Path = abs
 	info, err := os.Stat(v.Path)
@@ -222,8 +221,8 @@ func (r *Registry) Add(v config.DocFolder) error {
 	if !info.IsDir() {
 		return fmt.Errorf("%w: path %q is not a directory", ErrInvalidFolder, v.Path)
 	}
-	if real, err := filepath.EvalSymlinks(v.Path); err == nil {
-		v.Path = real
+	if resolved, err := filepath.EvalSymlinks(v.Path); err == nil {
+		v.Path = resolved
 	}
 	if v.Name == "" {
 		v.Name = filepath.Base(v.Path)
@@ -526,11 +525,8 @@ func (r *Registry) ReadBlob(folderID, relPath string) (Blob, error) {
 // WriteFile writes content atomically: write to a sibling tempfile then
 // rename. Refuses paths outside the folder root and refuses to create
 // files outside an existing directory (so we don't materialize whole
-// trees by accident from a typo'd path).
-//
-// Holds writeMu around the final rename so a concurrent RenameFile
-// (which Lstats the destination then renames into it) can't see an
-// "absent" destination here right before this rename creates it.
+// trees by accident from a typo'd path). An existing file keeps its
+// permission bits; a new file gets 0644.
 func (r *Registry) WriteFile(folderID, relPath string, content []byte) error {
 	if err := r.checkIgnored(folderID, relPath); err != nil {
 		return err
@@ -545,47 +541,22 @@ func (r *Registry) WriteFile(folderID, relPath string, content []byte) error {
 	if err := ensureRegularFileIfExists(resolved); err != nil {
 		return err
 	}
-	mode := fs.FileMode(0o644)
-	if info, err := os.Stat(resolved); err == nil {
-		mode = info.Mode().Perm()
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	dir := filepath.Dir(resolved)
-	if info, err := os.Stat(dir); err != nil {
-		return fmt.Errorf("parent dir: %w", err)
-	} else if !info.IsDir() {
-		return fmt.Errorf("parent %q is not a directory", dir)
-	}
-	tmp, err := os.CreateTemp(dir, ".kenn-forge-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if _, err := tmp.Write(content); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
+	if err := ensureParentDir(resolved); err != nil {
 		return err
 	}
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
-	return os.Rename(tmpName, resolved)
+	return ignorePublished(atomicfile.WriteFile(resolved, content,
+		atomicfile.WithPerm(0o644), atomicfile.WithPreserveMode()))
 }
 
 // CreateFile writes content to a new file at relPath. Unlike WriteFile,
 // it refuses to overwrite an existing file - the file ops UI uses this
 // to materialize a fresh document without accidentally clobbering one.
 //
-// Uses O_CREATE|O_EXCL so the kernel enforces no-overwrite atomically.
-// A separate exists-check pair (Lstat then WriteFile) would leave a TOCTTOU
-// gap that lets a concurrent caller clobber a file in the race window.
+// The content is staged and published with a no-replace link or rename,
+// so the kernel enforces no-overwrite and readers never see a partially
+// written file.
 func (r *Registry) CreateFile(folderID, relPath string, content []byte) error {
 	if err := r.checkIgnored(folderID, relPath); err != nil {
 		return err
@@ -597,29 +568,19 @@ func (r *Registry) CreateFile(folderID, relPath string, content []byte) error {
 	if err := ensureMarkdown(resolved); err != nil {
 		return err
 	}
-	dir := filepath.Dir(resolved)
-	if info, err := os.Stat(dir); err != nil {
-		return fmt.Errorf("parent dir: %w", err)
-	} else if !info.IsDir() {
-		return fmt.Errorf("parent %q is not a directory", dir)
+	if err := ensureParentDir(resolved); err != nil {
+		return err
 	}
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 	if err := ensureRegularFileIfExists(resolved); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(resolved, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return ErrAlreadyExists
-		}
-		return err
+	err = atomicfile.WriteNew(resolved, content, atomicfile.WithPerm(0o644))
+	if errors.Is(err, fs.ErrExist) {
+		return ErrAlreadyExists
 	}
-	defer func() { _ = f.Close() }()
-	if _, err := f.Write(content); err != nil {
-		return err
-	}
-	return nil
+	return ignorePublished(err)
 }
 
 // DeleteFile removes the file at relPath. Refuses non-markdown,
@@ -651,10 +612,8 @@ func (r *Registry) DeleteFile(folderID, relPath string) error {
 // Refuses to overwrite an existing destination so a typo doesn't
 // silently merge two notes.
 //
-// Holds writeMu around the exists-check + rename pair so a concurrent
-// CreateFile/RenameFile can't sneak a file into the destination between
-// the Lstat and Rename. Cross-platform RENAME_NOREPLACE isn't available
-// in stdlib, so process-level serialization is the portable substitute.
+// The rename itself refuses an existing destination atomically, so a
+// file created concurrently by another process is never replaced.
 func (r *Registry) RenameFile(folderID, from, to string) error {
 	if err := r.checkIgnored(folderID, from); err != nil {
 		return err
@@ -698,12 +657,33 @@ func (r *Registry) RenameFile(folderID, from, to string) error {
 	if err := ensureRegularFileIfExists(dstResolved); err != nil {
 		return err
 	}
-	if _, err := os.Lstat(dstLexical); err == nil {
-		return ErrAlreadyExists
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	if err := atomicfile.RenameNoReplace(srcLexical, dstLexical); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return ErrAlreadyExists
+		}
 		return err
 	}
-	return os.Rename(srcLexical, dstLexical)
+	return nil
+}
+
+// ignorePublished treats a write whose content is already visible as
+// successful. atomicfile reports a later directory fsync or staging
+// cleanup failure as ErrPublished; the document is saved either way.
+func ignorePublished(err error) error {
+	if errors.Is(err, atomicfile.ErrPublished) {
+		return nil
+	}
+	return err
+}
+
+func ensureParentDir(path string) error {
+	dir := filepath.Dir(path)
+	if info, err := os.Stat(dir); err != nil {
+		return fmt.Errorf("parent dir: %w", err)
+	} else if !info.IsDir() {
+		return fmt.Errorf("parent %q is not a directory", dir)
+	}
+	return nil
 }
 
 // resolve canonicalizes relPath against the folder root and verifies the
@@ -722,11 +702,11 @@ func (r *Registry) resolve(folderID, relPath string) (string, error) {
 	}
 	full := filepath.Join(v.Path, clean)
 	// Resolve symlinks if the target exists.
-	if real, err := filepath.EvalSymlinks(full); err == nil {
-		if !pathWithin(v.Path, real) {
+	if resolved, err := filepath.EvalSymlinks(full); err == nil {
+		if !pathWithin(v.Path, resolved) {
 			return "", ErrOutsideFolder
 		}
-		return real, nil
+		return resolved, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
@@ -772,7 +752,7 @@ func (r *Registry) lexicalPath(folderID, relPath string) (string, error) {
 func cleanRelativePath(relPath string) (string, error) {
 	clean := filepath.Clean(relPath)
 	if clean == "." || clean == "" {
-		return "", fmt.Errorf("empty path")
+		return "", errors.New("empty path")
 	}
 	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", ErrOutsideFolder

@@ -9,8 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
+
+	"go.kenn.io/kit/safefileio"
 )
 
 const (
@@ -71,7 +74,7 @@ func (s *Store) Save(data []byte) (string, error) {
 		return "", err
 	}
 
-	file, err := os.CreateTemp(s.root, "paste-image-*"+extension)
+	file, err := safefileio.CreatePrivateTemp(s.root, "paste-image-*"+extension)
 	if err != nil {
 		return "", fmt.Errorf("create terminal paste image: %w", err)
 	}
@@ -82,10 +85,6 @@ func (s *Store) Save(data []byte) (string, error) {
 			_ = os.Remove(path)
 		}
 	}()
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		return "", fmt.Errorf("secure terminal paste image: %w", err)
-	}
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
 		return "", fmt.Errorf("write terminal paste image: %w", err)
@@ -143,7 +142,7 @@ func (s *Store) enforceCapLocked() error {
 		if order := a.modTime.Compare(b.modTime); order != 0 {
 			return order
 		}
-		return bytes.Compare([]byte(a.path), []byte(b.path))
+		return strings.Compare(a.path, b.path)
 	})
 	for _, entry := range entries {
 		if total <= s.maxBytes {

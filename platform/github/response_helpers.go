@@ -12,8 +12,8 @@ import (
 // IsNotModified returns true if the error represents a 304 Not Modified
 // response from the GitHub API.
 func IsNotModified(err error) bool {
-	var ghErr *gh.ErrorResponse
-	if !errors.As(err, &ghErr) || ghErr == nil || ghErr.Response == nil {
+	ghErr, ok := errors.AsType[*gh.ErrorResponse](err)
+	if !ok || ghErr == nil || ghErr.Response == nil {
 		return false
 	}
 	return ghErr.Response.StatusCode == http.StatusNotModified

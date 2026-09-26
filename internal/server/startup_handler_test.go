@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -27,7 +28,7 @@ func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
 	}))
 
 	firstRR := httptest.NewRecorder()
-	switcher.ServeHTTP(firstRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	switcher.ServeHTTP(firstRR, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 	require.Equal(t, http.StatusAccepted, firstRR.Code)
 
 	next := http.NewServeMux()
@@ -37,7 +38,7 @@ func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
 	switcher.Swap(next)
 
 	secondRR := httptest.NewRecorder()
-	switcher.ServeHTTP(secondRR, httptest.NewRequest(http.MethodGet, "/", nil))
+	switcher.ServeHTTP(secondRR, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 	require.Equal(t, http.StatusNoContent, secondRR.Code)
 }
 
@@ -63,7 +64,7 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 		BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
-	rootReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	rootReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	rootReq.Host = "127.0.0.1:8091"
 	rootReq.RemoteAddr = "127.0.0.1:1234"
 	rootRR := httptest.NewRecorder()
@@ -75,7 +76,7 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 	assert.Contains(rootRR.Body.String(), `window.__BASE_PATH__="/"`)
 	assert.NotContains(rootRR.Body.String(), "kenn-forge is starting")
 
-	liveReq := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	liveReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/livez", nil)
 	liveReq.Host = "127.0.0.1:8091"
 	liveReq.RemoteAddr = "127.0.0.1:1234"
 	liveRR := httptest.NewRecorder()
@@ -86,7 +87,7 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 	assert.Equal("v1.2.3", live.Version)
 	assert.Len(live.Revision, 40)
 
-	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+	apiReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/settings", nil)
 	apiReq.Host = "127.0.0.1:8091"
 	apiReq.RemoteAddr = "127.0.0.1:1234"
 	apiRR := httptest.NewRecorder()
@@ -98,7 +99,7 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 	require.NoError(t, json.Unmarshal(apiRR.Body.Bytes(), &problem))
 	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
 
-	assetReq := httptest.NewRequest(http.MethodGet, "/assets/index-DEADBEEF.js", nil)
+	assetReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/assets/index-DEADBEEF.js", nil)
 	assetReq.Host = "127.0.0.1:8091"
 	assetReq.RemoteAddr = "127.0.0.1:1234"
 	assetRR := httptest.NewRecorder()
@@ -127,7 +128,7 @@ func TestStartupHandlerUsesHostValidation(t *testing.T) {
 		BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.Host = "attacker.example:8091"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -154,7 +155,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 		BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/kenn-forge/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/", nil)
 	req.Host = "127.0.0.1:8091"
 	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
@@ -167,7 +168,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 	assert.Contains(rr.Body.String(), `src="/kenn-forge/assets/index.js"`)
 	assert.NotContains(rr.Body.String(), "kenn-forge is starting")
 
-	healthReq := httptest.NewRequest(http.MethodGet, "/kenn-forge/healthz", nil)
+	healthReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/healthz", nil)
 	healthReq.Host = "127.0.0.1:8091"
 	healthReq.RemoteAddr = "127.0.0.1:1234"
 	healthRR := httptest.NewRecorder()
@@ -175,7 +176,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 
 	assert.Equal(http.StatusServiceUnavailable, healthRR.Code)
 
-	apiReq := httptest.NewRequest(http.MethodGet, "/kenn-forge/api/v1/settings", nil)
+	apiReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/api/v1/settings", nil)
 	apiReq.Host = "127.0.0.1:8091"
 	apiReq.RemoteAddr = "127.0.0.1:1234"
 	apiRR := httptest.NewRecorder()
@@ -183,7 +184,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 
 	assert.Equal(http.StatusServiceUnavailable, apiRR.Code)
 
-	bareReq := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+	bareReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/settings", nil)
 	bareReq.Host = "127.0.0.1:8091"
 	bareReq.RemoteAddr = "127.0.0.1:1234"
 	bareRR := httptest.NewRecorder()
@@ -198,7 +199,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
 		},
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := ln.Addr().(*net.TCPAddr).Port
 
@@ -231,7 +232,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 
 	var fullServer *Server
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		if fullServer != nil {
 			require.NoError(t, fullServer.Shutdown(shutdownCtx))

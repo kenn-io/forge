@@ -126,8 +126,8 @@ func attachSpecTmuxSessionExists(
 }
 
 func attachSpecTmuxSessionAbsent(stderr []byte, err error) bool {
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok || exitErr.ExitCode() != 1 {
 		return false
 	}
 	msg := string(stderr)

@@ -15,6 +15,8 @@ import (
 )
 
 func TestGitHubComMergeUsesAsyncAPI(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -58,6 +60,8 @@ func TestGitHubComMergeUsesAsyncAPI(t *testing.T) {
 }
 
 func TestGitHubComMergePollsPendingOperation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -105,6 +109,8 @@ func TestGitHubComMergePollsPendingOperation(t *testing.T) {
 }
 
 func TestGitHubComMergePreservesTerminalFailure(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -136,6 +142,8 @@ func TestGitHubComMergePreservesTerminalFailure(t *testing.T) {
 }
 
 func TestGitHubComMergeHeadMoveIsConflict(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -166,6 +174,8 @@ func TestGitHubComMergeHeadMoveIsConflict(t *testing.T) {
 }
 
 func TestGitHubComMergeDoesNotAdoptExistingOperation(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	var calls atomic.Int32
 
@@ -200,6 +210,8 @@ func TestGitHubComMergeDoesNotAdoptExistingOperation(t *testing.T) {
 }
 
 func TestGitHubComMergeHonorsCancellationWhilePolling(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	var calls atomic.Int32
@@ -232,6 +244,8 @@ func TestGitHubComMergeHonorsCancellationWhilePolling(t *testing.T) {
 }
 
 func TestGitHubComMergeDoesNotTreatEnqueuedAsMerged(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -258,6 +272,8 @@ func TestGitHubComMergeDoesNotTreatEnqueuedAsMerged(t *testing.T) {
 }
 
 func TestGitHubEnterpriseMergeKeepsSynchronousAPI(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 

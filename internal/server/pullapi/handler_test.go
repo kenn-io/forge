@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestHandlerRegistersPullRoutes(t *testing.T) {
@@ -112,8 +113,8 @@ func TestListPullsTreatsAssociatedWorkspaceSubjectAsHasWorkspace(t *testing.T) {
 	database := dbtest.Open(t)
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	identity.PlatformRepoID = 1001
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: 42, Number: 42, Title: "Associated work",
@@ -155,8 +156,8 @@ func TestListPullsReportsStackPlacementForMultiMemberStacks(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(ctx, identity)
+	identity.PlatformRepoID = 1001
+	repoID, err := reposeed.Seed(ctx, database, identity)
 	require.NoError(err)
 	insert := func(number int, head, base string) int64 {
 		id, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -252,10 +253,10 @@ func TestProviderFetchOverlaysLocalPullWorkspaceWithoutReordering(t *testing.T) 
 	handler := New(Deps{
 		ProviderSource: stubPullProviderSource{rows: []MergeRequestResponse{
 			{RepoID: 91, Number: 2, Repo: httpapi.RepoRefResponse{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 			}},
 			{RepoID: 91, Number: 1, Repo: httpapi.RepoRefResponse{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 			}},
 		}},
 		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
@@ -263,7 +264,7 @@ func TestProviderFetchOverlaysLocalPullWorkspaceWithoutReordering(t *testing.T) 
 				key: {
 					Subject: db.WorkspaceSubjectMetadata{
 						Key: key, Platform: "github", PlatformHost: "github.com",
-						PlatformRepoID: "repo-widget",
+						PlatformRepoID: 1001,
 					},
 					Workspace: workspaceapi.WorkspaceRef{ID: "ws-local", Status: "ready"},
 				},
@@ -290,7 +291,7 @@ func TestProviderFetchReplacesHubPullDetailWorkspaceWithLocalWorkspace(t *testin
 		ProviderSource: stubPullProviderSource{detail: MergeRequestDetailResponse{
 			MergeRequest: &db.MergeRequest{RepoID: 91, Number: 42},
 			Repo: httpapi.RepoRefResponse{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 			},
 			Workspace: &workspaceapi.WorkspaceRef{ID: "ws-hub", Status: "ready"},
 		}},
@@ -299,7 +300,7 @@ func TestProviderFetchReplacesHubPullDetailWorkspaceWithLocalWorkspace(t *testin
 				key: {
 					Subject: db.WorkspaceSubjectMetadata{
 						Key: key, Platform: "github", PlatformHost: "github.com",
-						PlatformRepoID: "repo-widget",
+						PlatformRepoID: 1001,
 					},
 					Workspace: workspaceapi.WorkspaceRef{ID: "ws-local", Status: "ready"},
 				},
@@ -328,7 +329,7 @@ func TestLocalPullOverlayNeverJoinsByNumericRepoID(t *testing.T) {
 			RepoID: 1,
 			Number: 42,
 			Repo: httpapi.RepoRefResponse{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-hub",
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: 2001,
 			},
 		}}},
 		WorkspaceSubjects: func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error) {
@@ -336,7 +337,7 @@ func TestLocalPullOverlayNeverJoinsByNumericRepoID(t *testing.T) {
 				key: {
 					Subject: db.WorkspaceSubjectMetadata{
 						Key: key, Platform: "github", PlatformHost: "github.com",
-						PlatformRepoID: "repo-spoke",
+						PlatformRepoID: 2002,
 					},
 					Workspace: workspaceapi.WorkspaceRef{ID: "ws-wrong-repo", Status: "ready"},
 				},
@@ -355,8 +356,8 @@ func TestListPullsWorkspaceActivityRecencyIsOptIn(t *testing.T) {
 	database := dbtest.Open(t)
 	base := time.Date(2026, 8, 15, 10, 0, 0, 0, time.UTC)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	identity.PlatformRepoID = 1001
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	for number, activityAt := range map[int]time.Time{1: base, 2: base.Add(time.Hour)} {
 		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -405,8 +406,8 @@ func TestPullDetailTreatsWorkspaceSnapshotFailureAsBestEffort(t *testing.T) {
 	database := dbtest.Open(t)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	identity.PlatformRepoID = 1001
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: 42, Number: 42, Title: "Available pull request",

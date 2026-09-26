@@ -116,6 +116,42 @@ body {
   font-size: var(--font-size-root);
 }
 
+/* Phone type scale. kit-ui's touch scale (16px body, 20px titles) costs
+   too many rows on triage screens, so phones get a denser scale here:
+   15px body, 13px metadata, 17px titles. Text fields stay at 1rem because
+   iOS zooms the page when a focused field renders below 16px. */
+:root {
+  --font-size-touch-field: 1rem;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  :root {
+    --font-size-2xs: 0.6875rem;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.8125rem;
+    --font-size-md: 0.9375rem;
+    --font-size-lg: 1rem;
+    --font-size-xl: 1.0625rem;
+    --font-size-2xl: 1.375rem;
+  }
+  #app :is(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea, select) {
+    font-size: var(--font-size-touch-field);
+  }
+}
+
+:root.kit-type-touch {
+  --font-size-2xs: 0.6875rem;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-md: 0.9375rem;
+  --font-size-lg: 1rem;
+  --font-size-xl: 1.0625rem;
+  --font-size-2xl: 1.375rem;
+}
+.kit-type-touch #app :is(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea, select) {
+  font-size: var(--font-size-touch-field);
+}
+
 #app {
   display: flex;
   flex-direction: column;

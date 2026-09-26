@@ -8,8 +8,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-
-	"go.kenn.io/forge/internal/config"
 )
 
 type tailscaleDiscovery struct {
@@ -33,7 +31,7 @@ func (r *Runner) discoverTailscale(
 	ctx context.Context,
 	command string,
 	explicitDNS string,
-	explicitLogin string,
+	discoverLogin bool,
 ) (tailscaleDiscovery, error) {
 	result, err := r.deps.run(ctx, command, "status", "--json")
 	if err != nil {
@@ -57,19 +55,14 @@ func (r *Runner) discoverTailscale(
 		return tailscaleDiscovery{}, fmt.Errorf("tailscale HTTPS certificate is not available for %q", dnsName)
 	}
 
-	login := strings.TrimSpace(explicitLogin)
-	if login == "" {
-		profile, ok := status.Users[strconv.FormatInt(status.Self.UserID, 10)]
-		if !ok {
-			return tailscaleDiscovery{}, errors.New("tailscale status did not identify the current device user")
-		}
-		login = profile.LoginName
+	if !discoverLogin {
+		return tailscaleDiscovery{DNSName: dnsName}, nil
 	}
-	normalizedLogin, err := config.NormalizeTailscaleLogin(login)
-	if err != nil {
-		return tailscaleDiscovery{}, fmt.Errorf("tailscale login: %w", err)
+	profile, ok := status.Users[strconv.FormatInt(status.Self.UserID, 10)]
+	if !ok {
+		return tailscaleDiscovery{}, errors.New("tailscale status did not identify the current device user; pass --tailscale-login")
 	}
-	return tailscaleDiscovery{DNSName: dnsName, Login: normalizedLogin}, nil
+	return tailscaleDiscovery{DNSName: dnsName, Login: profile.LoginName}, nil
 }
 
 func canonicalDNSName(value string) string {
@@ -125,6 +118,7 @@ func (r *Runner) inspectServe(
 	ctx context.Context,
 	command string,
 	dnsName string,
+	httpsPort int,
 	port int,
 ) (serveState, error) {
 	result, err := r.deps.run(ctx, command, "serve", "status", "--json")
@@ -142,13 +136,13 @@ func (r *Runner) inspectServe(
 			continue
 		}
 		host, rawPort, err := net.SplitHostPort(authority)
-		if err != nil || canonicalDNSName(host) != dnsName || rawPort != "443" {
+		if err != nil || canonicalDNSName(host) != dnsName || rawPort != strconv.Itoa(httpsPort) {
 			continue
 		}
 		if handler.Proxy == expected {
 			return serveExact, nil
 		}
-		return serveAbsent, fmt.Errorf("tailscale Serve already owns https://%s/ with proxy %q", dnsName, handler.Proxy)
+		return serveAbsent, fmt.Errorf("tailscale Serve already owns https://%s/ with proxy %q", authority, handler.Proxy)
 	}
 	return serveAbsent, nil
 }
@@ -159,14 +153,15 @@ func (r *Runner) applyServe(ctx context.Context, plan Plan, transaction *transac
 		command = "tailscale"
 	}
 	target := fmt.Sprintf("http://127.0.0.1:%d", plan.Port)
+	httpsFlag := fmt.Sprintf("--https=%d", plan.TailscaleHTTPSPort)
 	if _, err := r.deps.run(
-		ctx, command, "serve", "--yes", "--bg", "--https=443", target,
+		ctx, command, "serve", "--yes", "--bg", httpsFlag, target,
 	); err != nil {
 		return fmt.Errorf("configure Tailscale Serve: %w", err)
 	}
 	transaction.record(func(ctx context.Context) error {
 		_, err := r.deps.run(
-			ctx, command, "serve", "--yes", "--https=443", "--set-path=/", "off",
+			ctx, command, "serve", "--yes", httpsFlag, "--set-path=/", "off",
 		)
 		return err
 	})

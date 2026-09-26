@@ -76,7 +76,7 @@ func TestRegistryDoesNotReplaceExistingFilesOrListeners(t *testing.T) {
 			case "symlink":
 				require.NoError(os.Symlink("missing", path))
 			case "live socket":
-				listener, err := net.Listen("unix", path)
+				listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", path)
 				require.NoError(err)
 				t.Cleanup(func() { _ = listener.Close() })
 			}

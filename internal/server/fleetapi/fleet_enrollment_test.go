@@ -899,3 +899,37 @@ func scopeSetForEnrollmentTest(scopes []federationauth.Scope) map[federationauth
 	}
 	return result
 }
+
+func TestSpokeEnrollmentRevocationStopsAtPeerTimeout(t *testing.T) {
+	require := require.New(t)
+	release := make(chan struct{})
+	spokeServer := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-release
+	}))
+	t.Cleanup(spokeServer.Close)
+	t.Cleanup(func() { close(release) })
+
+	hub := newEnrollmentHandlerFixture(t, enrollmentHubID, func(deps *Deps) {
+		deps.FederationHTTPClient = spokeServer.Client()
+		deps.Config.Fleet.PeerTimeout = "50ms"
+	})
+	require.NoError(hub.credentials.StoreOutbound(
+		enrollmentNodeID, "hub-calls-spoke-token", federationauth.HubToSpokeScopes(),
+	))
+
+	callerContext, cancelCaller := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancelCaller()
+	started := time.Now()
+	err := hub.handler.requestSpokeEnrollmentRevocation(callerContext, federation.Enrollment{
+		ID: enrollmentRequestID, NodeID: enrollmentNodeID,
+		SpokeBaseURL: spokeServer.URL, HubID: enrollmentHubID,
+		State: federation.EnrollmentActive,
+	})
+
+	require.Error(err)
+	assert.Less(t, time.Since(started), 5*time.Second,
+		"an unresponsive spoke must not hold revocation past the peer timeout")
+	var problem *httpapi.ProblemError
+	require.ErrorAs(err, &problem)
+	assert.Equal(t, http.StatusServiceUnavailable, problem.Status)
+}

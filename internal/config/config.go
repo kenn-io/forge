@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"net"
 	"net/url"
@@ -20,6 +21,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
+	"go.kenn.io/kit/atomicfile"
+
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -99,7 +102,7 @@ type Repo struct {
 	RepoPath         string `toml:"repo_path,omitempty" json:"repo_path,omitempty"`
 	Platform         string `toml:"platform,omitempty" json:"platform,omitempty"`
 	PlatformHost     string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
-	PlatformRepoID   string `toml:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
+	PlatformRepoID   int64  `toml:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
 	TokenEnv         string `toml:"token_env,omitempty" json:"token_env,omitempty"`
 	TokenFile        string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 	WorktreeBasePath string `toml:"worktree_base_path,omitempty" json:"worktree_base_path,omitempty"`
@@ -125,7 +128,7 @@ type RepoPreset struct {
 type RepoPresetRepository struct {
 	Provider       string `toml:"provider" json:"provider"`
 	PlatformHost   string `toml:"platform_host" json:"platform_host"`
-	PlatformRepoID string `toml:"platform_repo_id" json:"platform_repo_id"`
+	PlatformRepoID int64  `toml:"platform_repo_id" json:"platform_repo_id"`
 	RepoPath       string `toml:"repo_path" json:"repo_path"`
 }
 
@@ -177,8 +180,8 @@ func normalizeRepoPresets(presets []RepoPreset) error {
 			}
 			host := strings.TrimSpace(raw.PlatformHost)
 			repoPath := cleanPath(strings.TrimSpace(raw.RepoPath))
-			platformRepoID := strings.TrimSpace(raw.PlatformRepoID)
-			if platformRepoID == "" {
+			platformRepoID := raw.PlatformRepoID
+			if platformRepoID <= 0 {
 				return fmt.Errorf(
 					"repo_presets[%d].repos[%d]: platform_repo_id is required", i, j,
 				)
@@ -198,7 +201,7 @@ func normalizeRepoPresets(presets []RepoPreset) error {
 					"repo_presets[%d].repos[%d]: repository identity must be provider|platform_host/repo_path", i, j,
 				)
 			}
-			canonical := provider + "|" + host + "|" + platformRepoID
+			canonical := provider + "|" + host + "|" + strconv.FormatInt(platformRepoID, 10)
 			if _, exists := seenRepos[canonical]; exists {
 				continue
 			}
@@ -282,17 +285,17 @@ type GitHubAppConfig struct {
 	SelectedRepos []string `toml:"selected_repos,omitempty" json:"selected_repos,omitempty"`
 }
 
-func (r Repo) FullName() string {
+func (r *Repo) FullName() string {
 	return r.Owner + "/" + r.Name
 }
 
-func (r Repo) HasNameGlob() bool {
+func (r *Repo) HasNameGlob() bool {
 	return strings.ContainsAny(r.Name, "*?[")
 }
 
 // PlatformHostOrDefault returns the configured platform host,
 // defaulting to the provider's public host when empty.
-func (r Repo) PlatformHostOrDefault() string {
+func (r *Repo) PlatformHostOrDefault() string {
 	if r.PlatformHost == "" {
 		if host, ok := platformpkg.DefaultHost(platformpkg.Kind(r.PlatformOrDefault())); ok {
 			return host
@@ -302,7 +305,7 @@ func (r Repo) PlatformHostOrDefault() string {
 	return r.PlatformHost
 }
 
-func (r Repo) PlatformOrDefault() string {
+func (r *Repo) PlatformOrDefault() string {
 	if r.Platform == "" {
 		return defaultPlatform
 	}
@@ -312,7 +315,7 @@ func (r Repo) PlatformOrDefault() string {
 // ResolveToken returns the token for this repo. When TokenEnv is
 // set, it reads from that env var. Falls back to globalToken if
 // the env var is empty or TokenEnv is not set.
-func (r Repo) ResolveToken(globalToken string) string {
+func (r *Repo) ResolveToken(globalToken string) string {
 	if r.TokenEnv != "" {
 		if tok := os.Getenv(r.TokenEnv); tok != "" {
 			return tok
@@ -374,7 +377,9 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	if r.Owner == "" || r.Name == "" {
 		return errors.New("must have owner and name")
 	}
-	r.PlatformRepoID = strings.TrimSpace(r.PlatformRepoID)
+	if r.PlatformRepoID < 0 {
+		return errors.New("platform_repo_id must be the provider's positive integer repository ID")
+	}
 	r.WorktreeBasePath = strings.TrimSpace(r.WorktreeBasePath)
 	if r.WorktreeBasePath != "" && r.HasNameGlob() {
 		return errors.New("worktree_base_path is only supported for exact repositories")
@@ -402,7 +407,7 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	return nil
 }
 
-func (r Repo) ownerHasGlob() bool {
+func (r *Repo) ownerHasGlob() bool {
 	return strings.ContainsAny(r.Owner, "*?[")
 }
 
@@ -410,7 +415,7 @@ func (r Repo) ownerHasGlob() bool {
 // repository. A pattern's members are discovered at runtime, so its own
 // credential route is a discovery aid rather than the credential that serves
 // any particular repository.
-func (r Repo) nameHasGlob() bool {
+func (r *Repo) nameHasGlob() bool {
 	return strings.ContainsAny(r.Name, "*?[")
 }
 
@@ -900,7 +905,7 @@ type Fleet struct {
 	Sessions    FleetSessions `toml:"sessions" json:"sessions"`
 }
 
-func (f Fleet) RoleOrDefault() FleetRole {
+func (f *Fleet) RoleOrDefault() FleetRole {
 	role := FleetRole(strings.TrimSpace(string(f.Role)))
 	if role == "" {
 		return FleetRoleHub
@@ -910,7 +915,7 @@ func (f Fleet) RoleOrDefault() FleetRole {
 
 // PeerTimeoutOrDefault returns the per-peer fetch timeout, defaulting to
 // 2s when unset or unparseable.
-func (f Fleet) PeerTimeoutOrDefault() time.Duration {
+func (f *Fleet) PeerTimeoutOrDefault() time.Duration {
 	if f.PeerTimeout == "" {
 		return 2 * time.Second
 	}
@@ -1169,74 +1174,25 @@ agent_sessions = true
 // The file contains sensible defaults. Repos can be added later through the
 // settings UI.
 //
-// Writes to a temp file first, then hard-links into place so the target
-// path is never left empty or partially written.
+// The contents are staged in a temp file and published without replacing
+// anything, so the target path is never left empty or partially written
+// and a config created concurrently is kept.
 func EnsureDefault(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
-	if err != nil {
-		if _, statErr := os.Stat(path); statErr == nil {
-			return nil
-		}
-		return fmt.Errorf("creating temp config: %w", err)
+	err := atomicfile.WriteNew(path, []byte(defaultConfigContents()))
+	// ErrPublished means the default config is already in place and only
+	// a later fsync or cleanup step failed.
+	if err == nil || errors.Is(err, fs.ErrExist) || errors.Is(err, atomicfile.ErrPublished) {
+		return nil
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-
-	if _, err := tmp.WriteString(defaultConfigContents()); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing default config: %w", err)
+	if _, statErr := os.Stat(path); statErr == nil {
+		return nil
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("flushing default config: %w", err)
-	}
-
-	// Link fails atomically when path already exists, providing
-	// both atomic install and race-free existence check.
-	if err := os.Link(tmpPath, path); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil
-		}
-		// Hard links may not be supported (FAT/exFAT, network
-		// shares, cross-device). Fall back to O_EXCL create +
-		// write with cleanup on failure.
-		return writeExclusive(tmpPath, path)
-	}
-	return nil
-}
-
-// writeExclusive creates dst with O_EXCL (fails if it exists) and
-// copies the content from src. Partial files are removed on failure.
-func writeExclusive(src, dst string) error {
-	content, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("reading temp config: %w", err)
-	}
-
-	f, err := os.OpenFile(
-		dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600,
-	)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil
-		}
-		return fmt.Errorf("creating config %s: %w", dst, err)
-	}
-
-	if _, err := f.Write(content); err != nil {
-		f.Close()
-		os.Remove(dst)
-		return fmt.Errorf("writing config %s: %w", dst, err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(dst)
-		return fmt.Errorf("flushing config %s: %w", dst, err)
-	}
-	return nil
+	return fmt.Errorf("writing default config: %w", err)
 }
 
 func Load(path string) (*Config, error) {
@@ -1470,9 +1426,7 @@ func (c *Config) validate() error {
 	c.Modes = c.Modes.WithDefaults()
 	c.Workspaces = c.Workspaces.withDefaults()
 	if c.Workspaces.DefaultSidebarView != "diff" && c.Workspaces.DefaultSidebarView != "item" {
-		return fmt.Errorf(
-			"config: workspaces.default_sidebar_view must be one of diff or item",
-		)
+		return errors.New("config: workspaces.default_sidebar_view must be one of diff or item")
 	}
 
 	for i := range c.Repos {
@@ -1596,7 +1550,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("config: invalid MCP port %d", c.MCP.Port)
 	}
 	if c.MCP.DiffCacheMB < 0 || c.MCP.DiffCacheMB > math.MaxInt64>>20 {
-		return fmt.Errorf("config: MCP diff cache size is outside the supported range")
+		return errors.New("config: MCP diff cache size is outside the supported range")
 	}
 	if c.MCP.Enabled {
 		mcpPort := c.MCPPort()
@@ -1782,16 +1736,12 @@ func (c *Config) validate() error {
 
 	if len(c.Tmux.Command) > 0 &&
 		strings.TrimSpace(c.Tmux.Command[0]) == "" {
-		return fmt.Errorf(
-			"config: invalid tmux.command: first element must be non-empty",
-		)
+		return errors.New("config: invalid tmux.command: first element must be non-empty")
 	}
 
 	if len(c.Shell.Command) > 0 &&
 		strings.TrimSpace(c.Shell.Command[0]) == "" {
-		return fmt.Errorf(
-			"config: invalid shell.command: first element must be non-empty",
-		)
+		return errors.New("config: invalid shell.command: first element must be non-empty")
 	}
 
 	return nil
@@ -1801,7 +1751,7 @@ func normalizePlatformTransport(p *PlatformConfig) error {
 	p.BaseURL = strings.TrimSpace(p.BaseURL)
 	if p.Type != string(platformpkg.KindGitea) {
 		if p.BaseURL != "" || p.AllowInsecure {
-			return fmt.Errorf("base_url and allow_insecure are supported only for gitea")
+			return errors.New("base_url and allow_insecure are supported only for gitea")
 		}
 		return nil
 	}
@@ -1810,22 +1760,22 @@ func normalizePlatformTransport(p *PlatformConfig) error {
 	}
 	u, err := url.Parse(p.BaseURL)
 	if err != nil || u.Scheme == "" || u.Host == "" || u.Hostname() == "" {
-		return fmt.Errorf("base_url must be an absolute http(s) URL")
+		return errors.New("base_url must be an absolute http(s) URL")
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("base_url scheme must be http or https")
+		return errors.New("base_url scheme must be http or https")
 	}
 	if u.User != nil {
-		return fmt.Errorf("base_url must not include user info")
+		return errors.New("base_url must not include user info")
 	}
 	if u.RawQuery != "" || u.ForceQuery {
-		return fmt.Errorf("base_url must not include a query string")
+		return errors.New("base_url must not include a query string")
 	}
 	if u.Fragment != "" {
-		return fmt.Errorf("base_url must not include a fragment")
+		return errors.New("base_url must not include a fragment")
 	}
 	if u.Scheme == "http" && !p.AllowInsecure {
-		return fmt.Errorf("base_url uses plain HTTP; set allow_insecure = true to acknowledge that API tokens will be sent without TLS")
+		return errors.New("base_url uses plain HTTP; set allow_insecure = true to acknowledge that API tokens will be sent without TLS")
 	}
 	u.Path = strings.TrimRight(u.Path, "/")
 	p.BaseURL = u.String()
@@ -2652,6 +2602,7 @@ func descriptorCredentialAvailable(desc tokenauth.Descriptor) bool {
 			if err == nil && len(bytes.TrimSpace(data)) > 0 {
 				return true
 			}
+		case tokenauth.SourceKindGitHubCLI, tokenauth.SourceKindGitLabCLI, tokenauth.SourceKindForgejoCLI:
 		}
 	}
 	return false
@@ -3718,25 +3669,19 @@ func (c *Config) Save(path string) error {
 		}
 	}
 
-	tmp, err := os.CreateTemp(dir, ".kenn-forge-config-*.toml")
+	// savePath is already resolved, so a symlinked config is written
+	// through to its target.
+	file, err := atomicfile.Create(savePath)
 	if err != nil {
 		return fmt.Errorf("creating temp config: %w", err)
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chmod temp config: %w", err)
-	}
-	enc := toml.NewEncoder(tmp)
-	if err := enc.Encode(f); err != nil {
-		_ = tmp.Close()
+	defer func() { _ = file.Abort() }()
+	if err := toml.NewEncoder(file).Encode(f); err != nil {
 		return fmt.Errorf("encoding config: %w", err)
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temp config: %w", err)
-	}
-	if err := os.Rename(tmpPath, savePath); err != nil {
+	// ErrPublished means the new config is already in place and only a
+	// later directory fsync failed; callers must not roll back.
+	if err := file.Commit(); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return fmt.Errorf("renaming temp config: %w", err)
 	}
 	return nil

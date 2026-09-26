@@ -297,8 +297,10 @@ func TestArchiveCLISubcommandsUseGeneratedDaemonContract(t *testing.T) {
 			wantMethod: http.MethodPost, wantPath: "/base/api/v1/archive/pause", wantOut: `"repo_path": "owner/repo"`,
 		},
 		{
-			name: "status filters", args: []string{"status", "--config", cfgPath,
-				"--json", "--repo", "github|github.example/owner/one", "--repo", "gitlab|gitlab.example/group/two"},
+			name: "status filters", args: []string{
+				"status", "--config", cfgPath,
+				"--json", "--repo", "github|github.example/owner/one", "--repo", "gitlab|gitlab.example/group/two",
+			},
 			wantMethod: http.MethodGet, wantPath: "/base/api/v1/archive/status",
 			wantQuery: url.Values{"repo": {"github|github.example/owner/one", "gitlab|gitlab.example/group/two"}},
 			wantOut:   "[]",

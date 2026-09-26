@@ -42,7 +42,7 @@ type QueueItem struct {
 // WorstCaseCost returns the maximum wire attempts this item's
 // detail fetch could require, including authentication retry and
 // provider metadata confirmation allowances.
-func (qi *QueueItem) WorstCaseCost() int {
+func (qi QueueItem) WorstCaseCost() int {
 	return detailWorstCaseAttemptCost(qi.Platform, qi.Type)
 }
 

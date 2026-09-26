@@ -303,6 +303,31 @@ func (o *GetArchiveReportRequestOptions) GetHeader() (map[string]string, error) 
 	return nil, nil
 }
 
+// GetArchiveSnapshotRequestOptions is the options needed to make a request to GetArchiveSnapshot.
+type GetArchiveSnapshotRequestOptions struct {
+	Query *GetArchiveSnapshotQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetArchiveSnapshotRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetArchiveSnapshotRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetArchiveSnapshotRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetArchiveSnapshotRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // StartArchivesRequestOptions is the options needed to make a request to StartArchives.
 type StartArchivesRequestOptions struct {
 	Body *StartArchivesBody
@@ -11423,6 +11448,7 @@ type ClientInterface interface {
 	ListArchivePacingWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListArchivePacingResp, error)
 	PauseArchivesWithResponse(ctx context.Context, options *PauseArchivesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PauseArchivesResp, error)
 	GetArchiveReportWithResponse(ctx context.Context, options *GetArchiveReportRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetArchiveReportResp, error)
+	GetArchiveSnapshotWithResponse(ctx context.Context, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetArchiveSnapshotResp, error)
 	StartArchivesWithResponse(ctx context.Context, options *StartArchivesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StartArchivesResp, error)
 	ListArchiveStatusWithResponse(ctx context.Context, options *ListArchiveStatusRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListArchiveStatusResp, error)
 	ListDevboxConnectionsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListDevboxConnectionsResp, error)
@@ -11752,6 +11778,7 @@ type ClientInterface interface {
 	UpdateSettingsWithResponse(ctx context.Context, options *UpdateSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateSettingsResp, error)
 	GetFleetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetFleetSettingsResp, error)
 	UpdateFleetSettingsWithResponse(ctx context.Context, options *UpdateFleetSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetSettingsResp, error)
+	GetLocalSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetLocalSettingsResp, error)
 	CreateRepoPresetWithResponse(ctx context.Context, options *CreateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoPresetResp, error)
 	DeleteRepoPresetWithResponse(ctx context.Context, options *DeleteRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoPresetResp, error)
 	UpdateRepoPresetWithResponse(ctx context.Context, options *UpdateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoPresetResp, error)
@@ -12464,6 +12491,67 @@ func (c *Client) GetArchiveReportWithResponse(ctx context.Context, options *GetA
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "GetArchiveReportResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetArchiveSnapshot Export cached work and archive coverage
+func (c *Client) GetArchiveSnapshotWithResponse(ctx context.Context, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetArchiveSnapshotResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"end":   {Style: "form", Explode: &[]bool{false}[0]},
+		"start": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/archive/snapshot")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetArchiveSnapshotResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetArchiveSnapshotErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetArchiveSnapshotResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetArchiveSnapshotResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -29494,6 +29582,61 @@ func (c *Client) UpdateFleetSettingsWithResponse(ctx context.Context, options *U
 	}
 }
 
+// GetLocalSettings Get settings owned by this Forge without contacting a fleet hub
+func (c *Client) GetLocalSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetLocalSettingsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/settings/local",
+		Method:     "GET",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/settings/local")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetLocalSettingsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetLocalSettingsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetLocalSettingsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetLocalSettingsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // CreateRepoPreset Create repository preset
 func (c *Client) CreateRepoPresetWithResponse(ctx context.Context, options *CreateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoPresetResp, error) {
 	var err error
@@ -32382,6 +32525,26 @@ func (c *Client) GetArchiveReportRaw(ctx context.Context, httpClient *http.Clien
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/report",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetArchiveSnapshotRaw returns an unread response. The caller must close its body.
+func (c *Client) GetArchiveSnapshotRaw(ctx context.Context, httpClient *http.Client, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"end":   {Style: "form", Explode: &[]bool{false}[0]},
+		"start": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
 		Method:        "GET",
 		Options:       options,
 		QueryEncoding: queryEncoding,
@@ -37737,6 +37900,20 @@ func (c *Client) UpdateFleetSettingsRaw(ctx context.Context, httpClient *http.Cl
 	return httpClient.Do(req)
 }
 
+// GetLocalSettingsRaw returns an unread response. The caller must close its body.
+func (c *Client) GetLocalSettingsRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/settings/local",
+		Method:     "GET",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // CreateRepoPresetRaw returns an unread response. The caller must close its body.
 func (c *Client) CreateRepoPresetRaw(ctx context.Context, httpClient *http.Client, options *CreateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -38770,6 +38947,27 @@ func NewGetArchiveReportRequest(ctx context.Context, baseURL string, options *Ge
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/report",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetArchiveSnapshotRequest constructs a typed request for a caller-owned transport.
+func NewGetArchiveSnapshotRequest(ctx context.Context, baseURL string, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"end":   {Style: "form", Explode: &[]bool{false}[0]},
+		"start": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
 		Method:        "GET",
 		Options:       options,
 		QueryEncoding: queryEncoding,
@@ -44448,6 +44646,21 @@ func NewUpdateFleetSettingsRequest(ctx context.Context, baseURL string, options 
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetLocalSettingsRequest constructs a typed request for a caller-owned transport.
+func NewGetLocalSettingsRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/settings/local",
+		Method:     "GET",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewCreateRepoPresetRequest constructs a typed request for a caller-owned transport.
 func NewCreateRepoPresetRequest(ctx context.Context, baseURL string, options *CreateRepoPresetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -48031,7 +48244,7 @@ type ListActivityAuthorsQuery struct {
 type ListActivityThreadEventsQuery struct {
 	Provider       *string                                `json:"provider,omitempty"`
 	PlatformHost   *string                                `json:"platform_host,omitempty"`
-	PlatformRepoID *string                                `json:"platform_repo_id,omitempty"`
+	PlatformRepoID *int64                                 `json:"platform_repo_id,omitempty"`
 	ItemType       *ListActivityThreadEventsQueryItemType `json:"item_type,omitempty"`
 	ItemNumber     *int64                                 `json:"item_number,omitempty"`
 	Types          []string                               `json:"types,omitempty"`
@@ -48058,6 +48271,17 @@ type GetArchiveReportQuery struct {
 	// Repo Repeated provider|platform_host/repo_path filters.
 	Repo    []string `json:"repo,omitempty"`
 	Verbose *bool    `json:"verbose,omitempty"`
+}
+
+type GetArchiveSnapshotQuery struct {
+	// Repo Optional configured repository subset. Repeat repo=provider|platform_host/repo_path to split large exports. Limits: 10,000 items/reviews/references and 32 MiB projected text or response; no items are dropped.
+	Repo []string `json:"repo,omitempty"`
+
+	// Start Inclusive UTC RFC3339 issue-creation boundary.
+	Start string `json:"start"`
+
+	// End Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit.
+	End string `json:"end"`
 }
 
 type ListArchiveStatusQuery struct {
@@ -48712,6 +48936,10 @@ type PauseArchivesErrorResponse = ProblemError
 type GetArchiveReportResponse = ArchiveReportResponse
 
 type GetArchiveReportErrorResponse = ProblemError
+
+type GetArchiveSnapshotResponse = ArchiveSnapshot
+
+type GetArchiveSnapshotErrorResponse = ProblemError
 
 type StartArchivesResponse []ArchiveStatusResponse
 
@@ -49839,6 +50067,10 @@ type UpdateFleetSettingsResponse = FleetSettingsResponse
 
 type UpdateFleetSettingsErrorResponse = ProblemError
 
+type GetLocalSettingsResponse = SettingsResponse
+
+type GetLocalSettingsErrorResponse = ProblemError
+
 type CreateRepoPresetResponse = SettingsResponse
 
 type CreateRepoPresetErrorResponse = ProblemError
@@ -50101,6 +50333,14 @@ type GetArchiveReportResp struct {
 	StatusCode   int
 	Error        *GetArchiveReportErrorResponse
 	JSON200      *GetArchiveReportResponse
+}
+
+type GetArchiveSnapshotResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetArchiveSnapshotErrorResponse
+	JSON200      *GetArchiveSnapshotResponse
 }
 
 type StartArchivesResp struct {
@@ -52624,6 +52864,14 @@ type UpdateFleetSettingsResp struct {
 	JSON200      *UpdateFleetSettingsResponse
 }
 
+type GetLocalSettingsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetLocalSettingsErrorResponse
+	JSON200      *GetLocalSettingsResponse
+}
+
 type CreateRepoPresetResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -53079,12 +53327,12 @@ type ActivityItemResponse struct {
 }
 
 type ActivityRepoRefResponse struct {
-	Name           string  `json:"name"`
-	Owner          string  `json:"owner"`
-	PlatformHost   string  `json:"platform_host"`
-	PlatformRepoID *string `json:"platform_repo_id,omitempty"`
-	Provider       string  `json:"provider"`
-	RepoPath       string  `json:"repo_path"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID *int64 `json:"platform_repo_id,omitempty"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type ActivityResponse struct {
@@ -53322,6 +53570,19 @@ type ArchiveRepositoryRef struct {
 	RepoPath     string `json:"repo_path"`
 }
 
+type ArchiveSnapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string               `json:"$schema,omitempty"`
+	End          time.Time             `json:"end"`
+	Issues       []SnapshotItem        `json:"issues"`
+	ObservedAt   time.Time             `json:"observed_at"`
+	PullRequests []SnapshotPullRequest `json:"pull_requests"`
+	Relations    []SnapshotRelation    `json:"relations"`
+	Repositories []SnapshotRepository  `json:"repositories"`
+	Schema1      string                `json:"schema"`
+	Start        time.Time             `json:"start"`
+}
+
 type ArchiveStatusResponse struct {
 	ActivePhases           []ArchiveStatusResponseActivePhases `json:"active_phases"`
 	BudgetWaitUntil        *time.Time                          `json:"budget_wait_until,omitempty"`
@@ -53521,7 +53782,7 @@ type ConfiguredRepoStatus struct {
 	Name              string  `json:"name"`
 	Owner             string  `json:"owner"`
 	PlatformHost      string  `json:"platform_host"`
-	PlatformRepoID    *string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID    *int64  `json:"platform_repo_id,omitempty"`
 	Provider          string  `json:"provider"`
 	RepoPath          string  `json:"repo_path"`
 	TrackedRepoPath   *string `json:"tracked_repo_path,omitempty"`
@@ -54035,7 +54296,7 @@ type FeatureCapabilities struct {
 
 type FederationActivityRepositoryIdentity struct {
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 }
 
@@ -54095,7 +54356,7 @@ type FederationWorkflowItemIdentity struct {
 	Number         int64  `json:"number"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 	Type           string `json:"type"`
 }
@@ -54129,7 +54390,7 @@ type FederationWorkflowRepositoryIdentity struct {
 	Name           string `json:"name"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 	RepoPath       string `json:"repo_path"`
 }
@@ -55456,13 +55717,12 @@ type ProviderCapabilitiesResponse struct {
 }
 
 type ProviderRepositoryObservation struct {
-	Name           string    `json:"name"`
-	ObservedAt     time.Time `json:"observed_at"`
-	Owner          string    `json:"owner"`
-	PlatformHost   string    `json:"platform_host"`
-	PlatformRepoID string    `json:"platform_repo_id"`
-	Provider       string    `json:"provider"`
-	RepoPath       string    `json:"repo_path"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type ProviderSettingsResponse struct {
@@ -55476,15 +55736,17 @@ type ProviderSettingsResponse struct {
 	RepoPresets            []RepoPreset                    `json:"repo_presets"`
 	Repos                  []ConfiguredRepoStatus          `json:"repos"`
 	RepositoryObservations []ProviderRepositoryObservation `json:"repository_observations"`
+	Sync                   SyncSettingsResponse            `json:"sync"`
 }
 
 type ProviderSettingsUpdate struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string       `json:"$schema,omitempty"`
-	Activity     *Activity     `json:"activity,omitempty"`
-	Detail       *Detail       `json:"detail,omitempty"`
-	Issues       *Issues       `json:"issues,omitempty"`
-	PullRequests *PullRequests `json:"pull_requests,omitempty"`
+	Schema       *string             `json:"$schema,omitempty"`
+	Activity     *Activity           `json:"activity,omitempty"`
+	Detail       *Detail             `json:"detail,omitempty"`
+	Issues       *Issues             `json:"issues,omitempty"`
+	PullRequests *PullRequests       `json:"pull_requests,omitempty"`
+	Sync         *SyncSettingsUpdate `json:"sync,omitempty"`
 }
 
 type ProviderStateConflict struct {
@@ -55506,7 +55768,7 @@ type ProviderStateRepository struct {
 	Name           string `json:"name"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 }
 
@@ -56025,7 +56287,7 @@ type RepoPreset struct {
 
 type RepoPresetRepository struct {
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 	RepoPath       string `json:"repo_path"`
 }
@@ -56070,7 +56332,7 @@ type RepoRefResponse struct {
 	Operations     *RepoOperations              `json:"operations,omitempty"`
 	Owner          string                       `json:"owner"`
 	PlatformHost   string                       `json:"platform_host"`
-	PlatformRepoID *string                      `json:"platform_repo_id,omitempty"`
+	PlatformRepoID *int64                       `json:"platform_repo_id,omitempty"`
 	Provider       string                       `json:"provider"`
 	RepoPath       string                       `json:"repo_path"`
 }
@@ -56090,7 +56352,7 @@ type RepoResponse struct {
 	Owner               string                       `json:"Owner"`
 	Platform            string                       `json:"Platform"`
 	PlatformHost        string                       `json:"PlatformHost"`
-	PlatformRepoID      string                       `json:"PlatformRepoID"`
+	PlatformRepoID      int64                        `json:"PlatformRepoID"`
 	ViewerCanMerge      bool                         `json:"ViewerCanMerge"`
 	Capabilities        ProviderCapabilitiesResponse `json:"capabilities"`
 	Operations          RepoOperations               `json:"operations"`
@@ -56164,25 +56426,24 @@ type RepoWorktreeBaseRequest struct {
 
 type RepositoryDescriptor struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string   `json:"$schema,omitempty"`
-	CloneURL         string    `json:"clone_url"`
-	DefaultBranch    string    `json:"default_branch"`
-	Name             string    `json:"name"`
-	ObservedAt       time.Time `json:"observed_at"`
-	Owner            string    `json:"owner"`
-	PlatformHost     string    `json:"platform_host"`
-	PlatformRepoID   string    `json:"platform_repo_id"`
-	ProtocolVersion  int64     `json:"protocol_version"`
-	Provider         string    `json:"provider"`
-	SnapshotRevision int64     `json:"snapshot_revision"`
-	Stale            bool      `json:"stale"`
+	Schema          *string   `json:"$schema,omitempty"`
+	CloneURL        string    `json:"clone_url"`
+	DefaultBranch   string    `json:"default_branch"`
+	Name            string    `json:"name"`
+	ObservedAt      time.Time `json:"observed_at"`
+	Owner           string    `json:"owner"`
+	PlatformHost    string    `json:"platform_host"`
+	PlatformRepoID  int64     `json:"platform_repo_id"`
+	ProtocolVersion int64     `json:"protocol_version"`
+	Provider        string    `json:"provider"`
+	Stale           bool      `json:"stale"`
 }
 
 type RepositoryIdentity struct {
 	Name           *string `json:"name,omitempty"`
 	Owner          *string `json:"owner,omitempty"`
 	PlatformHost   string  `json:"platformHost"`
-	PlatformRepoID string  `json:"platformRepoID"`
+	PlatformRepoID int64   `json:"platformRepoID"`
 	Provider       string  `json:"provider"`
 }
 
@@ -56387,14 +56648,17 @@ type SettingsResponse struct {
 	Mcp           McpSettingsResponse           `json:"mcp"`
 	Modes         *ModeVisibility               `json:"modes,omitempty"`
 	Notifications NotificationsSettingsResponse `json:"notifications"`
-	PullRequests  PullRequests                  `json:"pull_requests"`
-	QuickActions  []QuickAction                 `json:"quick_actions"`
-	RepoPresets   []RepoPreset                  `json:"repo_presets"`
-	Repos         []ConfiguredRepoStatus        `json:"repos"`
-	Roborev       RoborevSettingsResponse       `json:"roborev"`
-	Sync          SyncSettingsResponse          `json:"sync"`
-	Terminal      Terminal                      `json:"terminal"`
-	Workspaces    Workspaces                    `json:"workspaces"`
+
+	// ProviderSettingsLoaded Whether hub-owned fields (repositories, presets, activity, detail, sync, pull requests, issues, notifications) hold the effective values. False on a spoke when the hub's settings were not loaded; those fields cannot be edited until they are.
+	ProviderSettingsLoaded bool                    `json:"provider_settings_loaded"`
+	PullRequests           PullRequests            `json:"pull_requests"`
+	QuickActions           []QuickAction           `json:"quick_actions"`
+	RepoPresets            []RepoPreset            `json:"repo_presets"`
+	Repos                  []ConfiguredRepoStatus  `json:"repos"`
+	Roborev                RoborevSettingsResponse `json:"roborev"`
+	Sync                   SyncSettingsResponse    `json:"sync"`
+	Terminal               Terminal                `json:"terminal"`
+	Workspaces             Workspaces              `json:"workspaces"`
 }
 
 type Snapshot struct {
@@ -56411,6 +56675,117 @@ type Snapshot struct {
 	Sessions              []SessionSummary   `json:"sessions"`
 	Workspaces            []WorkspaceSummary `json:"workspaces"`
 	Worktrees             []WorktreeSummary  `json:"worktrees"`
+}
+
+type SnapshotCheck struct {
+	Conclusion string `json:"conclusion"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	URL        string `json:"url"`
+}
+
+type SnapshotCoverage struct {
+	ActivePhases           []string   `json:"active_phases"`
+	ArchivedItems          int64      `json:"archived_items"`
+	BudgetWaitUntil        *time.Time `json:"budget_wait_until,omitempty"`
+	CollectionMode         string     `json:"collection_mode"`
+	Comments               string     `json:"comments"`
+	InaccessibleItems      int64      `json:"inaccessible_items"`
+	InitialCompletedAt     *time.Time `json:"initial_completed_at,omitempty"`
+	InlineComments         string     `json:"inline_comments"`
+	Issues                 string     `json:"issues"`
+	MaintenanceSucceededAt *time.Time `json:"maintenance_succeeded_at,omitempty"`
+	MergeRequests          string     `json:"merge_requests"`
+	OperatorState          string     `json:"operator_state"`
+	Reviews                string     `json:"reviews"`
+	Status                 string     `json:"status"`
+	UnsupportedItems       int64      `json:"unsupported_items"`
+}
+
+type SnapshotItem struct {
+	Author            string    `json:"author"`
+	AuthorAssociation *string   `json:"author_association,omitempty"`
+	Body              string    `json:"body"`
+	BodyTruncated     bool      `json:"body_truncated"`
+	CreatedAt         time.Time `json:"created_at"`
+
+	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
+	DetailFetchedAt *time.Time `json:"detail_fetched_at,omitempty"`
+	ID              string     `json:"id"`
+	Labels          []string   `json:"labels"`
+	Number          int64      `json:"number"`
+	RepositoryID    string     `json:"repository_id"`
+	State           string     `json:"state"`
+	Title           string     `json:"title"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	URL             string     `json:"url"`
+}
+
+type SnapshotPullRequest struct {
+	Additions         *int64          `json:"additions,omitempty"`
+	Author            string          `json:"author"`
+	AuthorAssociation *string         `json:"author_association,omitempty"`
+	BaseBranch        string          `json:"base_branch"`
+	Body              string          `json:"body"`
+	BodyTruncated     bool            `json:"body_truncated"`
+	ChangedFiles      *int64          `json:"changed_files,omitempty"`
+	CheckState        string          `json:"check_state"`
+	Checks            []SnapshotCheck `json:"checks"`
+	CreatedAt         time.Time       `json:"created_at"`
+	Deletions         *int64          `json:"deletions,omitempty"`
+
+	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
+	DetailFetchedAt *time.Time `json:"detail_fetched_at,omitempty"`
+	Draft           bool       `json:"draft"`
+	Gaps            []string   `json:"gaps"`
+	HeadBranch      string     `json:"head_branch"`
+
+	// HeadInSameRepository Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
+	HeadInSameRepository *bool            `json:"head_in_same_repository,omitempty"`
+	HeadSha              string           `json:"head_sha"`
+	ID                   string           `json:"id"`
+	Labels               []string         `json:"labels"`
+	MergeableState       string           `json:"mergeable_state"`
+	Number               int64            `json:"number"`
+	RepositoryID         string           `json:"repository_id"`
+	ReviewState          string           `json:"review_state"`
+	Reviews              []SnapshotReview `json:"reviews"`
+	State                string           `json:"state"`
+	Title                string           `json:"title"`
+	UpdatedAt            time.Time        `json:"updated_at"`
+	URL                  string           `json:"url"`
+}
+
+type SnapshotRelation struct {
+	EvidenceID string    `json:"evidence_id"`
+	Kind       string    `json:"kind"`
+	ObservedAt time.Time `json:"observed_at"`
+	SourceID   string    `json:"source_id"`
+	TargetID   string    `json:"target_id"`
+	URL        string    `json:"url"`
+}
+
+type SnapshotRepository struct {
+	Coverage      *SnapshotCoverage `json:"coverage,omitempty"`
+	DefaultBranch string            `json:"default_branch"`
+	Host          string            `json:"host"`
+	ID            string            `json:"id"`
+	LastSyncAt    *time.Time        `json:"last_sync_at,omitempty"`
+	Path          string            `json:"path"`
+	Provider      string            `json:"provider"`
+	ProviderID    int64             `json:"provider_id"`
+	SyncError     string            `json:"sync_error"`
+}
+
+type SnapshotReview struct {
+	Author            string    `json:"author"`
+	AuthorAssociation *string   `json:"author_association,omitempty"`
+	Body              string    `json:"body"`
+	BodyTruncated     bool      `json:"body_truncated"`
+	CreatedAt         time.Time `json:"created_at"`
+	ID                string    `json:"id"`
+	State             string    `json:"state"`
+	URL               string    `json:"url"`
 }
 
 type SnippetRange struct {
@@ -56901,7 +57276,7 @@ type WorkspaceKataSummary struct {
 type WorkspaceLaunchPull struct {
 	BaseBranch       *string                         `json:"base_branch,omitempty"`
 	BaseOid          *string                         `json:"base_oid,omitempty"`
-	BaseRepoID       *string                         `json:"base_repo_id,omitempty"`
+	BaseRepoID       *int64                          `json:"base_repo_id,omitempty"`
 	HeadBranch       string                          `json:"head_branch"`
 	HeadOid          *string                         `json:"head_oid,omitempty"`
 	HeadRepoCloneURL string                          `json:"head_repo_clone_url"`
@@ -56915,7 +57290,7 @@ type WorkspaceLaunchRepository struct {
 	Name           string `json:"name"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 }
 
@@ -56927,7 +57302,7 @@ type WorkspaceLaunchRequest struct {
 	ItemKey         *string         `json:"item_key,omitempty"`
 	ItemNumber      int64           `json:"item_number"`
 	ItemType        string          `json:"item_type"`
-	PlatformRepoID  *string         `json:"platform_repo_id,omitempty"`
+	PlatformRepoID  *int64          `json:"platform_repo_id,omitempty"`
 	Repository      RepositoryRoute `json:"repository"`
 }
 
@@ -56956,12 +57331,12 @@ type WorkspaceRef struct {
 }
 
 type WorkspaceRepositorySummary struct {
-	Name           string  `json:"name"`
-	Owner          string  `json:"owner"`
-	PlatformHost   string  `json:"platform_host"`
-	PlatformRepoID *string `json:"platform_repo_id,omitempty"`
-	Provider       string  `json:"provider"`
-	RepoPath       string  `json:"repo_path"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID *int64 `json:"platform_repo_id,omitempty"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type WorkspaceResponse struct {

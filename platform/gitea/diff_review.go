@@ -126,11 +126,11 @@ func giteaReviewThread(
 	var newLine *int
 	if comment.OldLineNum > 0 && comment.LineNum > 0 {
 		old := int(comment.OldLineNum)
-		new := int(comment.LineNum)
-		line = new
+		newLineNum := int(comment.LineNum)
+		line = newLineNum
 		lineType = "context"
 		oldLine = &old
-		newLine = &new
+		newLine = &newLineNum
 	} else if comment.OldLineNum > 0 {
 		old := int(comment.OldLineNum)
 		line = old
@@ -138,8 +138,8 @@ func giteaReviewThread(
 		lineType = "delete"
 		oldLine = &old
 	} else if comment.LineNum > 0 {
-		new := int(comment.LineNum)
-		newLine = &new
+		newLineNum := int(comment.LineNum)
+		newLine = &newLineNum
 	}
 	var resolvedAt *time.Time
 	resolved := comment.Resolver != nil

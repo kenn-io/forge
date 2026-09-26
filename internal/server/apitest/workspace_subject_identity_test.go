@@ -18,27 +18,22 @@ func TestWorkspaceReferencesUseStableRepositoryIdentityAcrossRenameAndRouteReuse
 	now := time.Now().UTC().Truncate(time.Second)
 
 	oldIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	oldIdentity.PlatformRepoID = "repo-old-widget"
-	oldRepo, accepted, err := database.ReconcileRepositoryObservation(ctx, oldIdentity, now)
+	oldIdentity.PlatformRepoID = 1001
+	oldRepo, err := database.ObserveRepository(ctx, oldIdentity)
 	require.NoError(err)
-	require.True(accepted)
 	seedWorkspaceIdentitySubjects(t, database, oldRepo.Repository.ID, "acme", "widget", "old", now)
 
 	renamedIdentity := db.GitHubRepoIdentity("github.com", "acme", "gadget")
 	renamedIdentity.PlatformRepoID = oldIdentity.PlatformRepoID
-	_, accepted, err = database.ReconcileRepositoryObservation(ctx, renamedIdentity, now.Add(time.Minute))
+	_, err = database.ObserveRepository(ctx, renamedIdentity)
 	require.NoError(err)
-	require.True(accepted)
 
 	assertWorkspaceIdentitySurfaces(t, client.HTTP, "gadget", true)
 
 	replacementIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	replacementIdentity.PlatformRepoID = "repo-replacement-widget"
-	replacement, accepted, err := database.ReconcileRepositoryObservation(
-		ctx, replacementIdentity, now.Add(2*time.Minute),
-	)
+	replacementIdentity.PlatformRepoID = 1002
+	replacement, err := database.ObserveRepository(ctx, replacementIdentity)
 	require.NoError(err)
-	require.True(accepted)
 	seedWorkspaceIdentitySubjects(
 		t, database, replacement.Repository.ID, "acme", "widget", "replacement", now.Add(2*time.Minute),
 	)

@@ -52,7 +52,7 @@ func TestWorkspaceTmuxServerEnvironmentExcludesTokensE2E(t *testing.T) {
 	socket := filepath.Join(sockDir, "tmux.sock")
 	tmuxCommand := []string{tmuxPath, "-f", "/dev/null", "-S", socket}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		_ = procutil.Run(ctx, procutil.CommandContext(
 			ctx, tmuxPath, "-f", "/dev/null", "-S", socket, "kill-server",

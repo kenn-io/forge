@@ -53,7 +53,7 @@ func TestQueueFederationWorkspaceCleanupUsesLocalQueue(t *testing.T) {
 
 	api := newFleetTestAPI()
 	handler.Register(api)
-	request := httptest.NewRequest(
+	request := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost, "/federation/workspaces/ws-1/cleanup", nil,
 	)
 	request.Header.Set("Content-Type", "application/json")

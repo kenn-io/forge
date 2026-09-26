@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ComponentProps } from "svelte";
   import Modal from "../shared/Modal.svelte";
-  import type { LaunchTarget, RuntimeSession } from "../../api/types.js";
+  import type { LaunchTarget, QuickAction, RuntimeSession } from "../../api/types.js";
   import WorkspaceHome from "./WorkspaceHome.svelte";
 
   /**
@@ -20,8 +20,10 @@
     displayLabels?: Record<string, string>;
     launchingKey?: string | null;
     readonly?: boolean;
+    quickActions?: QuickAction[];
     onClose: () => void;
     onLaunch: (targetKey: string) => void;
+    onQuickAction?: (action: QuickAction) => void;
     onOpenSession: (sessionKey: string) => void;
   }
 
@@ -33,8 +35,10 @@
     displayLabels = {},
     launchingKey = null,
     readonly = false,
+    quickActions = [],
     onClose,
     onLaunch,
+    onQuickAction,
     onOpenSession,
   }: Props = $props();
 </script>
@@ -56,8 +60,10 @@
         {displayLabels}
         {launchingKey}
         {readonly}
+        {quickActions}
         showHeader={false}
         onLaunch={onLaunch}
+        {onQuickAction}
         onOpenSession={onOpenSession}
       />
     </div>

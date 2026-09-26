@@ -160,15 +160,13 @@ func (c *Client) doMergeAsyncRequest(
 		return result, nil, requestErr
 	}
 	if requestErr != nil {
-		var accepted *gh.AcceptedError
-		if errors.As(requestErr, &accepted) && resp.StatusCode == http.StatusAccepted {
+		if accepted, ok := errors.AsType[*gh.AcceptedError](requestErr); ok && resp.StatusCode == http.StatusAccepted {
 			if err := json.Unmarshal(accepted.Raw, &result); err != nil {
 				return result, resp, err
 			}
 			return result, resp, nil
 		}
-		var githubError *gh.ErrorResponse
-		if errors.As(requestErr, &githubError) &&
+		if githubError, ok := errors.AsType[*gh.ErrorResponse](requestErr); ok &&
 			resp.StatusCode == http.StatusConflict &&
 			githubError.Message == "" {
 			githubError.Message = "an asynchronous merge request is already in progress"
@@ -197,8 +195,10 @@ func mergeAsyncTerminalResult(
 		if message == "" {
 			message = "GitHub asynchronous merge ended in state " + result.Status
 		}
+		conflict := mergeAsyncConflictResponse(resp)
+		_ = conflict.Body.Close()
 		return true, &gh.ErrorResponse{
-			Response: mergeAsyncConflictResponse(resp),
+			Response: conflict,
 			Message:  message,
 		}
 	default:
@@ -213,6 +213,7 @@ func mergeAsyncConflictResponse(resp *gh.Response) *http.Response {
 		StatusCode: http.StatusConflict,
 		Status:     http.StatusText(http.StatusConflict),
 		Header:     make(http.Header),
+		Body:       http.NoBody,
 	}
 	if resp == nil || resp.Response == nil {
 		return conflict

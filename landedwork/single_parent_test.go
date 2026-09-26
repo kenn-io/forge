@@ -20,8 +20,10 @@ func TestExplicitSquashRejectsDifferentAggregate(t *testing.T) {
 	assert.Empty(r.DirectPushes)
 	assert.False(r.Coverage.Complete)
 	assert.Equal(f.base, r.Coverage.CertifiedHead)
-	assert.Equal([]landedwork.Gap{{CandidateID: "7", ObjectID: f.head, Reason: "source_correspondence_unproven",
-		Span: landedwork.Span{Before: f.base, Through: f.head}}}, r.Coverage.Gaps)
+	assert.Equal([]landedwork.Gap{{
+		CandidateID: "7", ObjectID: f.head, Reason: "source_correspondence_unproven",
+		Span: landedwork.Span{Before: f.base, Through: f.head},
+	}}, r.Coverage.Gaps)
 }
 
 func TestSquashRequiresSourceChain(t *testing.T) {

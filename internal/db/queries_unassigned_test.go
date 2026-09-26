@@ -10,6 +10,8 @@ import (
 )
 
 func TestUnassignedFiltersPullsIssuesAndActivityBeforeLimit(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -85,6 +87,8 @@ func TestUnassignedFiltersPullsIssuesAndActivityBeforeLimit(t *testing.T) {
 }
 
 func TestListUnassignedWorkspaceSubjectKeysSupportsLargeSetsAndHidesRemovedItems(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -107,11 +111,11 @@ func TestListUnassignedWorkspaceSubjectKeysSupportsLargeSetsAndHidesRemovedItems
 	)
 	require.NoError(err)
 
-	candidates := make([]WorkspaceSubjectKey, 11_000)
-	for i := range candidates {
-		candidates[i] = WorkspaceSubjectKey{
+	candidates := make([]WorkspaceSubjectKey, 0, 11_001)
+	for i := range 11_000 {
+		candidates = append(candidates, WorkspaceSubjectKey{
 			RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: i + 1,
-		}
+		})
 	}
 	candidates = append(candidates, WorkspaceSubjectKey{
 		RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 2,

@@ -19,7 +19,7 @@ func gitLabPagesTestRef() platform.RepoRef {
 	return platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.example.com",
 		Owner: "group", Name: "project", RepoPath: "group/project", PlatformID: 42,
-		PlatformExternalID: "42", WebURL: "https://gitlab.example.com/group/project",
+		WebURL: "https://gitlab.example.com/group/project",
 	}
 }
 
@@ -352,6 +352,7 @@ func TestGitLabPaginationChargesEveryMarkedPage(t *testing.T) {
 	assert.Equal(2, requests)
 	assert.Equal(2, budget.Spent())
 }
+
 func TestGitLabLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -400,6 +401,7 @@ func TestGitLabLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {
 	assert.Equal([]string{"1", "2"}, discussionPages)
 	assert.Equal([]string{"1"}, relatedPages)
 }
+
 func TestGitLabArchiveCapabilities(t *testing.T) {
 	assert.Equal(t, platform.ArchiveCapabilities{
 		HistoricalIssues: true,

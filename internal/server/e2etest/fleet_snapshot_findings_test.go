@@ -2,7 +2,6 @@ package e2etest
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"encoding/json"
 	"io"
@@ -17,6 +16,7 @@ import (
 
 	dbpkg "go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func putJSON(
@@ -34,7 +34,7 @@ func putJSON(
 		require.NoError(err)
 		payload = bytes.NewReader(buf)
 	}
-	req, err := http.NewRequest(http.MethodPut, url, payload)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPut, url, payload)
 	require.NoError(err)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
@@ -53,9 +53,9 @@ func seedLinkedProject(
 	identity dbpkg.RepoIdentity,
 ) (*dbpkg.Project, int64) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	identity = verifiedRepoIdentity(identity)
-	repoID, err := database.UpsertRepo(ctx, identity)
+	repoID, err := reposeed.Seed(ctx, database, identity)
 	require.NoError(t, err)
 	project, err := database.CreateProject(ctx, dbpkg.CreateProjectInput{
 		DisplayName:   identity.Name,
@@ -68,9 +68,8 @@ func seedLinkedProject(
 }
 
 func verifiedRepoIdentity(identity dbpkg.RepoIdentity) dbpkg.RepoIdentity {
-	if identity.PlatformRepoID == "" {
-		identity.PlatformRepoID = "test-" + identity.Platform + "-" +
-			identity.PlatformHost + "-" + identity.Owner + "-" + identity.Name
+	if identity.PlatformRepoID == 0 {
+		identity.PlatformRepoID = reposeed.SyntheticID(identity)
 	}
 	return identity
 }
@@ -127,7 +126,7 @@ func TestFleetSnapshotBranchMatchLinkE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	project, repoID := seedLinkedProject(
 		t, database, dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
@@ -237,7 +236,7 @@ func TestFleetSnapshotWorktreeStatsE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	project, _ := seedLinkedProject(
 		t, database, dbpkg.GitHubRepoIdentity("github.com", "acme", "stats"),

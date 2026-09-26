@@ -19,6 +19,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/terminalwebsocket"
@@ -65,7 +66,7 @@ func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {
 			controller := &Server{options: ServerOptions{Devboxes: connections}}
 			mux := http.NewServeMux()
 			controller.registerDevboxAPI(humago.New(mux, huma.DefaultConfig("test", "1")))
-			request := httptest.NewRequest(http.MethodPost, "/devboxes/compute-a/workspaces/work-a/runtime/sessions", strings.NewReader(body))
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/devboxes/compute-a/workspaces/work-a/runtime/sessions", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 			mux.ServeHTTP(response, request)

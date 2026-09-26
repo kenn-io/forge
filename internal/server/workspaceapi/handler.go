@@ -98,7 +98,7 @@ type Deps struct {
 	RecomputeWorktreeLinks  func(context.Context)
 	RefreshWorktreeStats    func(context.Context, string, string) error
 	RefreshProjectInventory func(context.Context, string) error
-	LookupRepo              func(context.Context, string, string, string, string) (*db.Repo, error)
+	LookupRepo              func(context.Context, string, string, string, string) (*db.ActiveRepo, error)
 	ResolveRepository       func(
 		context.Context, providerplane.RepositoryRoute,
 	) (*db.Repo, error)
@@ -136,7 +136,7 @@ type Handler struct {
 	recomputeWorktreeLinks         func(context.Context)
 	refreshWorktreeStats           func(context.Context, string, string) error
 	refreshProjectInventory        func(context.Context, string) error
-	lookupRepo                     func(context.Context, string, string, string, string) (*db.Repo, error)
+	lookupRepo                     func(context.Context, string, string, string, string) (*db.ActiveRepo, error)
 	resolveRepository              func(context.Context, providerplane.RepositoryRoute) (*db.Repo, error)
 	enqueueDetailSync              func(string, []any, func(context.Context) error, func(context.Context)) bool
 	providerWriteGate              providerplane.WriteAdmitter
@@ -175,20 +175,17 @@ type Handler struct {
 	workspaceTmuxPrunedAt      time.Time
 	workspaceTmuxPrunePending  bool
 	workspaceTmuxPruneInFlight bool
-	// workspaceSubjectAfterSummariesForTest pauses a snapshot between its two
-	// repository-identity reads so tests can prove the reconciliation fence.
-	workspaceSubjectAfterSummariesForTest func()
-	runtimeRecoveryCursor                 string
-	runtimeRestoreMu                      sync.Mutex
-	runtimeRecoveryMu                     sync.Mutex
-	runtimeRecoveryPending                map[string]bool
-	lifecycleMu                           sync.Mutex
-	lifecycleCtx                          context.Context
-	lifecycleCancel                       context.CancelFunc
-	lifecycleWG                           sync.WaitGroup
-	lifecycleStarted                      bool
-	lifecycleStopping                     bool
-	lifecycleDone                         chan struct{}
+	runtimeRecoveryCursor      string
+	runtimeRestoreMu           sync.Mutex
+	runtimeRecoveryMu          sync.Mutex
+	runtimeRecoveryPending     map[string]bool
+	lifecycleMu                sync.Mutex
+	lifecycleCtx               context.Context
+	lifecycleCancel            context.CancelFunc
+	lifecycleWG                sync.WaitGroup
+	lifecycleStarted           bool
+	lifecycleStopping          bool
+	lifecycleDone              chan struct{}
 }
 
 // New creates the workspace and project handler.

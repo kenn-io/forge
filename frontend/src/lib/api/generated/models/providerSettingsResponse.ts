@@ -9,6 +9,7 @@ import type { NotificationsSettingsResponse } from "./notificationsSettingsRespo
 import type { ProviderRepositoryObservation } from "./providerRepositoryObservation.ts";
 import type { PullRequests } from "./pullRequests.ts";
 import type { RepoPreset } from "./repoPreset.ts";
+import type { SyncSettingsResponse } from "./syncSettingsResponse.ts";
 
 export interface ProviderSettingsResponse {
   /** A URL to the JSON Schema for this object. */
@@ -21,4 +22,5 @@ export interface ProviderSettingsResponse {
   repo_presets: RepoPreset[];
   repos: ConfiguredRepoStatus[];
   repository_observations: ProviderRepositoryObservation[];
+  sync: SyncSettingsResponse;
 }

@@ -71,13 +71,13 @@ func Runner() gitcmd.Runner {
 // MutableRunner returns a runner with a per-test writable global config. Use
 // it only when the behavior under test intentionally changes global config;
 // ordinary Git tests should use the package-shared Runner.
-func MutableRunner(t testing.TB) gitcmd.Runner {
-	t.Helper()
-	root := t.TempDir()
+func MutableRunner(tb testing.TB) gitcmd.Runner {
+	tb.Helper()
+	root := tb.TempDir()
 	globalConfig := filepath.Join(root, "global.gitconfig")
-	require.NoError(t, os.WriteFile(globalConfig, nil, 0o600))
+	require.NoError(tb, os.WriteFile(globalConfig, nil, 0o600))
 	xdgConfigHome := filepath.Join(root, "xdg")
-	require.NoError(t, os.Mkdir(xdgConfigHome, 0o755))
+	require.NoError(tb, os.Mkdir(xdgConfigHome, 0o755))
 
 	return gitcmd.Runner{
 		Env: replaceEnvValues(gitenv.StripAll(os.Environ()), map[string]string{

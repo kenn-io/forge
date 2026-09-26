@@ -7,9 +7,11 @@ import (
 	"log/slog"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
@@ -40,6 +42,9 @@ type settingsResponse struct {
 	Fleet         fleetSettingsResponse           `json:"fleet"`
 	MCP           mcpSettingsResponse             `json:"mcp"`
 	Roborev       roborevSettingsResponse         `json:"roborev"`
+	// ProviderSettingsLoaded is false on a spoke whose response lacks the hub's
+	// settings; its hub-owned fields then hold spoke-local values.
+	ProviderSettingsLoaded bool `json:"provider_settings_loaded" doc:"Whether hub-owned fields (repositories, presets, activity, detail, sync, pull requests, issues, notifications) hold the effective values. False on a spoke when the hub's settings were not loaded; those fields cannot be edited until they are."`
 }
 
 // syncSettingsResponse reports the effective hourly sync ceiling. The schema
@@ -240,18 +245,19 @@ func (s *Server) configuredRepoProjection(
 	ctx context.Context,
 	raw config.Repo,
 	tracked []ghclient.RepoRef,
-) (string, string, error) {
+) (int64, string, error) {
 	if raw.HasNameGlob() {
-		return "", "", nil
+		return 0, "", nil
 	}
-	platformRepoID := strings.TrimSpace(raw.PlatformRepoID)
-	if platformRepoID != "" {
+	platformRepoID := raw.PlatformRepoID
+	if platformRepoID != 0 {
 		if s.db != nil {
-			entry, err := s.db.GetRepositoryByProviderID(
-				ctx, raw.PlatformOrDefault(), raw.PlatformHostOrDefault(), platformRepoID,
-			)
+			entry, err := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+				Provider: raw.PlatformOrDefault(), PlatformHost: raw.PlatformHostOrDefault(),
+				PlatformRepoID: platformRepoID,
+			})
 			if err != nil {
-				return "", "", fmt.Errorf(
+				return 0, "", fmt.Errorf(
 					"resolve configured repo %s: %w", configRepoPath(raw), err,
 				)
 			}
@@ -262,22 +268,21 @@ func (s *Server) configuredRepoProjection(
 		return platformRepoID, configRepoPath(raw), nil
 	}
 	if s.db != nil {
+		// An unpinned entry names a route; only the repository that holds it
+		// now answers for it, not rows it displaced.
 		entries, err := s.db.ListRepositoryCatalog(ctx, db.RepositoryCatalogFilter{
 			Platform: raw.PlatformOrDefault(), PlatformHost: raw.PlatformHostOrDefault(),
-			RepoPath: configRepoPath(raw),
+			RepoPath: configRepoPath(raw), Lifecycle: db.RepositoryLifecycleActive,
 		})
 		if err != nil {
-			return "", "", fmt.Errorf(
+			return 0, "", fmt.Errorf(
 				"resolve configured repo %s: %w", configRepoPath(raw), err,
 			)
 		}
 		if len(entries) == 1 &&
-			strings.TrimSpace(entries[0].Repository.PlatformRepoID) != "" {
+			entries[0].Repository.PlatformRepoID != 0 {
 			return entries[0].Repository.PlatformRepoID,
 				entries[0].Repository.RepoPath, nil
-		}
-		if len(entries) > 1 {
-			return "", "", nil
 		}
 	}
 	return trackedPlatformRepoIDForConfig(raw, tracked),
@@ -315,9 +320,9 @@ func (s *Server) hiddenRepoCorrelationSet(
 	for _, repo := range hidden {
 		set.ids[repo.ID] = struct{}{}
 		key := trackedRepoIdentityKey(ghclient.RepoRef{
-			Platform:           httpapi.ProviderKind(repo),
-			PlatformHost:       httpapi.ProviderHost(repo),
-			PlatformExternalID: repo.PlatformRepoID,
+			Platform:       httpapi.ProviderKind(repo),
+			PlatformHost:   httpapi.ProviderHost(repo),
+			PlatformRepoID: repo.PlatformRepoID,
 		})
 		if key == "" {
 			continue
@@ -390,16 +395,16 @@ func trackedPathForConfig(
 
 func trackedPlatformRepoIDForConfig(
 	raw config.Repo, tracked []ghclient.RepoRef,
-) string {
+) int64 {
 	if raw.HasNameGlob() {
-		return ""
+		return 0
 	}
 	for _, repo := range tracked {
 		if repoMatchesConfig(repo, raw) {
-			return strings.TrimSpace(repo.PlatformExternalID)
+			return repo.PlatformRepoID
 		}
 	}
-	return ""
+	return 0
 }
 
 func matchedRepoCount(
@@ -575,10 +580,10 @@ func (s *Server) worktreeBasePathForRepo(
 			if err != nil {
 				return "", false, err
 			}
-			stableMatch := targetID != "" && repoID == targetID &&
+			stableMatch := targetID != 0 && repoID == targetID &&
 				strings.EqualFold(repo.PlatformOrDefault(), target.PlatformOrDefault()) &&
 				samePlatformHost(repo.PlatformHostOrDefault(), target.PlatformHostOrDefault())
-			routeMatch := targetID == "" && sameConfiguredRepo(repo, target)
+			routeMatch := targetID == 0 && sameConfiguredRepo(repo, target)
 			if stableMatch || routeMatch {
 				return repo.WorktreeBasePath, true, nil
 			}
@@ -597,9 +602,9 @@ func (s *Server) worktreeBasePathForRepo(
 		if project.IsStale || identity == nil {
 			continue
 		}
-		stableMatch := strings.TrimSpace(repo.PlatformRepoID) != "" &&
-			strings.TrimSpace(identity.PlatformRepoID) == strings.TrimSpace(repo.PlatformRepoID)
-		routeMatch := strings.TrimSpace(repo.PlatformRepoID) == "" &&
+		stableMatch := repo.PlatformRepoID != 0 &&
+			identity.PlatformRepoID == repo.PlatformRepoID
+		routeMatch := repo.PlatformRepoID == 0 &&
 			strings.EqualFold(identity.Owner, repo.Owner) &&
 			strings.EqualFold(identity.Name, repo.Name)
 		if !strings.EqualFold(identity.Platform, repo.Platform) ||
@@ -711,7 +716,7 @@ func trackedRepoKey(repo ghclient.RepoRef) string {
 // different repository that merely reuses the route.
 type trackedProvenanceEntry struct {
 	path       string
-	providerID string
+	providerID int64
 }
 
 // trackedRepoProvenance captures config-entry provenance from the tracked
@@ -727,7 +732,7 @@ func trackedRepoProvenance(refs []ghclient.RepoRef) map[string]trackedProvenance
 		}
 		entry := trackedProvenanceEntry{
 			path:       repo.ConfiguredRepoPath,
-			providerID: strings.TrimSpace(repo.PlatformExternalID),
+			providerID: repo.PlatformRepoID,
 		}
 		if key := trackedRepoIdentityKey(repo); key != "" {
 			provenance["id\x00"+key] = entry
@@ -757,8 +762,8 @@ func withTrackedProvenance(
 	// by another repository, not a rename of the same one: provenance stays
 	// with the identity it was resolved for. Provider ids are opaque and
 	// case-sensitive — compared exactly, like identity keys.
-	incomingID := strings.TrimSpace(repo.PlatformExternalID)
-	if entry.providerID != "" && incomingID != "" &&
+	incomingID := repo.PlatformRepoID
+	if entry.providerID != 0 && incomingID != 0 &&
 		entry.providerID != incomingID {
 		return repo
 	}
@@ -767,11 +772,11 @@ func withTrackedProvenance(
 }
 
 func trackedRepoIdentityKey(repo ghclient.RepoRef) string {
-	if strings.TrimSpace(repo.PlatformExternalID) == "" {
+	if repo.PlatformRepoID == 0 {
 		return ""
 	}
 	return repoProvider(repo) + "\x00" +
-		trackedRepoHost(repo) + "\x00" + repo.PlatformExternalID
+		trackedRepoHost(repo) + "\x00" + strconv.FormatInt(repo.PlatformRepoID, 10)
 }
 
 // trackedRepoIndex locates repo in current, matching by stable provider id
@@ -811,11 +816,15 @@ func (s *Server) persistResolvedRepos(
 	repos []ghclient.RepoRef,
 ) error {
 	for _, repo := range repos {
-		if _, err := s.db.UpsertRepo(
+		if repo.PlatformRepoID == 0 {
+			// Not yet resolved by the provider; sync records it once it is.
+			continue
+		}
+		if _, err := s.db.ObserveRepository(
 			ctx, db.RepoIdentity{
 				Platform:       repoProvider(repo),
 				PlatformHost:   repo.PlatformHost,
-				PlatformRepoID: repo.PlatformExternalID,
+				PlatformRepoID: repo.PlatformRepoID,
 				Owner:          repo.Owner,
 				Name:           repo.Name,
 				RepoPath:       repo.RepoPath,
@@ -872,6 +881,15 @@ func (s *Server) getSettings(
 	}
 
 	return s.settingsOutputResponse(ctx)
+}
+
+func (s *Server) getLocalSettings(
+	ctx context.Context, _ *struct{},
+) (*getSettingsOutput, error) {
+	if s.cfg == nil {
+		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+	}
+	return s.settingsOutputResponseWithProvider(ctx, nil)
 }
 
 func (s *Server) mutateRepoPresets(
@@ -985,6 +1003,7 @@ func (s *Server) settingsOutputResponseWithProvider(
 	if provider != nil {
 		body.applyProviderSettings(provider.Settings)
 	}
+	body.ProviderSettingsLoaded = s.providerSource == nil || provider != nil
 	return &settingsOutput{Body: body}, nil
 }
 
@@ -997,30 +1016,30 @@ func (s *Server) observeProviderSettingsRepositories(
 	}
 	changed := false
 	for _, observation := range observations {
-		platformRepoID := strings.TrimSpace(observation.PlatformRepoID)
-		if platformRepoID == "" || observation.ObservedAt.IsZero() {
+		platformRepoID := observation.PlatformRepoID
+		if platformRepoID == 0 {
 			continue
 		}
 		repoPath := strings.Trim(strings.TrimSpace(observation.RepoPath), "/")
 		owner, name := strings.TrimSpace(observation.Owner), strings.TrimSpace(observation.Name)
-		current, err := s.db.GetRepositoryByProviderID(
-			ctx, observation.Provider, observation.PlatformHost, platformRepoID,
-		)
+		current, err := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+			Provider: observation.Provider, PlatformHost: observation.PlatformHost,
+			PlatformRepoID: platformRepoID,
+		})
 		if err != nil {
 			return false, fmt.Errorf("read provider settings repository: %w", err)
 		}
 		unchanged := current != nil && current.Lifecycle == db.RepositoryLifecycleActive &&
 			strings.EqualFold(current.Repository.Owner, owner) &&
 			strings.EqualFold(current.Repository.Name, name)
-		_, accepted, err := s.db.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+		if _, err := s.db.ObserveRepository(ctx, db.RepoIdentity{
 			Platform: observation.Provider, PlatformHost: observation.PlatformHost,
 			PlatformRepoID: platformRepoID, Owner: owner, Name: name,
 			RepoPath: repoPath,
-		}, observation.ObservedAt)
-		if err != nil {
+		}); err != nil {
 			return false, fmt.Errorf("observe provider settings repository: %w", err)
 		}
-		changed = changed || (accepted && !unchanged)
+		changed = changed || !unchanged
 	}
 	return changed, nil
 }
@@ -1065,19 +1084,35 @@ func (s *Server) updateSettings(
 func (s *Server) updateLocalSettings(
 	ctx context.Context, input *updateSettingsInput,
 ) (*settingsOutput, error) {
+	if err := s.commitLocalSettings(ctx, input); err != nil {
+		return nil, err
+	}
+	// A spoke's hub-owned fields are optional here: the local change is already
+	// committed, so a slow or unavailable hub must not delay or fail the response.
+	s.cfgMu.Lock()
+	fleet := s.cfg.Fleet
+	s.cfgMu.Unlock()
+	providerContext, cancel := context.WithTimeout(ctx, fleet.PeerTimeoutOrDefault())
+	defer cancel()
+	provider, err := s.fetchProviderSettings(providerContext)
+	if err != nil {
+		slog.Warn("load hub settings after spoke-local settings save", "err", err)
+		provider = nil
+	}
+	return s.settingsOutputResponseWithProvider(ctx, provider)
+}
+
+func (s *Server) commitLocalSettings(
+	ctx context.Context, input *updateSettingsInput,
+) error {
 	if s.cfgPath == "" {
-		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
+		return httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	if workspaces := input.Body.Workspaces; workspaces != nil && workspaces.DefaultExecutionTarget != nil {
 		if err := config.ValidateDefaultExecutionTarget(*workspaces.DefaultExecutionTarget); err != nil {
-			return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+			return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 		}
 	}
-	provider, err := s.fetchProviderSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	s.configReloadMu.Lock()
 	defer s.configReloadMu.Unlock()
 	s.cfgMu.Lock()
@@ -1179,7 +1214,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.MCP = prevMCP
 		s.cfg.Roborev = prevRoborev
 		s.cfgMu.Unlock()
-		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.AirplaneMode = prevAirplaneMode
@@ -1197,7 +1232,7 @@ func (s *Server) updateLocalSettings(
 		s.cfg.MCP = prevMCP
 		s.cfg.Roborev = prevRoborev
 		s.cfgMu.Unlock()
-		return nil, httpapi.Internal("save config: " + err.Error())
+		return httpapi.Internal("save config: " + err.Error())
 	}
 	budgetRaised := s.cfg.SyncBudgetPerHour > prevSyncBudgetPerHour
 	if s.syncer != nil {
@@ -1227,8 +1262,7 @@ func (s *Server) updateLocalSettings(
 		// next pass; run one now so the raised ceiling takes visible effect.
 		s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	}
-
-	return s.settingsOutputResponseWithProvider(ctx, provider)
+	return nil
 }
 
 func (s *settingsResponse) applyProviderSettings(provider settingsResponse) {
@@ -1236,8 +1270,8 @@ func (s *settingsResponse) applyProviderSettings(provider settingsResponse) {
 	s.Repos = provider.Repos
 	for i := range s.Repos {
 		for _, local := range localRepos {
-			if s.Repos[i].PlatformRepoID != "" &&
-				local.PlatformRepoID != "" &&
+			if s.Repos[i].PlatformRepoID != 0 &&
+				local.PlatformRepoID != 0 &&
 				s.Repos[i].PlatformRepoID == local.PlatformRepoID &&
 				strings.EqualFold(s.Repos[i].Provider, local.Provider) &&
 				samePlatformHost(s.Repos[i].PlatformHost, local.PlatformHost) {
@@ -1457,10 +1491,12 @@ func (s *Server) addConfiguredRepo(
 
 	// Re-acquire lock and apply the addition to current state
 	// so concurrent activity/settings changes are not lost.
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	for _, rp := range s.cfg.Repos {
 		if sameConfiguredRepo(rp, newRepo) {
 			s.cfgMu.Unlock()
+			s.configReloadMu.Unlock()
 			return nil, httpapi.BadRequest(httpapi.CodeBadRequest,
 				input.Body.Owner+"/"+input.Body.Name+
 					" is already configured", nil)
@@ -1470,16 +1506,19 @@ func (s *Server) addConfiguredRepo(
 	if err := s.cfg.Validate(); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = s.cfg.Repos[:len(s.cfg.Repos)-1]
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.mergeTrackedRepos(expanded)
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
 
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	return s.settingsOutputResponse(ctx)
@@ -1538,6 +1577,7 @@ func (s *Server) refreshConfiguredRepo(
 	// Without this, a concurrent DELETE on the same glob
 	// could run between the unlock above and the helper below,
 	// and the stale expansion would resurrect removed repos.
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	stillExists := false
 	currentRepos := slices.Clone(s.cfg.Repos)
@@ -1552,15 +1592,18 @@ func (s *Server) refreshConfiguredRepo(
 	}
 	if !stillExists {
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is no longer configured", nil)
 	}
 	if err := s.persistResolvedRepos(ctx, expanded); err != nil {
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("persist resolved repos: " + err.Error())
 	}
 	s.replaceGlobRepos(*target, expanded, currentRepos)
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
 
 	s.syncer.TriggerRun(context.WithoutCancel(ctx))
 	return s.settingsOutputResponse(ctx)
@@ -1712,7 +1755,7 @@ func worktreeBaseMutationTarget(
 			!strings.EqualFold(candidate.Name, target.Name) {
 			continue
 		}
-		if strings.TrimSpace(candidate.PlatformRepoID) == "" {
+		if candidate.PlatformRepoID == 0 {
 			return config.Repo{}, invalidHubDescriptor(
 				errors.New("hub repository settings omitted stable identity"),
 			)
@@ -1732,14 +1775,14 @@ func (s *Server) worktreeBaseRepoIndexLocked(
 	ctx context.Context, target config.Repo,
 ) (int, error) {
 	for i, repo := range s.cfg.Repos {
-		if target.PlatformRepoID == "" {
+		if target.PlatformRepoID == 0 {
 			if sameConfiguredRepo(repo, target) {
 				return i, nil
 			}
 			continue
 		}
-		platformRepoID := strings.TrimSpace(repo.PlatformRepoID)
-		if platformRepoID == "" && !repo.HasNameGlob() {
+		platformRepoID := repo.PlatformRepoID
+		if platformRepoID == 0 && !repo.HasNameGlob() {
 			var err error
 			platformRepoID, _, err = s.configuredRepoProjection(ctx, repo, nil)
 			if err != nil {
@@ -1853,19 +1896,14 @@ func (s *Server) updateConfiguredRepoUIVisibilityState(
 func (s *Server) applyVisibilityUnderReconciliationRead(
 	ctx context.Context, identity db.RepoIdentity, hidden bool,
 ) (*db.Repo, error) {
-	release, err := s.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	repo, err := s.resolveVisibilityRepoLocked(ctx, identity)
 	if err != nil || repo == nil {
-		return repo, err
+		return nil, err
 	}
 	if err := s.db.SetRepoHiddenFromUI(ctx, repo.ID, hidden); err != nil {
 		return nil, err
 	}
-	return repo, nil
+	return repo.Row(), nil
 }
 
 // resolveVisibilityRepoLocked resolves the catalog row a visibility mutation
@@ -1878,21 +1916,21 @@ func (s *Server) applyVisibilityUnderReconciliationRead(
 // leave the active replacement visible while consuming the request.
 func (s *Server) resolveVisibilityRepoLocked(
 	ctx context.Context, identity db.RepoIdentity,
-) (*db.Repo, error) {
-	if strings.TrimSpace(identity.PlatformRepoID) == "" {
-		return s.db.GetRepoByIdentityUnderRepositoryReconciliationRead(ctx, identity)
+) (*db.ActiveRepo, error) {
+	if identity.PlatformRepoID == 0 {
+		return s.db.GetRepoByIdentity(ctx, identity)
 	}
-	entry, err := s.db.GetRepositoryByProviderIDUnderRepositoryReconciliationRead(
-		ctx, identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
-	)
+	entry, err := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+		Provider: identity.Platform, PlatformHost: identity.PlatformHost,
+		PlatformRepoID: identity.PlatformRepoID,
+	})
 	if err != nil {
 		return nil, err
 	}
-	if entry == nil || entry.Lifecycle != db.RepositoryLifecycleActive {
+	if entry == nil {
 		return nil, nil
 	}
-	repo := entry.Repository
-	return &repo, nil
+	return entry.ActiveRepo()
 }
 
 // visibilityLookupIdentity names the catalog repository an exact configured
@@ -1912,7 +1950,7 @@ func (s *Server) visibilityLookupIdentity(raw config.Repo) db.RepoIdentity {
 		return db.RepoIdentity{
 			Platform:       repoProvider(repo),
 			PlatformHost:   trackedRepoHost(repo),
-			PlatformRepoID: repo.PlatformExternalID,
+			PlatformRepoID: repo.PlatformRepoID,
 			Owner:          repo.Owner,
 			Name:           repo.Name,
 			RepoPath:       repo.RepoPath,
@@ -1947,6 +1985,7 @@ func (s *Server) deleteConfiguredRepo(
 		Name:         name,
 	}
 
+	s.configReloadMu.Lock()
 	s.cfgMu.Lock()
 	idx := -1
 	for i, rp := range s.cfg.Repos {
@@ -1960,6 +1999,7 @@ func (s *Server) deleteConfiguredRepo(
 	}
 	if idx == -1 {
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound,
 			owner+"/"+name+" is not configured", nil)
 	}
@@ -1972,11 +2012,13 @@ func (s *Server) deleteConfiguredRepo(
 	if err := s.cfg.Save(s.cfgPath); err != nil {
 		s.cfg.Repos = prevRepos
 		s.cfgMu.Unlock()
+		s.configReloadMu.Unlock()
 		return nil, httpapi.Internal("save config: " + err.Error())
 	}
 	s.removeConfigRepos(s.cfg.Repos)
 	s.applyWorkspaceConfigLocked()
 	s.cfgMu.Unlock()
+	s.configReloadMu.Unlock()
 
 	// The hidden-from-UI preference belongs to an exact entry. Without one, a
 	// glob can keep the repository tracked and filtered while glob rows expose
@@ -2056,12 +2098,17 @@ func (s *Server) reconcileOrphanedRepoVisibility(ctx context.Context) error {
 func (s *Server) lookupRepoForVisibilityRelease(
 	ctx context.Context, identity db.RepoIdentity,
 ) (*db.Repo, error) {
-	if strings.TrimSpace(identity.PlatformRepoID) == "" {
-		return s.db.GetRepoByIdentity(ctx, identity)
+	if identity.PlatformRepoID == 0 {
+		repo, err := s.db.GetRepoByIdentity(ctx, identity)
+		if err != nil || repo == nil {
+			return nil, err
+		}
+		return repo.Row(), nil
 	}
-	entry, err := s.db.GetRepositoryByProviderID(
-		ctx, identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
-	)
+	entry, err := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+		Provider: identity.Platform, PlatformHost: identity.PlatformHost,
+		PlatformRepoID: identity.PlatformRepoID,
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -12,6 +12,8 @@ import (
 )
 
 func TestAirplaneModeSkipsScheduledSyncButAllowsManualSync(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	var detailCalls atomic.Int32
 	client := &mockClient{getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
@@ -43,6 +45,8 @@ func TestAirplaneModeSkipsScheduledSyncButAllowsManualSync(t *testing.T) {
 }
 
 func TestAirplaneModePausesAndResumesArchive(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -63,6 +67,8 @@ func TestAirplaneModePausesAndResumesArchive(t *testing.T) {
 }
 
 func TestAirplaneModeDropsQueuedAutomaticSyncAndKeepsManualScope(t *testing.T) {
+	t.Parallel()
+
 	for _, queuedManual := range []bool{false, true} {
 		t.Run(map[bool]string{false: "automatic", true: "manual"}[queuedManual], func(t *testing.T) {
 			require := require.New(t)

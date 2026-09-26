@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,6 +34,8 @@ func providerReviewDraftForTest(body string) ProviderStateReviewDraftPayload {
 }
 
 func TestProviderStateHandoffReviewDraftIsIdempotentAndConflictSafe(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -68,6 +71,8 @@ func TestProviderStateHandoffReviewDraftIsIdempotentAndConflictSafe(t *testing.T
 }
 
 func TestProviderStateHandoffWorkflowStateIsIdempotentAndConflictSafe(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -100,6 +105,8 @@ func TestProviderStateHandoffWorkflowStateIsIdempotentAndConflictSafe(t *testing
 }
 
 func TestProviderStateHandoffInventoryUsesStableIdentityAndSemanticPayload(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -119,13 +126,15 @@ func TestProviderStateHandoffInventoryUsesStableIdentityAndSemanticPayload(t *te
 	require.Len(records, 2)
 	assert.Equal(ProviderStateReviewDraft, records[0].Kind)
 	assert.Equal(ProviderStateWorkflowState, records[1].Kind)
-	assert.Contains(records[0].SourceKey, providerStateRepositoryForTest().PlatformRepoID)
+	assert.Contains(records[0].SourceKey, strconv.FormatInt(providerStateRepositoryForTest().PlatformRepoID, 10))
 	assert.NotEmpty(records[0].ContentDigest)
 	assert.Equal(review.Body, records[0].ReviewDraft.Body)
 	assert.Equal(workflow.Status, records[1].WorkflowState.Status)
 }
 
 func TestProviderStateHandoffInventorySkipsUntouchedWorkflowDefaults(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	database := openTestDB(t)
 	repoID := seedProviderStateTargetForTest(t, database)
@@ -147,13 +156,14 @@ func TestProviderStateHandoffInventorySkipsUntouchedWorkflowDefaults(t *testing.
 }
 
 func TestProviderStateHandoffDigestUsesStableRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	original := providerReviewDraftForTest("portable draft")
 	routed := original
 	routed.Repository.Provider = " GITHUB "
 	routed.Repository.PlatformHost = " GITHUB.COM "
-	routed.Repository.PlatformRepoID = " " + original.Repository.PlatformRepoID + " "
 	routed.Repository.Owner = "renamed-owner"
 	routed.Repository.Name = "renamed-repository"
 
@@ -166,6 +176,8 @@ func TestProviderStateHandoffDigestUsesStableRepositoryIdentity(t *testing.T) {
 }
 
 func TestProviderStateHandoffAcceptsReviewCommentWithoutCommitSHA(t *testing.T) {
+	t.Parallel()
+
 	payload := providerReviewDraftForTest("portable draft")
 	payload.Comments[0].CommitSHA = ""
 

@@ -66,8 +66,6 @@ components:
         repository_id:
           format: int64
           type: integer
-        repository_node_id:
-          type: string
         token:
           type: string
         writable:
@@ -78,7 +76,6 @@ components:
         - writable
         - github_user_id
         - repository_id
-        - repository_node_id
         - default_branch
       type: object
     CredentialRequest:

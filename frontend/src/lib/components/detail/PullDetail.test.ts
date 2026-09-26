@@ -168,7 +168,7 @@ function pullDetail(): PullDetail {
       owner: "acme",
       name: "widget",
       repo_path: "acme/widget",
-      platform_repo_id: "widget-repo-id",
+      platform_repo_id: 1001,
     },
     merge_request: {
       ID: 1,
@@ -988,7 +988,7 @@ describe("PullDetail provider workflow actions", () => {
         owner: "acme",
         name: "widget",
         repoPath: "acme/widget",
-        platformRepoId: "widget-repo-id",
+        platformRepoId: 1001,
       },
       "release.yml",
     );

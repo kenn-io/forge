@@ -123,7 +123,7 @@ type RateLimit struct {
 // works exactly once, expiring after one hour.
 func (c *Client) ConvertManifest(ctx context.Context, code string) (*AppCredentials, error) {
 	if code == "" {
-		return nil, fmt.Errorf("manifest conversion code is required")
+		return nil, errors.New("manifest conversion code is required")
 	}
 	var creds AppCredentials
 	err := c.do(ctx, http.MethodPost,
@@ -280,8 +280,8 @@ func (e *StatusError) RetryDeadline(now time.Time) time.Time {
 
 // IsStatus reports whether err is a StatusError with the given code.
 func IsStatus(err error, code int) bool {
-	var se *StatusError
-	if !errors.As(err, &se) || se == nil {
+	se, ok := errors.AsType[*StatusError](err)
+	if !ok || se == nil {
 		return false
 	}
 	return se.StatusCode == code

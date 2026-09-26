@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -32,14 +33,14 @@ type HostKey struct {
 func ParseHostKey(s string) (HostKey, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return HostKey{}, fmt.Errorf("host: empty")
+		return HostKey{}, errors.New("host: empty")
 	}
 
 	// Bracketed IPv6 path: [ipv6] or [ipv6]:port.
 	if strings.HasPrefix(s, "[") {
 		closing := strings.IndexByte(s, ']')
 		if closing < 0 {
-			return HostKey{}, fmt.Errorf("host: missing closing bracket")
+			return HostKey{}, errors.New("host: missing closing bracket")
 		}
 		host := s[1:closing]
 		// A bracketed value must parse as an IP literal and the
@@ -97,7 +98,7 @@ func ParseHostKey(s string) (HostKey, error) {
 
 func parsePort(p string) (string, error) {
 	if p == "" {
-		return "", fmt.Errorf("host: empty port")
+		return "", errors.New("host: empty port")
 	}
 	n, err := strconv.Atoi(p)
 	if err != nil {

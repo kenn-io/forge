@@ -31,7 +31,7 @@ func TestHandlerWorkspaceNotFound(t *testing.T) {
 	mgr := workspace.NewManager(d, t.TempDir())
 	h := &Handler{Workspaces: mgr}
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet, "/api/v1/workspaces/nonexistent/terminal",
 		nil,
 	)
@@ -62,7 +62,7 @@ func TestHandlerWorkspaceNotReady(t *testing.T) {
 
 	h := &Handler{Workspaces: mgr}
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/api/v1/workspaces/"+ws.ID+"/terminal",
 		nil,
@@ -281,7 +281,7 @@ func TestProcessExitCode(t *testing.T) {
 }
 
 func TestParseGeometryFallsBack(t *testing.T) {
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet, "/?cols=bad&rows=0", nil,
 	)
 	geometry := parseGeometry(req)
@@ -297,7 +297,7 @@ func readWebSocketUntil(
 ) string {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 2*time.Second)
 	defer cancel()
 	var builder strings.Builder
 	for {

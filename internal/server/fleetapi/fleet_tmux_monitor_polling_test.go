@@ -1,7 +1,6 @@
 package fleetapi
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,14 +59,14 @@ func TestFleetTmuxMonitorReusesWindowsWhileSessionsUnchanged(t *testing.T) {
 	mon := newFleetTmuxMonitor([]string{tmux}, false, func() time.Time { return now }, nil)
 	mon.probeTimeout = 5 * time.Second
 
-	mon.refreshInventory(context.Background())
+	mon.refreshInventory(t.Context())
 	require.Equal(1, countCalls(t, logPath, "list-windows"), "the first pass lists windows")
 	snap := mon.snapshot()
 	require.NotNil(snap.CurrentInventory)
 	require.Len(snap.CurrentInventory.Sessions["forge-a"].Windows, 1)
 
 	now = now.Add(fleetTmuxPollInterval)
-	mon.refreshInventory(context.Background())
+	mon.refreshInventory(t.Context())
 	assert.Equal(2, countCalls(t, logPath, "list-sessions"))
 	assert.Equal(1, countCalls(t, logPath, "list-windows"),
 		"a byte-identical session listing reuses the previous windows")
@@ -80,13 +79,13 @@ func TestFleetTmuxMonitorReusesWindowsWhileSessionsUnchanged(t *testing.T) {
 	// A changed listing re-lists windows.
 	require.NoError(os.WriteFile(sessionsPath, []byte("1717150000|2|forge-a\n"), 0o644))
 	now = now.Add(fleetTmuxPollInterval)
-	mon.refreshInventory(context.Background())
+	mon.refreshInventory(t.Context())
 	assert.Equal(2, countCalls(t, logPath, "list-windows"))
 
 	// An unchanged listing still re-lists windows once the refresh bound
 	// elapses.
 	now = now.Add(fleetTmuxWindowRefreshInterval)
-	mon.refreshInventory(context.Background())
+	mon.refreshInventory(t.Context())
 	assert.Equal(3, countCalls(t, logPath, "list-windows"))
 }
 
@@ -103,7 +102,7 @@ func TestFleetTmuxMonitorMetricsQueryOnlyPaneProcesses(t *testing.T) {
 	mon := newFleetTmuxMonitor([]string{tmux}, false, nil, nil)
 	mon.probeTimeout = 5 * time.Second
 
-	mon.refresh(context.Background())
+	mon.refresh(t.Context())
 
 	snap := mon.snapshot()
 	require.NotNil(snap.Metrics)
@@ -123,7 +122,7 @@ func TestFleetTmuxMonitorMetricsSpawnNothingWithoutSessions(t *testing.T) {
 	mon := newFleetTmuxMonitor([]string{tmux}, false, nil, nil)
 	mon.probeTimeout = 5 * time.Second
 
-	mon.refresh(context.Background())
+	mon.refresh(t.Context())
 
 	snap := mon.snapshot()
 	require.NotNil(snap.CurrentInventory)
@@ -135,7 +134,7 @@ func TestFleetTmuxMonitorMetricsSpawnNothingWithoutSessions(t *testing.T) {
 }
 
 func TestProbeFleetProcessTreesWithNoRootsSpawnsNothing(t *testing.T) {
-	processes, err := probeFleetProcessTrees(context.Background(), nil)
+	processes, err := probeFleetProcessTrees(t.Context(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, processes)
 }

@@ -429,6 +429,7 @@ func TestDisabledFederationSpokeStartupRepairsInterruptedCredentialPromotion(t *
 		{
 			name: "inbound credential persisted before outbound credential",
 			prepare: func(t *testing.T, credentials *federationauth.Store) {
+				t.Helper()
 				require.NoError(t, credentials.UpdateInboundScopes(
 					startupHubID, federationauth.HubToSpokeScopes(),
 				))

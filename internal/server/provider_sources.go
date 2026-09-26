@@ -123,35 +123,23 @@ func (s *hubProviderSource) observeWorkspaceLaunchSpec(
 	if s.db == nil {
 		return httpapi.Internal("repository catalog is unavailable")
 	}
-	entry, accepted, err := s.db.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+	entry, err := s.db.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 		PlatformRepoID: spec.Repository.PlatformRepoID,
 		Owner:          spec.Repository.Owner, Name: spec.Repository.Name,
 		RepoPath: spec.Repository.Owner + "/" + spec.Repository.Name,
-	}, spec.IssuedAt)
+	})
 	if err != nil {
 		return invalidHubDescriptor(err)
 	}
-	if !accepted {
-		return invalidHubDescriptor(
-			errors.New("workspace launch repository observation is older than the local route"),
-		)
-	}
-	applied, err := s.db.UpdateRepoProviderObservation(
-		ctx, entry.Repository.ID, spec.IssuedAt,
+	if err := s.db.UpdateRepoProviderObservation(
+		ctx, entry.Repository.ID,
 		db.RepoProviderMetadata{
-			PlatformRepoID: spec.Repository.PlatformRepoID,
-			CloneURL:       spec.Repository.CloneURL,
-			DefaultBranch:  spec.Repository.DefaultBranch,
+			CloneURL:      spec.Repository.CloneURL,
+			DefaultBranch: spec.Repository.DefaultBranch,
 		}, nil, nil,
-	)
-	if err != nil {
+	); err != nil {
 		return invalidHubDescriptor(err)
-	}
-	if !applied {
-		return invalidHubDescriptor(
-			errors.New("workspace launch repository observation lost its freshness fence"),
-		)
 	}
 	return nil
 }
@@ -251,9 +239,7 @@ func (s *hubProviderSource) ResolveRepositoryRoute(
 	if err != nil {
 		return nil, err
 	}
-	entry, err := s.db.GetRepositoryByProviderID(
-		ctx, descriptor.Provider, descriptor.PlatformHost, descriptor.PlatformRepoID,
-	)
+	entry, err := s.db.GetRepositoryByProviderID(ctx, descriptor.Identity())
 	if err != nil {
 		return nil, httpapi.Internal("read reconciled repository identity failed")
 	}
@@ -291,7 +277,7 @@ func (s *hubProviderSource) GetDiffDescriptor(
 	}
 	if descriptor.PullNumber != item.Number {
 		return providerplane.DiffDescriptor{}, invalidHubDescriptor(
-			fmt.Errorf("diff descriptor does not match requested pull number"),
+			errors.New("diff descriptor does not match requested pull number"),
 		)
 	}
 	if err := s.observeRepositoryDescriptor(ctx, descriptor.Repository); err != nil {
@@ -313,58 +299,25 @@ func observeRepositoryDescriptor(
 	if database == nil {
 		return httpapi.Internal("repository catalog is unavailable")
 	}
-	entry, accepted, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+	entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: descriptor.Provider, PlatformHost: descriptor.PlatformHost,
 		PlatformRepoID: descriptor.PlatformRepoID,
 		Owner:          descriptor.Owner, Name: descriptor.Name,
 		RepoPath: descriptor.Owner + "/" + descriptor.Name,
-	}, descriptor.ObservedAt)
+	})
 	if err != nil {
 		return invalidHubDescriptor(err)
 	}
-	if !accepted {
-		if repositoryDescriptorMatchesEntry(descriptor, entry) {
-			return nil
-		}
-		return invalidHubDescriptor(
-			errors.New("hub repository descriptor is older than the local route observation"),
-		)
-	}
-	applied, err := database.UpdateRepoProviderObservation(
-		ctx, entry.Repository.ID, descriptor.ObservedAt,
+	if err := database.UpdateRepoProviderObservation(
+		ctx, entry.Repository.ID,
 		db.RepoProviderMetadata{
-			PlatformRepoID: descriptor.PlatformRepoID,
-			CloneURL:       descriptor.CloneURL,
-			DefaultBranch:  descriptor.DefaultBranch,
+			CloneURL:      descriptor.CloneURL,
+			DefaultBranch: descriptor.DefaultBranch,
 		}, nil, nil,
-	)
-	if err != nil {
+	); err != nil {
 		return invalidHubDescriptor(err)
-	}
-	if !applied {
-		current, lookupErr := database.GetRepositoryByProviderID(
-			ctx, descriptor.Provider, descriptor.PlatformHost, descriptor.PlatformRepoID,
-		)
-		if lookupErr == nil && repositoryDescriptorMatchesEntry(descriptor, current) {
-			return nil
-		}
-		return invalidHubDescriptor(
-			errors.New("hub repository descriptor lost its observation fence"),
-		)
 	}
 	return nil
-}
-
-func repositoryDescriptorMatchesEntry(
-	descriptor providerplane.RepositoryDescriptor,
-	entry *db.RepositoryCatalogEntry,
-) bool {
-	return entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive &&
-		entry.Repository.Platform == descriptor.Provider &&
-		entry.Repository.PlatformHost == descriptor.PlatformHost &&
-		entry.Repository.PlatformRepoID == descriptor.PlatformRepoID &&
-		entry.Repository.Owner == descriptor.Owner &&
-		entry.Repository.Name == descriptor.Name
 }
 
 func invalidHubDescriptor(error) error {
@@ -712,8 +665,7 @@ func (s *hubProviderSource) exchangeWithProblem(ctx context.Context, scope feder
 }
 
 func hubProviderMutationProblem(err error) error {
-	var responseErr *providerplane.ResponseError
-	if errors.As(err, &responseErr) ||
+	if _, ok := errors.AsType[*providerplane.ResponseError](err); ok ||
 		errors.Is(err, providerplane.ErrCredentialUnavailable) ||
 		errors.Is(err, providerplane.ErrRequestBodyTooLarge) ||
 		errors.Is(err, providerplane.ErrInvalidScope) {
@@ -787,6 +739,9 @@ func providerSettingsRequestBody(update updateSettingsRequest) *generated.Provid
 	}
 	if value := update.Issues; value != nil {
 		body.Issues = new(generated.Issues(*value))
+	}
+	if value := update.Sync; value != nil && value.BudgetPerHour != nil {
+		body.Sync = &generated.SyncSettingsUpdate{BudgetPerHour: new(int64(*value.BudgetPerHour))}
 	}
 	return body
 }

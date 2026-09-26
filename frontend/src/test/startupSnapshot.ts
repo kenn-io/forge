@@ -41,6 +41,7 @@ export function makeStartupSnapshot(overrides: Partial<StartupSnapshot> = {}): S
     quick_actions: [],
     modes: { ...DEFAULT_MODE_VISIBILITY },
     notifications: { enabled: true },
+    provider_settings_loaded: true,
     pull_requests: { ...DEFAULT_PULL_REQUEST_SETTINGS },
     roborev: { init_managed_clones: false },
     repo_presets: [],

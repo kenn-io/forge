@@ -4,12 +4,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/federationtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -66,11 +67,13 @@ func (h *switchableFederationHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 	if h.offline.Load() {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"status": http.StatusServiceUnavailable,
 			"code":   httpapi.CodeHubUnavailable,
 			"detail": "the federation hub is unavailable",
-		})
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 	h.current.Load().handler.ServeHTTP(w, r)
@@ -88,23 +91,21 @@ type federatedDaemonFixture struct {
 	Switch      *switchableFederationHandler
 }
 
-type countingSyntheticProvider struct {
-}
+type countingSyntheticProvider struct{}
 
 func (p *countingSyntheticProvider) Seed(t *testing.T, database *db.DB) int64 {
 	t.Helper()
 	identity := verifiedRepoIdentity(db.GitHubRepoIdentity(
 		"github.com", "acme", "widget",
 	))
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
-	require.NoError(t, database.UpdateRepoProviderMetadata(
+	require.NoError(t, database.UpdateRepoProviderObservation(
 		t.Context(), repoID, db.RepoProviderMetadata{
-			PlatformRepoID: identity.PlatformRepoID,
-			WebURL:         "https://github.com/acme/widget",
-			CloneURL:       "https://github.com/acme/widget.git",
-			DefaultBranch:  "main",
-		},
+			WebURL:        "https://github.com/acme/widget",
+			CloneURL:      "https://github.com/acme/widget.git",
+			DefaultBranch: "main",
+		}, nil, nil,
 	))
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, pull := range []db.MergeRequest{
@@ -298,7 +299,7 @@ func newFederatedDaemonServer(
 			nil, daemon.Database, nil, []ghclient.RepoRef{{
 				Platform: platform.KindGitHub, PlatformHost: "github.com",
 				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-				PlatformExternalID: verifiedRepoIdentity(db.GitHubRepoIdentity(
+				PlatformRepoID: verifiedRepoIdentity(db.GitHubRepoIdentity(
 					"github.com", "acme", "widget",
 				)).PlatformRepoID,
 			}}, time.Minute, nil, nil,
@@ -329,15 +330,14 @@ func seedFederatedNodeRepository(t *testing.T, database *db.DB) {
 	identity := verifiedRepoIdentity(db.GitHubRepoIdentity(
 		"github.com", "acme", "widget",
 	))
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
-	require.NoError(t, database.UpdateRepoProviderMetadata(
+	require.NoError(t, database.UpdateRepoProviderObservation(
 		t.Context(), repoID, db.RepoProviderMetadata{
-			PlatformRepoID: identity.PlatformRepoID,
-			WebURL:         "https://github.com/acme/widget",
-			CloneURL:       "https://github.com/acme/widget.git",
-			DefaultBranch:  "main",
-		},
+			WebURL:        "https://github.com/acme/widget",
+			CloneURL:      "https://github.com/acme/widget.git",
+			DefaultBranch: "main",
+		}, nil, nil,
 	))
 }
 
@@ -351,7 +351,7 @@ func seedFederatedWorkspace(
 		ID: id, Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
-		ItemKey: fmt.Sprint(number), GitHeadRef: branch, WorkspaceBranch: branch,
+		ItemKey: strconv.Itoa(number), GitHeadRef: branch, WorkspaceBranch: branch,
 		WorktreePath: filepath.Join(t.TempDir(), id), Status: "ready", CreatedAt: now,
 	}
 	require.NoError(t, database.CreateWorkspaceWithLaunchSpec(
@@ -366,7 +366,7 @@ func seedFederatedWorkspace(
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
-			ItemKey: fmt.Sprint(number), GitHeadRef: branch,
+			ItemKey: strconv.Itoa(number), GitHeadRef: branch,
 			Pull: &db.WorkspaceLaunchPull{
 				HeadBranch: branch, HeadRepoKind: "same_repo", SnapshotRevision: 1,
 			},

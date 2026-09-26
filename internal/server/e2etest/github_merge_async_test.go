@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -150,10 +151,10 @@ func setupGitHubAsyncMergeE2E(
 	require.NoError(err)
 
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "1",
+		PlatformRepoID: 1,
 		Owner:          "acme",
 		Name:           "widget",
 		RepoPath:       "acme/widget",
@@ -219,7 +220,7 @@ func TestGitHubAsyncMergePersistsOnlyAfterTerminalSuccess(t *testing.T) {
 	})
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/7/merge",
 		strings.NewReader(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),

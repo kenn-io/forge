@@ -33,10 +33,12 @@ import (
 // and returns the absolute path. The build runs once per test via
 // t.TempDir.
 func buildForge(t *testing.T) string {
+	t.Helper()
 	return buildForgeWithLDFlags(t, "")
 }
 
 func buildForgeVersion(t *testing.T, runtimeVersion string) string {
+	t.Helper()
 	ldflags := ""
 	if runtimeVersion != "" {
 		ldflags = "-X main.version=" + runtimeVersion
@@ -742,6 +744,7 @@ func TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E(t *testing.T) {
 		build func(*testing.T, *daemonLifecycleFixture) string
 	}{
 		{name: "symlink", build: func(t *testing.T, fixture *daemonLifecycleFixture) string {
+			t.Helper()
 			configPath := fixture.configPath
 			alias := filepath.Join(filepath.Dir(configPath), "config-alias.toml")
 			if err := os.Symlink(configPath, alias); err != nil {
@@ -750,6 +753,7 @@ func TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E(t *testing.T) {
 			return alias
 		}},
 		{name: "case", build: func(t *testing.T, fixture *daemonLifecycleFixture) string {
+			t.Helper()
 			configPath := fixture.configPath
 			alias := filepath.Join(filepath.Dir(configPath), "CONFIG.TOML")
 			if _, err := os.Stat(alias); os.IsNotExist(err) {
@@ -762,6 +766,7 @@ func TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E(t *testing.T) {
 		{name: "unicode-normalization", build: func(
 			t *testing.T, fixture *daemonLifecycleFixture,
 		) string {
+			t.Helper()
 			decomposed := filepath.Join(filepath.Dir(fixture.configPath), "Cafe\u0301.toml")
 			require.NoError(t, os.Rename(fixture.configPath, decomposed))
 			fixture.configPath = decomposed
@@ -1244,7 +1249,7 @@ func TestDetachedServeRejectsChangedDataDirectoryE2E(t *testing.T) {
 // used elsewhere in the repo for "pick me a free port".
 func reserveFreePort(t *testing.T) int {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := ln.Addr().(*net.TCPAddr).Port
 	require.NoError(t, ln.Close())
@@ -1430,24 +1435,36 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 
 func waitForFile(t *testing.T, path string, timeout time.Duration) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
 		if _, err := os.Stat(path); err == nil {
 			return
 		}
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-deadline:
+			require.FailNowf(t, "file did not appear", "path=%s timeout=%s", path, timeout)
+			return
+		case <-ticker.C:
+		}
 	}
-	require.FailNowf(t, "file did not appear", "path=%s timeout=%s", path, timeout)
 }
 
 func waitForNoFile(t *testing.T, path string, timeout time.Duration) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
 		if _, err := os.Stat(path); err != nil && os.IsNotExist(err) {
 			return
 		}
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-deadline:
+			require.FailNowf(t, "file did not disappear", "path=%s timeout=%s", path, timeout)
+			return
+		case <-ticker.C:
+		}
 	}
-	require.FailNowf(t, "file did not disappear", "path=%s timeout=%s", path, timeout)
 }

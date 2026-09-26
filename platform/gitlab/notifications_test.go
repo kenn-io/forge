@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
@@ -14,7 +14,7 @@ import (
 // both the error shape and the undeclared capability flags.
 func TestNotificationStubsReturnUnsupportedCapability(t *testing.T) {
 	client, err := NewClient("gitlab.example.com", testTokenSource("token"), WithTransport(http.DefaultTransport))
-	require := Require.New(t)
+	require := require.New(t)
 	require.NoError(err)
 
 	assert := assert.New(t)

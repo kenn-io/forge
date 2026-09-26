@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { mountTerminalPopover } from "./terminal-popover.js";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import { getStores } from "../../context.js";
   import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -23,6 +24,7 @@
 
   let open = $state(false);
   let rootEl = $state<HTMLDivElement | null>(null);
+  let panelEl = $state<HTMLDivElement | null>(null);
   let terminal = $state<TerminalSettingsType>(
     settingsStore.getTerminalSettings(),
   );
@@ -46,7 +48,7 @@
     if (!open) return;
 
     function onPointerDown(ev: PointerEvent): void {
-      if (rootEl && ev.target instanceof Node && rootEl.contains(ev.target)) {
+      if (rootEl && ev.target instanceof Node && (rootEl.contains(ev.target) || panelEl?.contains(ev.target))) {
         return;
       }
       if (childSaving) return;
@@ -87,6 +89,8 @@
   {#if open}
     <div
       class="options-popover"
+      bind:this={panelEl}
+      {@attach (node) => mountTerminalPopover(node, rootEl!)}
       role="dialog"
       aria-label="Terminal options"
     >
@@ -135,9 +139,7 @@
   }
 
   .options-popover {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 4px);
+    position: fixed;
     /* The pane-controls popover that hosts this trigger sets
        `overflow-wrap: anywhere` so a long branch name cannot set its
        min-content width. That inherits in here, where it has no business:
@@ -145,7 +147,7 @@
        labels, which then broke mid-word ("Sa/ve"). */
     overflow-wrap: normal;
     word-break: normal;
-    z-index: 25;
+    z-index: calc(var(--z-overlay) - 1);
     width: 372px;
     padding: 10px;
     border: 1px solid var(--border-default);

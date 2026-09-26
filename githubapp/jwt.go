@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json/v2"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -19,7 +20,7 @@ import (
 func ParsePrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
-		return nil, fmt.Errorf("no PEM block found in private key")
+		return nil, errors.New("no PEM block found in private key")
 	}
 	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
 		return key, nil
@@ -44,7 +45,7 @@ func SignAppJWT(appID int64, key *rsa.PrivateKey, now time.Time) (string, error)
 		return "", fmt.Errorf("app id must be positive, got %d", appID)
 	}
 	if key == nil {
-		return "", fmt.Errorf("app private key is required")
+		return "", errors.New("app private key is required")
 	}
 	header := map[string]string{"alg": "RS256", "typ": "JWT"}
 	claims := map[string]any{

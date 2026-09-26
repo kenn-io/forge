@@ -1,13 +1,16 @@
 <script lang="ts">
   import type {
     LaunchTarget,
+    QuickAction,
     RuntimeSession,
   } from "../../api/types.js";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import FolderIcon from "@lucide/svelte/icons/folder";
   import PlayIcon from "@lucide/svelte/icons/play";
+  import ZapIcon from "@lucide/svelte/icons/zap";
   import LaunchTargetName from "./LaunchTargetName.svelte";
   import { isVisibleLaunchTarget } from "./launchTargets";
+  import { sortQuickActionsByLabel } from "../../stores/workspace-quick-actions.js";
 
   interface WorkspaceHomeWorkspace {
     id: string;
@@ -27,7 +30,10 @@
     launchingKey?: string | null;
     readonly?: boolean;
     showHeader?: boolean;
+    /** Configured quick actions; the section renders only when non-empty and onQuickAction is set. */
+    quickActions?: QuickAction[];
     onLaunch?: (targetKey: string) => void;
+    onQuickAction?: ((action: QuickAction) => void) | undefined;
     onOpenSession?: (sessionKey: string) => void;
   }
 
@@ -39,11 +45,26 @@
     launchingKey = null,
     readonly = false,
     showHeader = true,
+    quickActions = [],
     onLaunch,
+    onQuickAction,
     onOpenSession,
   }: WorkspaceHomeProps = $props();
 
   const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
+  const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
+  const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
+
+  function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
+    return launchTargets.find((target) => target.key === action.agent && target.kind === "agent");
+  }
+
+  function quickActionDisabledReason(action: QuickAction): string {
+    const target = quickActionTarget(action);
+    if (!target) return `Agent "${action.agent}" is not configured`;
+    if (!target.available) return target.disabled_reason || `Agent "${action.agent}" is not available`;
+    return "";
+  }
 
   function title(): string {
     return workspace?.mr_title ?? workspace?.git_head_ref ?? "Workspace";
@@ -115,6 +136,43 @@
       {/each}
     </div>
   </div>
+
+  {#if showQuickActions}
+    <div class="home-section">
+      <div class="section-bar">
+        <ZapIcon
+          class="section-icon quick"
+          size="12"
+          strokeWidth="2.25"
+          aria-hidden="true"
+        />
+        <span class="section-title">Quick actions</span>
+        <span class="section-count">{quickActions.length}</span>
+      </div>
+      <div class="launch-grid">
+        {#each sortedQuickActions as action, index (`${index}:${action.label}`)}
+          {@const target = quickActionTarget(action)}
+          {@const disabledReason = quickActionDisabledReason(action)}
+          <button
+            class="launch-card quick-card"
+            disabled={readonly || disabledReason !== ""}
+            title={disabledReason || action.prompt}
+            aria-label={action.label}
+            onclick={() => onQuickAction?.(action)}
+          >
+            <span class="quick-label">{action.label}</span>
+            {#if target}
+              <span class="quick-agent">
+                <LaunchTargetName {target} label={target.label} iconSize={11} fallbackIcon />
+              </span>
+            {:else}
+              <span class="quick-agent">{action.agent}</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   {#if sessions.length > 0}
     <div class="home-section">
@@ -316,6 +374,41 @@
   .launch-card :global(.launch-target-label) {
     font-weight: 600;
     letter-spacing: 0.005em;
+  }
+
+  .section-bar :global(.section-icon.quick) {
+    color: var(--accent-amber);
+  }
+
+  .workspace-home.readonly .section-bar :global(.section-icon.quick) {
+    color: var(--text-muted);
+  }
+
+  .quick-card {
+    --launch-target-icon-color: var(--text-muted);
+
+    gap: 2px;
+  }
+
+  .quick-label {
+    overflow: hidden;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .quick-agent {
+    display: flex;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+
+  .quick-agent :global(.launch-target-label) {
+    font-weight: 500;
   }
 
   .card-status {

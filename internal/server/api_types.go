@@ -12,7 +12,7 @@ type repoResponse struct {
 	ID                  int64
 	Platform            string
 	PlatformHost        string
-	PlatformRepoID      string
+	PlatformRepoID      int64
 	Owner               string
 	Name                string
 	LastSyncStartedAt   *time.Time
@@ -168,14 +168,16 @@ type resolveItemResponse struct {
 	RepoTracked bool   `json:"repo_tracked"`
 }
 
-type diffResponse = httpapi.DiffResponse
-type rateLimitResourceStatus struct {
-	Remaining int    `json:"remaining"`
-	Limit     int    `json:"limit"`
-	ResetAt   string `json:"reset_at"`
-	Known     bool   `json:"known"`
-	Requests  int    `json:"requests"`
-}
+type (
+	diffResponse            = httpapi.DiffResponse
+	rateLimitResourceStatus struct {
+		Remaining int    `json:"remaining"`
+		Limit     int    `json:"limit"`
+		ResetAt   string `json:"reset_at"`
+		Known     bool   `json:"known"`
+		Requests  int    `json:"requests"`
+	}
+)
 
 // rateLimitHostStatus is one credential principal's provider-side quota on one
 // host. GitHub meters each principal independently, so an App installation and
@@ -231,7 +233,7 @@ type activityResponse struct {
 type activityRepoRefResponse struct {
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID int64  `json:"platform_repo_id,omitempty"`
 	RepoPath       string `json:"repo_path"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`

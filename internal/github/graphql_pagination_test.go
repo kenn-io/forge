@@ -2,7 +2,7 @@ package github
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,6 +11,8 @@ import (
 )
 
 func TestFetchAllPagesSinglePage(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	items, err := fetchAllPages(
@@ -25,6 +27,8 @@ func TestFetchAllPagesSinglePage(t *testing.T) {
 }
 
 func TestFetchAllPagesMultiPage(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	calls := 0
 
@@ -57,13 +61,15 @@ func TestFetchAllPagesMultiPage(t *testing.T) {
 }
 
 func TestFetchAllPagesError(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	// Test error on first page
 	_, err := fetchAllPages(
 		t.Context(),
 		func(_ context.Context, cursor *string) ([]int, platformgithub.GraphQLPageInfo, error) {
-			return nil, platformgithub.GraphQLPageInfo{}, fmt.Errorf("graphql: rate limited")
+			return nil, platformgithub.GraphQLPageInfo{}, errors.New("graphql: rate limited")
 		},
 	)
 	require.Error(t, err)
@@ -71,6 +77,8 @@ func TestFetchAllPagesError(t *testing.T) {
 }
 
 func TestFetchAllPagesContextCanceled(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
@@ -84,6 +92,8 @@ func TestFetchAllPagesContextCanceled(t *testing.T) {
 }
 
 func TestFetchAllPagesEmptyCursor(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	items, err := fetchAllPages(
@@ -101,6 +111,8 @@ func TestFetchAllPagesEmptyCursor(t *testing.T) {
 }
 
 func TestFetchAllPagesRepeatedCursor(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	calls := 0
 
@@ -120,6 +132,8 @@ func TestFetchAllPagesRepeatedCursor(t *testing.T) {
 }
 
 func TestFetchAllPagesPartialResultsOnError(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	calls := 0
 
@@ -133,7 +147,7 @@ func TestFetchAllPagesPartialResultsOnError(t *testing.T) {
 					EndCursor:   "c1",
 				}, nil
 			}
-			return nil, platformgithub.GraphQLPageInfo{}, fmt.Errorf("page 2 failed")
+			return nil, platformgithub.GraphQLPageInfo{}, errors.New("page 2 failed")
 		},
 	)
 	require.Error(t, err)

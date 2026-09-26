@@ -19,6 +19,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -68,10 +69,10 @@ func seedProviderRepo(
 	host string,
 ) int64 {
 	t.Helper()
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform:       string(kind),
 		PlatformHost:   host,
-		PlatformRepoID: "repo-" + string(kind) + "-acme-widget",
+		PlatformRepoID: 42,
 		Owner:          "acme",
 		Name:           "widget",
 		RepoPath:       "acme/widget",
@@ -148,19 +149,19 @@ func newLabelTestServer(
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil,
 		[]ghclient.RepoRef{{
-			Platform:           kind,
-			PlatformHost:       host,
-			PlatformExternalID: "repo-" + string(kind) + "-acme-widget",
-			Owner:              "acme",
-			Name:               "widget",
-			RepoPath:           "acme/widget",
+			Platform:       kind,
+			PlatformHost:   host,
+			PlatformRepoID: 42,
+			Owner:          "acme",
+			Name:           "widget",
+			RepoPath:       "acme/widget",
 		}},
 		time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -178,7 +179,7 @@ func doJSONRequest(
 	if body != nil {
 		require.NoError(t, json.NewEncoder(&payload).Encode(body))
 	}
-	req := httptest.NewRequest(method, path, &payload)
+	req := httptest.NewRequestWithContext(t.Context(), method, path, &payload)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

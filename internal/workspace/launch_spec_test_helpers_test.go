@@ -10,6 +10,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/platform"
 )
 
 type databaseLaunchSpecResolver struct {
@@ -22,10 +23,13 @@ func (r databaseLaunchSpecResolver) ResolveWorkspaceLaunchSpec(
 ) (db.WorkspaceLaunchSpec, error) {
 	var repo *db.Repo
 	var err error
-	if strings.TrimSpace(request.PlatformRepoID) != "" {
+	if request.PlatformRepoID != 0 {
 		entry, lookupErr := r.db.GetRepositoryByProviderID(
-			ctx, request.Repository.Provider, request.Repository.PlatformHost,
-			request.PlatformRepoID,
+			ctx, platform.RepositoryIdentity{
+				Provider:       request.Repository.Provider,
+				PlatformHost:   request.Repository.PlatformHost,
+				PlatformRepoID: request.PlatformRepoID,
+			},
 		)
 		err = lookupErr
 		if entry != nil {
@@ -33,10 +37,14 @@ func (r databaseLaunchSpecResolver) ResolveWorkspaceLaunchSpec(
 			repo = &resolved
 		}
 	} else {
-		repo, err = r.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+		active, lookupErr := r.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 			Platform: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost,
 			Owner: request.Repository.Owner, Name: request.Repository.Name,
 		})
+		err = lookupErr
+		if active != nil {
+			repo = active.Row()
+		}
 	}
 	if err != nil {
 		return db.WorkspaceLaunchSpec{}, err
@@ -141,8 +149,8 @@ func (r databaseLaunchSpecResolver) RefreshWorkspaceLaunchSpec(
 	})
 }
 
-func newTestManager(t testing.TB, database *db.DB, worktreeDir string) *Manager {
-	t.Helper()
+func newTestManager(tb testing.TB, database *db.DB, worktreeDir string) *Manager {
+	tb.Helper()
 	manager := NewManager(database, worktreeDir)
 	if database != nil {
 		manager.SetLaunchSpecResolver(databaseLaunchSpecResolver{db: database})

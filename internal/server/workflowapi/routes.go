@@ -37,8 +37,7 @@ func register[I, O any](api huma.API, operationID, method, path string, status i
 }
 
 type resolvedRepository struct {
-	repo  *db.Repo
-	fence db.RepositoryRouteFence
+	repo *db.Repo
 }
 
 func (h *Handler) resolve(ctx context.Context, provider, host, owner, name, capability string) (resolvedRepository, error) {
@@ -49,29 +48,7 @@ func (h *Handler) resolve(ctx context.Context, provider, host, owner, name, capa
 	if err != nil {
 		return resolvedRepository{}, err
 	}
-	fence, found, err := h.resolver.CaptureRepositoryRouteFence(ctx, *repo)
-	if err != nil {
-		return resolvedRepository{}, httpapi.Internal("capture repository identity failed")
-	}
-	if !found {
-		return resolvedRepository{}, repositoryIdentityChangedProblem()
-	}
-	return resolvedRepository{repo: repo, fence: fence}, nil
-}
-
-func (h *Handler) confirm(ctx context.Context, resolved resolvedRepository) error {
-	matches, err := h.resolver.RepositoryRouteFenceMatches(ctx, *resolved.repo, resolved.fence)
-	if err != nil {
-		return httpapi.Internal("confirm repository identity failed")
-	}
-	if !matches {
-		return repositoryIdentityChangedProblem()
-	}
-	return nil
-}
-
-func repositoryIdentityChangedProblem() error {
-	return httpapi.NotFound(httpapi.CodeRepoNotFound, "repository identity no longer matches this route", nil)
+	return resolvedRepository{repo: repo.Row()}, nil
 }
 
 func (h *Handler) registry() *platform.Registry {
@@ -105,9 +82,6 @@ func (h *Handler) listCatalog(ctx context.Context, input *repositoryInput) (*cat
 		if err != nil {
 			return nil, httpapi.ProviderCallProblem(err, string(ref.Platform), ref.Host)
 		}
-	}
-	if err := h.confirm(ctx, resolved); err != nil {
-		return nil, err
 	}
 	repo := h.resolver.Ref(*resolved.repo)
 	operations := h.operations(*resolved.repo)
@@ -145,9 +119,6 @@ func (h *Handler) listRuns(ctx context.Context, input *workflowRunsInput) (*runs
 	if err != nil {
 		return nil, httpapi.ProviderCallProblem(err, string(httpapi.ProviderKind(*resolved.repo)), httpapi.ProviderHost(*resolved.repo))
 	}
-	if err := h.confirm(ctx, resolved); err != nil {
-		return nil, err
-	}
 	return &runsOutput{Body: WorkflowRunsResponse{
 		Repo: h.resolver.Ref(*resolved.repo), Items: workflowRuns(page.Items), NextCursor: page.NextCursor, Exhausted: page.Exhausted,
 	}}, nil
@@ -180,9 +151,6 @@ func (h *Handler) listJobs(ctx context.Context, input *workflowJobsInput) (*jobs
 	jobs, err := reader.ListWorkflowRunJobs(ctx, httpapi.PlatformRepoRef(*resolved.repo), runID)
 	if err != nil {
 		return nil, httpapi.ProviderCallProblem(err, string(httpapi.ProviderKind(*resolved.repo)), httpapi.ProviderHost(*resolved.repo))
-	}
-	if err := h.confirm(ctx, resolved); err != nil {
-		return nil, err
 	}
 	return &jobsOutput{Body: WorkflowJobsResponse{Repo: h.resolver.Ref(*resolved.repo), Items: workflowJobs(jobs)}}, nil
 }
@@ -264,7 +232,7 @@ func (h *Handler) dispatch(ctx context.Context, input *workflowDispatchInput) (*
 	}
 	dispatchID := newDispatchID()
 	var result platform.WorkflowDispatchResult
-	matched, err := h.resolver.GuardRepositoryRouteFence(ctx, *resolved.repo, resolved.fence, func() error {
+	err = func() error {
 		availability := h.operations(*resolved.repo).DispatchWorkflow
 		if !availability.Available {
 			return dispatchUnavailableProblem(*resolved.repo, availability)
@@ -287,12 +255,9 @@ func (h *Handler) dispatch(ctx context.Context, input *workflowDispatchInput) (*
 			return problem
 		}
 		return nil
-	})
+	}()
 	if err != nil {
 		return nil, err
-	}
-	if !matched {
-		return nil, repositoryIdentityChangedProblem()
 	}
 	response := WorkflowDispatchResponse{
 		Accepted: result.Accepted, DispatchID: dispatchID, Actor: result.Actor,

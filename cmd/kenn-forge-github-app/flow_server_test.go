@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,13 +29,11 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	// Svelte app when the dist was embedded by `make build`, or an
 	// explicit "rebuild with make build" explanation when only the
 	// committed stub is present (plain go test / go build).
-	resp, err := http.Get(flow.localBase + "/")
-	require.NoError(err)
+	resp := doGet(t, nil, flow.localBase+"/")
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusNotFound, resp.StatusCode)
 
-	resp, err = http.Get(flow.setupURL())
-	require.NoError(err)
+	resp = doGet(t, nil, flow.setupURL())
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	require.NoError(err)
@@ -47,47 +46,41 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	}
 
 	// Before a flow is prepared there is nothing to hand to GitHub.
-	resp, err = http.Get(flow.localBase + "/flow.json")
-	require.NoError(err)
+	resp = doGet(t, nil, flow.localBase+"/flow.json")
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusNotFound, resp.StatusCode)
 
-	resp, err = http.Get(flow.setupURL() + "flow.json")
-	require.NoError(err)
+	resp = doGet(t, nil, flow.setupURL()+"flow.json")
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusNotFound, resp.StatusCode)
 
 	flow.setFlow("https://example.test/settings/apps/new?state=s", `{"name":"x"}`, "x", "github.com")
-	resp, err = http.Get(flow.localBase + "/flow.json")
-	require.NoError(err)
+	resp = doGet(t, nil, flow.localBase+"/flow.json")
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusNotFound, resp.StatusCode)
 
-	resp, err = http.Get(flow.setupURL() + "flow.json")
-	require.NoError(err)
+	resp = doGet(t, nil, flow.setupURL()+"flow.json")
 	defer resp.Body.Close()
 	assert.Equal(http.StatusOK, resp.StatusCode)
 	assert.Equal("application/json", resp.Header.Get("Content-Type"))
 
 	// A callback with a wrong state must be rejected, and a good one
 	// must land the browser on the setup page's done view.
-	resp, err = http.Get(flow.localBase + flow.callbackPath + "?code=c&state=wrong")
-	require.NoError(err)
+	resp = doGet(t, nil, flow.localBase+flow.callbackPath+"?code=c&state=wrong")
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)
 
-	resp, err = http.Get(flow.localBase + flow.callbackPath + "?code=c")
-	require.NoError(err)
+	resp = doGet(t, nil, flow.localBase+flow.callbackPath+"?code=c")
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)
 
 	noRedirect := &http.Client{
+		Timeout: 5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-	resp, err = noRedirect.Get(flow.localBase + flow.callbackPath + "?code=c&state=" + flow.state)
-	require.NoError(err)
+	resp = doGet(t, noRedirect, flow.localBase+flow.callbackPath+"?code=c&state="+flow.state)
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusFound, resp.StatusCode)
 	assert.Equal(flow.setupURL()+"?step=done", resp.Header.Get("Location"))
@@ -96,11 +89,22 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	// Once the callback consumed the flow, re-serving the manifest
 	// would let a refreshed create tab auto-submit again and register
 	// a second app nothing records.
-	resp, err = http.Get(flow.setupURL() + "flow.json")
-	require.NoError(err)
+	resp = doGet(t, nil, flow.setupURL()+"flow.json")
 	_ = resp.Body.Close()
 	assert.Equal(http.StatusNotFound, resp.StatusCode,
 		"flow.json must die once the callback consumed the flow")
+}
+
+func doGet(t *testing.T, client *http.Client, rawURL string) *http.Response {
+	t.Helper()
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, rawURL, nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	return resp
 }
 
 func TestWritePrivateKeyRejectsHostileSlugs(t *testing.T) {

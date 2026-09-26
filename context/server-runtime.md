@@ -48,6 +48,13 @@ and the root event stream.
 
 ## Startup Contracts
 
+- Hub readiness must not wait for repository discovery: restore the verified catalog
+  locally, then resolve current configuration and start sync in the background
+  (`cmd/kenn-forge/main.go::resolveStartupRepos`). Background discovery holds
+  `configReloadMu` while it replaces the tracked set, so repository add, import,
+  refresh, and delete handlers take that lock before applying their change
+  (`internal/server/config_reload.go::InitializeProviderRepositories`).
+
 - Bare `kenn-forge` is help-only, `serve` is foreground, and background
   lifecycle management is under `daemon start|status|stop|restart`
   (`cmd/kenn-forge/cli.go::newRootCommand`).
@@ -194,8 +201,14 @@ and the root event stream.
   `internal/config/config.go::Config.validate`,
   `internal/server/daemon_access.go::daemonRequestPolicy.acceptsTailscaleServeUser`).
 - `fleet setup` keeps Forge on loopback with API auth; `--tailscale` owns one
-  Serve mapping, while `--origin` leaves ingress and browser auth to the operator
+  Serve mapping, while `--origin` leaves ingress to the operator
   (`internal/fleetsetup/setup.go::configureCandidate`).
+- Tailscale Serve identity is the tokenless path for people once a fleet is
+  wired; enrollment and peer traffic keep their tokens. `--tailscale` setup
+  keeps previously allowed logins and the existing origin's HTTPS port so a
+  re-run never locks a user out or moves an enrolled origin. `--origin` never
+  enables identity mode, because only Serve is known to replace client-supplied
+  identity headers (`internal/fleetsetup/setup.go::planTailscaleLogins`).
 - Setup services run as the selected current user and have no network-vendor or
   shell dependency (`internal/fleetsetup/service.go`).
 - The daemon bearer and browser cookie remain full local-user credentials.

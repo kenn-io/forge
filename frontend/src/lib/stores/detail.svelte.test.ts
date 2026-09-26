@@ -107,7 +107,7 @@ function pullDetail(headSHA: string): PullDetail {
       provider: "github",
       platform_host: "github.com",
       repo_path: "acme/widget",
-      platform_repo_id: "widget-repo-id",
+      platform_repo_id: 1001,
     },
     events: [],
     detail_loaded: true,
@@ -167,55 +167,52 @@ describe("createDetailStore", () => {
     await loadDetail(store, "acme", "widget", 7, {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: "replacement-repo-id",
+      platformRepoId: 1002,
       sync: false,
     });
     expect(store.getDetail()).toBeNull();
   });
 
-  it.each(["replacement-repo-id", undefined])(
-    "does not restore a pull snapshot for repository %s",
-    async (platformRepoId) => {
-      const failedRead = deferred<{ error: ProblemBody }>();
-      const get = vi
-        .fn()
-        .mockResolvedValueOnce({ data: pullDetail("old-head") })
-        .mockReturnValueOnce(failedRead.promise);
-      const store = createDetailStore({ client: mockClient({ GET: get }) });
-      const options = {
-        provider: "github",
-        repoPath: "acme/widget",
-        platformRepoId: "widget-repo-id",
-        sync: false,
-      } as const;
-      await loadDetail(store, "acme", "widget", 7, options);
-      store.clearDetail();
-      store.loadDetail("acme", "widget", 7, { ...options, platformRepoId });
-      expect(store.getDetail()).toBeNull();
-      failedRead.resolve({ error: { code: ProblemCodes.forbidden, title: "Unavailable", detail: "Cannot refresh" } });
-      await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
-      expect(store.getDetail()).toBeNull();
-    },
-  );
+  it.each([1002, undefined])("does not restore a pull snapshot for repository %s", async (platformRepoId) => {
+    const failedRead = deferred<{ error: ProblemBody }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("old-head") })
+      .mockReturnValueOnce(failedRead.promise);
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const options = {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: 1001,
+      sync: false,
+    } as const;
+    await loadDetail(store, "acme", "widget", 7, options);
+    store.clearDetail();
+    store.loadDetail("acme", "widget", 7, { ...options, platformRepoId });
+    expect(store.getDetail()).toBeNull();
+    failedRead.resolve({ error: { code: ProblemCodes.forbidden, title: "Unavailable", detail: "Cannot refresh" } });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    expect(store.getDetail()).toBeNull();
+  });
 
   it("does not join an old repository read when the selected repository changes", async () => {
     const oldRead = deferred<{ data: PullDetail }>();
     const replacement = pullDetail("replacement-head");
-    replacement.repo.platform_repo_id = "replacement-repo-id";
+    replacement.repo.platform_repo_id = 1002;
     const get = vi.fn().mockReturnValueOnce(oldRead.promise).mockResolvedValue({ data: replacement });
     const store = createDetailStore({ client: mockClient({ GET: get }) });
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
       sync: false,
     } as const;
     store.loadDetail("acme", "widget", 7, options);
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
-    store.loadDetail("acme", "widget", 7, { ...options, platformRepoId: "replacement-repo-id" });
+    store.loadDetail("acme", "widget", 7, { ...options, platformRepoId: 1002 });
     oldRead.resolve({ data: pullDetail("old-head") });
     await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
-    expect(store.getDetail()?.repo.platform_repo_id).toBe("replacement-repo-id");
+    expect(store.getDetail()?.repo.platform_repo_id).toBe(1002);
   });
 
   it("restores a recently viewed pull before its fresh read and retains its original workspace tick", async () => {
@@ -229,7 +226,7 @@ describe("createDetailStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
       sync: false,
     } as const;
     await loadDetail(store, "acme", "widget", 7, options);
@@ -260,7 +257,7 @@ describe("createDetailStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
       sync: false,
     } as const;
     await loadDetail(store, "acme", "widget", 7, options);
@@ -292,7 +289,7 @@ describe("createDetailStore", () => {
       owner: "acme",
       name: "widget",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
     };
     await loadDetail(store, "acme", "widget", 7, { ...ref, sync: false });
     store.toggleDetailPRStar(ref, 7, false);
@@ -316,7 +313,7 @@ describe("createDetailStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
       sync: false,
     } as const;
     await loadDetail(store, "acme", "widget", 7, options);
@@ -344,7 +341,7 @@ describe("createDetailStore", () => {
       owner: "acme",
       name: "widget",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
     };
     await loadDetail(store, "acme", "widget", 7, { ...ref, sync: false });
     store.setLocalPRBody("github", "github.com", "acme", "widget", 7, "local edit");
@@ -466,7 +463,7 @@ describe("createDetailStore", () => {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
       sync: false as const,
     };
     const incomplete = { ...pullDetail("head"), detail_loaded: false };
@@ -507,7 +504,7 @@ describe("createDetailStore", () => {
         sync: false as const,
       };
       const replacement = pullDetail("head");
-      replacement.repo.platform_repo_id = "replacement-repo-id";
+      replacement.repo.platform_repo_id = 1002;
       replacement.detail_loaded = false;
       const get = vi
         .fn()
@@ -539,7 +536,7 @@ describe("createDetailStore", () => {
     });
     await loadDetail(store, "acme", "widget", 7, {
       ...routeIdentity,
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
       sync: false,
     });
     const displayed = store.getDetail();
@@ -1905,7 +1902,7 @@ describe("createDetailStore", () => {
       const initial = pullDetail("head");
       const refreshed = pullDetail("head");
       refreshed.merge_request.Body = "provider body";
-      if (repository === "replacement") refreshed.repo.platform_repo_id = "replacement-repo-id";
+      if (repository === "replacement") refreshed.repo.platform_repo_id = 1002;
       const saving = Promise.withResolvers<{ error: { detail: string } }>();
       const patch = vi.fn(() => saving.promise);
       const get = vi.fn().mockResolvedValueOnce({ data: initial }).mockResolvedValue({ data: refreshed });

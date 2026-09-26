@@ -92,8 +92,8 @@ func (s *Server) startDetailSyncJob(key string, job detailSyncJob) bool {
 		}()
 
 		err := job.fn(ctx)
-		var diffErr *ghclient.DiffSyncError
-		if err != nil && !errors.As(err, &diffErr) {
+		diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
+		if err != nil && !isDiffErr {
 			slog.Warn("background detail sync failed", append(job.attrs, "err", err)...)
 			return
 		}

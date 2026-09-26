@@ -1,7 +1,6 @@
 package gitea
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +8,7 @@ import (
 
 	giteasdk "code.gitea.io/sdk/gitea"
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/gitealike"
 )
@@ -48,7 +47,7 @@ func TestClientReviewThreadCapabilitiesUseValidatedVersionFloor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
-			require := Require.New(t)
+			require := require.New(t)
 			server := httptest.NewServer(http.NotFoundHandler())
 			defer server.Close()
 			client, err := NewClient(
@@ -73,7 +72,7 @@ func TestClientReviewThreadCapabilitiesUseValidatedVersionFloor(t *testing.T) {
 
 func TestClientDiscoversVersionOnlyOnExplicitRead(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	versionRequested := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal("/api/v1/version", r.URL.Path)
@@ -104,13 +103,13 @@ func TestClientDefaultsToHTTPSForConfiguredHost(t *testing.T) {
 		"gitea.test:3000",
 		testTokenSource("token"),
 		WithServerVersion(testGiteaServerVersion), WithTransport(http.DefaultTransport))
-	Require.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "https://gitea.test:3000", client.baseURL)
 }
 
 func TestClientUsesExplicitHTTPBaseURLAndScopesTokenToItsOrigin(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var apiAuthorization string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiAuthorization = r.Header.Get("Authorization")
@@ -143,7 +142,16 @@ func TestClientUsesExplicitHTTPBaseURLAndScopesTokenToItsOrigin(t *testing.T) {
 	assert.Equal("http://gitea.test/owner/repo.git", repo.CloneURL)
 	assert.Equal("token gitea-token", apiAuthorization)
 
-	_, err = client.transport.httpClient.Get(offOrigin.URL)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, offOrigin.URL, nil)
+	require.NoError(err)
+	resp, err := client.transport.httpClient.Do(req)
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.Error(err)
 	assert.Contains(err.Error(), "refusing to attach auth")
 	assert.Empty(offOriginAuthorization)
@@ -169,7 +177,7 @@ func TestClientRejectsUnsafeExplicitBaseURL(t *testing.T) {
 				"gitea.test", testTokenSource("token"),
 				WithBaseURL(tt.baseURL, tt.allowInsecure),
 				WithServerVersion(testGiteaServerVersion), WithTransport(http.DefaultTransport))
-			Require.Error(t, err)
+			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.want)
 		})
 	}
@@ -199,13 +207,13 @@ func TestClientRejectsIncompatibleAdvertisedCloneTransport(t *testing.T) {
 			client, err := NewClient(
 				"gitea.test", testTokenSource("token"),
 				WithServerVersion(testGiteaServerVersion), WithTransport(http.DefaultTransport))
-			Require.NoError(t, err)
+			require.NoError(t, err)
 			client.allowInsecureHTTP = tt.allowInsecure
 			err = client.validateRepositoryCloneURL(platform.Repository{
 				Ref:      platform.RepoRef{Owner: "owner", Name: "repo"},
 				CloneURL: tt.cloneURL,
 			})
-			Require.Error(t, err)
+			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.want)
 		})
 	}
@@ -213,7 +221,7 @@ func TestClientRejectsIncompatibleAdvertisedCloneTransport(t *testing.T) {
 
 func TestClientReadsGiteaActionsChecks(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 
 	var sawStatuses, sawActions bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -245,7 +253,7 @@ func TestClientReadsGiteaActionsChecks(t *testing.T) {
 		"gitea.test", testTokenSource("gitea-token"),
 		WithBaseURL(server.URL, true), WithServerVersion(testGiteaServerVersion), WithTransport(http.DefaultTransport))
 	require.NoError(err)
-	checks, err := client.ListCIChecks(context.Background(), platform.RepoRef{Owner: "owner", Name: "repo"}, "abc")
+	checks, err := client.ListCIChecks(t.Context(), platform.RepoRef{Owner: "owner", Name: "repo"}, "abc")
 	require.NoError(err)
 
 	assert.True(sawStatuses)
@@ -255,7 +263,7 @@ func TestClientReadsGiteaActionsChecks(t *testing.T) {
 
 func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal("token gitea-token", r.Header.Get("Authorization"))
@@ -303,7 +311,7 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 	require.NoError(err)
 	ref := platform.RepoRef{Host: "gitea.test", Owner: "owner", Name: "repo", RepoPath: "owner/repo"}
 
-	mrEvents, err := client.ListMergeRequestEvents(context.Background(), ref, 3)
+	mrEvents, err := client.ListMergeRequestEvents(t.Context(), ref, 3)
 	require.NoError(err)
 	require.Len(mrEvents, 4)
 	assert.Equal("issue_comment", mrEvents[0].EventType)
@@ -316,7 +324,7 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 	assert.JSONEq(`{"previous_title":"Old title","current_title":"New title"}`, mrEvents[2].MetadataJSON)
 	assert.Equal("cross_referenced", mrEvents[3].EventType)
 
-	issueEvents, err := client.ListIssueEvents(context.Background(), ref, 3)
+	issueEvents, err := client.ListIssueEvents(t.Context(), ref, 3)
 	require.NoError(err)
 	require.Len(issueEvents, 4)
 	assert.Equal("issue_comment", issueEvents[0].EventType)
@@ -342,7 +350,7 @@ func TestClientReadsTimelineAssignmentAndTitleEvents(t *testing.T) {
 
 func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -376,7 +384,7 @@ func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {
 	)
 
 	checks, err := provider.ListCIChecks(
-		context.Background(),
+		t.Context(),
 		platform.RepoRef{Owner: "owner", Name: "repo"},
 		"abc",
 	)
@@ -388,7 +396,7 @@ func TestClientFallsBackToStatusesWhenActionsRequireNewerGitea(t *testing.T) {
 
 func TestClientRequestChangesSubmitsReview(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodPost, r.Method)
 		assert.Equal("/api/v1/repos/owner/repo/pulls/7/reviews", r.URL.Path)
@@ -415,7 +423,7 @@ func TestClientRequestChangesSubmitsReview(t *testing.T) {
 	client, err := NewClient("gitea.test", testTokenSource("gitea-token"), WithBaseURL(server.URL, true), WithServerVersion(testGiteaServerVersion), WithTransport(http.DefaultTransport))
 	require.NoError(err)
 	require.NoError(client.RequestChanges(
-		context.Background(), platform.RepoRef{Owner: "owner", Name: "repo"},
+		t.Context(), platform.RepoRef{Owner: "owner", Name: "repo"},
 		7, "needs work", "reviewed-head",
 	))
 }

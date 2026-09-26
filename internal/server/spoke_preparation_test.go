@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,13 +16,16 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
@@ -162,7 +166,7 @@ base_url = "https://hub.example"
 		FederationHTTPClient: &http.Client{Transport: roundTripFunc(func(
 			*http.Request,
 		) (*http.Response, error) {
-			return nil, fmt.Errorf("hub offline")
+			return nil, errors.New("hub offline")
 		})},
 		HostCheckAllowLoopbackAnyPort: true,
 	})
@@ -274,7 +278,7 @@ func TestPrepareFederationSpokeSealsAndPersistsRoleThroughDaemon(t *testing.T) {
 	spokeMRID := seedPR(t, spokeDB, "acme", "widget", 7)
 	seedPR(t, hubDB, "acme", "widget", 7)
 	seedPR(t, hubDB, "acme", "project-only", 8)
-	projectRepoID, err := spokeDB.UpsertRepo(t.Context(), db.RepoIdentity{
+	projectRepoID, err := reposeed.Seed(t.Context(), spokeDB, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
 		Owner: "acme", Name: "project-only",
 	})
@@ -372,9 +376,11 @@ base_url = %q
 	require.Equal(http.StatusOK, status)
 	assert.True(retry.ReadyToActivate)
 	assert.Equal(first.PreparationSeal, retry.PreparationSeal)
+	// spokeConfig is the same pointer the config watcher rewrites.
 	spoke.cfgMu.Lock()
-	assert.Equal(config.FleetRoleSpoke, spokeConfig.Fleet.Role)
+	role := spoke.cfg.Fleet.Role
 	spoke.cfgMu.Unlock()
+	assert.Equal(config.FleetRoleSpoke, role)
 }
 
 func TestPersistPreparedSpokeRoleKeepsSealAndMembershipGuards(t *testing.T) {
@@ -518,7 +524,7 @@ func TestSpokePreparationRejectsFilesystemLaunchSpecBeforePersistence(t *testing
 	spec := db.WorkspaceLaunchSpec{
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 			Owner: "acme", Name: "widget", CloneURL: "file:///tmp/acme/widget.git",
 			DefaultBranch: "main",
 		},
@@ -563,7 +569,7 @@ func TestSpokePreparationRequiresCredentialBeforePersistingLaunchSpec(t *testing
 	spec := db.WorkspaceLaunchSpec{
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 			Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
 			DefaultBranch: "main",
 		},
@@ -608,7 +614,7 @@ func TestSpokePreparationRequiresForkCredentialBeforePersistingLaunchSpec(t *tes
 	spec := db.WorkspaceLaunchSpec{
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 			Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
 			DefaultBranch: "main",
 		},
@@ -660,7 +666,7 @@ func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) {
 	current := db.WorkspaceLaunchSpec{
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 			Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
 			DefaultBranch: "main",
 		},
@@ -682,15 +688,14 @@ func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) {
 	refreshed.Repository.CloneURL = "https://github.com/acme-renamed/widget-renamed.git"
 	refreshed.IssuedAt = now
 	refreshed.SourceVisibleUntil = now.Add(db.WorkspaceLaunchSpecVisibilityLease)
-	_, accepted, err := database.ReconcileRepositoryObservation(
+	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
 			PlatformRepoID: refreshed.Repository.PlatformRepoID,
 			Owner:          refreshed.Repository.Owner, Name: refreshed.Repository.Name,
-		}, time.Now().UTC().Add(time.Second),
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 	encoded, err := json.Marshal(refreshed)
 	require.NoError(err)
 	client := providerPlaneClientFunc(func(

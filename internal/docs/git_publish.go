@@ -290,7 +290,7 @@ type CommitFailedError struct {
 }
 
 func (e *CommitFailedError) Error() string {
-	return fmt.Sprintf("git commit failed: %s", e.Stderr)
+	return "git commit failed: " + e.Stderr
 }
 
 type PushFailedAfterCommitError struct {
@@ -363,14 +363,14 @@ func (r *Registry) GitPublish(ctx context.Context, folderID, message string) (Pu
 	if err != nil || upstream == "" {
 		return PublishResponse{}, &NoUpstreamError{
 			Branch:           branch,
-			SuggestedCommand: fmt.Sprintf("git push -u origin %s", branch),
+			SuggestedCommand: "git push -u origin " + branch,
 		}
 	}
 	upstreamRemote, upstreamMergeRef, err := r.currentUpstreamPushTarget(ctx, v.Path, branch)
 	if err != nil || upstreamRemote == "" || upstreamMergeRef == "" {
 		return PublishResponse{}, &NoUpstreamError{
 			Branch:           branch,
-			SuggestedCommand: fmt.Sprintf("git push -u origin %s", branch),
+			SuggestedCommand: "git push -u origin " + branch,
 		}
 	}
 	// Validate where the push will land before staging or committing, so

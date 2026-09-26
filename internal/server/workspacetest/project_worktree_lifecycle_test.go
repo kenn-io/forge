@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
@@ -20,7 +20,7 @@ import (
 func lifecycleRouteGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
-	Require.NoError(t, err, "git %v: %s", args, stderr)
+	require.NoError(t, err, "git %v: %s", args, stderr)
 	return strings.TrimSpace(string(out))
 }
 
@@ -31,13 +31,13 @@ func decodeProblemCode(t *testing.T, resp *http.Response) string {
 	var problem struct {
 		Code string `json:"code"`
 	}
-	Require.NoError(t, json.NewDecoder(resp.Body).Decode(&problem))
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&problem))
 	return problem.Code
 }
 
 func TestWorktreeCreateOnDiskRoute(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -53,6 +53,11 @@ func TestWorktreeCreateOnDiskRoute(t *testing.T) {
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		ID     string `json:"id"`
@@ -84,7 +89,7 @@ func TestWorktreeCreateOnDiskRoute(t *testing.T) {
 // attaching a branch that is already checked out (the primary checkout).
 func TestWorktreeCreateOnDiskBranchInUse(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -114,7 +119,7 @@ func TestWorktreeCreateOnDiskBranchInUse(t *testing.T) {
 // is rolled back so nothing is registered and a retry is possible.
 func TestWorktreeCreateOnDiskHookFailure(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -137,6 +142,11 @@ func TestWorktreeCreateOnDiskHookFailure(t *testing.T) {
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusUnprocessableEntity, resp.StatusCode)
 	var problem struct {
 		Code    string `json:"code"`
@@ -163,7 +173,7 @@ func TestWorktreeCreateOnDiskHookFailure(t *testing.T) {
 // the git work back so the conflicting state is not made worse.
 func TestWorktreeCreateOnDiskRollsBackWhenRowConflicts(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -202,7 +212,7 @@ func TestWorktreeCreateOnDiskRollsBackWhenRowConflicts(t *testing.T) {
 // directory removed, branch deleted, registry row dropped.
 func TestWorktreeDeleteFromDiskRoute(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -218,6 +228,11 @@ func TestWorktreeDeleteFromDiskRoute(t *testing.T) {
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		ID   string `json:"id"`
@@ -253,7 +268,7 @@ func TestWorktreeDeleteFromDiskRoute(t *testing.T) {
 // kept (registry row and disk both intact) unless force is set.
 func TestWorktreeDeleteFromDiskRefusesDirtyWithoutForce(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -269,6 +284,11 @@ func TestWorktreeDeleteFromDiskRefusesDirtyWithoutForce(t *testing.T) {
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		ID   string `json:"id"`
@@ -313,7 +333,7 @@ func TestWorktreeDeleteFromDiskRefusesDirtyWithoutForce(t *testing.T) {
 // project's default branch is protected from disk-removing deletes.
 func TestWorktreeDeleteFromDiskRefusesDefaultBranch(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -326,6 +346,11 @@ func TestWorktreeDeleteFromDiskRefusesDefaultBranch(t *testing.T) {
 		"default_branch": "main",
 	})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", registerBody)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var project struct {
 		ID string `json:"id"`
@@ -356,7 +381,7 @@ func TestWorktreeDeleteFromDiskRefusesDefaultBranch(t *testing.T) {
 // the worktree before removal; its failure aborts the delete entirely.
 func TestWorktreeDeleteFromDiskRunsTeardownHook(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -378,6 +403,11 @@ func TestWorktreeDeleteFromDiskRunsTeardownHook(t *testing.T) {
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		ID string `json:"id"`
@@ -404,7 +434,7 @@ func TestWorktreeDeleteFromDiskRunsTeardownHook(t *testing.T) {
 // keeps both the disk worktree and the registry row.
 func TestWorktreeDeleteFromDiskAbortsOnTeardownFailure(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -424,6 +454,11 @@ func TestWorktreeDeleteFromDiskAbortsOnTeardownFailure(t *testing.T) {
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		ID   string `json:"id"`
@@ -455,7 +490,7 @@ func TestWorktreeDeleteFromDiskAbortsOnTeardownFailure(t *testing.T) {
 // registry-only contract: path is required and no git work happens.
 func TestWorktreeRegisterWithoutCreateOnDiskUnchanged(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 
 	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
@@ -488,7 +523,7 @@ func TestWorktreeRegisterWithoutCreateOnDiskUnchanged(t *testing.T) {
 // satisfies (and must satisfy) the same contract.
 func TestWorktreeCreateOnDiskSameBranchConcurrent(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
@@ -519,7 +554,7 @@ func TestWorktreeCreateOnDiskSameBranchConcurrent(t *testing.T) {
 		go func() {
 			ready.Done()
 			<-start
-			req, err := http.NewRequest(http.MethodPost,
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
 				ts.URL+"/api/v1/projects/"+projectID+"/worktrees",
 				bytes.NewReader(body))
 			if err != nil {

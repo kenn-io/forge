@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -56,7 +57,7 @@ func TestBasePathAPIRouting(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
 			srv := setupWithBasePath(t, tt.basePath, frontend)
-			req := httptest.NewRequest(http.MethodGet, tt.reqPath, nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.reqPath, nil)
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
 
@@ -76,7 +77,7 @@ func TestBasePathInjectsScript(t *testing.T) {
 	}
 
 	srv := setupWithBasePath(t, "/kenn-forge/", frontend)
-	req := httptest.NewRequest(http.MethodGet, "/kenn-forge/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -92,7 +93,7 @@ func TestBasePathRewritesAssetURLs(t *testing.T) {
 	}
 
 	srv := setupWithBasePath(t, "/kenn-forge/", frontend)
-	req := httptest.NewRequest(http.MethodGet, "/kenn-forge/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -107,7 +108,7 @@ func TestCrossOriginProtectionRejectsCrossSite(t *testing.T) {
 	srv := setupWithBasePath(t, "/", nil)
 
 	body := strings.NewReader(`{"body":"test"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", body)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/sync", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	rr := httptest.NewRecorder()
@@ -119,7 +120,7 @@ func TestCrossOriginProtectionRejectsCrossSite(t *testing.T) {
 func TestCrossOriginProtectionAllowsSameOrigin(t *testing.T) {
 	srv := setupWithBasePath(t, "/", nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/sync", nil)
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -132,7 +133,7 @@ func TestCrossOriginProtectionAllowsNativeClient(t *testing.T) {
 	srv := setupWithBasePath(t, "/", nil)
 
 	// Native clients do not send browser origin metadata.
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/sync", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -143,7 +144,7 @@ func TestCrossOriginProtectionAppliesUnderBasePath(t *testing.T) {
 	srv := setupWithBasePath(t, "/kenn-forge/", nil)
 
 	body := strings.NewReader(`{"body":"test"}`)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/kenn-forge/api/v1/sync", body,
 	)
@@ -165,14 +166,14 @@ func TestBasePathDocsAndOpenAPIUsePrefixedURLs(t *testing.T) {
 
 	srv := setupWithBasePath(t, "/kenn-forge/", frontend)
 
-	docsReq := httptest.NewRequest(http.MethodGet, "/kenn-forge/api/v1/docs", nil)
+	docsReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/api/v1/docs", nil)
 	docsRR := httptest.NewRecorder()
 	srv.ServeHTTP(docsRR, docsReq)
 
 	require.Equal(t, http.StatusOK, docsRR.Code, docsRR.Body.String())
 	assert.Contains(docsRR.Body.String(), `apiDescriptionUrl="/kenn-forge/api/v1/openapi.yaml"`)
 
-	openAPIReq := httptest.NewRequest(http.MethodGet, "/kenn-forge/api/v1/openapi.json", nil)
+	openAPIReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/api/v1/openapi.json", nil)
 	openAPIRR := httptest.NewRecorder()
 	srv.ServeHTTP(openAPIRR, openAPIReq)
 

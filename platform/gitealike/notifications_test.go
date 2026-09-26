@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
@@ -15,7 +15,7 @@ func TestNotificationStubsReturnUnsupportedCapability(t *testing.T) {
 	provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{}, WithReadActions())
 
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	caps := provider.Capabilities()
 	assert.False(caps.ReadNotifications)
 	assert.False(caps.NotificationMutation)

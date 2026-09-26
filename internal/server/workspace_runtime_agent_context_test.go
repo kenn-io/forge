@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,6 +21,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -127,7 +127,7 @@ func TestWorkspaceRuntimeLaunchWritesAgentContextE2E(t *testing.T) {
 		Tmux:   config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	assert.NoFileExists(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
@@ -174,7 +174,7 @@ func TestWorkspaceRuntimeLaunchRejectsUnsafeRepositoryAgentInstructionsE2E(t *te
 				Tmux:   config.Tmux{Command: []string{tmuxPath}},
 			}
 			client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-			ctx := context.Background()
+			ctx := t.Context()
 			ws := createReadyWorkspace(t, ctx, client)
 			agentsPath := filepath.Join(ws.WorktreePath, "AGENTS.md")
 			switch tt.entry {
@@ -261,7 +261,7 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 
 	launch := func(workspaceID string) {
 		t.Helper()
-		req := httptest.NewRequest(
+		req := httptest.NewRequestWithContext(t.Context(),
 			http.MethodPost,
 			"/api/v1/workspaces/"+workspaceID+"/runtime/sessions",
 			bytes.NewBufferString(`{"target_key":"codex"}`),
@@ -305,7 +305,7 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 
 func seedServerWorkspaceRepo(t *testing.T, d *db.DB) int64 {
 	t.Helper()
-	repoID, err := d.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 	seedRepoLaunchMetadata(t, d, repoID)
 	return repoID

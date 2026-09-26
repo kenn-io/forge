@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
+
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
@@ -30,22 +32,21 @@ import (
 )
 
 type gitLabContainerManifest struct {
-	BaseURL           string `json:"base_url"`
-	APIURL            string `json:"api_url"`
-	Host              string `json:"host"`
-	Token             string `json:"token"`
-	Owner             string `json:"owner"`
-	Name              string `json:"name"`
-	RepoPath          string `json:"repo_path"`
-	WebURL            string `json:"web_url"`
-	CloneURL          string `json:"clone_url"`
-	DefaultBranch     string `json:"default_branch"`
-	ProjectID         int64  `json:"project_id"`
-	ProjectExternalID string `json:"project_external_id"`
-	MergeRequestIID   int    `json:"merge_request_iid"`
-	IssueIID          int    `json:"issue_iid"`
-	Label             string `json:"label"`
-	ReleaseTag        string `json:"release_tag"`
+	BaseURL         string `json:"base_url"`
+	APIURL          string `json:"api_url"`
+	Host            string `json:"host"`
+	Token           string `json:"token"`
+	Owner           string `json:"owner"`
+	Name            string `json:"name"`
+	RepoPath        string `json:"repo_path"`
+	WebURL          string `json:"web_url"`
+	CloneURL        string `json:"clone_url"`
+	DefaultBranch   string `json:"default_branch"`
+	ProjectID       int64  `json:"project_id"`
+	MergeRequestIID int    `json:"merge_request_iid"`
+	IssueIID        int    `json:"issue_iid"`
+	Label           string `json:"label"`
+	ReleaseTag      string `json:"release_tag"`
 }
 
 func TestGitLabContainerE2E(t *testing.T) {
@@ -181,16 +182,15 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	database := dbtest.Open(t)
 	repo := ghclient.RepoRef{
-		Platform:           platform.KindGitLab,
-		PlatformHost:       manifest.Host,
-		Owner:              manifest.Owner,
-		Name:               manifest.Name,
-		RepoPath:           manifest.RepoPath,
-		PlatformRepoID:     manifest.ProjectID,
-		PlatformExternalID: manifest.ProjectExternalID,
-		WebURL:             manifest.WebURL,
-		CloneURL:           manifest.CloneURL,
-		DefaultBranch:      manifest.DefaultBranch,
+		Platform:       platform.KindGitLab,
+		PlatformHost:   manifest.Host,
+		Owner:          manifest.Owner,
+		Name:           manifest.Name,
+		RepoPath:       manifest.RepoPath,
+		PlatformRepoID: manifest.ProjectID,
+		WebURL:         manifest.WebURL,
+		CloneURL:       manifest.CloneURL,
+		DefaultBranch:  manifest.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -204,7 +204,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	repoRow, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   manifest.Host,
-		PlatformRepoID: manifest.ProjectExternalID,
+		PlatformRepoID: manifest.ProjectID,
 		Owner:          manifest.Owner,
 		Name:           manifest.Name,
 		RepoPath:       manifest.RepoPath,
@@ -638,12 +638,12 @@ func envOrDefault(key, fallback string) string {
 
 func freeLoopbackPort(t *testing.T) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 	addr, ok := listener.Addr().(*net.TCPAddr)
 	require.True(t, ok)
-	return fmt.Sprint(addr.Port)
+	return strconv.Itoa(addr.Port)
 }
 
 func repoRoot(t *testing.T) string {

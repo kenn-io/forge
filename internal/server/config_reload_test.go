@@ -20,6 +20,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -28,6 +29,7 @@ import (
 	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
@@ -109,6 +111,11 @@ func streamConfigEvents(t *testing.T, srv *Server) *configEventStream {
 
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 
 	stream := &configEventStream{
 		resp:   resp,
@@ -662,7 +669,11 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	assert.Equal(wantRegistryRoot, gotRegistryFolders[0].Path)
 	httpServer := httptest.NewServer(srv)
 	t.Cleanup(httpServer.Close)
-	listResponse, err := httpServer.Client().Get(httpServer.URL + "/api/v1/docs/folders")
+	listResponseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, httpServer.URL+"/api/v1/docs/folders", nil)
+	require.NoError(err)
+	httpClient := httpServer.Client()
+	httpClient.Timeout = 5 * time.Second
+	listResponse, err := httpClient.Do(listResponseReq)
 	require.NoError(err)
 	t.Cleanup(func() { listResponse.Body.Close() })
 	require.Equal(http.StatusOK, listResponse.StatusCode)
@@ -673,7 +684,11 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	assert.Equal("handbook", listBody.Folders[0].ID)
 	assert.Equal("Handbook", listBody.Folders[0].Name)
 
-	updatedReadResponse, err := httpServer.Client().Get(httpServer.URL + "/api/v1/docs/folders/handbook/file?path=guide.md")
+	updatedReadResponseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, httpServer.URL+"/api/v1/docs/folders/handbook/file?path=guide.md", nil)
+	require.NoError(err)
+	httpClient = httpServer.Client()
+	httpClient.Timeout = 5 * time.Second
+	updatedReadResponse, err := httpClient.Do(updatedReadResponseReq)
 	require.NoError(err)
 	t.Cleanup(func() { updatedReadResponse.Body.Close() })
 	require.Equal(http.StatusOK, updatedReadResponse.StatusCode)
@@ -681,7 +696,11 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 	require.NoError(json.NewDecoder(updatedReadResponse.Body).Decode(&readBody))
 	assert.Equal("# Guide\n", readBody.Content)
 
-	oldReadResponse, err := httpServer.Client().Get(httpServer.URL + "/api/v1/docs/folders/notes/file?path=old.md")
+	oldReadResponseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, httpServer.URL+"/api/v1/docs/folders/notes/file?path=old.md", nil)
+	require.NoError(err)
+	httpClient = httpServer.Client()
+	httpClient.Timeout = 5 * time.Second
+	oldReadResponse, err := httpClient.Do(oldReadResponseReq)
 	require.NoError(err)
 	t.Cleanup(func() { oldReadResponse.Body.Close() })
 	assert.Equal(http.StatusNotFound, oldReadResponse.StatusCode)
@@ -715,7 +734,7 @@ func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		<-start
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/docs/folders", mutationBody)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/docs/folders", mutationBody)
 		setAcceptedHostForServerTest(req, srv)
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Content-Type", "application/json")
@@ -964,9 +983,17 @@ token_env = "KENN_FORGE_MISSING_REPO_TOKEN"
 func TestConfigReload_AirplaneModeOmitsUnresolvedPinnedRepository(t *testing.T) {
 	require := require.New(t)
 	initialConfig := "airplane_mode = true\n" + validReloadConfig +
-		"platform_repo_id = \"repo-acme-widget\"\n"
+		"platform_repo_id = 1001\n"
+	mock := &mockGH{getRepositoryFn: func(
+		_ context.Context, owner, name string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			ID: new(int64(1001)), Name: new(name), Owner: &gh.User{Login: new(owner)},
+			Archived: new(false),
+		}, nil
+	}}
 	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
-		t, initialConfig, &mockGH{}, ServerOptions{
+		t, initialConfig, mock, ServerOptions{
 			HostCheckAllowLoopbackAnyPort:      true,
 			WorktreeDir:                        t.TempDir(),
 			DisableWorkspaceBackgroundMonitors: true,
@@ -974,7 +1001,7 @@ func TestConfigReload_AirplaneModeOmitsUnresolvedPinnedRepository(t *testing.T) 
 	)
 	previous := srv.syncer.TrackedRepos()
 	require.Len(previous, 1)
-	require.Equal("repo-acme-widget", previous[0].PlatformExternalID)
+	require.Equal(int64(1001), previous[0].PlatformRepoID)
 	previous[0].Name = "widget-next"
 	previous[0].RepoPath = "acme/widget-next"
 	previous[0].ConfiguredRepoPath = ""
@@ -987,7 +1014,7 @@ func TestConfigReload_AirplaneModeOmitsUnresolvedPinnedRepository(t *testing.T) 
 [[repos]]
 owner = "acme"
 name = "replacement"
-platform_repo_id = "R_pinned"
+platform_repo_id = 1002
 `)
 	event := waitForConfigEvent(t, stream, 2*time.Second)
 	require.True(event.Valid, event.Error)
@@ -995,7 +1022,7 @@ platform_repo_id = "R_pinned"
 	configured := slices.Clone(srv.cfg.Repos)
 	srv.cfgMu.Unlock()
 	require.Len(configured, 2)
-	require.Equal("R_pinned", configured[1].PlatformRepoID)
+	require.Equal(int64(1002), configured[1].PlatformRepoID)
 	previous[0].ConfiguredRepoPath = "acme/widget"
 	assert.Equal(t, previous, srv.syncer.TrackedRepos(),
 		"keep the verified repository without adopting the unresolved pinned route")
@@ -1026,7 +1053,7 @@ platform = "gitlab"
 platform_host = "gitlab.example.com"
 owner = "acme"
 name = "backend"
-platform_repo_id = "gid://gitlab/Project/42"
+platform_repo_id = 42
 
 [[repos]]
 platform = "gitlab"
@@ -1047,7 +1074,7 @@ name = "service-*"
 		{
 			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
 			Owner: "acme", Name: "backend", RepoPath: "acme/backend",
-			PlatformExternalID: "gid://gitlab/Project/42",
+			PlatformRepoID: 42,
 		},
 		{
 			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
@@ -1058,7 +1085,7 @@ name = "service-*"
 	for i, repo := range startupFallbacks {
 		seedVerifiedRepo(t, database, db.RepoIdentity{
 			Platform: string(repo.Platform), PlatformHost: repo.PlatformHost,
-			PlatformRepoID: fmt.Sprintf("gid://gitlab/Project/%d", 42+i),
+			PlatformRepoID: int64(42 + i),
 			Owner:          repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
 		})
 	}
@@ -1857,7 +1884,7 @@ command = ["/bin/echo"]
 	// from future launches while the boot descriptor remains active.
 	assert.True(ev.RestartRequired)
 
-	_, err := srv.runtime.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	_, err := srv.runtime.Launch(t.Context(), "ws-1", t.TempDir(), "helper")
 	require.NoError(err)
 	assert.Contains(owner.startedStripEnvVars, "KENN_FORGE_REPO_OLD_TOKEN")
 	assert.Contains(owner.startedStripEnvVars, "KENN_FORGE_REPO_NEW_TOKEN")
@@ -1976,7 +2003,7 @@ func TestConfigReload_ResolvedArchivedStateReplacesFallbackDuplicate(t *testing.
 				_ context.Context, owner string,
 			) ([]*gh.Repository, error) {
 				return []*gh.Repository{{
-					NodeID:   new("repo-acme-widget"),
+					ID:       new(testutil.FixtureRepoID("acme", "widget")),
 					Name:     new("widget"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(true),
@@ -1992,9 +2019,9 @@ func TestConfigReload_ResolvedArchivedStateReplacesFallbackDuplicate(t *testing.
 			},
 		},
 	)
-	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	waitForConfigWatcher(t, srv, 2*time.Second)
@@ -2046,7 +2073,7 @@ func TestConfigReload_FallbackKeepsRenamedArchivedTrackedRepo(t *testing.T) {
 		Name:               "widget-next",
 		PlatformHost:       "github.com",
 		RepoPath:           "acme/widget-next",
-		PlatformExternalID: "repo-acme-widget",
+		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
 		ConfiguredRepoPath: "acme/widget",
 		Archived:           true,
 	}})
@@ -2081,7 +2108,7 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 				return nil, errors.New("temporary repo lookup failure")
 			}
 			return &gh.Repository{
-				NodeID:   new("repo-x"),
+				ID:       new(int64(1001)),
 				Name:     new(repo),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(false),
@@ -2092,7 +2119,7 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 		) ([]*gh.Repository, error) {
 			if !renamed.Load() {
 				return []*gh.Repository{{
-					NodeID:   new("repo-x"),
+					ID:       new(int64(1001)),
 					Name:     new("widget"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -2100,13 +2127,13 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 			}
 			return []*gh.Repository{
 				{
-					NodeID:   new("repo-x"),
+					ID:       new(int64(1001)),
 					Name:     new("widget-next"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
 				{
-					NodeID:   new("repo-y"),
+					ID:       new(int64(1002)),
 					Name:     new("widget"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -2140,11 +2167,11 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 	for _, repo := range tracked {
 		byName[repo.Name] = repo
 	}
-	assert.Equal("repo-x", byName["widget-next"].PlatformExternalID)
+	assert.Equal(int64(1001), byName["widget-next"].PlatformRepoID)
 	assert.Equal("acme/widget", byName["widget-next"].ConfiguredRepoPath,
 		"the renamed repo keeps the exact entry's provenance through the"+
 			" API refresh and the failed reload")
-	assert.Equal("repo-y", byName["widget"].PlatformExternalID)
+	assert.Equal(int64(1002), byName["widget"].PlatformRepoID)
 	assert.Empty(byName["widget"].ConfiguredRepoPath,
 		"the route successor must not claim the exact entry")
 }
@@ -2203,7 +2230,7 @@ func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {
 			content = validReloadConfigChangedActivity
 		}
 		writeConfigToml(t, cfgPath, content)
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 	}
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
@@ -2396,10 +2423,8 @@ base_url = "https://replacement-hub.example"
 	event := srv.applyConfigChange(t.Context())
 	require.True(event.Valid, event.Error)
 	require.True(event.RestartRequired)
-	require.Equal(
-		config.FleetRoleHub,
-		srv.activeFleetConfigSnapshotLocked().Fleet.RoleOrDefault(),
-	)
+	fleetCfg := srv.activeFleetConfigSnapshotLocked().Fleet
+	require.Equal(config.FleetRoleHub, fleetCfg.RoleOrDefault())
 
 	member := config.FleetMember{
 		NodeID:  "22222222222222222222222222222222",
@@ -2914,4 +2939,69 @@ name = "widget"
 	require.False(event.Valid, "terminal-variable token names must be rejected")
 	assert.NotContains(srv.workspaces.TmuxStripEnvVars(), "TMUX_TMPDIR",
 		"rejected collisions must never enter the strip sets")
+}
+
+func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.InitializeProviderRepositories(t.Context(), func(ctx context.Context, cfg *config.Config) []ghclient.RepoRef {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "discovered", PlatformRepoID: 12345}}
+		})
+	}()
+	<-entered
+	response := httptest.NewRecorder()
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1:8091/healthz", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
+	srv.ServeHTTP(response, request)
+	assert.Equal(t, http.StatusOK, response.Code)
+	close(release)
+	require.NoError(<-done)
+	repos := srv.syncer.TrackedRepos()
+	require.Len(repos, 1)
+	require.Equal(int64(12345), repos[0].PlatformRepoID)
+}
+
+func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.InitializeProviderRepositories(t.Context(), func(ctx context.Context, cfg *config.Config) []ghclient.RepoRef {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget", PlatformRepoID: 12345}}
+		})
+	}()
+	<-entered
+	added := make(chan int, 1)
+	go func() {
+		rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+			"provider": "github", "host": "github.com", "owner": "other-org", "name": "other-repo",
+		})
+		added <- rr.Code
+	}()
+	require.Never(func() bool { return len(added) > 0 }, time.Second, 10*time.Millisecond,
+		"an add must wait for discovery instead of being overwritten by its stale snapshot")
+	close(release)
+	require.NoError(<-done)
+	require.Equal(http.StatusCreated, <-added)
+	var names []string
+	for _, repo := range srv.syncer.TrackedRepos() {
+		names = append(names, repo.Owner+"/"+repo.Name)
+	}
+	require.ElementsMatch([]string{"acme/widget", "other-org/other-repo"}, names)
 }

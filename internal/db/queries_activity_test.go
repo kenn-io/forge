@@ -27,30 +27,40 @@ func TestListActivity(t *testing.T) {
 		t, d, repoA, 10, "Crash on startup", base.Add(2*time.Minute))
 
 	err := d.UpsertMREvents(ctx, []MREvent{
-		{MergeRequestID: prID1, EventType: "issue_comment", Author: "carol",
+		{
+			MergeRequestID: prID1, EventType: "issue_comment", Author: "carol",
 			Body:      "Looks good to me",
 			CreatedAt: base.Add(3 * time.Minute),
-			DedupeKey: "comment-1"},
-		{MergeRequestID: prID2, EventType: "review", Author: "dave",
+			DedupeKey: "comment-1",
+		},
+		{
+			MergeRequestID: prID2, EventType: "review", Author: "dave",
 			Summary:   "APPROVED",
 			CreatedAt: base.Add(4 * time.Minute),
-			DedupeKey: "review-1"},
-		{MergeRequestID: prID1, EventType: "commit", Author: "alice",
+			DedupeKey: "review-1",
+		},
+		{
+			MergeRequestID: prID1, EventType: "commit", Author: "alice",
 			Summary: "abc123", Body: "fix: handle nil",
 			CreatedAt: base.Add(5 * time.Minute),
-			DedupeKey: "commit-abc123"},
-		{MergeRequestID: prID1, EventType: "review_comment", Author: "eve",
+			DedupeKey: "commit-abc123",
+		},
+		{
+			MergeRequestID: prID1, EventType: "review_comment", Author: "eve",
 			Body:      "nit: rename var",
 			CreatedAt: base.Add(6 * time.Minute),
-			DedupeKey: "review_comment-1"},
+			DedupeKey: "review_comment-1",
+		},
 	})
 	require.NoError(t, err)
 
 	err = d.UpsertIssueEvents(ctx, []IssueEvent{
-		{IssueID: issueID1, EventType: "issue_comment", Author: "frank",
+		{
+			IssueID: issueID1, EventType: "issue_comment", Author: "frank",
 			Body:      "Can reproduce on macOS",
 			CreatedAt: base.Add(7 * time.Minute),
-			DedupeKey: "icomment-1"},
+			DedupeKey: "icomment-1",
+		},
 	})
 	require.NoError(t, err)
 
@@ -173,18 +183,18 @@ func TestListActivity(t *testing.T) {
 		ctx := t.Context()
 		base := baseTime()
 
-		githubRepo, err := d.UpsertRepo(ctx, RepoIdentity{
+		githubRepo, err := seedTestRepo(ctx, d, RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "github-widgets",
+			PlatformRepoID: 1001,
 			Owner:          "acme",
 			Name:           "widgets",
 		})
 		require.NoError(err)
-		giteaRepo, err := d.UpsertRepo(ctx, RepoIdentity{
+		giteaRepo, err := seedTestRepo(ctx, d, RepoIdentity{
 			Platform:       "gitea",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "gitea-widgets",
+			PlatformRepoID: 1002,
 			Owner:          "acme",
 			Name:           "widgets",
 		})
@@ -435,10 +445,12 @@ func TestListActivity(t *testing.T) {
 		newest := all[0]
 
 		err = d.UpsertMREvents(ctx, []MREvent{
-			{MergeRequestID: prID1, EventType: "issue_comment", Author: "grace",
+			{
+				MergeRequestID: prID1, EventType: "issue_comment", Author: "grace",
 				Body:      "New comment",
 				CreatedAt: base.Add(10 * time.Minute),
-				DedupeKey: "comment-new"},
+				DedupeKey: "comment-new",
+			},
 		})
 		require.NoError(err)
 
@@ -762,6 +774,8 @@ func TestListActivity(t *testing.T) {
 }
 
 func TestListActivityAtOrBeforeCursorBeyondUnixNanoRange(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -800,6 +814,8 @@ func TestListActivityAtOrBeforeCursorBeyondUnixNanoRange(t *testing.T) {
 }
 
 func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
+	t.Parallel()
+
 	t.Run("hide closed merged uses notification subject state and keeps unknown state", func(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
@@ -904,6 +920,8 @@ func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
 }
 
 func TestListCollapsedActivityProjection(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1013,6 +1031,8 @@ func TestListCollapsedActivityProjection(t *testing.T) {
 }
 
 func TestListCollapsedActivityProjectionRetainsVisibleEventsForBotParents(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1053,6 +1073,8 @@ func TestListCollapsedActivityProjectionRetainsVisibleEventsForBotParents(t *tes
 }
 
 func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1115,6 +1137,8 @@ func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(
 }
 
 func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1162,6 +1186,8 @@ func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
 }
 
 func TestListCollapsedActivityProjectionDetectsNonNewestNotificationMutation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1246,6 +1272,8 @@ func insertOversizedBranchCommitRow(
 }
 
 func TestListActivityItemAuthor(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1317,6 +1345,8 @@ func TestListActivityItemAuthor(t *testing.T) {
 }
 
 func TestListActivityCarriesParentRecencyWhenNewerEventsAreFiltered(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1374,6 +1404,8 @@ func TestListActivityCarriesParentRecencyWhenNewerEventsAreFiltered(t *testing.T
 }
 
 func TestListActivitySubjectsUsesAuthoritativeRecencyForWindowAndLimit(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1428,6 +1460,8 @@ func TestListActivitySubjectsUsesAuthoritativeRecencyForWindowAndLimit(t *testin
 }
 
 func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -1513,6 +1547,8 @@ func activityBodies(items []ActivityItem) []string {
 }
 
 func TestParseDBTime(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	tests := []struct {
 		name  string
@@ -1581,6 +1617,8 @@ func TestParseDBTime(t *testing.T) {
 }
 
 func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1633,6 +1671,8 @@ func TestUpsertMREventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 }
 
 func TestUpsertMREventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1671,6 +1711,8 @@ func TestUpsertMREventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T)
 }
 
 func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1723,6 +1765,8 @@ func TestUpsertIssueEventsRewritesLegacyCreatedAtOnConflict(t *testing.T) {
 }
 
 func TestUpsertIssueEventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1761,6 +1805,8 @@ func TestUpsertIssueEventsPreservesDirectURLWhenPartialRefreshOmitsIt(t *testing
 }
 
 func TestListActivityIncludesNotifications(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -1827,6 +1873,8 @@ func TestListActivityIncludesNotifications(t *testing.T) {
 }
 
 func TestListActivityAuthors(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -1951,6 +1999,8 @@ func TestListActivityAuthors(t *testing.T) {
 }
 
 func TestListActivityNotificationCarriesSubjectState(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -1993,6 +2043,8 @@ func TestListActivityNotificationCarriesSubjectState(t *testing.T) {
 }
 
 func TestListActivityNotificationMatchesRepoByIdentity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2034,6 +2086,8 @@ func TestListActivityNotificationMatchesRepoByIdentity(t *testing.T) {
 }
 
 func TestListActivityNotificationRepoFiltersApplyBeforeUnionLimit(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2113,6 +2167,8 @@ func TestListActivityNotificationRepoFiltersApplyBeforeUnionLimit(t *testing.T) 
 }
 
 func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2120,10 +2176,10 @@ func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
 	base := baseTime()
 	number := 7
 
-	_, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	_, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
-	}, base)
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
 	require.NoError(d.UpsertNotifications(ctx, []Notification{{
 		Platform:               "github",
@@ -2142,10 +2198,10 @@ func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
 		SourceUpdatedAt:        base.Add(10 * time.Minute),
 		SyncedAt:               base.Add(10 * time.Minute),
 	}}))
-	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
-	}, base.Add(time.Hour))
+		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+	})
 	require.NoError(err)
 
 	renamed, err := d.ListActivity(ctx, ListActivityOpts{
@@ -2179,6 +2235,8 @@ func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
 }
 
 func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		itemType     string
@@ -2192,6 +2250,7 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 			staleURL:   "https://github.com/acme/widget/pull/7",
 			currentURL: "https://github.com/acme/gadget/pull/7",
 			insertParent: func(t *testing.T, d *DB, repoID int64, number int, url string) {
+				t.Helper()
 				mr := testMR(repoID, number, withMRTitle("Current parent title"))
 				mr.URL = url
 				insertTestMRWithOptions(t, d, mr)
@@ -2203,6 +2262,7 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 			staleURL:   "https://github.com/acme/widget/issues/7",
 			currentURL: "https://github.com/acme/gadget/issues/7",
 			insertParent: func(t *testing.T, d *DB, repoID int64, number int, url string) {
+				t.Helper()
 				issue := testIssue(repoID, number, withIssueTitle("Current parent title"))
 				issue.URL = url
 				insertTestIssueWithOptions(t, d, issue)
@@ -2218,10 +2278,10 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 			base := baseTime()
 			number := 7
 
-			entry, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+			entry, err := d.ObserveRepository(ctx, RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
-			}, base)
+				PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+			})
 			require.NoError(err)
 			require.NoError(d.UpsertNotifications(ctx, []Notification{{
 				Platform:               "github",
@@ -2240,10 +2300,10 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 				SourceUpdatedAt:        base.Add(10 * time.Minute),
 				SyncedAt:               base.Add(10 * time.Minute),
 			}}))
-			_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+			_, err = d.ObserveRepository(ctx, RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
-			}, base.Add(time.Hour))
+				PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+			})
 			require.NoError(err)
 			tc.insertParent(t, d, entry.Repository.ID, number, tc.currentURL)
 
@@ -2266,6 +2326,8 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 }
 
 func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -2284,10 +2346,14 @@ func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
 	stackedPRID := insertTestMRWithOptions(t, d, stackedPR)
 	lastComment := now.Add(-14 * time.Hour)
 	require.NoError(d.UpsertMREvents(ctx, []MREvent{
-		{MergeRequestID: stackedPRID, EventType: "issue_comment", Author: "reviewer",
-			CreatedAt: lastComment, DedupeKey: "stack-comment"},
-		{MergeRequestID: stackedPRID, EventType: "cross_referenced", Author: "bot",
-			CreatedAt: now.Add(-time.Hour), DedupeKey: "stack-xref"},
+		{
+			MergeRequestID: stackedPRID, EventType: "issue_comment", Author: "reviewer",
+			CreatedAt: lastComment, DedupeKey: "stack-comment",
+		},
+		{
+			MergeRequestID: stackedPRID, EventType: "cross_referenced", Author: "bot",
+			CreatedAt: now.Add(-time.Hour), DedupeKey: "stack-xref",
+		},
 	}))
 
 	// Only the provider timestamp is inside the window; the ledger is stale.
@@ -2323,10 +2389,14 @@ func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
 	issueID := insertTestIssueWithOptions(t, d, issue)
 	lastIssueComment := now.Add(-5 * time.Hour)
 	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{
-		{IssueID: issueID, EventType: "issue_comment", Author: "reporter",
-			CreatedAt: lastIssueComment, DedupeKey: "issue-comment"},
-		{IssueID: issueID, EventType: "assigned", Author: "triager",
-			CreatedAt: now.Add(-30 * time.Minute), DedupeKey: "issue-assigned"},
+		{
+			IssueID: issueID, EventType: "issue_comment", Author: "reporter",
+			CreatedAt: lastIssueComment, DedupeKey: "issue-comment",
+		},
+		{
+			IssueID: issueID, EventType: "assigned", Author: "triager",
+			CreatedAt: now.Add(-30 * time.Minute), DedupeKey: "issue-assigned",
+		},
 	}))
 
 	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{Since: &since, Limit: 50})
@@ -2362,6 +2432,8 @@ func TestActivityRecencyDerivesFromRenderedEventLedger(t *testing.T) {
 }
 
 func TestListActivityAuthorsIncludeParentsRecentOnlyByCloseOrMerge(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)

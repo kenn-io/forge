@@ -9,10 +9,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"go.kenn.io/forge/githubapp"
 	"strings"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/githubapp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -33,7 +33,7 @@ func serveUnix(ctx context.Context, path string, mode os.FileMode, server *http.
 		if info.Mode()&os.ModeSocket == 0 {
 			return fmt.Errorf("refusing to replace non-socket path: %s", path)
 		}
-		conn, dialErr := net.DialTimeout("unix", path, time.Second)
+		conn, dialErr := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "unix", path)
 		if dialErr == nil {
 			_ = conn.Close()
 			return fmt.Errorf("unix socket already listening: %s", path)
@@ -45,7 +45,7 @@ func serveUnix(ctx context.Context, path string, mode os.FileMode, server *http.
 			return err
 		}
 	}
-	listener, err := net.Listen("unix", path)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", path)
 	if err != nil {
 		return err
 	}

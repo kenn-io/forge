@@ -1,7 +1,6 @@
 package workspacetest
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -33,8 +33,8 @@ func seedIssueOnHost(
 	state, title string,
 ) int64 {
 	t.Helper()
-	repoID, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity(host, owner, name),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, db.GitHubRepoIdentity(host, owner, name),
 	)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -136,7 +136,7 @@ func TestWorkspaceRetryErroredWorkspaceE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, database := fixture.client, fixture.database
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider:     "github",
@@ -177,7 +177,7 @@ func TestWorkspaceRetryReadyWorkspaceConflictE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, database := fixture.client, fixture.database
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider:     "github",
@@ -231,7 +231,7 @@ func TestWorkspaceReadyStatusImpliesReadySetupEventE2E(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, database := fixture.client, fixture.database
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider:     "github",
@@ -513,7 +513,7 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	seedIssueOnHost(t, fixture.database, "github.com", "acme", "widget", 7, "open", "Test Issue")
 
@@ -567,7 +567,7 @@ func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Replace the seed title with a multi-word issue title to make
 	// sure the slug appears in the issue-workspace branch name.
@@ -606,7 +606,7 @@ func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
 		IssueWorkspaceBranchStyle: config.IssueWorkspaceBranchStyleBare,
 	}
 	fixture := setupWorkspaceServerFixture(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	seedIssueOnHost(
 		t, fixture.database, "github.com", "acme", "widget", 9,
@@ -640,7 +640,7 @@ func TestWorkspaceCreateIssueIsIdempotent(t *testing.T) {
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	seedIssueOnHost(t, fixture.database, "github.com", "acme", "widget", 7, "open", "Test Issue")
 
 	path := "/api/v1/issues/gh/acme/widget/7/workspace"
@@ -678,7 +678,7 @@ func TestWorkspaceCreateIssueAfterDeleteRecreatesBranch(t *testing.T) {
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	seedIssueOnHost(t, fixture.database, "github.com", "acme", "widget", 7, "open", "Test Issue")
 
@@ -729,7 +729,7 @@ func TestWorkspaceCreatePRAndIssueCanCoexistForSameRepoNumber(t *testing.T) {
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	seedIssueOnHost(t, fixture.database, "github.com", "acme", "widget", 1, "open", "Test Issue")
 

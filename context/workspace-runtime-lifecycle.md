@@ -433,6 +433,8 @@ stale tabs.
 
 ## Released Terminal Retention
 
+- Repeat visits restore host-scoped workspace/runtime presentation before revalidation; cached runtime may reclaim retained sessions but cannot decide queued launches, authorize new attachments, or discard absent peers
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoredSessionKeys`).
 - A live view's desired set claims its sessions even when a tab is hidden; only unclaimed sessions enter the bounded, release-ordered LRU, and a zero limit disables retention (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionReleased`).
 - While a workspace switch awaits destination runtime reconciliation, cache trimming must protect that destination prefix; otherwise releasing the previous workspace can evict the pending cache hit at capacity (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::releaseOwnedSessions`).
 - Retention keeps the parsed xterm subtree and connected socket but relinquishes interaction, resize, and WebGL resources; reclaim reparents the same subtree without reconnect or replay (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`, `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::syncRendererState`).

@@ -315,19 +315,19 @@ func TestListItemWorkflowStatesRepoFiltersUseCasefoldKeys(t *testing.T) {
 	ctx := t.Context()
 	base := baseTime()
 
-	firstRepo, err := d.UpsertRepo(ctx, RepoIdentity{
+	firstRepo, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "gitlab-first",
+		PlatformRepoID: 1001,
 		Owner:          "Group/SubGroup",
 		Name:           "Project.Special",
 		RepoPath:       "Group/SubGroup/Project.Special",
 	})
 	require.NoError(err)
-	secondRepo, err := d.UpsertRepo(ctx, RepoIdentity{
+	secondRepo, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "gitlab-second",
+		PlatformRepoID: 1002,
 		Owner:          "Other/SubGroup",
 		Name:           "Project.Special",
 		RepoPath:       "Other/SubGroup/Project.Special",

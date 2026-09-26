@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
@@ -97,7 +97,7 @@ func TestProviderCapabilitiesAdvertiseLabelsOnlyWithLabelTransport(t *testing.T)
 }
 
 func TestProviderListLabelsCollectsPagesAndNormalizes(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	transport := &fakeLabelTransport{
 		fakeTransport: &fakeTransport{},
@@ -125,7 +125,7 @@ func TestProviderListLabelsWithoutLabelTransportIsUnsupported(t *testing.T) {
 
 	_, err := provider.ListLabels(t.Context(), labelTestRef())
 
-	Require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+	require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
 }
 
 func TestProviderSetLabelsResolvesNamesToIDs(t *testing.T) {
@@ -148,7 +148,7 @@ func TestProviderSetLabelsResolvesNamesToIDs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require := Require.New(t)
+			require := require.New(t)
 			assert := assert.New(t)
 			transport := &fakeLabelTransport{
 				fakeTransport: &fakeTransport{},
@@ -177,7 +177,7 @@ func TestProviderSetLabelsResolvesNamesToIDs(t *testing.T) {
 }
 
 func TestProviderSetLabelsClearsWithEmptyNames(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	transport := &fakeLabelTransport{
 		fakeTransport: &fakeTransport{},
@@ -193,7 +193,7 @@ func TestProviderSetLabelsClearsWithEmptyNames(t *testing.T) {
 }
 
 func TestProviderSetLabelsFailsWhenNameMissingUpstream(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	transport := &fakeLabelTransport{
 		fakeTransport: &fakeTransport{},
@@ -221,12 +221,12 @@ func TestProviderSetLabelsWithoutMutationsIsUnsupported(t *testing.T) {
 
 	_, err := provider.SetMergeRequestLabels(t.Context(), labelTestRef(), 7, []string{"bug"})
 
-	Require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
+	require.ErrorIs(t, err, platform.ErrUnsupportedCapability)
 	assert.Empty(t, transport.replaceCalls)
 }
 
 func TestProviderSetLabelsMapsTransportErrors(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	transport := &fakeLabelTransport{
 		fakeTransport: &fakeTransport{},
 		labels:        [][]LabelDTO{{{ID: 11, Name: "bug"}}},

@@ -10,6 +10,8 @@ import (
 )
 
 func TestKataIssueLinkCRUDUsesStableSubjectIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -83,6 +85,8 @@ func TestKataIssueLinkCRUDUsesStableSubjectIdentity(t *testing.T) {
 }
 
 func TestCreateKataIssueLinkIsIdempotentAndRefreshesProjectUID(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -147,6 +151,8 @@ func TestCreateKataIssueLinkIsIdempotentAndRefreshesProjectUID(t *testing.T) {
 }
 
 func TestKataIssueLinkValidationRejectsAmbiguousAndBlankIdentities(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 
@@ -190,6 +196,8 @@ func TestKataIssueLinkValidationRejectsAmbiguousAndBlankIdentities(t *testing.T)
 }
 
 func TestKataIssueLinksSurviveRepoRenameAndCascadeWithOwners(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -213,11 +221,8 @@ func TestKataIssueLinksSurviveRepoRenameAndCascadeWithOwners(t *testing.T) {
 	identity := verifiedTestRepoIdentity("github", "github.com", "acme", "widget")
 	identity.Owner = "renamed"
 	identity.Name = "renamed-widget"
-	entry, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), identity, time.Now().UTC().Add(time.Hour),
-	)
+	entry, err := database.ObserveRepository(t.Context(), identity)
 	require.NoError(err)
-	assert.True(accepted)
 	require.NotNil(entry)
 	assert.Equal(repoID, entry.Repository.ID)
 	repoLinks, err := database.ListKataIssueLinks(t.Context(), repoSubject)

@@ -112,6 +112,7 @@ function waitForReparent(): Promise<void> {
 
 const settingsStore = {
   getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
+  getQuickActions: () => [],
   getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
   getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
 };
@@ -332,7 +333,7 @@ describe("WorkspaceHost", () => {
 
     await vi.waitFor(() => {
       expect(host.inert).toBe(false);
-      expect(host.querySelector(".header-end")).not.toBeNull();
+      expect(host.querySelector(".header-bar")).not.toBeNull();
     }, WAIT);
 
     // WorkspaceHost.svelte's inlineDockForSlot() only builds the inlineDock
@@ -360,7 +361,7 @@ describe("WorkspaceHost", () => {
     // which the surface renders outside this host.
     const prsScope = page.elementLocator(host);
     await vi.waitFor(() => {
-      expect(host.querySelector(".header-end")).toBeNull();
+      expect(host.querySelector(".header-bar")).toBeNull();
     }, WAIT);
     expect(prsScope.getByRole("button", { name: "Expand Terminal" }).query()).toBeNull();
     expect(prsScope.getByRole("button", { name: "Collapse Terminal" }).query()).toBeNull();

@@ -9,6 +9,7 @@
   import {
     hostedWorkspaceControls,
     workspaceControlsBusy,
+    type HostedWorkspaceControls,
   } from "../../stores/workspace-host.svelte.ts";
 
   interface Props {
@@ -21,15 +22,18 @@
      * the leaf holding the workspace pane itself.
      */
     showStripActions?: boolean;
+    controls?: HostedWorkspaceControls | null;
+    busy?: boolean;
   }
 
-  const { showStripActions = true }: Props = $props();
+  const { showStripActions = true, controls: providedControls, busy: providedBusy }: Props = $props();
   const runtime = getAppRuntime();
 
   // One button in a pane's tab strip, replacing the three bars that used to stack
   // above an embedded terminal. The contents come from the live view, which owns
   // every piece of state they act on.
-  const controls = $derived(hostedWorkspaceControls());
+  const controls = $derived(providedControls === undefined ? hostedWorkspaceControls() : providedControls);
+  const busy = $derived(providedBusy ?? workspaceControlsBusy());
 
   let open = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
@@ -55,7 +59,7 @@
       if (triggerEl?.contains(event.target as Node) || panelEl?.contains(event.target as Node)) return;
       // A control with a write in flight owns its own pending feedback; dismissing
       // the popover under it would unmount that feedback mid-save.
-      if (workspaceControlsBusy()) return;
+      if (busy) return;
       close();
     }
     function onKeydown(event: KeyboardEvent): void {
@@ -64,7 +68,7 @@
       // owns Escape through the modal stack, and its handler runs after this one,
       // so the stack depth is the signal to stand down.
       if (getStackDepth() > 0) return;
-      if (workspaceControlsBusy()) return;
+      if (busy) return;
       close();
       triggerEl?.focus();
     }

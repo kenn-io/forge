@@ -127,5 +127,7 @@ func (c *Client) validateAssignableLabelNames(names []string) error {
 	return nil
 }
 
-var _ platform.LabelReader = (*Client)(nil)
-var _ platform.LabelMutator = (*Client)(nil)
+var (
+	_ platform.LabelReader  = (*Client)(nil)
+	_ platform.LabelMutator = (*Client)(nil)
+)

@@ -121,15 +121,15 @@ func (s *Handler) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadU
 			return s.syncer.SyncMRForRepository(
 				ctx,
 				ghclient.RepoRef{
-					Platform:           repoProviderKind(*repo),
-					Owner:              repo.Owner,
-					Name:               repo.Name,
-					PlatformHost:       repoProviderHost(*repo),
-					RepoPath:           repo.RepoPath,
-					PlatformExternalID: repo.PlatformRepoID,
-					WebURL:             repo.WebURL,
-					CloneURL:           repo.CloneURL,
-					DefaultBranch:      repo.DefaultBranch,
+					Platform:       repoProviderKind(*repo),
+					Owner:          repo.Owner,
+					Name:           repo.Name,
+					PlatformHost:   repoProviderHost(*repo),
+					RepoPath:       repo.RepoPath,
+					PlatformRepoID: repo.PlatformRepoID,
+					WebURL:         repo.WebURL,
+					CloneURL:       repo.CloneURL,
+					DefaultBranch:  repo.DefaultBranch,
 				},
 				repo.ID,
 				change.Number,
@@ -227,15 +227,15 @@ func (s *Handler) maybeEnqueuePushedHeadCIRefresh(ctx context.Context, change wo
 			_, err := s.syncer.RefreshMRCIStatusForRepository(
 				ctx,
 				ghclient.RepoRef{
-					Platform:           repoProviderKind(*currentRepo),
-					Owner:              currentRepo.Owner,
-					Name:               currentRepo.Name,
-					PlatformHost:       repoProviderHost(*currentRepo),
-					RepoPath:           currentRepo.RepoPath,
-					PlatformExternalID: currentRepo.PlatformRepoID,
-					WebURL:             currentRepo.WebURL,
-					CloneURL:           currentRepo.CloneURL,
-					DefaultBranch:      currentRepo.DefaultBranch,
+					Platform:       repoProviderKind(*currentRepo),
+					Owner:          currentRepo.Owner,
+					Name:           currentRepo.Name,
+					PlatformHost:   repoProviderHost(*currentRepo),
+					RepoPath:       currentRepo.RepoPath,
+					PlatformRepoID: currentRepo.PlatformRepoID,
+					WebURL:         currentRepo.WebURL,
+					CloneURL:       currentRepo.CloneURL,
+					DefaultBranch:  currentRepo.DefaultBranch,
 				},
 				currentRepo.ID,
 				change.Number,
@@ -294,9 +294,9 @@ func (s *Handler) lookupPushedHeadMR(ctx context.Context, change workspace.Pushe
 	}
 	mr, err := s.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, change.Number)
 	if err != nil {
-		return repo, nil
+		return repo.Row(), nil
 	}
-	return repo, mr
+	return repo.Row(), mr
 }
 
 func pushedHeadMRNeedsCIRefresh(status string, hadPending, approvalRequired bool) bool {

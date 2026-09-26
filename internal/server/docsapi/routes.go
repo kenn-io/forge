@@ -738,10 +738,10 @@ func docsMissingPathProblem() huma.StatusError {
 }
 
 func docsRegistryProblem(err error) huma.StatusError {
-	var unsafeConfig *docs.UnsafeGitConfigError
-	switch {
-	case errors.As(err, &unsafeConfig):
+	if unsafeConfig, ok := errors.AsType[*docs.UnsafeGitConfigError](err); ok {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, unsafeConfig.Error(), map[string]any{"reason": "unsafeGitConfig"})
+	}
+	switch {
 	case errors.Is(err, docs.ErrFolderNotFound):
 		return httpapi.NotFound(httpapi.CodeNotFound, err.Error(), map[string]any{"reason": "folderNotFound"})
 	case errors.Is(err, docs.ErrDuplicateFolderID):
@@ -762,9 +762,24 @@ func docsRegistryProblem(err error) huma.StatusError {
 }
 
 func docsGitPublishProblem(err error) huma.StatusError {
-	var commitFailed *docs.CommitFailedError
-	var noUpstream *docs.NoUpstreamError
-	var pushFailed *docs.PushFailedAfterCommitError
+	if noUpstream, ok := errors.AsType[*docs.NoUpstreamError](err); ok {
+		return httpapi.BadRequest(httpapi.CodeBadRequest, noUpstream.Error(), map[string]any{
+			"reason":            "noUpstream",
+			"branch":            noUpstream.Branch,
+			"suggested_command": noUpstream.SuggestedCommand,
+		})
+	}
+	if commitFailed, ok := errors.AsType[*docs.CommitFailedError](err); ok {
+		return httpapi.NewProblem(http.StatusInternalServerError, httpapi.CodeInternalError, commitFailed.Stderr, map[string]any{
+			"reason": "commitFailed",
+		})
+	}
+	if pushFailed, ok := errors.AsType[*docs.PushFailedAfterCommitError](err); ok {
+		return httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, pushFailed.Error(), map[string]any{
+			"reason": "pushFailedAfterCommit",
+			"commit": pushFailed.Commit,
+		})
+	}
 	switch {
 	case errors.Is(err, docs.ErrEmptyMessage):
 		return httpapi.BadRequest(httpapi.CodeBadRequest, "commit message is required", map[string]any{"reason": "emptyMessage"})
@@ -776,44 +791,29 @@ func docsGitPublishProblem(err error) huma.StatusError {
 		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "indexNotClean"})
 	case errors.Is(err, docs.ErrConflict):
 		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "conflict"})
-	case errors.As(err, &noUpstream):
-		return httpapi.BadRequest(httpapi.CodeBadRequest, noUpstream.Error(), map[string]any{
-			"reason":            "noUpstream",
-			"branch":            noUpstream.Branch,
-			"suggested_command": noUpstream.SuggestedCommand,
-		})
-	case errors.As(err, &commitFailed):
-		return httpapi.NewProblem(http.StatusInternalServerError, httpapi.CodeInternalError, commitFailed.Stderr, map[string]any{
-			"reason": "commitFailed",
-		})
-	case errors.As(err, &pushFailed):
-		return httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, pushFailed.Error(), map[string]any{
-			"reason": "pushFailedAfterCommit",
-			"commit": pushFailed.Commit,
-		})
 	default:
 		return docsRegistryProblem(err)
 	}
 }
 
 func docsGitPullProblem(err error) huma.StatusError {
-	var noUpstream *docs.NoUpstreamError
-	var pullFailed *docs.PullFailedError
-	switch {
-	case errors.Is(err, docs.ErrNotAGitRepo):
-		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "notGitRepo"})
-	case errors.Is(err, docs.ErrDiverged):
-		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "diverged"})
-	case errors.As(err, &noUpstream):
+	if noUpstream, ok := errors.AsType[*docs.NoUpstreamError](err); ok {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, noUpstream.Error(), map[string]any{
 			"reason":            "noUpstream",
 			"branch":            noUpstream.Branch,
 			"suggested_command": noUpstream.SuggestedCommand,
 		})
-	case errors.As(err, &pullFailed):
+	}
+	if pullFailed, ok := errors.AsType[*docs.PullFailedError](err); ok {
 		return httpapi.NewProblem(http.StatusBadGateway, httpapi.CodeUpstreamError, pullFailed.Error(), map[string]any{
 			"reason": "pullFailed",
 		})
+	}
+	switch {
+	case errors.Is(err, docs.ErrNotAGitRepo):
+		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), map[string]any{"reason": "notGitRepo"})
+	case errors.Is(err, docs.ErrDiverged):
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "diverged"})
 	default:
 		return docsRegistryProblem(err)
 	}

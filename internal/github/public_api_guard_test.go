@@ -12,16 +12,21 @@ import (
 )
 
 func TestPublicGitHubAPIGuardTransportBlocksAPIGitHub(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	baseCalls := 0
 	transport := publicGitHubAPIGuardTransport{base: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		baseCalls++
 		return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
 	})}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/rate_limit", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/rate_limit", nil)
 	require.NoError(t, err)
 
 	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 
 	require.ErrorIs(t, err, ErrPublicGitHubAPIBlocked)
 	assert.Nil(resp)
@@ -29,16 +34,21 @@ func TestPublicGitHubAPIGuardTransportBlocksAPIGitHub(t *testing.T) {
 }
 
 func TestPublicGitHubAPIGuardTransportAllowsOtherHosts(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	baseCalls := 0
 	transport := publicGitHubAPIGuardTransport{base: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		baseCalls++
 		return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
 	})}
-	req, err := http.NewRequest(http.MethodGet, "https://github.example.com/api/v3/rate_limit", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://github.example.com/api/v3/rate_limit", nil)
 	require.NoError(t, err)
 
 	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -47,6 +57,8 @@ func TestPublicGitHubAPIGuardTransportAllowsOtherHosts(t *testing.T) {
 }
 
 func TestNewClientBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 
 	client, err := NewClient(testTokenSource("fake-token"), "github.com", nil, nil)
@@ -58,6 +70,8 @@ func TestNewClientBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {
 }
 
 func TestRoutedClientExplicitlyImplementsOwnerBearingClientMethods(t *testing.T) {
+	t.Parallel()
+
 	// Optional client surfaces are covered too: they are reached by type
 	// assertion, and an unrouted one fails that assertion silently on every
 	// production host instead of failing to compile.
@@ -141,6 +155,8 @@ func functionHasParameterNamed(fn *ast.FuncType, names ...string) bool {
 }
 
 func TestNewGraphQLFetcherBlocksPublicGitHubAPIInDefaultTests(t *testing.T) {
+	t.Parallel()
+
 	fetcher := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", nil, nil)
 
 	_, err := fetcher.FetchRepoPRs(t.Context(), "acme", "widgets", false)

@@ -23,12 +23,12 @@ func TestManagedSourceReadsTokenFileEachCall(t *testing.T) {
 		Candidates: []Candidate{{Kind: SourceKindFile, FilePath: path}},
 	}, Options{})
 
-	got, err := src.Token(context.Background())
+	got, err := src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("first", got)
 
 	require.NoError(os.WriteFile(path, []byte("second\n"), 0o600))
-	got, err = src.Token(context.Background())
+	got, err = src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("second", got)
 }
@@ -47,7 +47,7 @@ func TestManagedSourceFallsThroughEmptyFileAndEnv(t *testing.T) {
 		},
 	}, Options{})
 
-	got, err := src.Token(context.Background())
+	got, err := src.Token(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "from-env", got)
 }
@@ -60,7 +60,7 @@ func TestManagedSourceUnreadableFileDoesNotExposeToken(t *testing.T) {
 		},
 	}, Options{})
 
-	_, err := src.Token(context.Background())
+	_, err := src.Token(t.Context())
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "ghp_sentinel_secret")
 	assert.Contains(t, err.Error(), "token file")
@@ -79,12 +79,12 @@ func TestManagedSourceGitHubCLIInvalidatesCache(t *testing.T) {
 		Candidates: []Candidate{{Kind: SourceKindGitHubCLI, Host: "github.com"}},
 	}, Options{GitHubCLI: runner})
 
-	first, err := src.Token(context.Background())
+	first, err := src.Token(t.Context())
 	require.NoError(err)
-	second, err := src.Token(context.Background())
+	second, err := src.Token(t.Context())
 	require.NoError(err)
 	src.Invalidate("first")
-	third, err := src.Token(context.Background())
+	third, err := src.Token(t.Context())
 	require.NoError(err)
 
 	assert.Equal("first", first)
@@ -106,7 +106,7 @@ func TestManagedSourceUpdateChangesDescriptor(t *testing.T) {
 		Candidates: []Candidate{{Kind: SourceKindEnv, EnvName: "NEW_TOKEN"}},
 	})
 
-	got, err := src.Token(context.Background())
+	got, err := src.Token(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "new", got)
 }
@@ -171,7 +171,7 @@ func TestProbeBatchMintsFreshInstallationTokens(t *testing.T) {
 		}},
 	}
 	source := set.Upsert(desc)
-	ctx := WithGitHubOwner(context.Background(), "acme")
+	ctx := WithGitHubOwner(t.Context(), "acme")
 	token, err := source.Token(ctx)
 	require.NoError(err)
 	require.Equal("token-1", token)
@@ -194,7 +194,7 @@ func TestMissingTokenErrorIsDetectable(t *testing.T) {
 	src := NewManagedSource(Descriptor{
 		Key: Key{Platform: "gitlab", Host: "gitlab.com"},
 	}, Options{})
-	_, err := src.Token(context.Background())
+	_, err := src.Token(t.Context())
 	require.ErrorIs(t, err, ErrMissingToken)
 	assert.NotContains(t, err.Error(), "secret")
 }
@@ -230,10 +230,10 @@ func TestManagedSourceProviderCLIsUseTheirOwnRunnerAndCache(t *testing.T) {
 	}, options)
 
 	for range 2 {
-		got, err := gitlab.Token(context.Background())
+		got, err := gitlab.Token(t.Context())
 		require.NoError(err)
 		assert.Equal("glab-gitlab.example.test", got)
-		got, err = forgejo.Token(context.Background())
+		got, err = forgejo.Token(t.Context())
 		require.NoError(err)
 		assert.Equal("fj-gitea.example.test", got)
 	}
@@ -241,7 +241,7 @@ func TestManagedSourceProviderCLIsUseTheirOwnRunnerAndCache(t *testing.T) {
 	assert.Equal(1, fjCalls, "fj lookup is cached per source")
 
 	gitlab.Invalidate("glab-gitlab.example.test")
-	_, err := gitlab.Token(context.Background())
+	_, err := gitlab.Token(t.Context())
 	require.NoError(err)
 	assert.Equal(2, glabCalls, "a rejected token re-runs only its own CLI")
 	assert.Equal(1, fjCalls)
@@ -253,7 +253,7 @@ func TestManagedSourceProviderCLIWithoutRunnerIsMissingToken(t *testing.T) {
 		Candidates: []Candidate{{Kind: SourceKindGitLabCLI, Host: "gitlab.example.test"}},
 	}, Options{})
 
-	_, err := src.Token(context.Background())
+	_, err := src.Token(t.Context())
 	require.ErrorIs(t, err, ErrMissingToken)
 	assert.Contains(t, err.Error(), "gitlab_cli:gitlab.example.test")
 }

@@ -17,10 +17,12 @@ import (
 func TestDeleteProjectWorktreeTmuxSessionCreatedAtPreservesNewerGeneration(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	project := createDiscoveryTestProject(t, d, "gen")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: project.ID, Branch: "feature",
@@ -62,10 +64,12 @@ func TestDeleteProjectWorktreeTmuxSessionCreatedAtPreservesNewerGeneration(
 func TestDeleteHostRuntimeTmuxSessionCreatedAtPreservesNewerGeneration(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	oldGen := time.Date(2026, 6, 10, 10, 0, 0, 0, time.UTC)
 	newGen := oldGen.Add(time.Minute)
@@ -90,10 +94,12 @@ func TestDeleteHostRuntimeTmuxSessionCreatedAtPreservesNewerGeneration(
 }
 
 func TestDeleteProjectWorktreeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	project := createDiscoveryTestProject(t, d, "non-tmux-project")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: project.ID, Branch: "feature",
@@ -117,10 +123,12 @@ func TestDeleteProjectWorktreeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
 }
 
 func TestDeleteHostRuntimeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	createdAt := time.Date(2026, 6, 10, 10, 0, 0, 0, time.UTC)
 	require.NoError(execHostRuntimeSession(ctx, d, "host-pty-1", createdAt))
 
@@ -139,10 +147,12 @@ func TestDeleteHostRuntimeTmuxSessionIgnoresNonTmuxRuntime(t *testing.T) {
 // collision across projects: discovery for project B must not move a worktree
 // row (and its stable id and tmux links) owned by project A.
 func TestReconcileProjectInventoryDoesNotStealForeignWorktree(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
 
 	owner := createDiscoveryTestProject(t, d, "owner")

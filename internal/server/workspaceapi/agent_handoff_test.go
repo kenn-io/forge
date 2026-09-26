@@ -68,7 +68,7 @@ func (f agentHandoffFixture) request(t *testing.T, body map[string]string) *http
 	t.Helper()
 	encoded, err := json.Marshal(body)
 	require.NoError(t, err)
-	request := httptest.NewRequest(
+	request := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost, "/api/v1/workspaces/ws-runtime-token/runtime/agent-handoffs", bytes.NewReader(encoded),
 	)
 	request.Header.Set("Content-Type", "application/json")
@@ -94,7 +94,7 @@ func TestAgentHandoffWaitsForReadyThenLaunchesAndDeliversPrompt(t *testing.T) {
 
 	// The workspace becomes ready while the handoff is already waiting.
 	readyTimer := time.AfterFunc(60*time.Millisecond, func() {
-		_ = fixture.database.UpdateWorkspaceStatus(context.Background(), "ws-runtime-token", "ready", nil)
+		_ = fixture.database.UpdateWorkspaceStatus(t.Context(), "ws-runtime-token", "ready", nil)
 	})
 	t.Cleanup(func() { readyTimer.Stop() })
 
@@ -155,7 +155,7 @@ func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 		fixture.owner.mu.Unlock()
 		return pty != nil && len(fixture.handler.runtime.ListSessions("ws-runtime-token")) == 1
 	}, time.Second, 5*time.Millisecond)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 	assert.Empty(pty.written())
 	pty.output <- []byte("\x1b[?2004h")
 
@@ -178,12 +178,18 @@ func TestAgentHandoffRejectsInvalidInputBeforeWaiting(t *testing.T) {
 		body map[string]string
 		want string
 	}{
-		{name: "non-agent target", body: map[string]string{"target_key": "shell", "message": "hi"},
-			want: "not an available agent launch target"},
-		{name: "unknown target", body: map[string]string{"target_key": "nope", "message": "hi"},
-			want: "not an available agent launch target"},
-		{name: "blank message", body: map[string]string{"target_key": "codex", "message": "  \n"},
-			want: "must not be blank"},
+		{
+			name: "non-agent target", body: map[string]string{"target_key": "shell", "message": "hi"},
+			want: "not an available agent launch target",
+		},
+		{
+			name: "unknown target", body: map[string]string{"target_key": "nope", "message": "hi"},
+			want: "not an available agent launch target",
+		},
+		{
+			name: "blank message", body: map[string]string{"target_key": "codex", "message": "  \n"},
+			want: "must not be blank",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -242,7 +248,7 @@ func TestAgentHandoffSurvivesClientCancellationWhileWaiting(t *testing.T) {
 		return fixture.handler.agentHandoffCtx != nil
 	}, time.Second, 5*time.Millisecond)
 	cancelRequest()
-	require.NoError(fixture.database.UpdateWorkspaceStatus(context.Background(), "ws-runtime-token", "ready", nil))
+	require.NoError(fixture.database.UpdateWorkspaceStatus(t.Context(), "ws-runtime-token", "ready", nil))
 
 	var response *httptest.ResponseRecorder
 	select {
@@ -267,7 +273,7 @@ func TestAgentHandoffCancelsPromptlyOnShutdown(t *testing.T) {
 	go func() {
 		done <- fixture.serve(request)
 	}()
-	time.Sleep(40 * time.Millisecond)
+	time.Sleep(40 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 	started := time.Now()
 	fixture.handler.CancelAgentHandoffs()
 

@@ -255,7 +255,7 @@ func TestRunAllowedBudgets(t *testing.T) {
 		{path: "internal/server/federation_events_test.go", function: "TestNodeStreamsHubEventsWithNodeLocalCursorIDs", assertion: "github.com/stretchr/testify/assert.Never", budget: 50 * time.Millisecond}: {
 			count: 1, reason: "Hub events over an httptest TLS federation stream to a disabled spoke. Retained by #1112.",
 		},
-		{path: "internal/server/repobrowserapi/handler_test.go", function: "TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors", assertion: "github.com/stretchr/testify/require.Never", budget: 250 * time.Millisecond}: {
+		{path: "internal/server/repobrowserapi/handler_test.go", function: "TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors", assertion: "github.com/stretchr/testify/assert.Never", budget: 250 * time.Millisecond}: {
 			count: 1, reason: "Real Git clone ref resolution after an upstream push, with background monitors disabled.",
 		},
 		{path: "internal/server/runtime_launch_rollback_test.go", function: "TestCommandSameKeyPersistenceOwnership", assertion: "github.com/stretchr/testify/require.Never", budget: 150 * time.Millisecond}: {

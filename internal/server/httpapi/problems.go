@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -555,6 +556,8 @@ func ProviderMutationProblem(err error, provider, host string) huma.StatusError 
 			platform.ErrCodeStaleState,
 			platform.ErrCodeConflict:
 			return ProviderCallProblem(err, provider, host)
+		case platform.ErrCodeProviderContract, platform.ErrCodePageLimit:
+			// Contract and page-limit failures are ambiguous after dispatch.
 		}
 	}
 	return MutationOutcomeUnknown(
@@ -609,8 +612,8 @@ func MapPlatformError(err error) huma.StatusError {
 	if errors.Is(err, platform.ErrSyncDisabled) {
 		return ServiceUnavailable(err.Error())
 	}
-	var pe *platform.Error
-	if !errors.As(err, &pe) {
+	pe, ok := errors.AsType[*platform.Error](err)
+	if !ok {
 		return Upstream(err.Error(), "", "")
 	}
 	provider := string(pe.Provider)

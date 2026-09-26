@@ -48,7 +48,7 @@ func DBReviewThreads(threads []platform.MergeRequestReviewThread) ([]db.MREvent,
 		threadIDCopy := threadID
 		events = append(events, db.MREvent{
 			PlatformExternalID: externalID, EventType: "review_comment",
-			Author: thread.AuthorLogin, Body: thread.Body, CreatedAt: thread.CreatedAt,
+			Author: thread.AuthorLogin, AuthorAssociation: thread.AuthorAssociation, Body: thread.Body, CreatedAt: thread.CreatedAt,
 			MetadataJSON: thread.MetadataJSON,
 			DedupeKey:    "review_comment:" + externalID, DirectURL: thread.DirectURL,
 			ThreadID: &threadIDCopy,
@@ -111,7 +111,7 @@ func DBRepoIdentity(ref platform.RepoRef) db.RepoIdentity {
 	return db.RepoIdentity{
 		Platform:       string(ref.Platform),
 		PlatformHost:   ref.Host,
-		PlatformRepoID: ref.PlatformExternalID,
+		PlatformRepoID: ref.PlatformID,
 		Owner:          ref.Owner,
 		Name:           ref.Name,
 		RepoPath:       ref.RepoPath,
@@ -119,11 +119,7 @@ func DBRepoIdentity(ref platform.RepoRef) db.RepoIdentity {
 }
 
 func DBRepositoryIdentity(repo platform.Repository) db.RepoIdentity {
-	identity := DBRepoIdentity(repo.Ref)
-	if identity.PlatformRepoID == "" {
-		identity.PlatformRepoID = repo.PlatformExternalID
-	}
-	return identity
+	return DBRepoIdentity(repo.Ref)
 }
 
 func DBMergeRequest(repoID int64, mr platform.MergeRequest) *db.MergeRequest {
@@ -135,6 +131,7 @@ func DBMergeRequest(repoID int64, mr platform.MergeRequest) *db.MergeRequest {
 		URL:                     mr.URL,
 		Title:                   mr.Title,
 		Author:                  mr.Author,
+		AuthorAssociation:       mr.AuthorAssociation,
 		AuthorDisplayName:       mr.AuthorDisplayName,
 		State:                   db.MergeRequestState(mr.State),
 		IsDraft:                 mr.IsDraft,
@@ -177,6 +174,7 @@ func DBIssue(repoID int64, issue platform.Issue) *db.Issue {
 		URL:                issue.URL,
 		Title:              issue.Title,
 		Author:             issue.Author,
+		AuthorAssociation:  issue.AuthorAssociation,
 		State:              issue.State,
 		Body:               issue.Body,
 		CommentCount:       issue.CommentCount,
@@ -196,6 +194,7 @@ func DBMREvent(mrID int64, event platform.MergeRequestEvent) db.MREvent {
 		PlatformExternalID: event.PlatformExternalID,
 		EventType:          event.EventType,
 		Author:             event.Author,
+		AuthorAssociation:  event.AuthorAssociation,
 		Summary:            event.Summary,
 		Body:               event.Body,
 		MetadataJSON:       event.MetadataJSON,

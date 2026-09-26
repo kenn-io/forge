@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
+
+	_ "modernc.org/sqlite"
 
 	"go.kenn.io/forge/internal/db/dbupgrade"
-	_ "modernc.org/sqlite"
 )
 
 // DB holds separate read-write and read-only connections to the SQLite database.
@@ -18,17 +18,8 @@ type DB struct {
 	ro                *sql.DB
 	rwStmts           *stmtCache
 	roStmts           *stmtCache
-	mrReconcileMu     sync.RWMutex
-	mrReconcileGate   sync.Mutex
 	mrSnapshotLocksMu sync.Mutex
 	mrSnapshotLocks   map[mergeRequestSnapshotLockKey]*mergeRequestSnapshotLock
-
-	// repositoryReconciliationGeneration counts repository reconciliation
-	// writes so caches keyed on repository identity can detect that a
-	// repository row, route, or replacement may have changed.
-	repositoryReconciliationGeneration atomic.Uint64
-
-	beforeRepositoryReconciliationWriteLock func()
 }
 
 type mergeRequestSnapshotLockKey struct {
@@ -41,20 +32,27 @@ type mergeRequestSnapshotLock struct {
 	refs  int
 }
 
-var ErrRepositoryRouteFenceChanged = errors.New("repository route fence changed")
+// ErrRepositoryIdentityChanged reports that the repository behind a route or
+// stored reference is no longer the repository the caller resolved.
+var ErrRepositoryIdentityChanged = errors.New("repository identity changed")
 
-type repositoryRouteGuardContextKey struct{}
-
-type repositoryRouteLeaseContextKey struct{}
-
-type repositoryRouteGuard struct {
-	db       *DB
-	identity RepoIdentity
-	fence    RepositoryRouteFence
+// Shared SQL adapter surfaces so helpers can run against *sql.DB, *sql.Tx, or
+// the statement cache without duplicating identical interface declarations.
+type execer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
-type repositoryRouteLease struct {
-	guard *repositoryRouteGuard
+type queryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+type rowQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+type scanner interface {
+	Scan(...any) error
 }
 
 // Open opens (or creates) a SQLite database at path, enables WAL mode, and
@@ -151,7 +149,7 @@ func openPool(path string, size int) (*sql.DB, error) {
 }
 
 func (d *DB) init() error {
-	if _, err := d.rw.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	if _, err := d.rw.ExecContext(context.Background(), "PRAGMA journal_mode=WAL"); err != nil {
 		return fmt.Errorf("enable WAL: %w", err)
 	}
 
@@ -226,118 +224,15 @@ func (d *DB) ReadDB() *sql.DB { return d.ro }
 // WriteDB returns the read-write connection pool.
 func (d *DB) WriteDB() *sql.DB { return d.rw }
 
-// LockRepositoryReconciliationRead keeps repository identity and its related
-// rows stable until the returned release function is called exactly once.
-func (d *DB) LockRepositoryReconciliationRead(
-	ctx context.Context,
-) (func(), error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	d.mrReconcileGate.Lock()
-	d.mrReconcileMu.RLock()
-	d.mrReconcileGate.Unlock()
-	if err := ctx.Err(); err != nil {
-		d.mrReconcileMu.RUnlock()
-		return nil, err
-	}
-
-	var once sync.Once
-	return func() {
-		once.Do(d.mrReconcileMu.RUnlock)
-	}, nil
-}
-
-// WithRepositoryRouteFence binds subsequent database writes to one observed
-// repository route generation. Reads are unaffected; each write validates the
-// fence while holding the reconciliation read lock through commit.
-func (d *DB) WithRepositoryRouteFence(
-	ctx context.Context,
-	identity RepoIdentity,
-	fence RepositoryRouteFence,
-) context.Context {
-	return context.WithValue(ctx, repositoryRouteGuardContextKey{}, &repositoryRouteGuard{
-		db: d, identity: canonicalRepoIdentity(identity), fence: fence,
-	})
-}
-
-func (d *DB) repositoryRouteGuard(ctx context.Context) *repositoryRouteGuard {
-	guard, _ := ctx.Value(repositoryRouteGuardContextKey{}).(*repositoryRouteGuard)
-	if guard == nil || guard.db != d {
-		return nil
-	}
-	return guard
-}
-
-// lockRepositoryRouteWrite validates an optional context route guard and keeps
-// repository reconciliation from interleaving until release. The returned
-// context makes nested guarded writes re-entrant for the same short critical
-// section.
-func (d *DB) lockRepositoryRouteWrite(
-	ctx context.Context,
-) (context.Context, func(), error) {
-	guard := d.repositoryRouteGuard(ctx)
-	if guard == nil {
-		return ctx, func() {}, nil
-	}
-	if lease, _ := ctx.Value(repositoryRouteLeaseContextKey{}).(*repositoryRouteLease); lease != nil && lease.guard == guard {
-		return ctx, func() {}, nil
-	}
-
-	release, err := d.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return ctx, nil, err
-	}
-	matches, err := d.RepositoryRouteFenceMatchesUnderRepositoryReconciliationRead(
-		ctx, guard.identity, guard.fence,
-	)
-	if err != nil {
-		release()
-		return ctx, nil, err
-	}
-	if !matches {
-		release()
-		return ctx, nil, fmt.Errorf(
-			"%w for %s/%s", ErrRepositoryRouteFenceChanged,
-			guard.identity.PlatformHost, guard.identity.RepoPath,
-		)
-	}
-	locked := context.WithValue(
-		ctx, repositoryRouteLeaseContextKey{}, &repositoryRouteLease{guard: guard},
-	)
-	return locked, release, nil
-}
-
-// LockRepositoryReconciliationReadForWrite holds repository identity stable
-// for a compound write. When ctx carries a route fence, it validates that
-// fence and returns a context that makes nested guarded DB writes re-entrant.
-func (d *DB) LockRepositoryReconciliationReadForWrite(
-	ctx context.Context,
-) (context.Context, func(), error) {
-	if d.repositoryRouteGuard(ctx) != nil {
-		return d.lockRepositoryRouteWrite(ctx)
-	}
-	release, err := d.LockRepositoryReconciliationRead(ctx)
-	return ctx, release, err
-}
-
 func (d *DB) execContext(
 	ctx context.Context,
 	query string,
 	args ...any,
 ) (sql.Result, error) {
-	lockedCtx, release, err := d.lockRepositoryRouteWrite(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	return d.rwStmts.ExecContext(lockedCtx, query, args...)
+	return d.rwStmts.ExecContext(ctx, query, args...)
 }
 
-// rwExecContext writes through the write pool without the repository route
-// fence. Callers that hold reconciliation locks themselves, or that write
-// tables outside repository identity, use it exactly as they previously used
-// the raw pool.
+// rwExecContext writes through the write pool's statement cache.
 func (d *DB) rwExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return d.rwStmts.ExecContext(ctx, query, args...)
 }
@@ -363,42 +258,6 @@ func (d *DB) roQueryRowContext(ctx context.Context, query string, args ...any) *
 	return d.roStmts.QueryRowContext(ctx, query, args...)
 }
 
-func (d *DB) lockRepositoryReconciliationWrite() func() {
-	d.mrReconcileGate.Lock()
-	if hook := d.beforeRepositoryReconciliationWriteLock; hook != nil {
-		hook()
-	}
-	d.mrReconcileMu.Lock()
-	d.mrReconcileGate.Unlock()
-	d.repositoryReconciliationGeneration.Add(1)
-	return d.mrReconcileMu.Unlock
-}
-
-// RepositoryReconciliationGeneration reports a process-local counter that
-// advances whenever a repository reconciliation write begins. A reader that
-// samples it before resolving repository identity and finds it unchanged later
-// knows no reconciliation write started in between, so cached repository rows
-// resolved under the reconciliation read lock are still current.
-func (d *DB) RepositoryReconciliationGeneration() uint64 {
-	return d.repositoryReconciliationGeneration.Load()
-}
-
-// SetBeforeRepositoryReconciliationWriteLockForTest installs a hook after
-// write admission closes to new readers and immediately before the write lock.
-func (d *DB) SetBeforeRepositoryReconciliationWriteLockForTest(
-	hook func(),
-) func() {
-	d.mrReconcileGate.Lock()
-	previous := d.beforeRepositoryReconciliationWriteLock
-	d.beforeRepositoryReconciliationWriteLock = hook
-	d.mrReconcileGate.Unlock()
-	return func() {
-		d.mrReconcileGate.Lock()
-		d.beforeRepositoryReconciliationWriteLock = previous
-		d.mrReconcileGate.Unlock()
-	}
-}
-
 // LockMergeRequestSnapshot serializes parent snapshot commits for one merge
 // request. The returned release function must be called exactly once.
 func (d *DB) LockMergeRequestSnapshot(
@@ -406,27 +265,10 @@ func (d *DB) LockMergeRequestSnapshot(
 	repoID int64,
 	number int,
 ) (func(), error) {
-	// Repository reconciliation can move this merge request to a different
-	// repo ID. Hold the stable read side for the entire per-MR lock lifetime
-	// so a snapshot commit and its lock key cannot be split by that move.
-	releaseReconciliation, err := d.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	releaseSnapshot, err := d.lockMergeRequestSnapshotUnderRepositoryReconciliationRead(
-		ctx, repoID, number,
-	)
-	if err != nil {
-		releaseReconciliation()
-		return nil, err
-	}
-	return func() {
-		releaseSnapshot()
-		releaseReconciliation()
-	}, nil
+	return d.lockMergeRequestSnapshot(ctx, repoID, number)
 }
 
-func (d *DB) lockMergeRequestSnapshotUnderRepositoryReconciliationRead(
+func (d *DB) lockMergeRequestSnapshot(
 	ctx context.Context,
 	repoID int64,
 	number int,
@@ -480,12 +322,7 @@ func (d *DB) releaseMergeRequestSnapshotLockRef(
 
 // Tx runs fn inside a transaction, rolling back on error.
 func (d *DB) Tx(ctx context.Context, fn func(tx *sql.Tx) error) error {
-	lockedCtx, release, err := d.lockRepositoryRouteWrite(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
-	tx, err := d.rw.BeginTx(lockedCtx, nil)
+	tx, err := d.rw.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}

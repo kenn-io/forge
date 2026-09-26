@@ -21,7 +21,7 @@ import (
 type PlatformIdentity struct {
 	Platform       string `json:"platform"`
 	Host           string `json:"platform_host"`
-	PlatformRepoID string `json:"-"`
+	PlatformRepoID int64  `json:"-"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 }
@@ -96,11 +96,11 @@ type CreateProjectInput struct {
 func (d *DB) CreateProject(ctx context.Context, in CreateProjectInput) (*Project, error) {
 	displayName := strings.TrimSpace(in.DisplayName)
 	if displayName == "" {
-		return nil, fmt.Errorf("display_name is required")
+		return nil, errors.New("display_name is required")
 	}
 	localPath := strings.TrimSpace(in.LocalPath)
 	if localPath == "" {
-		return nil, fmt.Errorf("local_path is required")
+		return nil, errors.New("local_path is required")
 	}
 
 	id, err := newProjectID()
@@ -239,15 +239,15 @@ type CreateProjectWorktreeInput struct {
 func (d *DB) CreateProjectWorktree(ctx context.Context, in CreateProjectWorktreeInput) (*ProjectWorktree, error) {
 	projectID := strings.TrimSpace(in.ProjectID)
 	if projectID == "" {
-		return nil, fmt.Errorf("project_id is required")
+		return nil, errors.New("project_id is required")
 	}
 	branch := strings.TrimSpace(in.Branch)
 	if branch == "" {
-		return nil, fmt.Errorf("branch is required")
+		return nil, errors.New("branch is required")
 	}
 	path := strings.TrimSpace(in.Path)
 	if path == "" {
-		return nil, fmt.Errorf("path is required")
+		return nil, errors.New("path is required")
 	}
 
 	if _, err := d.GetProjectByID(ctx, projectID); err != nil {
@@ -725,7 +725,7 @@ func scanProjectFields(scanner interface{ Scan(...any) error }) (*Project, error
 		isStale      int64
 		platform     sql.NullString
 		platformHost sql.NullString
-		platformID   sql.NullString
+		platformID   sql.NullInt64
 		repoOwner    sql.NullString
 		repoName     sql.NullString
 	)
@@ -749,7 +749,7 @@ func scanProjectFields(scanner interface{ Scan(...any) error }) (*Project, error
 		p.PlatformIdentity = &PlatformIdentity{
 			Platform:       platform.String,
 			Host:           platformHost.String,
-			PlatformRepoID: platformID.String,
+			PlatformRepoID: platformID.Int64,
 			Owner:          repoOwner.String,
 			Name:           repoName.String,
 		}

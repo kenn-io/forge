@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,13 +88,10 @@ type Manager struct {
 	// Deterministic synchronization and failure-injection hooks for
 	// repository-browser concurrency tests and clone cleanup tests. Tests set
 	// these before starting goroutines.
-	repoBrowserReadWaitingForTest      func(string)
-	repoBrowserAfterReadLockForTest    func(string)
-	repoBrowserAfterRefreshJoinForTest func(RepoBrowserRouteFence)
-	repoBrowserFetchErrorForTest       func(RepoBrowserRouteFence) error
-	removeRepoBrowserStagingForTest    func(string) error
-	publishRepoBrowserStagingForTest   func(string, string) error
-	removeCloneAsideForTest            func(string) error
+	repoBrowserReadWaitingForTest    func(string)
+	repoBrowserAfterReadLockForTest  func(string)
+	publishRepoBrowserStagingForTest func(string, string) error
+	removeCloneAsideForTest          func(string) error
 }
 
 type ensureCloneFlight struct {
@@ -115,15 +113,16 @@ func (e *cloneValidationError) Error() string { return e.err.Error() }
 
 func (e *cloneValidationError) Unwrap() error { return e.err }
 
-type repositoryIdentityContextKey struct{}
-type requiredCredentialContextKey struct{}
+type (
+	repositoryIdentityContextKey struct{}
+	requiredCredentialContextKey struct{}
+)
 
 // WithRepositoryIdentity partitions clone-backed work by the provider's
 // stable repository identity. Callers should set this after reconciling a
 // mutable owner/name route so route reuse cannot share clone state or an
 // in-flight fetch between distinct repositories.
-func WithRepositoryIdentity(ctx context.Context, providerRepoID string) context.Context {
-	providerRepoID = strings.TrimSpace(providerRepoID)
+func WithRepositoryIdentity(ctx context.Context, providerRepoID int64) context.Context {
 	return context.WithValue(ctx, repositoryIdentityContextKey{}, providerRepoID)
 }
 
@@ -150,7 +149,7 @@ func (m *Manager) RequireCredentialRoute(
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
-		return fmt.Errorf("%w: %v", ErrCredentialUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrCredentialUnavailable, err)
 	}
 	if strings.TrimSpace(token) == "" {
 		return fmt.Errorf("%w for %s/%s", ErrCredentialUnavailable, owner, name)
@@ -219,12 +218,11 @@ func cloneNamespaceForPlatform(platform string) string {
 
 func cloneNamespaceForContext(ctx context.Context, platform string) string {
 	namespace := cloneNamespaceForPlatform(platform)
-	providerRepoID, _ := ctx.Value(repositoryIdentityContextKey{}).(string)
-	providerRepoID = strings.TrimSpace(providerRepoID)
-	if providerRepoID == "" {
+	providerRepoID, _ := ctx.Value(repositoryIdentityContextKey{}).(int64)
+	if providerRepoID <= 0 {
 		return namespace
 	}
-	digest := sha256.Sum256([]byte(providerRepoID))
+	digest := sha256.Sum256([]byte(strconv.FormatInt(providerRepoID, 10)))
 	identityNamespace := fmt.Sprintf("repo-%x", digest[:16])
 	if namespace == "" {
 		return identityNamespace
@@ -240,6 +238,99 @@ func (m *Manager) ClonePathForContext(
 	return m.ClonePathInNamespace(
 		cloneNamespaceForContext(ctx, platform), host, owner, name,
 	)
+}
+
+// CloneLocation is one bare clone found on disk.
+type CloneLocation struct {
+	Host  string
+	Owner string
+	Name  string
+	Path  string
+}
+
+// ClonesForContext lists the bare clones already on disk in ctx's clone
+// namespace, the namespace ClonePathForContext uses for ctx and platform. A
+// renamed repository can leave clones at several owner/name routes inside one
+// identity namespace. When ctx carries no repository identity it returns nil:
+// route-keyed storage is shared across repositories, so it cannot be
+// enumerated per repository.
+func (m *Manager) ClonesForContext(
+	ctx context.Context, platform string,
+) ([]CloneLocation, error) {
+	if providerRepoID, _ := ctx.Value(repositoryIdentityContextKey{}).(int64); providerRepoID <= 0 {
+		return nil, nil
+	}
+	root := filepath.Join(m.baseDir, cloneNamespaceForContext(ctx, platform))
+	var clones []CloneLocation
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if path == root && errors.Is(walkErr, fs.ErrNotExist) {
+				return fs.SkipAll
+			}
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if path == root || !entry.IsDir() || !strings.HasSuffix(entry.Name(), ".git") {
+			return nil
+		}
+		if !looksLikeBareClone(path) {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		location, ok := cloneLocationFromRelative(filepath.ToSlash(rel))
+		if !ok {
+			return fs.SkipDir
+		}
+		location.Path = path
+		clones = append(clones, location)
+		return fs.SkipDir
+	})
+	if err != nil {
+		return nil, err
+	}
+	return clones, nil
+}
+
+// cloneLocationFromRelative inverts clonePath's {host}/{owner...}/{name}.git
+// layout, plus the {name}.git layout of local fixture clones. Owners may span
+// several segments (nested GitLab groups).
+func cloneLocationFromRelative(rel string) (CloneLocation, bool) {
+	parts := strings.Split(rel, "/")
+	name := strings.TrimSuffix(parts[len(parts)-1], ".git")
+	if name == "" {
+		return CloneLocation{}, false
+	}
+	switch {
+	case len(parts) == 1:
+		return CloneLocation{Name: name}, true
+	case len(parts) >= 3:
+		return CloneLocation{
+			Host:  parts[0],
+			Owner: strings.Join(parts[1:len(parts)-1], "/"),
+			Name:  name,
+		}, true
+	default:
+		return CloneLocation{}, false
+	}
+}
+
+func looksLikeBareClone(path string) bool {
+	head, err := os.Lstat(filepath.Join(path, "HEAD"))
+	if err != nil || !head.Mode().IsRegular() {
+		return false
+	}
+	for _, dir := range []string{"objects", "refs"} {
+		info, err := os.Lstat(filepath.Join(path, dir))
+		if err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Manager) clonePathForContext(
@@ -456,8 +547,10 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 	}
 	started, flight, err := m.awaitEnsureCloneFlight(ctx, key, run, validate)
 	if err != nil {
-		var invalidated *cloneValidationError
-		if started || !errors.As(err, &invalidated) {
+		if started {
+			return err
+		}
+		if _, ok := errors.AsType[*cloneValidationError](err); !ok {
 			return err
 		}
 		// The starter's route lost ownership and its failed validation
@@ -609,24 +702,24 @@ func (m *Manager) restoreExistingClone(
 
 func (m *Manager) validateRemoteTransport(platform, host, remoteURL string) error {
 	u, err := url.Parse(strings.TrimSpace(remoteURL))
-	if err != nil || !strings.EqualFold(u.Scheme, "http") {
-		return nil
+	if err == nil && strings.EqualFold(u.Scheme, "http") {
+		if m.AllowsInsecureHTTP(platform, host) {
+			return nil
+		}
+		hostname := strings.Trim(strings.ToLower(u.Hostname()), "[]")
+		if !strings.EqualFold(strings.TrimSpace(platform), "gitea") && hostname == "localhost" {
+			return nil
+		}
+		if ip := net.ParseIP(hostname); !strings.EqualFold(strings.TrimSpace(platform), "gitea") &&
+			ip != nil && ip.IsLoopback() {
+			return nil
+		}
+		return fmt.Errorf(
+			"plain HTTP clone transport for %s host %q requires allow_insecure = true",
+			strings.ToLower(strings.TrimSpace(platform)), host,
+		)
 	}
-	if m.AllowsInsecureHTTP(platform, host) {
-		return nil
-	}
-	hostname := strings.Trim(strings.ToLower(u.Hostname()), "[]")
-	if !strings.EqualFold(strings.TrimSpace(platform), "gitea") && hostname == "localhost" {
-		return nil
-	}
-	if ip := net.ParseIP(hostname); !strings.EqualFold(strings.TrimSpace(platform), "gitea") &&
-		ip != nil && ip.IsLoopback() {
-		return nil
-	}
-	return fmt.Errorf(
-		"plain HTTP clone transport for %s host %q requires allow_insecure = true",
-		strings.ToLower(strings.TrimSpace(platform)), host,
-	)
+	return nil
 }
 
 func validateEnsureCloneCaller(
@@ -1116,7 +1209,7 @@ func (m *Manager) validateRemoteIdentity(
 	}
 	rewrites, err := m.git(ctx, dir, "config", "--local", "--get-regexp", `^url\..*\.(insteadOf|pushInsteadOf)$`)
 	if err == nil && strings.TrimSpace(string(rewrites)) != "" {
-		return fmt.Errorf("authenticated git rejects repository-local URL rewrites")
+		return errors.New("authenticated git rejects repository-local URL rewrites")
 	}
 	for _, key := range []string{"remote." + remote + ".url", "remote." + remote + ".pushurl"} {
 		out, err := m.git(ctx, dir, "config", "--get-all", key)
@@ -1262,7 +1355,7 @@ func (m *Manager) gitNetworked(
 		wrapped = wrapGitError(err, stderr)
 	}
 	if required && errors.Is(wrapped, tokenauth.ErrMissingToken) {
-		return nil, fmt.Errorf("%w: %v", ErrCredentialUnavailable, wrapped)
+		return nil, fmt.Errorf("%w: %w", ErrCredentialUnavailable, wrapped)
 	}
 	return nil, wrapped
 }
@@ -1353,10 +1446,11 @@ func safeGitErrorCause(err error) error {
 }
 
 func gitExitCode(err error) (int, bool) {
-	var exitErr interface {
+	type exitCoder interface {
+		error
 		ExitCode() (int, bool)
 	}
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[exitCoder](err); ok {
 		return exitErr.ExitCode()
 	}
 	return 0, false
@@ -1411,7 +1505,7 @@ func (m *Manager) gitRunnerAuthed(
 	if err != nil {
 		if required && !errors.Is(err, context.Canceled) &&
 			!errors.Is(err, context.DeadlineExceeded) {
-			return runner, "", fmt.Errorf("%w: %v", ErrCredentialUnavailable, err)
+			return runner, "", fmt.Errorf("%w: %w", ErrCredentialUnavailable, err)
 		}
 		return runner, "", fmt.Errorf("resolve git token for host %s: %w", host, err)
 	}

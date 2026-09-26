@@ -89,11 +89,6 @@ func (m *Manager) PushWorktreeBranch(
 	if requireCredential {
 		ctx = gitclone.WithRequiredCredential(ctx)
 	}
-	if err := m.verifyRepoRouteUnoccupied(
-		ctx, platformName, platformHost, owner, name,
-	); err != nil {
-		return err
-	}
 	return pushWorktreeBranch(
 		ctx, m.branchSyncGit(platformName, platformHost, owner, name), dir,
 	)
@@ -121,11 +116,6 @@ func (m *Manager) PullWorktreeBranch(
 	}
 	if requireCredential {
 		ctx = gitclone.WithRequiredCredential(ctx)
-	}
-	if err := m.verifyRepoRouteUnoccupied(
-		ctx, platformName, platformHost, owner, name,
-	); err != nil {
-		return err
 	}
 	return pullWorktreeBranch(
 		ctx, m.branchSyncGit(platformName, platformHost, owner, name), dir,
@@ -209,7 +199,7 @@ func remoteBranchExists(
 	}
 	fields := strings.Fields(out)
 	if len(fields) != 2 || fields[1] != ref {
-		return false, fmt.Errorf("check remote branch: unexpected ls-remote output")
+		return false, errors.New("check remote branch: unexpected ls-remote output")
 	}
 	return true, nil
 }

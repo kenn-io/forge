@@ -22,16 +22,17 @@ const (
 )
 
 type RepoRef struct {
-	Platform           Kind
-	Host               string
-	Owner              string
-	Name               string
-	RepoPath           string
-	PlatformID         int64
-	PlatformExternalID string
-	WebURL             string
-	CloneURL           string
-	DefaultBranch      string
+	Platform Kind
+	Host     string
+	Owner    string
+	Name     string
+	RepoPath string
+	// PlatformID is the provider's integer repository ID. It is the only
+	// repository ID: stable across renames and transfers, unique per host.
+	PlatformID    int64
+	WebURL        string
+	CloneURL      string
+	DefaultBranch string
 }
 
 func (r RepoRef) DisplayName() string {
@@ -53,20 +54,18 @@ type RepositoryFeatures struct {
 }
 
 type Repository struct {
-	Ref                RepoRef
-	PlatformID         int64
-	PlatformExternalID string
-	Description        string
-	Private            bool
-	Archived           bool
-	Features           RepositoryFeatures
-	MergeSettings      *RepositoryMergeSettings
-	ViewerCanMerge     *bool
-	DefaultBranch      string
-	WebURL             string
-	CloneURL           string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	Ref            RepoRef
+	Description    string
+	Private        bool
+	Archived       bool
+	Features       RepositoryFeatures
+	MergeSettings  *RepositoryMergeSettings
+	ViewerCanMerge *bool
+	DefaultBranch  string
+	WebURL         string
+	CloneURL       string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 func (r Repository) FeatureEnabled(feature string) (bool, bool) {
@@ -99,6 +98,7 @@ type MergeRequest struct {
 	URL                string
 	Title              string
 	Author             string
+	AuthorAssociation  *string
 	AuthorDisplayName  string
 	State              string
 	IsDraft            bool
@@ -152,6 +152,7 @@ type Issue struct {
 	URL                string
 	Title              string
 	Author             string
+	AuthorAssociation  *string
 	State              string
 	Body               string
 	CommentCount       int
@@ -180,6 +181,7 @@ type MergeRequestEvent struct {
 	MergeRequestNumber int
 	EventType          string
 	Author             string
+	AuthorAssociation  *string
 	Summary            string
 	Body               string
 	MetadataJSON       string
@@ -352,6 +354,7 @@ type MergeRequestReviewThread struct {
 	ProviderCommentID  string
 	Body               string
 	AuthorLogin        string
+	AuthorAssociation  *string
 	DirectURL          string
 	Range              DiffReviewLineRange
 	Resolved           bool
@@ -411,7 +414,7 @@ func (c ArchiveCapabilities) HasHistoricalInventory() bool {
 }
 
 func (c ArchiveCapabilities) Support(capability ArchiveCapability) (ArchiveCapabilitySupport, error) {
-	supported := false
+	var supported bool
 	switch capability {
 	case ArchiveCapabilityHistoricalIssues:
 		supported = c.HistoricalIssues

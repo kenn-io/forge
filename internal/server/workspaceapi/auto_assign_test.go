@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -43,37 +44,46 @@ func (p *autoAssignProvider) Capabilities() platform.Capabilities {
 		AssigneeMutation:      true,
 	}
 }
+
 func (p *autoAssignProvider) AuthenticatedUser(context.Context, platform.RepoRef) (string, error) {
 	return "maintainer", nil
 }
+
 func (p *autoAssignProvider) ListOpenMergeRequests(context.Context, platform.RepoRef) ([]platform.MergeRequest, error) {
 	p.listPullCalls++
 	return nil, nil
 }
+
 func (p *autoAssignProvider) GetMergeRequest(context.Context, platform.RepoRef, int) (platform.MergeRequest, error) {
 	p.getPullCalls++
 	return p.pull, nil
 }
+
 func (p *autoAssignProvider) ListMergeRequestEvents(context.Context, platform.RepoRef, int) ([]platform.MergeRequestEvent, error) {
 	return nil, nil
 }
+
 func (p *autoAssignProvider) ListOpenIssues(context.Context, platform.RepoRef) ([]platform.Issue, error) {
 	p.listIssueCalls++
 	return nil, nil
 }
+
 func (p *autoAssignProvider) GetIssue(context.Context, platform.RepoRef, int) (platform.Issue, error) {
 	p.getIssueCalls++
 	return p.issue, nil
 }
+
 func (p *autoAssignProvider) ListIssueEvents(context.Context, platform.RepoRef, int) ([]platform.IssueEvent, error) {
 	return nil, nil
 }
+
 func (p *autoAssignProvider) SetMergeRequestAssignees(
 	_ context.Context, _ platform.RepoRef, _ int, usernames []string,
 ) ([]string, error) {
 	p.pullAssigned = slices.Clone(usernames)
 	return slices.Clone(usernames), nil
 }
+
 func (p *autoAssignProvider) SetIssueAssignees(
 	_ context.Context, _ platform.RepoRef, _ int, usernames []string,
 ) ([]string, error) {
@@ -88,13 +98,12 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 
 	database := dbtest.Open(t)
 	repoIdentity := db.RepoIdentity{
-		Platform:       string(platform.KindGitLab),
-		PlatformHost:   "git.example.test",
-		PlatformRepoID: "repo-acme-widget",
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     string(platform.KindGitLab),
+		PlatformHost: "git.example.test",
+		Owner:        "acme",
+		Name:         "widget",
 	}
-	repoID, err := database.UpsertRepo(t.Context(), repoIdentity)
+	repoID, err := reposeed.Seed(t.Context(), database, repoIdentity)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	pullID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -161,13 +170,13 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), *repo, tt.number, tt.issue, false))
+			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), repo.Repo, tt.number, tt.issue, false))
 			assert.Equal([]string{"reviewer", "maintainer"}, tt.assigned())
 			assert.Equal([]string{"reviewer", "maintainer"}, tt.stored())
 
 			provider.pullAssigned = nil
 			provider.issueAssigned = nil
-			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), *repo, tt.number, tt.issue, true))
+			require.NoError(handler.autoAssignWorkspaceItem(t.Context(), repo.Repo, tt.number, tt.issue, true))
 			assert.Nil(tt.assigned())
 		})
 	}
@@ -202,9 +211,9 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	provider.pullAssigned = nil
 	provider.issueAssigned = nil
 
-	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 7, false, false)
+	err = handler.autoAssignWorkspaceItem(t.Context(), repo.Repo, 7, false, false)
 	require.ErrorContains(err, "not visible")
-	err = handler.autoAssignWorkspaceItem(t.Context(), *repo, 8, true, false)
+	err = handler.autoAssignWorkspaceItem(t.Context(), repo.Repo, 8, true, false)
 	require.ErrorContains(err, "not visible")
 	assert.Empty(provider.pullAssigned)
 	assert.Empty(provider.issueAssigned)

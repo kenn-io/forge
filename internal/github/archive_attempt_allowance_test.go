@@ -32,6 +32,8 @@ func (c *countingRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 }
 
 func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &countingRoundTripper{status: http.StatusInternalServerError}
@@ -43,6 +45,9 @@ func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 		require.NoError(err)
 		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		require.NoError(err)
 		assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	}
@@ -50,6 +55,9 @@ func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 	require.NoError(err)
 	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	assert.Nil(resp)
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 
@@ -59,6 +67,8 @@ func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
 }
 
 func TestArchiveAttemptAllowanceBoundsAuthRetries(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &countingRoundTripper{status: http.StatusUnauthorized}
@@ -77,6 +87,9 @@ func TestArchiveAttemptAllowanceBoundsAuthRetries(t *testing.T) {
 	require.NoError(err)
 
 	resp, err := authRT.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	assert.Nil(resp)
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 	// The initial attempt spent the only admitted unit; the authentication
@@ -86,6 +99,8 @@ func TestArchiveAttemptAllowanceBoundsAuthRetries(t *testing.T) {
 }
 
 func TestArchiveAttemptAllowanceLeavesLiveContextsUnbounded(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &countingRoundTripper{status: http.StatusInternalServerError}
@@ -99,6 +114,9 @@ func TestArchiveAttemptAllowanceLeavesLiveContextsUnbounded(t *testing.T) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 		require.NoError(err)
 		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		require.NoError(err)
 		assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	}
@@ -108,6 +126,8 @@ func TestArchiveAttemptAllowanceLeavesLiveContextsUnbounded(t *testing.T) {
 }
 
 func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	registry := NewQuotaRegistry()
@@ -142,12 +162,18 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	req, err = http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 	require.NoError(err)
-	resp, err := transport.RoundTrip(req)
+	resp, err = transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	assert.Nil(resp)
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 
@@ -165,6 +191,8 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 }
 
 func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -210,7 +238,10 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 		ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	window, ok = registry.PacingWindow(identity, resources)
@@ -230,7 +261,10 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 		ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err = transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	window, ok = registry.PacingWindow(identity, resources)
@@ -239,6 +273,8 @@ func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
 }
 
 func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -282,7 +318,10 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 			ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
 		)
 		require.NoError(err)
-		_, err = transport.RoundTrip(req)
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -295,6 +334,8 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 }
 
 func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()
@@ -336,7 +377,10 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 		if err != nil {
 			return err
 		}
-		_, err = transport.RoundTrip(req)
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -359,6 +403,8 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 }
 
 func TestArchiveProviderAttemptAllowanceSeedsCostAcrossQuotaWindowReset(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -404,7 +450,10 @@ func TestArchiveProviderAttemptAllowanceSeedsCostAcrossQuotaWindowReset(t *testi
 			ctx, http.MethodPost, "https://api.github.test/graphql", nil,
 		)
 		require.NoError(err)
-		_, err = transport.RoundTrip(req)
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -419,6 +468,8 @@ func TestArchiveProviderAttemptAllowanceSeedsCostAcrossQuotaWindowReset(t *testi
 }
 
 func TestArchiveProviderAttemptAllowanceRechecksEveryRequiredPool(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()
@@ -461,6 +512,9 @@ func TestArchiveProviderAttemptAllowanceRechecksEveryRequiredPool(t *testing.T) 
 	)
 	require.NoError(err)
 	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	assert.Nil(resp)
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 	assert.Zero(calls.Load())

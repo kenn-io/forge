@@ -22,7 +22,7 @@ type PullFailedError struct {
 }
 
 func (e *PullFailedError) Error() string {
-	return fmt.Sprintf("git pull failed: %s", e.Stderr)
+	return "git pull failed: " + e.Stderr
 }
 
 type PullResponse struct {

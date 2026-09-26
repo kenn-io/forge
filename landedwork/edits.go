@@ -94,7 +94,12 @@ func parseEditFiles(raw []byte) ([]fileEdit, error) {
 			return nil, errEdits
 		}
 		oldMode, newMode := strings.TrimPrefix(fields[0], ":"), fields[1]
-		if !editMode(oldMode) || !editMode(newMode) || !objectID(fields[2]) || !objectID(fields[3]) || !strings.Contains("ADMT", fields[4]) || len(fields[4]) != 1 {
+		if !editMode(oldMode) || !editMode(newMode) || !objectID(fields[2]) || !objectID(fields[3]) {
+			return nil, errEdits
+		}
+		switch fields[4] {
+		case "A", "D", "M", "T":
+		default:
 			return nil, errEdits
 		}
 		files = append(files, fileEdit{path: string(path), oldMode: oldMode, newMode: newMode, oldID: fields[2], newID: fields[3]})

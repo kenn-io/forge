@@ -905,7 +905,7 @@
     --focus-mobile-space-xs: 6.5px;
     --focus-mobile-space-sm: 10px;
     --focus-mobile-space-md: 13px;
-    --focus-mobile-hit-target: 44px;
+    --focus-mobile-hit-target: 40px;
     --focus-mobile-radius-sm: 8.5px;
     --focus-mobile-radius-md: 12px;
     background: var(--bg-primary);

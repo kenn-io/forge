@@ -47,6 +47,8 @@ func assertMetadataTestEvent(t *testing.T, database *DB, mrID int64, wantMetadat
 }
 
 func TestChildSnapshotEventMetadataUpdates(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		updateKey    string
@@ -83,6 +85,8 @@ func TestChildSnapshotEventMetadataUpdates(t *testing.T) {
 }
 
 func TestChildSnapshotEventMetadataUpdatesRejectStaleRevision(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
@@ -110,6 +114,8 @@ func TestChildSnapshotEventMetadataUpdatesRejectStaleRevision(t *testing.T) {
 }
 
 func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
@@ -128,18 +134,14 @@ func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) 
 	}
 	upsert := func(state MergeRequestState, title string, updatedAt time.Time) bool {
 		t.Helper()
-		release, err := database.LockRepositoryReconciliationRead(ctx)
-		require.NoError(t, err)
-		defer release()
-		_, _, accepted, err :=
-			database.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
-				ctx, &MergeRequest{
-					RepoID: repoID, PlatformID: 1, Number: 1, Title: title,
-					State: state, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
-					CreatedAt: now.Add(-time.Hour), UpdatedAt: updatedAt,
-					LastActivityAt: updatedAt,
-				}, computer,
-			)
+		_, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
+			ctx, &MergeRequest{
+				RepoID: repoID, PlatformID: 1, Number: 1, Title: title,
+				State: state, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
+				CreatedAt: now.Add(-time.Hour), UpdatedAt: updatedAt,
+				LastActivityAt: updatedAt,
+			}, computer,
+		)
 		require.NoError(t, err)
 		return accepted
 	}
@@ -172,6 +174,8 @@ func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) 
 }
 
 func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)

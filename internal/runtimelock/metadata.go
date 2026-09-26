@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+
+	"go.kenn.io/kit/atomicfile"
 )
 
 // Metadata is the on-disk shape of kenn-forge.run.json. JSON tags are
@@ -47,46 +49,18 @@ type Metadata struct {
 // unavailable: corrupt".
 var errMetadataMissing = errors.New("runtime metadata is missing")
 
-// writeMetadata writes meta atomically to MetadataPath(dataDir).
-//
-// Pattern (mirrors internal/ptyowner/paths.go:writeState):
-//  1. Marshal meta to JSON.
-//  2. Open <dataDir>/.kenn-forge.run.json.tmp with O_CREATE|O_WRONLY|O_TRUNC mode 0o600.
-//     Truncating, rather than O_EXCL, ensures a leftover temp file from a
-//     previous crash is overwritten rather than blocking us.
-//  3. Write, fsync, close.
-//  4. os.Rename onto MetadataPath. On Go 1.26 + Windows this maps to
-//     MoveFileEx with MOVEFILE_REPLACE_EXISTING.
-//
-// Any failure removes the temp file before returning so we never leak.
+// writeMetadata writes meta atomically to MetadataPath(dataDir) with
+// mode 0600. The runtime flock held by Handle serializes writers.
 func writeMetadata(dataDir string, meta Metadata) error {
 	data, err := json.Marshal(meta, jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("marshal runtime metadata: %w", err)
 	}
-
-	tmpPath := metadataTmpPath(dataDir)
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return fmt.Errorf("open runtime metadata temp file: %w", err)
-	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("write runtime metadata temp file: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("sync runtime metadata temp file: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("close runtime metadata temp file: %w", err)
-	}
-	if err := os.Rename(tmpPath, MetadataPath(dataDir)); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("rename runtime metadata: %w", err)
+	// ErrPublished means the metadata is already in place and only a
+	// later directory fsync failed.
+	err = atomicfile.WriteFile(MetadataPath(dataDir), data)
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
+		return fmt.Errorf("write runtime metadata: %w", err)
 	}
 	return nil
 }
@@ -97,8 +71,7 @@ func writeMetadata(dataDir string, meta Metadata) error {
 func readMetadata(dataDir string) (Metadata, error) {
 	data, err := os.ReadFile(MetadataPath(dataDir))
 	if err != nil {
-		var pathErr *fs.PathError
-		if errors.As(err, &pathErr) && errors.Is(pathErr.Err, fs.ErrNotExist) {
+		if pathErr, ok := errors.AsType[*fs.PathError](err); ok && errors.Is(pathErr.Err, fs.ErrNotExist) {
 			return Metadata{}, errMetadataMissing
 		}
 		return Metadata{}, fmt.Errorf("read runtime metadata: %w", err)

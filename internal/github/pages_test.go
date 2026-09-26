@@ -24,6 +24,8 @@ func pagesTestRef() platform.RepoRef {
 }
 
 func TestGitHubRepositoryFeatureDisabled(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		capability string
@@ -61,6 +63,8 @@ func TestGitHubRepositoryFeatureDisabled(t *testing.T) {
 }
 
 func TestGitHubArchiveMergeRequestInventoryClassifiesIssueOnlyRepository(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name               string
 		repositoryStatus   int
@@ -160,7 +164,10 @@ func (r *requestRecorder) take() []string {
 	r.lines = nil
 	return out
 }
+
 func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -244,6 +251,8 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 }
 
 func TestGitHubArchiveDestinationIgnoresRepoCasing(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ref := platform.RepoRef{
@@ -272,6 +281,8 @@ func TestGitHubArchiveDestinationIgnoresRepoCasing(t *testing.T) {
 // watermark, and stop once the descending traversal crosses the overlapped
 // watermark.
 func TestGitHubUpdatedMergeRequestsAcrossPages(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	watermark := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -332,6 +343,8 @@ func TestGitHubUpdatedMergeRequestsAcrossPages(t *testing.T) {
 }
 
 func TestGitHubArchiveMergeRequestInventoryBypassesListETag(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	requests := 0

@@ -1,5 +1,7 @@
 package httpapi
 
+import "go.kenn.io/forge/platform"
+
 type ProviderCapabilitiesResponse struct {
 	ReadRepositories            bool     `json:"read_repositories"`
 	ReadMergeRequests           bool     `json:"read_merge_requests"`
@@ -73,11 +75,20 @@ type RepoOperations struct {
 type RepoRefResponse struct {
 	Provider       string                       `json:"provider"`
 	PlatformHost   string                       `json:"platform_host"`
-	PlatformRepoID string                       `json:"platform_repo_id,omitempty"`
+	PlatformRepoID int64                        `json:"platform_repo_id,omitempty"`
 	RepoPath       string                       `json:"repo_path"`
 	Owner          string                       `json:"owner"`
 	Name           string                       `json:"name"`
 	DefaultBranch  string                       `json:"default_branch,omitempty"`
 	Capabilities   ProviderCapabilitiesResponse `json:"capabilities"`
 	Operations     *RepoOperations              `json:"operations,omitempty"`
+}
+
+// Identity returns the response's canonical repository identity. It is
+// incomplete when the response carries no provider repository ID.
+func (r RepoRefResponse) Identity() platform.RepositoryIdentity {
+	return platform.RepositoryIdentity{
+		Provider: r.Provider, PlatformHost: r.PlatformHost,
+		PlatformRepoID: r.PlatformRepoID,
+	}.Canonical()
 }

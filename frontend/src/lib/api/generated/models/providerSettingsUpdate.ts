@@ -5,6 +5,7 @@ import type { Activity } from "./activity.ts";
 import type { Detail } from "./detail.ts";
 import type { Issues } from "./issues.ts";
 import type { PullRequests } from "./pullRequests.ts";
+import type { SyncSettingsUpdate } from "./syncSettingsUpdate.ts";
 
 export interface ProviderSettingsUpdate {
   /** A URL to the JSON Schema for this object. */
@@ -13,4 +14,5 @@ export interface ProviderSettingsUpdate {
   detail?: Detail;
   issues?: Issues;
   pull_requests?: PullRequests;
+  sync?: SyncSettingsUpdate;
 }

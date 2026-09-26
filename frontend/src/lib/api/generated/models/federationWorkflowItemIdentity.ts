@@ -7,7 +7,7 @@ export interface FederationWorkflowItemIdentity {
   number: number;
   owner: string;
   platform_host: string;
-  platform_repo_id: string;
+  platform_repo_id: number;
   provider: string;
   type: string;
 }

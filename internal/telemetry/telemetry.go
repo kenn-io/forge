@@ -206,7 +206,7 @@ func safeTelemetryToken(value any) (any, bool) {
 	if text == "" || len(text) > 64 {
 		return nil, false
 	}
-	for i := 0; i < len(text); i++ {
+	for i := range len(text) {
 		b := text[i]
 		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
 			(b >= '0' && b <= '9') || b == '_' || b == '-' || b == '.' {

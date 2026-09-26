@@ -11,6 +11,7 @@ import { pushModalFrame, resetModalStack } from "../../stores/keyboard/modal-sta
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
     getWorkspace: vi.fn(),
+    getFleetWorkspace: vi.fn(),
     refreshWorkspace: vi.fn(),
   },
   showFlash: vi.fn(),
@@ -40,6 +41,9 @@ vi.mock("../../app/runtime-context.js", async () => {
       WorkspacesService: {
         getWorkspace: mocks.runtimeClient.getWorkspace,
         refreshWorkspace: mocks.runtimeClient.refreshWorkspace,
+      },
+      FleetService: {
+        getFleetWorkspace: mocks.runtimeClient.getFleetWorkspace,
       },
     }),
   );
@@ -180,6 +184,7 @@ describe("WorkspaceTerminalView pane props", () => {
 
   beforeEach(() => {
     mocks.runtimeClient.getWorkspace.mockReset();
+    mocks.runtimeClient.getFleetWorkspace.mockReset();
     mocks.runtimeClient.refreshWorkspace.mockReset();
     mocks.showFlash.mockReset();
     mocks.workspaceEventsSubscriber = undefined;
@@ -266,9 +271,52 @@ describe("WorkspaceTerminalView pane props", () => {
     expect(screen.getByRole("button", { name: "Reviews" })).toBeTruthy();
   });
 
-  it("refreshes workspace details and reveals a newly associated PR", async () => {
+  it.each(["self", "peer"])("scopes the remembered PR tab to its %s host", async (host) => {
+    const key = `kenn-forge-workspace-viewed-items:["${host}","ws-1"]`;
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        pr: {
+          provider: "github",
+          platformHost: "example.com",
+          platformRepoId: 1055,
+          owner: "other",
+          name: "gadgets",
+          repoPath: "other/gadgets",
+          number: 55,
+        },
+        issue: null,
+      }),
+    );
     mocks.runtimeClient.getWorkspace.mockResolvedValue(readyIssueWorkspaceData);
-    mocks.runtimeClient.refreshWorkspace.mockResolvedValue({ ...readyIssueWorkspaceData, associated_pr_number: 42 });
+    mocks.runtimeClient.getFleetWorkspace.mockResolvedValue({
+      ...readyIssueWorkspaceData,
+      fleet_host_key: "peer",
+      git_head_ref: "feature/peer-workspace",
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
+    if (host === "self") expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
+    else expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
+
+    await view.rerender({ workspaceHostKey: "peer" });
+    await screen.findAllByText("feature/peer-workspace");
+    expect(mocks.runtimeClient.getFleetWorkspace).toHaveBeenCalledWith(
+      { hostKey: "peer", id: "ws-1" },
+      { signal: expect.any(AbortSignal) },
+    );
+    if (host === "peer") expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
+    else expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
+    localStorage.removeItem(key);
+  });
+
+  it("offers search before a refresh discovers a linked PR", async () => {
+    mocks.runtimeClient.getWorkspace.mockResolvedValue(readyIssueWorkspaceData);
+    mocks.runtimeClient.refreshWorkspace.mockResolvedValue({
+      ...readyIssueWorkspaceData,
+      associated_pr_number: 42,
+      git_head_ref: "feature/refreshed",
+    });
 
     render(WorkspaceTerminalView, {
       props: {
@@ -279,10 +327,12 @@ describe("WorkspaceTerminalView pane props", () => {
 
     await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
     expect(screen.queryByRole("button", { name: "PR" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Search PRs and issues" })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh workspace details" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "PR" })).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText("feature/refreshed").length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", { name: "PR" })).toBeTruthy();
     expect(mocks.runtimeClient.refreshWorkspace).toHaveBeenCalledWith(
       { id: "ws-1" },
       { signal: expect.any(AbortSignal) },

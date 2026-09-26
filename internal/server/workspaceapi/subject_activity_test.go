@@ -1,72 +1,14 @@
 package workspaceapi
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
-
-func TestWorkspaceSubjectSnapshotFencesRepositoryReconciliationAcrossReads(t *testing.T) {
-	require := require.New(t)
-	h := newEnrichmentTestHandler(t, "")
-	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
-	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repository, accepted, err := h.db.ReconcileRepositoryObservation(t.Context(), identity, now)
-	require.NoError(err)
-	require.True(accepted)
-	require.NoError(h.db.InsertWorkspace(t.Context(), &db.Workspace{
-		ID: "ws-fenced", Platform: "github", PlatformHost: "github.com",
-		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
-		ItemNumber: 51, WorktreePath: t.TempDir(), Status: "ready",
-	}))
-	_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
-		RepoID: repository.Repository.ID, PlatformID: 51, Number: 51,
-		URL: "https://github.com/acme/widget/pull/51", Title: "Fenced work",
-		Author: "alice", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
-	})
-	require.NoError(err)
-
-	afterSummaries := make(chan struct{})
-	continueSnapshot := make(chan struct{})
-	h.workspaceSubjectAfterSummariesForTest = func() {
-		close(afterSummaries)
-		<-continueSnapshot
-	}
-	snapshotDone := make(chan error, 1)
-	go func() {
-		_, snapshotErr := h.WorkspaceSubjectSnapshot(context.Background())
-		snapshotDone <- snapshotErr
-	}()
-	<-afterSummaries
-
-	writeAttempted := make(chan struct{})
-	restoreHook := h.db.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
-		close(writeAttempted)
-	})
-	t.Cleanup(restoreHook)
-	renameDone := make(chan error, 1)
-	go func() {
-		renamed := db.GitHubRepoIdentity("github.com", "acme", "gadget")
-		renamed.PlatformRepoID = identity.PlatformRepoID
-		_, _, renameErr := h.db.ReconcileRepositoryObservation(context.Background(), renamed, now.Add(time.Minute))
-		renameDone <- renameErr
-	}()
-	<-writeAttempted
-
-	select {
-	case err := <-renameDone:
-		require.Failf("repository reconciliation completed during snapshot", "error: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	close(continueSnapshot)
-	require.NoError(<-snapshotDone)
-	require.NoError(<-renameDone)
-}
 
 func TestWorkspaceSubjectSnapshotKeepsReferenceAndCachedActivity(t *testing.T) {
 	require := require.New(t)
@@ -75,8 +17,7 @@ func TestWorkspaceSubjectSnapshotKeepsReferenceAndCachedActivity(t *testing.T) {
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return now }
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := h.db.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), h.db, identity)
 	require.NoError(err)
 	_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: 41, Number: 41,
@@ -113,8 +54,7 @@ func TestWorkspaceSubjectSnapshotResolvesAdHocAssociationAsPullReference(t *test
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return now }
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := h.db.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), h.db, identity)
 	require.NoError(err)
 	_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: 42, Number: 42,
@@ -145,8 +85,7 @@ func TestWorkspaceSubjectSnapshotFallsBackFromRemovedAssociatedPullRequest(t *te
 	h := newEnrichmentTestHandler(t, "")
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := h.db.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), h.db, identity)
 	require.NoError(err)
 	_, err = h.db.UpsertIssue(t.Context(), &db.Issue{
 		RepoID: repoID, PlatformID: 7, Number: 7,
@@ -197,12 +136,9 @@ func TestWorkspaceSubjectSnapshotUsesStableRepositoryIdentityAfterRename(t *test
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return now }
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repository, accepted, err := h.db.ReconcileRepositoryObservation(
-		t.Context(), identity, now,
-	)
+	identity.PlatformRepoID = 1001
+	repository, err := h.db.ObserveRepository(t.Context(), identity)
 	require.NoError(err)
-	require.True(accepted)
 	repoID := repository.Repository.ID
 	_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: 43, Number: 43,
@@ -218,11 +154,10 @@ func TestWorkspaceSubjectSnapshotUsesStableRepositoryIdentityAfterRename(t *test
 	}))
 	renamedIdentity := db.GitHubRepoIdentity("github.com", "acme", "gadget")
 	renamedIdentity.PlatformRepoID = identity.PlatformRepoID
-	_, accepted, err = h.db.ReconcileRepositoryObservation(
-		t.Context(), renamedIdentity, now.Add(time.Minute),
+	_, err = h.db.ObserveRepository(
+		t.Context(), renamedIdentity,
 	)
 	require.NoError(err)
-	require.True(accepted)
 
 	snapshot, err := h.WorkspaceSubjectSnapshot(t.Context())
 	require.NoError(err)
@@ -239,10 +174,9 @@ func TestWorkspaceSubjectSnapshotKeepsStableIdentityAcrossReusedRoute(t *testing
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return now }
 	oldIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	oldIdentity.PlatformRepoID = "repo-old-widget"
-	oldRepo, accepted, err := h.db.ReconcileRepositoryObservation(t.Context(), oldIdentity, now)
+	oldIdentity.PlatformRepoID = 1002
+	oldRepo, err := h.db.ObserveRepository(t.Context(), oldIdentity)
 	require.NoError(err)
-	require.True(accepted)
 	_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: oldRepo.Repository.ID, PlatformID: 45, Number: 45,
 		URL: "https://github.com/acme/widget/pull/45", Title: "Old routed work",
@@ -258,16 +192,14 @@ func TestWorkspaceSubjectSnapshotKeepsStableIdentityAcrossReusedRoute(t *testing
 
 	renamedIdentity := db.GitHubRepoIdentity("github.com", "acme", "gadget")
 	renamedIdentity.PlatformRepoID = oldIdentity.PlatformRepoID
-	_, accepted, err = h.db.ReconcileRepositoryObservation(t.Context(), renamedIdentity, now.Add(time.Minute))
+	_, err = h.db.ObserveRepository(t.Context(), renamedIdentity)
 	require.NoError(err)
-	require.True(accepted)
 	replacementIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	replacementIdentity.PlatformRepoID = "repo-replacement-widget"
-	replacement, accepted, err := h.db.ReconcileRepositoryObservation(
-		t.Context(), replacementIdentity, now.Add(2*time.Minute),
+	replacementIdentity.PlatformRepoID = 1003
+	replacement, err := h.db.ObserveRepository(
+		t.Context(), replacementIdentity,
 	)
 	require.NoError(err)
-	require.True(accepted)
 	_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: replacement.Repository.ID, PlatformID: 145, Number: 45,
 		URL: "https://github.com/acme/widget/pull/45", Title: "Replacement work",
@@ -292,8 +224,7 @@ func TestWorkspaceSubjectSnapshotKeepsNonReadyReferenceWithoutCachedActivity(t *
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return now }
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := h.db.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), h.db, identity)
 	require.NoError(err)
 	_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: 44, Number: 44,

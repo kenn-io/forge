@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strings"
+	"strconv"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -186,7 +186,8 @@ func (s *Handler) buildLocalRaw(ctx context.Context) (fleet.RawSnapshot, error) 
 		raw.Workspaces = slices.Clone(summaries)
 		for i := range summaries {
 			sum := summaries[i]
-			projKey, ok := "", false
+			var projKey string
+			var ok bool
 			if stableKey := stableIdentityKey(sum.Repository); stableKey != "" {
 				projKey, ok = projByStableIdentity[stableKey]
 			} else {
@@ -596,10 +597,11 @@ func normPath(p string) string {
 }
 
 func stableIdentityKey(identity fleet.RepositoryIdentity) string {
-	if strings.TrimSpace(identity.PlatformRepoID) == "" {
+	if identity.PlatformRepoID == 0 {
 		return ""
 	}
-	return identity.Provider + "\x00" + identity.PlatformHost + "\x00" + identity.PlatformRepoID
+	return identity.Provider + "\x00" + identity.PlatformHost + "\x00" +
+		strconv.FormatInt(identity.PlatformRepoID, 10)
 }
 
 func routeIdentityKey(identity fleet.RepositoryIdentity) string {

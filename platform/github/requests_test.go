@@ -172,7 +172,8 @@ func TestApplyReviewSuggestionsRejectsWhitespacePaddedPath(t *testing.T) {
 		srv.URL+"/api/uploads/")
 
 	require.NoError(t, err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              ghClient,
 		ghWrite:         ghClient,
 		httpWriteClient: srv.Client(),
@@ -229,7 +230,8 @@ func TestApplyReviewSuggestionsCreatesBoundCommit(t *testing.T) {
 		srv.URL+"/api/uploads/")
 
 	require.NoError(err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              ghClient,
 		ghWrite:         ghClient,
 		httpWriteClient: srv.Client(),
@@ -316,7 +318,8 @@ func TestApplyReviewSuggestionsProbesHeadRepoWithWriteCredential(t *testing.T) {
 		writeSrv.URL+"/api/uploads/")
 
 	require.NoError(err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              readGH,
 		ghWrite:         writeGH,
 		httpWriteClient: writeSrv.Client(),
@@ -370,7 +373,8 @@ func TestApplyReviewSuggestionsFailsClosedWhenPullNotOpenUpstream(t *testing.T) 
 		srv.URL+"/api/uploads/")
 
 	require.NoError(err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              ghClient,
 		ghWrite:         ghClient,
 		httpWriteClient: srv.Client(),
@@ -434,7 +438,8 @@ func TestApplyReviewSuggestionsFailsClosedWhenPullClosesBeforeMutation(t *testin
 		srv.URL+"/api/uploads/")
 
 	require.NoError(err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              ghClient,
 		ghWrite:         ghClient,
 		httpWriteClient: srv.Client(),
@@ -514,7 +519,8 @@ func TestApplyReviewSuggestionsFailsStaleBeforeContentWhenPullHeadAlreadyChanged
 				srv.URL+"/api/uploads/")
 
 			require.NoError(err)
-			client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+			client := &Client{
+				now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 				gh:              ghClient,
 				ghWrite:         ghClient,
 				httpWriteClient: srv.Client(),
@@ -603,7 +609,8 @@ func TestApplyReviewSuggestionsFailsStaleWhenPullHeadChangesBeforeMutation(t *te
 				srv.URL+"/api/uploads/")
 
 			require.NoError(err)
-			client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+			client := &Client{
+				now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 				gh:              ghClient,
 				ghWrite:         ghClient,
 				httpWriteClient: srv.Client(),
@@ -659,7 +666,8 @@ func TestApplyReviewSuggestionsFailsClosedWhenLiveHeadRepoMissing(t *testing.T) 
 		srv.URL+"/api/uploads/")
 
 	require.NoError(err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              ghClient,
 		ghWrite:         ghClient,
 		httpWriteClient: srv.Client(),
@@ -716,7 +724,8 @@ func TestApplyReviewSuggestionsFailsClosedWhenLiveHeadRepoInaccessible(t *testin
 		srv.URL+"/api/uploads/")
 
 	require.NoError(err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              ghClient,
 		ghWrite:         ghClient,
 		httpWriteClient: srv.Client(),
@@ -1083,7 +1092,8 @@ func TestListRepositoriesByOwnerUsesInstallationReposWithAppToken(t *testing.T) 
 		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
 
 	require.NoError(err)
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:   ghClient,
 		auth: Authentication{InstallationActive: func(owner string) bool { return true }},
 	}
@@ -1118,7 +1128,8 @@ func TestGetRepositoryOverlaysMergeSettingsFromUserCredential(t *testing.T) {
 	require.NoError(err)
 	writeGH, err := newEnterpriseGHClient(writeSrv.Client(), writeSrv.URL+"/", writeSrv.URL+"/")
 	require.NoError(err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh: readGH, ghWrite: writeGH,
 		auth: Authentication{InstallationActive: func(owner string) bool { return true }},
 	}
@@ -1151,7 +1162,8 @@ func TestGetRepositoryRetainsCompleteAppMergeSettingsWhenUserOverlayFails(t *tes
 	require.NoError(err)
 	writeGH, err := newEnterpriseGHClient(writeSrv.Client(), writeSrv.URL+"/", writeSrv.URL+"/")
 	require.NoError(err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh: readGH, ghWrite: writeGH,
 		auth: Authentication{InstallationActive: func(owner string) bool { return true }},
 	}
@@ -1182,7 +1194,8 @@ func TestGetRepositoryKeepsCompleteAppMergeSettingsWhenUserFieldsAreIncomplete(t
 	require.NoError(err)
 	writeGH, err := newEnterpriseGHClient(writeSrv.Client(), writeSrv.URL+"/", writeSrv.URL+"/")
 	require.NoError(err)
-	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh: readGH, ghWrite: writeGH,
 		auth: Authentication{InstallationActive: func(owner string) bool { return true }},
 	}
@@ -1229,7 +1242,8 @@ func TestListRepositoriesByOwnerSkipsInstallationReposForUnmatchedOwner(t *testi
 		srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
 
 	require.NoError(err)
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:   ghClient,
 		auth: Authentication{InstallationActive: func(owner string) bool { return owner == "" || owner == "kenn-io" }},
 	}
@@ -1305,7 +1319,8 @@ func TestListForcePushEvents(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		httpClient:      srv.Client(),
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
@@ -1342,7 +1357,8 @@ func TestListPullRequestTimelineEvents(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		httpClient:      srv.Client(),
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
@@ -1422,7 +1438,8 @@ func TestListPullRequestReviewThreads(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		httpClient:      srv.Client(),
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
@@ -1508,7 +1525,8 @@ func TestListPullRequestReviewThreadsScopesPaginatedCommentAuthByOwner(t *testin
 		SetHeader:     platform.BearerAuthHeader,
 		AllowedOrigin: srv.URL,
 	}
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		httpClient:      &http.Client{Transport: auth},
 		graphQLEndpoint: srv.URL + "/graphql",
 		auth: Authentication{Context: func(ctx context.Context, owner string, _ bool) context.Context {
@@ -1533,7 +1551,8 @@ func TestListPullRequestTimelineEventsReturnsGraphQLErrors(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		httpClient:      srv.Client(),
 		graphQLEndpoint: srv.URL,
 	}
@@ -1601,7 +1620,8 @@ func TestListIssueTimelineEvents(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		httpClient:      srv.Client(),
 		graphQLEndpoint: srv.URL + "/graphql",
 	}
@@ -1662,7 +1682,8 @@ func TestListPullRequestTimelineEventsRejectsNullGraphQLNodes(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+			c := &Client{
+				now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 				httpClient:      srv.Client(),
 				graphQLEndpoint: srv.URL,
 			}
@@ -1697,7 +1718,8 @@ func TestMarkPullRequestReadyForReviewUsesGraphQLMutation(t *testing.T) {
 	ghClient, err := newEnterpriseGHClient(srv.Client(), srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
 	require.NoError(err)
 
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              ghClient,
 		httpClient:      srv.Client(),
 		graphQLEndpoint: srv.URL + "/graphql",
@@ -1747,7 +1769,8 @@ func TestConvertPullRequestToDraftUsesGraphQLMutation(t *testing.T) {
 	ghClient, err := newEnterpriseGHClient(srv.Client(), srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
 	require.NoError(err)
 
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              ghClient,
 		httpClient:      srv.Client(),
 		graphQLEndpoint: srv.URL + "/graphql",
@@ -1793,7 +1816,8 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 	ghClient, err := newEnterpriseGHClient(srv.Client(), srv.URL+"/api/v3/", srv.URL+"/api/uploads/")
 	require.NoError(err)
 
-	c := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+	c := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
 		gh:              ghClient,
 		httpClient:      srv.Client(),
 		graphQLEndpoint: srv.URL + "/graphql",

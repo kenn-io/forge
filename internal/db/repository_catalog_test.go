@@ -1,90 +1,372 @@
 package db
 
 import (
-	"context"
+	"database/sql"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/platform"
 )
 
-func seedRepositoryCatalogCollision(t *testing.T, d *DB) (int64, int64) {
+func observeCatalogRepository(
+	t *testing.T, d *DB, providerID int64, owner, name string,
+) *RepositoryCatalogEntry {
+	t.Helper()
+	entry, err := d.ObserveRepository(t.Context(), RepoIdentity{
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: providerID,
+		Owner:          owner,
+		Name:           name,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	assertDatabaseIntegrityForTest(t, d.ReadDB())
+	return entry
+}
+
+func githubRepositoryIdentity(providerID int64) platform.RepositoryIdentity {
+	return platform.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: providerID,
+	}
+}
+
+func githubRoute(owner, name string) RepoIdentity {
+	return RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: owner, Name: name,
+	}
+}
+
+// seedRepositoryRouteReplacement leaves two rows at org-a/project-a: 1001 was
+// displaced by 1002, which now holds the route.
+func seedRepositoryRouteReplacement(t *testing.T, d *DB) (int64, int64) {
+	t.Helper()
+	original := observeCatalogRepository(t, d, 1001, "org-a", "project-a")
+	replacement := observeCatalogRepository(t, d, 1002, "org-a", "project-a")
+	return original.Repository.ID, replacement.Repository.ID
+}
+
+func TestObserveRepositoryCreatesActiveRepository(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	entry, err := d.ObserveRepository(t.Context(), RepoIdentity{
+		Platform: "gitlab", PlatformHost: "GitLab.Example.com",
+		PlatformRepoID: 250833, Owner: "Group-A", Name: "Project-A",
+	})
+	require.NoError(err)
+	require.NotNil(entry)
+	assert.Equal(RepositoryLifecycleActive, entry.Lifecycle)
+	assert.Equal("gitlab.example.com", entry.Repository.PlatformHost)
+	assert.EqualValues(250833, entry.Repository.PlatformRepoID)
+	assert.Equal("Group-A/Project-A", entry.Repository.RepoPath)
+	assert.False(entry.Repository.ViewerCanMerge,
+		"a new repository must not inherit a permissive merge permission")
+
+	again, err := d.ObserveRepository(t.Context(), RepoIdentity{
+		Platform: "gitlab", PlatformHost: "gitlab.example.com",
+		PlatformRepoID: 250833, Owner: "Group-A", Name: "Project-A",
+	})
+	require.NoError(err)
+	assert.Equal(entry.Repository.ID, again.Repository.ID)
+	entries, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{})
+	require.NoError(err)
+	assert.Len(entries, 1)
+}
+
+func TestObserveRepositoryRejectsIncompleteIdentity(t *testing.T) {
+	d := openTestDB(t)
+	for name, identity := range map[string]RepoIdentity{
+		"missing provider id": githubRoute("org-a", "project-a"),
+		"missing route": {
+			Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := d.ObserveRepository(t.Context(), identity)
+			require.Error(t, err)
+		})
+	}
+	entries, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{})
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+func TestObserveRepositoryRenamesSameProviderIDInPlace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	original := observeCatalogRepository(t, d, 1001, "org-a", "project-a")
+	now := baseTime()
+	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: original.Repository.ID, PlatformID: 9001, Number: 7,
+		Title: "carried over", State: MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	renamed := observeCatalogRepository(t, d, 1001, "org-b", "project-b")
+	assert.Equal(original.Repository.ID, renamed.Repository.ID)
+	assert.Equal("org-b/project-b", renamed.Repository.RepoPath)
+	assert.Equal(RepositoryLifecycleActive, renamed.Lifecycle)
+
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "org-b", "project-b", 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("carried over", mr.Title)
+	oldRoute, err := d.ResolveActiveRepositoryRoute(ctx, githubRoute("org-a", "project-a"))
+	require.NoError(err)
+	assert.Nil(oldRoute, "the vacated route resolves to nothing")
+}
+
+func TestObserveRepositoryRefreshesCaseOnlyDisplayRoute(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	identity := RepoIdentity{
+		Platform: "gitlab", PlatformHost: "gitlab.example.com",
+		PlatformRepoID: 42, Owner: "Group-A", Name: "Project-A",
+	}
+	first, err := d.ObserveRepository(t.Context(), identity)
+	require.NoError(err)
+	identity.Owner, identity.Name = "group-a", "PROJECT-A"
+	second, err := d.ObserveRepository(t.Context(), identity)
+	require.NoError(err)
+	assert.Equal(first.Repository.ID, second.Repository.ID)
+	assert.Equal("group-a", second.Repository.Owner)
+	assert.Equal("PROJECT-A", second.Repository.Name)
+	assert.Equal("group-a/PROJECT-A", second.Repository.RepoPath)
+}
+
+func TestObserveRepositoryRenameClearsVacatedRouteState(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	number := 7
+	original := observeCatalogRepository(t, d, 1001, "acme", "alpha")
+	seedRouteScopedState(t, d, "acme", "alpha", number)
+
+	renamed := observeCatalogRepository(t, d, 1001, "acme", "beta")
+	assert.Equal(original.Repository.ID, renamed.Repository.ID)
+	assertRouteScopedStateCleared(t, d, "acme", "alpha", number)
+
+	notifications, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	require.Len(notifications, 1, "notifications linked to the repository survive its rename")
+	assert.Equal("linked", notifications[0].PlatformNotificationID)
+}
+
+func TestObserveRepositoryNewIDDisplacesRouteOccupant(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	number := 7
+	original := observeCatalogRepository(t, d, 1001, "acme", "widget")
+	now := baseTime()
+	_, err := d.UpsertIssue(ctx, &Issue{
+		RepoID: original.Repository.ID, PlatformID: 9001, Number: 3,
+		Title: "original history", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	seedRouteScopedState(t, d, "acme", "widget", number)
+
+	replacement := observeCatalogRepository(t, d, 1002, "acme", "widget")
+	assert.NotEqual(original.Repository.ID, replacement.Repository.ID)
+	assert.Equal(RepositoryLifecycleActive, replacement.Lifecycle)
+
+	displaced, err := d.GetRepositoryByProviderID(ctx, githubRepositoryIdentity(1001))
+	require.NoError(err)
+	require.NotNil(displaced)
+	assert.Equal(original.Repository.ID, displaced.Repository.ID)
+	assert.Equal(RepositoryLifecycleInactive, displaced.Lifecycle)
+	assert.Equal("acme/widget", displaced.Repository.RepoPath,
+		"an inactive row keeps its last route for display")
+
+	active, err := d.ResolveActiveRepositoryRoute(ctx, githubRoute("acme", "widget"))
+	require.NoError(err)
+	require.NotNil(active)
+	assert.Equal(replacement.Repository.ID, active.Repository.ID)
+	assertRouteScopedStateCleared(t, d, "acme", "widget", number)
+
+	issue, err := d.GetIssue(ctx, "github", "github.com", "acme", "widget", 3)
+	require.NoError(err)
+	assert.Nil(issue, "the replacement does not inherit the displaced repository's items")
+	var issueRepoID int64
+	require.NoError(d.ReadDB().QueryRowContext(ctx,
+		`SELECT repo_id FROM forge_issues WHERE number = 3`,
+	).Scan(&issueRepoID))
+	assert.Equal(original.Repository.ID, issueRepoID, "displaced history is kept")
+}
+
+func TestObserveRepositoryReactivatesDisplacedIDAtNewRoute(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	originalID, replacementID := seedRepositoryRouteReplacement(t, d)
+
+	moved := observeCatalogRepository(t, d, 1001, "org-a", "project-moved")
+	assert.Equal(originalID, moved.Repository.ID)
+	assert.Equal(RepositoryLifecycleActive, moved.Lifecycle)
+	assert.Equal("org-a/project-moved", moved.Repository.RepoPath)
+
+	replacement, err := d.GetRepositoryByProviderID(t.Context(), githubRepositoryIdentity(1002))
+	require.NoError(err)
+	require.NotNil(replacement)
+	assert.Equal(replacementID, replacement.Repository.ID)
+	assert.Equal(RepositoryLifecycleActive, replacement.Lifecycle,
+		"reactivating at another route leaves the current occupant alone")
+}
+
+func seedRouteScopedState(t *testing.T, d *DB, owner, name string, number int) {
 	t.Helper()
 	require := require.New(t)
-	result, err := d.WriteDB().Exec(`
-		INSERT INTO forge_repos (
-			platform, platform_host, platform_repo_id,
-			owner, name, repo_path, owner_key, name_key, repo_path_key,
-			lifecycle_state
-		) VALUES
-			('github', 'github.com', 'provider-old',
-			 'org-a', 'project-a', 'org-a/project-a',
-			 'org-a', 'project-a', 'org-a/project-a', 'inactive'),
-			('github', 'github.com', 'provider-new',
-			 'org-a', 'project-a', 'org-a/project-a',
-			 'org-a', 'project-a', 'org-a/project-a', 'active')`)
-	require.NoError(err)
-	lastID, err := result.LastInsertId()
-	require.NoError(err)
-	oldID, newID := lastID-1, lastID
-	_, err = d.WriteDB().Exec(`
-		INSERT INTO forge_repo_routes (
-			repo_id, platform, platform_host,
-			owner, name, repo_path, owner_key, name_key, repo_path_key,
-			is_current, first_seen_at, last_seen_at
-		) VALUES
-			(?, 'github', 'github.com',
-			 'org-a', 'project-a', 'org-a/project-a',
-			 'org-a', 'project-a', 'org-a/project-a',
-			 0, '2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z'),
-			(?, 'github', 'github.com',
-			 'org-a', 'project-a', 'org-a/project-a',
-			 'org-a', 'project-a', 'org-a/project-a',
-			 1, '2026-02-02T00:00:00Z', '2026-02-02T00:00:00Z')`,
-		oldID,
-		newID,
+	ctx := t.Context()
+	observedAt := baseTime()
+	require.NoError(d.UpdateNotificationSyncWatermark(
+		ctx, "github", "github.com", owner, name, observedAt, &observedAt,
+	))
+	require.NoError(d.UpsertHTTPEtag(
+		ctx, "github", "github.com", owner, name, "pull_request", number, `"old"`,
+	))
+	require.NoError(d.UpsertNotifications(ctx, []Notification{
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "linked", RepoOwner: owner, RepoName: name,
+			SubjectType: "PullRequest", SubjectTitle: "linked", ItemNumber: &number,
+			ItemType: ItemTypePR, Reason: "mention", Unread: true,
+			SourceUpdatedAt: observedAt, SyncedAt: observedAt,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com",
+			PlatformNotificationID: "route-only", RepoOwner: owner, RepoName: name,
+			SubjectType: "PullRequest", SubjectTitle: "route only", ItemNumber: &number,
+			ItemType: ItemTypePR, Reason: "mention", Unread: true,
+			SourceUpdatedAt: observedAt, SyncedAt: observedAt,
+		},
+	}))
+	_, err := d.WriteDB().ExecContext(ctx,
+		`UPDATE forge_notification_items SET repo_id = NULL
+		 WHERE platform_notification_id = 'route-only'`,
 	)
 	require.NoError(err)
-	return oldID, newID
+}
+
+func assertRouteScopedStateCleared(t *testing.T, d *DB, owner, name string, number int) {
+	t.Helper()
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	watermark, err := d.GetNotificationSyncWatermark(ctx, "github", "github.com", owner, name)
+	require.NoError(err)
+	assert.Nil(watermark)
+	etag, err := d.GetHTTPEtag(ctx, "github", "github.com", owner, name, "pull_request", number)
+	require.NoError(err)
+	assert.Empty(etag)
+	var routeOnly int
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM forge_notification_items
+		WHERE platform_notification_id = 'route-only'`,
+	).Scan(&routeOnly))
+	assert.Zero(routeOnly)
 }
 
 func TestResolveActiveRepositoryRouteReturnsOnlyCurrentOccupant(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	_, newID := seedRepositoryCatalogCollision(t, d)
-	entry, err := d.ResolveActiveRepositoryRoute(t.Context(), RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "org-a",
-		Name:         "project-a",
-	})
+	_, newID := seedRepositoryRouteReplacement(t, d)
+	entry, err := d.ResolveActiveRepositoryRoute(t.Context(), githubRoute("org-a", "project-a"))
 	require.NoError(err)
 	require.NotNil(entry)
 	assert.Equal(newID, entry.Repository.ID)
 	assert.Equal(RepositoryLifecycleActive, entry.Lifecycle)
 }
 
-func TestGetRepositoryByProviderIDReturnsInactiveRepository(t *testing.T) {
+func TestGetRepoByIdentityPrefersProviderID(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	oldID, _ := seedRepositoryCatalogCollision(t, d)
-	entry, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-old",
-	)
+	renamed := observeCatalogRepository(t, d, 1001, "org-a", "project-renamed")
+	other := observeCatalogRepository(t, d, 1002, "org-a", "project-a")
+
+	// A stale route paired with the provider ID still finds the renamed
+	// repository, not whichever repository now holds the route.
+	byID, err := d.GetRepoByIdentity(t.Context(), RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Owner: "org-a", Name: "project-a",
+	})
 	require.NoError(err)
-	require.NotNil(entry)
-	assert.Equal(oldID, entry.Repository.ID)
-	assert.Equal(RepositoryLifecycleInactive, entry.Lifecycle)
-	require.Len(entry.Routes, 1)
-	assert.False(entry.Routes[0].Current)
+	require.NotNil(byID)
+	assert.Equal(renamed.Repository.ID, byID.ID)
+
+	byRoute, err := d.GetRepoByIdentity(t.Context(), githubRoute("org-a", "project-a"))
+	require.NoError(err)
+	require.NotNil(byRoute)
+	assert.Equal(other.Repository.ID, byRoute.ID)
+
+	missing, err := d.GetRepoByIdentity(t.Context(), RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 9999,
+		Owner: "org-a", Name: "project-a",
+	})
+	require.NoError(err)
+	assert.Nil(missing, "an unknown provider ID never falls back to the route")
 }
 
-func TestListRepositoryCatalogFindsHistoricalNameCollisions(t *testing.T) {
+func TestActiveRepoCarriesProviderIdentity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
-	oldID, newID := seedRepositoryCatalogCollision(t, d)
+	oldID, newID := seedRepositoryRouteReplacement(t, d)
+	want := githubRepositoryIdentity(1002)
+
+	active, err := d.GetRepoByIdentity(t.Context(), githubRoute("org-a", "project-a"))
+	require.NoError(err)
+	require.NotNil(active)
+	assert.Equal(newID, active.ID)
+	assert.Equal(want, active.Identity())
+	// The identity is fixed when the row is read; editing the row copy
+	// cannot redirect comparisons to another repository.
+	active.PlatformRepoID = 1001
+	assert.Equal(want, active.Identity())
+
+	byID, err := d.GetActiveRepoByID(t.Context(), oldID)
+	require.NoError(err)
+	assert.Nil(byID)
+	inactive, err := d.GetActiveRepoByProviderID(t.Context(), githubRepositoryIdentity(1001))
+	require.NoError(err)
+	assert.Nil(inactive)
+}
+
+func TestActiveRepoRejectsActiveRowWithoutProviderIdentity(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	// Normal writes cannot produce this row; a corrupted store must fail
+	// loudly instead of yielding an empty identity that compares equal to
+	// other unresolved references.
+	result, err := d.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_repos (
+			platform, platform_host, platform_repo_id,
+			owner, name, repo_path, owner_key, name_key, repo_path_key,
+			lifecycle_state
+		) VALUES ('github', 'github.com', 0, 'org-a', 'project-b', 'org-a/project-b',
+			'org-a', 'project-b', 'org-a/project-b', 'active')`)
+	require.NoError(err)
+	id, err := result.LastInsertId()
+	require.NoError(err)
+	_, err = d.GetActiveRepoByID(t.Context(), id)
+	require.ErrorContains(err, "no provider identity")
+}
+
+func TestListRepositoryCatalogFindsEveryRowAtRoute(t *testing.T) {
+	d := openTestDB(t)
+	oldID, newID := seedRepositoryRouteReplacement(t, d)
 	entries, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{
 		Platform:     "github",
 		PlatformHost: "github.com",
@@ -98,11 +380,36 @@ func TestListRepositoryCatalogFindsHistoricalNameCollisions(t *testing.T) {
 	})
 }
 
-func TestOperationalRepositoryReadsUseCurrentIncarnation(t *testing.T) {
+func TestListRepositoryCatalogRejectsUnqualifiedProviderID(t *testing.T) {
+	d := openTestDB(t)
+	_, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{
+		PlatformRepoID: 1001,
+	})
+	require.ErrorContains(t, err, "platform and host")
+}
+
+func TestListRepositoryCatalogFiltersLifecycle(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	_, newID := seedRepositoryRouteReplacement(t, d)
+	entries, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{
+		Lifecycle: RepositoryLifecycleActive,
+	})
+	require.NoError(err)
+	require.Len(entries, 1)
+	assert.Equal(t, newID, entries[0].Repository.ID)
+
+	_, err = d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{
+		Lifecycle: "retired",
+	})
+	require.ErrorContains(err, "unsupported repository lifecycle")
+}
+
+func TestOperationalRepositoryReadsUseActiveRepository(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	oldID, newID := seedRepositoryCatalogCollision(t, d)
+	oldID, newID := seedRepositoryRouteReplacement(t, d)
 	now := baseTime()
 	for _, item := range []struct {
 		repoID int64
@@ -130,16 +437,11 @@ func TestOperationalRepositoryReadsUseCurrentIncarnation(t *testing.T) {
 	require.Len(repos, 1)
 	assert.Equal(newID, repos[0].ID)
 
-	mrs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{
-		State: "all",
-	})
+	mrs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{State: "all"})
 	require.NoError(err)
 	require.Len(mrs, 1)
-	assert.Equal(newID, mrs[0].RepoID)
 	assert.Equal("current item", mrs[0].Title)
-	mr, err := d.GetMergeRequest(
-		t.Context(), "github", "github.com", "org-a", "project-a", 7,
-	)
+	mr, err := d.GetMergeRequest(t.Context(), "github", "github.com", "org-a", "project-a", 7)
 	require.NoError(err)
 	require.NotNil(mr)
 	assert.Equal(newID, mr.RepoID)
@@ -147,94 +449,25 @@ func TestOperationalRepositoryReadsUseCurrentIncarnation(t *testing.T) {
 	issues, err := d.ListIssues(t.Context(), ListIssuesOpts{State: "all"})
 	require.NoError(err)
 	require.Len(issues, 1)
-	assert.Equal(newID, issues[0].RepoID)
 	assert.Equal("current item", issues[0].Title)
-	issue, err := d.GetIssue(
-		t.Context(), "github", "github.com", "org-a", "project-a", 8,
-	)
+	issue, err := d.GetIssue(t.Context(), "github", "github.com", "org-a", "project-a", 8)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal(newID, issue.RepoID)
-}
-
-func TestOperationalAssociationsDoNotCrossRepositoryIncarnations(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	oldID, newID := seedRepositoryCatalogCollision(t, d)
-	now := baseTime()
-
-	oldNotification := notificationFixture("historical", "mention", now)
-	oldNotification.RepoID = &oldID
-	currentNotification := notificationFixture("current", "mention", now)
-	for _, notification := range []*Notification{&oldNotification, &currentNotification} {
-		notification.RepoOwner = "org-a"
-		notification.RepoName = "project-a"
-	}
-	require.NoError(d.UpsertNotifications(
-		t.Context(), []Notification{oldNotification, currentNotification},
-	))
-	var currentNotificationRepoID int64
-	require.NoError(d.ReadDB().QueryRow(`
-		SELECT repo_id FROM forge_notification_items
-		WHERE platform_notification_id = 'current'`,
-	).Scan(&currentNotificationRepoID))
-	assert.Equal(newID, currentNotificationRepoID)
-	notifications, err := d.ListNotifications(
-		t.Context(), ListNotificationsOpts{State: "all"},
-	)
-	require.NoError(err)
-	require.Len(notifications, 1)
-	assert.Equal("current", notifications[0].PlatformNotificationID)
-
-	_, err = d.UpsertMergeRequest(t.Context(), &MergeRequest{
-		RepoID: newID, PlatformID: 7, Number: 7,
-		Title: "replacement item", State: MergeRequestStateOpen,
-		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
-	})
-	require.NoError(err)
-	_, err = d.WriteDB().Exec(`
-		INSERT INTO forge_workspaces (
-			id, platform, platform_host,
-			repo_owner, repo_name,
-			repo_owner_key, repo_name_key, repo_path_key,
-			item_type, item_number, item_key,
-			git_head_ref, workspace_branch,
-			worktree_path, tmux_session, terminal_backend, created_at
-		) VALUES (
-			'historical-workspace', 'github', 'github.com',
-			'org-a', 'project-a',
-			'org-a', 'project-a', 'org-a/project-a',
-			'pull_request', 7, '7',
-			'', '__middleman_unknown__',
-			'/tmp/historical-workspace', 'historical-workspace', 'tmux',
-			'2026-02-01T00:00:00Z'
-		)`)
-	require.NoError(err)
-	summary, err := d.GetWorkspaceSummary(t.Context(), "historical-workspace")
-	require.NoError(err)
-	require.NotNil(summary)
-	assert.Nil(summary.SourceTitle)
 }
 
 func TestWorkspaceRouteLookupBindsCurrentRepositoryAfterReplacement(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	firstObservedAt := baseTime()
-	original := reconcileCatalogRepository(
-		t, d, "provider-old", "org-a", "project-a", firstObservedAt,
-	)
+	original := observeCatalogRepository(t, d, 1001, "org-a", "project-a")
 	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
 		ID: "historical-workspace", Platform: "github",
 		PlatformHost: "github.com", RepoOwner: "org-a", RepoName: "project-a",
 		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
 		WorktreePath: "/tmp/historical-workspace", TmuxSession: "historical-workspace",
 	}))
-	current := reconcileCatalogRepository(
-		t, d, "provider-new", "org-a", "project-a",
-		firstObservedAt.Add(time.Hour),
-	)
+	current := observeCatalogRepository(t, d, 1002, "org-a", "project-a")
 	originalWorkspace, err := d.GetWorkspace(t.Context(), "historical-workspace")
 	require.NoError(err)
 	require.NotNil(originalWorkspace)
@@ -244,20 +477,14 @@ func TestWorkspaceRouteLookupBindsCurrentRepositoryAfterReplacement(t *testing.T
 		t.Context(), "github", "github.com", "org-a", "project-a", 7,
 	)
 	require.NoError(err)
-	assert.Nil(byRoute)
-	linkedByRoute, err := d.GetWorkspaceLinkedToMRForProvider(
-		t.Context(), "github", "github.com", "org-a", "project-a", 7,
-	)
-	require.NoError(err)
-	assert.Nil(linkedByRoute)
+	assert.Nil(byRoute, "a displaced repository's workspace does not answer for the route")
 
-	err = d.InsertWorkspace(t.Context(), &Workspace{
+	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
 		ID: "replacement-workspace", Platform: "github",
 		PlatformHost: "github.com", RepoOwner: "org-a", RepoName: "project-a",
 		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
 		WorktreePath: "/tmp/replacement-workspace", TmuxSession: "replacement-workspace",
-	})
-	require.NoError(err)
+	}))
 	replacementWorkspace, err := d.GetWorkspace(t.Context(), "replacement-workspace")
 	require.NoError(err)
 	require.NotNil(replacementWorkspace)
@@ -273,7 +500,7 @@ func TestWorkspaceRouteLookupBindsCurrentRepositoryAfterReplacement(t *testing.T
 func TestInsertWorkspaceRejectsChangedExplicitRepositoryIdentity(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	originalID, _ := seedRepositoryCatalogCollision(t, d)
+	originalID, _ := seedRepositoryRouteReplacement(t, d)
 
 	err := d.InsertWorkspace(t.Context(), &Workspace{
 		ID: "stale-repository-workspace", Platform: "github",
@@ -283,1054 +510,98 @@ func TestInsertWorkspaceRejectsChangedExplicitRepositoryIdentity(t *testing.T) {
 		WorktreePath: "/tmp/stale-repository-workspace",
 		TmuxSession:  "stale-repository-workspace",
 	})
-	require.ErrorContains(err, "repository identity changed")
-	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
+	require.ErrorIs(err, ErrRepositoryIdentityChanged)
 }
 
-func TestInactiveWorkspaceRepositoryKeepsPersistedRoute(t *testing.T) {
+func TestDeactivateRepositoryKeepsHistoryAndRoute(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	observedAt := baseTime()
-	repo := reconcileCatalogRepository(
-		t, d, "provider-retired", "org-a", "project-a", observedAt,
-	)
-	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
+	ctx := t.Context()
+	repository := observeCatalogRepository(t, d, 1001, "org-a", "project-a")
+	insertTestIssueWithOptions(t, d, testIssue(repository.Repository.ID, 1))
+	require.NoError(d.InsertWorkspace(ctx, &Workspace{
 		ID: "retired-workspace", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "org-a", RepoName: "project-a",
 		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
 		WorktreePath: "/tmp/retired-workspace", TmuxSession: "retired-workspace",
 	}))
-	_, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-retired", Owner: "org-a", Name: "renamed",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-	retired, err := d.DeactivateRepositoryObservation(
-		t.Context(), "github", "github.com", "provider-retired",
-		observedAt.Add(2*time.Minute),
-	)
-	require.NoError(err)
-	require.NotNil(retired)
-	require.Equal(repo.Repository.ID, retired.Repository.ID)
 
-	workspace, err := d.GetWorkspace(t.Context(), "retired-workspace")
-	require.NoError(err)
-	require.NotNil(workspace)
-	require.Equal("project-a", workspace.RepoName)
-
-	workspaces, err := d.ListWorkspaces(t.Context())
-	require.NoError(err)
-	require.Len(workspaces, 1)
-	require.Equal("project-a", workspaces[0].RepoName)
-
-	summary, err := d.GetWorkspaceSummary(t.Context(), "retired-workspace")
-	require.NoError(err)
-	require.NotNil(summary)
-	require.Equal("project-a", summary.RepoName)
-}
-
-func TestInsertWorkspaceWithoutActiveRepositoryRetainsHistoricalRouteFence(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	observedAt := baseTime()
-	reconcileCatalogRepository(
-		t, d, "provider-retired", "org-a", "project-a", observedAt,
-	)
-	retired, err := d.DeactivateRepositoryObservation(
-		t.Context(), "github", "github.com", "provider-retired",
-		observedAt.Add(time.Hour),
-	)
-	require.NoError(err)
-	require.NotNil(retired)
-
-	err = d.InsertWorkspace(t.Context(), &Workspace{
-		ID: "unresolved-repository-workspace", Platform: "github",
-		PlatformHost: "github.com", RepoOwner: "org-a", RepoName: "project-a",
-		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 10,
-		WorktreePath: "/tmp/unresolved-repository-workspace",
-		TmuxSession:  "unresolved-repository-workspace",
-	})
-	require.ErrorContains(err, "repository route has historical occupants")
-}
-
-func TestRepositoryCatalogLookupNeverFallsBackFromProviderID(t *testing.T) {
-	d := openTestDB(t)
-	seedRepositoryCatalogCollision(t, d)
-	entry, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "missing-id",
-	)
-	require.NoError(t, err)
-	assert.Nil(t, entry)
-}
-
-func TestListRepositoryCatalogRejectsUnqualifiedProviderID(t *testing.T) {
-	d := openTestDB(t)
-	_, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{
-		PlatformRepoID: "provider-old",
-	})
-	require.ErrorContains(t, err, "platform and host")
-}
-
-func TestListRepositoryCatalogFiltersLifecycle(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	_, newID := seedRepositoryCatalogCollision(t, d)
-	entries, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{
-		Lifecycle: RepositoryLifecycleActive,
-	})
-	require.NoError(err)
-	require.Len(entries, 1)
-	assert.Equal(t, newID, entries[0].Repository.ID)
-
-	_, err = d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{
-		Lifecycle: "retired",
-	})
-	require.ErrorContains(err, "unsupported repository lifecycle")
-}
-
-func TestGetRepositoryByProviderIDOrdersRoutesByFirstSeen(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	oldID, _ := seedRepositoryCatalogCollision(t, d)
-	_, err := d.WriteDB().Exec(`
-		INSERT INTO forge_repo_routes (
-			repo_id, platform, platform_host,
-			owner, name, repo_path, owner_key, name_key, repo_path_key,
-			is_current, first_seen_at, last_seen_at
-		) VALUES (
-			?, 'github', 'github.com',
-			'org-z', 'earlier-project', 'org-z/earlier-project',
-			'org-z', 'earlier-project', 'org-z/earlier-project',
-			0, '2025-12-01T00:00:00Z', '2025-12-02T00:00:00Z'
-		)`, oldID)
-	require.NoError(err)
-
-	entry, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-old",
-	)
-	require.NoError(err)
-	require.NotNil(entry)
-	require.Len(entry.Routes, 2)
-	assert.Equal("org-z/earlier-project", entry.Routes[0].RepoPath)
-	assert.Equal("org-a/project-a", entry.Routes[1].RepoPath)
-}
-
-func reconcileCatalogRepository(
-	t *testing.T,
-	d *DB,
-	providerID string,
-	owner string,
-	name string,
-	observedAt time.Time,
-) *RepositoryCatalogEntry {
-	t.Helper()
-	entry, accepted, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: providerID,
-		Owner:          owner,
-		Name:           name,
-	}, observedAt)
-	require.NoError(t, err)
-	require.True(t, accepted)
-	require.NotNil(t, entry)
-	assertDatabaseIntegrityForTest(t, d.ReadDB())
-	return entry
-}
-
-func TestReconcileRepositoryObservationIsIdempotent(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	firstObservedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	first := reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", firstObservedAt,
-	)
-	require.Len(first.Routes, 1)
-	firstRouteID := first.Routes[0].ID
-	firstSeenAt := first.Routes[0].FirstSeenAt
-
-	secondObservedAt := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
-	second := reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", secondObservedAt,
-	)
-	require.Len(second.Routes, 1)
-	assert.Equal(first.Repository.ID, second.Repository.ID)
-	assert.Equal(firstRouteID, second.Routes[0].ID)
-	assert.Equal(firstSeenAt, second.Routes[0].FirstSeenAt)
-	assert.Equal(secondObservedAt, second.Routes[0].LastSeenAt)
-	assert.Equal(RepositoryLifecycleActive, second.Lifecycle)
-}
-
-func TestReconcileRepositoryObservationIgnoresStaleRename(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	firstObservedAt := baseTime()
-	reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", firstObservedAt,
-	)
-	newestObservedAt := firstObservedAt.Add(2 * time.Hour)
-	newest := reconcileCatalogRepository(
-		t, d, "provider-1", "org-b", "project-b", newestObservedAt,
-	)
-
-	stale, accepted, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "provider-1",
-		Owner:          "org-a",
-		Name:           "project-a",
-	}, firstObservedAt.Add(time.Hour))
-	require.NoError(err)
-	assert.False(accepted, "stale observation must report rejection")
-	require.NotNil(stale)
-	assert.Equal(newest.Repository.ID, stale.Repository.ID)
-	assert.Equal("org-b/project-b", stale.Repository.RepoPath)
-	require.Len(stale.Routes, 2)
-	assert.False(stale.Routes[0].Current)
-	assert.True(stale.Routes[1].Current)
-	assert.Equal(newestObservedAt, stale.Routes[1].LastSeenAt)
-}
-
-// TestReconcileRepositoryObservationRejectsStaleReactivation covers a delayed
-// observation whose route is currently free: without a repository-level
-// watermark it would reactivate the inactive repository with stale data.
-func TestReconcileRepositoryObservationRejectsStaleReactivation(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	old := reconcileCatalogRepository(
-		t, d, "provider-old", "org-a", "project-a", baseTime(),
-	)
-	reconcileCatalogRepository(
-		t, d, "provider-new", "org-a", "project-a", baseTime().Add(2*time.Hour),
-	)
-
-	stale, accepted, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "provider-old",
-		Owner:          "org-c",
-		Name:           "project-c",
-	}, baseTime().Add(time.Hour))
-	require.NoError(err)
-	assert.False(accepted,
-		"observation older than the repository watermark must be rejected")
-	require.NotNil(stale)
-	assert.Equal(old.Repository.ID, stale.Repository.ID)
-	assert.Equal(RepositoryLifecycleInactive, stale.Lifecycle)
-
-	active, err := d.ResolveActiveRepositoryRoute(t.Context(), RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		Owner: "org-c", Name: "project-c",
-	})
-	require.NoError(err)
-	assert.Nil(active)
-}
-
-func TestDeactivateRepositoryObservationIgnoresStaleAbsence(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	observedAt := baseTime().Add(2 * time.Hour)
-	reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", observedAt,
-	)
-
-	entry, err := d.DeactivateRepositoryObservation(
-		t.Context(), "github", "github.com", "provider-1",
-		baseTime().Add(time.Hour),
-	)
-	require.NoError(err)
-	require.NotNil(entry)
-	assert.Equal(RepositoryLifecycleActive, entry.Lifecycle)
-	require.Len(entry.Routes, 1)
-	assert.True(entry.Routes[0].Current)
-	assert.Equal(observedAt, entry.Routes[0].LastSeenAt)
-}
-
-// TestInsertWorkspaceWaitsForReconciliation verifies workspace creation holds
-// the reconciliation read lock, then binds the repository that owns the route
-// after a pending replacement finishes.
-func TestInsertWorkspaceWaitsForReconciliation(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	reconcileCatalogRepository(
-		t, d, "provider-1", "acme", "widget", baseTime(),
-	)
-
-	writerEntered := make(chan struct{})
-	releaseWriter := make(chan struct{})
-	defer func() {
-		select {
-		case <-releaseWriter:
-		default:
-			close(releaseWriter)
-		}
-	}()
-	restoreHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
-		close(writerEntered)
-		<-releaseWriter
-	})
-	t.Cleanup(restoreHook)
-
-	writerDone := make(chan error, 1)
-	go func() {
-		_, _, reconcileErr := d.ReconcileRepositoryObservation(
-			context.Background(),
-			RepoIdentity{
-				Platform:       "github",
-				PlatformHost:   "github.com",
-				PlatformRepoID: "provider-2",
-				Owner:          "acme",
-				Name:           "widget",
-			},
-			baseTime().Add(time.Hour),
-		)
-		writerDone <- reconcileErr
-	}()
-	<-writerEntered
-
-	insertDone := make(chan error, 1)
-	go func() {
-		insertDone <- d.InsertWorkspace(context.Background(), &Workspace{
-			ID: "ws-reconcile-race", Platform: "github",
-			PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget",
-			ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
-			WorktreePath: "/tmp/ws-reconcile-race",
-			TmuxSession:  "ws-reconcile-race",
-		})
-	}()
-	select {
-	case <-insertDone:
-		require.Fail("workspace insert crossed a pending reconciliation")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	close(releaseWriter)
-	require.NoError(<-writerDone)
-	require.NoError(<-insertDone)
-	workspace, err := d.GetWorkspace(t.Context(), "ws-reconcile-race")
-	require.NoError(err)
-	require.NotNil(workspace)
-	current, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-2",
-	)
-	require.NoError(err)
-	require.NotNil(current)
-	require.Equal(current.Repository.ID, workspace.RepoID)
-}
-
-func TestReconcileRepositoryObservationRejectsStaleReplacement(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	observedAt := baseTime().Add(2 * time.Hour)
-	current := reconcileCatalogRepository(
-		t, d, "provider-current", "org-a", "project-a", observedAt,
-	)
-
-	entry, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "provider-stale",
-		Owner:          "org-a",
-		Name:           "project-a",
-	}, observedAt.Add(-time.Hour))
-	require.ErrorContains(err, "predates current route observation")
-	assert.Nil(entry)
-
-	stillCurrent, err := d.ResolveActiveRepositoryRoute(t.Context(), RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		Owner: "org-a", Name: "project-a",
-	})
-	require.NoError(err)
-	require.NotNil(stillCurrent)
-	assert.Equal(current.Repository.ID, stillCurrent.Repository.ID)
-	stale, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-stale",
-	)
-	require.NoError(err)
-	assert.Nil(stale)
-}
-
-func TestReconcileRepositoryObservationRejectsStaleKnownRepositoryAfterReplacement(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	firstObservedAt := baseTime()
-	old := reconcileCatalogRepository(
-		t, d, "provider-old", "org-a", "project-a", firstObservedAt,
-	)
-	replacementObservedAt := firstObservedAt.Add(2 * time.Hour)
-	replacement := reconcileCatalogRepository(
-		t, d, "provider-new", "org-a", "project-a", replacementObservedAt,
-	)
-
-	stale, accepted, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "provider-old",
-		Owner:          "org-a",
-		Name:           "project-a",
-	}, firstObservedAt.Add(time.Hour))
-	require.NoError(err)
-	assert.False(accepted,
-		"observation older than the repository watermark must be rejected")
-	require.NotNil(stale)
-	assert.Equal(old.Repository.ID, stale.Repository.ID)
-
-	active, err := d.ResolveActiveRepositoryRoute(t.Context(), RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		Owner: "org-a", Name: "project-a",
-	})
-	require.NoError(err)
-	require.NotNil(active)
-	assert.Equal(replacement.Repository.ID, active.Repository.ID)
-
-	displaced, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-old",
-	)
-	require.NoError(err)
-	require.NotNil(displaced)
-	assert.Equal(old.Repository.ID, displaced.Repository.ID)
-	assert.Equal(RepositoryLifecycleInactive, displaced.Lifecycle)
-}
-
-func TestReconcileRepositoryObservationRenamesSameProviderID(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	original := reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", baseTime(),
-	)
-	insertTestIssueWithOptions(t, d, testIssue(original.Repository.ID, 1))
-	insertTestMRWithOptions(t, d, testMR(original.Repository.ID, 2))
-	_, err := d.WriteDB().Exec(`
-		INSERT INTO forge_archive_repos (
-			repo_id, collection_mode, operator_state, created_at, updated_at
-		) VALUES (?, 'full', 'active', datetime('now'), datetime('now'))`,
-		original.Repository.ID,
-	)
-	require.NoError(err)
-
-	renamed := reconcileCatalogRepository(
-		t,
-		d,
-		"provider-1",
-		"org-b",
-		"project-b",
-		baseTime().Add(time.Hour),
-	)
-	assert.Equal(original.Repository.ID, renamed.Repository.ID)
-	require.Len(renamed.Routes, 2)
-	assert.False(renamed.Routes[0].Current)
-	assert.True(renamed.Routes[1].Current)
-	assert.Equal("org-b/project-b", renamed.Repository.RepoPath)
-
-	var issueRepoID, mergeRequestRepoID, archiveRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
-		`SELECT repo_id FROM forge_issues WHERE number = 1`,
-	).Scan(&issueRepoID))
-	require.NoError(d.ReadDB().QueryRow(
-		`SELECT repo_id FROM forge_merge_requests WHERE number = 2`,
-	).Scan(&mergeRequestRepoID))
-	require.NoError(d.ReadDB().QueryRow(
-		`SELECT repo_id FROM forge_archive_repos WHERE repo_id = ?`,
-		original.Repository.ID,
-	).Scan(&archiveRepoID))
-	assert.Equal(original.Repository.ID, issueRepoID)
-	assert.Equal(original.Repository.ID, mergeRequestRepoID)
-	assert.Equal(original.Repository.ID, archiveRepoID)
-}
-
-func TestReconcileRepositoryObservationReplacesAndReactivates(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	oldRepo := reconcileCatalogRepository(
-		t, d, "provider-old", "org-a", "project-a", baseTime(),
-	)
-	insertTestIssueWithOptions(t, d, testIssue(oldRepo.Repository.ID, 1))
-	newRepo := reconcileCatalogRepository(
-		t,
-		d,
-		"provider-new",
-		"org-a",
-		"project-a",
-		baseTime().Add(time.Hour),
-	)
-	assert.NotEqual(oldRepo.Repository.ID, newRepo.Repository.ID)
-	oldByID, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-old",
-	)
-	require.NoError(err)
-	require.NotNil(oldByID)
-	assert.Equal(RepositoryLifecycleInactive, oldByID.Lifecycle)
-
-	reactivated := reconcileCatalogRepository(
-		t,
-		d,
-		"provider-old",
-		"org-b",
-		"project-b",
-		baseTime().Add(2*time.Hour),
-	)
-	assert.Equal(oldRepo.Repository.ID, reactivated.Repository.ID)
-	assert.Equal(RepositoryLifecycleActive, reactivated.Lifecycle)
-	activeOldRoute, err := d.ResolveActiveRepositoryRoute(t.Context(), RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "org-a",
-		Name:         "project-a",
-	})
-	require.NoError(err)
-	require.NotNil(activeOldRoute)
-	assert.Equal(newRepo.Repository.ID, activeOldRoute.Repository.ID)
-
-	var issueRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
-		`SELECT repo_id FROM forge_issues WHERE number = 1`,
-	).Scan(&issueRepoID))
-	assert.Equal(oldRepo.Repository.ID, issueRepoID)
-}
-
-func TestRepositoryObservationPreservesAToBToARouteHistory(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	database := openTestDB(t)
-	ctx := t.Context()
-	observedAt := baseTime()
-
-	for index, providerRepoID := range []string{"R_1", "R_2", "R_1"} {
-		_, accepted, err := database.ReconcileRepositoryObservation(ctx, RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: providerRepoID,
-			Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
-		}, observedAt.Add(time.Duration(index)*time.Minute))
-		require.NoError(err)
-		assert.True(accepted)
-	}
-
-	first, err := database.GetRepositoryByProviderID(
-		ctx, "github", "github.com", "R_1",
-	)
-	require.NoError(err)
-	require.NotNil(first)
-	second, err := database.GetRepositoryByProviderID(
-		ctx, "github", "github.com", "R_2",
-	)
-	require.NoError(err)
-	require.NotNil(second)
-	require.Len(first.Routes, 1)
-	require.Len(second.Routes, 1)
-	assert.Equal(int64(2), first.Routes[0].Generation)
-	assert.Equal(int64(1), second.Routes[0].Generation)
-	assert.True(first.Routes[0].Current)
-	assert.False(second.Routes[0].Current)
-}
-
-func TestReconcileRepositoryObservationAdoptionKeepsLegacyContent(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	result, err := d.WriteDB().Exec(`
-		INSERT INTO forge_repos (
-			platform, platform_host, platform_repo_id,
-			owner, name, repo_path, owner_key, name_key, repo_path_key,
-			lifecycle_state
-		) VALUES (
-			'github', 'github.com', '',
-			'org-a', 'project-a', 'org-a/project-a',
-			'org-a', 'project-a', 'org-a/project-a', 'inactive'
-		)`)
-	require.NoError(err)
-	legacyID, err := result.LastInsertId()
-	require.NoError(err)
-	_, err = d.WriteDB().Exec(`
-		INSERT INTO forge_repo_routes (
-			repo_id, platform, platform_host,
-			owner, name, repo_path, owner_key, name_key, repo_path_key,
-			is_current, first_seen_at, last_seen_at
-		) VALUES (
-			?, 'github', 'github.com',
-			'org-a', 'project-a', 'org-a/project-a',
-			'org-a', 'project-a', 'org-a/project-a',
-			0, datetime('now'), datetime('now')
-		)`, legacyID)
-	require.NoError(err)
-	insertTestIssueWithOptions(t, d, testIssue(legacyID, 1))
-
-	canonical := reconcileCatalogRepository(
-		t, d, "provider-new", "org-a", "project-a", baseTime(),
-	)
-	assert.Equal(legacyID, canonical.Repository.ID,
-		"first verification adopts the legacy row instead of stranding it")
-	var issueRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
-		`SELECT repo_id FROM forge_issues WHERE number = 1`,
-	).Scan(&issueRepoID))
-	assert.Equal(canonical.Repository.ID, issueRepoID,
-		"content linked to the legacy row stays bound to the adopted identity")
-}
-
-func TestReconcileRepositoryObservationRollsBackOnRouteWriteFailure(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	original := reconcileCatalogRepository(
-		t, d, "provider-old", "org-a", "project-a", baseTime(),
-	)
-	_, err := d.WriteDB().Exec(`
-		INSERT INTO forge_projects (
-			id, display_name, local_path, repo_id
-		) VALUES ('project-local', 'Project Local', '/tmp/project-local', ?)`,
-		original.Repository.ID,
-	)
-	require.NoError(err)
-	_, err = d.WriteDB().Exec(`
-		CREATE TRIGGER reject_catalog_route_insert
-		BEFORE INSERT ON forge_repo_routes
-		BEGIN
-			SELECT RAISE(ABORT, 'injected route failure');
-		END`)
-	require.NoError(err)
-
-	_, _, err = d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "provider-new",
-		Owner:          "org-a",
-		Name:           "project-a",
-	}, baseTime().Add(time.Hour))
-	require.ErrorContains(err, "injected route failure")
-
-	active, err := d.ResolveActiveRepositoryRoute(t.Context(), RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "org-a",
-		Name:         "project-a",
-	})
-	require.NoError(err)
-	require.NotNil(active)
-	assert.Equal(original.Repository.ID, active.Repository.ID)
-	assert.Equal(RepositoryLifecycleActive, active.Lifecycle)
-	var projectRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
-		`SELECT repo_id FROM forge_projects WHERE id = 'project-local'`,
-	).Scan(&projectRepoID))
-	assert.Equal(original.Repository.ID, projectRepoID)
-	assertDatabaseIntegrityForTest(t, d.ReadDB())
-}
-
-func TestReconcileRepositoryObservationMovesIntoOccupiedRoute(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	moving := reconcileCatalogRepository(
-		t, d, "provider-moving", "org-a", "project-a", baseTime(),
-	)
-	displaced := reconcileCatalogRepository(
-		t,
-		d,
-		"provider-displaced",
-		"org-b",
-		"project-b",
-		baseTime().Add(time.Hour),
-	)
-	moved := reconcileCatalogRepository(
-		t,
-		d,
-		"provider-moving",
-		"org-b",
-		"project-b",
-		baseTime().Add(2*time.Hour),
-	)
-	assert.Equal(moving.Repository.ID, moved.Repository.ID)
-	displacedByID, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-displaced",
-	)
-	require.NoError(err)
-	require.NotNil(displacedByID)
-	assert.Equal(displaced.Repository.ID, displacedByID.Repository.ID)
-	assert.Equal(RepositoryLifecycleInactive, displacedByID.Lifecycle)
-}
-
-func TestReconcileRepositoryObservationRejectsIncompleteIdentity(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	for _, identity := range []RepoIdentity{
-		{
-			Platform: "github", PlatformHost: "github.com",
-			Owner: "org-a", Name: "project-a",
-		},
-		{
-			Platform: "gitlab", PlatformRepoID: "provider-1",
-			Owner: "org-a", Name: "project-a",
-		},
-	} {
-		_, _, err := d.ReconcileRepositoryObservation(
-			t.Context(), identity, baseTime(),
-		)
-		require.Error(err)
-	}
-	var repositoryCount int
-	require.NoError(d.ReadDB().QueryRow(
-		`SELECT COUNT(*) FROM forge_repos`,
-	).Scan(&repositoryCount))
-	require.Zero(repositoryCount)
-}
-
-func TestReconcileRepositoryObservationRefreshesCaseOnlyDisplayMetadata(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	firstObservedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	first, accepted, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "provider-1",
-		Owner:          "Group-A",
-		Name:           "Project-A",
-	}, firstObservedAt)
-	require.NoError(err)
-	require.True(accepted)
-	require.NotNil(first)
-	require.Len(first.Routes, 1)
-
-	secondObservedAt := firstObservedAt.Add(time.Hour)
-	second, accepted, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "provider-1",
-		Owner:          "group-a",
-		Name:           "PROJECT-A",
-	}, secondObservedAt)
-	require.NoError(err)
-	require.True(accepted, "case-only rename must be applied, not rejected")
-	require.NotNil(second)
-	require.Len(second.Routes, 1)
-	assert.Equal(first.Repository.ID, second.Repository.ID)
-	assert.Equal(first.Routes[0].ID, second.Routes[0].ID)
-	assert.Equal(first.Routes[0].FirstSeenAt, second.Routes[0].FirstSeenAt)
-	assert.Equal("group-a", second.Repository.Owner)
-	assert.Equal("PROJECT-A", second.Repository.Name)
-	assert.Equal("group-a/PROJECT-A", second.Repository.RepoPath)
-	assert.Equal("group-a", second.Routes[0].Owner)
-	assert.Equal("PROJECT-A", second.Routes[0].Name)
-	assert.Equal("group-a/PROJECT-A", second.Routes[0].RepoPath)
-	assert.Equal(secondObservedAt, second.Routes[0].LastSeenAt)
-}
-
-func TestRepositoryCatalogReadWaitsForReconciliation(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	reconcileCatalogRepository(
-		t, d, "provider-old", "org-a", "project-a", baseTime(),
-	)
-
-	releaseRead, err := d.LockRepositoryReconciliationRead(t.Context())
-	require.NoError(err)
-	writerWaiting := make(chan struct{})
-	restoreHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
-		close(writerWaiting)
-	})
-	t.Cleanup(restoreHook)
-
-	writerDone := make(chan error, 1)
-	go func() {
-		_, _, reconcileErr := d.ReconcileRepositoryObservation(
-			context.Background(),
-			RepoIdentity{
-				Platform:       "github",
-				PlatformHost:   "github.com",
-				PlatformRepoID: "provider-new",
-				Owner:          "org-a",
-				Name:           "project-a",
-			},
-			baseTime().Add(time.Hour),
-		)
-		writerDone <- reconcileErr
-	}()
-	<-writerWaiting
-
-	type readResult struct {
-		entry *RepositoryCatalogEntry
-		err   error
-	}
-	readDone := make(chan readResult, 1)
-	go func() {
-		entry, readErr := d.GetRepositoryByProviderID(
-			context.Background(), "github", "github.com", "provider-old",
-		)
-		readDone <- readResult{entry: entry, err: readErr}
-	}()
-	select {
-	case <-readDone:
-		require.Fail("catalog read crossed a pending reconciliation")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	releaseRead()
-	require.NoError(<-writerDone)
-	result := <-readDone
-	require.NoError(result.err)
-	require.NotNil(result.entry)
-	assert.Equal(RepositoryLifecycleInactive, result.entry.Lifecycle)
-	require.Len(result.entry.Routes, 1)
-	assert.False(result.entry.Routes[0].Current)
-}
-
-func TestDeactivateRepositoryObservationPreservesHistory(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	repository := reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", baseTime(),
-	)
-	insertTestIssueWithOptions(t, d, testIssue(repository.Repository.ID, 1))
-	_, err := d.WriteDB().Exec(`
-		INSERT INTO forge_archive_repos (
-			repo_id, collection_mode, operator_state, created_at, updated_at
-		) VALUES (?, 'full', 'active', datetime('now'), datetime('now'))`,
-		repository.Repository.ID,
-	)
-	require.NoError(err)
-
-	deactivated, err := d.DeactivateRepositoryObservation(
-		t.Context(), "github", "github.com", "provider-1",
-		baseTime().Add(time.Hour),
-	)
+	deactivated, err := d.DeactivateRepository(ctx, githubRepositoryIdentity(1001))
 	require.NoError(err)
 	require.NotNil(deactivated)
 	assert.Equal(repository.Repository.ID, deactivated.Repository.ID)
 	assert.Equal(RepositoryLifecycleInactive, deactivated.Lifecycle)
-	require.Len(deactivated.Routes, 1)
-	assert.False(deactivated.Routes[0].Current)
+	assert.Equal("org-a/project-a", deactivated.Repository.RepoPath)
 
-	active, err := d.ResolveActiveRepositoryRoute(t.Context(), RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "org-a",
-		Name:         "project-a",
-	})
+	active, err := d.ResolveActiveRepositoryRoute(ctx, githubRoute("org-a", "project-a"))
 	require.NoError(err)
 	assert.Nil(active)
-	var issueRepoID, archiveRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
-		`SELECT repo_id FROM forge_issues WHERE number = 1`,
-	).Scan(&issueRepoID))
-	require.NoError(d.ReadDB().QueryRow(
-		`SELECT repo_id FROM forge_archive_repos WHERE repo_id = ?`,
-		repository.Repository.ID,
-	).Scan(&archiveRepoID))
-	assert.Equal(repository.Repository.ID, issueRepoID)
-	assert.Equal(repository.Repository.ID, archiveRepoID)
-
-	again, err := d.DeactivateRepositoryObservation(
-		t.Context(), "github", "github.com", "provider-1",
-		baseTime().Add(2*time.Hour),
-	)
-	require.NoError(err)
-	require.NotNil(again)
-	require.Len(again.Routes, 1)
-	assert.Equal(deactivated.Routes[0].ID, again.Routes[0].ID)
-}
-
-func TestLegacyRepositoryWritersMaintainCatalogState(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	legacyID, err := d.UpsertRepo(t.Context(), RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "org-a",
-		Name:         "project-a",
-	})
-	require.NoError(err)
-
-	legacyEntries, err := d.ListRepositoryCatalog(
-		t.Context(), RepositoryCatalogFilter{RepoPath: "org-a/project-a"},
-	)
-	require.NoError(err)
-	require.Len(legacyEntries, 1)
-	assert.Equal(legacyID, legacyEntries[0].Repository.ID)
-	assert.Equal(RepositoryLifecycleInactive, legacyEntries[0].Lifecycle)
-	require.Len(legacyEntries[0].Routes, 1)
-	assert.False(legacyEntries[0].Routes[0].Current)
-
-	require.NoError(d.UpdateRepoProviderMetadata(
-		t.Context(), legacyID, RepoProviderMetadata{
-			PlatformRepoID: "provider-1",
-			WebURL:         "https://example.com/org-a/project-a",
-			CloneURL:       "https://example.com/org-a/project-a.git",
-			DefaultBranch:  "main",
-		},
-	))
-	canonical, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-1",
-	)
-	require.NoError(err)
-	require.NotNil(canonical)
-	assert.Equal(legacyID, canonical.Repository.ID)
-	assert.Equal(RepositoryLifecycleActive, canonical.Lifecycle)
-	require.Len(canonical.Routes, 1)
-	assert.True(canonical.Routes[0].Current)
-}
-
-func TestUpsertRepoByProviderIDDoesNotMergeRouteReplacement(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	oldID, err := d.UpsertRepoByProviderID(t.Context(), RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "provider-old",
-		Owner:          "org-a",
-		Name:           "project-a",
-	})
-	require.NoError(err)
-	insertTestIssueWithOptions(t, d, testIssue(oldID, 1))
-
-	newID, err := d.UpsertRepoByProviderID(t.Context(), RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "provider-new",
-		Owner:          "org-a",
-		Name:           "project-a",
-	})
-	require.NoError(err)
-	assert.NotEqual(oldID, newID)
-	oldEntry, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-old",
-	)
-	require.NoError(err)
-	require.NotNil(oldEntry)
-	assert.Equal(RepositoryLifecycleInactive, oldEntry.Lifecycle)
 	var issueRepoID int64
-	require.NoError(d.ReadDB().QueryRow(
+	require.NoError(d.ReadDB().QueryRowContext(ctx,
 		`SELECT repo_id FROM forge_issues WHERE number = 1`,
 	).Scan(&issueRepoID))
-	assert.Equal(oldID, issueRepoID)
+	assert.Equal(repository.Repository.ID, issueRepoID)
+	workspace, err := d.GetWorkspace(ctx, "retired-workspace")
+	require.NoError(err)
+	require.NotNil(workspace)
+	assert.Equal(repository.Repository.ID, workspace.RepoID)
+	assert.Equal("project-a", workspace.RepoName)
+
+	unknown, err := d.DeactivateRepository(ctx, githubRepositoryIdentity(9999))
+	require.NoError(err)
+	assert.Nil(unknown)
+	_, err = d.DeactivateRepository(ctx, platform.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com",
+	})
+	require.Error(err)
 }
 
-func TestUpdateRepoProviderMetadataRejectsStableIDChange(t *testing.T) {
+func TestRepositoryRouteHasOtherRepository(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	repository := reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", baseTime(),
-	)
-	err := d.UpdateRepoProviderMetadata(
-		t.Context(), repository.Repository.ID, RepoProviderMetadata{
-			PlatformRepoID: "provider-2",
-		},
-	)
-	require.ErrorContains(err, "stable provider id")
-	entry, err := d.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "provider-1",
-	)
-	require.NoError(err)
-	require.NotNil(entry)
-}
-
-func TestUpdateRepoProviderObservationRejectsOlderSameRouteSettings(t *testing.T) {
-	require := require.New(t)
 	ctx := t.Context()
-	d := openTestDB(t)
-	identity := RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-a", Owner: "acme", Name: "widget",
+	originalID, replacementID := seedRepositoryRouteReplacement(t, d)
+	solo := observeCatalogRepository(t, d, 1003, "org-a", "project-solo")
+
+	for name, tc := range map[string]struct {
+		route  RepoIdentity
+		repoID int64
+		want   bool
+	}{
+		"active holder sees displaced row": {
+			route: githubRoute("org-a", "project-a"), repoID: replacementID, want: true,
+		},
+		"displaced row sees active holder": {
+			route: githubRoute("Org-A", "Project-A"), repoID: originalID, want: true,
+		},
+		"sole holder": {
+			route: githubRoute("org-a", "project-solo"), repoID: solo.Repository.ID,
+		},
+		"unused route": {
+			route: githubRoute("org-a", "project-unused"), repoID: solo.Repository.ID,
+		},
+	} {
+		shared, err := d.RepositoryRouteHasOtherRepository(ctx, tc.route, tc.repoID)
+		require.NoError(err, name)
+		assert.Equal(tc.want, shared, name)
 	}
-	older := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
-	newer := older.Add(time.Second)
-	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, identity, older)
-	require.NoError(err)
-	require.True(accepted)
-	require.NotNil(entry)
-	_, accepted, err = d.ReconcileRepositoryObservation(ctx, identity, newer)
-	require.NoError(err)
-	require.True(accepted)
-
-	applied, err := d.UpdateRepoProviderObservation(
-		ctx,
-		entry.Repository.ID,
-		newer,
-		RepoProviderMetadata{
-			PlatformRepoID: "repo-a",
-			WebURL:         "https://github.com/acme/widget",
-			CloneURL:       "https://github.com/acme/widget.git",
-			DefaultBranch:  "main",
-		},
-		&RepoMergeSettings{AllowSquashMerge: false, AllowMergeCommit: true},
-		new(true),
-	)
-	require.NoError(err)
-	require.True(applied)
-
-	applied, err = d.UpdateRepoProviderObservation(
-		ctx,
-		entry.Repository.ID,
-		older,
-		RepoProviderMetadata{
-			PlatformRepoID: "repo-a",
-			WebURL:         "https://stale.example/acme/widget",
-			CloneURL:       "https://stale.example/acme/widget.git",
-			DefaultBranch:  "stale",
-		},
-		&RepoMergeSettings{AllowSquashMerge: true},
-		new(false),
-	)
-	require.NoError(err)
-	require.False(applied)
-
-	stored, err := d.GetRepoByID(ctx, entry.Repository.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.Equal("https://github.com/acme/widget", stored.WebURL)
-	require.Equal("main", stored.DefaultBranch)
-	require.False(stored.AllowSquashMerge)
-	require.True(stored.AllowMergeCommit)
-	require.True(stored.ViewerCanMerge)
+	_, err := d.RepositoryRouteHasOtherRepository(ctx, githubRoute("org-a", "project-a"), 0)
+	require.Error(err)
 }
 
-// TestUpdateRepoProviderObservationPersistsViewerOnlySnapshot covers
-// providers that report the viewer's merge permission without repository
-// merge-method settings (for example a GitLab snapshot). The permission must
-// persist on its own; the merge methods keep their stored values.
 func TestUpdateRepoProviderObservationPersistsViewerOnlySnapshot(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	identity := RepoIdentity{
-		Platform: "gitlab", PlatformHost: "gitlab.example.com",
-		PlatformRepoID: "gid://gitlab/Project/42",
-		Owner:          "group", Name: "project", RepoPath: "group/project",
-	}
-	when := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
-	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, identity, when)
-	require.NoError(err)
-	require.True(accepted)
-	require.NoError(d.UpdateRepoMergeSettings(
-		ctx, entry.Repository.ID, true, false, true,
-	))
+	entry := observeCatalogRepository(t, d, 1001, "acme", "widget")
+	require.NoError(d.UpdateRepoMergeSettings(ctx, entry.Repository.ID, true, false, true))
 
-	applied, err := d.UpdateRepoProviderObservation(
-		ctx,
-		entry.Repository.ID,
-		when,
-		RepoProviderMetadata{
-			PlatformRepoID: "gid://gitlab/Project/42",
-			DefaultBranch:  "main",
-		},
-		nil,
-		new(false),
-	)
-	require.NoError(err)
-	require.True(applied)
+	require.NoError(d.UpdateRepoProviderObservation(
+		ctx, entry.Repository.ID, RepoProviderMetadata{DefaultBranch: "main"}, nil, new(false),
+	))
 
 	stored, err := d.GetRepoByID(ctx, entry.Repository.ID)
 	require.NoError(err)
@@ -1339,45 +610,25 @@ func TestUpdateRepoProviderObservationPersistsViewerOnlySnapshot(t *testing.T) {
 	assert.True(stored.AllowSquashMerge)
 	assert.False(stored.AllowMergeCommit)
 	assert.True(stored.AllowRebaseMerge)
+	assert.Equal("main", stored.DefaultBranch)
 }
 
-// TestUpdateRepoProviderObservationPreservesMetadataOnEmptyFields covers
-// provider snapshots that omit URLs or the default branch (minimal REST
-// payloads and test fixtures): known stored metadata must survive, while the
-// snapshot's merge settings still commit.
-func TestUpdateRepoProviderObservationPreservesMetadataOnEmptyFields(t *testing.T) {
+func TestUpdateRepoProviderObservationPreservesOmittedFields(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	identity := RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-a", Owner: "acme", Name: "widget",
-		RepoPath: "acme/widget",
-	}
-	when := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
-	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, identity, when)
-	require.NoError(err)
-	require.True(accepted)
-	require.NoError(d.UpdateRepoProviderMetadata(
-		ctx, entry.Repository.ID, RepoProviderMetadata{
-			PlatformRepoID: "repo-a",
-			WebURL:         "https://github.com/acme/widget",
-			CloneURL:       "/fixtures/acme/widget.git",
-			DefaultBranch:  "main",
-		},
-	))
+	entry := observeCatalogRepository(t, d, 1001, "acme", "widget")
+	require.NoError(d.UpdateRepoProviderObservation(ctx, entry.Repository.ID, RepoProviderMetadata{
+		WebURL:        "https://github.com/acme/widget",
+		CloneURL:      "/fixtures/acme/widget.git",
+		DefaultBranch: "main",
+	}, nil, new(true)))
 
-	applied, err := d.UpdateRepoProviderObservation(
-		ctx,
-		entry.Repository.ID,
-		when,
-		RepoProviderMetadata{PlatformRepoID: "repo-a"},
-		&RepoMergeSettings{AllowSquashMerge: true},
-		new(false),
-	)
-	require.NoError(err)
-	require.True(applied)
+	require.NoError(d.UpdateRepoProviderObservation(
+		ctx, entry.Repository.ID, RepoProviderMetadata{},
+		&RepoMergeSettings{AllowSquashMerge: true}, nil,
+	))
 
 	stored, err := d.GetRepoByID(ctx, entry.Repository.ID)
 	require.NoError(err)
@@ -1387,586 +638,163 @@ func TestUpdateRepoProviderObservationPreservesMetadataOnEmptyFields(t *testing.
 	assert.Equal("main", stored.DefaultBranch)
 	assert.True(stored.AllowSquashMerge)
 	assert.False(stored.AllowMergeCommit)
-	assert.False(stored.ViewerCanMerge)
+	assert.True(stored.ViewerCanMerge, "an omitted viewer permission keeps the known value")
 }
 
-func TestUpdateRepoProviderObservationFailsClosedForReplacementOnReusedRoute(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	observedAt := baseTime()
-
-	reconcileCatalogRepository(t, d, "provider-original", "acme", "widget", observedAt)
-	reconcileCatalogRepository(
-		t, d, "provider-original", "acme", "renamed", observedAt.Add(time.Minute),
+// insertPendingGitHubRepository writes a GitHub repository in the shape
+// migration 60 leaves it: inactive, keyed only by its GraphQL node ID.
+func insertPendingGitHubRepository(t *testing.T, d *DB, nodeID, owner, name string) int64 {
+	t.Helper()
+	result, err := d.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_repos (
+			platform, platform_host, platform_repo_id, github_node_id,
+			owner, name, repo_path, owner_key, name_key, repo_path_key,
+			lifecycle_state
+		) VALUES ('github', 'github.com', 0, ?, ?, ?, ?, ?, ?, ?, 'inactive')`,
+		nodeID, owner, name, owner+"/"+name, owner, name, owner+"/"+name,
 	)
-	replacementObservedAt := observedAt.Add(2 * time.Minute)
-	replacement := reconcileCatalogRepository(
-		t, d, "provider-replacement", "acme", "widget", replacementObservedAt,
-	)
-
-	applied, err := d.UpdateRepoProviderObservation(
-		ctx,
-		replacement.Repository.ID,
-		replacementObservedAt,
-		RepoProviderMetadata{PlatformRepoID: "provider-replacement"},
-		nil,
-		nil,
-	)
-	require.NoError(err)
-	require.True(applied)
-
-	stored, err := d.GetRepoByID(ctx, replacement.Repository.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.False(stored.ViewerCanMerge,
-		"a replacement must not inherit the permissive schema default")
+	require.NoError(t, err)
+	id, err := result.LastInsertId()
+	require.NoError(t, err)
+	return id
 }
 
-func TestUpdateRepoProviderObservationPreservesKnownViewerPermissionWhenOmitted(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	observedAt := baseTime()
-	entry := reconcileCatalogRepository(t, d, "provider-1", "acme", "widget", observedAt)
-	require.NoError(d.UpdateRepoViewerCanMerge(ctx, entry.Repository.ID, true))
-
-	applied, err := d.UpdateRepoProviderObservation(
-		ctx,
-		entry.Repository.ID,
-		observedAt,
-		RepoProviderMetadata{PlatformRepoID: "provider-1"},
-		nil,
-		nil,
+func insertLaunchSpecForTest(t *testing.T, d *DB, workspaceID string, repoID int64, specJSON string) {
+	t.Helper()
+	_, err := d.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_workspaces (
+			id, platform, platform_host, repo_owner, repo_name,
+			repo_owner_key, repo_name_key, repo_path_key, repo_id,
+			item_type, item_number, item_key, git_head_ref,
+			workspace_branch, worktree_path, tmux_session, status
+		) VALUES (?, 'github', 'github.com', 'org-a', 'project-a',
+			'org-a', 'project-a', 'org-a/project-a', ?,
+			'pull_request', 5, '5', 'feature/five',
+			'feature/five', '/tmp/' || ?, ?, 'ready')`,
+		workspaceID, repoID, workspaceID, workspaceID,
 	)
-	require.NoError(err)
-	require.True(applied)
-
-	stored, err := d.GetRepoByID(ctx, entry.Repository.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.True(stored.ViewerCanMerge)
+	require.NoError(t, err)
+	_, err = d.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_workspace_launch_specs (
+			workspace_id, version, spec_json, source_visible_until, created_at
+		) VALUES (?, 1, ?, datetime('now'), datetime('now'))`,
+		workspaceID, specJSON,
+	)
+	require.NoError(t, err)
 }
 
-// TestUpsertRepoCachedIdentityDoesNotReclaimReusedRoute covers a delayed
-// cached write: it carries no provider verification, so it must resolve by
-// stable ID without stealing back a route another repository now holds.
-func TestUpsertRepoCachedIdentityDoesNotReclaimReusedRoute(t *testing.T) {
-	assert := assert.New(t)
+func TestObserveRepositoryWaitsForPendingGitHubConversion(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	old := reconcileCatalogRepository(
-		t, d, "provider-old", "acme", "widget", baseTime(),
-	)
-	reconcileCatalogRepository(
-		t, d, "provider-old", "acme", "gadget", baseTime().Add(time.Hour),
-	)
-	current := reconcileCatalogRepository(
-		t, d, "provider-new", "acme", "widget", baseTime().Add(2*time.Hour),
-	)
+	pendingID := insertPendingGitHubRepository(t, d, "R_kgDOexample", "org-a", "project-a")
 
-	cached := RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-old",
-		Owner:          "acme", Name: "widget",
-	}
-	upserted, err := d.UpsertRepo(t.Context(), cached)
-	require.NoError(err)
-	assert.Equal(old.Repository.ID, upserted)
-	byProvider, err := d.UpsertRepoByProviderID(t.Context(), cached)
-	require.NoError(err)
-	assert.Equal(old.Repository.ID, byProvider)
-
-	active, err := d.ResolveActiveRepositoryRoute(t.Context(), RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		Owner: "acme", Name: "widget",
-	})
-	require.NoError(err)
-	require.NotNil(active)
-	assert.Equal(current.Repository.ID, active.Repository.ID,
-		"cached write must not reclaim the reused route")
-}
-
-func TestDeactivateRepositoryObservationAdvancesWatermarkWhenAlreadyInactive(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", baseTime(),
-	)
-	first, err := d.DeactivateRepositoryObservation(
-		t.Context(), "github", "github.com", "provider-1",
-		baseTime().Add(2*time.Hour),
-	)
-	require.NoError(err)
-	require.NotNil(first)
-	assert.Equal(RepositoryLifecycleInactive, first.Lifecycle)
-
-	second, err := d.DeactivateRepositoryObservation(
-		t.Context(), "github", "github.com", "provider-1",
-		baseTime().Add(4*time.Hour),
-	)
-	require.NoError(err)
-	require.NotNil(second)
-
-	stale, accepted, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-1",
-		Owner:          "org-a", Name: "project-a",
-	}, baseTime().Add(3*time.Hour))
-	require.NoError(err)
-	assert.False(accepted,
-		"positive observation older than the second absence must be rejected")
-	require.NotNil(stale)
-	assert.Equal(RepositoryLifecycleInactive, stale.Lifecycle)
-}
-
-func TestWorkspaceRouteWithOnlyHistoricalOccupantsIsAmbiguous(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", baseTime(),
-	)
-	reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-b", baseTime().Add(time.Hour),
-	)
-
-	vacated, err := d.WorkspaceRepoRouteHasHistoricalOccupants(
-		t.Context(), "github", "github.com", "org-a", "project-a",
-	)
-	require.NoError(err)
-	assert.True(vacated,
-		"a vacated route must stay ambiguous until its next occupant is cataloged")
-
-	current, err := d.WorkspaceRepoRouteHasHistoricalOccupants(
-		t.Context(), "github", "github.com", "org-a", "project-b",
-	)
-	require.NoError(err)
-	assert.False(current,
-		"a route wholly owned by its current occupant is unambiguous")
-
-	_, err = d.UpsertRepo(t.Context(), RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		Owner: "org-a", Name: "legacy",
-	})
-	require.NoError(err)
-	legacy, err := d.WorkspaceRepoRouteHasHistoricalOccupants(
-		t.Context(), "github", "github.com", "org-a", "legacy",
-	)
-	require.NoError(err)
-	assert.False(legacy,
-		"a legacy route-only repository is uncataloged, not vacated")
-}
-
-func TestReconcileRepositoryObservationAdoptsLegacyRouteOnlyRepository(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	legacyID, err := d.UpsertRepo(t.Context(), RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
+	_, err := d.ObserveRepository(t.Context(), RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 		Owner: "org-a", Name: "project-a",
 	})
-	require.NoError(err)
-
-	entry := reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", baseTime(),
-	)
-
-	assert.Equal(legacyID, entry.Repository.ID,
-		"first verification must adopt the legacy route-only row, not strand it")
-	assert.Equal("provider-1", entry.Repository.PlatformRepoID)
-	assert.Equal(RepositoryLifecycleActive, entry.Lifecycle)
-	collision, err := d.WorkspaceRepoRouteHasHistoricalOccupants(
-		t.Context(), "github", "github.com", "org-a", "project-a",
-	)
-	require.NoError(err)
-	assert.False(collision,
-		"an adopted route has a single owner and must stay unambiguous")
-}
-
-func TestReconcileRepositoryObservationFailsClosedWhenAdoptingLegacyRepository(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	legacyID, err := d.UpsertRepo(t.Context(), RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
+	require.ErrorIs(err, ErrGitHubRepositoryConversionPending)
+	_, err = d.ObserveRepository(t.Context(), RepoIdentity{
+		Platform: "github", PlatformHost: "ghe.example.com", PlatformRepoID: 1001,
 		Owner: "org-a", Name: "project-a",
 	})
-	require.NoError(err)
-	require.NoError(d.UpdateRepoViewerCanMerge(t.Context(), legacyID, true))
+	require.NoError(err, "other hosts are not blocked")
+	_, err = d.ObserveRepository(t.Context(), RepoIdentity{
+		Platform: "gitlab", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Owner: "org-a", Name: "project-a",
+	})
+	require.NoError(err, "other providers are not blocked")
 
-	entry := reconcileCatalogRepository(
-		t, d, "provider-1", "org-a", "project-a", baseTime(),
-	)
-	require.Equal(legacyID, entry.Repository.ID)
-
-	stored, err := d.GetRepoByID(t.Context(), legacyID)
-	require.NoError(err)
-	require.NotNil(stored)
-	require.False(stored.ViewerCanMerge,
-		"first provider verification must reset a legacy path-only permission")
+	require.NoError(d.CompleteGitHubRepositoryConversion(t.Context(), pendingID, 1001))
+	entry := observeCatalogRepository(t, d, 1001, "org-a", "project-a")
+	require.Equal(pendingID, entry.Repository.ID, "the converted row is observed, not duplicated")
+	require.Equal(RepositoryLifecycleActive, entry.Lifecycle)
 }
 
-func TestAdoptLegacyClonesIfSafeRequiresUnreusedVerifiedRoute(t *testing.T) {
-	t.Run("verified route with one owner", func(t *testing.T) {
-		d := openTestDB(t)
-		entry := reconcileCatalogRepository(
-			t, d, "provider-1", "acme", "widget", baseTime(),
-		)
-		called := false
-
-		adopted, err := d.AdoptLegacyClonesIfSafe(
-			t.Context(), RepoIdentity{
-				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "provider-1",
-				Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
-			}, entry.Repository.ID,
-			func() error { called = true; return nil },
-		)
-		require.NoError(t, err)
-		assert.True(t, adopted)
-		assert.True(t, called)
-	})
-
-	t.Run("route with a different legacy owner", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-		d := openTestDB(t)
-		_, err := d.UpsertRepo(t.Context(), RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		})
-		require.NoError(err)
-		entry := reconcileCatalogRepository(
-			t, d, "provider-1", "acme", "renamed", baseTime(),
-		)
-		moved, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "provider-1",
-			Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
-		}, baseTime().Add(time.Minute))
-		require.NoError(err)
-		require.Equal(entry.Repository.ID, moved.Repository.ID)
-
-		called := false
-		adopted, err := d.AdoptLegacyClonesIfSafe(
-			t.Context(), RepoIdentity{
-				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "provider-1",
-				Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
-			}, moved.Repository.ID,
-			func() error { called = true; return nil },
-		)
-		require.NoError(err)
-		assert.False(adopted)
-		assert.False(called)
-	})
-
-	t.Run("stale route snapshot after reuse", func(t *testing.T) {
-		assert := assert.New(t)
-		require := require.New(t)
-		d := openTestDB(t)
-		original := reconcileCatalogRepository(
-			t, d, "provider-original", "acme", "widget", baseTime(),
-		)
-		_, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "provider-original",
-			Owner:          "acme", Name: "renamed", RepoPath: "acme/renamed",
-		}, baseTime().Add(time.Minute))
-		require.NoError(err)
-		reconcileCatalogRepository(
-			t, d, "provider-replacement", "acme", "widget",
-			baseTime().Add(2*time.Minute),
-		)
-		called := false
-
-		adopted, err := d.AdoptLegacyClonesIfSafe(
-			t.Context(), RepoIdentity{
-				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "provider-original",
-				Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
-			}, original.Repository.ID,
-			func() error { called = true; return nil },
-		)
-		require.NoError(err)
-		assert.False(adopted)
-		assert.False(called)
-	})
-}
-
-func TestAdoptLegacyClonesIfSafeHoldsRouteGuardThroughAdoption(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	entry := reconcileCatalogRepository(
-		t, d, "provider-1", "acme", "widget", baseTime(),
-	)
-	identity := RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-1",
-		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
-	}
-	adoptionStarted := make(chan struct{})
-	releaseAdoption := make(chan struct{})
-	adoptionDone := make(chan error, 1)
-	go func() {
-		_, err := d.AdoptLegacyClonesIfSafe(
-			t.Context(), identity, entry.Repository.ID,
-			func() error {
-				close(adoptionStarted)
-				<-releaseAdoption
-				return nil
-			},
-		)
-		adoptionDone <- err
-	}()
-	<-adoptionStarted
-
-	writerWaiting := make(chan struct{})
-	restoreHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
-		close(writerWaiting)
-	})
-	t.Cleanup(restoreHook)
-	renameDone := make(chan error, 1)
-	go func() {
-		_, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "provider-1",
-			Owner:          "acme", Name: "renamed", RepoPath: "acme/renamed",
-		}, baseTime().Add(time.Minute))
-		renameDone <- err
-	}()
-	<-writerWaiting
-	select {
-	case err := <-renameDone:
-		require.Fail("route changed during clone adoption", "unexpected error: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-	close(releaseAdoption)
-	require.NoError(<-adoptionDone)
-	require.NoError(<-renameDone)
-}
-
-func TestReconcileRepositoryObservationClearsVacatedRouteSyncState(t *testing.T) {
+func TestCompleteGitHubRepositoryConversionRecordsIntegerID(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
-	observedAt := baseTime()
-	number := 7
+	pendingID := insertPendingGitHubRepository(t, d, "R_kgDOexample", "org-a", "project-a")
+	otherID := insertPendingGitHubRepository(t, d, "R_kgDOother", "org-a", "project-b")
+	// Migration 60 zeroes the node IDs launch specifications embedded.
+	insertLaunchSpecForTest(t, d, "ws-converted", pendingID, `{
+		"repository":{"provider":"github","platform_host":"github.com","platform_repo_id":0},
+		"pull":{"base_repo_id":0}}`)
+	insertLaunchSpecForTest(t, d, "ws-other", otherID, `{
+		"repository":{"provider":"github","platform_host":"github.com","platform_repo_id":0},
+		"pull":{"base_repo_id":0}}`)
 
-	original := reconcileCatalogRepository(
-		t, d, "provider-original", "acme", "alpha", observedAt,
-	)
-	require.NoError(d.UpdateNotificationSyncWatermark(
-		ctx, "github", "github.com", "acme", "alpha", observedAt, &observedAt,
-	))
-	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "acme", "alpha", "pull_request", number, `"old"`,
-	))
-	require.NoError(d.UpsertNotifications(ctx, []Notification{
-		{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformNotificationID: "linked", RepoOwner: "acme", RepoName: "alpha",
-			SubjectType: "PullRequest", SubjectTitle: "linked", ItemNumber: &number,
-			ItemType: ItemTypePR, Reason: "mention", Unread: true,
-			SourceUpdatedAt: observedAt, SyncedAt: observedAt,
-		},
-		{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformNotificationID: "path-only", RepoOwner: "acme", RepoName: "alpha",
-			SubjectType: "PullRequest", SubjectTitle: "path only", ItemNumber: &number,
-			ItemType: ItemTypePR, Reason: "mention", Unread: true,
-			SourceUpdatedAt: observedAt, SyncedAt: observedAt,
-		},
-	}))
-	_, err := d.WriteDB().ExecContext(ctx,
-		`UPDATE forge_notification_items SET repo_id = NULL
-		 WHERE platform_notification_id = 'path-only'`,
-	)
+	pending, err := d.ListPendingGitHubRepositories(ctx)
 	require.NoError(err)
+	assert.Equal([]PendingGitHubRepository{
+		{RepoID: pendingID, PlatformHost: "github.com", Owner: "org-a", Name: "project-a", NodeID: "R_kgDOexample"},
+		{RepoID: otherID, PlatformHost: "github.com", Owner: "org-a", Name: "project-b", NodeID: "R_kgDOother"},
+	}, pending)
 
-	renamed, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-original",
-		Owner:          "acme", Name: "beta", RepoPath: "acme/beta",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-	assert.Equal(original.Repository.ID, renamed.Repository.ID)
+	require.NoError(d.CompleteGitHubRepositoryConversion(ctx, pendingID, 1001))
 
-	watermark, err := d.GetNotificationSyncWatermark(
-		ctx, "github", "github.com", "acme", "alpha",
-	)
+	entry, err := d.GetRepositoryByProviderID(ctx, githubRepositoryIdentity(1001))
 	require.NoError(err)
-	assert.Nil(watermark)
-	etag, err := d.GetHTTPEtag(
-		ctx, "github", "github.com", "acme", "alpha", "pull_request", number,
-	)
-	require.NoError(err)
-	assert.Empty(etag)
-	notifications, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
-	require.NoError(err)
-	require.Len(notifications, 1)
-	assert.Equal("linked", notifications[0].PlatformNotificationID)
-	require.NotNil(notifications[0].RepoID)
-	assert.Equal(original.Repository.ID, *notifications[0].RepoID)
-}
+	require.NotNil(entry)
+	assert.Equal(pendingID, entry.Repository.ID)
+	assert.Equal(RepositoryLifecycleInactive, entry.Lifecycle,
+		"conversion alone does not reactivate; the next observation does")
 
-func TestReconcileRepositoryObservationClearsHistoricalRouteStateBeforeReuse(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	observedAt := baseTime()
-	number := 7
-
-	reconcileCatalogRepository(t, d, "provider-original", "acme", "alpha", observedAt)
-	_, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-original",
-		Owner:          "acme", Name: "beta", RepoPath: "acme/beta",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-
-	require.NoError(d.UpdateNotificationSyncWatermark(
-		ctx, "github", "github.com", "acme", "alpha", observedAt, &observedAt,
-	))
-	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "acme", "alpha", "pull_request", number, `"stale"`,
-	))
-	require.NoError(d.UpsertNotifications(ctx, []Notification{{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformNotificationID: "path-only", RepoOwner: "acme", RepoName: "alpha",
-		SubjectType: "PullRequest", SubjectTitle: "stale", ItemNumber: &number,
-		ItemType: ItemTypePR, Reason: "mention", Unread: true,
-		SourceUpdatedAt: observedAt, SyncedAt: observedAt,
-	}}))
-
-	replacement, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-replacement",
-		Owner:          "acme", Name: "alpha", RepoPath: "acme/alpha",
-	}, observedAt.Add(2*time.Minute))
-	require.NoError(err)
-	assert.Equal("provider-replacement", replacement.Repository.PlatformRepoID)
-
-	watermark, err := d.GetNotificationSyncWatermark(
-		ctx, "github", "github.com", "acme", "alpha",
-	)
-	require.NoError(err)
-	assert.Nil(watermark)
-	etag, err := d.GetHTTPEtag(
-		ctx, "github", "github.com", "acme", "alpha", "pull_request", number,
-	)
-	require.NoError(err)
-	assert.Empty(etag)
-	notifications, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
-	require.NoError(err)
-	assert.Empty(notifications)
-}
-
-func TestReconcileRepositoryObservationClearsLegacyHistoricalRouteStateBeforeReuse(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	observedAt := baseTime()
-	number := 7
-
-	legacyID, err := d.UpsertRepo(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		Owner: "acme", Name: "alpha", RepoPath: "acme/alpha",
-	})
-	require.NoError(err)
-	replacement := reconcileCatalogRepository(
-		t, d, "provider-replacement", "acme", "beta", observedAt,
-	)
-	require.NotEqual(legacyID, replacement.Repository.ID)
-
-	require.NoError(d.UpdateNotificationSyncWatermark(
-		ctx, "github", "github.com", "acme", "alpha", observedAt, &observedAt,
-	))
-	require.NoError(d.UpsertHTTPEtag(
-		ctx, "github", "github.com", "acme", "alpha", "pull_request", number, `"stale"`,
-	))
-	require.NoError(d.UpsertNotifications(ctx, []Notification{{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformNotificationID: "path-only", RepoOwner: "acme", RepoName: "alpha",
-		SubjectType: "PullRequest", SubjectTitle: "stale", ItemNumber: &number,
-		ItemType: ItemTypePR, Reason: "mention", Unread: true,
-		SourceUpdatedAt: observedAt, SyncedAt: observedAt,
-	}}))
-
-	moved, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-replacement",
-		Owner:          "acme", Name: "alpha", RepoPath: "acme/alpha",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-	assert.Equal(replacement.Repository.ID, moved.Repository.ID)
-
-	watermark, err := d.GetNotificationSyncWatermark(
-		ctx, "github", "github.com", "acme", "alpha",
-	)
-	require.NoError(err)
-	assert.Nil(watermark)
-	etag, err := d.GetHTTPEtag(
-		ctx, "github", "github.com", "acme", "alpha", "pull_request", number,
-	)
-	require.NoError(err)
-	assert.Empty(etag)
-	notifications, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
-	require.NoError(err)
-	assert.Empty(notifications)
-}
-
-func TestRepositoryRouteGuardRejectsWriteAfterABAReuse(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	observedAt := baseTime()
-	identity := RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-original",
-		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+	readSpecIDs := func(workspaceID string) (any, any) {
+		var repoID, baseRepoID any
+		require.NoError(d.ReadDB().QueryRowContext(ctx, `
+			SELECT json_extract(spec_json, '$.repository.platform_repo_id'),
+			       json_extract(spec_json, '$.pull.base_repo_id')
+			FROM forge_workspace_launch_specs WHERE workspace_id = ?`, workspaceID,
+		).Scan(&repoID, &baseRepoID))
+		return repoID, baseRepoID
 	}
-	original, _, err := d.ReconcileRepositoryObservation(ctx, identity, observedAt)
-	require.NoError(err)
-	require.NoError(d.UpdateRepoMergeSettings(
-		ctx, original.Repository.ID, false, false, false,
-	))
-	fence, found, err := d.CurrentRepositoryRouteFence(
-		ctx, identity, original.Repository.ID,
-	)
-	require.NoError(err)
-	require.True(found)
-	guarded := d.WithRepositoryRouteFence(ctx, identity, fence)
+	repoID, baseRepoID := readSpecIDs("ws-converted")
+	assert.EqualValues(1001, repoID)
+	assert.EqualValues(1001, baseRepoID)
+	repoID, baseRepoID = readSpecIDs("ws-other")
+	assert.EqualValues(0, repoID, "other repositories' specifications wait for their own conversion")
+	assert.EqualValues(0, baseRepoID)
 
-	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-original",
-		Owner:          "acme", Name: "renamed", RepoPath: "acme/renamed",
-	}, observedAt.Add(time.Minute))
+	pending, err = d.ListPendingGitHubRepositories(ctx)
 	require.NoError(err)
-	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-replacement",
-		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
-	}, observedAt.Add(2*time.Minute))
-	require.NoError(err)
-	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-replacement",
-		Owner:          "acme", Name: "elsewhere", RepoPath: "acme/elsewhere",
-	}, observedAt.Add(3*time.Minute))
-	require.NoError(err)
-	_, _, err = d.ReconcileRepositoryObservation(ctx, identity, observedAt.Add(4*time.Minute))
-	require.NoError(err)
+	require.Len(pending, 1)
+	assert.Equal(otherID, pending[0].RepoID)
+}
 
-	err = d.UpdateRepoMergeSettings(guarded, original.Repository.ID, true, false, false)
-	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
-	repo, err := d.GetRepoByID(ctx, original.Repository.ID)
+func TestCompleteGitHubRepositoryConversionUnresolvableNode(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	pendingID := insertPendingGitHubRepository(t, d, "R_kgDOgone", "org-a", "project-a")
+	insertTestIssueWithOptions(t, d, testIssue(pendingID, 1))
+
+	require.NoError(d.CompleteGitHubRepositoryConversion(ctx, pendingID, 0))
+
+	pending, err := d.ListPendingGitHubRepositories(ctx)
 	require.NoError(err)
-	require.NotNil(repo)
-	require.False(repo.AllowSquashMerge)
+	assert.Empty(pending)
+	repo, err := d.GetRepoByID(ctx, pendingID)
+	require.NoError(err)
+	require.NotNil(repo, "an unresolvable repository keeps its row and history")
+	assert.Zero(repo.PlatformRepoID)
+	var lifecycle string
+	require.NoError(d.ReadDB().QueryRowContext(ctx,
+		`SELECT lifecycle_state FROM forge_repos WHERE id = ?`, pendingID,
+	).Scan(&lifecycle))
+	assert.Equal("inactive", lifecycle)
+
+	// The host is no longer blocked, and a new repository at the old route
+	// gets its own row.
+	entry := observeCatalogRepository(t, d, 1001, "org-a", "project-a")
+	assert.NotEqual(pendingID, entry.Repository.ID)
+	var issueRepoID sql.NullInt64
+	require.NoError(d.ReadDB().QueryRowContext(ctx,
+		`SELECT repo_id FROM forge_issues WHERE number = 1`,
+	).Scan(&issueRepoID))
+	assert.Equal(pendingID, issueRepoID.Int64)
+
+	require.ErrorContains(d.CompleteGitHubRepositoryConversion(ctx, pendingID, -1), "negative")
 }

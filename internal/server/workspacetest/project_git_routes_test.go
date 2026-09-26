@@ -38,6 +38,11 @@ func TestCloneProject(t *testing.T) {
 		"path": dest,
 	})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects/clone", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		ID        string `json:"id"`
@@ -91,6 +96,11 @@ func TestCloneProjectBranchAndHomePath(t *testing.T) {
 		"branch": "feat/clone",
 	})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects/clone", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		LocalPath string `json:"local_path"`
@@ -133,6 +143,11 @@ func TestCloneProjectFailureCleansOwnedDestination(t *testing.T) {
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects/clone", body)
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
 		var problem struct {
 			Code string `json:"code"`
 		}
@@ -167,6 +182,11 @@ func TestListProjectBranches(t *testing.T) {
 
 	resp := httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/branches", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var body struct {
 		Branches []string `json:"branches"`
@@ -227,6 +247,11 @@ func TestInspectProjectWorktree(t *testing.T) {
 		resp := httpDo(t, ts, http.MethodGet,
 			"/api/v1/projects/"+projectID+"/worktrees/"+
 				worktreeID+"/inspect", nil)
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
 		require.Equal(http.StatusOK, resp.StatusCode)
 		var got inspection
 		require.NoError(json.NewDecoder(resp.Body).Decode(&got))
@@ -292,6 +317,11 @@ func TestInspectProjectWorktreeCountsStoredTmuxSessions(t *testing.T) {
 
 	resp := httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/inspect", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var got struct {
 		AliveSessionCount int `json:"alive_session_count"`

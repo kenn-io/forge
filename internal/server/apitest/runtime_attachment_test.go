@@ -55,10 +55,17 @@ func TestBridgeRuntimeAttachmentOutputClosedEmitsExitFrameBeforeDone(t *testing.
 	))
 	t.Cleanup(srv.Close)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL, nil)
+	if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -129,11 +136,18 @@ func TestBridgeRuntimeAttachmentSubscriberDropDoesNotEmitExitFrame(t *testing.T)
 	t.Cleanup(srv.Close)
 
 	ctx, cancel := context.WithTimeout(
-		context.Background(), 4*time.Second,
+		t.Context(), 4*time.Second,
 	)
 	defer cancel()
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL, nil)
+	if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 

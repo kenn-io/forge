@@ -26,6 +26,23 @@ func (t *transport) GetRepository(
 	return convertRepository(repository)
 }
 
+func (t *transport) GetRepositoryByID(
+	ctx context.Context,
+	id int64,
+) (gitealike.RepositoryDTO, error) {
+	var repository *giteasdk.Repository
+	var resp *giteasdk.Response
+	err := t.withRequestContext(ctx, func() error {
+		var err error
+		repository, resp, err = t.api.GetRepoByID(id)
+		return err
+	})
+	if err != nil {
+		return gitealike.RepositoryDTO{}, giteaHTTPError(resp, err)
+	}
+	return convertRepository(repository)
+}
+
 func (t *transport) GetAuthenticatedUser(
 	ctx context.Context,
 ) (gitealike.UserDTO, error) {

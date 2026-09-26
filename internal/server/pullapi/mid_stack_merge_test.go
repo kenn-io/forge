@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -24,14 +25,13 @@ func newMidStackMergeFixture(
 	ctx := t.Context()
 	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref: ref,
@@ -52,7 +52,7 @@ func newMidStackMergeFixture(
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(t, err)
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
+	repoID, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(ref))
 	require.NoError(t, err)
 	bottomID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, PlatformID: 7001, Number: 1, State: db.MergeRequestStateOpen,

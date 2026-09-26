@@ -7,7 +7,7 @@ import (
 )
 
 func unassignedCondition(alias string) string {
-	return fmt.Sprintf(`%s.assignees_json = '[]'`, alias)
+	return alias + ".assignees_json = '[]'"
 }
 
 func activityUnassignedCondition() string {
@@ -67,16 +67,13 @@ func (d *DB) ListUnassignedWorkspaceSubjectKeys(
 	if err != nil {
 		return nil, fmt.Errorf("list unassigned workspace subjects: %w", err)
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var key WorkspaceSubjectKey
 		if err := rows.Scan(&key.RepoID, &key.ItemType, &key.ItemNumber); err != nil {
-			rows.Close()
 			return nil, fmt.Errorf("scan unassigned workspace subject: %w", err)
 		}
 		keys[key] = struct{}{}
-	}
-	if err := rows.Close(); err != nil {
-		return nil, fmt.Errorf("close unassigned workspace subjects: %w", err)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list unassigned workspace subject rows: %w", err)

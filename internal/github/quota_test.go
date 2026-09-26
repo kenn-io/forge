@@ -21,6 +21,8 @@ var (
 )
 
 func TestQuotaRegistryScopesObservationsByCredentialAndResource(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()
@@ -50,6 +52,8 @@ func TestQuotaRegistryScopesObservationsByCredentialAndResource(t *testing.T) {
 }
 
 func TestQuotaRegistryIncompleteHeadersPreserveLastProviderFacts(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()
 	reset := time.Date(2026, 7, 24, 18, 0, 0, 0, time.UTC)
@@ -67,6 +71,8 @@ func TestQuotaRegistryIncompleteHeadersPreserveLastProviderFacts(t *testing.T) {
 }
 
 func TestQuotaRegistryReserveRequiresEveryKnownPool(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()
 	reset := time.Now().UTC().Add(time.Hour)
@@ -101,6 +107,8 @@ func TestQuotaRegistryReserveRequiresEveryKnownPool(t *testing.T) {
 }
 
 func TestQuotaRegistryTreatsExpiredProviderWindowAsUnknown(t *testing.T) {
+	t.Parallel()
+
 	registry := NewQuotaRegistry()
 	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
 		Limit: 5000, Remaining: 0, Reset: time.Now().UTC().Add(-time.Second),
@@ -116,6 +124,8 @@ func TestQuotaRegistryTreatsExpiredProviderWindowAsUnknown(t *testing.T) {
 }
 
 func TestQuotaRegistryPacingWindowUsesSmallestLimitAndLatestReset(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
@@ -141,6 +151,8 @@ func TestQuotaRegistryPacingWindowUsesSmallestLimitAndLatestReset(t *testing.T) 
 }
 
 func TestQuotaRegistryPacingWindowTracksStaggeredResourceResets(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
@@ -178,6 +190,8 @@ func TestQuotaRegistryPacingWindowTracksStaggeredResourceResets(t *testing.T) {
 }
 
 func TestQuotaRegistryPacingWindowRequiresEveryCurrentPool(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
 	registry := NewQuotaRegistry()
@@ -205,6 +219,8 @@ func TestQuotaRegistryPacingWindowRequiresEveryCurrentPool(t *testing.T) {
 // while its mutation/notification chain spends the user's, so one credential's
 // usage can never be billed to the other.
 func TestQuotaTransportAttributesEachChainToItsBoundIdentity(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()
@@ -233,14 +249,20 @@ func TestQuotaTransportAttributesEachChainToItsBoundIdentity(t *testing.T) {
 		t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widget", nil,
 	)
 	require.NoError(err)
-	_, err = readChain.RoundTrip(readReq)
+	resp, err := readChain.RoundTrip(readReq)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	writeReq, err := http.NewRequestWithContext(
 		t.Context(), http.MethodGet, "https://api.github.com/notifications", nil,
 	)
 	require.NoError(err)
-	_, err = writeChain.RoundTrip(writeReq)
+	resp, err = writeChain.RoundTrip(writeReq)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	app, ok := registry.Get(quotaTestApp, QuotaResourceREST)
@@ -264,6 +286,8 @@ func quotaTestHeaders(limit, remaining int, reset time.Time) http.Header {
 // while GraphQL has never been observed, admitting the work would spend REST
 // past the reserve held for foreground mutations.
 func TestQuotaAvailabilityUnknownResourceDoesNotMaskExhaustedResource(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()
 	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
@@ -287,6 +311,8 @@ func TestQuotaAvailabilityUnknownResourceDoesNotMaskExhaustedResource(t *testing
 // With nothing observed at all, background work still proceeds: response
 // headers are what populate the registry in the first place.
 func TestQuotaAvailabilityFullyUnobservedAllowsBackgroundWork(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	registry := NewQuotaRegistry()
 
@@ -307,6 +333,8 @@ func TestQuotaAvailabilityFullyUnobservedAllowsBackgroundWork(t *testing.T) {
 // would repopulate the registry is exactly what fails when a credential is in
 // trouble.
 func TestBackgroundAdmissionUsesPersistedTrackerWhenRegistryIsEmpty(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -337,6 +365,8 @@ func TestBackgroundAdmissionUsesPersistedTrackerWhenRegistryIsEmpty(t *testing.T
 // A persisted window that has already elapsed describes a quota that has since
 // reset, so it must not hold back work the provider would now accept.
 func TestBackgroundAdmissionIgnoresPersistedTrackerPastItsResetWindow(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -369,6 +399,8 @@ func TestBackgroundAdmissionIgnoresPersistedTrackerPastItsResetWindow(t *testing
 // arrive after a later one. Within one reset window the provider's remaining
 // only falls, and a stale header must not hand back quota already spent.
 func TestQuotaRegistryHeadersNeverRaiseRemainingWithinAWindow(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	registry := NewQuotaRegistry()
@@ -405,6 +437,8 @@ func TestQuotaRegistryHeadersNeverRaiseRemainingWithinAWindow(t *testing.T) {
 // expired -- and an expired pool reads as unobserved, which admits background
 // work the newer observation had already ruled out.
 func TestQuotaRegistryHeadersFromAnOlderWindowDoNotRewindThePool(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	registry := NewQuotaRegistry()
@@ -435,6 +469,8 @@ func TestQuotaRegistryHeadersFromAnOlderWindowDoNotRewindThePool(t *testing.T) {
 // closed. Rewinding to it would make the pool read as expired, and expired
 // reads as unobserved.
 func TestQuotaRegistrySnapshotFromAnOlderWindowDoesNotRewindThePool(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	registry := NewQuotaRegistry()
@@ -460,6 +496,8 @@ func TestQuotaRegistrySnapshotFromAnOlderWindowDoesNotRewindThePool(t *testing.T
 // same decision, so a pool that moves mid-window is not observed until the
 // window turns.
 func TestBackgroundReserveIsEvaluatedOncePerCadenceWindow(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
@@ -502,6 +540,8 @@ func TestBackgroundReserveIsEvaluatedOncePerCadenceWindow(t *testing.T) {
 // This is what puts the reserve on the snapshot's cadence rather than merely on
 // the same interval.
 func TestSnapshotRefreshDropsTheCachedReserveVerdict(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -551,6 +591,8 @@ func TestSnapshotRefreshDropsTheCachedReserveVerdict(t *testing.T) {
 // min(remaining) from different pools would understate a larger pool's
 // reserve and admit spend below its floor.
 func TestQuotaRegistryPacingWindowArchiveHeadroomIsPerPool(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
@@ -587,6 +629,8 @@ func TestQuotaRegistryPacingWindowArchiveHeadroomIsPerPool(t *testing.T) {
 // reset so callers can attribute the binding constraint and the recovery time
 // to the pool that owns them.
 func TestQuotaRegistryPacingWindowExposesPerResourcePools(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)

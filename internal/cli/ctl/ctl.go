@@ -629,7 +629,7 @@ func encodeJSONLines(w io.Writer, payload any) error {
 	}
 	value := reflect.ValueOf(payload)
 	if value.IsValid() && (value.Kind() == reflect.Slice || value.Kind() == reflect.Array) && value.Type().Elem().Kind() != reflect.Uint8 {
-		for i := 0; i < value.Len(); i++ {
+		for i := range value.Len() {
 			if err := json.MarshalEncode(enc, value.Index(i).Interface()); err != nil {
 				return err
 			}
@@ -707,7 +707,7 @@ type apiStatusError struct {
 func (e apiStatusError) Error() string {
 	body := strings.TrimSpace(string(e.Body))
 	if body == "" {
-		return fmt.Sprintf("kenn-forge API returned %s", e.Status)
+		return "kenn-forge API returned " + e.Status
 	}
 	return fmt.Sprintf("kenn-forge API returned %s: %s", e.Status, body)
 }

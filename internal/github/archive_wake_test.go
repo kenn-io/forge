@@ -60,10 +60,10 @@ func (r *pacedArchiveRunner) recorded() []time.Time {
 // bubble so the syncer's channels and the loop's timers are all virtual.
 func startPacedArchiveLoop(t *testing.T, runner *pacedArchiveRunner) (*Syncer, func()) {
 	t.Helper()
-	syncer := NewSyncerWithRegistry(nil, nil, nil, nil, time.Hour, nil, nil)
+	syncer := NewSyncerWithRegistry(nil, openTestDB(t), nil, nil, time.Hour, nil, nil)
 	syncer.SetArchiveService(runner)
 	syncer.SetArchivePollIntervalForTesting(time.Second)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	ready := make(chan struct{})
 	close(ready)
 	done := make(chan struct{})
@@ -78,6 +78,8 @@ func startPacedArchiveLoop(t *testing.T, runner *pacedArchiveRunner) (*Syncer, f
 }
 
 func TestArchiveLoopBacksOffWhileIdleAndResetsOnWake(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -103,6 +105,8 @@ func TestArchiveLoopBacksOffWhileIdleAndResetsOnWake(t *testing.T) {
 }
 
 func TestArchiveLoopKeepsPacingIntervalWhileWorkFlows(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -127,6 +131,8 @@ func TestArchiveLoopKeepsPacingIntervalWhileWorkFlows(t *testing.T) {
 }
 
 func TestArchiveLoopIdleBackoffIsCapped(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -144,6 +150,8 @@ func TestArchiveLoopIdleBackoffIsCapped(t *testing.T) {
 }
 
 func TestArchiveLoopKeepsPacingIntervalWhilePassesFail(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -163,6 +171,8 @@ func TestArchiveLoopKeepsPacingIntervalWhilePassesFail(t *testing.T) {
 }
 
 func TestArchiveLoopWakesWhenSyncRunCompletes(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -176,7 +186,7 @@ func TestArchiveLoopWakesWhenSyncRunCompletes(t *testing.T) {
 
 		// A completed sync run (here with no repositories) must wake the
 		// worker immediately and restart the backoff from the pacing interval.
-		syncer.RunOnce(context.Background())
+		syncer.RunOnce(t.Context())
 		time.Sleep(time.Second)
 		synctest.Wait()
 		require.Equal([]time.Duration{0, time.Second}, runner.offsetsFrom(backedOff))
@@ -184,6 +194,8 @@ func TestArchiveLoopWakesWhenSyncRunCompletes(t *testing.T) {
 }
 
 func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		runner := &pacedArchiveRunner{}
@@ -205,7 +217,7 @@ func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
 
 		// Live work preempting an admitted archive request marks the host.
 		// Only the release that frees the host wakes the worker, immediately.
-		_, releaseArchive, ok := syncer.tryBeginArchiveProviderRequest(context.Background(), key)
+		_, releaseArchive, ok := syncer.tryBeginArchiveProviderRequest(t.Context(), key)
 		require.True(ok)
 		started := make(chan struct{})
 		var releaseFirst func()
@@ -235,6 +247,8 @@ func TestArchiveLoopWakesOnlyHostsThatDeniedArchiveWork(t *testing.T) {
 }
 
 func TestCanceledProviderWorkStopsWaitingForArchive(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		syncer := &Syncer{archiveProviderRequests: make(map[string]archiveProviderRequest)}

@@ -156,7 +156,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoPath: string;
     hideStaleWhileLoading?: boolean;
     autoSync?: IssueDetailSyncMode;
@@ -287,7 +287,7 @@
   }
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
-  let lastDetailLoadPlatformRepoId: string | undefined;
+  let lastDetailLoadPlatformRepoId: number | undefined;
   let lastDetailLoadAutoSync: IssueDetailSyncMode | undefined;
 
   $effect(() => {

@@ -2,6 +2,7 @@ package gitea
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -161,23 +162,23 @@ func validateBaseURL(raw string, allowInsecure bool) (string, error) {
 	raw = strings.TrimSpace(raw)
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" || u.Host == "" || u.Hostname() == "" {
-		return "", fmt.Errorf("gitea base URL must be an absolute http(s) URL")
+		return "", errors.New("gitea base URL must be an absolute http(s) URL")
 	}
 	u.Scheme = strings.ToLower(u.Scheme)
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("gitea base URL scheme must be http or https")
+		return "", errors.New("gitea base URL scheme must be http or https")
 	}
 	if u.User != nil {
-		return "", fmt.Errorf("gitea base URL must not include user info")
+		return "", errors.New("gitea base URL must not include user info")
 	}
 	if u.RawQuery != "" || u.ForceQuery {
-		return "", fmt.Errorf("gitea base URL must not include a query string")
+		return "", errors.New("gitea base URL must not include a query string")
 	}
 	if u.Fragment != "" {
-		return "", fmt.Errorf("gitea base URL must not include a fragment")
+		return "", errors.New("gitea base URL must not include a fragment")
 	}
 	if u.Scheme == "http" && !allowInsecure {
-		return "", fmt.Errorf("gitea base URL uses plain HTTP without an explicit insecure transport acknowledgement")
+		return "", errors.New("gitea base URL uses plain HTTP without an explicit insecure transport acknowledgement")
 	}
 	u.Path = strings.TrimRight(u.Path, "/")
 	return u.String(), nil

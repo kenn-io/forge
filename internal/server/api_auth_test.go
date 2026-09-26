@@ -113,9 +113,19 @@ func TestDaemonPingContract(t *testing.T) {
 	unauthorized := authGet(t, ts, "/api/ping", func(r *http.Request) {
 		r.Header.Set("X-Forwarded-Host", "forge.example.test")
 	})
+	t.Cleanup(func() {
+		if unauthorized != nil && unauthorized.Body != nil {
+			_ = unauthorized.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusUnauthorized, unauthorized.StatusCode)
 	response := authGet(t, ts, "/api/ping", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer secret-token")
+	})
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
 	})
 	require.Equal(http.StatusOK, response.StatusCode)
 	var ping daemon.PingInfo
@@ -133,6 +143,11 @@ func TestDaemonPingContract(t *testing.T) {
 	forwarded := authGet(t, ts, daemonruntime.ProofPingPath, func(r *http.Request) {
 		r.Header.Set("X-Forwarded-Host", "forge.example.test")
 	})
+	t.Cleanup(func() {
+		if forwarded != nil && forwarded.Body != nil {
+			_ = forwarded.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusForbidden, forwarded.StatusCode)
 }
 
@@ -141,7 +156,7 @@ func authGet(
 	decorate func(*http.Request),
 ) *http.Response {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, ts.URL+path, nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+path, nil)
 	require.NoError(t, err)
 	if decorate != nil {
 		decorate(req)
@@ -166,6 +181,11 @@ func TestAPIAuthGatesAPIRoutes(t *testing.T) {
 	ts := newAuthTestServer(t, "secret-token")
 
 	resp := authGet(t, ts, "/api/v1/snapshot", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusUnauthorized, resp.StatusCode)
 	assert.Equal(`Bearer realm="kenn-forge"`,
 		resp.Header.Get("WWW-Authenticate"))
@@ -178,15 +198,30 @@ func TestAPIAuthGatesAPIRoutes(t *testing.T) {
 	resp = authGet(t, ts, "/api/v1/snapshot", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer secret-token")
 	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusOK, resp.StatusCode)
 
 	resp = authGet(t, ts, "/api/v1/snapshot", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer wrong")
 	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusUnauthorized, resp.StatusCode)
 
 	resp = authGet(t, ts, "/api/v1/snapshot", func(r *http.Request) {
 		r.Header.Set("Tailscale-User-Login", "user@example.com")
+	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 	})
 	assert.Equal(http.StatusUnauthorized, resp.StatusCode,
 		"Tailscale identity is opt-in")
@@ -199,6 +234,11 @@ func TestTailscaleServeIdentityAuthorizesGatedTransports(t *testing.T) {
 
 	response := authGet(t, ts, "/api/v1/snapshot", func(request *http.Request) {
 		request.Header.Set("Tailscale-User-Login", " USER@EXAMPLE.COM ")
+	})
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
 	})
 	assert.Equal(http.StatusOK, response.StatusCode)
 
@@ -220,6 +260,11 @@ func TestTailscaleServeIdentityAuthorizesGatedTransports(t *testing.T) {
 		request.Header.Set("Upgrade", "websocket")
 		request.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
 		request.Header.Set("Sec-WebSocket-Version", "13")
+	})
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
 	})
 	assert.NotEqual(http.StatusUnauthorized, response.StatusCode)
 }
@@ -245,11 +290,16 @@ func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {
 					request.Header.Add("Tailscale-User-Login", value)
 				}
 			})
+			t.Cleanup(func() {
+				if response != nil && response.Body != nil {
+					_ = response.Body.Close()
+				}
+			})
 			assert.Equal(http.StatusUnauthorized, response.StatusCode)
 		})
 	}
 
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/snapshot", nil)
 	request.RemoteAddr = "192.0.2.10:43210"
 	request.Host = srv.hostOpts.Load().Bind.String()
 	request.Header.Set("Tailscale-User-Login", "user@example.com")
@@ -263,6 +313,11 @@ func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {
 		request.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
 		request.Header.Set("Sec-WebSocket-Version", "13")
 	})
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusUnauthorized, response.StatusCode)
 
 	response = authGet(t, ts, "/ws/v1/workspaces/ws-1/terminal", func(request *http.Request) {
@@ -273,6 +328,11 @@ func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {
 		request.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
 		request.Header.Set("Sec-WebSocket-Version", "13")
 	})
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusForbidden, response.StatusCode)
 
 	response = authGet(t, ts, "/ws/v1/workspaces/ws-1/terminal", func(request *http.Request) {
@@ -282,6 +342,11 @@ func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {
 		request.Header.Set("Upgrade", "websocket")
 		request.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
 		request.Header.Set("Sec-WebSocket-Version", "13")
+	})
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
 	})
 	assert.Equal(http.StatusForbidden, response.StatusCode)
 }
@@ -315,6 +380,11 @@ func TestFederationCredentialTakesPrecedenceOverTailscaleServeIdentity(t *testin
 		request.Header.Set(federationauth.NodeIDHeader, nodeID)
 		request.Header.Set("Tailscale-User-Login", "user@example.com")
 	})
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, response.StatusCode)
 	var identity struct {
 		NodeID string `json:"node_id"`
@@ -333,6 +403,11 @@ func TestAPIAuthGatesTerminalWebSocketRoutes(t *testing.T) {
 	ts := newAuthTestServer(t, "secret-token")
 
 	resp := authGet(t, ts, "/ws/v1/workspaces/ws-1/terminal", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusUnauthorized, resp.StatusCode,
 		"unauthenticated terminal WebSocket requests must be rejected")
 
@@ -340,6 +415,11 @@ func TestAPIAuthGatesTerminalWebSocketRoutes(t *testing.T) {
 		func(r *http.Request) {
 			r.Header.Set("Authorization", "Bearer secret-token")
 		})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	assert.NotEqual(http.StatusUnauthorized, resp.StatusCode,
 		"a valid credential clears the gate")
 }
@@ -353,6 +433,11 @@ func TestAPIAuthHealthAndAssetsStayOpen(t *testing.T) {
 
 	for _, path := range []string{"/healthz", "/livez"} {
 		resp := authGet(t, ts, path, nil)
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
 		assert.Equal(http.StatusOK, resp.StatusCode, path)
 	}
 }
@@ -367,6 +452,11 @@ func TestAPIAuthCookieBootstrap(t *testing.T) {
 	ts := newAuthTestServer(t, "secret-token")
 
 	resp := authGet(t, ts, "/?auth_token=secret-token", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusSeeOther, resp.StatusCode)
 	assert.Equal("/", resp.Header.Get("Location"),
 		"token must be stripped from the redirect target")
@@ -378,10 +468,20 @@ func TestAPIAuthCookieBootstrap(t *testing.T) {
 	resp = authGet(t, ts, "/api/v1/snapshot", func(r *http.Request) {
 		r.AddCookie(cookies[0])
 	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusOK, resp.StatusCode,
 		"the bootstrap cookie authorizes API requests")
 
 	resp = authGet(t, ts, "/?auth_token=wrong", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusForbidden, resp.StatusCode)
 	assert.Empty(resp.Cookies())
 }
@@ -391,6 +491,11 @@ func TestAPIAuthCookieBootstrap(t *testing.T) {
 func TestAPIAuthDisabledByDefault(t *testing.T) {
 	ts := newAuthTestServer(t, "")
 	resp := authGet(t, ts, "/api/v1/snapshot", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -402,10 +507,20 @@ func TestFederationAuthIsScopedIndependentlyOfLocalAuth(t *testing.T) {
 	resp := authGet(t, ts, "/api/v1/snapshot/raw", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
 	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusOK, resp.StatusCode)
 
 	resp = authGet(t, ts, "/api/v1/settings", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
+	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 	})
 	require.Equal(http.StatusForbidden, resp.StatusCode)
 	var problem httpapi.ProblemError
@@ -417,6 +532,11 @@ func TestFederationAuthIsScopedIndependentlyOfLocalAuth(t *testing.T) {
 	resp = authGet(t, ts, "/api/v1/settings", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer local-secret")
 	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	assert.NotEqual(http.StatusUnauthorized, resp.StatusCode)
 	assert.NotEqual(http.StatusForbidden, resp.StatusCode)
 }
@@ -426,7 +546,7 @@ func TestFederationAuthTreatsEscapedSlashAsOneRouteParameter(t *testing.T) {
 	require := require.New(t)
 	ts, _, token := newFederationAuthTestServer(t, federationauth.ScopeWorkspaceWrite)
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		ts.URL+"/api/v1/issues/gitlab/group%2Fsubgroup/widget/7/workspace",
 		strings.NewReader(`{}`),
@@ -451,6 +571,11 @@ func TestFederationAuthRejectsInsufficientScopeAndSubjectMismatch(t *testing.T) 
 	resp := authGet(t, ts, "/api/v1/snapshot/raw", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
 	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusForbidden, resp.StatusCode)
 	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(resp.Body).Decode(&problem))
@@ -462,6 +587,11 @@ func TestFederationAuthRejectsInsufficientScopeAndSubjectMismatch(t *testing.T) 
 		r.Header.Set("Authorization", "Bearer "+token)
 		r.Header.Set(federationauth.NodeIDHeader,
 			"0123456789abcdef0123456789abcdef")
+	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 	})
 	require.Equal(http.StatusForbidden, resp.StatusCode)
 	problem = httpapi.ProblemError{}
@@ -477,11 +607,21 @@ func TestRevokedFederationCredentialFailsOnNextRequest(t *testing.T) {
 	resp := authGet(t, ts, "/api/v1/snapshot/raw", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
 	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NoError(store.RevokeInbound(token))
 
 	resp = authGet(t, ts, "/api/v1/snapshot/raw", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+token)
+	})
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 	})
 	assert.Equal(http.StatusUnauthorized, resp.StatusCode)
 }
@@ -656,7 +796,7 @@ func TestPendingHubCredentialCanRevokeLocalEnrollmentBeforeRoleTransition(t *tes
 	t.Cleanup(ts.Close)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	request, err := http.NewRequest(
+	request, err := http.NewRequestWithContext(t.Context(),
 		http.MethodDelete, ts.URL+"/api/v1/fleet/enrollments/"+enrollmentID, http.NoBody,
 	)
 	require.NoError(err)
@@ -718,7 +858,7 @@ func TestPendingSpokeCredentialCannotRevokeSiblingEnrollment(t *testing.T) {
 	t.Cleanup(ts.Close)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	request, err := http.NewRequest(
+	request, err := http.NewRequestWithContext(t.Context(),
 		http.MethodDelete, ts.URL+"/api/v1/fleet/enrollments/"+siblingID, http.NoBody,
 	)
 	require.NoError(err)
@@ -789,7 +929,7 @@ func TestLeaseUnawareHubEnrollmentCredentialIsInactive(t *testing.T) {
 		})
 	}
 	requestActivation := func() *http.Response {
-		request, requestErr := http.NewRequest(
+		request, requestErr := http.NewRequestWithContext(t.Context(),
 			http.MethodPost,
 			ts.URL+"/api/v1/federation/enrollments/"+enrollmentID+"/activate",
 			strings.NewReader(`{"protocol_version":3,"preparation_seal":"legacy"}`),
@@ -899,7 +1039,7 @@ func TestActiveHubCredentialRequiresActiveSpokeStartup(t *testing.T) {
 			t.Cleanup(ts.Close)
 			t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-			request, err := http.NewRequest(
+			request, err := http.NewRequestWithContext(t.Context(),
 				http.MethodPost, ts.URL+"/api/v1/runtime/sessions", strings.NewReader(`{}`),
 			)
 			require.NoError(err)
@@ -1018,7 +1158,7 @@ func TestRevokedSpokeCredentialOnlyRetriesRevocation(t *testing.T) {
 	assert.Equal(http.StatusForbidden, identity.StatusCode)
 	identity.Body.Close()
 
-	revoke, err := http.NewRequest(
+	revoke, err := http.NewRequestWithContext(t.Context(),
 		http.MethodDelete,
 		ts.URL+"/api/v1/fleet/enrollments/"+enrollmentID,
 		http.NoBody,
@@ -1139,7 +1279,7 @@ func TestPendingSpokeCredentialOnlyAccessesPreparationProviderRoutes(t *testing.
 	t.Cleanup(ts.Close)
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	request := func(method, path, body string) *http.Response {
-		req, requestErr := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		req, requestErr := http.NewRequestWithContext(t.Context(), method, ts.URL+path, strings.NewReader(body))
 		require.NoError(requestErr)
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set(federationauth.NodeIDHeader, nodeID)
@@ -1201,20 +1341,35 @@ func TestFederationProviderAuthRequiresExactProtocolAndScope(t *testing.T) {
 	}
 
 	response := requestProviderRead("")
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+	})
 	require.Equal(http.StatusConflict, response.StatusCode)
 	var problem httpapi.ProblemError
 	require.NoError(json.NewDecoder(response.Body).Decode(&problem))
 	assert.Equal("protocolMismatch", problem.Details["reason"])
 
 	response = requestProviderRead("2")
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+	})
 	require.Equal(http.StatusConflict, response.StatusCode)
 
 	response = requestProviderRead(providerplane.ProtocolVersionHeaderValue())
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+	})
 	assert.NotEqual(http.StatusUnauthorized, response.StatusCode)
 	assert.NotEqual(http.StatusForbidden, response.StatusCode)
 	assert.NotEqual(http.StatusConflict, response.StatusCode)
 
-	write, err := http.NewRequest(
+	write, err := http.NewRequestWithContext(t.Context(),
 		http.MethodPost, ts.URL+"/api/v1/sync", strings.NewReader(`{}`),
 	)
 	require.NoError(err)
@@ -1231,6 +1386,11 @@ func TestFederationProviderAuthRequiresExactProtocolAndScope(t *testing.T) {
 
 	require.NoError(store.RevokeInbound(token))
 	response = requestProviderRead(providerplane.ProtocolVersionHeaderValue())
+	t.Cleanup(func() {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusUnauthorized, response.StatusCode)
 }
 
@@ -1274,7 +1434,7 @@ func TestFederationProviderSettingsUseDedicatedProjection(t *testing.T) {
 	delete(body, "$schema")
 	assert.ElementsMatch([]string{
 		"activity", "detail", "issues", "notifications",
-		"pull_requests", "repo_presets", "repos", "repository_observations",
+		"pull_requests", "repo_presets", "repos", "repository_observations", "sync",
 	}, slices.Collect(maps.Keys(body)))
 }
 
@@ -1318,7 +1478,7 @@ func TestPreEnrollmentEndpointUsesOneTimeTokenInsteadOfLocalAPIAuth(t *testing.T
 		"hub_credential":"hub-calls-spoke-token"
 	}`, federation.ProtocolVersion)
 	body := strings.NewReader(joinJSON)
-	request, err := http.NewRequest(
+	request, err := http.NewRequestWithContext(t.Context(),
 		http.MethodPost, ts.URL+"/api/v1/federation/enrollments", body,
 	)
 	require.NoError(err)
@@ -1329,7 +1489,7 @@ func TestPreEnrollmentEndpointUsesOneTimeTokenInsteadOfLocalAPIAuth(t *testing.T
 	defer response.Body.Close()
 	assert.Equal(http.StatusCreated, response.StatusCode)
 
-	missingRequest, err := http.NewRequest(
+	missingRequest, err := http.NewRequestWithContext(t.Context(),
 		http.MethodPost, ts.URL+"/api/v1/federation/enrollments",
 		strings.NewReader(joinJSON),
 	)

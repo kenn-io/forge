@@ -9,7 +9,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	appfiles "go.kenn.io/forge/internal/githubapp"
 	"io"
 	"net"
 	"net/http"
@@ -20,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	appfiles "go.kenn.io/forge/internal/githubapp"
 
 	"go.kenn.io/forge/githubapp"
 	"go.kenn.io/forge/internal/config"
@@ -203,7 +204,7 @@ type flowJSON struct {
 }
 
 func newFlowServer(stdout io.Writer) (*flowServer, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("starting local callback server: %w", err)
 	}

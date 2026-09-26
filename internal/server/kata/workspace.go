@@ -302,10 +302,10 @@ func (h *Handler) createKataWorkspace(
 			}
 			return nil, httpapi.Conflict(httpapi.CodeConflict, "workspace already exists for this Kata task", nil)
 		}
-		if strings.Contains(err.Error(), "not tracked") {
+		if errors.Is(err, workspace.ErrWorkspaceNotFound) {
 			return nil, httpapi.NotFound(httpapi.CodeNotFound, err.Error(), nil)
 		}
-		if strings.Contains(err.Error(), "invalid branch name") {
+		if errors.Is(err, workspace.ErrInvalidBranchName) {
 			return nil, httpapi.Validation("body.short_id", err.Error())
 		}
 		return nil, httpapi.Internal("create Kata workspace: " + err.Error())
@@ -477,7 +477,7 @@ func (h *Handler) kataManualWorkspaceTarget(
 		if err != nil {
 			return kataResolvedWorkspaceRepo{}, false, false, err
 		}
-		return target, true, repo != nil && h.kataTrackedRepoMatchesAnyConfig(*repo, repos), nil
+		return target, true, repo != nil && h.kataTrackedRepoMatchesAnyConfig(repo.Repo, repos), nil
 	}
 	return kataResolvedWorkspaceRepo{}, false, false, nil
 }

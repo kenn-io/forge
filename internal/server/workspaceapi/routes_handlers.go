@@ -170,11 +170,13 @@ type listWorkspacesOutput = httpapi.BodyOutput[listWorkspacesOutputBody]
 
 type getWorkspaceOutput = httpapi.BodyOutput[workspaceResponse]
 
-type getWorkspaceDiffOutput = httpapi.BodyOutput[diffResponse]
-type getWorkspaceFilePreviewOutput = httpapi.BodyOutput[filePreviewResponse]
-type getWorkspaceFilesOutput = httpapi.BodyOutput[filesResponse]
-type watchWorkspaceDiffOutput = httpapi.BodyOutput[workspaceDiffWatchResponse]
-type getWorkspaceCommitsOutput = httpapi.BodyOutput[commitsResponse]
+type (
+	getWorkspaceDiffOutput        = httpapi.BodyOutput[diffResponse]
+	getWorkspaceFilePreviewOutput = httpapi.BodyOutput[filePreviewResponse]
+	getWorkspaceFilesOutput       = httpapi.BodyOutput[filesResponse]
+	watchWorkspaceDiffOutput      = httpapi.BodyOutput[workspaceDiffWatchResponse]
+	getWorkspaceCommitsOutput     = httpapi.BodyOutput[commitsResponse]
+)
 
 type getWorkspaceRuntimeOutput = httpapi.BodyOutput[workspaceRuntimeResponse]
 
@@ -863,7 +865,7 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 	branch := strings.TrimSpace(derefString(input.Body.Branch))
 	itemKey := db.AdHocWorkspaceItemKey(branch)
 	if itemKey != "" {
-		existing, err := s.adHocWorkspaceForBranch(ctx, repo, itemKey)
+		existing, err := s.adHocWorkspaceForBranch(ctx, repo.Row(), itemKey)
 		if err != nil {
 			return nil, err
 		}
@@ -884,7 +886,7 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 		},
 	)
 	if err != nil {
-		return s.adHocWorkspaceCreateError(ctx, repo, itemKey, err)
+		return s.adHocWorkspaceCreateError(ctx, repo.Row(), itemKey, err)
 	}
 
 	createdBranch := ws.WorkspaceBranch != ""
@@ -943,7 +945,7 @@ func (s *Handler) adHocWorkspaceForBranch(
 // fence-guarded write layer reports this before any row is persisted for the
 // replacement repository.
 func repositoryRouteFenceProblem(err error) error {
-	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+	if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 		return httpapi.NotFound(httpapi.CodeRepoNotFound,
 			"repository identity changed during workspace creation", nil)
 	}
@@ -1123,8 +1125,8 @@ func (s *Handler) refreshWorkspace(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	kind := repoProviderKind(*repo)
-	host := repoProviderHost(*repo)
+	kind := repoProviderKind(repo.Repo)
+	host := repoProviderHost(repo.Repo)
 
 	switch summary.ItemType {
 	case db.WorkspaceItemTypeIssue:
@@ -1230,7 +1232,7 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 			"owner", owner, "name", name, "err", err)
 		return nil
 	}
-	if strings.Contains(err.Error(), "is not tracked") {
+	if errors.Is(err, ghclient.ErrRepoNotTracked) {
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1258,7 +1260,7 @@ func (s *Handler) refreshWorkspaceIssue(
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(err.Error(), "is not tracked") {
+	if errors.Is(err, ghclient.ErrRepoNotTracked) {
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1282,10 +1284,10 @@ func (s *Handler) refreshWorkspacePullRequest(
 	if removed {
 		return nil
 	}
-	var diffErr *ghclient.DiffSyncError
 	err = s.syncer.SyncMROnProvider(ctx, kind, host, owner, name, number)
-	if err != nil && !errors.As(err, &diffErr) {
-		if strings.Contains(err.Error(), "is not tracked") {
+	diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
+	if err != nil && !isDiffErr {
+		if errors.Is(err, ghclient.ErrRepoNotTracked) {
 			return httpapi.Forbidden(err.Error(), nil)
 		}
 		return httpapi.ProviderCallProblemWithDetail(
@@ -2461,11 +2463,11 @@ func readOnlyWorktreeIsDirty(ctx context.Context, worktreePath string) (bool, er
 		"--ignore-submodules=none",
 	)
 	if err != nil {
-		out := append(stdout, stderr...)
+		stdout = append(stdout, stderr...)
 		return false, fmt.Errorf(
 			"check worktree dirty state: %w: %s",
 			err,
-			strings.TrimSpace(string(out)),
+			strings.TrimSpace(string(stdout)),
 		)
 	}
 	return strings.TrimSpace(string(stdout)) != "", nil

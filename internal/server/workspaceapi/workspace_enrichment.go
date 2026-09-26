@@ -272,12 +272,12 @@ func (s *Handler) cachedWorkspaceEnrichment(
 	if !ok {
 		return nil, true
 	}
-	copy := entry
+	entryCopy := entry
 	tmuxDue, divergenceDue := entry.componentsDue(s.now())
 	if kind == workspaceEnrichmentTmux {
-		return &copy, tmuxDue
+		return &entryCopy, tmuxDue
 	}
-	return &copy, tmuxDue || divergenceDue
+	return &entryCopy, tmuxDue || divergenceDue
 }
 
 // componentsDue reports which enrichment components have aged past their

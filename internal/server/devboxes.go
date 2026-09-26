@@ -17,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -61,7 +62,8 @@ func (s *Server) registerDevboxAPI(api huma.API) {
 	}, httpapi.DocumentOperation("list-devbox-connections", "List connected devboxes", "Devboxes"))
 	huma.Get(api, "/devboxes/discovery", func(ctx context.Context, input *struct {
 		Registry string `query:"registry"`
-	}) (*httpapi.BodyOutput[devbox.Discovery], error) {
+	},
+	) (*httpapi.BodyOutput[devbox.Discovery], error) {
 		connections, err := s.devboxController()
 		if err != nil {
 			return nil, err
@@ -77,7 +79,8 @@ func (s *Server) registerDevboxAPI(api huma.API) {
 			Registry string `json:"registry"`
 			HostID   string `json:"host_id"`
 		}
-	}) (*httpapi.BodyOutput[devbox.Connection], error) {
+	},
+	) (*httpapi.BodyOutput[devbox.Connection], error) {
 		connections, err := s.devboxController()
 		if err != nil {
 			return nil, err
@@ -91,7 +94,8 @@ func (s *Server) registerDevboxAPI(api huma.API) {
 	}, httpapi.DocumentOperation("connect-devbox", "Connect your assigned devbox account", "Devboxes"))
 	huma.Delete(api, "/devboxes/{connection_id}", func(ctx context.Context, input *struct {
 		ConnectionID string `path:"connection_id"`
-	}) (*struct{}, error) {
+	},
+	) (*struct{}, error) {
 		connections, err := s.devboxController()
 		if err != nil {
 			return nil, err
@@ -103,7 +107,8 @@ func (s *Server) registerDevboxAPI(api huma.API) {
 	}, httpapi.DocumentOperation("disconnect-devbox", "Remove a connection without deleting remote work", "Devboxes"))
 	huma.Post(api, "/devboxes/{connection_id}/reconnect", func(ctx context.Context, input *struct {
 		ConnectionID string `path:"connection_id"`
-	}) (*struct{}, error) {
+	},
+	) (*struct{}, error) {
 		connections, err := s.devboxController()
 		if err != nil {
 			return nil, err

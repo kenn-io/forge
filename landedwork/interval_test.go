@@ -13,9 +13,11 @@ import (
 func twoLandings(t *testing.T) (fixture, []landedwork.Candidate) {
 	t.Helper()
 	f := buildFixture(t, false)
-	first := landedwork.Candidate{Repository: f.bounds().Repository, ID: "7", Terminal: f.head,
+	first := landedwork.Candidate{
+		Repository: f.bounds().Repository, ID: "7", Terminal: f.head,
 		SourceHead: f.source[1], Source: f.source, SourceComplete: true, Method: "merge",
-		MethodEvidence: "fixture-method", TerminalEvidence: "fixture-terminal"}
+		MethodEvidence: "fixture-method", TerminalEvidence: "fixture-terminal",
+	}
 	f.repo.Checkout("-b", "second")
 	id := f.repo.CommitFile("second.txt", "second\n", "second change")
 	f.repo.Checkout("main")

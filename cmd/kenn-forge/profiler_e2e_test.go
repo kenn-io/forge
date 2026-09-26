@@ -144,7 +144,7 @@ func profilerStatus(
 	headers map[string]string,
 ) int {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
 	require.NoError(t, err)
 	if host != "" {
 		req.Host = host
@@ -153,7 +153,7 @@ func profilerStatus(
 		req.Header.Set(key, value)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	_, err = io.Copy(io.Discard, resp.Body)
@@ -167,32 +167,42 @@ func waitForHTTPBody(
 	timeout time.Duration,
 ) string {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	client := &http.Client{Timeout: 5 * time.Second}
 	var lastErr error
-	for time.Now().Before(deadline) {
-		resp, err := http.Get(url)
+	for {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
 		if err != nil {
 			lastErr = err
-			time.Sleep(50 * time.Millisecond)
-			continue
-		}
-		body, readErr := io.ReadAll(resp.Body)
-		closeErr := resp.Body.Close()
-		if readErr != nil {
-			lastErr = readErr
-		} else if closeErr != nil {
-			lastErr = closeErr
-		} else if resp.StatusCode == http.StatusOK {
-			return string(body)
 		} else {
-			lastErr = fmt.Errorf(
-				"GET %s returned %d: %s",
-				url, resp.StatusCode, body,
-			)
+			resp, err := client.Do(req)
+			if err != nil {
+				lastErr = err
+			} else {
+				body, readErr := io.ReadAll(resp.Body)
+				closeErr := resp.Body.Close()
+				if readErr != nil {
+					lastErr = readErr
+				} else if closeErr != nil {
+					lastErr = closeErr
+				} else if resp.StatusCode == http.StatusOK {
+					return string(body)
+				} else {
+					lastErr = fmt.Errorf(
+						"GET %s returned %d: %s",
+						url, resp.StatusCode, body,
+					)
+				}
+			}
 		}
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-deadline:
+			require.NoError(t, lastErr, "timed out waiting for %s", url)
+			require.FailNowf(t, "timed out waiting for HTTP", "url=%s", url)
+			return ""
+		case <-ticker.C:
+		}
 	}
-	require.NoError(t, lastErr, "timed out waiting for %s", url)
-	require.FailNowf(t, "timed out waiting for HTTP", "url=%s", url)
-	return ""
 }

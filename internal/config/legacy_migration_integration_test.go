@@ -35,12 +35,12 @@ func TestLegacyDatabaseRelocationAppliesSchemaIdentityMigration(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(legacyHome, "config.toml"), []byte(legacyConfig), 0o600))
 
 	database := dbtest.OpenAt(t, legacyPath)
-	_, err := database.WriteDB().Exec(`
+	_, err := database.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_repos (
-			id, platform, platform_host, owner, name, repo_path,
+			id, platform, platform_host, platform_repo_id, owner, name, repo_path,
 			owner_key, name_key, repo_path_key, created_at
 		) VALUES (
-			1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+			1, 'github', 'github.com', 1001, 'acme', 'widget', 'acme/widget',
 			'acme', 'widget', 'acme/widget', datetime('now')
 		)`)
 	require.NoError(err)
@@ -73,7 +73,7 @@ func TestLegacyDatabaseRelocationAppliesSchemaIdentityMigration(t *testing.T) {
 	database = dbtest.OpenWithMigrationsAt(t, forgePath)
 
 	var owner, name string
-	require.NoError(database.ReadDB().QueryRow(
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(),
 		`SELECT owner, name FROM forge_repos WHERE id = 1`,
 	).Scan(&owner, &name))
 	assert.Equal("acme", owner)

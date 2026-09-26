@@ -67,6 +67,11 @@ func TestRemoveStaleWorktreeRoute(t *testing.T) {
 	// The worktree is gone from the project.
 	listResp := httpDo(t, ts, http.MethodGet,
 		"/api/v1/projects/"+projectID+"/worktrees", nil)
+	t.Cleanup(func() {
+		if listResp != nil && listResp.Body != nil {
+			_ = listResp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, listResp.StatusCode)
 	var wtList struct {
 		Worktrees []map[string]any `json:"worktrees"`

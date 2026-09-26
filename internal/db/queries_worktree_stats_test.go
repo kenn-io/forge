@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -9,9 +8,11 @@ import (
 )
 
 func TestUpsertAndListWorktreeStatsRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	sampledAt := time.Date(2026, 6, 4, 9, 0, 0, 0, time.UTC)
 
 	_, err := d.UpsertWorktreeStats(ctx, "/repo/wt", WorktreeGitStats{
@@ -32,9 +33,11 @@ func TestUpsertAndListWorktreeStatsRoundTrip(t *testing.T) {
 }
 
 func TestUpsertWorktreeStatsReplacesPriorSample(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := d.UpsertWorktreeStats(ctx, "/repo/wt", WorktreeGitStats{
 		DiffAdded: 1, SyncAhead: 1,
@@ -55,9 +58,11 @@ func TestUpsertWorktreeStatsReplacesPriorSample(t *testing.T) {
 }
 
 func TestUpsertWorktreeStatsReportsChange(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	t0 := time.Date(2026, 6, 4, 9, 0, 0, 0, time.UTC)
 
 	changed, err := d.UpsertWorktreeStats(ctx, "/repo/wt", WorktreeGitStats{
@@ -82,17 +87,21 @@ func TestUpsertWorktreeStatsReportsChange(t *testing.T) {
 }
 
 func TestUpsertWorktreeStatsRequiresPath(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	_, err := d.UpsertWorktreeStats(
-		context.Background(), "  ", WorktreeGitStats{}, time.Now(),
+		t.Context(), "  ", WorktreeGitStats{}, time.Now(),
 	)
 	require.Error(t, err)
 }
 
 func TestPruneWorktreeStatsDropsAbsentPaths(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 4, 9, 0, 0, 0, time.UTC)
 
 	for _, path := range []string{"/repo/a", "/repo/b", "/repo/c"} {
@@ -114,9 +123,11 @@ func TestPruneWorktreeStatsDropsAbsentPaths(t *testing.T) {
 }
 
 func TestPruneWorktreeStatsEmptyKeepClearsTable(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := d.UpsertWorktreeStats(
 		ctx, "/repo/a", WorktreeGitStats{}, time.Now(),
 	)

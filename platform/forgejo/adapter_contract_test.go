@@ -28,6 +28,7 @@ func TestGiteaLikeAdapterContract(t *testing.T) {
 			token string,
 			options gitealiketest.ClientOptions,
 		) gitealiketest.TestClient {
+			t.Helper()
 			clientOptions := []ClientOption{WithBaseURLForTesting(baseURL), WithTransport(http.DefaultTransport)}
 			if options.ForegroundTimeout > 0 {
 				clientOptions = append(clientOptions, WithForegroundTimeoutForTesting(options.ForegroundTimeout))

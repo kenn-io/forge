@@ -14,7 +14,6 @@ func TestPathsAreUnderDataDir(t *testing.T) {
 
 	require.Equal(t, filepath.Join(dir, "kenn-forge.lock"), LockPath(dir))
 	require.Equal(t, filepath.Join(dir, "kenn-forge.run.json"), MetadataPath(dir))
-	require.Equal(t, filepath.Join(dir, ".kenn-forge.run.json.tmp"), metadataTmpPath(dir))
 }
 
 func TestMetadataMCPListenAddrAtomicWriteRoundTrip(t *testing.T) {
@@ -64,26 +63,6 @@ func TestMetadataPersistsNodeID(t *testing.T) {
 	got, err := readMetadata(dir)
 	require.NoError(err)
 	require.Equal(meta, got)
-}
-
-func TestMetadataWriteOverwritesStaleTempFile(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-
-	// Simulate a previous run that crashed mid-rename: a leftover
-	// temp file with garbage that we want overwritten.
-	require.NoError(os.WriteFile(metadataTmpPath(dir), []byte("garbage"), 0o600))
-
-	meta := Metadata{PID: 1, ListenAddr: "127.0.0.1:1"}
-	require.NoError(writeMetadata(dir, meta))
-
-	got, err := readMetadata(dir)
-	require.NoError(err)
-	require.Equal(meta, got)
-
-	// The temp file from the simulated crash is gone.
-	_, err = os.Stat(metadataTmpPath(dir))
-	require.True(os.IsNotExist(err), "temp file should be cleaned up, got %v", err)
 }
 
 func TestReadMetadataMissingFile(t *testing.T) {

@@ -34,7 +34,7 @@ func TestServeFleetProjectWrite_SelfRoutesToLocalHandler(t *testing.T) {
 		})
 	}
 
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/fleet/hosts/self/projects",
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/fleet/hosts/self/projects",
 		strings.NewReader(`{"local_path":"/local/repo"}`))
 	r.SetPathValue("host_key", fleetSelfHostAlias)
 	w := httptest.NewRecorder()
@@ -49,7 +49,7 @@ func TestServeFleetProjectWrite_SelfRoutesToLocalHandler(t *testing.T) {
 func TestServeFleetProjectWrite_UnknownHostIs404(t *testing.T) {
 	s := hubServer()
 
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/fleet/hosts/spoke/projects",
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/fleet/hosts/spoke/projects",
 		strings.NewReader(`{"local_path":"/x"}`))
 	r.SetPathValue("host_key", "spoke")
 	w := httptest.NewRecorder()
@@ -86,6 +86,11 @@ func TestFleetProjectIntakeSelfRoutePersistsProject(t *testing.T) {
 		"/api/v1/fleet/hosts/self/projects",
 		registerBody,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		ID        string `json:"id"`
@@ -101,6 +106,11 @@ func TestFleetProjectIntakeSelfRoutePersistsProject(t *testing.T) {
 	assert.Equal(expectedRoot, project.LocalPath)
 
 	resp = httpDo(t, ts, http.MethodGet, "/api/v1/projects", nil)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, resp.StatusCode)
 	var listed struct {
 		Projects []struct {

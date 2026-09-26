@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v7"
+
 	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -221,7 +221,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 	if hint.Target != activityrelay.WorkflowRuns && s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
 		return nil
 	}
-	stored, err := s.db.GetRepositoryByProviderID(ctx, hint.Provider, hint.Host, repo.PlatformExternalID)
+	stored, err := s.db.GetRepositoryByProviderID(ctx, repo.Identity())
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 		err = s.refreshRelayRefs(ctx, repo)
 	}
 	if err != nil {
-		return fmt.Errorf("refresh %s/%s/%d: %w", hint.RepositoryID, target, hint.Number, err)
+		return fmt.Errorf("refresh %d/%s/%d: %w", hint.RepositoryID, target, hint.Number, err)
 	}
 	if s.onRelayRefresh != nil {
 		s.onRelayRefresh(ctx, repoID, target, hint.Number)
@@ -313,11 +313,10 @@ func (s *Syncer) refreshRelayRefs(ctx context.Context, repo RepoRef) error {
 		return err
 	}
 	defer s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)()
-	repo, repoID, fence, found, err := s.reconcileRepoForDirectSync(ctx, repo)
-	if err != nil || !found {
+	repo, repoID, err := s.reconcileRepoForDirectSync(ctx, repo)
+	if err != nil {
 		return err
 	}
-	ctx = s.db.WithRepositoryRouteFence(ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)), fence)
 	ctx = withCloneRepositoryIdentity(ctx, repo)
 	if s.clones != nil {
 		branch := s.defaultBranchForActivity(ctx, repoID, repo)
@@ -325,7 +324,7 @@ func (s *Syncer) refreshRelayRefs(ctx context.Context, repo RepoRef) error {
 		if err != nil {
 			return err
 		}
-		if err := s.ensureCloneForRoute(ctx, repo, repoID, fence); err != nil {
+		if err := s.ensureClone(ctx, repo); err != nil {
 			return err
 		}
 		s.syncDefaultBranchActivity(ctx, repo, repoID, branch, previous)

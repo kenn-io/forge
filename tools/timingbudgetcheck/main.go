@@ -48,7 +48,7 @@ var allowedBudgets = map[budgetKey]budgetAllowance{
 	{
 		path:      "internal/server/repobrowserapi/handler_test.go",
 		function:  "TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors",
-		assertion: "github.com/stretchr/testify/require.Never",
+		assertion: "github.com/stretchr/testify/assert.Never",
 		budget:    250 * time.Millisecond,
 	}: {
 		count:  1,
@@ -357,7 +357,7 @@ func resolvedCallee(expr ast.Expr, info *types.Info) (*types.Func, *types.Signat
 
 func waitForIndex(signature *types.Signature) int {
 	if params := signature.Params(); params != nil {
-		for i := 0; i < params.Len(); i++ {
+		for i := range params.Len() {
 			if params.At(i).Name() == "waitFor" {
 				return i
 			}

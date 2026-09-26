@@ -2,6 +2,7 @@ package workspaceapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestDeleteWorkspaceRejectsConcurrentSetup(t *testing.T) {
 	_, err := handler.DeleteWorkspace(t.Context(), &DeleteWorkspaceInput{
 		ID: "ws-creating",
 	})
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(ok, "want *ProblemError, got %T", err)
 	assert.Equal(http.StatusConflict, problem.Status)
 	assert.Equal(httpapi.CodeWorkspaceSetupInProgress, problem.Code)
@@ -61,7 +62,7 @@ func TestDeleteWorkspaceReportsDeletionAlreadyInProgress(t *testing.T) {
 	_, err := handler.DeleteWorkspace(t.Context(), &DeleteWorkspaceInput{
 		ID: "ws-deleting",
 	})
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(ok, "want *ProblemError, got %T", err)
 	assert.Equal(http.StatusConflict, problem.Status)
 	assert.Equal(httpapi.CodeWorkspaceDeletionInProgress, problem.Code)
@@ -115,7 +116,7 @@ func TestQueueWorkspaceDeletionPersistsFailure(t *testing.T) {
 	})
 	handler.Start(t.Context(), true)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})
@@ -165,7 +166,7 @@ func TestQueueWorkspaceForceDeletionRemovesDirtyWorkspaceRecord(t *testing.T) {
 	})
 	handler.Start(t.Context(), true)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})
@@ -192,25 +193,24 @@ func TestPRMonitorPreservesDirtyUnresolvedWorkspace(t *testing.T) {
 	insertDeletionTestWorkspace(
 		t, database, "ws-unresolved-dirty", worktreePath, "ready",
 	)
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	original := db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-original", Owner: "acme", Name: "widget",
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 	}
-	_, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), original, observedAt,
+	_, err := database.ObserveRepository(
+		t.Context(), original,
 	)
 	require.NoError(err)
 	original.Name = "widget-original"
-	_, _, err = database.ReconcileRepositoryObservation(
-		t.Context(), original, observedAt.Add(time.Minute),
+	_, err = database.ObserveRepository(
+		t.Context(), original,
 	)
 	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-replacement", Owner: "acme", Name: "widget",
-		}, observedAt.Add(2*time.Minute),
+			PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+		},
 	)
 	require.NoError(err)
 
@@ -227,7 +227,7 @@ func TestPRMonitorPreservesDirtyUnresolvedWorkspace(t *testing.T) {
 	})
 	handler.Start(t.Context(), true)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})
@@ -278,7 +278,7 @@ func TestDeleteWorkspaceDirtyPreservesReadyStatus(t *testing.T) {
 		Workspaces: workspace.NewManager(database, base),
 	})
 	_, err := handler.DeleteWorkspace(t.Context(), &DeleteWorkspaceInput{ID: "ws-dirty"})
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(ok, "want *ProblemError, got %T", err)
 	assert.Equal(http.StatusConflict, problem.Status)
 	assert.Equal(httpapi.CodeWorktreeDirty, problem.Code)
@@ -391,7 +391,7 @@ func TestStartMarksInterruptedWorkspaceDeletionFailed(t *testing.T) {
 	handler := New(Deps{DB: database})
 	handler.Start(t.Context(), true)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})
@@ -412,7 +412,7 @@ func TestStartMarksInterruptedWorkspaceSetupFailed(t *testing.T) {
 	handler := New(Deps{DB: database})
 	handler.Start(t.Context(), true)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})

@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/platform"
 )
 
 func (s *Server) MCPBackend() mcpserver.Backend {
@@ -59,10 +60,11 @@ func (b mcpBackend) ListActivity(
 	var resolved resolvedMCPRepository
 	if query.Repository.Provider != "" {
 		var err error
-		resolved, err = b.resolveProviderRepositoryFence(ctx, query.Repository)
+		resolved, err = b.resolveProviderRepository(ctx, query.Repository)
 		if err != nil {
 			return mcpserver.ActivityPage{}, err
 		}
+		query.Repository = repositoryAtResolvedRoute(query.Repository, resolved.repo)
 	}
 	body, err := b.server.listActivityService(ctx, &listActivityInput{
 		Repo: mcpRepositoryFilter(query.Repository), Types: query.ActivityTypes,
@@ -70,11 +72,6 @@ func (b mcpBackend) ListActivity(
 	})
 	if err != nil {
 		return mcpserver.ActivityPage{}, mcpBackendError(err)
-	}
-	if resolved.repo != nil {
-		if err := b.confirmProviderRepositoryRoute(ctx, resolved); err != nil {
-			return mcpserver.ActivityPage{}, err
-		}
 	}
 	out := mcpserver.ActivityPage{
 		Items: make([]mcpserver.ActivityItem, 0, len(body.Items)), Capped: body.Capped,
@@ -109,10 +106,11 @@ func (b mcpBackend) ListPulls(
 	var resolved resolvedMCPRepository
 	if query.Repository.Provider != "" {
 		var err error
-		resolved, err = b.resolveProviderRepositoryFence(ctx, query.Repository)
+		resolved, err = b.resolveProviderRepository(ctx, query.Repository)
 		if err != nil {
 			return nil, err
 		}
+		query.Repository = repositoryAtResolvedRoute(query.Repository, resolved.repo)
 	}
 	rows, err := b.server.pullAPI.ListService(ctx, pullapi.ListQuery{
 		Repo: mcpRepositoryFilter(query.Repository), State: query.State,
@@ -120,11 +118,6 @@ func (b mcpBackend) ListPulls(
 	})
 	if err != nil {
 		return nil, mcpBackendError(err)
-	}
-	if resolved.repo != nil {
-		if err := b.confirmProviderRepositoryRoute(ctx, resolved); err != nil {
-			return nil, err
-		}
 	}
 	out := make([]mcpserver.Pull, 0, len(rows))
 	for _, row := range rows {
@@ -139,10 +132,11 @@ func (b mcpBackend) ListIssues(
 	var resolved resolvedMCPRepository
 	if query.Repository.Provider != "" {
 		var err error
-		resolved, err = b.resolveProviderRepositoryFence(ctx, query.Repository)
+		resolved, err = b.resolveProviderRepository(ctx, query.Repository)
 		if err != nil {
 			return nil, err
 		}
+		query.Repository = repositoryAtResolvedRoute(query.Repository, resolved.repo)
 	}
 	rows, err := b.server.issueAPI.ListService(ctx, issueapi.ListQuery{
 		Repo: mcpRepositoryFilter(query.Repository), State: query.State,
@@ -150,11 +144,6 @@ func (b mcpBackend) ListIssues(
 	})
 	if err != nil {
 		return nil, mcpBackendError(err)
-	}
-	if resolved.repo != nil {
-		if err := b.confirmProviderRepositoryRoute(ctx, resolved); err != nil {
-			return nil, err
-		}
 	}
 	out := make([]mcpserver.Issue, 0, len(rows))
 	for _, row := range rows {
@@ -166,16 +155,14 @@ func (b mcpBackend) ListIssues(
 func (b mcpBackend) GetPull(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (mcpserver.PullDetail, error) {
-	resolved, err := b.resolveProviderRepositoryFence(ctx, itemRepositoryIdentity(item))
+	resolved, err := b.resolveProviderRepository(ctx, itemRepositoryIdentity(item))
 	if err != nil {
 		return mcpserver.PullDetail{}, err
 	}
+	item = itemAtResolvedRoute(item, resolved.repo)
 	detail, err := b.server.pullAPI.GetService(ctx, pullServiceIdentity(item))
 	if err != nil {
 		return mcpserver.PullDetail{}, mcpBackendError(err)
-	}
-	if err := b.confirmProviderRepositoryRoute(ctx, resolved); err != nil {
-		return mcpserver.PullDetail{}, err
 	}
 	out := mcpserver.PullDetail{
 		DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt,
@@ -228,16 +215,14 @@ func (b mcpBackend) GetPull(
 func (b mcpBackend) GetIssue(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (mcpserver.IssueDetail, error) {
-	resolved, err := b.resolveProviderRepositoryFence(ctx, itemRepositoryIdentity(item))
+	resolved, err := b.resolveProviderRepository(ctx, itemRepositoryIdentity(item))
 	if err != nil {
 		return mcpserver.IssueDetail{}, err
 	}
+	item = itemAtResolvedRoute(item, resolved.repo)
 	detail, err := b.server.issueAPI.GetService(ctx, issueServiceIdentity(item))
 	if err != nil {
 		return mcpserver.IssueDetail{}, mcpBackendError(err)
-	}
-	if err := b.confirmProviderRepositoryRoute(ctx, resolved); err != nil {
-		return mcpserver.IssueDetail{}, err
 	}
 	out := mcpserver.IssueDetail{
 		DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt,
@@ -277,10 +262,11 @@ func (b mcpBackend) GetIssue(
 func (b mcpBackend) GetPullDiff(
 	ctx context.Context, item mcpserver.ItemIdentity, includePatches bool,
 ) (mcpserver.Diff, error) {
-	resolved, err := b.resolveRepositoryFence(ctx, itemRepositoryIdentity(item))
+	resolved, err := b.resolveMCPRepository(ctx, itemRepositoryIdentity(item))
 	if err != nil {
 		return mcpserver.Diff{}, err
 	}
+	item = itemAtResolvedRoute(item, resolved.repo)
 	identity := pullServiceIdentity(item)
 	var (
 		stale bool
@@ -301,19 +287,17 @@ func (b mcpBackend) GetPullDiff(
 		stale = result.Stale
 		files = mcpDiffFiles(result.Files)
 	}
-	if err := b.confirmRepositoryRoute(ctx, resolved); err != nil {
-		return mcpserver.Diff{}, err
-	}
 	return mcpserver.Diff{Stale: stale, Files: files}, nil
 }
 
 func (b mcpBackend) GetPullStack(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (mcpserver.Stack, error) {
-	resolved, err := b.resolveProviderRepositoryFence(ctx, itemRepositoryIdentity(item))
+	resolved, err := b.resolveProviderRepository(ctx, itemRepositoryIdentity(item))
 	if err != nil {
 		return mcpserver.Stack{}, err
 	}
+	item = itemAtResolvedRoute(item, resolved.repo)
 	var stack pullapi.StackContext
 	if b.server.providerSource != nil {
 		stack, err = b.server.providerSource.GetPullStack(ctx, item)
@@ -322,9 +306,6 @@ func (b mcpBackend) GetPullStack(
 	}
 	if err != nil {
 		return mcpserver.Stack{}, mcpBackendError(err)
-	}
-	if err := b.confirmProviderRepositoryRoute(ctx, resolved); err != nil {
-		return mcpserver.Stack{}, err
 	}
 	return mcpStack(stack), nil
 }
@@ -348,10 +329,11 @@ func (b mcpBackend) listWorkflowStatesLocal(
 	var resolved resolvedMCPRepository
 	if query.Repository.Provider != "" {
 		var err error
-		resolved, err = b.resolveRepositoryFence(ctx, query.Repository)
+		resolved, err = b.resolveMCPRepository(ctx, query.Repository)
 		if err != nil {
 			return mcpserver.WorkflowPage{}, err
 		}
+		query.Repository = repositoryAtResolvedRoute(query.Repository, resolved.repo)
 	}
 	rows, next, err := b.server.db.ListItemWorkflowStates(ctx, db.ListWorkflowStatesOpts{
 		RepoFilters: mcpRepoFilters(query.Repository), ItemTypes: query.ItemTypes,
@@ -366,11 +348,6 @@ func (b mcpBackend) listWorkflowStatesLocal(
 			}
 		}
 		return mcpserver.WorkflowPage{}, mcpBackendError(err)
-	}
-	if resolved.repo != nil {
-		if err := b.confirmRepositoryRoute(ctx, resolved); err != nil {
-			return mcpserver.WorkflowPage{}, err
-		}
 	}
 	out := mcpserver.WorkflowPage{
 		Items: make([]mcpserver.WorkflowItem, 0, len(rows)), NextCursor: next,
@@ -535,11 +512,11 @@ func (b mcpBackend) GetWorkspace(
 func (b mcpBackend) CreatePullWorkspace(
 	ctx context.Context, item mcpserver.ItemIdentity, suppressAutoAssign bool,
 ) (mcpserver.Workspace, error) {
-	resolved, err := b.resolveWorkspaceRepositoryFence(ctx, itemRepositoryIdentity(item))
+	resolved, err := b.resolveWorkspaceRepository(ctx, itemRepositoryIdentity(item))
 	if err != nil {
 		return mcpserver.Workspace{}, err
 	}
-	ctx = b.routeFenceContext(ctx, resolved)
+	item = itemAtResolvedRoute(item, resolved.repo)
 	result, err := b.server.workspaceAPI.CreatePullWorkspace(ctx, workspaceapi.CreatePullWorkspaceRequest{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
 		Owner: item.Owner, Name: item.Name, Number: item.Number,
@@ -554,11 +531,11 @@ func (b mcpBackend) CreatePullWorkspace(
 func (b mcpBackend) CreateIssueWorkspace(
 	ctx context.Context, item mcpserver.ItemIdentity, suppressAutoAssign bool,
 ) (mcpserver.Workspace, error) {
-	resolved, err := b.resolveWorkspaceRepositoryFence(ctx, itemRepositoryIdentity(item))
+	resolved, err := b.resolveWorkspaceRepository(ctx, itemRepositoryIdentity(item))
 	if err != nil {
 		return mcpserver.Workspace{}, err
 	}
-	ctx = b.routeFenceContext(ctx, resolved)
+	item = itemAtResolvedRoute(item, resolved.repo)
 	result, err := b.server.workspaceAPI.CreateIssueWorkspaceService(ctx, workspaceapi.CreateIssueWorkspaceRequest{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
 		Owner: item.Owner, Name: item.Name, Number: item.Number,
@@ -573,11 +550,11 @@ func (b mcpBackend) CreateIssueWorkspace(
 func (b mcpBackend) CreateAdHocWorkspace(
 	ctx context.Context, repo mcpserver.RepositoryIdentity, branch string,
 ) (mcpserver.Workspace, error) {
-	resolved, err := b.resolveWorkspaceRepositoryFence(ctx, repo)
+	resolved, err := b.resolveWorkspaceRepository(ctx, repo)
 	if err != nil {
 		return mcpserver.Workspace{}, err
 	}
-	ctx = b.routeFenceContext(ctx, resolved)
+	repo = repositoryAtResolvedRoute(repo, resolved.repo)
 	var branchPtr *string
 	if branch != "" {
 		branchPtr = &branch
@@ -673,12 +650,12 @@ func (b mcpBackend) SubmitInitialMessage(
 		converted := mcpBackendError(err)
 		if result.State == "pending" || result.State == "uncertain" {
 			if backendErr, ok := errors.AsType[*mcpserver.Error](converted); ok {
-				copy := *backendErr
-				copy.Ambiguous = true
-				copy.Retryable = false
-				copy.Details = cloneMCPErrorDetails(backendErr.Details)
-				copy.Details["initial_message_state"] = result.State
-				converted = &copy
+				annotated := *backendErr
+				annotated.Ambiguous = true
+				annotated.Retryable = false
+				annotated.Details = cloneMCPErrorDetails(backendErr.Details)
+				annotated.Details["initial_message_state"] = result.State
+				converted = &annotated
 			}
 		}
 		return status, converted
@@ -696,13 +673,11 @@ func (b mcpBackend) GetInitialMessage(
 	return *mcpInitialMessage(result), nil
 }
 
-// resolvedMCPRepository binds a stable-identity-validated repository to either
-// its spoke-local route generation or the hub authority that resolved
-// it.
+// resolvedMCPRepository is a repository resolved from the provider identity
+// an MCP request named, either locally or through the hub authority.
 type resolvedMCPRepository struct {
-	repo  *db.Repo
-	fence db.RepositoryRouteFence
-	hub   bool
+	repo *db.Repo
+	hub  bool
 }
 
 func mcpRepositoryIdentityChangedError() error {
@@ -712,28 +687,21 @@ func mcpRepositoryIdentityChangedError() error {
 	}
 }
 
-func (b mcpBackend) resolveRepositoryFence(
+func (b mcpBackend) resolveMCPRepository(
 	ctx context.Context, identity mcpserver.RepositoryIdentity,
 ) (resolvedMCPRepository, error) {
 	repo, err := b.resolveRepository(ctx, identity)
 	if err != nil {
 		return resolvedMCPRepository{}, err
 	}
-	fence, found, err := b.server.repoResolver.CaptureRepositoryRouteFence(ctx, *repo)
-	if err != nil {
-		return resolvedMCPRepository{}, mcpBackendError(err)
-	}
-	if !found {
-		return resolvedMCPRepository{}, mcpRepositoryIdentityChangedError()
-	}
-	return resolvedMCPRepository{repo: repo, fence: fence}, nil
+	return resolvedMCPRepository{repo: repo}, nil
 }
 
-func (b mcpBackend) resolveWorkspaceRepositoryFence(
+func (b mcpBackend) resolveWorkspaceRepository(
 	ctx context.Context, identity mcpserver.RepositoryIdentity,
 ) (resolvedMCPRepository, error) {
 	if b.server.providerSource == nil {
-		return b.resolveRepositoryFence(ctx, identity)
+		return b.resolveMCPRepository(ctx, identity)
 	}
 	if err := validateMCPRepositoryIdentity(identity); err != nil {
 		return resolvedMCPRepository{}, err
@@ -747,7 +715,7 @@ func (b mcpBackend) resolveWorkspaceRepositoryFence(
 	if err != nil {
 		return resolvedMCPRepository{}, mcpBackendError(err)
 	}
-	if descriptor.PlatformRepoID != strings.TrimSpace(identity.PlatformRepoID) {
+	if descriptor.PlatformRepoID != identity.PlatformRepoID {
 		return resolvedMCPRepository{}, mcpRepositoryIdentityChangedError()
 	}
 	identity.Provider = descriptor.Provider
@@ -755,14 +723,14 @@ func (b mcpBackend) resolveWorkspaceRepositoryFence(
 	identity.PlatformRepoID = descriptor.PlatformRepoID
 	identity.Owner = descriptor.Owner
 	identity.Name = descriptor.Name
-	return b.resolveRepositoryFence(ctx, identity)
+	return b.resolveMCPRepository(ctx, identity)
 }
 
-func (b mcpBackend) resolveProviderRepositoryFence(
+func (b mcpBackend) resolveProviderRepository(
 	ctx context.Context, identity mcpserver.RepositoryIdentity,
 ) (resolvedMCPRepository, error) {
 	if b.server.providerSource == nil {
-		return b.resolveRepositoryFence(ctx, identity)
+		return b.resolveMCPRepository(ctx, identity)
 	}
 	if err := validateMCPRepositoryIdentity(identity); err != nil {
 		return resolvedMCPRepository{}, err
@@ -777,81 +745,25 @@ func (b mcpBackend) resolveProviderRepositoryFence(
 	return resolvedMCPRepository{repo: repo, hub: true}, nil
 }
 
-// confirmRepositoryRoute fails a route-addressed read closed when repository
-// reconciliation reassigned the validated route while the read was running.
-// The fence generation changes on every ownership change, including
-// A -> B -> A reuse, so equal captures before and after the read prove the
-// read observed only the validated repository.
-func (b mcpBackend) confirmRepositoryRoute(
-	ctx context.Context, resolved resolvedMCPRepository,
-) error {
-	matches, err := b.server.repoResolver.RepositoryRouteFenceMatches(
-		ctx, *resolved.repo, resolved.fence,
-	)
-	if err != nil {
-		return mcpBackendError(err)
-	}
-	if !matches {
-		return mcpRepositoryIdentityChangedError()
-	}
-	return nil
-}
-
-func (b mcpBackend) confirmProviderRepositoryRoute(
-	ctx context.Context, resolved resolvedMCPRepository,
-) error {
-	if !resolved.hub {
-		return b.confirmRepositoryRoute(ctx, resolved)
-	}
-	identity := mcpserver.RepositoryIdentity{
-		Provider: resolved.repo.Platform, PlatformHost: resolved.repo.PlatformHost,
-		PlatformRepoID: resolved.repo.PlatformRepoID,
-		Owner:          resolved.repo.Owner, Name: resolved.repo.Name,
-	}
-	repo, err := b.server.providerSource.ResolveRepository(ctx, identity)
-	if err != nil {
-		return mcpBackendError(err)
-	}
-	if !mcpRepositoryStableIdentityMatches(*repo, identity) {
-		return mcpRepositoryIdentityChangedError()
-	}
-	return nil
-}
-
-// routeFenceContext binds the validated route generation to the request so
-// every downstream database write re-validates it under the reconciliation
-// read lock, failing workspace mutations closed instead of persisting rows
-// for a replacement repository that took over the route mid-request.
-func (b mcpBackend) routeFenceContext(
-	ctx context.Context, resolved resolvedMCPRepository,
-) context.Context {
-	repo := resolved.repo
-	return b.server.db.WithRepositoryRouteFence(ctx, db.RepoIdentity{
-		Platform: repo.Platform, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
-		Owner:          repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
-	}, resolved.fence)
-}
-
 func (b mcpBackend) resolveRepository(
 	ctx context.Context, identity mcpserver.RepositoryIdentity,
 ) (*db.Repo, error) {
 	if err := validateMCPRepositoryIdentity(identity); err != nil {
 		return nil, err
 	}
-	repo, err := b.server.repoResolver.LookupRoute(
-		ctx, identity.Provider, identity.PlatformHost, identity.Owner, identity.Name,
-	)
+	// The provider ID names the repository; owner/name in the request are
+	// only its last known route.
+	repo, err := b.server.db.GetActiveRepoByProviderID(ctx, platform.RepositoryIdentity{
+		Provider: identity.Provider, PlatformHost: identity.PlatformHost,
+		PlatformRepoID: identity.PlatformRepoID,
+	})
 	if err != nil {
-		return nil, mcpBackendError(httpapi.ProviderRouteLookupError(err))
+		return nil, mcpBackendError(httpapi.Internal("look up repository failed"))
 	}
-	if repo.PlatformRepoID != strings.TrimSpace(identity.PlatformRepoID) {
-		return nil, &mcpserver.Error{
-			Kind: "not_found", Code: string(httpapi.CodeRepoNotFound),
-			Message: "repository identity no longer matches this route",
-		}
+	if repo == nil {
+		return nil, mcpRepositoryIdentityChangedError()
 	}
-	return repo, nil
+	return repo.Row(), nil
 }
 
 func validateMCPRepositoryIdentity(identity mcpserver.RepositoryIdentity) error {
@@ -861,7 +773,7 @@ func validateMCPRepositoryIdentity(identity mcpserver.RepositoryIdentity) error 
 			Message: "provider is required",
 		}
 	}
-	if strings.TrimSpace(identity.PlatformRepoID) == "" {
+	if identity.PlatformRepoID <= 0 {
 		return &mcpserver.Error{
 			Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
 			Message: "platform_repo_id is required",
@@ -873,15 +785,33 @@ func validateMCPRepositoryIdentity(identity mcpserver.RepositoryIdentity) error 
 func mcpRepositoryStableIdentityMatches(
 	repo db.Repo, identity mcpserver.RepositoryIdentity,
 ) bool {
-	actual := providerplane.RepositoryIdentity{
+	actual := platform.RepositoryIdentity{
 		Provider: repo.Platform, PlatformHost: repo.PlatformHost,
 		PlatformRepoID: repo.PlatformRepoID,
 	}.Canonical()
-	expected := providerplane.RepositoryIdentity{
+	expected := platform.RepositoryIdentity{
 		Provider: identity.Provider, PlatformHost: identity.PlatformHost,
 		PlatformRepoID: identity.PlatformRepoID,
 	}.Canonical()
 	return actual.Valid() && actual == expected
+}
+
+// itemAtResolvedRoute addresses item by the resolved repository's current
+// route, so route-keyed services read the repository the provider ID named
+// even when the request carried an older owner/name.
+func itemAtResolvedRoute(item mcpserver.ItemIdentity, repo *db.Repo) mcpserver.ItemIdentity {
+	item.Provider, item.PlatformHost = repo.Platform, repo.PlatformHost
+	item.Owner, item.Name = repo.Owner, repo.Name
+	return item
+}
+
+// repositoryAtResolvedRoute is itemAtResolvedRoute for repository identities.
+func repositoryAtResolvedRoute(
+	identity mcpserver.RepositoryIdentity, repo *db.Repo,
+) mcpserver.RepositoryIdentity {
+	identity.Provider, identity.PlatformHost = repo.Platform, repo.PlatformHost
+	identity.Owner, identity.Name, identity.RepoPath = repo.Owner, repo.Name, repo.RepoPath
+	return identity
 }
 
 func itemRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIdentity {
@@ -899,8 +829,8 @@ func mcpBackendError(err error) error {
 	if existing, ok := errors.AsType[*mcpserver.Error](err); ok {
 		return existing
 	}
-	var problem *httpapi.ProblemError
-	if !errors.As(err, &problem) {
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	if !ok {
 		return &mcpserver.Error{Kind: "internal_error", Message: err.Error()}
 	}
 	kind := "internal_error"
@@ -935,15 +865,15 @@ func mcpBackendError(err error) error {
 
 func mcpBackendMutationError(err error) error {
 	converted := mcpBackendError(err)
-	var backendErr *mcpserver.Error
-	if !errors.As(converted, &backendErr) || backendErr.Kind != "internal_error" {
+	backendErr, ok := errors.AsType[*mcpserver.Error](converted)
+	if !ok || backendErr.Kind != "internal_error" {
 		return converted
 	}
-	copy := *backendErr
-	copy.Ambiguous = true
-	copy.Retryable = false
-	copy.Details = cloneMCPErrorDetails(backendErr.Details)
-	return &copy
+	annotated := *backendErr
+	annotated.Ambiguous = true
+	annotated.Retryable = false
+	annotated.Details = cloneMCPErrorDetails(backendErr.Details)
+	return &annotated
 }
 
 func normalizeMCPWorkflowStatus(status string) db.KanbanStatus {

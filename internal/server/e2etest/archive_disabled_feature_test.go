@@ -114,7 +114,7 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 		case "/api/v3/rate_limit":
 			_, _ = w.Write([]byte(`{"resources":{"core":{"limit":5000,"remaining":4999,"reset":4102444800}}}`))
-		case "/api/v3/repos/acme/widget":
+		case "/api/v3/repos/acme/widget", "/api/v3/repositories/1":
 			_, _ = w.Write([]byte(`{
 				"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget",
 				"owner":{"login":"acme"},"has_pull_requests":false
@@ -139,7 +139,7 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "R_widget",
+		PlatformID: 1,
 	}
 	quotaRegistry := ghclient.NewQuotaRegistry()
 	identity := ghclient.IdentityKey{Host: "github.com", Principal: "user:7"}
@@ -186,7 +186,7 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	repo := ghclient.RepoRef{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-		PlatformExternalID: ref.PlatformExternalID,
+		PlatformRepoID: ref.PlatformID,
 	}
 	require.NoError(syncer.SetReposWithContext(ctx, []ghclient.RepoRef{repo}, false))
 

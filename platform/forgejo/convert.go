@@ -1,7 +1,7 @@
 package forgejo
 
 import (
-	"fmt"
+	"errors"
 	"net/url"
 	"strings"
 	"time"
@@ -12,7 +12,7 @@ import (
 
 func convertRepository(repo *forgejosdk.Repository) (gitealike.RepositoryDTO, error) {
 	if repo == nil {
-		return gitealike.RepositoryDTO{}, fmt.Errorf("forgejo repository is nil")
+		return gitealike.RepositoryDTO{}, errors.New("forgejo repository is nil")
 	}
 	var canPush, canAdmin *bool
 	if repo.Permissions != nil {

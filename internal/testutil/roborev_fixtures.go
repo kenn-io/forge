@@ -1,7 +1,9 @@
 package testutil
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -149,16 +151,16 @@ func SeedRoborevDB(path string) error {
 	}
 	defer db.Close()
 
-	if _, err := db.Exec(roborevSchema); err != nil {
+	if _, err := db.ExecContext(context.Background(), roborevSchema); err != nil {
 		return fmt.Errorf("create schema: %w", err)
 	}
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() {
-		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
 			return
 		}
 	}()
@@ -201,7 +203,7 @@ func seedRoborevRepos(tx *sql.Tx) error {
 		{2, "/home/dev/test-repo-beta", "test-repo-beta"},
 	}
 	for _, r := range repos {
-		_, err := tx.Exec(
+		_, err := tx.ExecContext(context.Background(),
 			`INSERT INTO repos (id, root_path, name, created_at)
 			 VALUES (?, ?, ?, ?)`,
 			r.id, r.path, r.name,
@@ -223,7 +225,7 @@ func seedRoborevCommits(tx *sql.Tx) error {
 		sha := fmt.Sprintf("%08x", 0xaa000000+i)
 		subject := fmt.Sprintf("commit %d: implement feature", i)
 		ts := jobTime(i)
-		_, err := tx.Exec(
+		_, err := tx.ExecContext(context.Background(),
 			`INSERT INTO commits
 			 (id, repo_id, sha, author, subject,
 			  timestamp, created_at)
@@ -373,7 +375,7 @@ func insertRoborevJob(
 		}
 	}
 
-	_, err := tx.Exec(
+	_, err := tx.ExecContext(context.Background(),
 		`INSERT INTO review_jobs
 		 (id, repo_id, commit_id, git_ref, branch,
 		  agent, model, status, enqueued_at,
@@ -394,7 +396,7 @@ func insertRoborevJob(
 func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	// ID 70: queued job in alpha (cancel test)
 	enq70 := jobTime(70)
-	_, err := tx.Exec(
+	_, err := tx.ExecContext(context.Background(),
 		`INSERT INTO review_jobs
 		 (id, repo_id, commit_id, git_ref, branch,
 		  agent, model, status, enqueued_at, job_type)
@@ -410,7 +412,7 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	// ID 71: done/fail/open with review (close-review test)
 	enq71 := jobTime(71)
 	fin71 := enq71.Add(7 * time.Minute)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(context.Background(),
 		`INSERT INTO review_jobs
 		 (id, repo_id, commit_id, git_ref, branch,
 		  agent, model, status,
@@ -430,7 +432,7 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	// ID 72: done/fail/open with review + comment (add-comment)
 	enq72 := jobTime(72)
 	fin72 := enq72.Add(7 * time.Minute)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(context.Background(),
 		`INSERT INTO review_jobs
 		 (id, repo_id, commit_id, git_ref, branch,
 		  agent, model, status,
@@ -451,7 +453,7 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	// allows real mutation handlers to accept reruns without an installed CLI.
 	enq73 := jobTime(73)
 	fin73 := enq73.Add(7 * time.Minute)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(context.Background(),
 		`INSERT INTO review_jobs
 		 (id, repo_id, commit_id, git_ref, branch,
 		  agent, model, status,
@@ -474,7 +476,7 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	// "--" before "0s" sort boundary.
 	enq74 := jobTime(74)
 	started74 := enq74.Add(2 * time.Minute)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(context.Background(),
 		`INSERT INTO review_jobs
 		 (id, repo_id, commit_id, git_ref, branch,
 		  agent, model, status,
@@ -497,7 +499,7 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	// by default via hide_classify_jobs=true, then visible when
 	// the Reviews UI opts in to auto-design rows.
 	enq75 := jobTime(75)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(context.Background(),
 		`INSERT INTO review_jobs
 		 (id, repo_id, commit_id, git_ref, branch,
 		  agent, model, status,
@@ -518,7 +520,7 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 	// ID 76: failed auto-design classifier byproduct. It should be
 	// hidden by the same default filter as skipped auto-design rows.
 	enq76 := jobTime(76)
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(context.Background(),
 		`INSERT INTO review_jobs
 		 (id, repo_id, commit_id, git_ref, branch,
 		  agent, model, status,
@@ -545,7 +547,7 @@ func seedRoborevMutationFixtures(tx *sql.Tx) error {
 		{72, "gemini"},
 	} {
 		created := jobTime(mj.jobID).Add(8 * time.Minute)
-		_, err = tx.Exec(
+		_, err = tx.ExecContext(context.Background(),
 			`INSERT INTO reviews
 			 (job_id, agent, prompt, output,
 			  created_at, closed, verdict_bool)
@@ -618,7 +620,7 @@ func seedRoborevPanelFixtures(tx *sql.Tx) error {
 		enq := jobTime(j.id)
 		started := enq.Add(2 * time.Minute)
 		finished := started.Add(4 * time.Minute)
-		_, err := tx.Exec(
+		_, err := tx.ExecContext(context.Background(),
 			`INSERT INTO review_jobs
 			 (id, repo_id, commit_id, git_ref, branch,
 			  agent, model, status, enqueued_at,
@@ -649,7 +651,7 @@ func seedRoborevPanelFixtures(tx *sql.Tx) error {
 // seedRoborevReviews creates one review per done/applied/rebased job.
 func seedRoborevReviews(tx *sql.Tx) error {
 	// Skip mutation fixture IDs 71, 72 (reviews inserted separately)
-	rows, err := tx.Query(
+	rows, err := tx.QueryContext(context.Background(),
 		`SELECT id, agent FROM review_jobs
 		 WHERE status IN ('done', 'applied', 'rebased')
 		   AND id NOT IN (71, 72)
@@ -709,7 +711,7 @@ func seedRoborevReviews(tx *sql.Tx) error {
 		}
 
 		created := jobTime(j.id).Add(8 * time.Minute)
-		_, err := tx.Exec(
+		_, err := tx.ExecContext(context.Background(),
 			`INSERT INTO reviews
 			 (job_id, agent, prompt, output,
 			  created_at, closed, verdict_bool)
@@ -753,7 +755,7 @@ func seedRoborevResponses(tx *sql.Tx) error {
 	commentJobs := []int{72}
 
 	// Pick 2 more fail+open reviews from the bulk set.
-	rows, err := tx.Query(
+	rows, err := tx.QueryContext(context.Background(),
 		`SELECT rj.id FROM review_jobs rj
 		 JOIN reviews r ON r.job_id = rj.id
 		 WHERE rj.status = 'done' AND r.verdict_bool = 0
@@ -789,7 +791,7 @@ func seedRoborevResponses(tx *sql.Tx) error {
 		for c := range n {
 			created := jobTime(jobID).
 				Add(time.Duration(12+c*3) * time.Minute)
-			_, err := tx.Exec(
+			_, err := tx.ExecContext(context.Background(),
 				`INSERT INTO responses
 				 (job_id, responder, response, created_at)
 				 VALUES (?, ?, ?, ?)`,

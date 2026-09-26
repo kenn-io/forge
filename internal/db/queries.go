@@ -239,7 +239,7 @@ func repoListFilterCondition(repoAlias string, filters []RepoFilter, args *[]any
 	var groups []string
 	for _, filter := range filters {
 		var clauses []string
-		if filter.PlatformRepoID != "" {
+		if filter.PlatformRepoID != 0 {
 			if filter.Platform != "" {
 				clauses = append(clauses, repoAlias+".platform = ?")
 				*args = append(*args, strings.ToLower(strings.TrimSpace(filter.Platform)))
@@ -250,7 +250,7 @@ func repoListFilterCondition(repoAlias string, filters []RepoFilter, args *[]any
 				*args = append(*args, host)
 			}
 			clauses = append(clauses, repoAlias+".platform_repo_id = ?")
-			*args = append(*args, strings.TrimSpace(filter.PlatformRepoID))
+			*args = append(*args, filter.PlatformRepoID)
 		} else if filter.RepoPath != "" {
 			if filter.Platform != "" {
 				clauses = append(clauses, repoAlias+".platform = ?")
@@ -990,11 +990,6 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 // stable repository identity. Deletes otherwise run in FK-dependency order so
 // this works on existing DBs where CASCADE may not be retrofitted.
 func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
-	releaseReconciliation := d.lockRepositoryReconciliationWrite()
-	defer releaseReconciliation()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		queries := []string{
 			`DELETE FROM forge_starred_items WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
@@ -1004,11 +999,6 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 			`DELETE FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_issue_events WHERE issue_id IN (SELECT id FROM forge_issues WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
 			`DELETE FROM forge_issues WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
-			`UPDATE forge_repo_routes SET is_current = 0
-			 WHERE repo_id IN (
-				 SELECT id FROM forge_repos WHERE platform_host != ?
-				   AND id IN (SELECT repo_id FROM forge_workspaces WHERE repo_id IS NOT NULL)
-			 )`,
 			`UPDATE forge_repos SET lifecycle_state = 'inactive'
 			 WHERE platform_host != ?
 			   AND id IN (SELECT repo_id FROM forge_workspaces WHERE repo_id IS NOT NULL)`,
@@ -1026,168 +1016,6 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 }
 
 // --- Repos ---
-
-// UpsertRepo inserts a repo identity if it does not exist, then returns its ID.
-// Callers pass cached identities without provider verification, so a known
-// provider ID resolves read-only; routes move only through provider-verified
-// reconciliation.
-func (d *DB) UpsertRepo(ctx context.Context, identity RepoIdentity) (int64, error) {
-	identity.PlatformRepoID = strings.TrimSpace(identity.PlatformRepoID)
-	identity = canonicalRepoIdentity(identity)
-	if identity.PlatformRepoID != "" {
-		return d.upsertRepoByProviderID(ctx, identity)
-	}
-	if identity.PlatformHost == "" || identity.Owner == "" || identity.Name == "" {
-		return 0, errors.New(
-			"upsert repo requires platform, host, owner, and name",
-		)
-	}
-	releaseReconciliation := d.lockRepositoryReconciliationWrite()
-	defer releaseReconciliation()
-	if err := ctx.Err(); err != nil {
-		return 0, err
-	}
-	var id int64
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		var err error
-		id, err = upsertRepoIdentityTx(ctx, tx, identity)
-		return err
-	})
-	return id, err
-}
-
-func upsertRepoIdentityTx(ctx context.Context, tx *sql.Tx, identity RepoIdentity) (int64, error) {
-	identity = canonicalRepoIdentity(identity)
-	if identity.PlatformRepoID != "" {
-		return 0, errors.New(
-			"route-only repository upsert cannot assign a provider id",
-		)
-	}
-	if id, found, err := currentRepositoryIDByRouteTx(ctx, tx, identity); err != nil {
-		return 0, err
-	} else if found {
-		return id, nil
-	}
-	var legacyID int64
-	err := tx.QueryRowContext(ctx, `
-		SELECT id
-		FROM forge_repos
-		WHERE platform = ?
-		  AND platform_host = ?
-		  AND platform_repo_id = ''
-		  AND repo_path_key = ?
-		ORDER BY id
-		LIMIT 1`,
-		identity.Platform,
-		identity.PlatformHost,
-		identity.RepoPathKey,
-	).Scan(&legacyID)
-	if err == nil {
-		return legacyID, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("lookup legacy repository route: %w", err)
-	}
-
-	result, err := tx.ExecContext(ctx,
-		`INSERT INTO forge_repos (
-		     platform, platform_host, platform_repo_id,
-		     owner, name, repo_path,
-		     owner_key, name_key, repo_path_key,
-		     lifecycle_state
-		 )
-		 VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, 'inactive')`,
-		identity.Platform, identity.PlatformHost,
-		identity.Owner, identity.Name, identity.RepoPath,
-		identity.OwnerKey, identity.NameKey, identity.RepoPathKey,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("upsert repo: %w", err)
-	}
-	id, err := result.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("read legacy repository id: %w", err)
-	}
-	observedAt := time.Now().UTC()
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO forge_repo_routes (
-			repo_id, platform, platform_host,
-			owner, name, repo_path, owner_key, name_key, repo_path_key,
-			is_current, first_seen_at, last_seen_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-		id,
-		identity.Platform,
-		identity.PlatformHost,
-		identity.Owner,
-		identity.Name,
-		identity.RepoPath,
-		identity.OwnerKey,
-		identity.NameKey,
-		identity.RepoPathKey,
-		observedAt,
-		observedAt,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("record legacy repository route: %w", err)
-	}
-	return id, nil
-}
-
-// UpsertRepoByProviderID resolves a cached identity by its stable provider
-// ID, creating the catalog entry only when the ID is unknown. It never moves
-// routes: cached writes carry no provider verification, and a delayed one
-// must not reclaim a route another repository has since taken.
-func (d *DB) UpsertRepoByProviderID(ctx context.Context, identity RepoIdentity) (int64, error) {
-	identity.PlatformRepoID = strings.TrimSpace(identity.PlatformRepoID)
-	identity = canonicalRepoIdentity(identity)
-	return d.upsertRepoByProviderID(ctx, identity)
-}
-
-func (d *DB) upsertRepoByProviderID(ctx context.Context, identity RepoIdentity) (int64, error) {
-	// Deliberately lock-free: callers like the MR snapshot upsert already
-	// hold the reconciliation read lock, and nested acquisition deadlocks
-	// against a queued reconciliation writer holding the lock gate.
-	existing, err := d.getRepositoryByProviderID(
-		ctx, identity.Platform, identity.PlatformHost, identity.PlatformRepoID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	if existing != nil {
-		return existing.Repository.ID, nil
-	}
-	entry, _, err := d.ReconcileRepositoryObservation(
-		ctx, identity, time.Now().UTC(),
-	)
-	if err != nil {
-		return 0, err
-	}
-	return entry.Repository.ID, nil
-}
-
-func lookupRepoIdentityByIDTx(
-	ctx context.Context,
-	tx *sql.Tx,
-	repoID int64,
-) (RepoIdentity, error) {
-	var identity RepoIdentity
-	err := tx.QueryRowContext(ctx,
-		`SELECT platform, platform_host, platform_repo_id,
-		        owner, name, repo_path,
-		        owner_key, name_key, repo_path_key
-		 FROM forge_repos
-		 WHERE id = ?`,
-		repoID,
-	).Scan(
-		&identity.Platform, &identity.PlatformHost, &identity.PlatformRepoID,
-		&identity.Owner, &identity.Name, &identity.RepoPath,
-		&identity.OwnerKey, &identity.NameKey, &identity.RepoPathKey,
-	)
-	if err != nil {
-		return RepoIdentity{}, fmt.Errorf("lookup repo identity by id: %w", err)
-	}
-	return canonicalRepoIdentity(identity), nil
-}
 
 func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 	rows, err := d.roQueryContext(ctx,
@@ -1259,141 +1087,33 @@ func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time,
 	return nil
 }
 
-func (d *DB) UpdateRepoProviderMetadata(
-	ctx context.Context,
-	repoID int64,
-	metadata RepoProviderMetadata,
-) error {
-	metadata.PlatformRepoID = strings.TrimSpace(metadata.PlatformRepoID)
-	releaseReconciliation := d.lockRepositoryReconciliationWrite()
-	defer releaseReconciliation()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	tx, err := d.rw.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("update repo provider metadata: begin: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if guard := d.repositoryRouteGuard(ctx); guard != nil {
-		matches, err := repositoryRouteFenceMatchesTx(
-			ctx, tx, guard.identity, guard.fence,
-		)
+// GetRepoByIdentity returns the active repo for identity, or nil if not
+// found. A provider ID, when present, decides the repository; otherwise the
+// owner/name route is resolved to its current occupant.
+func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*ActiveRepo, error) {
+	if identity.PlatformRepoID != 0 {
+		repo, err := d.GetActiveRepoByProviderID(ctx, identity.ProviderIdentity())
 		if err != nil {
-			return fmt.Errorf("update repo provider metadata: %w", err)
+			return nil, fmt.Errorf("get repo by identity: %w", err)
 		}
-		if !matches {
-			return fmt.Errorf(
-				"update repo provider metadata: %w for %s/%s",
-				ErrRepositoryRouteFenceChanged,
-				guard.identity.PlatformHost, guard.identity.RepoPath,
-			)
-		}
+		return repo, nil
 	}
-	err = func(tx *sql.Tx) error {
-		identity, err := lookupRepoIdentityByIDTx(ctx, tx, repoID)
-		if err != nil {
-			return err
-		}
-		currentProviderID := strings.TrimSpace(identity.PlatformRepoID)
-		if currentProviderID != "" && metadata.PlatformRepoID != "" &&
-			currentProviderID != metadata.PlatformRepoID {
-			return fmt.Errorf(
-				"stable provider id for repository %d cannot change from %q to %q",
-				repoID, currentProviderID, metadata.PlatformRepoID,
-			)
-		}
-
-		providerID := currentProviderID
-		if providerID == "" {
-			providerID = metadata.PlatformRepoID
-		}
-		if currentProviderID == "" && providerID != "" {
-			identity.PlatformRepoID = providerID
-			existingID, found, err := repositoryIDByProviderIDTx(
-				ctx, tx, identity,
-			)
-			if err != nil {
-				return err
-			}
-			if found && existingID != repoID {
-				return fmt.Errorf(
-					"stable provider id %q already belongs to repository %d",
-					providerID, existingID,
-				)
-			}
-			occupantID, occupied, err := currentRepositoryIDByRouteTx(
-				ctx, tx, identity,
-			)
-			if err != nil {
-				return err
-			}
-			if occupied && occupantID != repoID {
-				return fmt.Errorf(
-					"repository route %q is occupied by repository %d",
-					identity.RepoPath, occupantID,
-				)
-			}
-			if err := activateRepositoryRouteTx(
-				ctx, tx, repoID, identity, time.Now().UTC(),
-			); err != nil {
-				return err
-			}
-			if err := updateRepositoryDisplayTx(ctx, tx, repoID, identity); err != nil {
-				return err
-			}
-		}
-
-		_, err = tx.ExecContext(ctx,
-			`UPDATE forge_repos
-			 SET platform_repo_id = ?,
-			     web_url = ?,
-			     clone_url = ?,
-			     default_branch = ?
-			 WHERE id = ?`,
-			providerID,
-			metadata.WebURL,
-			metadata.CloneURL,
-			metadata.DefaultBranch,
-			repoID,
-		)
-		return err
-	}(tx)
-	if err != nil {
-		return fmt.Errorf("update repo provider metadata: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("update repo provider metadata: commit: %w", err)
-	}
-	return nil
-}
-
-// GetRepoByIdentity returns the repo for the provider-qualified identity,
-// or nil if not found.
-func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*Repo, error) {
 	entry, err := d.ResolveActiveRepositoryRoute(ctx, identity)
 	return repoFromCatalogEntry(entry, err)
 }
 
-// GetRepoByIdentityUnderRepositoryReconciliationRead is GetRepoByIdentity for
-// callers that already hold LockRepositoryReconciliationRead — acquiring the
-// lock again deadlocks behind a queued reconciliation writer.
-func (d *DB) GetRepoByIdentityUnderRepositoryReconciliationRead(
-	ctx context.Context, identity RepoIdentity,
-) (*Repo, error) {
-	entry, err := d.resolveActiveRepositoryRoute(ctx, identity)
-	return repoFromCatalogEntry(entry, err)
-}
-
-func repoFromCatalogEntry(entry *RepositoryCatalogEntry, err error) (*Repo, error) {
+func repoFromCatalogEntry(entry *RepositoryCatalogEntry, err error) (*ActiveRepo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get repo by identity: %w", err)
 	}
 	if entry == nil {
 		return nil, nil
 	}
-	repo := entry.Repository
-	return &repo, nil
+	repo, err := entry.ActiveRepo()
+	if err != nil {
+		return nil, fmt.Errorf("get repo by identity: %w", err)
+	}
+	return repo, nil
 }
 
 // GetRepoByID returns the repo with the given ID, or nil if not found.
@@ -1403,14 +1123,17 @@ func (d *DB) GetRepoByID(ctx context.Context, id int64) (*Repo, error) {
 
 // GetActiveRepoByID returns the active repo with the given ID, or nil if the
 // repo does not exist or is inactive.
-func (d *DB) GetActiveRepoByID(ctx context.Context, id int64) (*Repo, error) {
-	return d.getRepoByID(ctx, id, true)
+func (d *DB) GetActiveRepoByID(ctx context.Context, id int64) (*ActiveRepo, error) {
+	repo, err := d.getRepoByID(ctx, id, true)
+	if err != nil || repo == nil {
+		return nil, err
+	}
+	return newActiveRepo(*repo)
 }
 
 func (d *DB) getRepoByID(ctx context.Context, id int64, activeOnly bool) (*Repo, error) {
 	var r Repo
-	query :=
-		`SELECT id, platform, platform_host, platform_repo_id,
+	query := `SELECT id, platform, platform_host, platform_repo_id,
 		        owner, name, repo_path,
 		        owner_key, name_key, repo_path_key,
 		        web_url, clone_url, default_branch,
@@ -1592,14 +1315,7 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 	ctx context.Context,
 	mr *MergeRequest,
 ) (int64, int64, bool, error) {
-	release, err := d.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return 0, 0, false, err
-	}
-	defer release()
-	return d.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
-		ctx, mr, nil,
-	)
+	return d.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(ctx, mr, nil)
 }
 
 // MREventMetadataComputer derives metadata_json replacements (keyed by event
@@ -1609,21 +1325,20 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 // round can shift and its results land atomically with the snapshot.
 type MREventMetadataComputer func(mergeRequestID int64, events []MREvent) map[string]string
 
-// UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead applies
-// a parent snapshot while its caller holds LockRepositoryReconciliationRead.
-// terminalEventMetadata, when non-nil, runs inside the snapshot transaction on
+// UpsertMergeRequestSnapshotWithLabelsAndEventMetadata applies a parent
+// snapshot. terminalEventMetadata, when non-nil, runs inside the snapshot transaction on
 // the accepted round that takes the merge request out of the open state (the
 // stored row was open, the incoming snapshot is not): it receives the
 // transaction's view of the stored events and its returned metadata lands with
 // the terminal state — together or not at all, computed from data no
 // concurrent writer can change underneath it. Non-transition rounds and
 // rejected snapshots never invoke it.
-func (d *DB) UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
+func (d *DB) UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
 	ctx context.Context,
 	mr *MergeRequest,
 	terminalEventMetadata MREventMetadataComputer,
 ) (int64, int64, bool, error) {
-	release, err := d.lockMergeRequestSnapshotUnderRepositoryReconciliationRead(
+	release, err := d.lockMergeRequestSnapshot(
 		ctx, mr.RepoID, mr.Number,
 	)
 	if err != nil {
@@ -1700,7 +1415,7 @@ func upsertMergeRequestSnapshot(
 ) (int64, int64, bool, error) {
 	result, err := executor.ExecContext(ctx, `
 		INSERT INTO forge_merge_requests
-		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_display_name,
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_association, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
 		     platform_head_sha, platform_base_sha, head_repo_clone_url,
 		     additions, deletions, files_changed, merge_commit_sha, comment_count,
@@ -1710,13 +1425,14 @@ func upsertMergeRequestSnapshot(
 		     last_activity_at, merged_at, closed_at, mergeable_state,
 		     assignees_json, reviewers_json, head_repo_identity_stale,
 		     snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_merge_requests.platform_external_id),
 		    url                  = excluded.url,
 		    title                = excluded.title,
 		    author               = excluded.author,
+		    author_association = CASE WHEN forge_merge_requests.author = excluded.author THEN COALESCE(excluded.author_association, forge_merge_requests.author_association) ELSE excluded.author_association END,
 		    author_display_name  = excluded.author_display_name,
 		    state                = excluded.state,
 		    is_draft             = excluded.is_draft,
@@ -1763,7 +1479,7 @@ func upsertMergeRequestSnapshot(
 		    snapshot_revision    = forge_merge_requests.snapshot_revision + 1
 		WHERE excluded.updated_at >= forge_merge_requests.updated_at`,
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
-		mr.Author, mr.AuthorDisplayName,
+		mr.Author, mr.AuthorAssociation, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.IsLocked, mr.Body, mr.HeadBranch, mr.BaseBranch,
 		mr.PlatformHeadSHA, mr.PlatformBaseSHA, mr.HeadRepoCloneURL,
 		mr.Additions, mr.Deletions, mr.FilesChanged, mr.MergeCommitSHA,
@@ -2089,8 +1805,14 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		conds = append(conds, unassignedCondition("p"))
 	}
 	if opts.Search != "" {
-		cond, condArgs := listSearchCondition("p", opts.Search)
-		if cond != "" {
+		// Zero padding opts into an exact PR number before pagination, so old
+		// PRs remain reachable without changing ordinary substring searches.
+		numberText := strings.TrimPrefix(strings.TrimSpace(opts.Search), "#")
+		number, err := strconv.ParseUint(numberText, 10, 63)
+		if err == nil && len(numberText) > 1 && numberText[0] == '0' {
+			conds = append(conds, "p.number = ?")
+			args = append(args, number)
+		} else if cond, condArgs := listSearchCondition("p", opts.Search); cond != "" {
 			conds = append(conds, cond)
 			args = append(args, condArgs...)
 		}
@@ -2237,9 +1959,9 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	}
 	stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO forge_mr_events
-			    (merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
+			    (merge_request_id, platform_id, platform_external_id, event_type, author, author_association, summary, body,
 			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
 			    platform_external_id = excluded.platform_external_id,
@@ -2252,6 +1974,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 			        ELSE excluded.author
 			    END,
 			    summary       = excluded.summary,
+		    author_association = CASE WHEN forge_mr_events.author = excluded.author THEN COALESCE(excluded.author_association, forge_mr_events.author_association) ELSE excluded.author_association END,
 			    body          = excluded.body,
 			    metadata_json = excluded.metadata_json,
 			    created_at    = excluded.created_at,
@@ -2305,7 +2028,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 			}
 		}
 		if _, err := stmt.ExecContext(ctx,
-			e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.Summary, e.Body,
+			e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.AuthorAssociation, e.Summary, e.Body,
 			e.MetadataJSON, e.CreatedAt, e.DedupeKey, e.DirectURL, e.ThreadID, e.PositionJSON, e.Resolvable, e.Resolved,
 		); err != nil {
 			return fmt.Errorf("insert mr event (dedupe_key=%s): %w", e.DedupeKey, err)
@@ -2501,14 +2224,10 @@ func (d *DB) ListMREvents(ctx context.Context, mrID int64) ([]MREvent, error) {
 	return listMREvents(ctx, d.roStmts, mrID)
 }
 
-type mrEventQueryer interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
 // listMREvents reads a merge request's events through the supplied queryer, so
 // in-transaction callers (terminal liveness finalization) see the same rows
 // their transaction will update.
-func listMREvents(ctx context.Context, q mrEventQueryer, mrID int64) ([]MREvent, error) {
+func listMREvents(ctx context.Context, q queryer, mrID int64) ([]MREvent, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT id, merge_request_id, platform_id, platform_external_id, event_type, author, summary, body,
 		       metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved
@@ -3164,16 +2883,17 @@ func upsertIssueParentTx(
 	var issueID, revision int64
 	err := tx.QueryRowContext(ctx, `
 		INSERT INTO forge_issues
-		    (repo_id, platform_id, platform_external_id, number, url, title, author, state,
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_association, state,
 		     body, comment_count, labels_json, assignees_json, detail_fetched_at,
 		     created_at, updated_at, last_activity_at, closed_at, snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), '[]'), ?, ?, ?, ?, ?, 1)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), '[]'), ?, ?, ?, ?, ?, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id       = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_issues.platform_external_id),
 		    url               = excluded.url,
 		    title             = excluded.title,
 		    author            = excluded.author,
+		    author_association = CASE WHEN forge_issues.author = excluded.author THEN COALESCE(excluded.author_association, forge_issues.author_association) ELSE excluded.author_association END,
 		    state             = excluded.state,
 		    body              = excluded.body,
 		    comment_count     = excluded.comment_count,
@@ -3187,7 +2907,7 @@ func upsertIssueParentTx(
 		WHERE excluded.updated_at >= forge_issues.updated_at
 		RETURNING id, snapshot_revision`,
 		issue.RepoID, issue.PlatformID, issue.PlatformExternalID, issue.Number, issue.URL,
-		issue.Title, issue.Author, issue.State,
+		issue.Title, issue.Author, issue.AuthorAssociation, issue.State,
 		issue.Body, issue.CommentCount, issue.LabelsJSON, issue.AssigneesJSON,
 		issue.DetailFetchedAt,
 		issue.CreatedAt, issue.UpdatedAt, issue.LastActivityAt, issue.ClosedAt,
@@ -3692,35 +3412,6 @@ func (d *DB) UpsertHTTPEtag(
 	})
 }
 
-func (d *DB) UpsertHTTPEtagIfRouteFence(
-	ctx context.Context,
-	identity RepoIdentity,
-	fence RepositoryRouteFence,
-	resourceType string,
-	resourceNumber int,
-	etag string,
-) (bool, error) {
-	if etag == "" {
-		return true, nil
-	}
-	identity = canonicalRepoIdentity(identity)
-	guarded := d.WithRepositoryRouteFence(ctx, identity, fence)
-	err := d.Tx(guarded, func(tx *sql.Tx) error {
-		return upsertHTTPEtagTx(
-			guarded, tx, identity.Platform, identity.PlatformHost,
-			identity.OwnerKey, identity.NameKey,
-			resourceType, resourceNumber, etag,
-		)
-	})
-	if errors.Is(err, ErrRepositoryRouteFenceChanged) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("conditionally upsert http etag: %w", err)
-	}
-	return true, nil
-}
-
 func upsertHTTPEtagTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -3897,12 +3588,18 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 		INSERT INTO forge_issue_pr_references (
 			issue_id, source_provider, source_platform_host,
 			source_owner, source_repo, source_number, source_url,
-			observed_event_key, observed_at
+			observed_event_key, observed_at, source_repo_id
 		)
 		SELECT
-			i.id, r.platform, r.platform_host, ?, ?, ?, ?, ?, ?
+			i.id, r.platform, r.platform_host, ref.owner, ref.name, ?, ?, ?, ?,
+			(SELECT source.id FROM forge_repos source
+			 WHERE source.lifecycle_state = 'active'
+			   AND source.platform = r.platform
+			   AND source.platform_host = r.platform_host
+			   AND source.repo_path_key = lower(ref.owner || '/' || ref.name))
 		FROM forge_issues i
 		JOIN forge_repos r ON r.id = i.repo_id
+		CROSS JOIN (SELECT ? AS owner, ? AS name) ref
 		WHERE i.id = ?
 		ON CONFLICT (
 			issue_id, source_provider, source_platform_host,
@@ -3910,7 +3607,8 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 		) DO UPDATE SET
 			source_url = excluded.source_url,
 			observed_event_key = excluded.observed_event_key,
-			observed_at = MAX(observed_at, excluded.observed_at)`)
+			observed_at = MAX(observed_at, excluded.observed_at),
+			source_repo_id = COALESCE(source_repo_id, excluded.source_repo_id)`)
 	if err != nil {
 		return fmt.Errorf("prepare materialize issue PR references: %w", err)
 	}
@@ -3931,8 +3629,8 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 			continue
 		}
 		if _, err := refStmt.ExecContext(
-			ctx, ref.SourceOwner, ref.SourceRepo, ref.SourceNumber,
-			ref.SourceURL, e.DedupeKey, e.CreatedAt, e.IssueID,
+			ctx, ref.SourceNumber, ref.SourceURL, e.DedupeKey, e.CreatedAt,
+			ref.SourceOwner, ref.SourceRepo, e.IssueID,
 		); err != nil {
 			return fmt.Errorf("materialize issue PR reference (dedupe_key=%s): %w", e.DedupeKey, err)
 		}
@@ -4542,14 +4240,16 @@ func (d *DB) GetWorktreeLinksForMRs(
 			WHERE merge_request_id IN (` +
 			strings.Join(placeholders, ",") + `)
 			ORDER BY linked_at DESC`
-		rows, err := d.roQueryContext(ctx, query, args...)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"get worktree links for MRs: %w", err,
-			)
-		}
-		links, err := scanWorktreeLinks(rows)
-		rows.Close()
+		links, err := func() ([]WorktreeLink, error) {
+			rows, err := d.roQueryContext(ctx, query, args...)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"get worktree links for MRs: %w", err,
+				)
+			}
+			defer rows.Close()
+			return scanWorktreeLinks(rows)
+		}()
 		if err != nil {
 			return nil, err
 		}
@@ -4586,75 +4286,6 @@ func canonicalWorkspacePlatform(provider string) string {
 		return "github"
 	}
 	return provider
-}
-
-func (d *DB) workspaceRouteHasHistoricalOccupants(
-	ctx context.Context,
-	provider, platformHost, repoPathKey string,
-) (bool, error) {
-	provider = strings.ToLower(strings.TrimSpace(provider))
-	var collision bool
-	// A route is ambiguous when any of its records belongs to a repository
-	// other than its current occupant — including a vacated route whose
-	// only records are historical (rename observed, replacement not yet
-	// cataloged). Legacy route-only repositories (no provider ID) record
-	// their route as non-current without being vacated, so a record with
-	// no occupant counts only when its repository is cataloged.
-	err := d.roQueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM forge_repo_routes historical
-			WHERE historical.platform_host = ?
-			  AND historical.repo_path_key = ?
-			  AND (? = '' OR historical.platform = ?)
-			  AND NOT EXISTS (
-				SELECT 1
-				FROM forge_repo_routes current
-				WHERE current.platform = historical.platform
-				  AND current.platform_host = historical.platform_host
-				  AND current.repo_path_key = historical.repo_path_key
-				  AND current.is_current = 1
-				  AND current.repo_id = historical.repo_id
-			  )
-			  AND (
-				EXISTS (
-					SELECT 1
-					FROM forge_repo_routes occupant
-					WHERE occupant.platform = historical.platform
-					  AND occupant.platform_host = historical.platform_host
-					  AND occupant.repo_path_key = historical.repo_path_key
-					  AND occupant.is_current = 1
-				)
-				OR EXISTS (
-					SELECT 1
-					FROM forge_repos repo
-					WHERE repo.id = historical.repo_id
-					  AND repo.platform_repo_id <> ''
-				)
-			  )
-		)`,
-		platformHost, repoPathKey, provider, provider,
-	).Scan(&collision)
-	if err != nil {
-		return false, fmt.Errorf("inspect workspace repository route: %w", err)
-	}
-	return collision, nil
-}
-
-// WorkspaceRepoRouteHasHistoricalOccupants reports whether the given
-// repository route has ever belonged to a repository other than its current
-// occupant. Operational workspace paths use it to fail closed instead of
-// fetching code from a route's new occupant.
-func (d *DB) WorkspaceRepoRouteHasHistoricalOccupants(
-	ctx context.Context,
-	provider, platformHost, owner, name string,
-) (bool, error) {
-	host, ownerKey, nameKey := canonicalRepoLookupIdentifier(
-		platformHost, owner, name,
-	)
-	return d.workspaceRouteHasHistoricalOccupants(
-		ctx, provider, host, ownerKey+"/"+nameKey,
-	)
 }
 
 func (d *DB) canonicalizeWorkspaceRepo(
@@ -4696,21 +4327,14 @@ func (d *DB) resolveWorkspaceLookupRoute(
 	ctx context.Context,
 	provider, platformHost, owner, name string,
 ) (string, string, string, int64, bool, error) {
-	_, host, _, _, ownerKey, nameKey, pathKey, repoID, err :=
-		d.canonicalizeWorkspaceRepo(ctx, provider, platformHost, owner, name)
+	_, host, _, _, ownerKey, nameKey, _, repoID, err := d.canonicalizeWorkspaceRepo(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return "", "", "", 0, false, err
 	}
 	if repoID != 0 {
 		return host, ownerKey, nameKey, repoID, false, nil
 	}
-	collision, err := d.workspaceRouteHasHistoricalOccupants(
-		ctx, provider, host, pathKey,
-	)
-	if err != nil {
-		return "", "", "", 0, false, err
-	}
-	return host, ownerKey, nameKey, 0, !collision, nil
+	return host, ownerKey, nameKey, 0, true, nil
 }
 
 func workspaceRepositoryLookupPredicate(
@@ -4833,14 +4457,6 @@ func scanWorkspaceRow(
 func (d *DB) InsertWorkspace(
 	ctx context.Context, ws *Workspace,
 ) error {
-	// The route-history collision check and the insert must be atomic with
-	// respect to repository reconciliation, or a concurrent replacement can
-	// slip a workspace onto a route that just became historically ambiguous.
-	release, err := d.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
 	prepared, err := d.prepareWorkspaceInsert(ctx, ws)
 	if err != nil {
 		return err
@@ -4872,33 +4488,18 @@ func (d *DB) prepareWorkspaceInsert(
 	requestedRepoID := ws.RepoID
 	ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		prepared.repoOwnerKey, prepared.repoNameKey, prepared.repoPathKey,
-		prepared.repoID, err =
-		d.canonicalizeWorkspaceRepo(
-			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		)
+		prepared.repoID, err = d.canonicalizeWorkspaceRepo(
+		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	)
 	if err != nil {
 		return preparedWorkspaceInsert{}, err
 	}
 	if requestedRepoID != 0 && requestedRepoID != prepared.repoID {
 		return preparedWorkspaceInsert{}, fmt.Errorf(
 			"%w: workspace repository identity changed for route: %s/%s",
-			ErrRepositoryRouteFenceChanged,
+			ErrRepositoryIdentityChanged,
 			ws.RepoOwner, ws.RepoName,
 		)
-	}
-	if prepared.repoID == 0 {
-		collision, err := d.workspaceRouteHasHistoricalOccupants(
-			ctx, ws.Platform, ws.PlatformHost, prepared.repoPathKey,
-		)
-		if err != nil {
-			return preparedWorkspaceInsert{}, err
-		}
-		if collision {
-			return preparedWorkspaceInsert{}, fmt.Errorf(
-				"workspace repository route has historical occupants: %s/%s",
-				prepared.repoOwnerKey, prepared.repoNameKey,
-			)
-		}
 	}
 	ws.RepoID = prepared.repoID
 	if ws.TerminalBackend == "" {
@@ -4915,13 +4516,9 @@ func (d *DB) prepareWorkspaceInsert(
 	return prepared, nil
 }
 
-type workspaceInsertExecutor interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-}
-
 func insertPreparedWorkspace(
 	ctx context.Context,
-	executor workspaceInsertExecutor,
+	executor execer,
 	ws *Workspace,
 	prepared preparedWorkspaceInsert,
 ) error {
@@ -5002,8 +4599,7 @@ func (d *DB) GetWorkspaceLinkedToMRForProvider(
 	mrNumber int,
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	platformHost, owner, name, repoID, legacySafe, err :=
-		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
+	platformHost, owner, name, repoID, legacySafe, err := d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -5057,8 +4653,7 @@ func (d *DB) getWorkspaceByMR(
 	mrNumber int,
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	platformHost, owner, name, repoID, legacySafe, err :=
-		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
+	platformHost, owner, name, repoID, legacySafe, err := d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -5116,8 +4711,7 @@ func (d *DB) getWorkspaceByIssue(
 	issueNumber int,
 ) (*Workspace, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	platformHost, owner, name, repoID, legacySafe, err :=
-		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
+	platformHost, owner, name, repoID, legacySafe, err := d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -5157,8 +4751,7 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 	if itemType == "" || itemKey == "" {
 		return nil, nil
 	}
-	platformHost, owner, name, repoID, legacySafe, err :=
-		d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
+	platformHost, owner, name, repoID, legacySafe, err := d.resolveWorkspaceLookupRoute(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, err
 	}
@@ -5368,7 +4961,7 @@ func (d *DB) FailWorkspaceDeletion(ctx context.Context, id, message string) erro
 		return fmt.Errorf("read workspace deletion failure result: %w", err)
 	}
 	if rowsAffected != 1 {
-		return fmt.Errorf("fail workspace deletion: workspace is not deleting")
+		return errors.New("fail workspace deletion: workspace is not deleting")
 	}
 	return nil
 }
@@ -5918,22 +5511,8 @@ const workspaceSummaryColumns = `
 // ListWorkspaceSummaries and GetWorkspaceSummary.
 const workspaceSummaryJoins = `
 	FROM forge_workspaces w
-	LEFT JOIN forge_repo_routes rr
-	    ON w.repo_id IS NULL
-	   AND rr.platform = w.platform
-	   AND rr.platform_host = w.platform_host
-	   AND rr.owner_key = w.repo_owner_key
-	   AND rr.name_key = w.repo_name_key
-	   AND NOT EXISTS (
-	       SELECT 1
-	       FROM forge_repo_routes historical
-	       WHERE historical.platform = rr.platform
-	         AND historical.platform_host = rr.platform_host
-	         AND historical.repo_path_key = rr.repo_path_key
-	         AND historical.repo_id <> rr.repo_id
-	   )
 	LEFT JOIN forge_repos r
-	    ON r.id = COALESCE(w.repo_id, rr.repo_id)
+	    ON r.id = w.repo_id
 	   AND r.lifecycle_state = 'active'
 	LEFT JOIN forge_merge_requests m
 	    ON m.repo_id = r.id
@@ -5970,7 +5549,7 @@ func scanWorkspaceSummary(
 	var itemLastActivityAt sql.NullString
 	var workspaceRepoID sql.NullInt64
 	var repoID sql.NullInt64
-	var repoPlatformID sql.NullString
+	var repoPlatformID sql.NullInt64
 	err := scanner.Scan(
 		&s.ID, &s.Platform, &s.PlatformHost, &s.RepoOwner, &s.RepoName,
 		&workspaceRepoID,
@@ -5997,7 +5576,7 @@ func scanWorkspaceSummary(
 		s.RepoID = repoID.Int64
 	}
 	if repoPlatformID.Valid {
-		s.RepoPlatformID = repoPlatformID.String
+		s.RepoPlatformID = repoPlatformID.Int64
 	}
 	s.CreatedAt = s.CreatedAt.UTC()
 	s.MRTitle = s.SourceTitle

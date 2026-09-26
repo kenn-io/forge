@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -2743,7 +2742,7 @@ func TestRepositoryStableIdentitySurvivesConfigSave(t *testing.T) {
 [[repos]]
 owner = "acme"
 name = "widget"
-platform_repo_id = "repo-widget"
+platform_repo_id = 1001
 	`)
 	cfg, err := Load(path)
 	require.NoError(err)
@@ -2752,7 +2751,17 @@ platform_repo_id = "repo-widget"
 	require.NoError(cfg.Save(savedPath))
 	saved, err := os.ReadFile(savedPath)
 	require.NoError(err)
-	assert.Contains(string(saved), `platform_repo_id = "repo-widget"`)
+	assert.Contains(string(saved), `platform_repo_id = 1001`)
+}
+
+func TestRepositoryRejectsNegativePlatformRepoID(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+[[repos]]
+owner = "acme"
+name = "widget"
+platform_repo_id = -1
+`))
+	require.ErrorContains(t, err, "platform_repo_id must be the provider's positive integer repository ID")
 }
 
 func TestRepoPresetsConfigRoundTrip(t *testing.T) {
@@ -2766,17 +2775,17 @@ name = "b"
 [[repo_presets]]
 name = "  Review queue  "
 repos = [
-  { provider = "github", platform_host = " github.com ", platform_repo_id = " R_widgets ", repo_path = " acme/widgets " },
-  { provider = "gitlab", platform_host = "git.example.com", platform_repo_id = "42", repo_path = "group/project" },
-  { provider = "github", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/old-widgets" },
+  { provider = "github", platform_host = " github.com ", platform_repo_id = 1001, repo_path = " acme/widgets " },
+  { provider = "gitlab", platform_host = "git.example.com", platform_repo_id = 42, repo_path = "group/project" },
+  { provider = "github", platform_host = "github.com", platform_repo_id = 1001, repo_path = "acme/old-widgets" },
 ]
 `)
 
 	want := []RepoPreset{{
 		Name: "Review queue",
 		Repos: []RepoPresetRepository{
-			{Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widgets", RepoPath: "acme/widgets"},
-			{Provider: "gitlab", PlatformHost: "git.example.com", PlatformRepoID: "42", RepoPath: "group/project"},
+			{Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001, RepoPath: "acme/widgets"},
+			{Provider: "gitlab", PlatformHost: "git.example.com", PlatformRepoID: 42, RepoPath: "group/project"},
 		},
 	}}
 	assert.Equal(want, cfg.RepoPresets)
@@ -2795,7 +2804,7 @@ func TestRepoPresetValidation(t *testing.T) {
 			presets: `
 [[repo_presets]]
 name = "GLOBAL"
-repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = 1001, repo_path = "acme/widgets" }]
 `,
 			wantErr: `repo_presets[0]: name "GLOBAL" is reserved`,
 		},
@@ -2804,11 +2813,11 @@ repos = [{ provider = "github", platform_host = "github.com", platform_repo_id =
 			presets: `
 [[repo_presets]]
 name = "Review Queue"
-repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = 1001, repo_path = "acme/widgets" }]
 
 [[repo_presets]]
 name = "review queue"
-repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_docs", repo_path = "acme/docs" }]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = 1002, repo_path = "acme/docs" }]
 `,
 			wantErr: `duplicate repo preset name "review queue"`,
 		},
@@ -2817,7 +2826,7 @@ repos = [{ provider = "github", platform_host = "github.com", platform_repo_id =
 			presets: `
 [[repo_presets]]
 name = "   "
-repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = 1001, repo_path = "acme/widgets" }]
 `,
 			wantErr: "repo_presets[0]: name is required",
 		},
@@ -2835,7 +2844,7 @@ repos = []
 			presets: `
 [[repo_presets]]
 name = "Review queue"
-repos = [{ provider = "GitHub", platform_host = "github.com", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
+repos = [{ provider = "GitHub", platform_host = "github.com", platform_repo_id = 1001, repo_path = "acme/widgets" }]
 `,
 			wantErr: `repo_presets[0].repos[0]: repository identity must use a canonical provider`,
 		},
@@ -2844,7 +2853,7 @@ repos = [{ provider = "GitHub", platform_host = "github.com", platform_repo_id =
 			presets: `
 [[repo_presets]]
 name = "Review queue"
-repos = [{ provider = "bitbucket", platform_host = "bitbucket.org", platform_repo_id = "R_widgets", repo_path = "acme/widgets" }]
+repos = [{ provider = "bitbucket", platform_host = "bitbucket.org", platform_repo_id = 1001, repo_path = "acme/widgets" }]
 `,
 			wantErr: `repo_presets[0].repos[0]: unsupported provider "bitbucket"`,
 		},
@@ -2854,6 +2863,15 @@ repos = [{ provider = "bitbucket", platform_host = "bitbucket.org", platform_rep
 [[repo_presets]]
 name = "Review queue"
 repos = [{ provider = "github", platform_host = "github.com", repo_path = "acme/widgets" }]
+`,
+			wantErr: `repo_presets[0].repos[0]: platform_repo_id is required`,
+		},
+		{
+			name: "stable repository id must be positive",
+			presets: `
+[[repo_presets]]
+name = "Review queue"
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = -1, repo_path = "acme/widgets" }]
 `,
 			wantErr: `repo_presets[0].repos[0]: platform_repo_id is required`,
 		},
@@ -4173,7 +4191,7 @@ func TestGitHubCLITokenForHostTimesOutWithoutCallerDeadline(t *testing.T) {
 	setGHAuthExecTimeout(t, time.Second)
 
 	start := time.Now()
-	got, err := GitHubCLITokenForHost(context.Background(), "github.com")
+	got, err := GitHubCLITokenForHost(t.Context(), "github.com")
 	elapsed := time.Since(start)
 
 	require.NoError(t, err)

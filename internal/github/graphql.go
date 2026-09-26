@@ -95,14 +95,15 @@ func adaptIssue(gql *platformgithub.GraphQLIssue) *gh.Issue {
 		authorLogin += "[bot]"
 	}
 	issue := &gh.Issue{
-		ID:       new(gql.DatabaseId),
-		Number:   new(gql.Number),
-		Title:    new(gql.Title),
-		State:    new(state),
-		Body:     new(gql.Body),
-		HTMLURL:  new(gql.URL),
-		Comments: new(gql.Comments.TotalCount),
-		User:     &gh.User{Login: new(authorLogin)},
+		ID:                new(gql.DatabaseId),
+		Number:            new(gql.Number),
+		Title:             new(gql.Title),
+		State:             new(state),
+		Body:              new(gql.Body),
+		HTMLURL:           new(gql.URL),
+		Comments:          new(gql.Comments.TotalCount),
+		User:              &gh.User{Login: new(authorLogin)},
+		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 	}
 
 	created := gh.Timestamp{Time: gql.CreatedAt}
@@ -124,23 +125,25 @@ func adaptComment(gql *platformgithub.GraphQLComment) *gh.IssueComment {
 	created := gh.Timestamp{Time: gql.CreatedAt}
 	updated := gh.Timestamp{Time: gql.UpdatedAt}
 	return &gh.IssueComment{
-		ID:        new(platformgithub.FirstPositiveInt64(int64(gql.FullDatabaseId), gql.DatabaseId)),
-		Body:      new(gql.Body),
-		HTMLURL:   new(gql.URL),
-		User:      &gh.User{Login: new(gql.Author.Login)},
-		CreatedAt: &created,
-		UpdatedAt: &updated,
+		ID:                new(platformgithub.FirstPositiveInt64(int64(gql.FullDatabaseId), gql.DatabaseId)),
+		Body:              new(gql.Body),
+		HTMLURL:           new(gql.URL),
+		User:              &gh.User{Login: new(gql.Author.Login)},
+		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from GraphQL.
+		CreatedAt:         &created,
+		UpdatedAt:         &updated,
 	}
 }
 
 func adaptReview(gql *platformgithub.GraphQLReview) *gh.PullRequestReview {
 	submitted := gh.Timestamp{Time: gql.SubmittedAt}
 	return &gh.PullRequestReview{
-		ID:          new(gql.DatabaseId),
-		Body:        new(gql.Body),
-		State:       new(gql.State),
-		User:        &gh.User{Login: new(gql.Author.Login)},
-		SubmittedAt: &submitted,
+		ID:                new(gql.DatabaseId),
+		Body:              new(gql.Body),
+		State:             new(gql.State),
+		User:              &gh.User{Login: new(gql.Author.Login)},
+		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
+		SubmittedAt:       &submitted,
 	}
 }
 
@@ -186,6 +189,7 @@ func splitCheckContexts(contexts []platformgithub.GraphQLCheckContext) ([]*gh.Ch
 func adaptCheckRun(gql *platformgithub.GraphQLCheckRunFields) *gh.CheckRun {
 	url := sanitizeURL(gql.DetailsURL)
 	return &gh.CheckRun{
+		ID:          new(gql.DatabaseId),
 		Name:        new(gql.Name),
 		Status:      new(toLower(gql.Status)),
 		Conclusion:  new(toLower(gql.Conclusion)),
@@ -303,20 +307,21 @@ func platformReviewThreadsFromGQL(threads []platformgithub.GraphQLReviewThread) 
 				reason = string(*comment.MinimizedReason)
 			}
 			normalizedComment := platformgithub.PullRequestReviewThreadComment{
-				NodeID:          fmt.Sprint(comment.ID),
-				DatabaseID:      platformgithub.FirstPositiveInt64(int64(comment.FullDatabaseId), comment.DatabaseId),
-				SubjectType:     comment.SubjectType,
-				Body:            comment.Body,
-				AuthorLogin:     comment.Author.Login,
-				Path:            comment.Path,
-				Line:            comment.Line,
-				OriginalLine:    comment.OriginalLine,
-				DiffHunk:        comment.DiffHunk,
-				URL:             comment.URL,
-				IsMinimized:     comment.IsMinimized,
-				MinimizedReason: reason,
-				CreatedAt:       comment.CreatedAt,
-				UpdatedAt:       comment.UpdatedAt,
+				NodeID:            fmt.Sprint(comment.ID),
+				DatabaseID:        platformgithub.FirstPositiveInt64(int64(comment.FullDatabaseId), comment.DatabaseId),
+				SubjectType:       comment.SubjectType,
+				Body:              comment.Body,
+				AuthorLogin:       comment.Author.Login,
+				AuthorAssociation: comment.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
+				Path:              comment.Path,
+				Line:              comment.Line,
+				OriginalLine:      comment.OriginalLine,
+				DiffHunk:          comment.DiffHunk,
+				URL:               comment.URL,
+				IsMinimized:       comment.IsMinimized,
+				MinimizedReason:   reason,
+				CreatedAt:         comment.CreatedAt,
+				UpdatedAt:         comment.UpdatedAt,
 			}
 			if comment.Commit != nil {
 				normalizedComment.CommitID = comment.Commit.OID
@@ -488,7 +493,7 @@ func NewGraphQLFetcher(
 	// above authRT would let a 401-then-retry count as a single spend
 	// since AuthTransport's retry never becomes visible to a wrapper
 	// above it.
-	var readBase = WrapSyncBudgetTransport(
+	readBase := WrapSyncBudgetTransport(
 		http.DefaultTransport, budget,
 	)
 	if resolvedOptions.quotaRegistry != nil &&
@@ -542,6 +547,37 @@ func NewGraphQLFetcherWithClient(
 		client:      client,
 		rateTracker: rateTracker,
 	}
+}
+
+type gqlRepositoryNodeQuery struct {
+	Node *struct {
+		Repository struct {
+			DatabaseID int64 `graphql:"databaseId"`
+		} `graphql:"... on Repository"`
+	} `graphql:"node(id: $id)"`
+}
+
+// RepositoryDatabaseID resolves a GitHub repository node ID to the integer
+// repository ID. found is false when GitHub reports no such node: the
+// repository was deleted or is not visible to this credential.
+func (g *GraphQLFetcher) RepositoryDatabaseID(
+	ctx context.Context, nodeID string,
+) (int64, bool, error) {
+	var q gqlRepositoryNodeQuery
+	if err := g.client.Query(ctx, &q, map[string]any{
+		"id": githubv4.ID(nodeID),
+	}); err != nil {
+		// githubv4 reports GraphQL errors as an unexported type, so the
+		// message is the only signal that the node no longer exists.
+		if strings.Contains(err.Error(), "Could not resolve to a node") { //nolint:kennlint // no typed error to match
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("resolve repository node %s: %w", nodeID, err)
+	}
+	if q.Node == nil || q.Node.Repository.DatabaseID <= 0 {
+		return 0, false, nil
+	}
+	return q.Node.Repository.DatabaseID, true, nil
 }
 
 func (g *GraphQLFetcher) ShouldBackoff() (bool, time.Duration) {

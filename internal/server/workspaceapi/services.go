@@ -2,7 +2,6 @@ package workspaceapi
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/agentactivity"
@@ -10,6 +9,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
 )
 
 type CreatePullWorkspaceRequest struct {
@@ -142,16 +142,19 @@ func (s *Handler) RefreshProviderWorkspaceFacts(
 	if err != nil {
 		return httpapi.BadRequest(httpapi.CodeValidationError, err.Error(), nil)
 	}
-	var repo *db.Repo
-	if platformRepoID := strings.TrimSpace(request.PlatformRepoID); platformRepoID != "" {
-		entry, lookupErr := s.db.GetRepositoryByProviderID(
-			ctx, route.Provider, route.PlatformHost, platformRepoID,
-		)
+	var repo *db.ActiveRepo
+	if request.PlatformRepoID != 0 {
+		entry, lookupErr := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+			Provider: route.Provider, PlatformHost: route.PlatformHost,
+			PlatformRepoID: request.PlatformRepoID,
+		})
 		if lookupErr != nil {
 			return providerRouteLookupError(lookupErr)
 		}
-		if entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive {
-			repo = &entry.Repository
+		if entry != nil {
+			if repo, err = entry.ActiveRepo(); err != nil {
+				return httpapi.Internal("resolve repository failed")
+			}
 		}
 	} else {
 		repo, err = s.lookupRepoByProviderRoute(
@@ -164,8 +167,8 @@ func (s *Handler) RefreshProviderWorkspaceFacts(
 	if repo == nil {
 		return httpapi.NotFound(httpapi.CodeRepoNotFound, "repo not found", nil)
 	}
-	kind := repoProviderKind(*repo)
-	host := repoProviderHost(*repo)
+	kind := repoProviderKind(repo.Repo)
+	host := repoProviderHost(repo.Repo)
 	if request.ItemType == db.WorkspaceItemTypeIssue {
 		return s.refreshWorkspaceIssue(
 			ctx, repo.ID, kind, host, repo.Owner, repo.Name, request.ItemNumber,

@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 
 func createDiscoveryTestProject(t *testing.T, d *DB, name string) *Project {
 	t.Helper()
-	p, err := d.CreateProject(context.Background(), CreateProjectInput{
+	p, err := d.CreateProject(t.Context(), CreateProjectInput{
 		DisplayName: name,
 		LocalPath:   filepath.Join(t.TempDir(), name),
 	})
@@ -21,7 +20,7 @@ func createDiscoveryTestProject(t *testing.T, d *DB, name string) *Project {
 
 func mustListWorktrees(t *testing.T, d *DB, projectID string) []ProjectWorktree {
 	t.Helper()
-	wts, err := d.ListProjectWorktrees(context.Background(), projectID)
+	wts, err := d.ListProjectWorktrees(t.Context(), projectID)
 	require.NoError(t, err)
 	return wts
 }
@@ -40,7 +39,7 @@ func worktreeByPath(t *testing.T, wts []ProjectWorktree, path string) ProjectWor
 
 func mustGetProject(t *testing.T, d *DB, projectID string) *Project {
 	t.Helper()
-	p, err := d.GetProjectByID(context.Background(), projectID)
+	p, err := d.GetProjectByID(t.Context(), projectID)
 	require.NoError(t, err)
 	return p
 }
@@ -49,9 +48,11 @@ func mustGetProject(t *testing.T, d *DB, projectID string) *Project {
 // a discovery pass surfaces a linked worktree without explicit registration and
 // refreshes the project's repository kind and default branch.
 func TestReconcileProjectInventory_DiscoversLinkedWorktreeAndProjectFacts(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 
 	project := createDiscoveryTestProject(t, d, "alpha")
@@ -79,9 +80,11 @@ func TestReconcileProjectInventory_DiscoversLinkedWorktreeAndProjectFacts(t *tes
 // re-discovering the same path keeps the row's id (so linked tmux sessions
 // survive the ON DELETE CASCADE) while refreshing its branch.
 func TestReconcileProjectInventory_PreservesWorktreeIDAndTmuxLink(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 
 	project := createDiscoveryTestProject(t, d, "beta")
@@ -126,9 +129,11 @@ func TestReconcileProjectInventory_PreservesWorktreeIDAndTmuxLink(t *testing.T) 
 // a pass is marked stale (not deleted) and clears its stale flag — keeping its
 // id — when the path reappears.
 func TestReconcileProjectInventory_StaleAndReappear(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 
 	project := createDiscoveryTestProject(t, d, "gamma")
@@ -160,9 +165,11 @@ func TestReconcileProjectInventory_StaleAndReappear(t *testing.T) {
 // TestMarkProjectStaleThenReconcileClears verifies a failed discovery marks the
 // project stale and a later successful pass clears it.
 func TestMarkProjectStaleThenReconcileClears(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 
 	project := createDiscoveryTestProject(t, d, "delta")

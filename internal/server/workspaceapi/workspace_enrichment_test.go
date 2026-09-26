@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	gitcmd "go.kenn.io/kit/git/cmd"
@@ -61,7 +62,7 @@ func newEnrichmentTestHandler(t *testing.T, tmuxScript string) *Handler {
 	handler.Start(ctx, true)
 	t.Cleanup(func() {
 		cancel()
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer shutdownCancel()
 		require.NoError(t, handler.Shutdown(shutdownCtx))
 	})
@@ -142,9 +143,8 @@ func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *test
 
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(
-		t.Context(), identity,
+	repoID, err := reposeed.Seed(
+		t.Context(), database, identity,
 	)
 	require.NoError(err)
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
@@ -212,7 +212,7 @@ func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *test
 	handler.Start(ctx, true)
 	t.Cleanup(func() {
 		cancel()
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer shutdownCancel()
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})
@@ -305,7 +305,8 @@ func TestWorkspaceEnrichmentSupersededResponseUsesCurrentCacheState(t *testing.T
 	srv := &Handler{now: func() time.Time { return now }}
 	summary := db.WorkspaceSummary{
 		ID:     "ws-superseded",
-		Status: "ready"}
+		Status: "ready",
+	}
 	currentAhead := 7
 	entry := workspaceEnrichmentCacheEntry{
 		response:              workspaceResponse{CommitsAhead: &currentAhead},
@@ -346,9 +347,11 @@ func TestWorkspaceEnrichmentPendingJobUsesLatestSummary(t *testing.T) {
 	})
 
 	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{
-		ID: "ws-latest", Status: "ready", WorktreePath: "/old"})
+		ID: "ws-latest", Status: "ready", WorktreePath: "/old",
+	})
 	srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{
-		ID: "ws-latest", Status: "ready", WorktreePath: "/new"})
+		ID: "ws-latest", Status: "ready", WorktreePath: "/new",
+	})
 
 	srv.workspaceEnrichmentMu.Lock()
 	pending := srv.workspaceEnrichmentPending["ws-latest"]
@@ -399,7 +402,8 @@ func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
 	})
 	summary := db.WorkspaceSummary{
 		ID:     "ws-status",
-		Status: "ready"}
+		Status: "ready",
+	}
 	ahead := 2
 	srv.workspaceEnrichmentCache[summary.ID] = workspaceEnrichmentCacheEntry{
 		response: workspaceResponse{
@@ -483,7 +487,8 @@ func TestCachedWorkspaceEnrichmentKeepsFreshTmuxOnlyResultPending(t *testing.T) 
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	srv := &Handler{now: func() time.Time { return now }}
 	summary := db.WorkspaceSummary{
-		ID: "ws-tmux-only", Status: "ready"}
+		ID: "ws-tmux-only", Status: "ready",
+	}
 	entry := workspaceEnrichmentCacheEntry{
 		hasTmux: true, tmuxRefreshedAt: now, tmuxAttemptAt: now,
 	}
@@ -505,7 +510,8 @@ func TestWorkspaceEnrichmentTmuxSuccessPreservesDivergenceFailure(t *testing.T) 
 		workspaceEnrichmentGenerations: map[string]uint64{"ws-component-errors": 1},
 	}
 	summary := db.WorkspaceSummary{
-		ID: "ws-component-errors", Status: "ready"}
+		ID: "ws-component-errors", Status: "ready",
+	}
 
 	_, recorded, _ := srv.recordWorkspaceEnrichmentResult(
 		summary.ID,
@@ -638,7 +644,8 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 		ID:           "ws-failed-refresh",
 		WorktreePath: worktree,
 		TmuxSession:  "missing-session",
-		Status:       "ready"})
+		Status:       "ready",
+	})
 
 	require.Eventually(func() bool {
 		srv.workspaceEnrichmentMu.Lock()
@@ -663,7 +670,8 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 		ID:           "ws-partial-refresh",
 		WorktreePath: worktree,
 		TmuxSession:  "missing-session-2",
-		Status:       "ready"}
+		Status:       "ready",
+	}
 	srv.scheduleWorkspaceEnrichment(missingSummary)
 	require.Eventually(func() bool {
 		srv.workspaceEnrichmentMu.Lock()
@@ -990,7 +998,8 @@ func TestWorkspaceEnrichmentUsesBoundedWorkersPastBackgroundCapacity(t *testing.
 	for i := range 12 {
 		srv.scheduleWorkspaceEnrichment(db.WorkspaceSummary{
 			ID:     "ws-" + string(rune('a'+i)),
-			Status: "ready"})
+			Status: "ready",
+		})
 	}
 
 	srv.workspaceEnrichmentMu.Lock()

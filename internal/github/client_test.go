@@ -35,30 +35,40 @@ func (m *mockClient) ListPullRequestTimelineEvents(
 }
 
 func TestNewClientReturnsNonNil(t *testing.T) {
+	t.Parallel()
+
 	c, err := NewClient(testTokenSource("fake-token"), "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientEnterprise(t *testing.T) {
+	t.Parallel()
+
 	c, err := NewClient(testTokenSource("test-token"), "github.mycompany.com", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientGitHubDotCom(t *testing.T) {
+	t.Parallel()
+
 	c, err := NewClient(testTokenSource("test-token"), "github.com", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewClientEmptyHost(t *testing.T) {
+	t.Parallel()
+
 	c, err := NewClient(testTokenSource("test-token"), "", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNativeStackClientDecodesPullHintsAndStackPages(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	createdAt := "2026-07-24T12:00:00Z"
@@ -105,27 +115,35 @@ func TestNativeStackClientDecodesPullHintsAndStackPages(t *testing.T) {
 }
 
 func TestGraphQLEndpointForHost(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(t, "https://api.github.com/graphql", graphQLEndpointForHost(""))
 	require.Equal(t, "https://api.github.com/graphql", graphQLEndpointForHost("github.com"))
 	require.Equal(t, "https://github.example.com/api/graphql", graphQLEndpointForHost("github.example.com"))
 }
 
 func TestClientInterfaceIncludesListForcePushEvents(t *testing.T) {
+	t.Parallel()
+
 	_, ok := reflect.TypeFor[Client]().MethodByName("ListForcePushEvents")
 	require.True(t, ok)
 }
 
 func TestClientInterfaceIncludesListPullRequestTimelineEvents(t *testing.T) {
+	t.Parallel()
+
 	_, ok := reflect.TypeFor[Client]().MethodByName("ListPullRequestTimelineEvents")
 	require.True(t, ok)
 }
 
 func TestClientInterfaceIncludesListPullRequestReviewThreads(t *testing.T) {
+	t.Parallel()
+
 	_, ok := reflect.TypeFor[Client]().MethodByName("ListPullRequestReviewThreads")
 	require.True(t, ok)
 }
 
-func TestListOpenIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) {
+func TestListOpenIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	require := require.New(t)
 	logs := captureDefaultLogs(t)
 
@@ -172,7 +190,7 @@ func testIssuePage(page int) []map[string]any {
 	}}
 }
 
-func TestListOpenPullRequestsLogsFetchProgressForPaginatedPullRequestSet(t *testing.T) {
+func TestListOpenPullRequestsLogsFetchProgressForPaginatedPullRequestSet(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	require := require.New(t)
 	logs := captureDefaultLogs(t)
 
@@ -223,6 +241,8 @@ func testPullRequestPage(page int) []map[string]any {
 
 // Exercise cache installation through the application-built client's requests.
 func TestNewClientWiresETagTransport(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

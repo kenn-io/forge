@@ -22,10 +22,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/gofrs/flock"
 	"go.kenn.io/forge/internal/procutil"
 	"golang.org/x/sync/semaphore"
-	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -38,39 +36,12 @@ const (
 )
 
 var (
-	ErrUnsafePath                   = errors.New("unsafe repo browser path")
-	ErrTooManyPaths                 = errors.New("too many repo browser paths")
-	ErrTooLargeAsset                = errors.New("repo browser asset too large")
-	ErrUnsupportedAsset             = errors.New("unsupported repo browser asset type")
-	ErrCommitOutOfScope             = errors.New("repo browser commit outside selected file history")
-	ErrRepoBrowserRouteFenceChanged = errors.New("repo browser repository route changed")
+	ErrUnsafePath       = errors.New("unsafe repo browser path")
+	ErrTooManyPaths     = errors.New("too many repo browser paths")
+	ErrTooLargeAsset    = errors.New("repo browser asset too large")
+	ErrUnsupportedAsset = errors.New("unsupported repo browser asset type")
+	ErrCommitOutOfScope = errors.New("repo browser commit outside selected file history")
 )
-
-// RepoBrowserRouteFence is an opaque, comparable route-ownership token.
-// Server callers create one from their catalog generation without exposing
-// the database representation to gitclone.
-type RepoBrowserRouteFence struct {
-	parts [3]int64
-}
-
-func NewRepoBrowserRouteFence(part1, part2, part3 int64) RepoBrowserRouteFence {
-	return RepoBrowserRouteFence{parts: [3]int64{part1, part2, part3}}
-}
-
-type RepoBrowserRouteFenceValidator func(
-	context.Context, RepoBrowserRouteFence,
-) (bool, error)
-
-type RepoBrowserRouteFencePublishGuard func(
-	context.Context,
-	RepoBrowserRouteFence,
-	func() error,
-) (bool, error)
-
-type repoBrowserCloneValidationError struct{ err error }
-
-func (e *repoBrowserCloneValidationError) Error() string { return e.err.Error() }
-func (e *repoBrowserCloneValidationError) Unwrap() error { return e.err }
 
 const repoBrowserBarrierCapacity int64 = 1 << 30
 
@@ -143,25 +114,16 @@ type RepoBrowserRepoRef struct {
 	Owner    string
 	Name     string
 	RepoPath string
-	// ProviderRepoID is the provider's stable repository identity. Browser
+	// ProviderRepoID is the provider's integer repository identity. Browser
 	// clone storage partitions on it so a reused owner/name path never
-	// serves the displaced repository's cached refs or objects. Empty for
+	// serves the displaced repository's cached refs or objects. Zero for
 	// repositories without a verified identity, which keep path-scoped
 	// storage.
-	ProviderRepoID string
+	ProviderRepoID int64
 	RemoteURL      string
 	// RequireCredential marks federation-node clones whose network work must
 	// never fall back to anonymous access if the exact route disappears.
 	RequireCredential bool
-
-	// The route-fence callbacks bind server-created browser work to the catalog
-	// generation that supplied RemoteURL. Standalone callers may leave all
-	// three unset for legacy unfenced behavior.
-	RouteFence         RepoBrowserRouteFence
-	ValidateRouteFence RepoBrowserRouteFenceValidator
-	// PublishIfRouteFenceMatches must hold route ownership stable while it
-	// invokes the supplied filesystem publication callback.
-	PublishIfRouteFenceMatches RepoBrowserRouteFencePublishGuard
 }
 
 type RepoBrowserRef struct {
@@ -936,247 +898,6 @@ func (m *Manager) lockRepoBrowserRead(
 	return barrier.unlockRead, nil
 }
 
-// AdoptLegacyClones copies the pre-stable-ID main clone and moves the legacy
-// repository-browser clone into identity-partitioned storage without
-// contacting the provider. The path-scoped main clone remains in place for
-// workspace flows that intentionally continue to use it. Callers must invoke
-// this only after the repository catalog has verified that the current route
-// has no other historical owner.
-func (m *Manager) AdoptLegacyClones(ctx context.Context, repo RepoBrowserRepoRef) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if strings.TrimSpace(repo.ProviderRepoID) == "" {
-		return errors.New("adopt legacy clones requires a stable provider repository id")
-	}
-	if err := m.validateRepoBrowserRemote(repo, repo.RemoteURL); err != nil {
-		return err
-	}
-
-	legacyMain, err := m.ClonePath(repo.Provider, repo.Host, repo.Owner, repo.Name)
-	if err != nil {
-		return err
-	}
-	stableMain, err := m.ClonePathForContext(
-		WithRepositoryIdentity(ctx, repo.ProviderRepoID),
-		repo.Provider, repo.Host, repo.Owner, repo.Name,
-	)
-	if err != nil {
-		return err
-	}
-	legacyBrowserRepo := repo
-	legacyBrowserRepo.ProviderRepoID = ""
-	legacyBrowser, err := m.repoBrowserClonePath(legacyBrowserRepo)
-	if err != nil {
-		return err
-	}
-	stableBrowser, err := m.repoBrowserClonePath(repo)
-	if err != nil {
-		return err
-	}
-
-	if err := m.copyLegacyMainClone(
-		ctx, legacyMain, stableMain, repo.Host, repo.Owner, repo.Name, repo.RemoteURL,
-	); err != nil {
-		return fmt.Errorf("adopt legacy main clone: %w", err)
-	}
-	if err := m.adoptLegacyClone(
-		ctx, legacyBrowser, stableBrowser, repo.Host, repo.Owner, repo.Name,
-	); err != nil {
-		return fmt.Errorf("adopt legacy repository browser clone: %w", err)
-	}
-	return nil
-}
-
-func (m *Manager) copyLegacyMainClone(
-	ctx context.Context,
-	legacyPath, stablePath, host, owner, name, remoteURL string,
-) error {
-	if legacyPath == stablePath {
-		return nil
-	}
-	stableExists, err := m.validateStableClone(ctx, stablePath)
-	if err != nil || stableExists {
-		return err
-	}
-	legacyExists, err := m.validateLegacyClone(
-		ctx, legacyPath, host, owner, name,
-	)
-	if err != nil || !legacyExists {
-		return err
-	}
-
-	stableParent := filepath.Dir(stablePath)
-	if err := os.MkdirAll(stableParent, 0o755); err != nil {
-		return err
-	}
-	// Keep the lock file after unlock: removing a flock path can let a third
-	// process lock a new inode while another adopter still holds the old one.
-	adoptionLock := flock.New(stablePath + ".adopt.lock")
-	locked, err := adoptionLock.TryLockContext(ctx, 10*time.Millisecond)
-	if err != nil {
-		return fmt.Errorf("acquire stable clone adoption lock: %w", err)
-	}
-	if !locked {
-		return errors.New("stable clone adoption lock not acquired")
-	}
-	defer func() {
-		_ = adoptionLock.Unlock()
-		_ = adoptionLock.Close()
-	}()
-
-	stableExists, err = m.validateStableClone(ctx, stablePath)
-	if err != nil || stableExists {
-		return err
-	}
-	staging, err := os.MkdirTemp(
-		stableParent, "."+filepath.Base(stablePath)+".adopting-",
-	)
-	if err != nil {
-		return fmt.Errorf("create stable clone staging path: %w", err)
-	}
-	if err := os.Remove(staging); err != nil {
-		return fmt.Errorf("prepare stable clone staging path: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(staging) }()
-
-	if _, err := m.git(
-		ctx, stableParent,
-		"clone", "--mirror", "--no-hardlinks", legacyPath, staging,
-	); err != nil {
-		return fmt.Errorf("copy legacy main clone: %w", err)
-	}
-	if _, err := m.git(
-		ctx, staging, "config", "remote.origin.url", remoteURL,
-	); err != nil {
-		return fmt.Errorf("set copied main clone origin: %w", err)
-	}
-	if _, err := m.git(
-		ctx, staging, "config", "--unset-all", "remote.origin.fetch",
-	); err != nil {
-		return fmt.Errorf("reset copied main clone refspecs: %w", err)
-	}
-	if _, err := m.git(
-		ctx, staging, "config", "--unset", "remote.origin.mirror",
-	); err != nil {
-		return fmt.Errorf("reset copied main clone mirror mode: %w", err)
-	}
-	for _, refspec := range defaultRefspecs() {
-		if _, err := m.git(
-			ctx, staging, "config", "--add", "remote.origin.fetch", refspec,
-		); err != nil {
-			return fmt.Errorf("add copied main clone refspec %q: %w", refspec, err)
-		}
-	}
-	if complete, err := m.validateStableClone(ctx, staging); err != nil {
-		return fmt.Errorf("validate copied main clone: %w", err)
-	} else if !complete {
-		return errors.New("validate copied main clone: staging clone is missing")
-	}
-
-	stableExists, err = m.validateStableClone(ctx, stablePath)
-	if err != nil {
-		return err
-	}
-	if stableExists {
-		return nil
-	}
-	if err := os.Rename(staging, stablePath); err != nil {
-		if exists, validationErr := m.validateStableClone(ctx, stablePath); exists && validationErr == nil {
-			return nil
-		} else if validationErr != nil {
-			return errors.Join(err, validationErr)
-		}
-		return err
-	}
-	return nil
-}
-
-func (m *Manager) validateStableClone(
-	ctx context.Context, stablePath string,
-) (bool, error) {
-	info, err := os.Lstat(stablePath)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return false, errors.New("stable clone path is not a directory")
-	}
-	headInfo, err := os.Lstat(filepath.Join(stablePath, "HEAD"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, errors.New("stable clone path is incomplete: missing HEAD")
-		}
-		return false, err
-	}
-	if !headInfo.Mode().IsRegular() {
-		return false, errors.New("stable clone path is incomplete: HEAD is not a regular file")
-	}
-	out, err := m.git(ctx, stablePath, "rev-parse", "--is-bare-repository")
-	if err != nil || strings.TrimSpace(string(out)) != "true" {
-		if err == nil {
-			err = errors.New("repository is not bare")
-		}
-		return false, fmt.Errorf("stable clone path is incomplete: %w", err)
-	}
-	return true, nil
-}
-
-func (m *Manager) validateLegacyClone(
-	ctx context.Context, legacyPath, host, owner, name string,
-) (bool, error) {
-	info, err := os.Lstat(legacyPath)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return false, errors.New("legacy clone path is not a directory")
-	}
-	if _, err := os.Stat(filepath.Join(legacyPath, "HEAD")); err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	if err := m.validateRemoteIdentity(ctx, legacyPath, "origin", host, owner, name); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func (m *Manager) adoptLegacyClone(
-	ctx context.Context,
-	legacyPath, stablePath, host, owner, name string,
-) error {
-	if legacyPath == stablePath {
-		return nil
-	}
-	stableExists, err := m.validateStableClone(ctx, stablePath)
-	if err != nil || stableExists {
-		return err
-	}
-	legacyExists, err := m.validateLegacyClone(ctx, legacyPath, host, owner, name)
-	if err != nil || !legacyExists {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(stablePath), 0o755); err != nil {
-		return err
-	}
-	if err := os.Rename(legacyPath, stablePath); err != nil {
-		if _, statErr := os.Stat(filepath.Join(stablePath, "HEAD")); statErr == nil {
-			return nil
-		}
-		return err
-	}
-	return nil
-}
-
 func (m *Manager) EnsureRepoBrowserClone(ctx context.Context, repo RepoBrowserRepoRef) error {
 	if err := m.ensureRepoBrowserCloneLocal(ctx, repo); err != nil {
 		return err
@@ -1214,13 +935,6 @@ func (m *Manager) refreshRepoBrowserClone(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := m.validateRepoBrowserRouteFence(ctx, repo); err != nil {
-		m.evictStaleRepoBrowserRegistration(repo, err)
-		return err
-	}
-	if repo.ValidateRouteFence != nil && repo.PublishIfRouteFenceMatches == nil {
-		return errors.New("repo browser fenced refresh requires guarded publication")
-	}
 	namespace := repoBrowserCloneNamespace(repo)
 	if err := m.validateRepoBrowserRemote(repo, repo.RemoteURL); err != nil {
 		return err
@@ -1246,100 +960,37 @@ func (m *Manager) refreshRepoBrowserClone(
 				staging, repo.RemoteURL,
 			)
 		} else {
-			if inject := m.repoBrowserFetchErrorForTest; inject != nil {
-				err = inject(repo.RouteFence)
-			}
-			if err == nil {
-				err = m.fetch(
-					opCtx, repo.Provider, repo.Host, repo.Owner, repo.Name, staging,
-				)
-			}
+			err = m.fetch(
+				opCtx, repo.Provider, repo.Host, repo.Owner, repo.Name, staging,
+			)
 		}
 		if err != nil {
-			return nil, m.finishRepoBrowserStagingFailure(opCtx, repo, staging, err)
+			return nil, m.discardRepoBrowserStaging(staging, err)
 		}
 		if err := m.fetchRepoBrowserTags(
 			opCtx, repo.Provider, repo.Host, repo.Owner, repo.Name, staging,
 		); err != nil {
-			return nil, m.finishRepoBrowserStagingFailure(opCtx, repo, staging, err)
+			return nil, m.discardRepoBrowserStaging(staging, err)
 		}
-		if err := m.validateRepoBrowserRouteFence(opCtx, repo); err != nil {
-			return nil, m.discardRepoBrowserStaging(
-				staging, err, errors.Is(err, ErrRepoBrowserRouteFenceChanged),
-			)
-		}
-		moved, err := m.publishRepoBrowserStagingGuarded(opCtx, repo, staging, dir)
+		moved, err := m.publishRepoBrowserStaging(opCtx, repo, staging, dir)
 		if err != nil {
 			if moved {
 				return nil, err
 			}
-			return nil, m.discardRepoBrowserStaging(
-				staging, err, errors.Is(err, ErrRepoBrowserRouteFenceChanged),
-			)
+			return nil, m.discardRepoBrowserStaging(staging, err)
 		}
 		return nil, nil
 	}
-	start := func() <-chan singleflight.Result {
-		ch := m.repoBrowserRefreshSF.DoChan(key, run)
-		if hook := m.repoBrowserAfterRefreshJoinForTest; hook != nil {
-			hook(repo.RouteFence)
-		}
-		return ch
-	}
-	wait := func(ch <-chan singleflight.Result) (singleflight.Result, error) {
-		select {
-		case res := <-ch:
-			return res, nil
-		case <-ctx.Done():
-			return singleflight.Result{}, ctx.Err()
-		}
-	}
-	res, err := wait(start())
-	if err != nil {
-		return err
-	}
-	if res.Err != nil {
-		if _, ok := errors.AsType[*repoBrowserCloneValidationError](res.Err); !ok {
-			if errors.Is(res.Err, ErrRepoBrowserRouteFenceChanged) {
-				if ownErr := m.validateRepoBrowserRouteFence(ctx, repo); ownErr != nil {
-					m.evictStaleRepoBrowserRegistration(repo, ownErr)
-				}
-			}
-			return res.Err
-		}
-		if ownErr := m.validateRepoBrowserRouteFence(ctx, repo); ownErr != nil {
-			m.evictStaleRepoBrowserRegistration(repo, ownErr)
-			return ownErr
-		}
-		res, err = wait(start())
-		if err != nil {
-			return err
-		}
+	select {
+	case res := <-m.repoBrowserRefreshSF.DoChan(key, run):
 		if res.Err != nil {
 			return res.Err
 		}
-	}
-	if err := m.validateRepoBrowserRouteFence(ctx, repo); err != nil {
-		m.evictStaleRepoBrowserRegistration(repo, err)
-		return err
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	m.registerRepoBrowserRepo(repo)
 	return nil
-}
-
-func (m *Manager) finishRepoBrowserStagingFailure(
-	ctx context.Context,
-	repo RepoBrowserRepoRef,
-	staging string,
-	mutationErr error,
-) error {
-	validationErr := m.validateRepoBrowserRouteFence(ctx, repo)
-	reason := errors.Join(mutationErr, validationErr)
-	return m.discardRepoBrowserStaging(
-		staging,
-		reason,
-		errors.Is(validationErr, ErrRepoBrowserRouteFenceChanged),
-	)
 }
 
 func (m *Manager) prepareRepoBrowserStaging(
@@ -1360,7 +1011,7 @@ func (m *Manager) prepareRepoBrowserStaging(
 		return "", false, fmt.Errorf("prepare repo browser staging path: %w", err)
 	}
 	fail := func(reason error) (string, bool, error) {
-		if cleanupErr := m.removeRepoBrowserStaging(staging); cleanupErr != nil {
+		if cleanupErr := os.RemoveAll(staging); cleanupErr != nil {
 			return "", false, errors.Join(
 				reason,
 				fmt.Errorf("remove unpublished repo browser staging clone: %w", cleanupErr),
@@ -1406,53 +1057,14 @@ func (m *Manager) prepareRepoBrowserStaging(
 	return staging, true, nil
 }
 
-func (m *Manager) discardRepoBrowserStaging(
-	staging string,
-	reason error,
-	retryCurrentFence bool,
-) error {
-	if cleanupErr := m.removeRepoBrowserStaging(staging); cleanupErr != nil {
+func (m *Manager) discardRepoBrowserStaging(staging string, reason error) error {
+	if cleanupErr := os.RemoveAll(staging); cleanupErr != nil {
 		return errors.Join(
 			reason,
 			fmt.Errorf("remove unpublished repo browser staging clone: %w", cleanupErr),
 		)
 	}
-	if retryCurrentFence {
-		return &repoBrowserCloneValidationError{err: reason}
-	}
 	return reason
-}
-
-func (m *Manager) removeRepoBrowserStaging(path string) error {
-	if remove := m.removeRepoBrowserStagingForTest; remove != nil {
-		return remove(path)
-	}
-	return os.RemoveAll(path)
-}
-
-func (m *Manager) publishRepoBrowserStagingGuarded(
-	ctx context.Context,
-	repo RepoBrowserRepoRef,
-	staging string,
-	published string,
-) (bool, error) {
-	moved := false
-	publish := func() error {
-		var err error
-		moved, err = m.publishRepoBrowserStaging(ctx, repo, staging, published)
-		return err
-	}
-	if repo.PublishIfRouteFenceMatches == nil {
-		return moved, publish()
-	}
-	matches, err := repo.PublishIfRouteFenceMatches(ctx, repo.RouteFence, publish)
-	if err != nil {
-		return moved, err
-	}
-	if !matches {
-		return moved, ErrRepoBrowserRouteFenceChanged
-	}
-	return moved, nil
 }
 
 func (m *Manager) publishRepoBrowserStaging(
@@ -1526,10 +1138,6 @@ func (m *Manager) RegisterExistingRepoBrowserClone(ctx context.Context, repo Rep
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if err := m.validateRepoBrowserRouteFence(ctx, repo); err != nil {
-		m.evictStaleRepoBrowserRegistration(repo, err)
-		return false, err
-	}
 	if err := m.validateRepoBrowserRemote(repo, repo.RemoteURL); err != nil {
 		return false, err
 	}
@@ -1561,10 +1169,6 @@ func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrow
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := m.validateRepoBrowserRouteFence(ctx, repo); err != nil {
-		m.evictStaleRepoBrowserRegistration(repo, err)
-		return err
-	}
 	namespace := repoBrowserCloneNamespace(repo)
 	if err := m.validateRepoBrowserRemote(repo, repo.RemoteURL); err != nil {
 		return err
@@ -1591,14 +1195,7 @@ func (m *Manager) ensureRepoBrowserCloneLocal(ctx context.Context, repo RepoBrow
 		}
 	}
 	m.ensureRefspecs(ctx, dir)
-	// Route reconciliation may queue behind guarded publication. Release the
-	// clone read barrier before re-entering that DB guard so publication never
-	// waits on a reader that is itself waiting on reconciliation.
 	unlock()
-	if err := m.validateRepoBrowserRouteFence(ctx, repo); err != nil {
-		m.evictStaleRepoBrowserRegistration(repo, err)
-		return err
-	}
 	return nil
 }
 
@@ -1606,37 +1203,6 @@ func (m *Manager) registerRepoBrowserRepo(repo RepoBrowserRepoRef) {
 	m.repoBrowserMu.Lock()
 	defer m.repoBrowserMu.Unlock()
 	m.repoBrowserRepos[repoBrowserCloneNamespace(repo)] = repo
-}
-
-func (m *Manager) validateRepoBrowserRouteFence(
-	ctx context.Context, repo RepoBrowserRepoRef,
-) error {
-	if repo.ValidateRouteFence == nil {
-		return nil
-	}
-	matches, err := repo.ValidateRouteFence(ctx, repo.RouteFence)
-	if err != nil {
-		return err
-	}
-	if !matches {
-		return ErrRepoBrowserRouteFenceChanged
-	}
-	return nil
-}
-
-func (m *Manager) evictStaleRepoBrowserRegistration(
-	repo RepoBrowserRepoRef, err error,
-) {
-	if !errors.Is(err, ErrRepoBrowserRouteFenceChanged) {
-		return
-	}
-	namespace := repoBrowserCloneNamespace(repo)
-	m.repoBrowserMu.Lock()
-	defer m.repoBrowserMu.Unlock()
-	current, ok := m.repoBrowserRepos[namespace]
-	if ok && current.RouteFence == repo.RouteFence {
-		delete(m.repoBrowserRepos, namespace)
-	}
 }
 
 func (m *Manager) repoBrowserReposSnapshot() []RepoBrowserRepoRef {
@@ -1684,8 +1250,8 @@ func repoBrowserCloneNamespace(repo RepoBrowserRepoRef) string {
 	// reuse: a replacement repository on a reused path must not serve the
 	// displaced repository's cached refs or SHA-addressable objects.
 	// Repositories without a verified identity keep path-scoped storage.
-	if id := strings.TrimSpace(repo.ProviderRepoID); id != "" {
-		parts = append(parts, id)
+	if repo.ProviderRepoID > 0 {
+		parts = append(parts, strconv.FormatInt(repo.ProviderRepoID, 10))
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return "repo-browser-" + hex.EncodeToString(sum[:8])
@@ -1758,10 +1324,11 @@ func isShowRefMissingError(err error) bool {
 	if strings.Contains(strings.ToLower(err.Error()), "not a valid ref") {
 		return true
 	}
-	var exitErr interface {
+	type exitCoder interface {
+		error
 		ExitCode() (int, bool)
 	}
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[exitCoder](err); ok {
 		code, ok := exitErr.ExitCode()
 		return ok && code == 1
 	}

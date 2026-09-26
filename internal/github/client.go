@@ -53,6 +53,7 @@ type Client interface {
 	DeleteIssueComment(ctx context.Context, owner, repo string, commentID int64) error
 	CreatePullRequestReviewCommentReply(ctx context.Context, owner, repo string, number int, body string, commentID int64) (*gh.PullRequestComment, error)
 	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
+	GetRepositoryByID(ctx context.Context, owner string, id int64) (*gh.Repository, error)
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
 	CreateReviewWithComments(
 		ctx context.Context,
@@ -151,7 +152,6 @@ func graphQLEndpointForHost(platformHost string) string {
 		return "https://api.github.com/graphql"
 	}
 	return "https://" + platformHost + "/api/graphql"
-
 }
 
 // ClientOption adjusts NewClient construction.
@@ -321,6 +321,7 @@ func NewClient(
 		ReadRate: githubRateObserver(rateTracker), NotificationRate: githubRateObserver(options.notificationRateTracker),
 		ViewerCacheTTL:  authenticatedViewerLoginTTL,
 		ReadOnlyContext: IsArchiveSyncBudgetContext,
+		OwnerContext:    tokenauth.WithGitHubOwner,
 		GraphQLContext:  func(ctx context.Context) context.Context { return withQuotaResource(ctx, QuotaResourceGraphQL) },
 		InvalidateETags: et.invalidateRepo,
 		Warning:         slog.Warn,

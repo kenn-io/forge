@@ -1,7 +1,6 @@
 package gitclone
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -45,7 +44,7 @@ func setupAncestryClone(t *testing.T) (*Manager, map[string]string) {
 }
 
 func TestIsAncestor(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr, shas := setupAncestryClone(t)
 	assert := assert.New(t)
 
@@ -61,4 +60,3 @@ func TestIsAncestor(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(ancestor)
 }
-

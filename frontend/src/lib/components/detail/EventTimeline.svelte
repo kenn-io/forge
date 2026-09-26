@@ -60,7 +60,7 @@
     orderingEvents?: Array<PREvent | IssueEvent> | undefined;
     provider?: string | undefined;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoOwner?: string;
     repoName?: string;
     repoPath?: string | undefined;

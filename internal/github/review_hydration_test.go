@@ -3,13 +3,14 @@ package github
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -37,7 +38,7 @@ func newCompleteReviewSyncFixture(t *testing.T, reviewCount int) completeReviewS
 		Platform: platform.KindGitea, PlatformHost: "gitea.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}
-	repoID, err := database.UpsertRepo(t.Context(), verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: 7, PlatformExternalID: "mr-7", Number: 7,
@@ -54,7 +55,7 @@ func newCompleteReviewSyncFixture(t *testing.T, reviewCount int) completeReviewS
 
 	threads := make([]platform.MergeRequestReviewThread, reviewCount)
 	for i := range reviewCount {
-		reviewID := fmt.Sprintf("%d", i+1)
+		reviewID := strconv.Itoa(i + 1)
 		threads[i] = platform.MergeRequestReviewThread{
 			ProviderThreadID:  "thread-" + reviewID,
 			ProviderReviewID:  reviewID,
@@ -104,6 +105,8 @@ func (f completeReviewSyncFixture) sync(t *testing.T) error {
 }
 
 func TestGitealikeReviewHydrationCompletesAtomicallyInOneSync(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newCompleteReviewSyncFixture(t, 17)
@@ -122,6 +125,8 @@ func TestGitealikeReviewHydrationCompletesAtomicallyInOneSync(t *testing.T) {
 }
 
 func TestGitealikeReviewHydrationPreservesCompleteDatasetOnReadFailure(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newCompleteReviewSyncFixture(t, 17)

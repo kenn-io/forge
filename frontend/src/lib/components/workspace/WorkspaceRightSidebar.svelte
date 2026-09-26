@@ -1,10 +1,12 @@
 <script lang="ts">
   import { EmptyState } from "@kenn-io/kit-ui";
+  import type { NumberedRouteItemRef } from "../../routes.js";
   import PullDetail from "../detail/PullDetail.svelte";
   import IssueDetail from "../detail/IssueDetail.svelte";
   import WorkspaceDiffPanel from "./WorkspaceDiffPanel.svelte";
   import WorkspaceReviewsPanel from "./WorkspaceReviewsPanel.svelte";
   import KataLinksPanel from "../kata/KataLinksPanel.svelte";
+  import { defaultWorkspaceDiffBase, type WorkspaceDiffGitState } from "./workspace-diff-default.js";
 
   interface Props {
     activeTab: "diff" | "pr" | "issue" | "reviews" | "kata";
@@ -13,19 +15,22 @@
     workspaceHostKey?: string | undefined;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoOwner: string;
     repoName: string;
     repoPath: string;
     ownerItemType: "pull_request" | "issue" | "kata_task" | "adhoc";
     ownerItemNumber: number;
     associatedPRNumber: number | null;
+    viewedPR?: NumberedRouteItemRef | null;
+    viewedIssue?: NumberedRouteItemRef | null;
     branch: string;
     roborevBaseUrl: string;
     refreshToken?: number;
     diffRefreshToken?: number;
     disabled?: boolean;
     visible?: boolean;
+    gitState?: WorkspaceDiffGitState;
   }
 
   let {
@@ -42,12 +47,15 @@
     ownerItemType,
     ownerItemNumber,
     associatedPRNumber,
+    viewedPR = null,
+    viewedIssue = null,
     branch,
     roborevBaseUrl,
     refreshToken = 0,
     diffRefreshToken = 0,
     disabled = false,
     visible = true,
+    gitState = {},
   }: Props = $props();
 
   // Determine if we have valid context
@@ -64,11 +72,15 @@
     ownerItemNumber > 0 &&
     hasRepo
   );
+  const workspaceRepo = $derived({ provider, platformHost, platformRepoId, owner: repoOwner, name: repoName, repoPath });
+  const displayedPR = $derived(viewedPR ?? (hasPR && associatedPRNumber !== null ? { ...workspaceRepo, number: associatedPRNumber } : null));
+  const displayedIssue = $derived(viewedIssue ?? (hasIssue ? { ...workspaceRepo, number: ownerItemNumber } : null));
   const hasMergeTarget = $derived(
     ownerItemType === "pull_request"
       ? ownerItemNumber > 0 && hasRepo
       : hasPR
   );
+  const defaultDiffBase = $derived(defaultWorkspaceDiffBase(gitState, hasMergeTarget));
 
 </script>
 
@@ -89,20 +101,15 @@
         {diffRefreshToken}
         {disabled}
         showMergeTarget={hasMergeTarget}
+        defaultBase={defaultDiffBase}
       />
     {/key}
   {:else if activeTab === "pr"}
-    {#if hasPR}
-      {#key `pr:${provider}:${platformHost ?? ""}:${repoPath}:${associatedPRNumber ?? 0}:${refreshToken}`}
+    {#if displayedPR}
+      {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${JSON.stringify(displayedPR)}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
           <PullDetail
-            {provider}
-            {platformHost}
-            {platformRepoId}
-            owner={repoOwner}
-            name={repoName}
-            {repoPath}
-            number={associatedPRNumber ?? 0}
+            {...displayedPR}
             hideTabs={true}
             hideWorkspaceAction={true}
           />
@@ -112,18 +119,10 @@
       <EmptyState title="No linked PR" />
     {/if}
   {:else if activeTab === "issue"}
-    {#if hasIssue}
-      {#key `issue:${provider}:${platformHost ?? ""}:${repoPath}:${ownerItemNumber}:${refreshToken}`}
+    {#if displayedIssue}
+      {#key `issue:${workspaceHostKey ?? "self"}:${workspaceID}:${JSON.stringify(displayedIssue)}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
-          <IssueDetail
-            {provider}
-            {platformHost}
-            {platformRepoId}
-            owner={repoOwner}
-            name={repoName}
-            {repoPath}
-            number={ownerItemNumber}
-          />
+          <IssueDetail {...displayedIssue} />
         </div>
       {/key}
     {:else}

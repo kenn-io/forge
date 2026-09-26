@@ -1,14 +1,13 @@
 package gitlab
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
@@ -47,7 +46,7 @@ func TestGitLabCommentMutations(t *testing.T) {
 			method: http.MethodPost,
 			call: func(client *Client) (string, string, string, string, error) {
 				event, err := client.CreateMergeRequestComment(
-					context.Background(), projectRef(), 7, "hello mr",
+					t.Context(), projectRef(), 7, "hello mr",
 				)
 				return event.Author, event.Body, event.DedupeKey, event.DirectURL, err
 			},
@@ -60,7 +59,7 @@ func TestGitLabCommentMutations(t *testing.T) {
 			method: http.MethodPut,
 			call: func(client *Client) (string, string, string, string, error) {
 				event, err := client.EditMergeRequestComment(
-					context.Background(), projectRef(), 7, 9001, "hello mr",
+					t.Context(), projectRef(), 7, 9001, "hello mr",
 				)
 				return event.Author, event.Body, event.DedupeKey, event.DirectURL, err
 			},
@@ -73,7 +72,7 @@ func TestGitLabCommentMutations(t *testing.T) {
 			method: http.MethodPost,
 			call: func(client *Client) (string, string, string, string, error) {
 				event, err := client.ReplyToThread(
-					context.Background(),
+					t.Context(),
 					projectRef(),
 					7,
 					"0123456789abcdef0123456789abcdef01234567",
@@ -90,7 +89,7 @@ func TestGitLabCommentMutations(t *testing.T) {
 			method: http.MethodPost,
 			call: func(client *Client) (string, string, string, string, error) {
 				event, err := client.CreateIssueComment(
-					context.Background(), projectRef(), 11, "hello mr",
+					t.Context(), projectRef(), 11, "hello mr",
 				)
 				return event.Author, event.Body, event.DedupeKey, event.DirectURL, err
 			},
@@ -103,7 +102,7 @@ func TestGitLabCommentMutations(t *testing.T) {
 			method: http.MethodPut,
 			call: func(client *Client) (string, string, string, string, error) {
 				event, err := client.EditIssueComment(
-					context.Background(), projectRef(), 11, 9001, "hello mr",
+					t.Context(), projectRef(), 11, 9001, "hello mr",
 				)
 				return event.Author, event.Body, event.DedupeKey, event.DirectURL, err
 			},
@@ -115,7 +114,7 @@ func TestGitLabCommentMutations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
-			require := Require.New(t)
+			require := require.New(t)
 			var sawRequest bool
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.EscapedPath() != tt.path {
@@ -159,14 +158,14 @@ func TestGitLabDeleteCommentMutations(t *testing.T) {
 			name: "merge request comment",
 			path: "/api/v4/projects/42/merge_requests/7/notes/9001",
 			call: func(client *Client) error {
-				return client.DeleteMergeRequestComment(context.Background(), projectRef(), 7, 9001)
+				return client.DeleteMergeRequestComment(t.Context(), projectRef(), 7, 9001)
 			},
 		},
 		{
 			name: "issue comment",
 			path: "/api/v4/projects/42/issues/11/notes/9001",
 			call: func(client *Client) error {
-				return client.DeleteIssueComment(context.Background(), projectRef(), 11, 9001)
+				return client.DeleteIssueComment(t.Context(), projectRef(), 11, 9001)
 			},
 		},
 	}
@@ -199,7 +198,7 @@ func TestGitLabSetMergeRequestStateSendsStateEvent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.state, func(t *testing.T) {
 			assert := assert.New(t)
-			require := Require.New(t)
+			require := require.New(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.EscapedPath() != "/api/v4/projects/42/merge_requests/7" {
 					http.NotFound(w, r)
@@ -216,7 +215,7 @@ func TestGitLabSetMergeRequestStateSendsStateEvent(t *testing.T) {
 			defer server.Close()
 
 			mr, err := newTestClient(t, server.URL).SetMergeRequestState(
-				context.Background(), projectRef(), 7, tt.state,
+				t.Context(), projectRef(), 7, tt.state,
 			)
 			require.NoError(err)
 			assert.Equal(tt.wantState, mr.State)
@@ -227,7 +226,7 @@ func TestGitLabSetMergeRequestStateSendsStateEvent(t *testing.T) {
 
 func TestGitLabSetIssueStateSendsStateEvent(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.EscapedPath() != "/api/v4/projects/42/issues/11" {
 			http.NotFound(w, r)
@@ -244,7 +243,7 @@ func TestGitLabSetIssueStateSendsStateEvent(t *testing.T) {
 	defer server.Close()
 
 	issue, err := newTestClient(t, server.URL).SetIssueState(
-		context.Background(), projectRef(), 11, "closed",
+		t.Context(), projectRef(), 11, "closed",
 	)
 	require.NoError(err)
 	assert.Equal("closed", issue.State)
@@ -253,17 +252,17 @@ func TestGitLabSetIssueStateSendsStateEvent(t *testing.T) {
 
 func TestGitLabSetStateRejectsUnknownState(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	client, err := NewClient("gitlab.example.com", testTokenSource("token"), WithTransport(http.DefaultTransport))
 	require.NoError(err)
 
 	var platformErr *platform.Error
-	_, err = client.SetMergeRequestState(context.Background(), projectRef(), 7, "merged")
+	_, err = client.SetMergeRequestState(t.Context(), projectRef(), 7, "merged")
 	require.ErrorAs(err, &platformErr)
 	assert.Equal(platform.ErrCodeInvalidRepoRef, platformErr.Code)
 	assert.Equal("state", platformErr.Field)
 
-	_, err = client.SetIssueState(context.Background(), projectRef(), 11, "locked")
+	_, err = client.SetIssueState(t.Context(), projectRef(), 11, "locked")
 	require.ErrorAs(err, &platformErr)
 	assert.Equal(platform.ErrCodeInvalidRepoRef, platformErr.Code)
 }
@@ -307,7 +306,7 @@ func TestGitLabMergeMergeRequestMapsMethods(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
-			require := Require.New(t)
+			require := require.New(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.EscapedPath() != "/api/v4/projects/42/merge_requests/7/merge" {
 					http.NotFound(w, r)
@@ -326,7 +325,7 @@ func TestGitLabMergeMergeRequestMapsMethods(t *testing.T) {
 			defer server.Close()
 
 			result, err := newTestClient(t, server.URL).MergeMergeRequest(
-				context.Background(), projectRef(), 7,
+				t.Context(), projectRef(), 7,
 				"Squash title", "Squash body", tt.method, "reviewed-head",
 			)
 			require.NoError(err)
@@ -371,7 +370,7 @@ func TestGitLabMergeMergeRequestClassifies409s(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
-			require := Require.New(t)
+			require := require.New(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.EscapedPath() != "/api/v4/projects/42/merge_requests/7/merge" {
 					http.NotFound(w, r)
@@ -384,7 +383,7 @@ func TestGitLabMergeMergeRequestClassifies409s(t *testing.T) {
 			defer server.Close()
 
 			_, err := newTestClient(t, server.URL).MergeMergeRequest(
-				context.Background(), projectRef(), 7,
+				t.Context(), projectRef(), 7,
 				"title", "message", "squash", tt.expectedHeadSHA,
 			)
 			var platformErr *platform.Error
@@ -398,14 +397,14 @@ func TestGitLabMergeMergeRequestClassifies409s(t *testing.T) {
 
 func TestGitLabMergeMergeRequestRejectsRebaseWithTypedError(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	// No fake server: rebase must fail before any API call because GitLab
 	// selects rebase/fast-forward behavior via project settings, not per merge.
 	client, err := NewClient("gitlab.example.com", testTokenSource("token"), WithTransport(http.DefaultTransport))
 	require.NoError(err)
 
 	_, err = client.MergeMergeRequest(
-		context.Background(), projectRef(), 7, "title", "message", "rebase", "",
+		t.Context(), projectRef(), 7, "title", "message", "rebase", "",
 	)
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)
@@ -416,7 +415,7 @@ func TestGitLabMergeMergeRequestRejectsRebaseWithTypedError(t *testing.T) {
 
 func TestGitLabCreateIssueAndEditContent(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var createSeen, editIssueSeen, editMRSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -462,18 +461,18 @@ func TestGitLabCreateIssueAndEditContent(t *testing.T) {
 
 	client := newTestClient(t, server.URL)
 
-	issue, err := client.CreateIssue(context.Background(), projectRef(), "New issue", "Issue body")
+	issue, err := client.CreateIssue(t.Context(), projectRef(), "New issue", "Issue body")
 	require.NoError(err)
 	assert.Equal(12, issue.Number)
 	assert.Equal("New issue", issue.Title)
 
 	title := "Edited title"
-	edited, err := client.EditIssueContent(context.Background(), projectRef(), 12, &title, nil)
+	edited, err := client.EditIssueContent(t.Context(), projectRef(), 12, &title, nil)
 	require.NoError(err)
 	assert.Equal("Edited title", edited.Title)
 
 	mrBody := "Edited MR body"
-	mr, err := client.EditMergeRequestContent(context.Background(), projectRef(), 7, nil, &mrBody)
+	mr, err := client.EditMergeRequestContent(t.Context(), projectRef(), 7, nil, &mrBody)
 	require.NoError(err)
 	assert.Equal("Edited MR body", mr.Body)
 
@@ -484,7 +483,7 @@ func TestGitLabCreateIssueAndEditContent(t *testing.T) {
 
 func TestGitLabApproveMergeRequestPostsNoteAndApproves(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var noteSeen, approveSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.EscapedPath() {
@@ -517,7 +516,7 @@ func TestGitLabApproveMergeRequestPostsNoteAndApproves(t *testing.T) {
 	defer server.Close()
 
 	event, err := newTestClient(t, server.URL).ApproveMergeRequest(
-		context.Background(), projectRef(), 7, " ship it ", "reviewed-head",
+		t.Context(), projectRef(), 7, " ship it ", "reviewed-head",
 	)
 	require.NoError(err)
 	assert.True(noteSeen)
@@ -536,7 +535,7 @@ func TestGitLabApproveMergeRequestPostsNoteAndApproves(t *testing.T) {
 
 func TestGitLabApproveMergeRequestReportsNotePostedWhenApprovalFails(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var noteSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.EscapedPath() {
@@ -552,7 +551,7 @@ func TestGitLabApproveMergeRequestReportsNotePostedWhenApprovalFails(t *testing.
 	defer server.Close()
 
 	_, err := newTestClient(t, server.URL).ApproveMergeRequest(
-		context.Background(), projectRef(), 7, "ship it", "",
+		t.Context(), projectRef(), 7, "ship it", "",
 	)
 	require.Error(err)
 	assert.True(noteSeen)
@@ -565,7 +564,7 @@ func TestGitLabApproveMergeRequestReportsNotePostedWhenApprovalFails(t *testing.
 
 func TestGitLabApproveMergeRequestSkipsNoteForEmptyBody(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var noteSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.EscapedPath() {
@@ -585,7 +584,7 @@ func TestGitLabApproveMergeRequestSkipsNoteForEmptyBody(t *testing.T) {
 	defer server.Close()
 
 	event, err := newTestClient(t, server.URL).ApproveMergeRequest(
-		context.Background(), projectRef(), 7, "   ", "",
+		t.Context(), projectRef(), 7, "   ", "",
 	)
 	require.NoError(err)
 	assert.False(noteSeen)
@@ -595,7 +594,7 @@ func TestGitLabApproveMergeRequestSkipsNoteForEmptyBody(t *testing.T) {
 
 func TestGitLabApproveMergeRequestRejectsStaleHeadBeforePostingNote(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	var noteSeen, approveSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.EscapedPath() {
@@ -614,7 +613,7 @@ func TestGitLabApproveMergeRequestRejectsStaleHeadBeforePostingNote(t *testing.T
 	defer server.Close()
 
 	_, err := newTestClient(t, server.URL).ApproveMergeRequest(
-		context.Background(), projectRef(), 7, "ship it", "reviewed-head",
+		t.Context(), projectRef(), 7, "ship it", "reviewed-head",
 	)
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)

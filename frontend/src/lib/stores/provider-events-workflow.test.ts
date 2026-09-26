@@ -136,12 +136,12 @@ it.layer(ProviderEventsTest)("workflow run activity", (it) => {
       emitFrame(
         source,
         "workflow_runs_changed",
-        { provider: "github", platform_host: "github.com", platform_repo_id: "R_project" },
+        { provider: "github", platform_host: "github.com", platform_repo_id: 1107 },
         "1",
       );
       const event = yield* Queue.take(events);
       assert.strictEqual(event.type, "workflow_runs_changed");
-      if (event.type === "workflow_runs_changed") assert.strictEqual(event.payload.platform_repo_id, "R_project");
+      if (event.type === "workflow_runs_changed") assert.strictEqual(event.payload.platform_repo_id, 1107);
       yield* Fiber.interrupt(fiber);
     }),
   );

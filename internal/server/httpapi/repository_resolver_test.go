@@ -1,17 +1,16 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -63,10 +62,10 @@ func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "repo-group-subgroup-widget",
+		PlatformRepoID: 1001,
 		Owner:          "group/subgroup",
 		Name:           "widget",
 		RepoPath:       "group/subgroup/widget",
@@ -84,7 +83,7 @@ func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {
 
 	repo, err := resolver.Lookup(t.Context(), "gitlab", "gitlab.example.com", "group/subgroup/widget")
 	require.NoError(err)
-	ref := resolver.Ref(*repo)
+	ref := resolver.Ref(repo.Repo)
 
 	assert.Equal("gitlab", ref.Provider)
 	assert.Equal("gitlab.example.com", ref.PlatformHost)
@@ -92,133 +91,61 @@ func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {
 	assert.True(ref.Capabilities.ReadRepositories)
 }
 
-func TestRepositoryResolverGuardRepositoryRouteFenceBlocksReconciliation(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: "provider-old",
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
-	})
-	require.NoError(err)
-	repo, err := database.GetRepoByID(t.Context(), repoID)
-	require.NoError(err)
-	resolver := NewRepositoryResolver(RepositoryResolverDeps{DB: database})
-	fence, found, err := resolver.CaptureRepositoryRouteFence(t.Context(), *repo)
-	require.NoError(err)
-	require.True(found)
-
-	publishStarted := make(chan struct{})
-	releasePublish := make(chan struct{})
-	type guardResult struct {
-		matches bool
-		err     error
-	}
-	guardDone := make(chan guardResult, 1)
-	go func() {
-		matches, guardErr := resolver.GuardRepositoryRouteFence(
-			context.Background(), *repo, fence, func() error {
-				close(publishStarted)
-				<-releasePublish
-				return nil
+func TestPlatformRepoRefCarriesProviderIdentityAndIntegerID(t *testing.T) {
+	tests := []struct {
+		name     string
+		repo     db.Repo
+		wantKind platform.Kind
+		wantHost string
+		wantPath string
+	}{
+		{
+			name: "gitlab nested path",
+			repo: db.Repo{
+				Platform:       string(platform.KindGitLab),
+				PlatformHost:   "gitlab.example.com",
+				PlatformRepoID: 4242,
+				Owner:          "group",
+				Name:           "project",
+				RepoPath:       "group/project",
 			},
-		)
-		guardDone <- guardResult{matches: matches, err: guardErr}
-	}()
-	<-publishStarted
-
-	writerWaiting := make(chan struct{})
-	restoreHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
-		close(writerWaiting)
-	})
-	t.Cleanup(restoreHook)
-	writerDone := make(chan error, 1)
-	go func() {
-		_, _, reconcileErr := database.ReconcileRepositoryObservation(
-			context.Background(),
-			db.RepoIdentity{
-				Platform:       "github",
-				PlatformHost:   "github.com",
-				PlatformRepoID: "provider-new",
+			wantKind: platform.KindGitLab,
+			wantHost: "gitlab.example.com",
+			wantPath: "group/project",
+		},
+		{
+			name: "github defaults",
+			repo: db.Repo{
+				PlatformRepoID: 4242,
 				Owner:          "acme",
 				Name:           "widget",
-				RepoPath:       "acme/widget",
 			},
-			time.Now().UTC().Add(time.Hour),
-		)
-		writerDone <- reconcileErr
-	}()
-	<-writerWaiting
-	select {
-	case writerErr := <-writerDone:
-		require.Fail("reconciliation completed while publication guard was held", writerErr)
-	default:
-	}
-
-	close(releasePublish)
-	guarded := <-guardDone
-	require.NoError(guarded.err)
-	assert.True(guarded.matches)
-	require.NoError(<-writerDone)
-
-	stalePublishCalled := false
-	matches, err := resolver.GuardRepositoryRouteFence(
-		t.Context(), *repo, fence, func() error {
-			stalePublishCalled = true
-			return nil
+			wantKind: platform.KindGitHub,
+			wantHost: platform.DefaultGitHubHost,
+			wantPath: "acme/widget",
 		},
-	)
-	require.NoError(err)
-	assert.False(matches)
-	assert.False(stalePublishCalled)
-}
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
 
-func TestPlatformRepoRefRestoresProviderIdentityAndNumericID(t *testing.T) {
-	assert := assert.New(t)
+			ref := PlatformRepoRef(tt.repo)
 
-	ref := PlatformRepoRef(db.Repo{
-		Platform:       string(platform.KindGitLab),
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "4242",
-		Owner:          "group",
-		Name:           "project",
-		RepoPath:       "group/project",
-	})
-
-	assert.Equal(platform.KindGitLab, ref.Platform)
-	assert.Equal("gitlab.example.com", ref.Host)
-	assert.Equal("group/project", ref.RepoPath)
-	assert.Equal(int64(4242), ref.PlatformID)
-	assert.Equal("4242", ref.PlatformExternalID)
-}
-
-func TestPlatformRepoRefPreservesExternalIDAndGitHubDefaults(t *testing.T) {
-	assert := assert.New(t)
-
-	ref := PlatformRepoRef(db.Repo{
-		PlatformRepoID: "gid://github/Repository/4242",
-		Owner:          "acme",
-		Name:           "widget",
-	})
-
-	assert.Equal(platform.KindGitHub, ref.Platform)
-	assert.Equal(platform.DefaultGitHubHost, ref.Host)
-	assert.Equal("acme/widget", ref.RepoPath)
-	assert.Zero(ref.PlatformID)
-	assert.Equal("gid://github/Repository/4242", ref.PlatformExternalID)
+			assert.Equal(tt.wantKind, ref.Platform)
+			assert.Equal(tt.wantHost, ref.Host)
+			assert.Equal(tt.wantPath, ref.RepoPath)
+			assert.Equal(int64(4242), ref.PlatformID)
+		})
+	}
 }
 
 func TestRepositoryResolverRequireRouteCapabilityUsesCanonicalContract(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "repo-group-project",
+		PlatformRepoID: 1002,
 		Owner:          "group",
 		Name:           "project",
 		RepoPath:       "group/project",

@@ -231,7 +231,7 @@ func (o *PushedHeadObserver) resolveWorkspacePR(
 		return nil, nil, nil, false, nil
 	}
 
-	prNumber := 0
+	var prNumber int
 	var assoc *WorkspacePRAssociation
 	switch ws.ItemType {
 	case db.WorkspaceItemTypePullRequest:
@@ -295,7 +295,7 @@ func (o *PushedHeadObserver) workspaceRepository(
 	if ws.RepoID != 0 {
 		repo, err := o.db.GetActiveRepoByID(ctx, ws.RepoID)
 		if err != nil || repo == nil {
-			return repo, err
+			return nil, err
 		}
 		if launchSpec != nil {
 			if repo.PlatformRepoID != launchSpec.Repository.PlatformRepoID {
@@ -309,7 +309,7 @@ func (o *PushedHeadObserver) workspaceRepository(
 			repo.CloneURL = launchSpec.Repository.CloneURL
 			repo.DefaultBranch = launchSpec.Repository.DefaultBranch
 		}
-		return repo, nil
+		return repo.Row(), nil
 	}
 	if launchSpec != nil {
 		return &db.Repo{
@@ -323,12 +323,6 @@ func (o *PushedHeadObserver) workspaceRepository(
 			DefaultBranch:  launchSpec.Repository.DefaultBranch,
 		}, nil
 	}
-	collision, err := o.db.WorkspaceRepoRouteHasHistoricalOccupants(
-		ctx, workspaceProvider(ws), ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-	)
-	if err != nil || collision {
-		return nil, err
-	}
 	repo, err := o.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     workspaceProvider(ws),
 		PlatformHost: ws.PlatformHost,
@@ -338,7 +332,10 @@ func (o *PushedHeadObserver) workspaceRepository(
 	if err != nil {
 		return nil, fmt.Errorf("get repo: %w", err)
 	}
-	return repo, nil
+	if repo == nil {
+		return nil, nil
+	}
+	return repo.Row(), nil
 }
 
 type trackingLookup struct {

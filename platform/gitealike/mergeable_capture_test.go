@@ -8,12 +8,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMergeableCaptureTransportOnlyCapturesPullRequestJSON(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	cache := NewMergeableCache()
 	body := []byte(`[
 		{
@@ -34,10 +34,15 @@ func TestMergeableCaptureTransportOnlyCapturesPullRequestJSON(t *testing.T) {
 		}),
 	}
 
-	req, err := http.NewRequest(http.MethodGet, "https://gitea.test/api/v1/repos/owner/repo/pulls", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://gitea.test/api/v1/repos/owner/repo/pulls", nil)
 	require.NoError(err)
 	resp, err := transport.RoundTrip(req)
 	require.NoError(err)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	copiedBody, err := io.ReadAll(resp.Body)
 	require.NoError(err)
 
@@ -50,7 +55,7 @@ func TestMergeableCaptureTransportOnlyCapturesPullRequestJSON(t *testing.T) {
 
 func TestMergeableCacheCapturesKnownAndUnknownValues(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	cache := NewMergeableCache()
 	cache.CapturePullRequestJSON([]byte(`[
 		{"html_url":"https://gitea.test/owner/repo/pulls/1","mergeable":false,"head":{"sha":"head-a"},"base":{"sha":"base-a"}},
@@ -88,7 +93,7 @@ func TestMergeableCacheCapturesKnownAndUnknownValues(t *testing.T) {
 
 func TestMergeableCachePreservesDiffMetricPresence(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	cache := NewMergeableCache()
 	cache.CapturePullRequestJSON([]byte(`{
 		"html_url":"https://gitea.test/owner/repo/pulls/1",
@@ -160,8 +165,8 @@ func TestShouldCaptureMergeable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest(tt.method, "https://gitea.test"+tt.path, nil)
-			Require.NoError(t, err)
+			req, err := http.NewRequestWithContext(t.Context(), tt.method, "https://gitea.test"+tt.path, nil)
+			require.NoError(t, err)
 			resp := &http.Response{
 				StatusCode: tt.status,
 				Header:     http.Header{"Content-Type": []string{tt.contentType}},
@@ -173,7 +178,7 @@ func TestShouldCaptureMergeable(t *testing.T) {
 
 func TestMergeableCaptureTransportSkipsOversizedBodiesWithoutConsumingThem(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	cache := NewMergeableCache()
 	body := []byte(`{"html_url":"https://gitea.test/owner/repo/pulls/1","mergeable":false,"padding":"` +
 		strings.Repeat("x", mergeableCaptureMaxBodyBytes) + `"}`)
@@ -188,10 +193,15 @@ func TestMergeableCaptureTransportSkipsOversizedBodiesWithoutConsumingThem(t *te
 		}),
 	}
 
-	req, err := http.NewRequest(http.MethodGet, "https://gitea.test/api/v1/repos/owner/repo/pulls/1", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://gitea.test/api/v1/repos/owner/repo/pulls/1", nil)
 	require.NoError(err)
 	resp, err := transport.RoundTrip(req)
 	require.NoError(err)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	copiedBody, err := io.ReadAll(resp.Body)
 	require.NoError(err)
 

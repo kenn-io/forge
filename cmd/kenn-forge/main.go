@@ -73,7 +73,7 @@ func newMCPStartupHandler() http.Handler {
 
 func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error) {
 	primaryAddr := cfg.ListenAddr()
-	primary, err := net.Listen("tcp", primaryAddr)
+	primary, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", primaryAddr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listen on %s: %w", primaryAddr, err)
 	}
@@ -81,7 +81,7 @@ func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error)
 		return primary, nil, nil
 	}
 	mcpAddr := cfg.MCPListenAddr()
-	mcpListener, err := net.Listen("tcp", mcpAddr)
+	mcpListener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", mcpAddr)
 	if err != nil {
 		_ = primary.Close()
 		return nil, nil, fmt.Errorf("listen for MCP on %s: %w", mcpAddr, err)
@@ -145,10 +145,14 @@ type versionOutput struct {
 }
 
 func main() {
+	os.Exit(runMain())
+}
+
+func runMain() int {
 	closeLog, err := configureLogging(os.Stderr)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "configure logging: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer func() {
 		if err := closeLog(); err != nil {
@@ -159,12 +163,12 @@ func main() {
 	if err := runCLI(os.Args[1:], os.Stdout); err != nil {
 		if _, ok := errors.AsType[*apiVerbError](err); ok {
 			_, _ = fmt.Fprintln(os.Stderr, err)
-			os.Exit(exitCodeForAPIVerb(err))
-			return
+			return exitCodeForAPIVerb(err)
 		}
 		slog.Error("fatal", "err", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func configureLogging(stderr io.Writer) (func() error, error) {
@@ -265,13 +269,13 @@ func writeVersion(stdout io.Writer, asJSON bool) error {
 
 func runPtyOwner(root, session, cwd, commandJSON string) error {
 	if session == "" {
-		return fmt.Errorf("pty-owner session is required")
+		return errors.New("pty-owner session is required")
 	}
 	if root == "" {
-		return fmt.Errorf("pty-owner root is required")
+		return errors.New("pty-owner root is required")
 	}
 	if cwd == "" {
-		return fmt.Errorf("pty-owner cwd is required")
+		return errors.New("pty-owner cwd is required")
 	}
 	var command []string
 	if commandJSON != "" {
@@ -627,7 +631,7 @@ func run(opts serve.Options) error {
 		return err
 	}
 
-	slog.Info(fmt.Sprintf("starting server at http://%s", ln.Addr().String()))
+	slog.Info("starting server at http://" + ln.Addr().String())
 	if mcpListenAddr != "" {
 		slog.Info("starting MCP listener", "url", mcpURL)
 	}
@@ -712,8 +716,10 @@ func run(opts serve.Options) error {
 
 	var archiveService *archive.Service
 	var repos []ghclient.RepoRef
+	var startupRouters map[string]*ghclient.HostRouter
 	if controlPlanes.Provider != nil {
 		controlPlane := controlPlanes.Provider
+		startupRouters = controlPlane.githubRouters
 		syncer = ghclient.NewSyncerWithRegistry(
 			controlPlane.registry, database, cloneMgr, nil,
 			cfg.SyncDuration(), controlPlane.rateTrackers, controlPlane.budgets,
@@ -723,7 +729,7 @@ func run(opts serve.Options) error {
 			syncer.DisableSync()
 		}
 		repos = resolveStartupRepos(
-			ctx, cfg, syncer.SyncRegistry(), database, controlPlane.githubRouters,
+			ctx, cfg, database, controlPlane.githubRouters,
 		)
 		slog.Debug("startup repos resolved", "count", len(repos))
 		syncer.SetBranchActivityLimits(
@@ -822,7 +828,6 @@ func run(opts serve.Options) error {
 				stacks.SyncCompletedHook(ctx, database, nil),
 			),
 		)
-		syncer.Start(ctx)
 		if !opts.DisableSync && cfg.Relay.URL != "" {
 			backgroundLoops.start(func(runCtx context.Context) {
 				syncer.RunRelay(runCtx, ghclient.RelayOptions{URL: cfg.Relay.URL, Client: relayHTTPClient()})
@@ -860,6 +865,18 @@ func run(opts serve.Options) error {
 	switcher.Swap(srv)
 	if mcpSwitcher != nil {
 		mcpSwitcher.Swap(mcpSrv.HTTPHandler())
+		srv.SetTailnetMCPHandler(mcpSrv.TailnetHTTPHandler())
+	}
+
+	if syncer != nil && !opts.DisableSync {
+		backgroundLoops.start(func(runCtx context.Context) {
+			if err := srv.InitializeProviderRepositories(runCtx, func(resolveCtx context.Context, current *config.Config) []ghclient.RepoRef {
+				return resolveProviderRepos(resolveCtx, current, syncer.SyncRegistry(), database, startupRouters)
+			}); err != nil {
+				slog.Warn("initialize provider repositories", "err", err)
+			}
+			syncer.Start(runCtx)
+		})
 	}
 
 	select {
@@ -1059,7 +1076,34 @@ func configureCloneTransportPolicy(clones *gitclone.Manager, cfg *config.Config)
 	}
 }
 
+// resolveStartupRepos restores the configured catalog without contacting a provider.
+// Live discovery runs after the ready handler is installed.
 func resolveStartupRepos(
+	ctx context.Context,
+	cfg *config.Config,
+	database *db.DB,
+	githubRouters map[string]*ghclient.HostRouter,
+) []ghclient.RepoRef {
+	set := ghclient.NewExpandedRepoSet()
+	for _, raw := range cfg.Repos {
+		var repos []ghclient.RepoRef
+		if raw.HasNameGlob() {
+			repos = fallbackGlobFromDB(ctx, database, raw)
+		} else {
+			repos = fallbackExactFromDB(ctx, database, raw)
+		}
+		ghclient.RegisterConfiguredRepoCredentialAliases(githubRouters, raw, repos)
+		for _, repo := range repos {
+			if repo.PlatformRepoID == 0 {
+				continue
+			}
+			set.Add(repo, false)
+		}
+	}
+	return set.Refs()
+}
+
+func resolveProviderRepos(
 	ctx context.Context,
 	cfg *config.Config,
 	registry *platform.Registry,
@@ -1075,7 +1119,7 @@ func resolveStartupRepos(
 			// through its dedicated archive App on a fresh startup.
 			resolveCtx = ghclient.WithArchiveSyncBudget(ctx)
 		}
-		configuredProviderID := strings.TrimSpace(raw.PlatformRepoID)
+		configuredProviderID := raw.PlatformRepoID
 		var expanded []ghclient.RepoRef
 		var err error
 		if !cfg.AirplaneMode {
@@ -1094,7 +1138,7 @@ func resolveStartupRepos(
 			} else {
 				expanded = fallbackExactFromDB(ctx, database, raw)
 				if len(expanded) == 0 {
-					if configuredProviderID == "" {
+					if configuredProviderID == 0 {
 						expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
 					}
 				} else {
@@ -1153,7 +1197,7 @@ func fallbackExactFromDB(
 		PlatformHost: raw.PlatformHostOrDefault(),
 		Lifecycle:    db.RepositoryLifecycleActive,
 	}
-	if strings.TrimSpace(raw.PlatformRepoID) != "" {
+	if raw.PlatformRepoID != 0 {
 		filter.PlatformRepoID = raw.PlatformRepoID
 	} else {
 		filter.RepoPath = repoPath
@@ -1163,49 +1207,24 @@ func fallbackExactFromDB(
 		slog.Warn("fallback exact from db", "err", err)
 		return nil
 	}
-	var entry *db.RepositoryCatalogEntry
-	if filter.PlatformRepoID != "" {
-		if len(entries) == 1 {
-			entry = &entries[0]
-		}
-	} else {
-		entry = catalogEntryForConfiguredRoute(entries, repoPath)
-	}
-	if entry == nil {
+	// An ID filter matches one row, and a route has at most one active
+	// occupant.
+	if len(entries) != 1 {
 		return nil
 	}
+	entry := &entries[0]
 	return []ghclient.RepoRef{{
 		Platform:           platform.Kind(raw.PlatformOrDefault()),
 		Owner:              entry.Repository.Owner,
 		Name:               entry.Repository.Name,
 		PlatformHost:       entry.Repository.PlatformHost,
 		RepoPath:           entry.Repository.RepoPath,
-		PlatformExternalID: entry.Repository.PlatformRepoID,
+		PlatformRepoID:     entry.Repository.PlatformRepoID,
 		WebURL:             entry.Repository.WebURL,
 		CloneURL:           entry.Repository.CloneURL,
 		DefaultBranch:      entry.Repository.DefaultBranch,
 		ConfiguredRepoPath: repoPath,
 	}}
-}
-
-// catalogEntryForConfiguredRoute prefers the repository currently occupying
-// the configured route; a reused route may also historically match the
-// renamed repository that held it before. Multiple historical matches with
-// no current occupant cannot be attributed safely.
-func catalogEntryForConfiguredRoute(
-	entries []db.RepositoryCatalogEntry, repoPath string,
-) *db.RepositoryCatalogEntry {
-	for i := range entries {
-		for _, route := range entries[i].Routes {
-			if route.Current && strings.EqualFold(route.RepoPath, repoPath) {
-				return &entries[i]
-			}
-		}
-	}
-	if len(entries) == 1 {
-		return &entries[0]
-	}
-	return nil
 }
 
 // fallbackGlobFromDB returns repos from the database that match
@@ -1247,15 +1266,15 @@ func fallbackGlobFromDB(
 		)
 		if matched {
 			repo := ghclient.RepoRef{
-				Platform:           rawPlatform,
-				Owner:              r.Owner,
-				Name:               r.Name,
-				PlatformHost:       dbHost,
-				RepoPath:           r.RepoPath,
-				PlatformExternalID: r.PlatformRepoID,
-				WebURL:             r.WebURL,
-				CloneURL:           r.CloneURL,
-				DefaultBranch:      r.DefaultBranch,
+				Platform:       rawPlatform,
+				Owner:          r.Owner,
+				Name:           r.Name,
+				PlatformHost:   dbHost,
+				RepoPath:       r.RepoPath,
+				PlatformRepoID: r.PlatformRepoID,
+				WebURL:         r.WebURL,
+				CloneURL:       r.CloneURL,
+				DefaultBranch:  r.DefaultBranch,
 			}
 			matches = append(matches, repo)
 		}

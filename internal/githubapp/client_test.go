@@ -1,16 +1,16 @@
 package githubapp
 
 import (
-	"context"
-	"fmt"
-	"go.kenn.io/forge/githubapp"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/githubapp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,15 +24,22 @@ func submitManifest(t *testing.T, fake *githubapptest.Fake, manifest githubapp.M
 	t.Helper()
 	manifestJSON, err := manifest.JSON()
 	require.NoError(t, err)
+	form := url.Values{"manifest": {manifestJSON}}
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		fake.URL()+"/settings/apps/new?state=test-state",
+		strings.NewReader(form.Encode()),
+	)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	client := &http.Client{
+		Timeout: 5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-	resp, err := client.PostForm(
-		fake.URL()+"/settings/apps/new?state=test-state",
-		url.Values{"manifest": {manifestJSON}},
-	)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusFound, resp.StatusCode)
@@ -54,7 +61,7 @@ func TestConvertManifest(t *testing.T) {
 	code := submitManifest(t, fake, manifest)
 
 	client := githubapp.NewClientWithBase(fake.APIBase())
-	creds, err := client.ConvertManifest(context.Background(), code)
+	creds, err := client.ConvertManifest(t.Context(), code)
 	require.NoError(err)
 
 	assert := assert.New(t)
@@ -67,7 +74,7 @@ func TestConvertManifest(t *testing.T) {
 
 	// Conversion codes are single use; replay must fail loudly so the
 	// CLI reports a stale callback instead of silently re-creating.
-	_, err = client.ConvertManifest(context.Background(), code)
+	_, err = client.ConvertManifest(t.Context(), code)
 	assert.True(githubapp.IsStatus(err, http.StatusNotFound), "got %v", err)
 }
 
@@ -80,7 +87,7 @@ func TestMintInstallationToken(t *testing.T) {
 	require.NoError(err)
 	code := submitManifest(t, fake, manifest)
 	client := githubapp.NewClientWithBase(fake.APIBase())
-	creds, err := client.ConvertManifest(context.Background(), code)
+	creds, err := client.ConvertManifest(t.Context(), code)
 	require.NoError(err)
 	installID, err := fake.Install(creds.ID, "kenn-io")
 	require.NoError(err)
@@ -89,7 +96,7 @@ func TestMintInstallationToken(t *testing.T) {
 	require.NoError(os.WriteFile(keyPath, []byte(creds.PEM), 0o600))
 
 	token, expires, err := mintInstallationToken(
-		context.Background(), fake.APIBase(), creds.ID, keyPath, installID,
+		t.Context(), fake.APIBase(), creds.ID, keyPath, installID,
 	)
 	require.NoError(err)
 	assert := assert.New(t)
@@ -97,7 +104,7 @@ func TestMintInstallationToken(t *testing.T) {
 	assert.Greater(time.Until(expires), 50*time.Minute)
 
 	// The minted token must be usable as a plain bearer credential.
-	rate, err := client.CoreRateLimit(context.Background(), token)
+	rate, err := client.CoreRateLimit(t.Context(), token)
 	require.NoError(err)
 	assert.Equal(5000, rate.Limit)
 }
@@ -111,7 +118,7 @@ func TestMintInstallationTokenRejectsWrongKey(t *testing.T) {
 	require.NoError(err)
 	client := githubapp.NewClientWithBase(fake.APIBase())
 	creds, err := client.ConvertManifest(
-		context.Background(), submitManifest(t, fake, manifest),
+		t.Context(), submitManifest(t, fake, manifest),
 	)
 	require.NoError(err)
 	installID, err := fake.Install(creds.ID, "kenn-io")
@@ -122,7 +129,7 @@ func TestMintInstallationTokenRejectsWrongKey(t *testing.T) {
 	otherKey := generateTestKey(t)
 	wrongJWT, err := githubapp.SignAppJWT(creds.ID, otherKey, time.Now())
 	require.NoError(err)
-	_, err = client.CreateInstallationToken(context.Background(), wrongJWT, installID, nil)
+	_, err = client.CreateInstallationToken(t.Context(), wrongJWT, installID, nil)
 	assert.True(t, githubapp.IsStatus(err, http.StatusUnauthorized), "got %v", err)
 }
 
@@ -144,10 +151,10 @@ func TestAPIBaseForHost(t *testing.T) {
 func TestStatusErrorRetryDeadline(t *testing.T) {
 	now := time.Date(2026, time.August, 19, 12, 0, 0, 0, time.UTC)
 	rateResetHeader := make(http.Header)
-	rateResetHeader.Set("X-RateLimit-Reset", fmt.Sprint(now.Add(10*time.Minute).Unix()))
+	rateResetHeader.Set("X-RateLimit-Reset", strconv.FormatInt(now.Add(10*time.Minute).Unix(), 10))
 	rateResetHeader.Set("X-RateLimit-Remaining", "0")
 	unrelatedResetHeader := make(http.Header)
-	unrelatedResetHeader.Set("X-RateLimit-Reset", fmt.Sprint(now.Add(10*time.Minute).Unix()))
+	unrelatedResetHeader.Set("X-RateLimit-Reset", strconv.FormatInt(now.Add(10*time.Minute).Unix(), 10))
 	unrelatedResetHeader.Set("X-RateLimit-Remaining", "4999")
 	for _, tt := range []struct {
 		name   string

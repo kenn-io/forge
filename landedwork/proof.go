@@ -74,8 +74,10 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 			return reject(graphReason(err))
 		}
 	}
-	return Landing{CandidateID: c.ID, Proofs: []string{method}, Spine: []string{c.Terminal}, Before: parents[0], Terminal: c.Terminal,
-		Source: slices.Clone(c.Source), Introduced: introduced}, Gap{}
+	return Landing{
+		CandidateID: c.ID, Proofs: []string{method}, Spine: []string{c.Terminal}, Before: parents[0], Terminal: c.Terminal,
+		Source: slices.Clone(c.Source), Introduced: introduced,
+	}, Gap{}
 }
 
 func checkSources(ctx context.Context, v *objectView, c Candidate) (string, string) {

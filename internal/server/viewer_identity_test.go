@@ -11,9 +11,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -33,6 +35,7 @@ func (p *viewerIdentityProvider) Host() string            { return p.host }
 func (p *viewerIdentityProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{ReadAuthenticatedUser: true}
 }
+
 func (p *viewerIdentityProvider) AuthenticatedUser(_ context.Context, ref platform.RepoRef) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -42,9 +45,11 @@ func (p *viewerIdentityProvider) AuthenticatedUser(_ context.Context, ref platfo
 	}
 	return p.logins[ref.RepoPath], nil
 }
+
 func (p *viewerIdentityProvider) AuthenticatedUserCacheKey(ref platform.RepoRef) string {
 	return p.cacheKeys[ref.RepoPath]
 }
+
 func (p *viewerIdentityProvider) callCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -73,13 +78,13 @@ func newViewerIdentityTestServer(
 	refs := make([]ghclient.RepoRef, 0, len(repos))
 	repoIDs := make(map[string]int64, len(repos))
 	for _, repo := range repos {
-		id, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(repo))
+		id, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(repo))
 		require.NoError(t, err)
 		repoIDs[repo.RepoPath] = id
 		refs = append(refs, ghclient.RepoRef{
 			Platform: repo.Platform, PlatformHost: repo.Host,
 			Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
-			PlatformExternalID: repo.PlatformExternalID,
+			PlatformRepoID: repo.PlatformID,
 		})
 	}
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, refs, time.Hour, nil, nil)
@@ -100,8 +105,8 @@ func TestResolveAuthenticatedViewerLoginsRestrictsProviderCallsToRepoFilters(t *
 		errs:      map[string]error{"other/tool": errors.New("unavailable credential")},
 	}
 	srv, repoIDs := newViewerIdentityTestServer(t, []*viewerIdentityProvider{selected, unrelated}, []platform.RepoRef{
-		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformExternalID: "repo-widget"},
-		{Platform: platform.KindGitLab, Host: "gitlab.example.com", Owner: "other", Name: "tool", RepoPath: "other/tool", PlatformExternalID: "repo-tool"},
+		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformID: 1001},
+		{Platform: platform.KindGitLab, Host: "gitlab.example.com", Owner: "other", Name: "tool", RepoPath: "other/tool", PlatformID: 1002},
 	})
 
 	got, err := srv.resolveAuthenticatedViewerLogins(t.Context(), []db.RepoFilter{{
@@ -128,8 +133,8 @@ func TestResolveAuthenticatedViewerLoginsRefreshesExpiredCredentialCacheInBackgr
 		},
 	}
 	srv, _ := newViewerIdentityTestServer(t, []*viewerIdentityProvider{provider}, []platform.RepoRef{
-		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformExternalID: "repo-widget"},
-		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "gadget", RepoPath: "acme/gadget", PlatformExternalID: "repo-gadget"},
+		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformID: 1001},
+		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "gadget", RepoPath: "acme/gadget", PlatformID: 1003},
 	})
 
 	first, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
@@ -167,7 +172,7 @@ func TestResolveAuthenticatedViewerLoginsDoesNotCacheFailures(t *testing.T) {
 		errs:      map[string]error{"acme/widget": errors.New("temporary failure")},
 	}
 	srv, _ := newViewerIdentityTestServer(t, []*viewerIdentityProvider{provider}, []platform.RepoRef{{
-		Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformExternalID: "repo-widget",
+		Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformID: 1001,
 	}})
 
 	got, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
@@ -191,8 +196,8 @@ func TestResolveAuthenticatedViewerLoginsKeepsAvailableRepositories(t *testing.T
 		errs:   map[string]error{"other/tool": errors.New("unavailable credential")},
 	}
 	srv, repoIDs := newViewerIdentityTestServer(t, []*viewerIdentityProvider{provider}, []platform.RepoRef{
-		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformExternalID: "repo-widget"},
-		{Platform: platform.KindGitHub, Host: "github.com", Owner: "other", Name: "tool", RepoPath: "other/tool", PlatformExternalID: "repo-tool"},
+		{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformID: 1001},
+		{Platform: platform.KindGitHub, Host: "github.com", Owner: "other", Name: "tool", RepoPath: "other/tool", PlatformID: 1002},
 	})
 
 	got, err := srv.resolveAuthenticatedViewerLogins(t.Context(), nil)
@@ -209,6 +214,7 @@ func (p *unkeyedViewerIdentityProvider) Host() string            { return p.base
 func (p *unkeyedViewerIdentityProvider) Capabilities() platform.Capabilities {
 	return p.base.Capabilities()
 }
+
 func (p *unkeyedViewerIdentityProvider) AuthenticatedUser(
 	ctx context.Context, ref platform.RepoRef,
 ) (string, error) {
@@ -230,13 +236,13 @@ func TestResolveAuthenticatedViewerLoginsKeepsUnkeyedGitHubReposSeparate(t *test
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	refs := []ghclient.RepoRef{
-		{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformExternalID: "repo-widget"},
-		{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "other", Name: "tool", RepoPath: "other/tool", PlatformExternalID: "repo-tool"},
+		{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", PlatformRepoID: 1001},
+		{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "other", Name: "tool", RepoPath: "other/tool", PlatformRepoID: 1002},
 	}
 	for _, ref := range refs {
-		_, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(platform.RepoRef{
+		_, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
 			Platform: ref.Platform, Host: ref.PlatformHost, Owner: ref.Owner, Name: ref.Name,
-			RepoPath: ref.RepoPath, PlatformExternalID: ref.PlatformExternalID,
+			RepoPath: ref.RepoPath, PlatformID: ref.PlatformRepoID,
 		}))
 		require.NoError(err)
 	}

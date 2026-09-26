@@ -819,7 +819,7 @@ func (s *Server) resolveReposForReload(
 		kind := platform.Kind(raw.PlatformOrDefault())
 		if _, err := s.syncer.RepositoryReader(kind, host); err != nil {
 			for _, repo := range ghclient.FallbackConfiguredRepoRefs(previous, raw) {
-				if repo.PlatformExternalID != "" || slices.Contains(previous, repo) {
+				if repo.PlatformRepoID != 0 || slices.Contains(previous, repo) {
 					set.Add(repo, false)
 				}
 			}
@@ -870,4 +870,30 @@ func sanitizeConfigError(err error, cfgPath string) string {
 		msg = strings.ReplaceAll(msg, cfgPath, "config.toml")
 	}
 	return tokenauth.RedactKnownSecrets(msg)
+}
+
+// InitializeProviderRepositories discovers the current configuration after HTTP
+// readiness. Serialize with reloads and repository mutation handlers so startup
+// cannot restore an older repo set.
+func (s *Server) InitializeProviderRepositories(
+	ctx context.Context,
+	resolve func(context.Context, *config.Config) []ghclient.RepoRef,
+) error {
+	s.configReloadMu.Lock()
+	defer s.configReloadMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.cfgMu.Lock()
+	if s.cfg == nil || s.syncer == nil {
+		s.cfgMu.Unlock()
+		return nil
+	}
+	cfg := cloneReloadedConfig(s.cfg)
+	s.cfgMu.Unlock()
+	repos := resolve(ctx, &cfg)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.syncer.SetReposWithContext(ctx, repos, false)
 }

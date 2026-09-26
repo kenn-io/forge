@@ -89,7 +89,7 @@ func attachPtyOwnerSession(
 	})
 	if err != nil {
 		return nil, fmt.Errorf(
-			"%w: %q: %v",
+			"%w: %q: %w",
 			ErrSessionUnavailable, info.Key, err,
 		)
 	}

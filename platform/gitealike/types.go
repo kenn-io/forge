@@ -14,6 +14,7 @@ const defaultPageSize = 100
 
 type Transport interface {
 	GetRepository(ctx context.Context, owner, repo string) (RepositoryDTO, error)
+	GetRepositoryByID(ctx context.Context, id int64) (RepositoryDTO, error)
 	ListUserRepositories(ctx context.Context, owner string, opts PageOptions) ([]RepositoryDTO, Page, error)
 	ListOrgRepositories(ctx context.Context, owner string, opts PageOptions) ([]RepositoryDTO, Page, error)
 	ListOpenPullRequests(ctx context.Context, ref platform.RepoRef, opts PageOptions) ([]PullRequestDTO, Page, error)
@@ -357,15 +358,15 @@ func mapTransportError(kind platform.Kind, host string, err error) error {
 	if err == nil {
 		return nil
 	}
-	var httpErr *HTTPError
-	if !errors.As(err, &httpErr) {
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok {
 		return err
 	}
 	var code platform.PlatformErrorCode
 	switch httpErr.StatusCode {
-	case 401, 403:
+	case http.StatusUnauthorized, http.StatusForbidden:
 		code = platform.ErrCodePermissionDenied
-	case 404:
+	case http.StatusNotFound:
 		code = platform.ErrCodeNotFound
 	case http.StatusTooManyRequests:
 		code = platform.ErrCodeRateLimited

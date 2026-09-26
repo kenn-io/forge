@@ -79,7 +79,7 @@ func TestAutomaticSquashRejectsRangeBeforeHunks(t *testing.T) {
 	f.base = f.repo.CommitFile("repeat", "same\nsame\n", "repeated lines")
 	f.repo.Checkout("-b", "source")
 	f.source = []string{f.repo.CommitFile("repeat", "same\n", "remove occurrence")}
-	require.NoError(os.WriteFile(filepath.Join(f.repo.Root, "repeat"), []byte("same\nsame\n"), 0600))
+	require.NoError(os.WriteFile(filepath.Join(f.repo.Root, "repeat"), []byte("same\nsame\n"), 0o600))
 	f.repo.Run("add", "repeat")
 	f.source = append(f.source, f.repo.CommitFile("extra", "extra\n", "restore and add"))
 	f.repo.Checkout("-b", "target", f.base)

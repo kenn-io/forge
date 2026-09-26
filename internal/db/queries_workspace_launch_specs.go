@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/platform"
 )
 
 func canonicalWorkspaceLaunchSpec(spec WorkspaceLaunchSpec) WorkspaceLaunchSpec {
@@ -30,7 +32,7 @@ func marshalWorkspaceLaunchSpec(spec WorkspaceLaunchSpec) ([]byte, error) {
 
 func insertWorkspaceLaunchSpec(
 	ctx context.Context,
-	executor workspaceInsertExecutor,
+	executor execer,
 	workspaceID string,
 	spec WorkspaceLaunchSpec,
 ) error {
@@ -68,11 +70,10 @@ func (d *DB) validateWorkspaceLaunchSpecRepository(
 	if repo == nil ||
 		!strings.EqualFold(repo.Platform, spec.Repository.Provider) ||
 		!strings.EqualFold(repo.PlatformHost, spec.Repository.PlatformHost) ||
-		strings.TrimSpace(repo.PlatformRepoID) !=
-			strings.TrimSpace(spec.Repository.PlatformRepoID) {
+		repo.PlatformRepoID != spec.Repository.PlatformRepoID {
 		return fmt.Errorf(
 			"%w: workspace launch specification repository identity changed",
-			ErrRepositoryRouteFenceChanged,
+			ErrRepositoryIdentityChanged,
 		)
 	}
 	return nil
@@ -92,11 +93,6 @@ func (d *DB) CreateWorkspaceWithLaunchSpec(
 	if err := spec.ValidateWorkspace(*workspace); err != nil {
 		return err
 	}
-	release, err := d.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
 	prepared, err := d.prepareWorkspaceInsert(ctx, workspace)
 	if err != nil {
 		return err
@@ -132,11 +128,6 @@ func (d *DB) PutWorkspaceLaunchSpec(
 	workspaceID string,
 	spec WorkspaceLaunchSpec,
 ) error {
-	release, err := d.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
 	workspace, err := d.GetWorkspace(ctx, workspaceID)
 	if err != nil {
 		return err
@@ -160,14 +151,13 @@ func (d *DB) PutWorkspaceLaunchSpec(
 // Repository display routes are deliberately excluded because they can change.
 func (d *DB) GetWorkspaceByLaunchSpecIdentity(
 	ctx context.Context,
-	platform, platformHost, platformRepoID, itemType, itemKey string,
+	platform, platformHost string, platformRepoID int64, itemType, itemKey string,
 ) (*Workspace, error) {
 	platform = strings.ToLower(strings.TrimSpace(platform))
 	platformHost = strings.ToLower(strings.TrimSpace(platformHost))
-	platformRepoID = strings.TrimSpace(platformRepoID)
 	itemType = strings.TrimSpace(itemType)
 	itemKey = strings.TrimSpace(itemKey)
-	if platform == "" || platformHost == "" || platformRepoID == "" ||
+	if platform == "" || platformHost == "" || platformRepoID <= 0 ||
 		itemType == "" || itemKey == "" {
 		return nil, nil
 	}
@@ -198,42 +188,6 @@ func (d *DB) GetWorkspaceByLaunchSpecIdentity(
 	return workspace, nil
 }
 
-// ResolveUnambiguousHistoricalWorkspaceRepoID returns the stable identity for
-// a current or historical workspace route only when that route has belonged to
-// exactly one catalog repository. Reused routes remain unresolved.
-func (d *DB) ResolveUnambiguousHistoricalWorkspaceRepoID(
-	ctx context.Context, platform, platformHost, owner, name string,
-) (string, error) {
-	platform = strings.ToLower(strings.TrimSpace(platform))
-	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	var platformRepoID string
-	err := d.roQueryRowContext(ctx, `
-		SELECT r.platform_repo_id
-		FROM forge_repo_routes route
-		JOIN forge_repos r ON r.id = route.repo_id
-		WHERE route.platform = ?
-		  AND route.platform_host = ?
-		  AND route.repo_path_key = ?
-		  AND r.lifecycle_state = 'active'
-		  AND trim(r.platform_repo_id) <> ''
-		  AND NOT EXISTS (
-		      SELECT 1
-		      FROM forge_repo_routes other
-		      WHERE other.platform = route.platform
-		        AND other.platform_host = route.platform_host
-		        AND other.repo_path_key = route.repo_path_key
-		        AND other.repo_id <> route.repo_id
-		  )
-		LIMIT 1`, platform, platformHost, owner+"/"+name).Scan(&platformRepoID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("resolve historical workspace repository identity: %w", err)
-	}
-	return platformRepoID, nil
-}
-
 // PutRefreshedWorkspaceLaunchSpec persists refreshed provider facts and, when
 // the same stable repository has been renamed, moves the workspace route in
 // the same transaction. Route adoption is allowed only for the catalog's
@@ -243,12 +197,6 @@ func (d *DB) PutRefreshedWorkspaceLaunchSpec(
 	workspaceID string,
 	spec WorkspaceLaunchSpec,
 ) (*Workspace, error) {
-	release, err := d.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-
 	workspace, err := d.GetWorkspace(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -282,10 +230,10 @@ func (d *DB) PutRefreshedWorkspaceLaunchSpec(
 			!strings.EqualFold(current.Repository.PlatformHost, spec.Repository.PlatformHost) {
 			return nil, errors.New("refreshed workspace repository identity changed")
 		}
-		entry, lookupErr := d.GetRepositoryByProviderIDUnderRepositoryReconciliationRead(
-			ctx, spec.Repository.Provider, spec.Repository.PlatformHost,
-			spec.Repository.PlatformRepoID,
-		)
+		entry, lookupErr := d.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+			Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
+			PlatformRepoID: spec.Repository.PlatformRepoID,
+		})
 		if lookupErr != nil {
 			return nil, lookupErr
 		}
@@ -293,18 +241,6 @@ func (d *DB) PutRefreshedWorkspaceLaunchSpec(
 			!strings.EqualFold(entry.Repository.Owner, spec.Repository.Owner) ||
 			!strings.EqualFold(entry.Repository.Name, spec.Repository.Name) {
 			return nil, errors.New("refreshed workspace route is not the active repository route")
-		}
-		if workspace.RepoID == 0 {
-			collision, collisionErr := d.workspaceRouteHasHistoricalOccupants(
-				ctx, entry.Repository.Platform, entry.Repository.PlatformHost,
-				entry.Repository.RepoPathKey,
-			)
-			if collisionErr != nil {
-				return nil, collisionErr
-			}
-			if collision {
-				return nil, errors.New("refreshed workspace route has historical occupants")
-			}
 		}
 		workspace.Platform = entry.Repository.Platform
 		workspace.PlatformHost = entry.Repository.PlatformHost
@@ -477,16 +413,16 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 			reason = "launchSpecMismatch"
 		}
 		if reason != "" {
-			platformRepoID := ""
+			var platformRepoID int64
 			if spec != nil {
 				platformRepoID = spec.Repository.PlatformRepoID
-			} else {
-				platformRepoID, err = d.ResolveUnambiguousHistoricalWorkspaceRepoID(
-					ctx, workspace.Platform, workspace.PlatformHost,
-					workspace.RepoOwner, workspace.RepoName,
-				)
+			} else if workspace.RepoID != 0 {
+				repo, err := d.GetActiveRepoByID(ctx, workspace.RepoID)
 				if err != nil {
 					return nil, err
+				}
+				if repo != nil {
+					platformRepoID = repo.PlatformRepoID
 				}
 			}
 			unprepared = append(unprepared, UnpreparedWorkspace{

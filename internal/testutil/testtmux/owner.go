@@ -234,12 +234,12 @@ func publishOwnerState(
 }
 
 // Command registers a private socket before returning a tmux command prefix.
-func (o *Owner) Command(t testing.TB, tmuxPath string) []string {
-	t.Helper()
+func (o *Owner) Command(tb testing.TB, tmuxPath string) []string {
+	tb.Helper()
 	command, server, err := o.register(tmuxPath)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, o.release(server))
+	require.NoError(tb, err)
+	tb.Cleanup(func() {
+		require.NoError(tb, o.release(server))
 	})
 	return command
 }
@@ -791,28 +791,28 @@ func validateRunMarker(runDir string, identity processIdentity) error {
 
 func killSocketsIn(runDir string) error {
 	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
-		return nil
-	}
-	return filepath.WalkDir(runDir, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSocket == 0 {
+	if err == nil {
+		return filepath.WalkDir(runDir, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSocket == 0 {
+				return nil
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+			defer cancel()
+			_ = procutil.CommandContext(ctx, tmuxPath, "-S", path, "kill-server").Run()
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf("stop stale tmux test server %s: %w", path, ctx.Err())
+			}
 			return nil
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
-		defer cancel()
-		_ = procutil.CommandContext(ctx, tmuxPath, "-S", path, "kill-server").Run()
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("stop stale tmux test server %s: %w", path, ctx.Err())
-		}
-		return nil
-	})
+		})
+	}
+	return nil
 }
 
 func reapStaleProcesses(root string) error {

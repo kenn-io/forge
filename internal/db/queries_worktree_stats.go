@@ -35,7 +35,7 @@ func (d *DB) UpsertWorktreeStats(
 ) (changed bool, err error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return false, fmt.Errorf("worktree stats path is required")
+		return false, errors.New("worktree stats path is required")
 	}
 	ts := canonicalUTCTime(now)
 	if ts.IsZero() {

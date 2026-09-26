@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
-	"go.kenn.io/forge/internal/apiclient"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +15,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
+	"go.kenn.io/forge/internal/apiclient"
 
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,9 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -745,20 +748,24 @@ func TestRepoConfigAPIE2EUpdatesUIVisibility(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	entry, _, err := database.ReconcileRepositoryObservation(
+	entry, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "repo-acme-widget",
+			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 			Owner:          "acme",
 			Name:           "widget",
-		}, time.Now().UTC(),
+		},
 	)
 	require.NoError(err)
 	require.NotNil(entry)
 
 	summaryNames := func() []string {
-		resp, err := ts.Client().Get(ts.URL + "/api/v1/repos/summary")
+		respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/repos/summary", nil)
+		require.NoError(err)
+		httpClient := ts.Client()
+		httpClient.Timeout = 5 * time.Second
+		resp, err := httpClient.Do(respReq)
 		require.NoError(err)
 		defer resp.Body.Close()
 		require.Equal(http.StatusOK, resp.StatusCode)
@@ -875,21 +882,20 @@ name = "widget"
 
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity(platformHost, "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(
-		t.Context(), identity,
+	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoID, err := reposeed.Seed(
+		t.Context(), database, identity,
 	)
 	require.NoError(err)
 	cloneURL := strings.TrimSpace(string(runSettingsGitOutput(
 		t, localRepo, "remote", "get-url", "origin",
 	)))
-	require.NoError(database.UpdateRepoProviderMetadata(
+	require.NoError(database.UpdateRepoProviderObservation(
 		t.Context(), repoID, db.RepoProviderMetadata{
-			PlatformRepoID: "repo-acme-widget",
-			WebURL:         strings.TrimSuffix(cloneURL, ".git"),
-			CloneURL:       cloneURL,
-			DefaultBranch:  "main",
-		},
+			WebURL:        strings.TrimSuffix(cloneURL, ".git"),
+			CloneURL:      cloneURL,
+			DefaultBranch: "main",
+		}, nil, nil,
 	))
 	seed(database, repoID)
 
@@ -898,7 +904,6 @@ name = "widget"
 		database, nil,
 		[]github.RepoRef{{
 			Owner: "acme", Name: "widget", PlatformHost: platformHost,
-			PlatformExternalID: "repo-acme-widget",
 		}},
 		time.Minute, nil, nil,
 	)
@@ -1059,7 +1064,7 @@ func TestWorkspaceAPIE2ERejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 	defer ts.Close()
 
 	for _, provider := range []string{"github", "gitlab"} {
-		repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+		repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 			Platform:     provider,
 			PlatformHost: "forge.example.com",
 			Owner:        "acme",

@@ -1,11 +1,12 @@
 package gitealike
 
 import (
-	"go.kenn.io/forge/platform"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/platform"
 )
 
 // RateFromHeaders returns provider rate state only when the response contains

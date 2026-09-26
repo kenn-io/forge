@@ -32,6 +32,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
@@ -248,7 +249,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	clones := gitclone.New(bareDir, nil)
 	bare, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		gitclone.WithRepositoryIdentity(t.Context(), testutil.FixtureRepoID("acme", "widget")),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(t, err)
@@ -303,7 +304,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	// The generated API client also points at this URL rather than
 	// the in-process roundtripper used elsewhere, because we cannot
 	// split HTTP and WebSocket transports per-request.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	serveErr := make(chan error, 1)
 	go func() {
@@ -1085,7 +1086,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	)
 	ctx := t.Context()
 	clonePath, err := srv.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, "repo-acme-widget"),
+		gitclone.WithRepositoryIdentity(ctx, testutil.FixtureRepoID("acme", "widget")),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)

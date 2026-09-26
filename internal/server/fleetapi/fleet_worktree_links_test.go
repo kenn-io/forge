@@ -14,6 +14,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 // fakeWatchedMRSetter records every watched-MR set the recompute applies so
@@ -29,8 +30,8 @@ func (f *fakeWatchedMRSetter) SetWatchedMRs(mrs []ghclient.WatchedMR) {
 func seedActiveLinkRepo(t *testing.T, d *realdb.DB) int64 {
 	t.Helper()
 	identity := realdb.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "R_widget"
-	repoID, err := d.UpsertRepoByProviderID(t.Context(), identity)
+	identity.PlatformRepoID = 1001
+	repoID, err := reposeed.Seed(t.Context(), d, identity)
 	require.NoError(t, err)
 	return repoID
 }
@@ -230,7 +231,7 @@ func countLinkHints(hub *testEventHub) int {
 func TestRegisterWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
 	repoID := seedActiveLinkRepo(t, database)
@@ -270,7 +271,7 @@ func TestRegisterWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 func TestDeleteProjectWorktreeRecomputesBranchMatchLinks(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 
 	repoID := seedActiveLinkRepo(t, database)

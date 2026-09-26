@@ -275,7 +275,7 @@
   }
 
   :global(.mobile-main) .issue-item {
-    min-height: calc(var(--focus-mobile-hit-target, 37px) * 1.95);
+    min-height: var(--focus-mobile-hit-target, 44px);
     font-size: var(--font-size-md);
     padding: var(--focus-mobile-space-sm, 10px) var(--focus-mobile-space-md, 13px);
     border-bottom: thin solid var(--border-muted);

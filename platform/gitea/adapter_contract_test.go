@@ -27,6 +27,7 @@ func TestGiteaLikeAdapterContract(t *testing.T) {
 			token string,
 			options gitealiketest.ClientOptions,
 		) gitealiketest.TestClient {
+			t.Helper()
 			clientOptions := []ClientOption{
 				WithTransport(http.DefaultTransport), WithBaseURL(baseURL, true),
 				WithServerVersion(testGiteaServerVersion),

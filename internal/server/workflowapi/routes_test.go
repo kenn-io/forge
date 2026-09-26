@@ -20,6 +20,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -50,6 +51,7 @@ func (p *workflowTestProvider) Capabilities() platform.Capabilities { return p.c
 func (p *workflowTestProvider) AuthenticatedUser(context.Context, platform.RepoRef) (string, error) {
 	return p.authenticatedUser, nil
 }
+
 func (p *workflowTestProvider) ListManualWorkflows(context.Context, platform.RepoRef) ([]platform.WorkflowDefinition, error) {
 	p.catalogCalls++
 	if p.onCatalog != nil {
@@ -57,10 +59,12 @@ func (p *workflowTestProvider) ListManualWorkflows(context.Context, platform.Rep
 	}
 	return p.catalog, p.catalogErr
 }
+
 func (p *workflowTestProvider) ListWorkflowEnvironments(context.Context, platform.RepoRef) ([]platform.WorkflowEnvironment, error) {
 	p.environmentCalls++
 	return p.environments, nil
 }
+
 func (p *workflowTestProvider) ListWorkflowRuns(_ context.Context, _ platform.RepoRef, query platform.WorkflowRunQuery) (platform.Page[platform.WorkflowRun], error) {
 	p.runQueries = append(p.runQueries, query)
 	if query.PerPage != 20 || query.Cursor != "cursor-1" || query.WorkflowID != "release.yml" || query.Event != "workflow_dispatch" || query.Branch != "main" {
@@ -68,6 +72,7 @@ func (p *workflowTestProvider) ListWorkflowRuns(_ context.Context, _ platform.Re
 	}
 	return p.runs, p.runsErr
 }
+
 func (p *workflowTestProvider) GetWorkflowRun(_ context.Context, _ platform.RepoRef, runID string) (platform.WorkflowRun, error) {
 	p.runIDs = append(p.runIDs, runID)
 	if p.followRun != nil {
@@ -75,9 +80,11 @@ func (p *workflowTestProvider) GetWorkflowRun(_ context.Context, _ platform.Repo
 	}
 	return platform.WorkflowRun{}, platform.ErrNotFound
 }
+
 func (p *workflowTestProvider) ListWorkflowRunJobs(context.Context, platform.RepoRef, string) ([]platform.WorkflowRunJob, error) {
 	return p.jobs, p.jobsErr
 }
+
 func (p *workflowTestProvider) DispatchWorkflow(_ context.Context, _ platform.RepoRef, request platform.WorkflowDispatchRequest) (platform.WorkflowDispatchResult, error) {
 	p.dispatches = append(p.dispatches, request)
 	return p.dispatch, p.dispatchErr
@@ -110,13 +117,12 @@ func workflowFixtureWithRuntime(t *testing.T, provider *workflowTestProvider, op
 	t.Helper()
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity(platform.DefaultGitHubHost, "acme", "widget")
-	identity.PlatformRepoID = "R_widget"
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	identity.PlatformRepoID = 1001
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
-	require.NoError(t, database.UpdateRepoProviderMetadata(t.Context(), repoID, db.RepoProviderMetadata{
-		PlatformRepoID: "R_widget",
-		DefaultBranch:  "trunk",
-	}))
+	require.NoError(t, database.UpdateRepoProviderObservation(t.Context(), repoID, db.RepoProviderMetadata{
+		DefaultBranch: "trunk",
+	}, nil, nil))
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(t, err)
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
@@ -152,7 +158,7 @@ func workflowRequest(t *testing.T, mux http.Handler, method, path string, body a
 	if body != nil {
 		require.NoError(t, json.NewEncoder(&payload).Encode(body))
 	}
-	req := httptest.NewRequest(method, "/api/v1"+path, &payload)
+	req := httptest.NewRequestWithContext(t.Context(), method, "/api/v1"+path, &payload)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -206,7 +212,7 @@ func TestWorkflowCatalogRoutesUseStableRepositoryIdentity(t *testing.T) {
 		status, body := workflowRequest(t, mux, http.MethodGet, path, nil)
 		require.Equal(http.StatusOK, status)
 		repo := body["repo"].(map[string]any)
-		assert.Equal("R_widget", repo["platform_repo_id"])
+		assert.InDelta(float64(1001), repo["platform_repo_id"], 0)
 		assert.Equal("acme/widget", repo["repo_path"])
 		assert.Equal("trunk", repo["default_branch"])
 		assert.Equal(true, repo["operations"].(map[string]any)["dispatch_workflow"].(map[string]any)["available"])
@@ -423,21 +429,6 @@ func TestWorkflowRoutesRejectUnsupportedAndMalformedIdentifiers(t *testing.T) {
 	assert.Equal("path.workflow_id", body["details"].(map[string]any)["field"])
 }
 
-func TestWorkflowCatalogFailsClosedWhenRouteIdentityChanges(t *testing.T) {
-	provider := &workflowTestProvider{caps: platform.Capabilities{ReadWorkflows: true}, catalog: []platform.WorkflowDefinition{workflowDefinitionFixture()}}
-	mux, database := workflowFixture(t, provider, httpapi.OperationAvailability{})
-	provider.onCatalog = func() {
-		now := time.Now().UTC()
-		_, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_widget", Owner: "acme", Name: "renamed"}, now)
-		require.NoError(t, err)
-		_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_replacement", Owner: "acme", Name: "widget"}, now.Add(time.Second))
-		require.NoError(t, err)
-	}
-	status, body := workflowRequest(t, mux, http.MethodGet, "/actions/github/acme/widget/workflows", nil)
-	assert.Equal(t, http.StatusNotFound, status)
-	assert.Equal(t, "repoNotFound", body["code"])
-}
-
 func TestWorkflowDispatchValidatesLiveDefinitionBeforeMutation(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -568,6 +559,7 @@ func TestWorkflowDispatchEnforcesInputLimitsAndOperationGate(t *testing.T) {
 	assert.Equal("rateLimited", body["code"])
 	assert.Empty(provider.dispatches)
 }
+
 func TestWorkflowDispatchMapsWriteCredentialAvailabilityToForbidden(t *testing.T) {
 	for _, reason := range []string{"missing_write_credential", "write_credential_error"} {
 		t.Run(reason, func(t *testing.T) {
@@ -680,7 +672,7 @@ func TestWorkflowDispatchFollowThroughWatchesReturnedRunID(t *testing.T) {
 			require.Len(t, events, 3)
 			for _, event := range events {
 				assert.Equal(body["dispatch_id"], event.DispatchID)
-				assert.Equal("R_widget", event.PlatformRepoID)
+				assert.Equal(int64(1001), event.PlatformRepoID)
 				require.NotNil(t, event.Run)
 				assert.Equal("scheduled-run", event.Run.ID)
 			}
@@ -724,14 +716,14 @@ func TestWorkflowDispatchFollowThroughProviderOutage(t *testing.T) {
 				}}
 				handler := New(Deps{Runtime: &workflowTestRuntime{}})
 				handler.followDispatch(ctx, dispatchFollow{
-					repo:   db.Repo{PlatformRepoID: "R_widget"},
+					repo:   db.Repo{PlatformRepoID: 1001},
 					reader: provider, result: platform.WorkflowDispatchResult{Run: &run}, dispatchID: "dispatch-1",
 				})
 				events := publishedDispatchEvents(handler)
 				statuses := make([]string, 0, len(events))
 				for _, event := range events {
 					statuses = append(statuses, event.Status)
-					assert.Equal("R_widget", event.PlatformRepoID)
+					assert.Equal(int64(1001), event.PlatformRepoID)
 				}
 				assert.Equal(test.wantStatuses, statuses)
 				require.NotEmpty(t, events)
@@ -763,7 +755,7 @@ func TestWorkflowDispatchFollowThroughReportsUnresolvedRun(t *testing.T) {
 	events := publishedDispatchEvents(handler)
 	require.Len(events, 1)
 	assert.Equal("unresolved", events[0].Status)
-	assert.Equal("R_widget", events[0].PlatformRepoID)
+	assert.Equal(int64(1001), events[0].PlatformRepoID)
 	assert.Equal(body["dispatch_id"], events[0].DispatchID)
 	assert.Nil(events[0].Run)
 	assert.Empty(provider.runQueries, "a missing run ID must not trigger a search")

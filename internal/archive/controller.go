@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go.kenn.io/forge/internal/archive/report"
+	"go.kenn.io/forge/internal/archive/snapshot"
 	"go.kenn.io/forge/platform"
 )
 
@@ -14,4 +15,5 @@ type Controller interface {
 	PauseAll(context.Context) ([]Status, error)
 	Status(context.Context, []platform.RepoRef) ([]Status, error)
 	Report(context.Context, ReportOptions) (report.Model, error)
+	Snapshot(context.Context, SnapshotOptions) (snapshot.ArchiveSnapshot, error)
 }

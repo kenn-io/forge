@@ -120,7 +120,7 @@ func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *test
 	)
 	handler.Register(api)
 	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, httptest.NewRequest(
+	mux.ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet, "/api/v1/workspaces/"+workspaceID+"/agent-sessions", nil,
 	))
 	require.Equal(http.StatusOK, recorder.Code, recorder.Body.String())

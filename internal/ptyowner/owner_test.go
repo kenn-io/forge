@@ -469,7 +469,7 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 	paths, err := NewSessionPaths(root, "kenn-forge-stale")
 	require.NoError(err)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 	addr := listener.Addr().String()
 	t.Cleanup(func() { _ = listener.Close() })
@@ -601,7 +601,7 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 	paths, err := NewSessionPaths(root, "kenn-forge-silent-owner")
 	require.NoError(err)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 	defer listener.Close()
 	accepted := make(chan net.Conn, 1)
@@ -618,7 +618,7 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 		Cwd:     t.TempDir(),
 	}))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 50*time.Millisecond)
 	defer cancel()
 	err = (&Client{Root: root}).Ping(ctx, "kenn-forge-silent-owner")
 
@@ -862,7 +862,7 @@ func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
 		require.NoError(createPrivateSocketDir(paths.SocketDir))
 	}
 
-	listener, err := net.Listen("unix", paths.Socket)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", paths.Socket)
 	require.NoError(err)
 	defer listener.Close()
 

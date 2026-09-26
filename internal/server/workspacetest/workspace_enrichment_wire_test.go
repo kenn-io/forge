@@ -1,7 +1,6 @@
 package workspacetest
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -32,7 +31,7 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 			return time.Unix(0, clockNow.Load()).UTC()
 		},
 	})
-	ws := createReadyWorkspace(t, context.Background(), fixture.client)
+	ws := createReadyWorkspace(t, t.Context(), fixture.client)
 	workspaceByID := func() *generated.WorkspaceResponse {
 		resp, err := fixture.client.HTTP.ListWorkspacesWithResponse(t.Context())
 		if err != nil || resp.JSON200 == nil || resp.JSON200.Workspaces == nil {

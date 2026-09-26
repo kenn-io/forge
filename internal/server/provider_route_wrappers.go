@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
@@ -179,7 +181,7 @@ func (s *Server) federationSetWorkflowState(
 }
 
 func federationWorkflowProblem(err error) error {
-	backendErr, ok := err.(*mcpserver.Error)
+	backendErr, ok := errors.AsType[*mcpserver.Error](err)
 	if !ok {
 		return httpapi.Internal(err.Error())
 	}

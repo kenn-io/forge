@@ -3,6 +3,7 @@
 package testtmux
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -23,7 +24,7 @@ func processStart(pid int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	closingName := strings.LastIndexByte(string(content), ')')
+	closingName := bytes.LastIndexByte(content, ')')
 	if closingName < 0 {
 		return "", errors.New("process stat has no command terminator")
 	}

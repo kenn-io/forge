@@ -30,6 +30,7 @@ func (p Progress) recordPage(records int, more bool) {
 		p.Page(records, more)
 	}
 }
+
 func (p Progress) done() {
 	if p.Done != nil {
 		p.Done()
@@ -51,10 +52,13 @@ type ClientConfig struct {
 	GraphQLRate, WriteGraphQLRate         platform.RateObserver
 	ViewerCacheTTL                        time.Duration
 	ReadOnlyContext                       func(context.Context) bool
-	GraphQLContext                        func(context.Context) context.Context
-	InvalidateETags                       func(string, string, ...string)
-	Progress                              func(owner, repository, kind string) Progress
-	Warning                               func(string, ...any)
+	// OwnerContext names the repository owner for requests whose path carries
+	// none, such as reads by repository ID, so owner-scoped credentials apply.
+	OwnerContext    func(ctx context.Context, owner string) context.Context
+	GraphQLContext  func(context.Context) context.Context
+	InvalidateETags func(string, string, ...string)
+	Progress        func(owner, repository, kind string) Progress
+	Warning         func(string, ...any)
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -63,8 +67,10 @@ func NewClient(config ClientConfig) (*Client, error) {
 		host = platform.DefaultGitHubHost
 	}
 	if config.Read == nil || config.Write == nil || config.Notifications == nil || config.Clock == nil {
-		return nil, &platform.Error{Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub,
-			PlatformHost: host, Err: errors.New("read, write and notification clients and a clock are required")}
+		return nil, &platform.Error{
+			Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub,
+			PlatformHost: host, Err: errors.New("read, write and notification clients and a clock are required"),
+		}
 	}
 	base, uploads, graphQL := config.APIBase, config.UploadBase, config.GraphQLEndpoint
 	if base == "" {
@@ -115,6 +121,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		rateTracker: config.ReadRate, writeRateTracker: config.WriteRate, notificationRateTracker: config.NotificationRate,
 		graphQLRateTracker: config.GraphQLRate, writeGraphQLRateTracker: config.WriteGraphQLRate,
 		viewerCacheTTL: config.ViewerCacheTTL, readOnlyContext: config.ReadOnlyContext,
+		ownerContext:   config.OwnerContext,
 		graphQLContext: graphQLContext, invalidateETags: config.InvalidateETags,
 		progressFactory: config.Progress, warning: config.Warning,
 	}, nil
@@ -126,12 +133,14 @@ func (c *Client) authContext(ctx context.Context, owner string, mutation bool) c
 	}
 	return ctx
 }
+
 func (c *Client) progress(owner, repo, kind string) Progress {
 	if c.progressFactory != nil {
 		return c.progressFactory(owner, repo, kind)
 	}
 	return Progress{}
 }
+
 func (c *Client) warn(message string, args ...any) {
 	if c.warning != nil {
 		c.warning(message, args...)
@@ -145,6 +154,7 @@ type unconditionalReadKey struct{}
 func WithUnconditionalRead(ctx context.Context) context.Context {
 	return context.WithValue(ctx, unconditionalReadKey{}, true)
 }
+
 func UnconditionalRead(ctx context.Context) bool {
 	value, _ := ctx.Value(unconditionalReadKey{}).(bool)
 	return value

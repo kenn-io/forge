@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestAPIClientConstruction(t *testing.T) {
@@ -94,7 +95,7 @@ func TestAPIListRepos(t *testing.T) {
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := client.HTTP.ListReposWithResponse(t.Context())
@@ -176,7 +177,7 @@ func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/openapi.json", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -339,7 +340,7 @@ func TestAPIGetMRImportMetadata(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -365,7 +366,7 @@ func TestAPIGetMRImportMetadata(t *testing.T) {
 	require.NoError(err)
 	require.NoError(database.EnsureKanbanState(ctx, prID))
 
-	req := httptest.NewRequest(http.MethodGet,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 		"/api/v1/pulls/gh/acme/widget/42/import-metadata", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -384,7 +385,7 @@ func TestAPIGetMRImportMetadata(t *testing.T) {
 func TestAPIGetMRImportMetadataNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 		"/api/v1/pulls/gh/acme/widget/999/import-metadata", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -396,7 +397,7 @@ func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/openapi.json", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -445,10 +446,10 @@ func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	host := "gitlab.example.test:8443"
 	repoPath := "Team One/Sub Team/project+#1"
 	number := int64(7)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       provider,
 		PlatformHost:   host,
-		PlatformRepoID: "gid://gitlab/Project/7000",
+		PlatformRepoID: 7000,
 		Owner:          "Team One/Sub Team",
 		Name:           "project+#1",
 		RepoPath:       repoPath,
@@ -468,7 +469,7 @@ func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	})
 	require.NoError(err)
 
-	resp, err := client.HTTP.GetIssueOnHostWithResponse(ctx, &generated.GetIssueOnHostRequestOptions{PathParams: &generated.GetIssueOnHostPath{PlatformHost: host, Provider: provider, Owner: "Team One/Sub Team", Name: "project+#1", Number: int64(number)}})
+	resp, err := client.HTTP.GetIssueOnHostWithResponse(ctx, &generated.GetIssueOnHostRequestOptions{PathParams: &generated.GetIssueOnHostPath{PlatformHost: host, Provider: provider, Owner: "Team One/Sub Team", Name: "project+#1", Number: number}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON200)
@@ -488,10 +489,10 @@ func TestProviderIssueRouteHandlesNestedGitLabRepoPathOverHTTP(t *testing.T) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "git.example.com",
-		PlatformRepoID: "gid://gitlab/Project/7007",
+		PlatformRepoID: 7007,
 		Owner:          "group/subgroup",
 		Name:           "project",
 		RepoPath:       "group/subgroup/project",
@@ -511,7 +512,7 @@ func TestProviderIssueRouteHandlesNestedGitLabRepoPathOverHTTP(t *testing.T) {
 	})
 	require.NoError(err)
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/api/v1/host/git.example.com/issues/gitlab/group%2Fsubgroup/project/7",
 		nil,
@@ -548,7 +549,7 @@ func TestMRListEmptyLinksWhenNone(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -641,7 +642,7 @@ func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {
 
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -664,7 +665,7 @@ func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {
 	require.NoError(err)
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, "diff-head", "diff-base", "merge-base"))
 
-	req := httptest.NewRequest(http.MethodGet,
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 		"/api/v1/pulls/gh/acme/widget/1", nil)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)

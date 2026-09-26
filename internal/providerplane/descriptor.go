@@ -4,14 +4,16 @@
 package providerplane
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	gitremote "go.kenn.io/kit/git/remote"
+
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/platform"
-	gitremote "go.kenn.io/kit/git/remote"
 )
 
 // ProtocolVersionHeader carries the exact federation protocol version on
@@ -30,7 +32,7 @@ type Hub struct {
 }
 
 // RepositoryRoute identifies a repository by its current provider route.
-// Unlike RepositoryIdentity, it is suitable for requests whose caller does
+// Unlike platform.RepositoryIdentity, it is suitable for requests whose caller does
 // not yet know the provider's stable repository ID.
 type RepositoryRoute struct {
 	Provider     string `json:"provider"`
@@ -48,7 +50,7 @@ func CanonicalRepositoryRoute(route RepositoryRoute) (RepositoryRoute, error) {
 	}
 	host, ok := platform.HostOrDefault(kind, route.PlatformHost)
 	if !ok {
-		return RepositoryRoute{}, fmt.Errorf("platform host is required")
+		return RepositoryRoute{}, errors.New("platform host is required")
 	}
 	route.Provider = string(kind)
 	route.PlatformHost = strings.ToLower(strings.TrimSpace(host))
@@ -82,49 +84,46 @@ func (r RepositoryRoute) Validate() error {
 // RepositorySnapshot is the hub-owned input used to construct one
 // repository descriptor from a stable database snapshot.
 type RepositorySnapshot struct {
-	Provider         string
-	PlatformHost     string
-	PlatformRepoID   string
-	Owner            string
-	Name             string
-	CloneURL         string
-	DefaultBranch    string
-	SnapshotRevision uint64
-	ObservedAt       time.Time
-	Stale            bool
+	Provider       string
+	PlatformHost   string
+	PlatformRepoID int64
+	Owner          string
+	Name           string
+	CloneURL       string
+	DefaultBranch  string
+	ObservedAt     time.Time
+	Stale          bool
 }
 
 // RepositoryDescriptor carries only provider-verified facts a spoke needs to
 // reconcile a repository and perform Git work locally.
 type RepositoryDescriptor struct {
-	ProtocolVersion  int       `json:"protocol_version"`
-	Provider         string    `json:"provider"`
-	PlatformHost     string    `json:"platform_host"`
-	PlatformRepoID   string    `json:"platform_repo_id"`
-	Owner            string    `json:"owner"`
-	Name             string    `json:"name"`
-	CloneURL         string    `json:"clone_url"`
-	DefaultBranch    string    `json:"default_branch"`
-	SnapshotRevision uint64    `json:"snapshot_revision"`
-	ObservedAt       time.Time `json:"observed_at"`
-	Stale            bool      `json:"stale"`
+	ProtocolVersion int       `json:"protocol_version"`
+	Provider        string    `json:"provider"`
+	PlatformHost    string    `json:"platform_host"`
+	PlatformRepoID  int64     `json:"platform_repo_id"`
+	Owner           string    `json:"owner"`
+	Name            string    `json:"name"`
+	CloneURL        string    `json:"clone_url"`
+	DefaultBranch   string    `json:"default_branch"`
+	ObservedAt      time.Time `json:"observed_at"`
+	Stale           bool      `json:"stale"`
 }
 
 // BuildRepositoryDescriptor constructs and validates the wire value at the
 // hub boundary.
 func BuildRepositoryDescriptor(snapshot RepositorySnapshot) (RepositoryDescriptor, error) {
 	descriptor := RepositoryDescriptor{
-		ProtocolVersion:  federation.ProtocolVersion,
-		Provider:         snapshot.Provider,
-		PlatformHost:     snapshot.PlatformHost,
-		PlatformRepoID:   snapshot.PlatformRepoID,
-		Owner:            snapshot.Owner,
-		Name:             snapshot.Name,
-		CloneURL:         snapshot.CloneURL,
-		DefaultBranch:    snapshot.DefaultBranch,
-		SnapshotRevision: snapshot.SnapshotRevision,
-		ObservedAt:       snapshot.ObservedAt.UTC(),
-		Stale:            snapshot.Stale,
+		ProtocolVersion: federation.ProtocolVersion,
+		Provider:        snapshot.Provider,
+		PlatformHost:    snapshot.PlatformHost,
+		PlatformRepoID:  snapshot.PlatformRepoID,
+		Owner:           snapshot.Owner,
+		Name:            snapshot.Name,
+		CloneURL:        snapshot.CloneURL,
+		DefaultBranch:   snapshot.DefaultBranch,
+		ObservedAt:      snapshot.ObservedAt.UTC(),
+		Stale:           snapshot.Stale,
 	}
 	if err := descriptor.Validate(); err != nil {
 		return RepositoryDescriptor{}, err
@@ -141,8 +140,8 @@ func (d RepositoryDescriptor) Route() RepositoryRoute {
 }
 
 // Identity returns the descriptor's stable cross-spoke identity.
-func (d RepositoryDescriptor) Identity() RepositoryIdentity {
-	return RepositoryIdentity{
+func (d RepositoryDescriptor) Identity() platform.RepositoryIdentity {
+	return platform.RepositoryIdentity{
 		Provider: d.Provider, PlatformHost: d.PlatformHost,
 		PlatformRepoID: d.PlatformRepoID,
 	}
@@ -160,17 +159,16 @@ func (d RepositoryDescriptor) Validate() error {
 		return err
 	}
 	if !d.Identity().Valid() {
-		return fmt.Errorf("repository descriptor stable identity is required")
+		return errors.New("repository descriptor stable identity is required")
 	}
 	if d.Provider != strings.TrimSpace(d.Provider) ||
 		d.PlatformHost != strings.TrimSpace(d.PlatformHost) ||
-		d.PlatformRepoID != strings.TrimSpace(d.PlatformRepoID) ||
 		d.Owner != strings.TrimSpace(d.Owner) ||
 		d.Name != strings.TrimSpace(d.Name) {
-		return fmt.Errorf("repository descriptor identity must be canonical")
+		return errors.New("repository descriptor identity must be canonical")
 	}
 	if strings.TrimSpace(d.CloneURL) == "" || d.CloneURL != strings.TrimSpace(d.CloneURL) {
-		return fmt.Errorf("repository descriptor clone URL is required")
+		return errors.New("repository descriptor clone URL is required")
 	}
 	if err := validateFederationNetworkRemote(d.CloneURL); err != nil {
 		return fmt.Errorf("repository descriptor clone URL: %w", err)
@@ -182,13 +180,10 @@ func (d RepositoryDescriptor) Validate() error {
 	}
 	if strings.TrimSpace(d.DefaultBranch) == "" ||
 		d.DefaultBranch != strings.TrimSpace(d.DefaultBranch) {
-		return fmt.Errorf("repository descriptor default branch is required")
-	}
-	if d.SnapshotRevision == 0 {
-		return fmt.Errorf("repository descriptor snapshot revision is required")
+		return errors.New("repository descriptor default branch is required")
 	}
 	if d.ObservedAt.IsZero() || d.ObservedAt.Location() != time.UTC {
-		return fmt.Errorf("repository descriptor observed time must be UTC")
+		return errors.New("repository descriptor observed time must be UTC")
 	}
 	return nil
 }
@@ -202,7 +197,7 @@ func (d RepositoryDescriptor) ValidateRoute(route RepositoryRoute) error {
 		return err
 	}
 	if d.Route() != route {
-		return fmt.Errorf("repository descriptor does not match requested route")
+		return errors.New("repository descriptor does not match requested route")
 	}
 	return nil
 }
@@ -264,16 +259,16 @@ func BuildDiffDescriptor(snapshot DiffSnapshot) (DiffDescriptor, error) {
 func (d DiffDescriptor) Validate() error {
 	if d.ProtocolVersion != federation.ProtocolVersion ||
 		d.ProtocolVersion != d.Repository.ProtocolVersion {
-		return fmt.Errorf("diff descriptor protocol version mismatch")
+		return errors.New("diff descriptor protocol version mismatch")
 	}
 	if err := d.Repository.Validate(); err != nil {
 		return err
 	}
 	if d.PullNumber < 1 {
-		return fmt.Errorf("diff descriptor pull number is required")
+		return errors.New("diff descriptor pull number is required")
 	}
 	if d.SnapshotRevision == 0 {
-		return fmt.Errorf("diff descriptor snapshot revision is required")
+		return errors.New("diff descriptor snapshot revision is required")
 	}
 	for name, value := range map[string]string{
 		"platform head": d.PlatformHeadSHA,
@@ -307,7 +302,7 @@ func validateProviderHostPair(kind platform.Kind, host string) error {
 func (c Hub) validate() (Hub, error) {
 	c.NodeID = strings.TrimSpace(c.NodeID)
 	if !federation.ValidNodeID(c.NodeID) {
-		return Hub{}, fmt.Errorf("hub node ID is invalid")
+		return Hub{}, errors.New("hub node ID is invalid")
 	}
 	baseURL, err := federation.CanonicalOrigin(c.BaseURL)
 	if err != nil {
@@ -317,34 +312,11 @@ func (c Hub) validate() (Hub, error) {
 	return c, nil
 }
 
-// RepositoryIdentity is the stable cross-spoke key for provider repository
-// data. Local numeric database IDs are intentionally absent.
-type RepositoryIdentity struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
-}
-
-// Canonical returns the comparable cross-spoke form of a repository identity.
-// Provider repository IDs remain case-sensitive.
-func (r RepositoryIdentity) Canonical() RepositoryIdentity {
-	r.Provider = strings.ToLower(strings.TrimSpace(r.Provider))
-	r.PlatformHost = strings.ToLower(strings.TrimSpace(r.PlatformHost))
-	r.PlatformRepoID = strings.TrimSpace(r.PlatformRepoID)
-	return r
-}
-
-// Valid reports whether the stable cross-spoke identity is complete.
-func (r RepositoryIdentity) Valid() bool {
-	r = r.Canonical()
-	return r.Provider != "" && r.PlatformHost != "" && r.PlatformRepoID != ""
-}
-
 // ItemIdentity identifies one provider item without a spoke-local row ID.
 type ItemIdentity struct {
-	Repository RepositoryIdentity `json:"repository"`
-	ItemType   string             `json:"item_type"`
-	ItemNumber int                `json:"item_number"`
+	Repository platform.RepositoryIdentity `json:"repository"`
+	ItemType   string                      `json:"item_type"`
+	ItemNumber int                         `json:"item_number"`
 }
 
 // Canonical returns the comparable cross-spoke form of an item identity.

@@ -18,13 +18,14 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
 var defaultTestRepos = []ghclient.RepoRef{
 	{
 		Platform: "github", Owner: "acme", Name: "widget",
-		PlatformHost: "github.com", PlatformExternalID: "repo-acme-widget",
+		PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 	},
 }
 
@@ -38,7 +39,7 @@ func setupTestServer(t *testing.T) (*server.Server, *db.DB) {
 
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -61,7 +62,7 @@ func setupTestServerWithFixtureClient(
 
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -84,7 +85,7 @@ func setupTestClient(t *testing.T, srv *server.Server) *apiclient.Client {
 				body = strings.NewReader(string(payload))
 			}
 
-			serverReq := httptest.NewRequest(req.Method, req.URL.String(), body)
+			serverReq := httptest.NewRequestWithContext(t.Context(), req.Method, req.URL.String(), body)
 			serverReq.Header = req.Header.Clone()
 			if req.Method != http.MethodGet && serverReq.Header.Get("Content-Type") == "" {
 				serverReq.Header.Set("Content-Type", "application/json")
@@ -136,7 +137,7 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	numberText := strconv.Itoa(number)
@@ -193,7 +194,7 @@ func seedPROnHost(
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity(host, owner, name))
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -229,7 +230,7 @@ func seedPROnHost(
 func seedIssue(t *testing.T, database *db.DB, owner, name string, number int, state string) int64 {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -260,7 +261,7 @@ func seedIssueWithLabels(t *testing.T, database *db.DB, owner, name string, numb
 func seedIssueWithAssignees(t *testing.T, database *db.DB, owner, name string, number int, state string, assigneesJSON string) int64 {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", owner, name))
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -302,6 +303,6 @@ func markArchiveItemLifecycle(
 
 func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = "repo-" + owner + "-" + name
+	identity.PlatformRepoID = reposeed.SyntheticID(identity)
 	return identity
 }

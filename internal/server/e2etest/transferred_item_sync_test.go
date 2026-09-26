@@ -16,7 +16,9 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 // transferSyncMockGH overrides the issue read surface of the shared mockGH so
@@ -74,9 +76,9 @@ func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
 		},
 	}
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(err)
@@ -92,7 +94,6 @@ func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
 		map[string]ghclient.Client{"github.com": mock}, database, nil,
 		[]ghclient.RepoRef{{
 			Owner: "acme", Name: "widget", PlatformHost: "github.com",
-			PlatformExternalID: "repo-acme-widget",
 		}},
 		time.Minute, nil, nil,
 	)
@@ -128,7 +129,7 @@ func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
 	}
 
 	firstSync := triggerSync(nil)
-	issue, err := api.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	issue, err := api.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, issue.StatusCode, string(issue.Body))
 	require.NotNil(issue.JSON200)
@@ -195,7 +196,7 @@ func TestTransferredIssueObservableViaAPIE2E(t *testing.T) {
 	// Seed cycle: the issue is open in the source repo.
 	syncer.RunOnce(ctx)
 
-	seeded, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	seeded, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, seeded.StatusCode, string(seeded.Body))
 	require.NotNil(seeded.JSON200)
@@ -222,7 +223,7 @@ func TestTransferredIssueObservableViaAPIE2E(t *testing.T) {
 	syncer.RunOnce(ctx)
 
 	// (a) The source issue is served unchanged.
-	source, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	source, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, source.StatusCode, string(source.Body))
 	require.NotNil(source.JSON200)
@@ -245,7 +246,7 @@ func TestTransferredIssueObservableViaAPIE2E(t *testing.T) {
 		"the transferred item must surface as a failed repo sync cycle")
 
 	// (c) Nothing is served under the destination repository.
-	destination, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "newowner", Name: "newname", Number: int64(int64(issueNumber))}})
+	destination, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "newowner", Name: "newname", Number: int64(issueNumber)}})
 	require.Error(err)
 	require.NotNil(destination)
 	assert.Equal(

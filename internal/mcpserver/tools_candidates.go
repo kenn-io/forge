@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -74,7 +73,7 @@ type findCandidatesOutput struct {
 type candidateKey struct {
 	provider       string
 	platformHost   string
-	platformRepoID string
+	platformRepoID int64
 	repoPath       string
 	owner          string
 	name           string
@@ -85,7 +84,7 @@ type candidateKey struct {
 type candidateRepoKey struct {
 	provider       string
 	platformHost   string
-	platformRepoID string
+	platformRepoID int64
 	repoPath       string
 	owner          string
 	name           string
@@ -417,8 +416,7 @@ func (s *Server) enrichCandidateStack(ctx context.Context, cand *candidate) erro
 func (s *Server) stackForCandidate(ctx context.Context, item itemRef) (candidateStack, error) {
 	stack, err := s.backend.GetPullStack(ctx, itemIdentityFromRef(item))
 	if err != nil {
-		var backendErr *Error
-		if errors.As(err, &backendErr) && isStackAbsentError(backendErr) {
+		if backendErr, ok := errors.AsType[*Error](err); ok && isStackAbsentError(backendErr) {
 			return candidateStack{}, nil
 		}
 		return candidateStack{}, err
@@ -463,7 +461,7 @@ func workflowStateSet(values []string) (map[string]bool, error) {
 		case "new", "reviewing", "waiting", "awaiting_merge":
 			out[value] = true
 		default:
-			return nil, fmt.Errorf("workflow states must contain only new, reviewing, waiting, or awaiting_merge")
+			return nil, errors.New("workflow states must contain only new, reviewing, waiting, or awaiting_merge")
 		}
 	}
 	return out, nil

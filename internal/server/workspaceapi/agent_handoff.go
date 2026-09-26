@@ -142,8 +142,8 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 func postLaunchHandoffProblem(
 	err error, session localruntime.SessionInfo, status InitialMessageResult,
 ) error {
-	var problem *httpapi.ProblemError
-	if !errors.As(err, &problem) {
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	if !ok {
 		problem = httpapi.NewProblem(
 			http.StatusInternalServerError, httpapi.CodeInternalError, "submit initial message failed", nil,
 		)

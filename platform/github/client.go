@@ -33,23 +33,24 @@ type PullRequestReviewThread struct {
 }
 
 type PullRequestReviewThreadComment struct {
-	NodeID           string
-	DatabaseID       int64
-	ReviewDatabaseID int64
-	SubjectType      string
-	Body             string
-	AuthorLogin      string
-	Path             string
-	Line             int
-	OriginalLine     int
-	DiffHunk         string
-	URL              string
-	CommitID         string
-	OriginalCommitID string
-	IsMinimized      bool
-	MinimizedReason  string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	NodeID            string
+	DatabaseID        int64
+	ReviewDatabaseID  int64
+	SubjectType       string
+	Body              string
+	AuthorLogin       string
+	AuthorAssociation *string
+	Path              string
+	Line              int
+	OriginalLine      int
+	DiffHunk          string
+	URL               string
+	CommitID          string
+	OriginalCommitID  string
+	IsMinimized       bool
+	MinimizedReason   string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // EditPullRequestOpts holds optional fields for editing a pull request.
@@ -99,6 +100,7 @@ type Client struct {
 	now                     func() time.Time
 	viewerCacheTTL          time.Duration
 	readOnlyContext         func(context.Context) bool
+	ownerContext            func(context.Context, string) context.Context
 	graphQLContext          func(context.Context) context.Context
 	progressFactory         func(string, string, string) Progress
 	warning                 func(string, ...any)
@@ -166,7 +168,6 @@ func (c *Client) SetWriteGraphQLRateTracker(rateTracker platform.RateObserver) {
 // GitHub App installation token while writes use the user's own
 // credential (the mutation-marked chain skips the app candidate).
 func (c *Client) splitAuthActive() bool {
-
 	return c.auth.InstallationActive != nil && c.auth.InstallationActive("")
 }
 
@@ -178,7 +179,6 @@ func (c *Client) splitAuthActive() bool {
 // installation-token-only endpoints on this so a PAT-backed owner on a
 // host that also hosts another owner's app is not routed there.
 func (c *Client) splitAuthActiveForOwner(owner string) bool {
-
 	return c.auth.InstallationActive != nil && c.auth.InstallationActive(owner)
 }
 
@@ -368,7 +368,7 @@ func (c *Client) notificationItem(subjectType, apiURL, owner, repo string) (stri
 	}
 	segments := strings.Split(strings.TrimRight(apiURL, "/"), "/")
 	lastSegment := func(prefix string) (string, bool) {
-		for i := 0; i < len(segments)-1; i++ {
+		for i := range len(segments) - 1 {
 			if segments[i] == prefix {
 				return segments[i+1], true
 			}
@@ -735,6 +735,7 @@ mutation($pullRequestId: ID!) {
       locked
       body
       url
+      authorAssociation
       author {
         login
       }
@@ -792,6 +793,7 @@ query($threadID: ID!, $cursor: String) {
           diffHunk
           url
           author { login }
+          authorAssociation
           commit { oid }
           originalCommit { oid }
           pullRequestReview { databaseId }
@@ -820,17 +822,18 @@ type graphQLError struct {
 }
 
 type graphQLReviewThreadComment struct {
-	NodeID         string       `json:"id"`
-	DatabaseID     GraphQLInt64 `json:"databaseId"`
-	FullDatabaseID GraphQLInt64 `json:"fullDatabaseId"`
-	Body           string       `json:"body"`
-	Path           string       `json:"path"`
-	Line           int          `json:"line"`
-	OriginalLine   int          `json:"originalLine"`
-	SubjectType    string       `json:"subjectType"`
-	DiffHunk       string       `json:"diffHunk"`
-	URL            string       `json:"url"`
-	Author         *struct {
+	AuthorAssociation *string      `json:"authorAssociation"`
+	NodeID            string       `json:"id"`
+	DatabaseID        GraphQLInt64 `json:"databaseId"`
+	FullDatabaseID    GraphQLInt64 `json:"fullDatabaseId"`
+	Body              string       `json:"body"`
+	Path              string       `json:"path"`
+	Line              int          `json:"line"`
+	OriginalLine      int          `json:"originalLine"`
+	SubjectType       string       `json:"subjectType"`
+	DiffHunk          string       `json:"diffHunk"`
+	URL               string       `json:"url"`
+	Author            *struct {
 		Login string `json:"login"`
 	} `json:"author"`
 	Commit *struct {
@@ -1221,7 +1224,7 @@ func (c *Client) ListRepositoriesByOwner(
 	)
 	if userErr != nil {
 		return nil, fmt.Errorf(
-			"listing repositories for %s: org=%v user=%w",
+			"listing repositories for %s: org=%w user=%w",
 			owner, err, userErr,
 		)
 	}
@@ -1244,7 +1247,7 @@ func (c *Client) authenticatedLogin(ctx context.Context) (string, error) {
 	}
 	login := user.GetLogin()
 	if login == "" {
-		return "", fmt.Errorf("authenticated user login is empty")
+		return "", errors.New("authenticated user login is empty")
 	}
 	c.viewerLogin = login
 	c.viewerLoginAt = c.now()
@@ -1457,19 +1460,20 @@ func githubReviewThreadCommentFromGraphQL(
 	comment graphQLReviewThreadComment,
 ) PullRequestReviewThreadComment {
 	next := PullRequestReviewThreadComment{
-		NodeID:          comment.NodeID,
-		DatabaseID:      FirstPositiveInt64(int64(comment.FullDatabaseID), int64(comment.DatabaseID)),
-		SubjectType:     comment.SubjectType,
-		Body:            comment.Body,
-		Path:            comment.Path,
-		Line:            comment.Line,
-		OriginalLine:    comment.OriginalLine,
-		DiffHunk:        comment.DiffHunk,
-		URL:             comment.URL,
-		IsMinimized:     comment.IsMinimized,
-		MinimizedReason: comment.MinimizedReason,
-		CreatedAt:       comment.CreatedAt,
-		UpdatedAt:       comment.UpdatedAt,
+		NodeID:            comment.NodeID,
+		DatabaseID:        FirstPositiveInt64(int64(comment.FullDatabaseID), int64(comment.DatabaseID)),
+		SubjectType:       comment.SubjectType,
+		Body:              comment.Body,
+		AuthorAssociation: comment.AuthorAssociation,
+		Path:              comment.Path,
+		Line:              comment.Line,
+		OriginalLine:      comment.OriginalLine,
+		DiffHunk:          comment.DiffHunk,
+		URL:               comment.URL,
+		IsMinimized:       comment.IsMinimized,
+		MinimizedReason:   comment.MinimizedReason,
+		CreatedAt:         comment.CreatedAt,
+		UpdatedAt:         comment.UpdatedAt,
 	}
 	if comment.Author != nil {
 		next.AuthorLogin = comment.Author.Login
@@ -2056,8 +2060,7 @@ func (c *Client) DeleteIssueComment(
 	resp, err := c.writeGH().Issues.DeleteComment(ctx, owner, repo, commentID)
 	c.trackWriteRate(resp)
 	if err != nil {
-		var responseErr *gh.ErrorResponse
-		if errors.As(err, &responseErr) && responseErr.Response != nil && responseErr.Response.StatusCode == http.StatusNotFound {
+		if responseErr, ok := errors.AsType[*gh.ErrorResponse](err); ok && responseErr.Response != nil && responseErr.Response.StatusCode == http.StatusNotFound {
 			return &platform.Error{
 				Code:         platform.ErrCodeNotFound,
 				Provider:     platform.KindGitHub,
@@ -2102,6 +2105,30 @@ func (c *Client) GetRepository(
 	if err != nil {
 		return nil, fmt.Errorf("getting repository %s/%s: %w", owner, repo, err)
 	}
+	return c.withViewerOverlay(ctx, r)
+}
+
+// GetRepositoryByID reads a repository by its integer ID, so a renamed or
+// transferred repository resolves to its current route. owner, the last known
+// owner, only selects credentials; the ID alone decides the repository.
+func (c *Client) GetRepositoryByID(
+	ctx context.Context, owner string, id int64,
+) (*gh.Repository, error) {
+	if c.ownerContext != nil {
+		ctx = c.ownerContext(ctx, owner)
+	}
+	r, resp, err := c.gh.Repositories.GetByID(ctx, id)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, fmt.Errorf("getting repository %d: %w", id, err)
+	}
+	return c.withViewerOverlay(ctx, r)
+}
+
+func (c *Client) withViewerOverlay(
+	ctx context.Context, r *gh.Repository,
+) (*gh.Repository, error) {
+	owner, repo := r.GetOwner().GetLogin(), r.GetName()
 	if !c.splitAuthActive() {
 		return r, nil
 	}
@@ -2402,8 +2429,8 @@ func githubSuggestionLiveHeadRepoFullName(pr *gh.PullRequest) string {
 }
 
 func githubSuggestionHeadRepoUnavailable(err error) bool {
-	var ghErr *gh.ErrorResponse
-	if !errors.As(err, &ghErr) || ghErr.Response == nil {
+	ghErr, ok := errors.AsType[*gh.ErrorResponse](err)
+	if !ok || ghErr.Response == nil {
 		return false
 	}
 	switch ghErr.Response.StatusCode {
@@ -2676,15 +2703,14 @@ func applyReviewSuggestionEdits(
 	})
 	for i := 1; i < len(edits); i += 1 {
 		if edits[i].start <= edits[i-1].end {
-			return "", fmt.Errorf("suggestions contain overlapping line ranges")
+			return "", errors.New("suggestions contain overlapping line ranges")
 		}
 	}
 	for i := len(edits) - 1; i >= 0; i -= 1 {
 		edit := edits[i]
 		prefix := append([]string{}, lines[:edit.start-1]...)
-		next := append(prefix, edit.replacement...)
-		next = append(next, lines[edit.end:]...)
-		lines = next
+		prefix = append(prefix, edit.replacement...)
+		lines = append(prefix, lines[edit.end:]...)
 	}
 	return joinGitHubSuggestionContent(lines, newline, trailingNewline), nil
 }
@@ -2804,7 +2830,11 @@ func (c *Client) MarkPullRequestReadyForReview(
 		},
 	}
 	var idResult readyForReviewIDResponse
-	if _, err := postGraphQL(idPayload, &idResult); err != nil {
+	resp, err := postGraphQL(idPayload, &idResult)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
 		return nil, fmt.Errorf(
 			"marking %s/%s#%d ready for review: resolve pull request id: %w",
 			owner, repo, number, err,
@@ -2835,7 +2865,11 @@ func (c *Client) MarkPullRequestReadyForReview(
 		},
 	}
 	var mutationResult readyForReviewMutationResponse
-	if _, err := postGraphQL(mutationPayload, &mutationResult); err != nil {
+	resp, err = postGraphQL(mutationPayload, &mutationResult)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
 		return nil, fmt.Errorf(
 			"marking %s/%s#%d ready for review: %w",
 			owner, repo, number, err,
@@ -2934,7 +2968,11 @@ func (c *Client) ConvertPullRequestToDraft(
 		},
 	}
 	var idResult draftIDResponse
-	if _, err := postGraphQL(idPayload, &idResult); err != nil {
+	resp, err := postGraphQL(idPayload, &idResult)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
 		return nil, fmt.Errorf(
 			"converting %s/%s#%d to draft: resolve pull request id: %w",
 			owner, repo, number, err,
@@ -2965,7 +3003,11 @@ func (c *Client) ConvertPullRequestToDraft(
 		},
 	}
 	var mutationResult draftMutationResponse
-	if _, err := postGraphQL(mutationPayload, &mutationResult); err != nil {
+	resp, err = postGraphQL(mutationPayload, &mutationResult)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
 		return nil, fmt.Errorf(
 			"converting %s/%s#%d to draft: %w",
 			owner, repo, number, err,
@@ -3190,7 +3232,7 @@ func (c *Client) ListManualWorkflowRuns(
 			return platform.Page[*gh.WorkflowRun]{}, &platform.Error{
 				Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub,
 				PlatformHost: c.platformHost, Field: "cursor",
-				Err: fmt.Errorf("cursor must be a positive decimal GitHub page number"),
+				Err: errors.New("cursor must be a positive decimal GitHub page number"),
 			}
 		}
 		page = parsed

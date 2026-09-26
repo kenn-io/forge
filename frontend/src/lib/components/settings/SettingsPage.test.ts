@@ -1,11 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect, Layer } from "effect";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS, type Settings } from "../../api/types.js";
 import { makeStartupSnapshot } from "../../../test/startupSnapshot.js";
 
 const {
   loadSettings,
+  loadLocalSettings,
   setAirplaneMode,
   persistSettings,
   setDetailSettings,
@@ -14,6 +15,7 @@ const {
   setRepoPresets,
 } = vi.hoisted(() => ({
   loadSettings: vi.fn(),
+  loadLocalSettings: vi.fn(),
   setAirplaneMode: vi.fn(),
   persistSettings: vi.fn(),
   setDetailSettings: vi.fn(),
@@ -59,7 +61,10 @@ vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
   return {
     ...actual,
-    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({ persist: (request) => persistSettings(request) }),
+    SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
+      readLocal: Effect.suspend(() => loadLocalSettings()),
+      persist: (request) => persistSettings(request),
+    }),
   };
 });
 
@@ -117,9 +122,7 @@ function makeSettings(): Settings {
     repo_presets: [
       {
         name: "Review queue",
-        repos: [
-          { provider: "github", platform_host: "github.com", platform_repo_id: "R_widgets", repo_path: "acme/widgets" },
-        ],
+        repos: [{ provider: "github", platform_host: "github.com", platform_repo_id: 1102, repo_path: "acme/widgets" }],
       },
     ],
     launch_targets: [codexTarget],
@@ -128,9 +131,14 @@ function makeSettings(): Settings {
 }
 
 describe("SettingsPage", () => {
+  beforeEach(() => {
+    loadLocalSettings.mockReturnValue(Effect.fail(new Error("local settings unavailable")));
+  });
+
   afterEach(() => {
     cleanup();
     loadSettings.mockReset();
+    loadLocalSettings.mockReset();
     setAirplaneMode.mockReset();
     persistSettings.mockReset();
     setLaunchTargets.mockReset();
@@ -150,6 +158,43 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(setAirplaneMode).toHaveBeenLastCalledWith(true));
     expect(persistSettings.mock.calls[0]?.[0]()).toEqual({ airplane_mode: true });
     expect((screen.getByRole("switch", { name: "Airplane mode" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("keeps hub-owned spoke settings when an airplane mode save omits them", async () => {
+    const local = { ...makeSettings(), provider_settings_loaded: false };
+    local.fleet.role = "spoke";
+    const hub = { ...local, sync: { budget_per_hour: 2400 }, provider_settings_loaded: true };
+    loadLocalSettings.mockReturnValue(Effect.succeed(local));
+    loadSettings.mockReturnValue(Effect.succeed(hub));
+    persistSettings.mockReturnValue(Effect.succeed({ ...local, airplane_mode: true }));
+
+    render(SettingsRuntimeHarness, { props: { component: SettingsPage, componentProps: {} } });
+    await fireEvent.click(await screen.findByRole("button", { name: /^Sync/ }));
+    const budget = await screen.findByLabelText("Hourly sync budget");
+    await waitFor(() => expect((budget as HTMLInputElement).value).toBe("2400"));
+
+    await fireEvent.click(screen.getByRole("switch", { name: "Airplane mode" }));
+
+    await waitFor(() => expect(setAirplaneMode).toHaveBeenLastCalledWith(true));
+    expect((screen.getByLabelText("Hourly sync budget") as HTMLInputElement).value).toBe("2400");
+  });
+
+  it("keeps hub-owned panels unavailable when a spoke's settings lack the hub's values", async () => {
+    const local = { ...makeSettings(), provider_settings_loaded: false };
+    local.fleet.role = "spoke";
+    loadLocalSettings.mockReturnValue(Effect.succeed(local));
+    loadSettings.mockReturnValue(Effect.succeed(local));
+
+    render(SettingsRuntimeHarness, { props: { component: SettingsPage, componentProps: {} } });
+    await fireEvent.click(await screen.findByRole("button", { name: /^Sync/ }));
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Hub-owned settings are unavailable until this spoke is connected to its hub.").length,
+      ).toBeGreaterThan(0),
+    );
+    expect(screen.queryByLabelText("Hourly sync budget")).toBeNull();
+    expect(screen.getByRole("switch", { name: "Airplane mode" })).toBeTruthy();
   });
 
   it("keeps airplane mode off when saving fails", async () => {
@@ -244,5 +289,25 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Navigation")).toBeTruthy();
     expect(screen.getByText("System")).toBeTruthy();
     expect(screen.queryByText("Hub policy")).toBeNull();
+  });
+
+  it("shows local spoke settings while hub settings are unavailable", async () => {
+    const local = { ...makeSettings(), provider_settings_loaded: false };
+    local.fleet.role = "spoke";
+    loadLocalSettings.mockReturnValue(Effect.succeed(local));
+    loadSettings.mockReturnValue(
+      Effect.fail({
+        _tag: "TransientTransportError",
+        operation: "load hub settings",
+        cause: new Error("offline"),
+      }),
+    );
+
+    render(SettingsRuntimeHarness, { props: { component: SettingsPage, componentProps: {} } });
+
+    await screen.findByText("Providers");
+    await fireEvent.click(screen.getByRole("button", { name: /^Sync/ }));
+    expect(screen.getByRole("switch", { name: "Airplane mode" })).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText("Could not reach Kenn Forge").length).toBeGreaterThan(0));
   });
 });

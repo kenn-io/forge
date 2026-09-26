@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -27,7 +28,7 @@ func processExitCode(waitErr error) int {
 	if waitErr == nil {
 		return 0
 	}
-	if exit, ok := waitErr.(*exec.ExitError); ok {
+	if exit, ok := errors.AsType[*exec.ExitError](waitErr); ok {
 		return exit.ExitCode()
 	}
 	return -1

@@ -23,13 +23,13 @@ func ghUserReposCall(pageSize, page int) string {
 
 func decodeUserRepositories(
 	t *testing.T, ts *httptest.Server, path string,
-) (*http.Response, []byte) {
+) (int, []byte) {
 	t.Helper()
 	resp := httpDo(t, ts, http.MethodGet, path, nil)
 	defer resp.Body.Close()
 	var buf json.RawMessage
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&buf))
-	return resp, buf
+	return resp.StatusCode, buf
 }
 
 // TestListUserRepositories covers GET /api/v1/platform/user-repositories:
@@ -52,10 +52,10 @@ func TestListUserRepositories(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp, body := decodeUserRepositories(
+	status, body := decodeUserRepositories(
 		t, ts, "/api/v1/platform/user-repositories",
 	)
-	require.Equal(http.StatusOK, resp.StatusCode)
+	require.Equal(http.StatusOK, status)
 
 	var decoded struct {
 		Repositories []struct {
@@ -92,8 +92,8 @@ func TestListUserRepositoriesClampsLimit(t *testing.T) {
 		"/api/v1/platform/user-repositories?limit=5",
 		"/api/v1/platform/user-repositories?limit=5000",
 	} {
-		resp, _ := decodeUserRepositories(t, ts, path)
-		require.Equal(http.StatusOK, resp.StatusCode, path)
+		status, _ := decodeUserRepositories(t, ts, path)
+		require.Equal(http.StatusOK, status, path)
 	}
 	// per_page stays constant at 100 regardless of limit; small
 	// limits truncate after the fetch.
@@ -144,10 +144,10 @@ func TestListUserRepositoriesProblemCodes(t *testing.T) {
 			ts := httptest.NewServer(srv)
 			defer ts.Close()
 
-			resp, body := decodeUserRepositories(
+			status, body := decodeUserRepositories(
 				t, ts, "/api/v1/platform/user-repositories",
 			)
-			require.Equal(tc.wantStatus, resp.StatusCode)
+			require.Equal(tc.wantStatus, status)
 			var problem struct {
 				Code string `json:"code"`
 			}
@@ -171,10 +171,10 @@ func TestListUserRepositoriesRejectsUnimplementedProvider(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp, body := decodeUserRepositories(
+	status, body := decodeUserRepositories(
 		t, ts, "/api/v1/platform/user-repositories?provider=gitlab",
 	)
-	require.Equal(http.StatusConflict, resp.StatusCode)
+	require.Equal(http.StatusConflict, status)
 	var problem struct {
 		Code    string `json:"code"`
 		Details struct {
@@ -223,9 +223,9 @@ func TestListUserRepositoriesPaginatesAndTargetsHost(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp, body := decodeUserRepositories(t, ts,
+	status, body := decodeUserRepositories(t, ts,
 		"/api/v1/platform/user-repositories?limit=150&platform_host=ghe.example.com")
-	require.Equal(http.StatusOK, resp.StatusCode)
+	require.Equal(http.StatusOK, status)
 
 	var decoded struct {
 		Repositories []struct {
@@ -260,9 +260,9 @@ func TestListUserRepositoriesTruncatesMidPageLimit(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp, body := decodeUserRepositories(t, ts,
+	status, body := decodeUserRepositories(t, ts,
 		"/api/v1/platform/user-repositories?limit=150")
-	require.Equal(http.StatusOK, resp.StatusCode)
+	require.Equal(http.StatusOK, status)
 	var decoded struct {
 		Repositories []struct {
 			NameWithOwner string `json:"name_with_owner"`
@@ -297,9 +297,9 @@ func TestListUserRepositoriesUpstreamErrorCarriesHost(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	resp, body := decodeUserRepositories(t, ts,
+	status, body := decodeUserRepositories(t, ts,
 		"/api/v1/platform/user-repositories?platform_host=ghe.example.com")
-	require.Equal(http.StatusBadGateway, resp.StatusCode)
+	require.Equal(http.StatusBadGateway, status)
 	var problem struct {
 		Code    string `json:"code"`
 		Details struct {

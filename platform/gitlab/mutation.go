@@ -24,9 +24,9 @@ const gitlabHeadMismatchPhrase = "sha does not match head"
 // mismatch rejection. Any other 409 keeps the generic conflict mapping
 // so unrelated provider conflicts are not presented as staleness.
 func mapGitLabMutationError(platformHost, capability, expectedHeadSHA string, err error) error {
-	var gitlabErr *gitlab.ErrorResponse
+	gitlabErr, ok := errors.AsType[*gitlab.ErrorResponse](err)
 	if expectedHeadSHA != "" &&
-		errors.As(err, &gitlabErr) &&
+		ok &&
 		gitlabErr.HasStatusCode(http.StatusConflict) &&
 		strings.Contains(strings.ToLower(gitlabErr.Message), gitlabHeadMismatchPhrase) {
 		return &platform.Error{
@@ -45,7 +45,7 @@ var discussionIDPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 
 func validateDiscussionID(discussionID string) error {
 	if !discussionIDPattern.MatchString(discussionID) {
-		return fmt.Errorf("invalid discussion ID format: must be 40-character hex string")
+		return errors.New("invalid discussion ID format: must be 40-character hex string")
 	}
 	return nil
 }

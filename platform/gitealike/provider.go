@@ -128,7 +128,13 @@ func (p *Provider) GetRepository(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) (platform.Repository, error) {
-	repo, err := p.transport.GetRepository(ctx, ref.Owner, ref.Name)
+	var repo RepositoryDTO
+	var err error
+	if ref.PlatformID != 0 {
+		repo, err = p.transport.GetRepositoryByID(ctx, ref.PlatformID)
+	} else {
+		repo, err = p.transport.GetRepository(ctx, ref.Owner, ref.Name)
+	}
 	if err != nil {
 		return platform.Repository{}, p.mapError(err)
 	}
@@ -660,8 +666,8 @@ func (p *Provider) mergeRejectedForStaleHead(
 	if isHeadMismatchConflict(err) {
 		return true
 	}
-	var httpErr *HTTPError
-	if !errors.As(err, &httpErr) || httpErr == nil ||
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok || httpErr == nil ||
 		(httpErr.StatusCode != http.StatusConflict && httpErr.StatusCode != http.StatusMethodNotAllowed) {
 		return false
 	}
@@ -694,7 +700,7 @@ func (p *Provider) ApproveMergeRequest(
 	}
 	events := NormalizeMergeRequestEvents(p.kind, ref, number, nil, []ReviewDTO{review}, nil)
 	if len(events) == 0 {
-		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review event")
+		return platform.MergeRequestEvent{}, errors.New("provider returned no review event")
 	}
 	return events[0], nil
 }
@@ -945,8 +951,8 @@ var headMismatchPhrases = []string{
 // conflicts and out-of-date pushes, so the status alone is not enough:
 // only the head-mismatch messages classify as stale.
 func isHeadMismatchConflict(err error) bool {
-	var httpErr *HTTPError
-	if !errors.As(err, &httpErr) || httpErr == nil || httpErr.StatusCode != 409 {
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok || httpErr == nil || httpErr.StatusCode != http.StatusConflict {
 		return false
 	}
 	text := strings.ToLower(httpErr.Error())

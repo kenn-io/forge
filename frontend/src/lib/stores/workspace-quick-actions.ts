@@ -5,8 +5,19 @@ import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { showFlash } from "./flash.svelte.js";
 
+/** Quick actions ordered by label, ignoring case; ties keep their settings order. */
+export function sortQuickActionsByLabel(actions: readonly QuickAction[]): QuickAction[] {
+  return actions.toSorted((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+}
+
 // Choosing a quick action replaces the automatic session picker for this workspace.
+// Entries are keyed by quickActionWorkspaceKey.
 export const quickActionWorkspaces = new SvelteSet<string>();
+
+/** Identifies a workspace in quickActionWorkspaces; devbox workspace IDs are only unique per host. */
+export function quickActionWorkspaceKey(workspaceId: string, hostKey?: string): string {
+  return hostKey ? `${hostKey}\0${workspaceId}` : workspaceId;
+}
 
 /**
  * Runs a configured quick action against a workspace that was just created (or
@@ -21,7 +32,7 @@ export function runWorkspaceQuickAction(
   action: QuickAction,
   hostKey?: string,
 ): void {
-  quickActionWorkspaces.add(hostKey ? `${hostKey}\0${workspaceId}` : workspaceId);
+  quickActionWorkspaces.add(quickActionWorkspaceKey(workspaceId, hostKey));
   const program = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
     hostKey?.startsWith("devbox:")
       ? client.DevboxesService.launchDevboxHandoff(

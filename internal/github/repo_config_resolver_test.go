@@ -13,6 +13,8 @@ import (
 )
 
 func TestResolveConfiguredRepoCanonicalizesClientHosts(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct{ clientHost, repoHost string }{
 		{"", "github.com"},
 		{"GITHUB.COM", "github.com"},
@@ -26,7 +28,7 @@ func TestResolveConfiguredRepoCanonicalizesClientHosts(t *testing.T) {
 					require.Equal("acme", owner)
 					require.Equal("widgets", repo)
 					return &gh.Repository{
-						NodeID: new("repo-42"), Name: new("widgets"),
+						ID: new(int64(42)), Name: new("widgets"),
 						Owner: &gh.User{Login: new("acme")},
 					}, nil
 				},
@@ -35,13 +37,15 @@ func TestResolveConfiguredRepoCanonicalizesClientHosts(t *testing.T) {
 				config.Repo{PlatformHost: tc.repoHost, Owner: "acme", Name: "widgets"})
 			require.NoError(err)
 			require.Len(repos, 1)
-			require.Equal("repo-42", repos[0].PlatformExternalID)
+			require.Equal(int64(42), repos[0].PlatformRepoID)
 			require.Equal(tc.repoHost, repos[0].PlatformHost)
 		})
 	}
 }
 
 func TestResolveConfiguredRepos_ExpandsGlobIncludingArchived(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	client := &mockClient{
 		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
@@ -93,6 +97,8 @@ func TestResolveConfiguredRepos_ExpandsGlobIncludingArchived(t *testing.T) {
 }
 
 func TestResolveConfiguredRepos_AcceptsArchivedRepoAsArchiveOnly(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	client := &mockClient{
 		getRepositoryFn: func(
@@ -127,6 +133,8 @@ func TestResolveConfiguredRepos_AcceptsArchivedRepoAsArchiveOnly(t *testing.T) {
 }
 
 func TestExpandedRepoSetPrefersResolvedOverFallbackDuplicates(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	fallback := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "frozen",
@@ -135,7 +143,7 @@ func TestExpandedRepoSetPrefersResolvedOverFallbackDuplicates(t *testing.T) {
 	resolved := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "frozen",
 		PlatformHost: "github.com", RepoPath: "acme/frozen",
-		PlatformExternalID: "repo-acme-frozen", Archived: true,
+		PlatformRepoID: 1003, Archived: true,
 	}
 
 	set := NewExpandedRepoSet()
@@ -161,6 +169,8 @@ func TestExpandedRepoSetPrefersResolvedOverFallbackDuplicates(t *testing.T) {
 }
 
 func TestExpandedRepoSetReconcilesRenamedRouteByProviderIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	// A fallback ref keeps the old route of a renamed repo; the resolved
 	// duplicate arrives under the new route with the same stable provider
@@ -168,12 +178,12 @@ func TestExpandedRepoSetReconcilesRenamedRouteByProviderIdentity(t *testing.T) {
 	fallback := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "old-name",
 		PlatformHost: "github.com", RepoPath: "acme/old-name",
-		PlatformExternalID: "repo-x",
+		PlatformRepoID: 1004,
 	}
 	resolved := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "new-name",
 		PlatformHost: "github.com", RepoPath: "acme/new-name",
-		PlatformExternalID: "repo-x", Archived: true,
+		PlatformRepoID: 1004, Archived: true,
 	}
 
 	set := NewExpandedRepoSet()
@@ -189,6 +199,8 @@ func TestExpandedRepoSetReconcilesRenamedRouteByProviderIdentity(t *testing.T) {
 }
 
 func TestExpandedRepoSetMergesExactProvenanceAcrossDuplicates(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	// The exact entry's fallback preserved a renamed tracked ref with its
@@ -199,15 +211,15 @@ func TestExpandedRepoSetMergesExactProvenanceAcrossDuplicates(t *testing.T) {
 	exactFallback := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformExternalID: "repo-acme-tools",
+		PlatformRepoID:     1005,
 		ConfiguredRepoPath: "acme/tools", Archived: true,
 	}
 	resolvedGlob := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformExternalID: "repo-acme-tools",
-		WebURL:             "https://github.com/acme/tools-new",
-		Archived:           true,
+		PlatformRepoID: 1005,
+		WebURL:         "https://github.com/acme/tools-new",
+		Archived:       true,
 	}
 
 	set := NewExpandedRepoSet()
@@ -228,6 +240,8 @@ func TestExpandedRepoSetMergesExactProvenanceAcrossDuplicates(t *testing.T) {
 }
 
 func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	client := &mockClient{
 		getRepositoryFn: func(
@@ -272,6 +286,8 @@ func TestResolveConfiguredRepos_DeduplicatesExactAndGlobMatches(t *testing.T) {
 }
 
 func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	client := &mockClient{
 		getRepositoryFn: func(
@@ -314,6 +330,8 @@ func TestResolveConfiguredRepos_DeduplicatesOwnerCase(t *testing.T) {
 }
 
 func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	client := &mockClient{
 		getRepositoryFn: func(
@@ -344,6 +362,8 @@ func TestResolveConfiguredReposCasefoldsResolvedRepoRefs(t *testing.T) {
 }
 
 func TestResolveConfiguredRepos_ReportsZeroCountOnStartupWarning(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	client := &mockClient{
 		listReposByOwnerFn: func(
@@ -367,6 +387,8 @@ func TestResolveConfiguredRepos_ReportsZeroCountOnStartupWarning(t *testing.T) {
 }
 
 func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	client := &mockClient{
 		listReposByOwnerFn: func(_ context.Context, owner string) ([]*gh.Repository, error) {
@@ -398,6 +420,8 @@ func TestResolveConfiguredRepos_MatchesRepoNamesCaseInsensitively(t *testing.T) 
 }
 
 func TestResolveConfiguredReposReportsMissingProvider(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	result := resolveConfiguredRepos(
@@ -420,6 +444,8 @@ func TestResolveConfiguredReposReportsMissingProvider(t *testing.T) {
 }
 
 func TestResolveConfiguredReposReportsMissingRepositoryReader(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	result := resolveConfiguredRepos(
@@ -444,6 +470,8 @@ func TestResolveConfiguredReposReportsMissingRepositoryReader(t *testing.T) {
 }
 
 func TestResolveConfiguredReposKeepsDuplicateOwnerNameOnDifferentPlatforms(t *testing.T) {
+	t.Parallel()
+
 	result := resolveConfiguredRepos(
 		t.Context(),
 		mustRegistry(t,
@@ -494,6 +522,8 @@ func TestResolveConfiguredReposKeepsDuplicateOwnerNameOnDifferentPlatforms(t *te
 }
 
 func TestFallbackConfiguredRepoRefsSynthesizesGitHubProvider(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	got := FallbackConfiguredRepoRefs(nil, config.Repo{
@@ -514,6 +544,8 @@ func TestFallbackConfiguredRepoRefsSynthesizesGitHubProvider(t *testing.T) {
 }
 
 func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	previous := []RepoRef{
 		{
@@ -546,28 +578,30 @@ func TestFallbackConfiguredRepoRefsPreservesProviderIdentity(t *testing.T) {
 }
 
 func TestFallbackConfiguredRepoRefsHonorsPinnedIdentity(t *testing.T) {
+	t.Parallel()
+
 	for _, tt := range []struct {
 		name     string
-		id       string
+		id       int64
 		provider platform.Kind
 		host     string
 		cached   bool
 		want     bool
 		fromGlob bool
 	}{
-		{"renamed verified repository", "R_pinned", platform.KindGitHub, "github.com", true, true, false},
-		{"different repository", "R_other", platform.KindGitHub, "github.com", true, false, false},
-		{"unverified repository", "", platform.KindGitHub, "github.com", true, false, false},
-		{"different provider", "R_pinned", platform.KindGitLab, "github.com", true, false, false},
-		{"different host", "R_pinned", platform.KindGitHub, "git.example.com", true, false, false},
-		{"no cached reference", "", platform.KindGitHub, "github.com", false, false, false},
-		{"renamed repository from glob", "R_pinned", platform.KindGitHub, "github.com", true, true, true},
+		{"renamed verified repository", 1001, platform.KindGitHub, "github.com", true, true, false},
+		{"different repository", 1002, platform.KindGitHub, "github.com", true, false, false},
+		{"unverified repository", 0, platform.KindGitHub, "github.com", true, false, false},
+		{"different provider", 1001, platform.KindGitLab, "github.com", true, false, false},
+		{"different host", 1001, platform.KindGitHub, "git.example.com", true, false, false},
+		{"no cached reference", 0, platform.KindGitHub, "github.com", false, false, false},
+		{"renamed repository from glob", 1001, platform.KindGitHub, "github.com", true, true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			verified := RepoRef{
 				Platform: tt.provider, PlatformHost: tt.host,
 				Owner: "acme", Name: "widget-next", RepoPath: "acme/widget-next",
-				ConfiguredRepoPath: "acme/widget", PlatformExternalID: tt.id,
+				ConfiguredRepoPath: "acme/widget", PlatformRepoID: tt.id,
 				Archived: true,
 			}
 			if tt.fromGlob {
@@ -578,7 +612,7 @@ func TestFallbackConfiguredRepoRefsHonorsPinnedIdentity(t *testing.T) {
 				previous = []RepoRef{verified}
 			}
 			got := FallbackConfiguredRepoRefs(previous, config.Repo{
-				Owner: "acme", Name: "widget", PlatformRepoID: " R_pinned ",
+				Owner: "acme", Name: "widget", PlatformRepoID: 1001,
 			})
 			if tt.want {
 				verified.ConfiguredRepoPath = "acme/widget"
@@ -591,6 +625,8 @@ func TestFallbackConfiguredRepoRefsHonorsPinnedIdentity(t *testing.T) {
 }
 
 func TestRepoRefFromRepositoryStampsConfiguredRepoPath(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	ref := repoRefFromRepository(
@@ -599,9 +635,9 @@ func TestRepoRefFromRepositoryStampsConfiguredRepoPath(t *testing.T) {
 		platform.Repository{
 			Ref: platform.RepoRef{
 				Owner: "acme", Name: "tools-new",
-				RepoPath: "acme/tools-new",
+				RepoPath:   "acme/tools-new",
+				PlatformID: 1005,
 			},
-			PlatformExternalID: "repo-acme-tools",
 		},
 	)
 
@@ -609,6 +645,8 @@ func TestRepoRefFromRepositoryStampsConfiguredRepoPath(t *testing.T) {
 }
 
 func TestFallbackConfiguredRepoRefsMatchesRenamedRouteByConfiguredPath(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	renamed := RepoRef{
 		Platform:           platform.KindGitHub,
@@ -616,7 +654,7 @@ func TestFallbackConfiguredRepoRefsMatchesRenamedRouteByConfiguredPath(t *testin
 		Owner:              "acme",
 		Name:               "tools-new",
 		RepoPath:           "acme/tools-new",
-		PlatformExternalID: "repo-acme-tools",
+		PlatformRepoID:     1005,
 		ConfiguredRepoPath: "acme/tools",
 		Archived:           true,
 	}
@@ -630,6 +668,8 @@ func TestFallbackConfiguredRepoRefsMatchesRenamedRouteByConfiguredPath(t *testin
 }
 
 func TestFallbackConfiguredRepoRefsSynthesizesNonGitHubProvider(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	got := FallbackConfiguredRepoRefs(nil, config.Repo{
@@ -649,6 +689,8 @@ func TestFallbackConfiguredRepoRefsSynthesizesNonGitHubProvider(t *testing.T) {
 }
 
 func TestFallbackConfiguredRepoRefsGlobFiltersByProvider(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	previous := []RepoRef{
 		{
@@ -681,6 +723,8 @@ func TestFallbackConfiguredRepoRefsGlobFiltersByProvider(t *testing.T) {
 }
 
 func TestResolveConfiguredReposWithRegistryUsesNonGitHubProvider(t *testing.T) {
+	t.Parallel()
+
 	result := ResolveConfiguredReposWithRegistry(
 		t.Context(),
 		mustRegistry(t, resolverRepositoryReader{

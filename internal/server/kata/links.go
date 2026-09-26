@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
@@ -350,15 +351,6 @@ func (h *Handler) workspaceInheritedKataSubjects(
 	ctx context.Context,
 	workspace *db.Workspace,
 ) ([]db.KataLinkSubject, error) {
-	hasHistoricalOccupants, err := h.db.WorkspaceRepoRouteHasHistoricalOccupants(
-		ctx, workspace.Platform, workspace.PlatformHost, workspace.RepoOwner, workspace.RepoName,
-	)
-	if err != nil {
-		return nil, httpapi.Internal("inspect workspace repository route failed")
-	}
-	if hasHistoricalOccupants {
-		return []db.KataLinkSubject{}, nil
-	}
 	requests := make([]workspaceKataSubjectRequest, 0, 2)
 	switch workspace.ItemType {
 	case db.WorkspaceItemTypeIssue:
@@ -384,8 +376,7 @@ func (h *Handler) workspaceInheritedKataSubjects(
 			workspace.RepoOwner, workspace.RepoName, request.number,
 		)
 		if err != nil {
-			var problem *httpapi.ProblemError
-			if errors.As(err, &problem) && kataInheritanceCanSkipProblem(problem.Code) {
+			if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok && kataInheritanceCanSkipProblem(problem.Code) {
 				continue
 			}
 			return nil, err

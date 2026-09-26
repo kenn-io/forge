@@ -14,7 +14,7 @@ import (
 
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -31,6 +32,7 @@ import (
 func registerIdentifiedProject(
 	t *testing.T, ts *httptest.Server, localPath string,
 ) string {
+	t.Helper()
 	return registerPlatformProject(
 		t, ts, localPath, "github", "github.com", "acme", "widget",
 	)
@@ -42,7 +44,7 @@ func logUnexpectedResponse(t *testing.T, resp *http.Response, want int) {
 		return
 	}
 	body, err := io.ReadAll(resp.Body)
-	Require.NoError(t, err)
+	require.NoError(t, err)
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	t.Logf("unexpected response: %s", body)
 }
@@ -61,18 +63,19 @@ func registerPlatformProject(
 		},
 	})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", body)
-	Require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	defer resp.Body.Close()
 	var registered struct {
 		ID string `json:"id"`
 	}
-	Require.NoError(t, json.NewDecoder(resp.Body).Decode(&registered))
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&registered))
 	return registered.ID
 }
 
 func seedMergeRequest(
 	t *testing.T, database *db.DB, number int, headBranch, headSHA, cloneURL string,
 ) {
+	t.Helper()
 	seedMergeRequestForRepo(t, database, db.GitHubRepoIdentity(
 		"github.com", "acme", "widget",
 	), number, headBranch, headSHA, cloneURL)
@@ -84,11 +87,8 @@ func seedMergeRequestForRepo(
 ) {
 	t.Helper()
 	ctx := t.Context()
-	if identity.PlatformRepoID == "" {
-		identity.PlatformRepoID = "repo-" + identity.Owner + "-" + identity.Name
-	}
-	repoID, err := database.UpsertRepo(ctx, identity)
-	Require.NoError(t, err)
+	repoID, err := reposeed.Seed(ctx, database, identity)
+	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:           repoID,
@@ -107,7 +107,7 @@ func seedMergeRequestForRepo(
 		UpdatedAt:        now,
 		LastActivityAt:   now,
 	})
-	Require.NoError(t, err)
+	require.NoError(t, err)
 }
 
 // TestCreateWorktreeFromMergeRequestRoute covers the happy path for a
@@ -115,7 +115,7 @@ func seedMergeRequestForRepo(
 // origin, materialized as a new worktree, and registered.
 func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, database := setupProjectServer(t)
@@ -145,6 +145,11 @@ func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		ID           string `json:"id"`
@@ -186,7 +191,7 @@ func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 }
 
 func TestCreateWorktreeFromMergeRequestRouteRejectsChangedHead(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, database := setupProjectServer(t)
@@ -225,7 +230,7 @@ func TestCreateWorktreeFromMergeRequestRouteRejectsChangedHead(t *testing.T) {
 }
 
 func TestCreateWorktreeFromGitLabMergeRequestRefRoute(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
@@ -264,7 +269,7 @@ func TestCreateWorktreeFromGitLabMergeRequestRefRoute(t *testing.T) {
 }
 
 func TestCreateWorktreeFromRelativeForkRoutePersistsAbsoluteTracking(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
@@ -314,7 +319,7 @@ func worktreeConfigForRoute(t *testing.T, dir, key string) string {
 // request is a 404 with the pullNotFound code, and nothing touches disk.
 func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, database := setupProjectServer(t)
@@ -322,8 +327,8 @@ func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
 	defer ts.Close()
 
 	repo := initLifecycleRouteRepo(t)
-	_, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	_, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	projectID := registerIdentifiedProject(t, ts, repo)
@@ -347,7 +352,7 @@ func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
 // cannot resolve merge requests.
 func TestCreateWorktreeFromMergeRequestRouteNoIdentity(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 
 	srv, _ := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
@@ -372,7 +377,7 @@ func TestCreateWorktreeFromMergeRequestRouteNoIdentity(t *testing.T) {
 // hub proxying into this host) does not need a separate sync step.
 func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 
 	origin := initLifecycleRouteRepo(t)
@@ -420,10 +425,10 @@ func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 	database := dbtest.Open(t)
 	ref := ghclient.RepoRef{
 		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
-		PlatformExternalID: "repo-acme-widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 	}
-	_, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	_, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	syncer := ghclient.NewSyncer(
@@ -448,6 +453,11 @@ func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var created struct {
 		Branch string `json:"branch"`
@@ -462,7 +472,7 @@ func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 
 func TestCreateWorktreeFromMergeRequestRouteDoesNotSyncRemovedItem(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
-	require := Require.New(t)
+	require := require.New(t)
 
 	repoPath := initLifecycleRouteRepo(t)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -490,8 +500,8 @@ func TestCreateWorktreeFromMergeRequestRouteDoesNotSyncRemovedItem(t *testing.T)
 		Base: &gh.PullRequestBranch{Ref: &baseRef},
 	}}
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
@@ -506,7 +516,7 @@ func TestCreateWorktreeFromMergeRequestRouteDoesNotSyncRemovedItem(t *testing.T)
 		map[string]ghclient.Client{"github.com": mock}, database, nil,
 		[]ghclient.RepoRef{{
 			Platform: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", PlatformExternalID: "repo-acme-widget",
+			Owner: "acme", Name: "widget", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		}},
 		time.Minute, nil, nil,
 	)
@@ -523,6 +533,11 @@ func TestCreateWorktreeFromMergeRequestRouteDoesNotSyncRemovedItem(t *testing.T)
 	})
 	resp := httpDo(t, ts, http.MethodPost,
 		"/api/v1/projects/"+projectID+"/worktrees/from-merge-request", body)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	logUnexpectedResponse(t, resp, http.StatusNotFound)
 	require.Equal(http.StatusNotFound, resp.StatusCode)
 	require.Equal("pullNotFound", decodeProblemCode(t, resp))

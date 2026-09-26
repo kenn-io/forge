@@ -25,6 +25,8 @@ func insertTestMRWithBranches(
 }
 
 func TestListPRsForStackDetection(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	d := openTestDB(t)
 	repoID := insertTestRepo(t, d, "org", "repo")
@@ -44,6 +46,8 @@ func TestListPRsForStackDetection(t *testing.T) {
 }
 
 func TestUpsertStackAndReplaceMembers(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -84,6 +88,8 @@ func TestUpsertStackAndReplaceMembers(t *testing.T) {
 }
 
 func TestStackMembersRenumberAfterRemovedMembersAreFiltered(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		removedNumber int
@@ -149,6 +155,8 @@ func TestStackMembersRenumberAfterRemovedMembersAreFiltered(t *testing.T) {
 }
 
 func TestStackMembersIncludeMergeableState(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -175,6 +183,8 @@ func TestStackMembersIncludeMergeableState(t *testing.T) {
 }
 
 func TestListMRsBlockedByStackConflicts(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -203,6 +213,8 @@ func TestListMRsBlockedByStackConflicts(t *testing.T) {
 }
 
 func TestListStackPlacementsForMRs(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -268,6 +280,8 @@ func TestListStackPlacementsForMRs(t *testing.T) {
 }
 
 func TestDeleteStaleStacks(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -292,6 +306,8 @@ func TestDeleteStaleStacks(t *testing.T) {
 }
 
 func TestListStacksWithMembers_MalformedFilter(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	ctx := t.Context()
 
@@ -305,6 +321,8 @@ func TestListStacksWithMembers_MalformedFilter(t *testing.T) {
 }
 
 func TestReplaceStackMembersReassignsAcrossStacks(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -348,6 +366,8 @@ func TestReplaceStackMembersReassignsAcrossStacks(t *testing.T) {
 }
 
 func TestGetStackForPR(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)

@@ -1,8 +1,13 @@
 <script lang="ts">
-  import { quickActionWorkspaces } from "../../stores/workspace-quick-actions.js";
+  import {
+    quickActionWorkspaceKey,
+    quickActionWorkspaces,
+    runWorkspaceQuickAction,
+  } from "../../stores/workspace-quick-actions.js";
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
-  import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Stream } from "effect";
+  import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
+  import SearchIcon from "@lucide/svelte/icons/search";
   import { onDestroy, tick, untrack } from "svelte";
   import { navigate } from "../../stores/router.svelte.ts";
   import { isNarrow } from "../../stores/container.svelte.js";
@@ -25,6 +30,7 @@
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import type {
     LaunchTarget,
+    QuickAction,
     RuntimeSession,
   } from "../../api/types.js";
   import {
@@ -102,6 +108,7 @@
   import { watchFleetWorkspaceDiff } from "./fleet-diff-watch.js";
   import { workspaceEventStream } from "./workspace-event-stream.js";
   import { decodeWorkspaceDetail, type WorkspaceDetail } from "./workspace-detail.js";
+  import { createRecentDetails } from "../../stores/recent-details.js";
   import { reconnectSchedule } from "../../api/retry-policy.js";
   import { Button, CollapsibleSidebar, SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
@@ -109,6 +116,8 @@
   import { getStores } from "../../context.js";
   import { parseSessionPaneKey, sessionPaneKey, sessionPaneKeyMatchesWorkspace } from "../../stores/session-pane-key.js";
   import WorkspaceRightSidebar from "../workspace/WorkspaceRightSidebar.svelte";
+  import WorkspaceItemSearch from "../workspace/WorkspaceItemSearch.svelte";
+  import type { NumberedRouteItemRef } from "../../routes.js";
   import type { InlineDockMode, WorkspaceItemIdentity } from "../../workspace-inline.js";
   import { defaultWorkspaceSidebarTab, type WorkspaceSidebarTab } from "./workspace-sidebar-default.js";
   import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -377,6 +386,8 @@
   let runtimeForId = $state<string>("");
   let runtimeForHostKey = $state<string | undefined>(undefined);
   let runtimeSnapshotAuthoritative = $state(false);
+  let restoredSessionKeys = $state.raw<Set<SessionHostKey> | null>(null);
+  const recentWorkspaces = createRecentDetails<{ workspace: Workspace; runtime: WorkspaceRuntimeState }>();
   let loadError = $state<string | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
@@ -596,14 +607,34 @@
     const selected = selectedSidebarTabs[storageId];
     if (selected !== undefined) return selected;
     const saved = readLocalStorage(sidebarTabStorageKey(storageId));
+    if (saved === "none") return null;
     if (saved === "diff" || saved === "pr" || saved === "issue" || saved === "reviews" || saved === "kata") {
       return saved;
     }
     return workspace?.id === workspaceId && selectedWorkspaceHostKey(workspace) === workspaceHostKey
-      ? defaultWorkspaceSidebarTab(settingsStore.getWorkspaceSettings().default_sidebar_view, workspace.item_type)
-      : "diff";
+      ? defaultSidebarTab(workspace)
+      : null;
   });
-  let sidebarOpen = $state(loadSidebarOpen());
+  let sidebarExpanded = $state(loadSidebarOpen());
+  const sidebarOpen = $derived(sidebarExpanded && sidebarTab !== null);
+  let itemSearchAnchor = $state<HTMLElement | null>(null);
+  const itemSelectionStorageKey = $derived(`kenn-forge-workspace-viewed-items:${JSON.stringify([workspaceHostKey ?? "self", workspaceId])}`);
+  const ViewedItem = Schema.Struct({
+    provider: Schema.NonEmptyString,
+    platformHost: Schema.NonEmptyString,
+    platformRepoId: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
+    owner: Schema.NonEmptyString,
+    name: Schema.NonEmptyString,
+    repoPath: Schema.NonEmptyString,
+    number: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+  });
+  const ViewedItems = Schema.fromJsonString(Schema.Struct({
+    pr: Schema.NullOr(ViewedItem),
+    issue: Schema.NullOr(ViewedItem),
+  }));
+  let viewedItems: { pr: NumberedRouteItemRef | null; issue: NumberedRouteItemRef | null } = $derived(
+    Option.getOrElse(Schema.decodeUnknownOption(ViewedItems)(readLocalStorage(itemSelectionStorageKey)), () => ({ pr: null, issue: null })),
+  );
   let preferredRightSidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
   const currentWorkspaceListWidth = $derived(
@@ -612,8 +643,8 @@
     ),
   );
 
-  // Runtime is only "live" when both the runtime fetch and the
-  // workspace fetch resolve for the current route. Without the
+  // Runtime is only "live" when both runtime and workspace data belong
+  // to the current route, including a restored presentation. Without the
   // workspace.id check, a runtime that lands first for the new
   // workspace can render its sessions/launch targets next to the
   // previous workspace's still-cached header/home data.
@@ -663,6 +694,17 @@
         )
       : [],
   );
+  // Keep the last coherent presentation for repeat visits. Reads still run on
+  // every visit; a restored snapshot never establishes session authority.
+  $effect(() => {
+    if (!workspaceLive || !workspace) return;
+    const key = workspaceStorageId(workspaceId, workspaceHostKey);
+    if (workspace.status !== "ready") {
+      recentWorkspaces.delete(key);
+    } else if (runtimeLive && runtimeSnapshotAuthoritative && runtime) {
+      recentWorkspaces.remember(key, { workspace, runtime: { ...runtime, sessions: runtimeSessions } });
+    }
+  });
   const launchTargets = $derived(
     runtimeLive ? (runtime?.launch_targets ?? []) : [],
   );
@@ -913,7 +955,8 @@
   }
 
   const automaticLauncherBlocked = $derived(
-    explicitLaunchIntentPending() || (workspaceHostKey === undefined && quickActionWorkspaces.has(workspaceId)),
+    explicitLaunchIntentPending() ||
+      quickActionWorkspaces.has(quickActionWorkspaceKey(workspaceId, workspaceHostKey)),
   );
   const launcherOverlayAllowed = $derived(
     launcherState?.auto !== true || !automaticLauncherBlocked,
@@ -1181,6 +1224,11 @@
   );
 
   function upsertRuntimeSession(session: RuntimeSession): RuntimeSession[] {
+    // A successful launch is authority for this new session even while the
+    // rest of the restored workspace still awaits its background runtime read.
+    if (restoredSessionKeys !== null) {
+      restoredSessionKeys = new Set([...restoredSessionKeys, sessionHostKeyFor(session)]);
+    }
     const currentRuntime =
       runtime !== null &&
       runtimeForId === workspaceId &&
@@ -1453,19 +1501,35 @@
       workspaceDeletionLifecycleActive ||
       forceDeleting,
   );
+  $effect(() => {
+    if (!hostVisible || actionsBlocked) itemSearchAnchor = null;
+  });
   const inlineDockMode = $derived(inlineDock?.getMode() ?? null);
   const inlineDockExpandBlocked = $derived(getStackDepth() > 0);
+  let attributionOpen = $state(false);
+  // The dialog and the inert lock must use one predicate. A refresh can drop
+  // commit_attribution while attributionOpen is still true; locking on the flag
+  // alone then leaves the workspace inert with no dialog to dismiss.
+  const attributionDialogOpen = $derived(
+    attributionOpen && interactionVisible && workspace?.commit_attribution != null,
+  );
+  $effect(() => {
+    if (!interactionVisible || actionsBlocked || workspace?.commit_attribution == null) {
+      attributionOpen = false;
+    }
+  });
   const modalOpen = $derived(
     forcePromptMessage !== null ||
       stopPromptSession !== null ||
       deletePromptOpen ||
-      renamePrompt !== null,
+      renamePrompt !== null ||
+      attributionDialogOpen,
   );
 
   $effect(() => {
     writeLocalStorage(
       SIDEBAR_OPEN_KEY,
-      String(sidebarOpen),
+      String(sidebarExpanded),
     );
   });
   $effect(() => {
@@ -1496,11 +1560,12 @@
 
   function handleSidebarToggleClick(tab: SidebarTab): void {
     if (actionsBlocked) return;
+    itemSearchAnchor = null;
     if (sidebarOpen && sidebarTab === tab) {
-      sidebarOpen = false;
+      sidebarExpanded = false;
     } else {
       setSidebarTab(tab);
-      sidebarOpen = true;
+      sidebarExpanded = true;
     }
   }
 
@@ -1514,7 +1579,7 @@
       targetId === undefined ? workspaceHostKey : targetHostKey,
     );
     selectedSidebarTabs = { ...selectedSidebarTabs, [storageId]: tab };
-    writeLocalStorage(sidebarTabStorageKey(storageId), tab);
+    writeLocalStorage(sidebarTabStorageKey(storageId), tab ?? "none");
   }
 
   function openItemSidebar(
@@ -1529,7 +1594,7 @@
       (targetHostKey ?? undefined) !== workspaceHostKey
     ) {
       setSidebarTab(tab, targetId, targetHostKey);
-      sidebarOpen = true;
+      sidebarExpanded = true;
       if (targetHostKey) {
         navigate(
           `/terminal/fleet/${encodeURIComponent(targetHostKey)}/${encodeURIComponent(targetId)}`,
@@ -1544,7 +1609,8 @@
   }
 
   function toggleRightSidebar(): void {
-    sidebarOpen = !sidebarOpen;
+    sidebarExpanded = !sidebarOpen;
+    if (sidebarTab === null) setSidebarTab("diff");
   }
 
   function handleWorkspaceListResize(width: number): void {
@@ -1558,6 +1624,7 @@
 
   let containerEl = $state<HTMLElement | null>(null);
   let containerWidth = $state(0);
+  const compactHeader = $derived(containerWidth > 0 && containerWidth < 800);
 
   function maxRightSidebarWidth(
     containerWidth: number,
@@ -1715,6 +1782,7 @@
           : dockedSessionKeys.has(session.key));
       if (!onScreen) continue;
       const hostKey = sessionHostKeyFor(session);
+      if (restoredSessionKeys !== null && !restoredSessionKeys.has(hostKey)) continue;
       desired.set(hostKey, {
         hostKey,
         ...(workspaceHostKey === undefined ? {} : { fleetHostKey: workspaceHostKey }),
@@ -2086,27 +2154,39 @@
   }
 
   function defaultSidebarTab(ws: Workspace): SidebarTab {
-    return defaultWorkspaceSidebarTab(settingsStore.getWorkspaceSettings().default_sidebar_view, ws.item_type);
+    return defaultWorkspaceSidebarTab(settingsStore.getWorkspaceSettings().default_sidebar_view, ws.item_type, getWorkspacePRNumber(ws) !== null);
   }
 
   function isSidebarTabSupported(
     ws: Workspace,
     tab: SidebarTab,
   ): boolean {
-    if (tab === "diff") return true;
+    if (tab === null || tab === "diff") return true;
     if (tab === "issue") {
-      return ws.item_type === "issue";
+      return ws.item_type === "issue" || viewedItems.issue !== null;
     }
     if (tab === "kata") return workspaceHostKey === undefined;
     if (tab === "reviews") {
       return ws.item_type === "pull_request";
     }
-    return getWorkspacePRNumber(ws) !== null;
+    return getWorkspacePRNumber(ws) !== null || viewedItems.pr !== null;
   }
 
   function syncSidebarTabForWorkspace(ws: Workspace): void {
     if (!isSidebarTabSupported(ws, sidebarTab)) {
       setSidebarTab(defaultSidebarTab(ws));
+    }
+  }
+
+  function selectWorkspaceItem(itemType: "pr" | "issue", item: NumberedRouteItemRef | null): void {
+    if (!workspace || actionsBlocked) return;
+    viewedItems = { ...viewedItems, [itemType]: item };
+    writeLocalStorage(itemSelectionStorageKey, JSON.stringify(viewedItems));
+    if (isSidebarTabSupported(workspace, itemType)) {
+      setSidebarTab(itemType);
+      sidebarExpanded = true;
+    } else if (sidebarTab === itemType) {
+      setSidebarTab(defaultSidebarTab(workspace));
     }
   }
 
@@ -2135,6 +2215,7 @@
   // envelope so liveness rendering shows the error state instead of
   // continuing to display the deleted workspace.
   function handleWorkspaceGone(id: string, hostKey: string | undefined): void {
+    recentWorkspaces.delete(workspaceStorageId(id, hostKey));
     onWorkspaceDeleted?.(id, hostKey, workspaceIdentitySnapshot(id));
     if (workspace?.id === id) {
       workspace = null;
@@ -2251,6 +2332,7 @@
           completeAcceptedWorkspaceLaunch(id, hostKey, acceptedLaunch.sessionKey);
         }
         runtimeSnapshotAuthoritative = true;
+        restoredSessionKeys = null;
         if (
           hasAppliedRuntimeFor(id, hostKey) &&
           appliedRuntimeState?.fingerprint === fingerprint
@@ -2595,6 +2677,8 @@
             return true;
           }
           if (!responseFailed) {
+            recentWorkspaces.delete(workspaceStorageId(id, hostKey));
+            if (isCurrentWorkspace(id, hostKey)) workspace = null;
             onWorkspaceDeleted?.(id, hostKey, state.request.options.identity);
           }
           if (!isCurrentWorkspace(id, hostKey)) {
@@ -2681,6 +2765,19 @@
         },
       },
     );
+  }
+
+  // The agent handoff endpoint exists for local and devbox workspaces only;
+  // fleet peer workspaces keep the plain launch surface.
+  const workspaceQuickActions = $derived(
+    workspaceHostKey === undefined || workspaceHostKey.startsWith("devbox:")
+      ? settingsStore.getQuickActions()
+      : [],
+  );
+
+  function handleQuickAction(action: QuickAction): void {
+    if (!workspaceId || actionsBlocked) return;
+    runWorkspaceQuickAction(appRuntime, workspaceId, action, workspaceHostKey);
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(
@@ -3775,15 +3872,15 @@
   // App.svelte means the lifecycle is now driven entirely by this
   // effect.
   //
-  // Keep the previous workspace and runtime available to the workflow
-  // stage until their replacements arrive. The right sidebar gates on
-  // runtimeLive separately, so it cannot mix those retained values with
-  // the newly selected route.
+  // Restore repeat visits before starting the background reads. Both metadata
+  // and runtime are scoped to the workspace and host, so the sidebar cannot
+  // mix a previous workspace's data with the newly selected route.
   $effect(() => {
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     workspacePresentationGeneration += 1;
     runtimeSnapshotAuthoritative = false;
+    restoredSessionKeys = null;
     if (
       appliedRuntimeState?.workspaceId !== id ||
       appliedRuntimeState.hostKey !== hostKey
@@ -3802,6 +3899,17 @@
       cancelWorkspaceSwitch();
     }
     const storageId = id ? workspaceStorageId(id, hostKey) : "";
+    const recent = untrack(() => recentWorkspaces.get(storageId));
+    if (recent) {
+      workspace = recent.workspace;
+      // Only reclaim sockets still held by the pool. Evicted or exited sessions
+      // must wait for a fresh runtime read before attaching again.
+      restoredSessionKeys = new Set(untrack(() => mountedSessions().map((session) => session.hostKey)));
+      runtime = recent.runtime;
+      runtimeForId = id;
+      runtimeForHostKey = hostKey;
+      untrack(() => syncSidebarTabForWorkspace(recent.workspace));
+    }
     const restoredLayout = id ? loadTerminalLayout(storageId) : defaultTerminalLayout();
     const restoredTab = restoreWorkspaceTab(storageId);
     const restoredActiveTab =
@@ -3846,6 +3954,7 @@
     stopPromptSession = null;
     stopSessionStopping = false;
     renamePrompt = null;
+    attributionOpen = false;
     renameInputValue = "";
     renameSaving = false;
     mountedSessionKeys = restoredActiveTab.startsWith("session:")
@@ -3888,30 +3997,12 @@
       },
     );
 
-    const fleetDiffWatch = hostKey
-      ? appRuntime.runCommand(
-          watchFleetWorkspaceDiff(id, hostKey, (version) =>
-            Effect.sync(() => {
-              if (!isCurrentWorkspace(id, hostKey) || version === lastDiffSnapshotVersion) return;
-              lastDiffSnapshotVersion = version;
-              diffRefreshToken += 1;
-            }),
-          ),
-          {
-            operation: "workspace.fleet-diff.watch",
-            safeContext: { surface: "workspace" },
-            onFailure: () => undefined,
-          },
-        )
-      : null;
-
     const workspaceLifecycle = appRuntime.runCommand(
       Effect.gen(function* () {
         const initialWorkspace = yield* Deferred.make<Workspace | null>();
         const events = Stream.runForEach(
           workspaceEventStream(
             eventsStore.subscribeWorkspaceEvents,
-            hostKey ? undefined : () => eventsStore.selectWorkspace(id),
           ),
           (signal) => {
             switch (signal._tag) {
@@ -3995,7 +4086,6 @@
       stopRuntimePolling();
       releaseRuntimeRead();
       mutationPresenter.interrupt();
-      fleetDiffWatch?.interrupt();
       workspaceLifecycle.interrupt();
       // Leaving the workspace surface (view unmount) must end the
       // switch so late responses and pane callbacks cannot append
@@ -4010,6 +4100,32 @@
     };
   });
 
+  // Watching a diff owns server work and can reconnect SSE. Keep that lease
+  // tied to the visible pane, independently of workspace and PR updates. The
+  // route already names the workspace, so a saved Diff tab prewarms before
+  // metadata arrives.
+  $effect(() => {
+    if (!hostVisible || hideRightSidebar || !sidebarOpen || sidebarTab !== "diff") return;
+    const id = workspaceId;
+    const hostKey = workspaceHostKey;
+    if (!hostKey) return eventsStore.selectWorkspace(id);
+    const watch = appRuntime.runCommand(
+      watchFleetWorkspaceDiff(id, hostKey, (version) =>
+        Effect.sync(() => {
+          if (!isCurrentWorkspace(id, hostKey) || version === lastDiffSnapshotVersion) return;
+          lastDiffSnapshotVersion = version;
+          diffRefreshToken += 1;
+        }),
+      ),
+      {
+        operation: "workspace.fleet-diff.watch",
+        safeContext: { surface: "workspace" },
+        onFailure: () => undefined,
+      },
+    );
+    return watch.interrupt;
+  });
+
   $effect(() => {
     if (
       workspaceId ||
@@ -4022,7 +4138,7 @@
   });
 
   $effect(() => {
-    if (!workspaceId || !runtimeLive || workspace?.status !== "ready") return;
+    if (!workspaceId || !runtimeLive || !runtimeSnapshotAuthoritative || workspace?.status !== "ready") return;
     if (actionsBlocked || launchingKey !== null) return;
     const pendingLaunch = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
     const targetKey = pendingLaunch?.targetKey ?? null;
@@ -4263,128 +4379,175 @@
              has always been: no per-leaf strip exists there, so the chrome is the
              only thing left to carry these. -->
         {#if !controlsInPane}
-          <div class="header-bar">
+          <div class="header-bar" class:header-bar--compact={compactHeader}>
             <div class="header-start">
-              <span class="header-name">
+              <span class="header-name" title={displayName(workspace)}>
                 {displayName(workspace)}
               </span>
-              <code class="header-branch">
+              <code class="header-branch" title={workspace.git_head_ref}>
                 {workspace.git_head_ref}
               </code>
             </div>
-            <div class="header-end">
-              {#if !hideRightSidebar}
-                <div class="panel-toggle-group">
+            {#snippet headerActions()}
+              {#if workspace}
+                <div class="header-end">
+                  <div class="workspace-actions">{@render workspaceControls(!compactHeader)}</div>
+                  {#if !hideRightSidebar}
+                    <div class="panel-toggle-group">
+                      <button
+                        class="panel-toggle-btn"
+                        class:active={sidebarOpen && sidebarTab === "diff"}
+                        disabled={actionsBlocked}
+                        onclick={() => handleSidebarToggleClick("diff")}
+                      >
+                        Diff
+                      </button>
+                      {#if isSidebarTabSupported(workspace, "issue")}
+                        <button
+                          class="panel-toggle-btn"
+                          class:active={sidebarOpen && sidebarTab === "issue"}
+                          disabled={actionsBlocked}
+                          onclick={() => handleSidebarToggleClick("issue")}
+                        >
+                          Issue
+                        </button>
+                      {/if}
+                      {#if workspaceHostKey === undefined}
+                        <button
+                          class="panel-toggle-btn"
+                          class:active={sidebarOpen && sidebarTab === "kata"}
+                          disabled={actionsBlocked}
+                          onclick={() => handleSidebarToggleClick("kata")}
+                        >
+                          Kata
+                        </button>
+                      {/if}
+                      {#if isSidebarTabSupported(workspace, "pr")}
+                        <button
+                          class="panel-toggle-btn"
+                          class:active={sidebarOpen && sidebarTab === "pr"}
+                          disabled={actionsBlocked}
+                          onclick={() => handleSidebarToggleClick("pr")}
+                        >
+                          PR
+                        </button>
+                      {/if}
+                      {#if workspace.item_type === "pull_request"}
+                        <button
+                          class="panel-toggle-btn"
+                          class:active={sidebarOpen && sidebarTab === "reviews"}
+                          disabled={actionsBlocked}
+                          onclick={() => handleSidebarToggleClick("reviews")}
+                        >
+                          Reviews
+                        </button>
+                      {/if}
+                    </div>
+                    <IconButton
+                      size="sm"
+                      disabled={actionsBlocked}
+                      ariaLabel="Search PRs and issues"
+                      ariaHaspopup="dialog"
+                      ariaExpanded={itemSearchAnchor !== null}
+                      onclick={(event) => {
+                        itemSearchAnchor = itemSearchAnchor ? null : event.currentTarget as HTMLElement;
+                      }}
+                    >
+                      <SearchIcon size={14} strokeWidth={2.2} aria-hidden="true" />
+                    </IconButton>
+                    {#if itemSearchAnchor}
+                      <WorkspaceItemSearch
+                        workspaceID={workspace.id}
+                        hasLinkedPR={getWorkspacePRNumber(workspace) !== null}
+                        hasLinkedIssue={workspace.item_type === "issue"}
+                        viewedPR={viewedItems.pr}
+                        viewedIssue={viewedItems.issue}
+                        searchAnchor={itemSearchAnchor}
+                        disabled={actionsBlocked}
+                        onselect={selectWorkspaceItem}
+                        onSearchClose={() => { itemSearchAnchor = null; }}
+                      />
+                    {/if}
+                    <IconButton
+                      class="workspace-refresh-button"
+                      size="sm"
+                      disabled={actionsBlocked || refreshingWorkspace}
+                      ariaLabel="Refresh workspace details"
+                      onclick={() => void handleRefreshWorkspace()}
+                    >
+                      {#if refreshingWorkspace}
+                        <Spinner size={14} label="Refreshing workspace" />
+                      {:else}
+                        <RefreshIcon
+                          class="header-icon"
+                          size="14"
+                          strokeWidth="2.2"
+                          aria-hidden="true"
+                        />
+                      {/if}
+                    </IconButton>
+                  {/if}
+                  {#if inlineDock && inlineDockMode !== null}
+                    <!-- Dock mode changes are pure local UI: they must stay
+                         available while server-side actions are blocked
+                         (deletes in flight), or the dock cannot be collapsed
+                         out of the way. Only the modal guard applies, and only
+                         to the expand direction. -->
+                    <button
+                      class="header-btn"
+                      disabled={inlineDockMode !== "expanded" && inlineDockExpandBlocked}
+                      title={
+                        inlineDockMode !== "expanded" && inlineDockExpandBlocked
+                          ? "Close the open dialog first."
+                          : undefined
+                      }
+                      onclick={() =>
+                        inlineDock?.setMode(inlineDockMode === "expanded" ? "split" : "expanded")}
+                    >
+                      {#if inlineDockMode === "expanded"}
+                        <ChevronsDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                        Show Details
+                      {:else}
+                        <ChevronsUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                        Expand Terminal
+                      {/if}
+                    </button>
+                    <button
+                      class="header-btn"
+                      onclick={() => inlineDock?.setMode("collapsed")}
+                    >
+                      <PanelBottomCloseIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                      Collapse Terminal
+                    </button>
+                  {/if}
                   <button
-                    class="panel-toggle-btn"
-                    class:active={sidebarOpen && sidebarTab === "diff"}
+                    class="header-btn danger"
                     disabled={actionsBlocked}
-                    onclick={() => handleSidebarToggleClick("diff")}
+                    onclick={(event) =>
+                      void handleDelete(event.currentTarget)}
                   >
-                    Diff
+                    Delete
                   </button>
-                  {#if workspace.item_type === "issue"}
-                    <button
-                      class="panel-toggle-btn"
-                      class:active={sidebarOpen && sidebarTab === "issue"}
-                      disabled={actionsBlocked}
-                      onclick={() => handleSidebarToggleClick("issue")}
-                    >
-                      Issue
-                    </button>
-                  {/if}
-                  {#if workspaceHostKey === undefined}
-                    <button
-                      class="panel-toggle-btn"
-                      class:active={sidebarOpen && sidebarTab === "kata"}
-                      disabled={actionsBlocked}
-                      onclick={() => handleSidebarToggleClick("kata")}
-                    >
-                      Kata
-                    </button>
-                  {/if}
-                  {#if getWorkspacePRNumber(workspace) !== null}
-                    <button
-                      class="panel-toggle-btn"
-                      class:active={sidebarOpen && sidebarTab === "pr"}
-                      disabled={actionsBlocked}
-                      onclick={() => handleSidebarToggleClick("pr")}
-                    >
-                      PR
-                    </button>
-                  {/if}
-                  {#if workspace.item_type === "pull_request"}
-                    <button
-                      class="panel-toggle-btn"
-                      class:active={sidebarOpen && sidebarTab === "reviews"}
-                      disabled={actionsBlocked}
-                      onclick={() => handleSidebarToggleClick("reviews")}
-                    >
-                      Reviews
-                    </button>
-                  {/if}
                 </div>
-                <IconButton
-                  class="workspace-refresh-button"
-                  size="sm"
-                  disabled={actionsBlocked || refreshingWorkspace}
-                  ariaLabel="Refresh workspace details"
-                  onclick={() => void handleRefreshWorkspace()}
-                >
-                  {#if refreshingWorkspace}
-                    <Spinner size={14} label="Refreshing workspace" />
-                  {:else}
-                    <RefreshIcon
-                      class="header-icon"
-                      size="14"
-                      strokeWidth="2.2"
-                      aria-hidden="true"
-                    />
-                  {/if}
-                </IconButton>
               {/if}
-              {#if inlineDock && inlineDockMode !== null}
-                <!-- Dock mode changes are pure local UI: they must stay
-                     available while server-side actions are blocked
-                     (deletes in flight), or the dock cannot be collapsed
-                     out of the way. Only the modal guard applies, and only
-                     to the expand direction. -->
-                <button
-                  class="header-btn"
-                  disabled={inlineDockMode !== "expanded" && inlineDockExpandBlocked}
-                  title={
-                    inlineDockMode !== "expanded" && inlineDockExpandBlocked
-                      ? "Close the open dialog first."
-                      : undefined
-                  }
-                  onclick={() =>
-                    inlineDock?.setMode(inlineDockMode === "expanded" ? "split" : "expanded")}
-                >
-                  {#if inlineDockMode === "expanded"}
-                    <ChevronsDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                    Show Details
-                  {:else}
-                    <ChevronsUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                    Expand Terminal
-                  {/if}
-                </button>
-                <button
-                  class="header-btn"
-                  onclick={() => inlineDock?.setMode("collapsed")}
-                >
-                  <PanelBottomCloseIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  Collapse Terminal
-                </button>
-              {/if}
-              <button
-                class="header-btn danger"
-                disabled={actionsBlocked}
-                onclick={(event) =>
-                  void handleDelete(event.currentTarget)}
-              >
-                Delete
-              </button>
-            </div>
+            {/snippet}
+            {#if compactHeader}
+              <div class="compact-header-actions">
+                {#if launcherMode}
+                  <Button size="sm" surface="soft" tone="neutral" label="Launch session" disabled={actionsBlocked} onclick={openLauncher}>
+                    <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
+                  </Button>
+                {:else}
+                  <LaunchMenu {launchTargets} {launchingKey} disabled={actionsBlocked} hostVisible={interactionVisible} onLaunch={(key) => void handleLaunch(key)} />
+                {/if}
+                <WorkspacePaneControls
+                  controls={interactionVisible ? { snippet: headerActions, workspaceKey: viewWorkspaceKey } : null}
+                  busy={terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset}
+                />
+              </div>
+            {:else}
+              {@render headerActions()}
+            {/if}
           </div>
         {/if}
         <div
@@ -4394,26 +4557,6 @@
         >
           <div class="terminal-area">
             <div class="workspace-surface">
-              {#if !controlsInPane}
-                <!-- Kept for the standalone Workspaces tab, whose panes have no tab
-                     strip to hold the controls, and for a flattened detail surface,
-                     which suppresses per-leaf chrome. Otherwise the pane's own
-                     popover renders these, and a bar here would be a second copy of
-                     them above the terminal. -->
-                <div class="workspace-toolbar">
-                  <div class="workspace-toolbar-title">Workflow</div>
-                  <div class="workspace-actions">{@render workspaceControls()}</div>
-                </div>
-              {/if}
-              {#if workspace?.commit_attribution}
-                {@const attribution = workspace.commit_attribution}
-                <details class="commit-attribution" class:attribution-warning={attribution.status === "mismatch" || attribution.status === "unverified"}>
-                  <summary>{attribution.message}</summary>
-                  <p>{attribution.repository} · {attribution.branch} · {attribution.oid.slice(0, 12)}</p>
-                  <p>Author: {attribution.author_name} &lt;{attribution.author_email}&gt; (GitHub ID {attribution.author_id || "unresolved"})</p>
-                  <p>Committer: {attribution.committer_name} &lt;{attribution.committer_email}&gt; (GitHub ID {attribution.committer_id || "unresolved"})</p>
-                </details>
-              {/if}
               {#if runtimeError}
                 <div class="runtime-error">{runtimeError}</div>
               {/if}
@@ -4482,7 +4625,9 @@
                               displayLabels={sessionDisplayLabels}
                               {launchingKey}
                               readonly={actionsBlocked}
+                              quickActions={workspaceQuickActions}
                               onLaunch={(key) => void handleLaunch(key)}
+                              onQuickAction={handleQuickAction}
                               onOpenSession={openSession}
                             />
                           {/if}
@@ -4555,7 +4700,7 @@
               {/if}
             </div>
           </div>
-          {#if sidebarOpen && !hideRightSidebar}
+          {#if sidebarOpen && sidebarTab !== null && !hideRightSidebar}
             <SplitResizeHandle
               class="sidebar-resize-handle"
               ariaLabel="Resize workspace details"
@@ -4596,11 +4741,19 @@
                   ownerItemType={workspace.item_type}
                   ownerItemNumber={workspace.item_number}
                   associatedPRNumber={getWorkspacePRNumber(workspace)}
+                  viewedPR={viewedItems.pr}
+                  viewedIssue={viewedItems.issue}
                   branch={workspace.git_head_ref}
                   roborevBaseUrl={basePath + "/api/roborev"}
                   refreshToken={sidebarRefreshToken}
                   {diffRefreshToken}
                   disabled={actionsBlocked}
+                  gitState={{
+                    worktreeDirty: workspace.worktree_dirty,
+                    commitsAhead: workspace.commits_ahead,
+                    commitsVsPRHead: workspace.commits_vs_pr_head,
+                    branchUpstreamMissing: workspace.branch_upstream_missing,
+                  }}
                 />
               {:else}
                 <div class="state-message">
@@ -4664,13 +4817,47 @@
     displayLabels={sessionDisplayLabels}
     {launchingKey}
     readonly={actionsBlocked}
+    quickActions={workspaceQuickActions}
     onClose={closeLauncher}
     onLaunch={(key) => void handleLaunch(key)}
+    onQuickAction={(action) => {
+      closeLauncher();
+      handleQuickAction(action);
+    }}
     onOpenSession={(sessionKey) => {
       closeLauncher();
       openSession(sessionKey);
     }}
   />
+{/if}
+
+{#if attributionDialogOpen && workspace?.commit_attribution}
+  {@const attribution = workspace.commit_attribution}
+  <Modal
+    open
+    title="Last push"
+    showClose
+    onClose={() => { attributionOpen = false; }}
+  >
+    <div class="push-details">
+      <p>{attribution.message}</p>
+      <dl>
+        <dt>Author</dt>
+        <dd>
+          {attribution.author_name || "Not verified"}
+          {#if attribution.author_email}<span>{attribution.author_email}</span>{/if}
+        </dd>
+        <dt>Committer</dt>
+        <dd>
+          {attribution.committer_name || "Not verified"}
+          {#if attribution.committer_email}<span>{attribution.committer_email}</span>{/if}
+        </dd>
+        <dt>Commit</dt><dd><code>{attribution.oid.slice(0, 12)}</code></dd>
+        <dt>Branch</dt><dd>{attribution.branch}</dd>
+        <dt>Repository</dt><dd>{attribution.repository}</dd>
+      </dl>
+    </div>
+  </Modal>
 {/if}
 
 {#if renamePrompt !== null && interactionVisible}
@@ -4833,7 +5020,21 @@
 <!-- The workspace's own controls, defined here because every one of them is wired
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
-{#snippet workspaceControls()}
+{#snippet workspaceControls(showLaunch = true)}
+  {#if workspace?.commit_attribution}
+    {@const status = workspace.commit_attribution.status}
+    <Button
+      size="sm"
+      surface="soft"
+      tone={status === "mismatch" ? "danger" : status === "unverified" ? "info" : "neutral"}
+      label={status === "mismatch" ? "Check push identity" : status === "unverified" ? "Verify push identity" : "Last push"}
+      disabled={actionsBlocked}
+      onclick={(event) => {
+        previouslyFocusedEl = event.currentTarget as HTMLElement;
+        attributionOpen = true;
+      }}
+    />
+  {/if}
   {#if controlsInPane && inlineDock && inlineDockMode !== null && workspaceLive && workspace?.status === "ready"}
     <!-- The dock's own modes, which the header bar carries everywhere it still
          renders - so this copy is gated on exactly the case that hides it. A detail
@@ -4931,10 +5132,12 @@
     <!-- One opener rather than the menu: the overlay is the launch surface in a
          pane, and a second copy of the target list inside a popover inside a tab
          strip is the stacking this mode exists to remove. -->
-    <Button size="sm" surface="soft" tone="neutral" label="Launch session" onclick={openLauncher}>
-      <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
-    </Button>
-  {:else}
+    {#if showLaunch}
+      <Button size="sm" surface="soft" tone="neutral" label="Launch session" onclick={openLauncher}>
+        <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
+      </Button>
+    {/if}
+  {:else if showLaunch}
     <LaunchMenu
       launchTargets={launchTargets}
       {launchingKey}
@@ -5179,8 +5382,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 34px;
-    padding: 0 10px;
+    flex-wrap: wrap;
+    min-height: 34px;
+    padding: 4px 10px;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-default);
     border-left: 1px solid var(--border-default);
@@ -5188,8 +5392,41 @@
     flex-shrink: 0;
   }
 
+  .header-bar--compact {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .header-bar--compact .header-start {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .header-bar--compact .header-name,
+  .header-bar--compact .header-branch {
+    max-width: 100%;
+  }
+
+  .header-bar--compact .header-branch {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .compact-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
   .header-start {
     display: flex;
+    min-width: 0;
+    flex: 1 1 160px;
     align-items: center;
     gap: 8px;
     overflow: hidden;
@@ -5220,8 +5457,10 @@
   .header-end {
     display: flex;
     align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
   }
 
   .header-btn {
@@ -5279,40 +5518,29 @@
     background: var(--bg-primary);
   }
 
-  .commit-attribution { padding: 8px 12px; font-size: var(--font-size-sm); }
-  .attribution-warning { color: var(--color-danger); }
-
-  .workspace-toolbar {
-    display: flex;
-    align-items: stretch;
-    justify-content: space-between;
-    gap: var(--space-4);
-    height: 30px;
-    padding: 0 6px 0 0;
-    border-bottom: 1px solid var(--border-default);
-    border-left: 1px solid var(--border-default);
-    background: var(--bg-inset);
-    flex-shrink: 0;
+  .push-details {
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
   }
 
-  .workspace-toolbar-title {
-    display: inline-flex;
-    align-items: center;
-    padding: 0 10px;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+  .push-details p { margin: 0 0 var(--space-5); }
+
+  .push-details dl {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-4) var(--space-5);
+    margin: 0;
   }
+
+  .push-details dt, .push-details dd span { color: var(--text-secondary); }
+  .push-details dd { margin: 0; }
+  .push-details dd span { display: block; }
 
   .workspace-actions {
     display: flex;
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
-    padding-left: 6px;
-    border-left: 1px solid var(--border-muted);
   }
 
   .runtime-error {

@@ -24,6 +24,8 @@ func testReviewLineRange() ReviewLineRange {
 }
 
 func TestMRReviewDraftCRUD(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -74,6 +76,8 @@ func TestMRReviewDraftCRUD(t *testing.T) {
 }
 
 func TestMRReviewThreadsUpsertAndResolve(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -120,6 +124,8 @@ func TestMRReviewThreadsUpsertAndResolve(t *testing.T) {
 }
 
 func TestMRReviewThreadsUseCommentIDWhenProviderThreadIDIsMissing(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)

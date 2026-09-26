@@ -2,8 +2,11 @@ package e2etest
 
 import (
 	"context"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
@@ -78,6 +82,7 @@ func setupWithBasePath(t *testing.T, basePath string, _ any) *server.Server {
 }
 
 func setupTestServerWithConfig(t *testing.T) (*server.Server, *db.DB, string) {
+	t.Helper()
 	return setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -95,6 +100,7 @@ func setupTestServerWithConfigContent(
 	cfgContent string,
 	mock *mockGH,
 ) (*server.Server, *db.DB, string) {
+	t.Helper()
 	srv, database, cfgPath, _ := setupTestServerWithConfigContentAndSyncer(
 		t, cfgContent, mock,
 	)
@@ -106,6 +112,7 @@ func setupTestServerWithConfigContentAndSyncer(
 	cfgContent string,
 	mock *mockGH,
 ) (*server.Server, *db.DB, string, *ghclient.Syncer) {
+	t.Helper()
 	return setupTestServerWithConfigContentOptionsAndSyncer(
 		t, cfgContent, mock, server.ServerOptions{
 			HostCheckAllowLoopbackAnyPort: true,
@@ -119,6 +126,7 @@ func setupTestServerWithConfigContentAndOptions(
 	mock *mockGH,
 	options server.ServerOptions,
 ) (*server.Server, *db.DB, string) {
+	t.Helper()
 	options.HostCheckAllowLoopbackAnyPort = true
 	srv, database, cfgPath, _ := setupTestServerWithConfigContentOptionsAndSyncer(
 		t, cfgContent, mock, options,
@@ -158,7 +166,7 @@ func setupTestServerWithConfigContentOptionsAndSyncer(
 
 func gracefulShutdown(t *testing.T, srv *server.Server) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 	defer cancel()
 	require.NoError(t, srv.Shutdown(ctx))
 }
@@ -166,6 +174,9 @@ func gracefulShutdown(t *testing.T, srv *server.Server) {
 type mockGH struct {
 	getRateLimitSnapshotFn     func(context.Context) (*platformgithub.RateLimitSnapshot, error)
 	getRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
+	getRepositoryByIDFn        func(context.Context, string, int64) (*gh.Repository, error)
+	servedRoutesMu             sync.Mutex
+	servedRoutes               map[int64]mockGHRoute
 	getPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
 	listOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listReposByOwnerFn         func(context.Context, string) ([]*gh.Repository, error)
@@ -208,102 +219,168 @@ func (m *mockGH) GetUser(context.Context, string) (*gh.User, error) { return nil
 func (m *mockGH) ListReleases(context.Context, string, string, int) ([]*gh.RepositoryRelease, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListTags(context.Context, string, string, int) ([]*gh.RepositoryTag, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListOpenIssues(context.Context, string, string) ([]*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockGH) GetIssue(context.Context, string, string, int) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockGH) CreateIssue(context.Context, string, string, string, string) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListIssueComments(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListIssueCommentsIfChanged(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListReviews(context.Context, string, string, int) ([]*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListPullRequestReviewThreads(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListCommits(context.Context, string, string, int) ([]*gh.RepositoryCommit, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListPullRequestTimelineEvents(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListForcePushEvents(context.Context, string, string, int) ([]platformgithub.ForcePushEvent, error) {
 	return nil, nil
 }
+
 func (m *mockGH) GetCombinedStatus(context.Context, string, string, string) (*gh.CombinedStatus, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListCheckRunsForRef(context.Context, string, string, string) ([]*gh.CheckRun, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListWorkflowRunsForHeadSHA(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ApproveWorkflowRun(context.Context, string, string, int64) error {
 	return nil
 }
+
 func (m *mockGH) CreateIssueComment(context.Context, string, string, int, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockGH) EditIssueComment(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockGH) DeleteIssueComment(context.Context, string, string, int64) error {
 	return nil
 }
+
 func (m *mockGH) CreatePullRequestReviewCommentReply(
 	context.Context, string, string, int, string, int64,
 ) (*gh.PullRequestComment, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListNotifications(ctx context.Context, opts ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
 	if m.listNotificationsFn != nil {
 		return m.listNotificationsFn(ctx, opts)
 	}
 	return nil, false, nil
 }
+
 func (m *mockGH) GetNotificationThread(ctx context.Context, threadID string) (ghclient.NotificationThread, error) {
 	if m.getNotificationThreadFn != nil {
 		return m.getNotificationThreadFn(ctx, threadID)
 	}
 	return ghclient.NotificationThread{}, nil
 }
+
 func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string) error {
 	if m.markNotificationReadFn != nil {
 		return m.markNotificationReadFn(ctx, threadID)
 	}
 	return nil
 }
+
 func (m *mockGH) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {
+	var (
+		repository *gh.Repository
+		err        error
+	)
 	if m.getRepositoryFn != nil {
-		return m.getRepositoryFn(ctx, owner, repo)
+		repository, err = m.getRepositoryFn(ctx, owner, repo)
+	} else {
+		repository = &gh.Repository{
+			ID:       new(testutil.FixtureRepoID(owner, repo)),
+			Name:     &repo,
+			Owner:    &gh.User{Login: &owner},
+			Archived: new(bool),
+		}
 	}
-	id := int64(1)
-	nodeID := "repo-" + owner + "-" + repo
-	return &gh.Repository{
-		ID:       &id,
-		NodeID:   &nodeID,
-		Name:     &repo,
-		Owner:    &gh.User{Login: &owner},
-		Archived: new(bool),
-	}, nil
+	if err == nil && repository.GetID() != 0 {
+		m.servedRoutesMu.Lock()
+		if m.servedRoutes == nil {
+			m.servedRoutes = map[int64]mockGHRoute{}
+		}
+		m.servedRoutes[repository.GetID()] = mockGHRoute{owner: owner, name: repo}
+		m.servedRoutesMu.Unlock()
+	}
+	return repository, err
 }
+
+type mockGHRoute struct {
+	owner string
+	name  string
+}
+
+// GetRepositoryByID answers by-ID lookups for repositories this mock has
+// already served by route, or for fixture routes whose FixtureRepoID is id,
+// re-reading the route so getRepositoryFn stays the single source of
+// repository state.
+func (m *mockGH) GetRepositoryByID(
+	ctx context.Context, owner string, id int64,
+) (*gh.Repository, error) {
+	if m.getRepositoryByIDFn != nil {
+		return m.getRepositoryByIDFn(ctx, owner, id)
+	}
+	m.servedRoutesMu.Lock()
+	route, ok := m.servedRoutes[id]
+	m.servedRoutesMu.Unlock()
+	if !ok {
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{
+				StatusCode: http.StatusNotFound,
+				Request:    &http.Request{Method: http.MethodGet, URL: &url.URL{Path: "/repositories"}},
+			},
+			Message: "Not Found",
+		}
+	}
+	return m.GetRepository(ctx, route.owner, route.name)
+}
+
 func (m *mockGH) CreateReview(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockGH) CreateReviewWithComments(
 	ctx context.Context,
 	owner, repo string,
@@ -318,6 +395,7 @@ func (m *mockGH) CreateReviewWithComments(
 	}
 	return nil, nil
 }
+
 func (m *mockGH) ApplyReviewSuggestions(
 	_ context.Context,
 	_ string,
@@ -327,36 +405,45 @@ func (m *mockGH) ApplyReviewSuggestions(
 ) (*platform.AppliedReviewSuggestions, error) {
 	return nil, nil
 }
+
 func (m *mockGH) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ConvertPullRequestToDraft(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }
+
 func (m *mockGH) DismissReview(ctx context.Context, owner, repo string, number int, reviewID int64, message string) (*gh.PullRequestReview, error) {
 	if m.dismissReviewFn != nil {
 		return m.dismissReviewFn(ctx, owner, repo, number, reviewID, message)
 	}
 	return nil, nil
 }
+
 func (m *mockGH) MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string) (*gh.PullRequestMergeResult, error) {
 	if m.mergePullRequestFn != nil {
 		return m.mergePullRequestFn(ctx, owner, repo, number, commitTitle, commitMessage, method, expectedHeadSHA)
 	}
 	return nil, nil
 }
+
 func (m *mockGH) EditPullRequest(context.Context, string, string, int, platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
 	return nil, nil
 }
+
 func (m *mockGH) EditIssue(context.Context, string, string, int, string) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockGH) EditIssueContent(context.Context, string, string, int, *string, *string) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockGH) ListPullRequestsPage(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
 	return nil, false, nil
 }
+
 func (m *mockGH) ListIssuesPage(context.Context, string, string, string, int) ([]*gh.Issue, bool, error) {
 	return nil, false, nil
 }

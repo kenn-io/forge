@@ -10,10 +10,12 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-type syncBudgetKey struct{}
-type archiveSyncBudgetKey struct{}
-type archiveAttemptAllowanceKey struct{}
-type archiveProviderAttemptReservationKey struct{}
+type (
+	syncBudgetKey                        struct{}
+	archiveSyncBudgetKey                 struct{}
+	archiveAttemptAllowanceKey           struct{}
+	archiveProviderAttemptReservationKey struct{}
+)
 
 // archiveAttemptAllowance is a shared, mutable counter of the provider capacity
 // an admitted archive request is still allowed to consume. Headerless providers

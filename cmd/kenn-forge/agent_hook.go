@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,15 +42,12 @@ func receiveAgentHook(
 		return nil
 	}
 	integration, err := agenthook.ParseAgent(agent)
-	if err != nil {
-		return nil
-	}
-	handler := agentHookRelay{
-		agent:      integration,
-		configPath: configPath,
-	}
-	if err := agenthook.Handle(ctx, integration, stdin, stdout, handler); err != nil {
-		return nil
+	if err == nil {
+		handler := agentHookRelay{
+			agent:      integration,
+			configPath: configPath,
+		}
+		_ = agenthook.Handle(ctx, integration, stdin, stdout, handler)
 	}
 	return nil
 }
@@ -231,7 +229,7 @@ func installAgentHooks(action, configPath, rawAgent, binary string, stdout io.Wr
 		return err
 	}
 	if cfg.DataDirWasRelative() {
-		return fmt.Errorf("agent hook install requires an absolute data_dir")
+		return errors.New("agent hook install requires an absolute data_dir")
 	}
 	absoluteConfigPath, err := filepath.Abs(configPath)
 	if err != nil {

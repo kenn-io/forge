@@ -3,6 +3,7 @@ package localruntime
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -17,7 +18,7 @@ import (
 // identity, since configured target names need not identify an agent family.
 func agentResumeCommand(command []string, agent, sessionID string) ([]string, error) {
 	if len(command) == 0 || command[0] == "" {
-		return nil, fmt.Errorf("agent resume requires a configured command")
+		return nil, errors.New("agent resume requires a configured command")
 	}
 	adapter, err := agentcli.New(agentcli.Name(agent), agentcli.Command{
 		Executable: command[0],
@@ -42,9 +43,10 @@ func (m *Manager) requireTmuxSession(ctx context.Context, session string) error 
 	}
 	command, err := resolveTmuxCommand(command)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrSessionUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrSessionUnavailable, err)
 	}
-	args := append(command[1:], "has-session", "-t", session)
+	args := append([]string(nil), command[1:]...)
+	args = append(args, "has-session", "-t", session)
 	cmd := procutil.CommandContext(ctx, command[0], args...)
 	cmd.Env = TmuxClientEnvironment(os.Environ(), m.currentStripEnvVars())
 	var stderr bytes.Buffer
@@ -53,7 +55,7 @@ func (m *Manager) requireTmuxSession(ctx context.Context, session string) error 
 		if isTmuxSessionAbsent(stderr.Bytes(), err) {
 			return fmt.Errorf("%w: %s", ErrSessionNotFound, session)
 		}
-		return fmt.Errorf("%w: check tmux session: %v: %s", ErrSessionUnavailable, err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("%w: check tmux session: %w: %s", ErrSessionUnavailable, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }

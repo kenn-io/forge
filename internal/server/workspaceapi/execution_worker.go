@@ -43,24 +43,24 @@ func (s *Handler) admitWorkerRepository(ctx context.Context, repository db.Works
 		return nil, httpapi.Forbidden(err.Error(), nil)
 	}
 	if credential.GitHubUserID != s.executionWorker.GitHubUserID ||
-		(repository.PlatformRepoID != "" && repository.PlatformRepoID != credential.RepositoryNodeID) {
+		(repository.PlatformRepoID != 0 && repository.PlatformRepoID != credential.RepositoryID) {
 		return nil, httpapi.Validation("repository", "broker identity differs from the worker or supplied repository")
 	}
 	cloneURL := "https://github.com/" + repository.Owner + "/" + repository.Name + ".git"
 	if repository.CloneURL != "" && repository.CloneURL != cloneURL {
 		return nil, httpapi.Validation("repository.clone_url", "clone URL must match the admitted GitHub repository")
 	}
-	entry, _, err := s.db.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: credential.RepositoryNodeID,
+	entry, err := s.db.ObserveRepository(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: credential.RepositoryID,
 		Owner: repository.Owner, Name: repository.Name,
-	}, s.now().UTC())
+	})
 	if err != nil {
 		return nil, httpapi.Internal("record admitted repository: " + err.Error())
 	}
-	if err := s.db.UpdateRepoProviderMetadata(ctx, entry.Repository.ID, db.RepoProviderMetadata{
-		PlatformRepoID: credential.RepositoryNodeID, CloneURL: cloneURL,
-		WebURL: strings.TrimSuffix(cloneURL, ".git"), DefaultBranch: credential.DefaultBranch,
-	}); err != nil {
+	if err := s.db.UpdateRepoProviderObservation(ctx, entry.Repository.ID, db.RepoProviderMetadata{
+		CloneURL: cloneURL, WebURL: strings.TrimSuffix(cloneURL, ".git"),
+		DefaultBranch: credential.DefaultBranch,
+	}, nil, nil); err != nil {
 		return nil, httpapi.Internal("record admitted repository metadata: " + err.Error())
 	}
 	return credential, nil
@@ -125,7 +125,8 @@ func (s *Handler) createWorkerWorkspace(ctx context.Context, input *struct{ Body
 func (s *Handler) refreshWorkerContext(ctx context.Context, input *struct {
 	ID   string `path:"id"`
 	Body db.WorkspaceLaunchSpec
-}) (*struct{}, error) {
+},
+) (*struct{}, error) {
 	if err := input.Body.RequireVisible(s.now().UTC()); err != nil {
 		return nil, workspaceLaunchSpecProblem(err)
 	}

@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -44,12 +45,11 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 
 			database := dbtest.Open(t)
 			identity := db.GitHubRepoIdentity(serverURL.Host, "acme", "widget")
-			identity.PlatformRepoID = "repo-acme-widget"
-			repoID, err := database.UpsertRepo(t.Context(), identity)
+			repoID, err := reposeed.Seed(t.Context(), database, identity)
 			require.NoError(err)
-			require.NoError(database.UpdateRepoProviderMetadata(t.Context(), repoID, db.RepoProviderMetadata{
+			require.NoError(database.UpdateRepoProviderObservation(t.Context(), repoID, db.RepoProviderMetadata{
 				CloneURL: server.URL + "/acme/widget.git", DefaultBranch: "main",
-			}))
+			}, nil, nil))
 
 			clones := gitclone.New(filepath.Join(root, "clones"), nil)
 			manager := workspace.NewManager(database, filepath.Join(root, "worktrees"))
@@ -106,7 +106,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			handler.Start(parent, false)
 			t.Cleanup(func() {
 				cancelParent()
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 				defer cancel()
 				require.NoError(handler.Shutdown(shutdownCtx))
 			})
@@ -156,7 +156,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			require.NoError(manager.WarmWorktrees(t.Context()))
 
 			cancelParent()
-			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+			shutdownCtx, cancelShutdown := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 			defer cancelShutdown()
 			require.NoError(handler.Shutdown(shutdownCtx))
 		})

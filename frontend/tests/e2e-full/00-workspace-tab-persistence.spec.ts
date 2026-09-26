@@ -378,7 +378,12 @@ test.describe("workspace tab persistence", () => {
         (response) =>
           response.url().includes(`/api/v1/workspaces/${workspace.id}/diff`) && response.request().method() === "GET",
       );
-      await page.locator(".panel-toggle-group .panel-toggle-btn", { hasText: "Diff" }).click();
+      await page.getByRole("button", { name: "Workspace controls", exact: true }).click();
+      await page
+        .getByRole("dialog", { name: "Workspace controls" })
+        .getByRole("button", { name: "Diff", exact: true })
+        .click();
+      await page.keyboard.press("Escape");
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       const workspaceScope = page.locator(".right-sidebar .workspace-diff-scope");
       await expect(workspaceScope.locator(".diff-scope-picker")).toHaveCount(0);
@@ -512,7 +517,7 @@ test.describe("workspace tab persistence", () => {
     }
   });
 
-  test("prepares the selected diff before workspace details finish switching", async ({ page }) => {
+  test("prepares the selected diff after workspace metadata loads while runtime is pending", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -618,6 +623,10 @@ test.describe("workspace tab persistence", () => {
       await expect(page.getByRole("region", { name: "Workspace Diff" })).toHaveCount(0);
       await expect(page.locator(".terminal-view")).toBeFocused();
       await expect(page.locator(".right-sidebar.input-active")).toHaveCount(0);
+      expect(workspaceBDiffRequests).toEqual([]);
+
+      releaseWorkspaceDetail();
+      await expect(page.getByText("Loading workspace details...")).toBeVisible();
 
       await page.waitForFunction(
         (workspaceID) =>
@@ -630,13 +639,12 @@ test.describe("workspace tab persistence", () => {
       );
       expect(workspaceBDiffRequests).toEqual([]);
 
-      releaseWorkspaceDetail();
-      await expect(page.getByText("Loading workspace details...")).toBeVisible();
-      expect(workspaceBDiffRequests).toEqual([]);
-
       releaseRuntime();
       await expect(page.getByRole("region", { name: "Workspace Diff" })).toBeVisible();
       await expect.poll(() => workspaceBDiffRequests).toContain(`/api/v1/workspaces/${workspaceB.id}/files`);
+      await expect(
+        page.getByRole("region", { name: "Workspace Diff" }).getByText("workspace-b.txt", { exact: true }),
+      ).toBeVisible();
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

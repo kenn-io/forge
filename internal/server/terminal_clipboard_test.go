@@ -70,7 +70,7 @@ func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
 				"text": "copied through kenn-forge",
 			})
 			require.NoError(t, err)
-			req := httptest.NewRequest(
+			req := httptest.NewRequestWithContext(t.Context(),
 				http.MethodPost,
 				"/api/v1/terminal/clipboard",
 				bytes.NewReader(body),
@@ -98,7 +98,7 @@ func TestTerminalClipboardWritePreservesUnicode(t *testing.T) {
 	)
 	body, err := json.Marshal(map[string]string{"text": text})
 	require.NoError(t, err)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/terminal/clipboard",
 		bytes.NewReader(body),
@@ -183,7 +183,7 @@ func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
 				},
 			)
 			body := strings.NewReader(`{"text":"proxied copy"}`)
-			req := httptest.NewRequest(
+			req := httptest.NewRequestWithContext(t.Context(),
 				http.MethodPost,
 				"/api/v1/terminal/clipboard",
 				body,
@@ -209,7 +209,7 @@ func TestTerminalClipboardWriteThroughTrustedReverseProxyRequiresLocalClient(
 func TestLocalTerminalClipboardRequestRecognizesNonLoopbackInterface(
 	t *testing.T,
 ) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/terminal/clipboard", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/terminal/clipboard", nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	req.Header.Set("X-Forwarded-For", "192.0.2.10")
 	interfaceAddrs := func() ([]net.Addr, error) {
@@ -238,7 +238,7 @@ func TestTerminalClipboardWriteRejectsOversizedText(t *testing.T) {
 		"text": strings.Repeat("x", 1024*1024+1),
 	})
 	require.NoError(t, err)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/terminal/clipboard",
 		bytes.NewReader(body),
@@ -264,7 +264,7 @@ func TestTerminalClipboardWriteReportsNativeFailure(t *testing.T) {
 		ServerOptions{TerminalClipboard: clipboard},
 	)
 	body := strings.NewReader(`{"text":"copy me"}`)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/terminal/clipboard",
 		body,

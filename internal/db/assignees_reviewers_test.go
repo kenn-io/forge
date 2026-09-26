@@ -11,7 +11,7 @@ import (
 func seedAssigneeTestMR(t *testing.T, d *DB, updatedAt time.Time, assigneesJSON, reviewersJSON string) (int64, int64) {
 	t.Helper()
 	ctx := t.Context()
-	repoID, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
+	repoID, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
 	require.NoError(t, err)
 	mrID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
 		RepoID:         repoID,
@@ -31,6 +31,8 @@ func seedAssigneeTestMR(t *testing.T, d *DB, updatedAt time.Time, assigneesJSON,
 }
 
 func TestUpsertMergeRequestPersistsAndParsesUserLists(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -51,6 +53,8 @@ func TestUpsertMergeRequestPersistsAndParsesUserLists(t *testing.T) {
 }
 
 func TestUpsertMergeRequestPreservesUserListsWhenProviderOmitsThem(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -104,6 +108,8 @@ func TestUpsertMergeRequestPreservesUserListsWhenProviderOmitsThem(t *testing.T)
 }
 
 func TestUpdateMergeRequestUserListsPersistMutationResults(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -130,12 +136,14 @@ func TestUpdateMergeRequestUserListsPersistMutationResults(t *testing.T) {
 }
 
 func TestUpdateIssueAssigneesPersistsMutationResults(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	now := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
-	repoID, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
+	repoID, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
 	require.NoError(err)
 	issueID, err := d.UpsertIssue(ctx, &Issue{
 		RepoID:         repoID,

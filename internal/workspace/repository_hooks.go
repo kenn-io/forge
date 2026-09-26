@@ -21,6 +21,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/kit/atomicfile"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitworktree "go.kenn.io/kit/git/worktree"
 )
@@ -38,17 +39,17 @@ type roborevRepositoryConfig struct {
 func roborevManagedCloneServerAddress(endpoint string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || parsed.Scheme != "http" || parsed.Host == "" {
-		return "", fmt.Errorf("roborev managed-clone initialization requires a loopback HTTP endpoint")
+		return "", errors.New("roborev managed-clone initialization requires a loopback HTTP endpoint")
 	}
 	if parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("roborev managed-clone initialization requires an origin-only loopback HTTP endpoint")
+		return "", errors.New("roborev managed-clone initialization requires an origin-only loopback HTTP endpoint")
 	}
 	host := strings.ToLower(parsed.Hostname())
 	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
-		return "", fmt.Errorf("roborev managed-clone initialization requires 127.0.0.1, localhost, or [::1]")
+		return "", errors.New("roborev managed-clone initialization requires 127.0.0.1, localhost, or [::1]")
 	}
 	if parsed.Port() == "" {
-		return "", fmt.Errorf("roborev managed-clone initialization requires an explicit endpoint port")
+		return "", errors.New("roborev managed-clone initialization requires an explicit endpoint port")
 	}
 	return parsed.Host, nil
 }
@@ -57,7 +58,7 @@ func normalizeRepositoryRelativeDir(raw string) (string, error) {
 	value := strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
 	value = strings.TrimSuffix(value, "/")
 	if value == "" {
-		return "", fmt.Errorf("snapshot_dir is empty")
+		return "", errors.New("snapshot_dir is empty")
 	}
 	if strings.IndexFunc(value, unicode.IsControl) >= 0 {
 		return "", fmt.Errorf("snapshot_dir %q must not contain control characters", raw)
@@ -187,7 +188,7 @@ func workspaceRoborevConfig(workspacePath string) ([]byte, error) {
 		return nil, fmt.Errorf("inspect workspace .roborev.toml: %w", err)
 	}
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("workspace .roborev.toml must be a regular file")
+		return nil, errors.New("workspace .roborev.toml must be a regular file")
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -245,15 +246,14 @@ func ensureManagedCloneExclude(
 		return fmt.Errorf("resolve managed clone common directory: %w", err)
 	}
 	if canonicalGitDir == canonicalCommonDir {
-		return fmt.Errorf("managed workspace must be a linked worktree")
+		return errors.New("managed workspace must be a linked worktree")
 	}
 
 	sharedBare, err := gitCombinedOutput(
 		ctx, commonDir, "config", "--local", "--bool", "--get", "core.bare",
 	)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); !ok || exitErr.ExitCode() != 1 {
 			return fmt.Errorf("inspect managed clone core.bare: %w", err)
 		}
 	}
@@ -312,6 +312,64 @@ func ensureManagedCloneExclude(
 	return nil
 }
 
+// refreshManagedCloneExclude rebuilds a managed worktree's generated
+// exclude file from the user's current exclusion rules. Git reads only one
+// core.excludesFile, so setup copies the user's rules into the generated
+// file. Without a refresh, a rule the user adds later never reaches the
+// worktree. A worktree that does not use the generated file is left alone.
+func refreshManagedCloneExclude(ctx context.Context, workspacePath string) error {
+	gitDir, err := gitCombinedOutput(
+		ctx, workspacePath, "rev-parse", "--path-format=absolute", "--git-dir",
+	)
+	if err != nil {
+		return fmt.Errorf("resolve worktree Git directory: %w", err)
+	}
+	canonicalGitDir, err := canonicalFilesystemPath(strings.TrimSpace(gitDir))
+	if err != nil {
+		return fmt.Errorf("resolve worktree Git directory: %w", err)
+	}
+	excludePath := filepath.Join(canonicalGitDir, "forge-roborev-exclude")
+	// Read the worktree config file directly: `git config --worktree` fails
+	// in a repository with linked worktrees unless extensions.worktreeConfig
+	// is on, which only setup of the generated file enables.
+	configured, err := gitCombinedOutput(
+		ctx, workspacePath, "config", "--file",
+		filepath.Join(canonicalGitDir, "config.worktree"),
+		"--path", "--get", "core.excludesFile",
+	)
+	if err != nil {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
+			return nil
+		}
+		return fmt.Errorf("inspect worktree excludes file: %w", err)
+	}
+	// Setup stores the canonical path, so a different value is the user's own.
+	if filepath.Clean(strings.TrimSpace(configured)) != excludePath {
+		return nil
+	}
+	current, err := os.ReadFile(excludePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read worktree Roborev exclude: %w", err)
+	}
+	// Setup writes the snapshot pattern last.
+	lines := strings.Split(strings.TrimRight(string(current), "\n"), "\n")
+	pattern := strings.TrimSpace(lines[len(lines)-1])
+	if pattern == "" {
+		return nil
+	}
+	base, err := effectiveBaseExclude(ctx, workspacePath, canonicalGitDir, excludePath)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(roborevExcludeContent(base, pattern), current) {
+		return nil
+	}
+	return writeRoborevExclude(excludePath, base, pattern)
+}
+
 type gitConfigPathEntry struct {
 	origin string
 	path   string
@@ -335,7 +393,7 @@ func userExcludeEntries(
 		parts = parts[:len(parts)-1]
 	}
 	if len(parts)%2 != 0 {
-		return nil, fmt.Errorf("inspect user Git excludes file: invalid Git config output")
+		return nil, errors.New("inspect user Git excludes file: invalid Git config output")
 	}
 	entries := make([]gitConfigPathEntry, 0, len(parts)/2)
 	for i := 0; i < len(parts); i += 2 {
@@ -354,8 +412,7 @@ func worktreeRoborevBaseExclude(
 		"forge.roborevBaseExcludesFile",
 	)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 {
 			return "", nil
 		}
 		return "", fmt.Errorf("inspect saved user Git excludes file: %w", err)
@@ -447,37 +504,28 @@ func effectiveBaseExclude(
 func writeRoborevExclude(path string, base []byte, pattern string) error {
 	if info, err := os.Lstat(path); err == nil {
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("worktree Roborev exclude must be a regular file")
+			return errors.New("worktree Roborev exclude must be a regular file")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect worktree Roborev exclude: %w", err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".forge-roborev-exclude-*")
-	if err != nil {
-		return fmt.Errorf("create worktree Roborev exclude: %w", err)
+	content := roborevExcludeContent(base, pattern)
+	// ErrPublished means the exclude file is already in place and only a
+	// later directory fsync failed.
+	err := atomicfile.WriteFile(path, content, atomicfile.WithPerm(0o644))
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
+		return fmt.Errorf("install worktree Roborev exclude: %w", err)
 	}
-	tmpPath := tmp.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
+	return nil
+}
+
+func roborevExcludeContent(base []byte, pattern string) []byte {
 	content := append([]byte(nil), base...)
 	if len(content) > 0 && content[len(content)-1] != '\n' {
 		content = append(content, '\n')
 	}
 	content = append(content, pattern...)
-	content = append(content, '\n')
-	if _, err := tmp.Write(content); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write worktree Roborev exclude: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close worktree Roborev exclude: %w", err)
-	}
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
-		return fmt.Errorf("chmod worktree Roborev exclude: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("install worktree Roborev exclude: %w", err)
-	}
-	return nil
+	return append(content, '\n')
 }
 
 func gitIgnoreLiteralDirPattern(relativeDir string) string {
@@ -678,7 +726,7 @@ func (m *Manager) resolveTrustedDefaultCommit(
 	ctx context.Context, commonDir string, ws *Workspace,
 ) (string, error) {
 	if m.clones == nil {
-		return "", fmt.Errorf("clone manager not set")
+		return "", errors.New("clone manager not set")
 	}
 	preferred := ""
 	if m.db != nil {
@@ -805,11 +853,11 @@ func confirmRoborevRegistration(
 	}
 	content, err := io.ReadAll(io.LimitReader(response.Body, 2<<20+1))
 	if err != nil || len(content) > 2<<20 {
-		return fmt.Errorf("confirm Roborev registration: invalid daemon response")
+		return errors.New("confirm Roborev registration: invalid daemon response")
 	}
 	var inventory roborevRegistrationInventory
 	if err := json.Unmarshal(content, &inventory); err != nil || inventory.TotalCount == nil {
-		return fmt.Errorf("confirm Roborev registration: invalid daemon response")
+		return errors.New("confirm Roborev registration: invalid daemon response")
 	}
 	want, err := canonicalFilesystemPath(workspacePath)
 	if err != nil {
@@ -821,7 +869,7 @@ func confirmRoborevRegistration(
 			return nil
 		}
 	}
-	return fmt.Errorf("confirm Roborev registration: workspace is absent from daemon inventory")
+	return errors.New("confirm Roborev registration: workspace is absent from daemon inventory")
 }
 
 func (m *Manager) setupManagedRepositoryHooks(

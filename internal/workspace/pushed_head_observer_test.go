@@ -150,40 +150,6 @@ func TestPushedHeadObserverSkipsWorkspaceForInactiveRepository(t *testing.T) {
 	require.Zero(reader.branchCalls)
 }
 
-func TestPushedHeadObserverLegacyWorkspaceSkipsHistoricallyReusedRoute(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	insertPushedHeadWorkspace(
-		t, database, "ws-legacy-pr", db.WorkspaceItemTypePullRequest, 42, nil,
-	)
-	workspace, err := database.GetWorkspace(t.Context(), "ws-legacy-pr")
-	require.NoError(err)
-	require.Zero(workspace.RepoID)
-
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
-		Owner: "acme", Name: "widget",
-	}, observedAt)
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
-		Owner: "acme", Name: "moved-away",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-replacement",
-		Owner: "acme", Name: "widget",
-	}, observedAt.Add(2*time.Minute))
-	require.NoError(err)
-
-	repo, err := NewPushedHeadObserver(database).workspaceRepository(
-		t.Context(), workspace, nil,
-	)
-	require.NoError(err)
-	require.Nil(repo)
-}
-
 func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -204,7 +170,7 @@ func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testi
 	}
 	observer := newPushedHeadObserverForTest(t, d, reader)
 
-	result, err := observer.RunOnce(context.Background())
+	result, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	assert.Empty(result.Associations)
 	assert.Empty(result.HeadChanges)
@@ -230,7 +196,7 @@ func TestLaunchSpecPushedHeadObserverUsesHubCandidatesWithoutProviderItemRows(
 			Version: WorkspaceLaunchSpecVersion,
 			Repository: WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				PlatformRepoID: testRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
@@ -294,7 +260,7 @@ func TestPushedHeadObserverFirstObservationEnqueuesWhenProviderHeadDiffers(t *te
 	}
 	observer := newPushedHeadObserverForTest(t, d, reader)
 
-	result, err := observer.RunOnce(context.Background())
+	result, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(result.HeadChanges, 1)
 	change := result.HeadChanges[0]
@@ -330,17 +296,17 @@ func TestPushedHeadObserverRetriesObservedSHAUntilProviderHeadMatches(t *testing
 	observer.setGitReaderForTest(reader)
 	observer.setNowForTest(func() time.Time { return now })
 
-	first, err := observer.RunOnce(context.Background())
+	first, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(first.HeadChanges, 1)
 	observer.MarkRefreshEnqueued(first.HeadChanges[0], now)
 
-	suppressed, err := observer.RunOnce(context.Background())
+	suppressed, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	assert.Empty(suppressed.HeadChanges)
 
 	now = now.Add(pushedHeadRefreshRetryInterval + time.Second)
-	retry, err := observer.RunOnce(context.Background())
+	retry, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(retry.HeadChanges, 1)
 	assert.Equal("1111111", retry.HeadChanges[0].OldSHA)
@@ -363,14 +329,14 @@ func TestPushedHeadObserverDoesNotRetryAfterRefreshSucceeds(t *testing.T) {
 	}
 	observer := newPushedHeadObserverForTest(t, d, reader)
 
-	first, err := observer.RunOnce(context.Background())
+	first, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(first.HeadChanges, 1)
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	observer.MarkRefreshSucceeded(first.HeadChanges[0], now)
 	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "2222222", "")
 
-	retry, err := observer.RunOnce(context.Background())
+	retry, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	assert.Empty(retry.HeadChanges)
 }
@@ -394,7 +360,7 @@ func TestPushedHeadObserverStopsRetryingAfterSuccessfulRefreshStillDiffers(t *te
 	observer.setGitReaderForTest(reader)
 	observer.setNowForTest(func() time.Time { return now })
 
-	first, err := observer.RunOnce(context.Background())
+	first, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(first.HeadChanges, 1)
 	observer.MarkRefreshEnqueued(first.HeadChanges[0], now)
@@ -404,18 +370,18 @@ func TestPushedHeadObserverStopsRetryingAfterSuccessfulRefreshStillDiffers(t *te
 	observer.MarkRefreshSucceeded(first.HeadChanges[0], now.Add(2*time.Second))
 
 	now = now.Add(pushedHeadRefreshRetryInterval + time.Second)
-	steady, err := observer.RunOnce(context.Background())
+	steady, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	assert.Empty(steady.HeadChanges)
 
 	now = now.Add(pushedHeadRefreshRetryInterval + time.Second)
-	later, err := observer.RunOnce(context.Background())
+	later, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	assert.Empty(later.HeadChanges)
 
 	// A real local push moves the tracking ref and restarts the cycle.
 	reader.trackingSHA = "3333333"
-	pushed, err := observer.RunOnce(context.Background())
+	pushed, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(pushed.HeadChanges, 1)
 	assert.Equal("2222222", pushed.HeadChanges[0].OldSHA)
@@ -443,7 +409,7 @@ func TestPushedHeadObserverRetriesNewSHAWhenEnqueueWasDropped(t *testing.T) {
 
 	// Suppressed steady state for the first SHA: refresh enqueued and
 	// succeeded, provider still reports a different head.
-	first, err := observer.RunOnce(context.Background())
+	first, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(first.HeadChanges, 1)
 	observer.MarkRefreshEnqueued(first.HeadChanges[0], now)
@@ -453,14 +419,14 @@ func TestPushedHeadObserverRetriesNewSHAWhenEnqueueWasDropped(t *testing.T) {
 	// (same-key detail sync already in flight), so neither marker runs.
 	reader.trackingSHA = "3333333"
 	now = now.Add(time.Minute)
-	moved, err := observer.RunOnce(context.Background())
+	moved, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(moved.HeadChanges, 1)
 
 	// The new SHA must keep retrying: the old SHA's refresh stamps do not
 	// belong to it and must not satisfy the stop-retrying gate.
 	now = now.Add(time.Minute)
-	retry, err := observer.RunOnce(context.Background())
+	retry, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(retry.HeadChanges, 1)
 	assert.Equal("3333333", retry.HeadChanges[0].NewSHA)
@@ -485,7 +451,7 @@ func TestPushedHeadObserverLateSuccessForOldSHADoesNotDisturbNewCycle(t *testing
 	observer.setGitReaderForTest(reader)
 	observer.setNowForTest(func() time.Time { return now })
 
-	first, err := observer.RunOnce(context.Background())
+	first, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(first.HeadChanges, 1)
 	observer.MarkRefreshEnqueued(first.HeadChanges[0], now)
@@ -493,7 +459,7 @@ func TestPushedHeadObserverLateSuccessForOldSHADoesNotDisturbNewCycle(t *testing
 	// Push moves the ref; the new SHA's refresh is enqueued normally.
 	reader.trackingSHA = "3333333"
 	now = now.Add(time.Minute)
-	moved, err := observer.RunOnce(context.Background())
+	moved, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(moved.HeadChanges, 1)
 	observer.MarkRefreshEnqueued(moved.HeadChanges[0], now)
@@ -505,7 +471,7 @@ func TestPushedHeadObserverLateSuccessForOldSHADoesNotDisturbNewCycle(t *testing
 	observer.MarkRefreshSucceeded(first.HeadChanges[0], now.Add(time.Second))
 
 	now = now.Add(5 * time.Second)
-	within, err := observer.RunOnce(context.Background())
+	within, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	assert.Empty(within.HeadChanges)
 }
@@ -529,12 +495,12 @@ func TestPushedHeadObserverDetectsSubsequentTrackingRefMove(t *testing.T) {
 		trackingOK:  true,
 	}
 	observer := newPushedHeadObserverForTest(t, d, reader)
-	first, err := observer.RunOnce(context.Background())
+	first, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	assert.Empty(first.HeadChanges)
 
 	reader.trackingSHA = "2222222"
-	second, err := observer.RunOnce(context.Background())
+	second, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(second.HeadChanges, 1)
 	assert.Equal("1111111", second.HeadChanges[0].OldSHA)
@@ -561,7 +527,7 @@ func TestPushedHeadObserverAssociatesIssueWorkspaceAndObservesHead(t *testing.T)
 	observer.setNowForTest(func() time.Time {
 		return time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	})
-	result, err := observer.RunOnce(context.Background())
+	result, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(result.Associations, 1)
 	assert.Equal("ws-issue", result.Associations[0].WorkspaceID)
@@ -570,7 +536,7 @@ func TestPushedHeadObserverAssociatesIssueWorkspaceAndObservesHead(t *testing.T)
 	assert.Equal("acme/widget", result.Associations[0].RepoPath)
 	assert.Empty(result.HeadChanges)
 
-	ws, err := d.GetWorkspace(context.Background(), "ws-issue")
+	ws, err := d.GetWorkspace(t.Context(), "ws-issue")
 	require.NoError(err)
 	require.NotNil(ws)
 	require.NotNil(ws.AssociatedPRNumber)
@@ -647,24 +613,24 @@ func TestPushedHeadObserverMissingRefAndTransientErrorKeepObservationState(t *te
 		trackingOK:  true,
 	}
 	observer := newPushedHeadObserverForTest(t, d, reader)
-	_, err := observer.RunOnce(context.Background())
+	_, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 
 	reader.trackingSHA = ""
 	reader.trackingOK = false
-	missing, err := observer.RunOnce(context.Background())
+	missing, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	assert.Empty(missing.HeadChanges)
 
 	reader.trackingOK = true
 	reader.trackingErr = errors.New("transient git failure")
-	failed, err := observer.RunOnce(context.Background())
+	failed, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	assert.Empty(failed.HeadChanges)
 
 	reader.trackingErr = nil
 	reader.trackingSHA = "2222222"
-	recovered, err := observer.RunOnce(context.Background())
+	recovered, err := observer.RunOnce(t.Context())
 	require.NoError(err)
 	require.Len(recovered.HeadChanges, 1)
 	assert.Equal("1111111", recovered.HeadChanges[0].OldSHA)
@@ -774,7 +740,7 @@ func TestPushedHeadObserverUpstreamHeal(t *testing.T) {
 			}
 			observer := newPushedHeadObserverForTest(t, d, reader)
 
-			result, err := observer.RunOnce(context.Background())
+			result, err := observer.RunOnce(t.Context())
 			require.NoError(err)
 			assert.Empty(result.HeadChanges)
 			if !tc.wantHeal {

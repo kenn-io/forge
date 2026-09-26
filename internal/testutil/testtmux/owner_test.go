@@ -622,7 +622,7 @@ func TestOwnerCleanupStopsRegisteredServerAndPreservesControl(t *testing.T) {
 	}
 	controlPID := startTmuxServer(t, tmuxPath, controlCommand)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 2*time.Second)
 		defer cancel()
 		_ = procutil.CommandContext(
 			ctx, tmuxPath, "-S", controlSocket, "kill-server",
@@ -1058,7 +1058,7 @@ func TestNewAtRefusesUnmarkedStaleRun(t *testing.T) {
 	command := []string{tmuxPath, "-f", "/dev/null", "-S", socket}
 	serverPID := startTmuxServer(t, tmuxPath, command)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 2*time.Second)
 		defer cancel()
 		_ = procutil.CommandContext(ctx, tmuxPath, "-S", socket, "kill-server").Run()
 	})

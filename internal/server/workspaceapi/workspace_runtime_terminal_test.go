@@ -30,11 +30,18 @@ func TestServeRuntimeTerminalNegotiatesCompression(t *testing.T) {
 	)
 	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		CompressionMode: websocket.CompressionContextTakeover,
 	})
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	require.NotNil(resp)
 	require.Contains(
@@ -60,9 +67,16 @@ func TestServeRuntimeTerminalAnswersHeartbeat(t *testing.T) {
 	)
 	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL, nil)
+	if wsHTTPResp != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	require.NoError(conn.Write(
 		ctx, websocket.MessageText,
@@ -114,9 +128,16 @@ func TestServeRuntimeTerminalForwardsBufferedReplayBeforeRefresh(t *testing.T) {
 	)
 	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, wsURL+"?cols=80&rows=24", nil)
+	conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL+"?cols=80&rows=24", nil)
+	if wsHTTPResp != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -148,7 +169,7 @@ func TestForwardAvailableRuntimeOutputReturnsWriteError(t *testing.T) {
 	output <- replay
 
 	err := forwardAvailableRuntimeOutput(
-		context.Background(), time.Second, output,
+		t.Context(), time.Second, output,
 		func(_ context.Context, data []byte) error {
 			require.Equal(replay, data)
 			return wantErr
@@ -164,7 +185,7 @@ func TestForwardAvailableRuntimeOutputBoundsBlockedWrite(t *testing.T) {
 	output <- []byte("buffered replay")
 
 	err := forwardAvailableRuntimeOutput(
-		context.Background(), 10*time.Millisecond, output,
+		t.Context(), 10*time.Millisecond, output,
 		func(ctx context.Context, _ []byte) error {
 			<-ctx.Done()
 			return ctx.Err()
@@ -186,9 +207,16 @@ func TestServeRuntimeTerminalTranslatesReplayBoundary(t *testing.T) {
 	)
 	wsURL, _ := runtimeTerminalTestServer(t, attachment)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL, nil)
+	if wsHTTPResp != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -219,13 +247,20 @@ func TestServeRuntimeTerminalReplayBoundaryDefersInitialResize(t *testing.T) {
 	)
 	wsURL, _ := runtimeTerminalTestServer(t, attachment)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(
+	conn, wsHTTPResp, err := websocket.Dial(
 		ctx,
 		wsURL+"?cols=177&rows=41&replay_boundary=1",
 		nil,
 	)
+	if wsHTTPResp != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -265,7 +300,7 @@ func TestHandleRuntimeTerminalControlAcknowledgesResizeClaimBeforeReturning(t *t
 	)
 
 	heartbeat, err := handleRuntimeTerminalControl(
-		context.Background(),
+		t.Context(),
 		attachment,
 		[]byte(`{"type":"claim_resize","cols":132,"rows":43,"pixel_width":1056,"pixel_height":688}`),
 	)
@@ -297,9 +332,16 @@ func TestRuntimeTerminalStopsBeforeInputWhenResizeClaimSettlementFails(t *testin
 	)
 	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL, nil)
+	if wsHTTPResp != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 	require.NoError(conn.Write(
@@ -338,11 +380,18 @@ func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 	)
 	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(
+	conn, wsHTTPResp, err := websocket.Dial(
 		ctx, wsURL+"?cols=80&rows=24", nil,
 	)
+	if wsHTTPResp != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -401,9 +450,16 @@ func TestServeRuntimeTerminalRestartDetachDoesNotReportSessionExit(t *testing.T)
 			)
 			wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
-			conn, _, err := websocket.Dial(ctx, wsURL, nil)
+			conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL, nil)
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				t.Cleanup(func() {
+					if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+						_ = wsHTTPResp.Body.Close()
+					}
+				})
+			}
 			require.NoError(err)
 			defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -430,15 +486,22 @@ func TestServeRuntimeTerminalDrainsDelayedFinalOutputBeforeSessionExit(t *testin
 	)
 	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, wsHTTPResp, err := websocket.Dial(ctx, wsURL, nil)
+	if wsHTTPResp != nil {
+		t.Cleanup(func() {
+			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
+				_ = wsHTTPResp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
 	close(done)
 	go func() {
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 		output <- []byte("final terminal output")
 		close(output)
 	}()
@@ -487,7 +550,7 @@ func runtimeTerminalTestServer(
 }
 
 func TestParseRuntimeTerminalGeometry(t *testing.T) {
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/?cols=132&rows=43&pixel_width=1056&pixel_height=688",
 		nil,

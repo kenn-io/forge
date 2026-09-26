@@ -180,6 +180,13 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 			"Origin":        []string{"https://hub.example"},
 		},
 	})
+	if resp != nil {
+		t.Cleanup(func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		})
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 	require.NotNil(resp)
@@ -280,7 +287,7 @@ func TestFleetProxyUsesOnlyDestinationCredentialAndRefusesRedirects(t *testing.T
 	api := newFleetTestAPI()
 	handler.Register(api)
 	request := func() *httptest.ResponseRecorder {
-		req := httptest.NewRequest(
+		req := httptest.NewRequestWithContext(t.Context(),
 			http.MethodGet,
 			"/fleet/hosts/"+testMemberNodeID+"/workspaces",
 			nil,
@@ -336,7 +343,7 @@ func TestFleetProxyRejectsMemberOriginOutsideEnrollment(t *testing.T) {
 	api := newFleetTestAPI()
 	handler.Register(api)
 	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/fleet/hosts/"+testMemberNodeID+"/workspaces",
 		nil,
@@ -361,7 +368,8 @@ func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T
 
 	clients := newFederationMemberClients(base)
 
-	assert.Equal(15*time.Second, clients.rest.Timeout)
+	assert.Zero(clients.rest.Timeout,
+		"member requests use the live peer timeout on their request context")
 	assert.Zero(clients.proxy.Timeout,
 		"proxied operations own their request lifetime through the browser context")
 	assert.Zero(clients.websocket.Timeout,
@@ -369,8 +377,8 @@ func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T
 	restTransport, ok := clients.rest.Transport.(*http.Transport)
 	require.True(ok)
 	assert.NotSame(baseTransport, restTransport)
-	assert.Equal(5*time.Second, restTransport.TLSHandshakeTimeout)
-	assert.Equal(10*time.Second, restTransport.ResponseHeaderTimeout)
+	assert.Zero(restTransport.TLSHandshakeTimeout)
+	assert.Zero(restTransport.ResponseHeaderTimeout)
 	proxyTransport, ok := clients.proxy.Transport.(*http.Transport)
 	require.True(ok)
 	assert.Zero(proxyTransport.ResponseHeaderTimeout,
@@ -388,10 +396,13 @@ func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T
 			return nil, r.Context().Err()
 		}),
 	}, false)
-	req, err := http.NewRequest(http.MethodGet, "https://member.example/api/v1/snapshot", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://member.example/api/v1/snapshot", nil)
 	require.NoError(err)
 	started := time.Now()
-	_, err = timed.Do(req)
+	timedResp, err := timed.Do(req)
+	if timedResp != nil {
+		_ = timedResp.Body.Close()
+	}
 	require.ErrorIs(err, context.DeadlineExceeded)
 	assert.Less(time.Since(started), time.Second)
 }
@@ -438,7 +449,7 @@ func TestFleetRESTProxyClosesMemberResponseBody(t *testing.T) {
 	})
 	api := newFleetTestAPI()
 	handler.Register(api)
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/fleet/hosts/"+testMemberNodeID+"/workspaces",
 		nil,
@@ -499,7 +510,7 @@ func TestFleetRESTProxyRejectsOversizedBodyBeforeDialingMember(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(body))
+			request := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, strings.NewReader(body))
 			request.ContentLength = tc.contentLength
 
 			api.Adapter().ServeHTTP(recorder, request)

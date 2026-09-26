@@ -10,6 +10,8 @@ import (
 )
 
 func TestBranchActivityPersistence(t *testing.T) {
+	t.Parallel()
+
 	t.Run("upserts commits and prunes outside retention", func(t *testing.T) {
 		assert := assert.New(t)
 		d := openTestDB(t)
@@ -389,7 +391,7 @@ func loadTestBranchCommits(
 	repoID int64,
 ) map[string]BranchCommit {
 	t.Helper()
-	rows, err := d.ro.Query(`
+	rows, err := d.ro.QueryContext(t.Context(), `
 		SELECT repo_id, branch_name, commit_sha, author_name, author_email,
 		       authored_at, committer_name, committer_email, committed_at,
 		       subject
@@ -434,7 +436,7 @@ func loadTestBranchCommitsByBranch(
 	repoID int64,
 ) map[string]BranchCommit {
 	t.Helper()
-	rows, err := d.ro.Query(`
+	rows, err := d.ro.QueryContext(t.Context(), `
 		SELECT repo_id, branch_name, commit_sha, author_name, author_email,
 		       authored_at, committer_name, committer_email, committed_at,
 		       subject
@@ -494,7 +496,7 @@ func loadTestBranchCommitLifecycle(
 	t.Helper()
 	var createdAt string
 	var updatedAt string
-	err := d.ro.QueryRow(`
+	err := d.ro.QueryRowContext(t.Context(), `
 		SELECT created_at, updated_at
 		FROM forge_branch_commits
 		WHERE repo_id = ? AND commit_sha = ?`,
@@ -515,7 +517,7 @@ func loadTestBranchCommitLifecycle(
 func countTestBranchForcePushes(t *testing.T, d *DB, repoID int64) int {
 	t.Helper()
 	var count int
-	err := d.ro.QueryRow(`
+	err := d.ro.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
 		FROM forge_branch_force_pushes
 		WHERE repo_id = ?`,
@@ -532,7 +534,7 @@ func loadOnlyTestBranchForcePushAfterSHA(
 ) string {
 	t.Helper()
 	var afterSHA string
-	err := d.ro.QueryRow(`
+	err := d.ro.QueryRowContext(t.Context(), `
 		SELECT after_sha
 		FROM forge_branch_force_pushes
 		WHERE repo_id = ?`,
@@ -549,7 +551,7 @@ func loadOnlyTestBranchForcePushCreatedAt(
 ) time.Time {
 	t.Helper()
 	var createdAt string
-	err := d.ro.QueryRow(`
+	err := d.ro.QueryRowContext(t.Context(), `
 		SELECT created_at
 		FROM forge_branch_force_pushes
 		WHERE repo_id = ?`,

@@ -125,19 +125,19 @@ func TestTmuxActivityTrackerBoundsAndCoalescesProbes(t *testing.T) {
 		})
 		now = now.Add(tmuxSampleMinInterval + time.Second)
 
-		first := tracker.StartProbe(context.Background(), "session-a")
+		first := tracker.StartProbe(t.Context(), "session-a")
 		assert.True(first.Started)
 		assert.True(first.HasFallback)
 		assert.Equal(cached, first.Fallback)
 
-		sameSession := tracker.StartProbe(context.Background(), "session-a")
+		sameSession := tracker.StartProbe(t.Context(), "session-a")
 		assert.False(sameSession.Started)
 		assert.True(sameSession.HasFallback)
 		assert.Equal(cached, sameSession.Fallback)
 
 		started := make(chan tmuxProbeStart, 1)
 		go func() {
-			started <- tracker.StartProbe(context.Background(), "session-b")
+			started <- tracker.StartProbe(t.Context(), "session-b")
 		}()
 		synctest.Wait()
 		assert.Empty(started)
@@ -168,7 +168,7 @@ func TestProbeOneTmuxSessionWaitsForCoalescedProbeWithFallback(t *testing.T) {
 		HasOutput: true,
 	})
 	now = now.Add(tmuxSampleMinInterval + time.Second)
-	inFlight := tracker.StartProbe(context.Background(), "session-a")
+	inFlight := tracker.StartProbe(t.Context(), "session-a")
 	require.True(inFlight.Started)
 
 	type probeResult struct {
@@ -179,7 +179,7 @@ func TestProbeOneTmuxSessionWaitsForCoalescedProbeWithFallback(t *testing.T) {
 	result := make(chan probeResult, 1)
 	srv := &Handler{tmuxActivity: tracker}
 	ctx := &doneObservedContext{
-		Context:      context.Background(),
+		Context:      t.Context(),
 		doneObserved: make(chan struct{}),
 	}
 	go func() {
@@ -227,11 +227,11 @@ func TestProbeOneTmuxSessionReturnsFallbackWhenCoalescedWaitTimesOut(t *testing.
 		HasOutput: true,
 	})
 	now = now.Add(tmuxSampleMinInterval + time.Second)
-	inFlight := tracker.StartProbe(context.Background(), "session-a")
+	inFlight := tracker.StartProbe(t.Context(), "session-a")
 	require.True(inFlight.Started)
 	t.Cleanup(inFlight.Probe.Cancel)
 
-	baseCtx, cancel := context.WithCancel(context.Background())
+	baseCtx, cancel := context.WithCancel(t.Context())
 	ctx := &doneObservedContext{
 		Context:      baseCtx,
 		doneObserved: make(chan struct{}),

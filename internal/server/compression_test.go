@@ -15,6 +15,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -58,7 +59,7 @@ func TestHumaResponseCompressionNegotiatesZstdAndBrotli(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/payload", nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/payload", nil)
 			req.Header.Set("Accept-Encoding", tc.acceptEncoding)
 			rr := httptest.NewRecorder()
 
@@ -80,7 +81,7 @@ func TestHumaResponseCompressionSkipsSmallResponses(t *testing.T) {
 	api.UseMiddleware(newResponseCompressionMiddleware(128))
 	registerCompressionTestRoutes(api)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/small", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/small", nil)
 	req.Header.Set("Accept-Encoding", "zstd, br")
 	rr := httptest.NewRecorder()
 
@@ -104,7 +105,7 @@ func TestHumaResponseCompressionPreservesHumagoUnwrap(t *testing.T) {
 	})
 	registerCompressionTestRoutes(api)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/payload", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/payload", nil)
 	req.Header.Set("Accept-Encoding", "br")
 	rr := httptest.NewRecorder()
 
@@ -129,7 +130,7 @@ func TestHumaResponseCompressionStreamsWhenBodyExceedsCap(t *testing.T) {
 	} {
 		t.Run(tc.encoding, func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/oversized", nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/oversized", nil)
 			req.Header.Set("Accept-Encoding", tc.encoding)
 			rr := httptest.NewRecorder()
 
@@ -184,7 +185,7 @@ func TestHumaResponseCompressionIncludesMultiMiBPayloads(t *testing.T) {
 	api.UseMiddleware(newResponseCompressionMiddleware(128))
 	registerCompressionTestRoutes(api)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/huge", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/huge", nil)
 	req.Header.Set("Accept-Encoding", "br")
 	rr := httptest.NewRecorder()
 
@@ -199,7 +200,7 @@ func TestServerUsesResponseCompressionMiddleware(t *testing.T) {
 	_, err := testutil.SeedFixtures(t.Context(), database)
 	require.NoError(t, err)
 	srv := New(database, nil, nil, "/", nil, ServerOptions{})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/pulls", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
 	req.Header.Set("Accept-Encoding", "zstd")
 	rr := httptest.NewRecorder()
 

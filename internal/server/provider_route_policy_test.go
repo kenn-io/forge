@@ -70,6 +70,7 @@ func TestProviderRouteOwnershipExamples(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(ProviderWithLocalOverlay, rules["list-pulls"].Owner)
 	assert.Equal(NodeLocal, rules["get-settings"].Owner)
+	assert.Equal(NodeLocal, rules["get-local-settings"].Owner)
 	assert.Equal(ProviderHubOnly, rules["federation-get-provider-settings"].Owner)
 	assert.Equal(ProviderHubOnly, rules["merge-pull"].Owner)
 	assert.Equal(NodeLocal, rules["get-pull-diff"].Owner)

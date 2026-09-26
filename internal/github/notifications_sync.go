@@ -336,14 +336,12 @@ func (s *Syncer) syncNotificationsForHost(
 	return errors.Join(repoErrs...)
 }
 
-// notificationRepoTarget is a repository whose identity and route fence were
-// verified for this pass, so listed threads may be written under its fence.
+// notificationRepoTarget is a repository whose provider identity was verified
+// for this pass, so listed threads may be written for it.
 type notificationRepoTarget struct {
-	repo       RepoRef
-	identity   db.RepoIdentity
-	routeFence db.RepositoryRouteFence
-	watermark  *db.NotificationSyncWatermark
-	stale      bool
+	repo      RepoRef
+	identity  db.RepoIdentity
+	watermark *db.NotificationSyncWatermark
 }
 
 func (s *Syncer) syncNotificationsForIdentity(
@@ -490,29 +488,19 @@ func (s *Syncer) syncNotificationsForIdentity(
 
 	complete := len(repoErrs) == 0
 	for _, target := range targets {
-		if target.stale {
-			complete = false
-			continue
-		}
-		committed, err := s.db.UpdateNotificationSyncWatermarkIfRouteFence(
+		if err := s.db.UpdateNotificationSyncWatermark(
 			ctx, platformName, host, target.repo.Owner, target.repo.Name,
-			target.routeFence, startedAt,
-			watermarkLastFullSyncAt(target.watermark, startedAt, fullSync),
-		)
-		if err != nil {
+			startedAt, watermarkLastFullSyncAt(target.watermark, startedAt, fullSync),
+		); err != nil {
 			repoErrs = append(repoErrs, fmt.Errorf(
 				"store notification sync watermark for %s/%s on %s: %w",
 				target.repo.Owner, target.repo.Name, host, err,
 			))
 			complete = false
-			continue
-		}
-		if !committed {
-			complete = false
 		}
 	}
 	// Record the validator only when every repository in the group advanced;
-	// otherwise a later 304 could skip threads a fenced repository missed.
+	// otherwise a later 304 could skip threads a failed repository missed.
 	if complete && lastModified != "" {
 		s.setNotificationValidator(bucket, lastModified)
 	}
@@ -537,7 +525,7 @@ func (s *Syncer) persistNotificationPage(
 	for _, thread := range threads {
 		key := notificationRepoKey(platformName, host, thread.RepoOwner, thread.RepoName)
 		target, ok := targets[key]
-		if !ok || target.stale {
+		if !ok {
 			continue
 		}
 		thread.Participating = participating[thread.ID]
@@ -570,24 +558,18 @@ func (s *Syncer) persistNotificationPage(
 		if !ok || target == nil {
 			continue
 		}
-		committed, err := s.db.UpsertNotificationsIfRouteFence(
-			ctx, notifications, target.identity, target.routeFence,
-		)
-		if err != nil {
+		if err := s.db.UpsertNotifications(ctx, notifications); err != nil {
 			return fmt.Errorf(
 				"upsert notifications for %s/%s on %s page %d: %w",
 				target.repo.Owner, target.repo.Name, host, pageNumber, err,
 			)
-		}
-		if !committed {
-			target.stale = true
 		}
 	}
 	return nil
 }
 
 // prepareNotificationRepo verifies a repository's provider identity and
-// captures its route fence before notifications are written for it.
+// persists its settings before notifications are written for it.
 func (s *Syncer) prepareNotificationRepo(
 	ctx context.Context,
 	kind platform.Kind,
@@ -596,81 +578,33 @@ func (s *Syncer) prepareNotificationRepo(
 	repo RepoRef,
 	providerWork *notificationProviderWork,
 ) (*notificationRepoTarget, error) {
-	for range 2 {
-		target, retry, err := s.prepareNotificationRepoAttempt(
-			ctx, host, client, repo, providerWork,
-		)
-		if err != nil || !retry {
-			return target, err
-		}
-	}
-	return nil, fmt.Errorf(
-		"repository route changed repeatedly during notification sync of %s/%s on %s",
-		repo.Owner, repo.Name, host,
-	)
-}
-
-func (s *Syncer) prepareNotificationRepoAttempt(
-	ctx context.Context,
-	host string,
-	client notificationClient,
-	repo RepoRef,
-	providerWork *notificationProviderWork,
-) (*notificationRepoTarget, bool, error) {
 	if err := s.ensureNotificationIdentityBudget(repo, client); err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	resolved, observedRepoID, providerRepo, observedAt, accepted, err :=
-		s.reconcileRepoIdentityObservation(ctx, repo)
+	resolved, observedRepoID, providerRepo, err := s.reconcileRepoIdentityObservation(ctx, repo)
 	if err != nil {
-		return nil, false, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"verify repository identity before notification sync of %s/%s on %s: %w",
 			repo.Owner, repo.Name, host, err,
 		)
 	}
-	if !accepted {
-		return nil, true, nil
-	}
 	repo = resolved
-	observedIdentity := platformdb.DBRepoIdentity(platformRepoRef(repo))
-	routeFence, found, err := s.db.CurrentRepositoryRouteFence(
-		ctx, observedIdentity, observedRepoID,
-	)
-	if err != nil {
-		return nil, false, fmt.Errorf(
-			"capture repository route before notification sync of %s/%s on %s: %w",
-			repo.Owner, repo.Name, host, err,
-		)
-	}
-	if !found {
-		return nil, true, nil
-	}
 	providerWork.addRepo(ctx, repo)
 	if s.afterNotificationRepoIdentityReconciled != nil {
 		s.afterNotificationRepoIdentityReconciled()
 	}
 	if providerRepo != nil {
-		applied, err := s.updateRepoSettingsFromProviderObservation(
-			s.db.WithRepositoryRouteFence(ctx, observedIdentity, routeFence),
-			observedRepoID, observedAt, *providerRepo,
-		)
-		if err != nil {
-			if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
-				return nil, true, nil
-			}
-			return nil, false, fmt.Errorf(
+		if err := s.updateRepoSettingsFromProvider(ctx, observedRepoID, *providerRepo); err != nil {
+			return nil, fmt.Errorf(
 				"persist repository settings before notification sync of %s/%s on %s: %w",
 				repo.Owner, repo.Name, host, err,
 			)
 		}
-		if !applied {
-			return nil, true, nil
-		}
 	}
 	repo.RepoID = observedRepoID
 	return &notificationRepoTarget{
-		repo: repo, identity: observedIdentity, routeFence: routeFence,
-	}, false, nil
+		repo: repo, identity: platformdb.DBRepoIdentity(platformRepoRef(repo)),
+	}, nil
 }
 
 // The provider must expose the routed page listing, or notification sync
@@ -998,35 +932,6 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 		if !current {
 			continue
 		}
-		identity := db.RepoIdentity{
-			Platform: notification.Platform, PlatformHost: host,
-			Owner: notification.RepoOwner, Name: notification.RepoName,
-		}
-		var routeFence db.RepositoryRouteFence
-		var routeFound bool
-		if notification.RepoID == nil {
-			routeFence, routeFound, err = s.db.ResolveCurrentRepositoryRouteFence(
-				ctx, identity,
-			)
-		} else {
-			routeFence, routeFound, err = s.db.CurrentRepositoryRouteFence(
-				ctx, identity, *notification.RepoID,
-			)
-		}
-		if err != nil {
-			return fmt.Errorf(
-				"capture repository route before refreshing notification %s: %w",
-				notification.PlatformNotificationID, err,
-			)
-		}
-		if !routeFound {
-			if err := s.reopenLegacyNotificationAckAfterRouteChange(
-				ctx, notification,
-			); err != nil {
-				return err
-			}
-			continue
-		}
 		remote, advanced, err := s.fetchAdvancedNotificationThread(ctx, host, client, notification)
 		if err != nil {
 			// The pre-ack refetch spends the same upstream budget as the
@@ -1055,7 +960,7 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 			// so a thread the user already read upstream is not resurrected,
 			// and skip the mark-read so we never ack unseen activity.
 			if err := s.persistOrReopenNotificationAck(
-				ctx, host, notification, remote, routeFence, false,
+				ctx, host, notification, remote, false,
 			); err != nil {
 				return err
 			}
@@ -1069,28 +974,7 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 				)
 			}
 		}
-		releaseRoute, err := s.db.LockRepositoryReconciliationRead(ctx)
-		if err != nil {
-			return err
-		}
-		routeMatches, err := s.db.RepositoryRouteFenceMatchesUnderRepositoryReconciliationRead(
-			ctx, identity, routeFence,
-		)
-		if err != nil {
-			releaseRoute()
-			return err
-		}
-		if !routeMatches {
-			releaseRoute()
-			if err := s.reopenLegacyNotificationAckAfterRouteChange(
-				ctx, notification,
-			); err != nil {
-				return err
-			}
-			continue
-		}
 		markErr := markRead(ctx, notification.PlatformNotificationID)
-		releaseRoute()
 		if markErr != nil {
 			limited, deferErr := s.deferQueuedNotificationAckOnError(
 				ctx, kind, host, bucket, bucketRepos[bucket], notification, markErr,
@@ -1130,7 +1014,7 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 		}
 		if advanced {
 			if err := s.persistOrReopenNotificationAck(
-				ctx, host, notification, remote, routeFence, true,
+				ctx, host, notification, remote, true,
 			); err != nil {
 				return err
 			}
@@ -1334,19 +1218,24 @@ func (s *Syncer) persistReopenedNotification(
 	host string,
 	notification db.Notification,
 	remote NotificationThread,
-	routeFence db.RepositoryRouteFence,
 	forceUnread bool,
 ) (bool, error) {
-	if routeFence.RepoID == 0 {
-		return false, nil
+	var observedRepoID int64
+	if notification.RepoID != nil {
+		observedRepoID = *notification.RepoID
+	} else {
+		repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+			Platform: notification.Platform, PlatformHost: host,
+			Owner: notification.RepoOwner, Name: notification.RepoName,
+		})
+		if err != nil {
+			return false, fmt.Errorf("resolve repository for notification %s: %w", notification.PlatformNotificationID, err)
+		}
+		if repo == nil {
+			return false, nil
+		}
+		observedRepoID = repo.ID
 	}
-	observedIdentity := db.RepoIdentity{
-		Platform:     notification.Platform,
-		PlatformHost: host,
-		Owner:        notification.RepoOwner,
-		Name:         notification.RepoName,
-	}
-	observedRepoID := routeFence.RepoID
 	if remote.ID == "" {
 		remote.ID = notification.PlatformNotificationID
 	}
@@ -1373,13 +1262,10 @@ func (s *Syncer) persistReopenedNotification(
 	if err != nil {
 		return false, fmt.Errorf("normalize refreshed notification %s for %s: %w", notification.PlatformNotificationID, host, err)
 	}
-	committed, err := s.db.UpsertNotificationsIfRouteFence(
-		ctx, []db.Notification{refreshed}, observedIdentity, routeFence,
-	)
-	if err != nil {
+	if err := s.db.UpsertNotifications(ctx, []db.Notification{refreshed}); err != nil {
 		return false, fmt.Errorf("upsert refreshed notification %s for %s: %w", notification.PlatformNotificationID, host, err)
 	}
-	return committed, nil
+	return true, nil
 }
 
 func (s *Syncer) persistOrReopenNotificationAck(
@@ -1387,11 +1273,10 @@ func (s *Syncer) persistOrReopenNotificationAck(
 	host string,
 	notification db.Notification,
 	remote NotificationThread,
-	routeFence db.RepositoryRouteFence,
 	forceUnread bool,
 ) error {
 	committed, err := s.persistReopenedNotification(
-		ctx, host, notification, remote, routeFence, forceUnread,
+		ctx, host, notification, remote, forceUnread,
 	)
 	if err != nil || committed {
 		return err
@@ -1407,21 +1292,6 @@ func (s *Syncer) persistOrReopenNotificationAck(
 			ctx, notification.ID, notification.SourceAckQueuedAt,
 			notification.SourceUpdatedAt,
 		)
-	}
-	return s.db.ReopenNotificationAckPropagation(
-		ctx, notification.ID, notification.SourceAckQueuedAt,
-		notification.SourceUpdatedAt,
-	)
-}
-
-func (s *Syncer) reopenLegacyNotificationAckAfterRouteChange(
-	ctx context.Context,
-	notification db.Notification,
-) error {
-	if notification.RepoID != nil {
-		// ListQueuedNotificationAcks resolves linked rows by repo_id on every
-		// pass, so retaining the queue is sufficient to retry a rename safely.
-		return nil
 	}
 	return s.db.ReopenNotificationAckPropagation(
 		ctx, notification.ID, notification.SourceAckQueuedAt,

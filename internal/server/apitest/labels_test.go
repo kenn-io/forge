@@ -76,7 +76,7 @@ func setupLabelTestServer(t *testing.T) (*server.Server, *db.DB, *testutil.Fixtu
 	t.Cleanup(syncer.Stop)
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
 	})
@@ -95,7 +95,7 @@ func doLabelAPIRequest(
 	if body != nil {
 		require.NoError(t, json.NewEncoder(&payload).Encode(body))
 	}
-	req := httptest.NewRequest(method, path, &payload)
+	req := httptest.NewRequestWithContext(t.Context(), method, path, &payload)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -158,7 +158,7 @@ func TestAPIListRepoLabelsReturnsCachedCatalogWhileRefreshRuns(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(srv.Shutdown(ctx))
 	})
@@ -170,7 +170,7 @@ func TestAPIListRepoLabelsReturnsCachedCatalogWhileRefreshRuns(t *testing.T) {
 	}
 	resultCh := make(chan result, 1)
 	go func() {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/repo/github/acme/widget/labels", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/repo/github/acme/widget/labels", nil)
 		rr := httptest.NewRecorder()
 		srv.ServeHTTP(rr, req)
 		resultCh <- result{rr: rr}

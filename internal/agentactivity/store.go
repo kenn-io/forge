@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.kenn.io/kit/atomicfile"
 )
 
 type State string
@@ -109,36 +111,36 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 	}
 
 	cwd, err := canonicalWorkspacePath(hook.CWD)
-	if err != nil {
-		return nil
-	}
-	report := Report{
-		Agent:             agent,
-		SessionID:         hook.SessionID,
-		RuntimeSessionKey: runtimeSessionKey,
-		CWD:               cwd,
-		State:             state,
-		UpdatedAt:         s.now().UTC(),
-	}
-	if state == StateDone {
-		previous, ok := s.readReport(s.reportPath(agent, hook.SessionID))
-		if ok && previous.RuntimeSessionKey == runtimeSessionKey {
-			switch {
-			case isIdlePrompt(hook) && (previous.State == StateInput ||
-				previous.State == StateApproval):
-				// Claude Code raises idle_prompt after a minute of waiting for
-				// input whatever it is waiting for; an unanswered question or
-				// permission prompt is still pending, not finished.
-				return nil
-			case previous.State == StateDone:
-				// A completion that is already recorded keeps its original
-				// timestamp: idle_prompt follows Stop, and a fresh timestamp
-				// would make an acknowledged "done" reappear as new.
-				report.UpdatedAt = previous.UpdatedAt
+	if err == nil {
+		report := Report{
+			Agent:             agent,
+			SessionID:         hook.SessionID,
+			RuntimeSessionKey: runtimeSessionKey,
+			CWD:               cwd,
+			State:             state,
+			UpdatedAt:         s.now().UTC(),
+		}
+		if state == StateDone {
+			previous, ok := s.readReport(s.reportPath(agent, hook.SessionID))
+			if ok && previous.RuntimeSessionKey == runtimeSessionKey {
+				switch {
+				case isIdlePrompt(hook) && (previous.State == StateInput ||
+					previous.State == StateApproval):
+					// Claude Code raises idle_prompt after a minute of waiting for
+					// input whatever it is waiting for; an unanswered question or
+					// permission prompt is still pending, not finished.
+					return nil
+				case previous.State == StateDone:
+					// A completion that is already recorded keeps its original
+					// timestamp: idle_prompt follows Stop, and a fresh timestamp
+					// would make an acknowledged "done" reappear as new.
+					report.UpdatedAt = previous.UpdatedAt
+				}
 			}
 		}
+		return s.writeReport(report)
 	}
-	return s.writeReport(report)
+	return nil
 }
 
 func isIdlePrompt(hook HookEvent) bool {
@@ -429,24 +431,10 @@ func (s *Store) writeReport(report Report) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(s.root, ".agent-activity-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, s.reportPath(report.Agent, report.SessionID)); err != nil {
+	// Reports are rewritten on every activity event, so skip fsync as
+	// before. ErrPublished means the report is already visible.
+	err = atomicfile.WriteFile(s.reportPath(report.Agent, report.SessionID), data, atomicfile.WithoutSync())
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
 	s.invalidateCache()

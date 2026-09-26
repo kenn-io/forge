@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,9 +9,11 @@ import (
 )
 
 func TestSetProjectWorktreeLinkedIssuesRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: proj.ID, Branch: "feat", Path: filepath.Join(t.TempDir(), "wt"),
@@ -35,9 +36,11 @@ func TestSetProjectWorktreeLinkedIssuesRoundTrip(t *testing.T) {
 }
 
 func TestSetProjectWorktreeLinkedIssuesWrongProjectIsNotFound(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: proj.ID, Branch: "feat", Path: filepath.Join(t.TempDir(), "wt"),
@@ -53,9 +56,11 @@ func TestSetProjectWorktreeLinkedIssuesWrongProjectIsNotFound(t *testing.T) {
 // session-backend guards: user-set linked issues must survive discovery
 // reconciliation, which refreshes branch/staleness but must never clear them.
 func TestReconcileProjectInventoryPreservesLinkedIssues(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wtPath := filepath.Join(t.TempDir(), "feature")
 

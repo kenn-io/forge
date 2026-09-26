@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +32,11 @@ func launchCommandSessionForDeleteTest(
 			"/runtime/sessions",
 		body,
 	)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var session map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&session))
@@ -60,8 +64,7 @@ func TestRemoveProjectWorktreeStopsRuntimeSessions(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, projectID, worktreeID, recordPath :=
-		setupProjectWorktreeCommandSessionTestWithRecord(t)
+	srv, projectID, worktreeID, recordPath := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -80,7 +83,7 @@ func TestRemoveProjectWorktreeStopsRuntimeSessions(t *testing.T) {
 	scope := workspaceapi.ProjectWorktreeRuntimeScope(worktreeID)
 	assert.Empty(srv.runtime.ListSessions(scope))
 	rows, err := srv.db.ListProjectWorktreeTmuxSessions(
-		context.Background(), worktreeID,
+		t.Context(), worktreeID,
 	)
 	require.NoError(err)
 	assert.Empty(rows)
@@ -91,8 +94,7 @@ func TestDeleteProjectStopsWorktreeRuntimeSessions(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, projectID, worktreeID, recordPath :=
-		setupProjectWorktreeCommandSessionTestWithRecord(t)
+	srv, projectID, worktreeID, recordPath := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -114,15 +116,14 @@ func TestDeleteProjectStopsWorktreeRuntimeSessions(t *testing.T) {
 func TestDeleteProjectWorktreeKillsStoredTmuxSession(t *testing.T) {
 	require := require.New(t)
 
-	srv, projectID, worktreeID, recordPath :=
-		setupProjectWorktreeCommandSessionTestWithRecord(t)
+	srv, projectID, worktreeID, recordPath := setupProjectWorktreeCommandSessionTestWithRecord(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
 	// A stored row without a live runtime session models a tmux session
 	// surviving from before a kenn-forge restart.
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
-		context.Background(), &db.ProjectWorktreeTmuxSession{
+		t.Context(), &db.ProjectWorktreeTmuxSession{
 			WorktreeID:  worktreeID,
 			SessionKey:  "surface:host:wt:shell:leaf",
 			SessionName: "kenn-forge-stored-command",

@@ -168,8 +168,10 @@ type editIssueCommentHostInput struct {
 	}
 }
 
-type postIssueCommentOutput = httpapi.CreatedOutput[db.IssueEvent]
-type editIssueCommentOutput = httpapi.BodyOutput[db.IssueEvent]
+type (
+	postIssueCommentOutput = httpapi.CreatedOutput[db.IssueEvent]
+	editIssueCommentOutput = httpapi.BodyOutput[db.IssueEvent]
+)
 
 type deleteIssueCommentInput struct {
 	Provider     string `path:"provider"`

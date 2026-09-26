@@ -1,7 +1,6 @@
 package workspacetest
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -23,7 +22,7 @@ func TestWorkspacePushBranchRoutePushesAheadBranch(t *testing.T) {
 	assert := assert.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
@@ -48,7 +47,7 @@ func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
 	assert := assert.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 	gitfixture.Run(t, ws.WorktreePath, "push", "-u", "origin", "HEAD")
 	upstreamRef := workspaceGitOutput(
@@ -83,7 +82,7 @@ func TestWorkspacePullBranchRouteRejectsDirtyWorktree(t *testing.T) {
 	require := require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
 	client, srv := fixture.client, fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 	require.NoError(os.WriteFile(
 		filepath.Join(ws.WorktreePath, "dirty.txt"), []byte("dirty\n"), 0o644,

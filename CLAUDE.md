@@ -73,6 +73,8 @@ only routes to them.
 - Local thin clients must not infer startup-bound daemon middleware policy from
   reloadable config; derive required request metadata from the runtime record or
   send it safely when the middleware ignores it (`cmd/kenn-forge/daemon_client.go::discoverDaemonHTTP`).
+- The maintainer's local daemon runs under process-compose; never run `kenn-forge daemon start|restart|stop` against its config.
+  `daemon restart` swaps it for an unsupervised detached copy of the invoking binary. (`process-compose.yml`)
 - Generate workflow screenshots only with `make docs-screenshots`; docs builds
   only sync a complete set from orphan `docs-assets`. Keep captures untracked on
   `main` and use the real seeded e2e backend, not mocks or a developer daemon.

@@ -9,6 +9,8 @@ import (
 )
 
 func TestReplaceGitHubNativeStackReplacesMemberSnapshot(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -49,6 +51,8 @@ func TestReplaceGitHubNativeStackReplacesMemberSnapshot(t *testing.T) {
 }
 
 func TestGitHubNativeStacksAreRepositoryScopedAndDeletable(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)

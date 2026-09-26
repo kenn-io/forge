@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		URL:                ghPR.GetHTMLURL(),
 		Title:              ghPR.GetTitle(),
 		Author:             loginOrEmpty(ghPR.GetUser()),
+		AuthorAssociation:  ghPR.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		AuthorDisplayName:  nameOrEmpty(ghPR.GetUser()),
 		State:              ghPR.GetState(),
 		IsDraft:            ghPR.GetDraft(),
@@ -114,6 +116,7 @@ func NormalizeIssue(repo platform.RepoRef, ghIssue *gh.Issue) (platform.Issue, e
 		URL:                ghIssue.GetHTMLURL(),
 		Title:              ghIssue.GetTitle(),
 		Author:             loginOrEmpty(ghIssue.GetUser()),
+		AuthorAssociation:  ghIssue.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		State:              ghIssue.GetState(),
 		Body:               ghIssue.GetBody(),
 		CommentCount:       ghIssue.GetComments(),
@@ -161,6 +164,7 @@ func NormalizeReviewEvent(
 		EventType:          "review",
 		DedupeKey:          fmt.Sprintf("review-%d", r.GetID()),
 		Author:             loginOrEmpty(r.GetUser()),
+		AuthorAssociation:  r.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Body:               r.GetBody(),
 		Summary:            r.GetState(),
 		DirectURL:          r.GetHTMLURL(),
@@ -179,11 +183,12 @@ func NormalizeReviewCommentEvent(
 	event := platform.MergeRequestEvent{
 		Repo:               repo,
 		PlatformID:         c.GetID(),
-		PlatformExternalID: fmt.Sprintf("%d", c.GetID()),
+		PlatformExternalID: strconv.FormatInt(c.GetID(), 10),
 		MergeRequestNumber: mrNumber,
 		EventType:          "review_comment",
 		DedupeKey:          fmt.Sprintf("review_comment:%d", c.GetID()),
 		Author:             loginOrEmpty(c.GetUser()),
+		AuthorAssociation:  c.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Body:               c.GetBody(),
 		DirectURL:          c.GetHTMLURL(),
 	}
@@ -236,7 +241,7 @@ func NormalizeCommitEvent(
 		Repo:               repo,
 		MergeRequestNumber: mrNumber,
 		EventType:          "commit",
-		DedupeKey:          fmt.Sprintf("commit-%s", dedupeKey),
+		DedupeKey:          "commit-" + dedupeKey,
 		Author:             actor,
 		Summary:            sha,
 	}
@@ -687,6 +692,7 @@ func normalizeIssueCommentBase(repo platform.RepoRef, c *gh.IssueComment) platfo
 		PlatformExternalID: c.GetNodeID(),
 		EventType:          "issue_comment",
 		Author:             loginOrEmpty(c.GetUser()),
+		AuthorAssociation:  c.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Body:               c.GetBody(),
 		DirectURL:          c.GetHTMLURL(),
 	}
@@ -723,10 +729,10 @@ func timelineDedupeKey(event PullRequestTimelineEvent) string {
 		event.SourceType,
 		event.SourceOwner,
 		event.SourceRepo,
-		fmt.Sprint(event.SourceNumber),
+		strconv.Itoa(event.SourceNumber),
 		event.SourceURL,
-		fmt.Sprint(event.IsCrossRepository),
-		fmt.Sprint(event.WillCloseTarget),
+		strconv.FormatBool(event.IsCrossRepository),
+		strconv.FormatBool(event.WillCloseTarget),
 	}, "\x00")
 	return "timeline-" + shortHash(raw)
 }
@@ -759,7 +765,13 @@ func deriveCIStatusFromChecks(checks []platform.CICheck) string {
 	return "success"
 }
 
+// ciCheckCandidateIsNewer prefers the higher provider ID because GitHub assigns
+// check run and commit status IDs in creation order. Timestamps order
+// candidates only when an ID is missing, as for GraphQL status contexts.
 func ciCheckCandidateIsNewer(existing, candidate ciCheckCandidate) bool {
+	if existing.id != 0 && candidate.id != 0 && existing.id != candidate.id {
+		return candidate.id > existing.id
+	}
 	if existing.at.IsZero() != candidate.at.IsZero() {
 		return existing.at.IsZero()
 	}
@@ -779,19 +791,20 @@ func combinedStatuses(combined *gh.CombinedStatus) []*gh.RepoStatus {
 	return combined.Statuses
 }
 
+// checkRunRecency orders same-named check runs by when each attempt began.
+// Completion time is the last resort: a cancelled run often completes after
+// its replacement is queued, which would let the stale failure hide the rerun.
 func checkRunRecency(r *gh.CheckRun) time.Time {
-	completedAt := timestampTime(r.CompletedAt)
-	if !completedAt.IsZero() {
-		return completedAt
-	}
 	startedAt := timestampTime(r.StartedAt)
 	if !startedAt.IsZero() {
 		return startedAt
 	}
 	if suite := r.GetCheckSuite(); suite != nil {
-		return timestampTime(suite.CreatedAt)
+		if createdAt := timestampTime(suite.CreatedAt); !createdAt.IsZero() {
+			return createdAt
+		}
 	}
-	return time.Time{}
+	return timestampTime(r.CompletedAt)
 }
 
 func checkRunDedupeKey(r *gh.CheckRun) string {

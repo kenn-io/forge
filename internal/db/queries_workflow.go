@@ -199,7 +199,7 @@ func encodeWorkflowCursor(row WorkflowStateListRow, sortKey, activityKey string)
 func decodeWorkflowCursor(cursor string) (workflowCursor, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return workflowCursor{}, fmt.Errorf("%w: base64: %v", ErrInvalidWorkflowCursor, err)
+		return workflowCursor{}, fmt.Errorf("%w: base64: %w", ErrInvalidWorkflowCursor, err)
 	}
 	parts := strings.Split(string(raw), "\x1f")
 	if len(parts) != 8 {
@@ -207,7 +207,7 @@ func decodeWorkflowCursor(cursor string) (workflowCursor, error) {
 	}
 	number, err := strconv.Atoi(parts[7])
 	if err != nil {
-		return workflowCursor{}, fmt.Errorf("%w: number: %v", ErrInvalidWorkflowCursor, err)
+		return workflowCursor{}, fmt.Errorf("%w: number: %w", ErrInvalidWorkflowCursor, err)
 	}
 	return workflowCursor{
 		sortKey:     parts[0],

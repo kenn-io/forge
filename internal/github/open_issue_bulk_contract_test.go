@@ -38,6 +38,8 @@ func bulkTestIssue(number int, repositoryURL string) *gh.Issue {
 // one open list, and every item bound to the requested repository. A
 // malformed bulk result is a typed provider contract error.
 func TestGitHubListOpenIssuesRejectsMalformedBulkResults(t *testing.T) {
+	t.Parallel()
+
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
@@ -101,6 +103,8 @@ func TestGitHubListOpenIssuesRejectsMalformedBulkResults(t *testing.T) {
 // (including the well-formed items it contains) and the repo is marked failed
 // so the next cycle refetches unconditionally.
 func TestSyncerRejectsMalformedOpenIssueBulkListWithoutPersisting(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -135,6 +139,8 @@ func TestSyncerRejectsMalformedOpenIssueBulkListWithoutPersisting(t *testing.T) 
 // while the raw paged REST list preserves them through pull-request filtering
 // for downstream canonical normalization to reject typed.
 func TestGitHubLiveOpenIssueListsPreserveNilEntriesForValidation(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

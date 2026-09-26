@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	_ "modernc.org/sqlite"
 )
 
@@ -221,7 +222,7 @@ func TestPrepareEphemeralConfigDisablesReverseProxyTrustForDirectBackend(t *test
 	srv := server.NewWithConfig(
 		dbtest.Open(t), nil, nil, nil, reloaded, prepared.configPath, server.ServerOptions{},
 	)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/version", nil)
 	req.Host = "127.0.0.1:39141"
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
@@ -461,8 +462,8 @@ func TestDevEphemeralDefaultStartsWithoutProviderAccess(t *testing.T) {
 	}
 	require.NoError(sourceConfig.Save(sourcePath))
 	database := dbtest.OpenAt(t, filepath.Join(sourceDataDir, "forge.db"))
-	_, err = database.UpsertRepoByProviderID(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: providerHost, PlatformRepoID: "42",
+	_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform: "github", PlatformHost: providerHost, PlatformRepoID: 42,
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(err)
@@ -485,12 +486,10 @@ exec "$FORGE_TEST_BIN" "$@"
 	t.Setenv("KENN_FORGE_HOME", filepath.Join(root, "runtime"))
 	t.Setenv("BACKEND_ARGS", "")
 
-	oldDir, err := os.Getwd()
-	require.NoError(err)
-	require.NoError(os.Chdir(commandDir))
-	defer func() { require.NoError(os.Chdir(oldDir)) }()
+	stackScriptDir = commandDir
+	t.Cleanup(func() { stackScriptDir = "" })
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() {
@@ -502,7 +501,13 @@ exec "$FORGE_TEST_BIN" "$@"
 	}()
 	status := waitForStatusFile(t, filepath.Join(root, "run", "dev-ephemeral.json"))
 	require.Eventually(func() bool {
-		resp, requestErr := http.Get(status.BackendURL + "/api/v1/repos")
+		req, requestErr := http.NewRequestWithContext(
+			t.Context(), http.MethodGet, status.BackendURL+"/api/v1/repos", nil,
+		)
+		if requestErr != nil {
+			return false
+		}
+		resp, requestErr := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 		if requestErr != nil {
 			return false
 		}
@@ -658,7 +663,7 @@ func TestRunWaitsForWorkDirLockBeforeReusingLiveStatus(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(context.Background(), []string{"-work-dir", dir})
+		errCh <- run(t.Context(), []string{"-work-dir", dir})
 	}()
 	select {
 	case err := <-errCh:
@@ -732,16 +737,12 @@ func TestRunWaitsForStopLockBeforeStartingReplacementStack(t *testing.T) {
 		}
 	})
 
-	oldDir, err := os.Getwd()
-	require.NoError(err)
-	require.NoError(os.Chdir(commandDir))
-	t.Cleanup(func() {
-		require.NoError(os.Chdir(oldDir))
-	})
+	stackScriptDir = commandDir
+	t.Cleanup(func() { stackScriptDir = "" })
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(context.Background(), []string{
+		errCh <- run(t.Context(), []string{
 			"-config", sourcePath,
 			"-work-dir", workDir,
 			"-backend-port", "39511",
@@ -925,16 +926,16 @@ func TestWaitForCommandsEscalatesIgnoredInterrupt(t *testing.T) {
 	frontendScript := filepath.Join(dir, "frontend.sh")
 	writeInterruptIgnoringScript(t, backendScript)
 	writeBlockingScript(t, frontendScript)
-	backend, err := startCommand(context.Background(), commandSpec{name: backendScript})
+	backend, err := startCommand(t.Context(), commandSpec{name: backendScript})
 	require.NoError(err)
-	frontend, err := startCommand(context.Background(), commandSpec{name: frontendScript})
+	frontend, err := startCommand(t.Context(), commandSpec{name: frontendScript})
 	require.NoError(err)
 	t.Cleanup(func() {
 		stopProcess(backend.Process)
 		stopProcess(frontend.Process)
 	})
 
-	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancelCtx, cancel := context.WithCancel(t.Context())
 	cancel()
 	err = waitForCommands(cancelCtx, backend, frontend)
 	require.NoError(err)
@@ -952,7 +953,7 @@ func TestStopStartedCommandsEscalatesAndWaits(t *testing.T) {
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "ignore-int.sh")
 	writeInterruptIgnoringScript(t, scriptPath)
-	cmd, err := startCommand(context.Background(), commandSpec{name: scriptPath})
+	cmd, err := startCommand(t.Context(), commandSpec{name: scriptPath})
 	require.NoError(err)
 	t.Cleanup(func() { stopProcess(cmd.Process) })
 
@@ -989,12 +990,8 @@ func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
 	writeBlockingScript(t, filepath.Join(commandDir, "scripts", "dev-stack-backend.sh"))
 	writeBlockingScript(t, filepath.Join(commandDir, "scripts", "frontend-dev.sh"))
 
-	oldDir, err := os.Getwd()
-	require.NoError(err)
-	require.NoError(os.Chdir(commandDir))
-	t.Cleanup(func() {
-		require.NoError(os.Chdir(oldDir))
-	})
+	stackScriptDir = commandDir
+	t.Cleanup(func() { stackScriptDir = "" })
 
 	ctx := t.Context()
 	errCh := make(chan error, 1)
@@ -1020,7 +1017,7 @@ func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
 
 	var reuseErr error
 	require.Eventually(func() bool {
-		reuseErr = run(context.Background(), []string{
+		reuseErr = run(t.Context(), []string{
 			"-config", sourcePath,
 			"-work-dir", workDir,
 			"-backend-port", "39503",
@@ -1066,7 +1063,7 @@ func writeInterruptIgnoringScript(t *testing.T, path string) {
 
 func startTestCommand(t *testing.T, spec commandSpec) (*exec.Cmd, <-chan error) {
 	t.Helper()
-	cmd, err := startCommand(context.Background(), spec)
+	cmd, err := startCommand(t.Context(), spec)
 	require.NoError(t, err)
 	waitCh := make(chan error, 1)
 	go func() {
@@ -1100,15 +1097,20 @@ func waitForCommandExit(t *testing.T, cmd *exec.Cmd, waitCh <-chan error) {
 
 func waitForStatusFile(t *testing.T, path string) ephemeralStatus {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	deadline := time.After(5 * time.Second)
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
 		if status, ok := tryReadStatusFile(t, path); ok {
 			return status
 		}
-		time.Sleep(25 * time.Millisecond)
+		select {
+		case <-deadline:
+			require.Failf(t, "timed out waiting for status file", "path: %s", path)
+			return ephemeralStatus{}
+		case <-ticker.C:
+		}
 	}
-	require.Failf(t, "timed out waiting for status file", "path: %s", path)
-	return ephemeralStatus{}
 }
 
 func readStatusFile(t *testing.T, path string) ephemeralStatus {
@@ -1138,9 +1140,9 @@ func writeSQLiteMarker(t *testing.T, path, value string) {
 	db, err := sql.Open("sqlite", path)
 	require.NoError(err)
 	defer db.Close()
-	_, err = db.Exec("CREATE TABLE marker (value TEXT NOT NULL)")
+	_, err = db.ExecContext(t.Context(), "CREATE TABLE marker (value TEXT NOT NULL)")
 	require.NoError(err)
-	_, err = db.Exec("INSERT INTO marker (value) VALUES (?)", value)
+	_, err = db.ExecContext(t.Context(), "INSERT INTO marker (value) VALUES (?)", value)
 	require.NoError(err)
 }
 
@@ -1151,6 +1153,6 @@ func readSQLiteMarker(t *testing.T, path string) string {
 	require.NoError(err)
 	defer db.Close()
 	var value string
-	require.NoError(db.QueryRow("SELECT value FROM marker").Scan(&value))
+	require.NoError(db.QueryRowContext(t.Context(), "SELECT value FROM marker").Scan(&value))
 	return value
 }

@@ -11,7 +11,7 @@ export interface RepoRefResponse {
   operations?: RepoOperations;
   owner: string;
   platform_host: string;
-  platform_repo_id?: string;
+  platform_repo_id?: number;
   provider: string;
   repo_path: string;
 }

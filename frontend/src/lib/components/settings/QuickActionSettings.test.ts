@@ -83,7 +83,7 @@ describe("QuickActionSettings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Add quick action" }));
 
     expect(saveButton().disabled).toBe(true);
-    expect(screen.getByRole("combobox", { name: "Quick action agent: Codex" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Search agents...: Codex" })).toBeTruthy();
 
     await fireEvent.input(screen.getByLabelText("Quick action label"), { target: { value: " Rebase " } });
     await fireEvent.input(screen.getByLabelText("Quick action prompt"), {
@@ -100,6 +100,35 @@ describe("QuickActionSettings", () => {
       expect(onUpdate).toHaveBeenCalledWith(saved);
     });
     expect(saveButton().disabled).toBe(true);
+  });
+
+  it("sorts agent names and saves the agent selected through search", async () => {
+    const saved = [{ label: "Review", agent: "codex", prompt: "review" }];
+    mockPersistSettings.mockResolvedValue({ quick_actions: saved });
+    renderQuickActionSettings({
+      quickActions: [{ label: "Review", agent: "missing", prompt: "review" }],
+      launchTargets: [...launchTargets.toReversed(), { ...launchTargets[0]!, key: "aider", label: "aider" }],
+      onUpdate: vi.fn(),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Search agents...: missing" }));
+    expect(screen.getAllByRole("option").map((option) => option.textContent?.trim())).toEqual([
+      "aider",
+      "Codex",
+      "missing Not a configured agent",
+      "opencode opencode not found on PATH",
+    ]);
+    await fireEvent.input(screen.getByRole("combobox"), { target: { value: "CODEX" } });
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getByRole("option", { name: "Codex" }).querySelector(".kit-harness-icon--openai")).not.toBeNull();
+    await fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    expect(
+      screen.getByRole("button", { name: "Search agents...: Codex" }).querySelector(".kit-harness-icon--openai"),
+    ).not.toBeNull();
+    await fireEvent.click(saveButton());
+    await waitFor(() => {
+      expect(mockPersistSettings).toHaveBeenCalledWith({ quick_actions: saved });
+    });
   });
 
   it("refuses to save duplicate labels or blank prompts", async () => {
@@ -173,7 +202,7 @@ describe("QuickActionSettings", () => {
       onUpdate: vi.fn(),
     });
 
-    expect(screen.getByRole("combobox", { name: "Quick action agent: missing (Not a configured agent)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Search agents...: missing" })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Remove Ghost" }));
     await fireEvent.click(saveButton());

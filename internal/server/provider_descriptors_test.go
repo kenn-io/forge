@@ -6,17 +6,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sync"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gitcmd "go.kenn.io/kit/git/cmd"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
@@ -27,8 +30,9 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/platform"
 )
 
 type descriptorCloneRoutes struct {
@@ -66,26 +70,19 @@ func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {
 	require.NoError(err)
 
 	renameTime := time.Now().UTC().Add(time.Minute)
-	_, accepted, err := database.ReconcileRepositoryObservation(
+	renamed, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
 			PlatformRepoID: current.Repository.PlatformRepoID,
 			Owner:          "acme-renamed", Name: "widget-renamed",
-		}, renameTime,
-	)
-	require.NoError(err)
-	require.True(accepted)
-	renamed, err := database.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", current.Repository.PlatformRepoID,
-	)
-	require.NoError(err)
-	require.NotNil(renamed)
-	require.NoError(database.UpdateRepoProviderMetadata(
-		t.Context(), renamed.Repository.ID, db.RepoProviderMetadata{
-			PlatformRepoID: current.Repository.PlatformRepoID,
-			CloneURL:       "https://github.com/acme-renamed/widget-renamed.git",
-			DefaultBranch:  "main",
 		},
+	)
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderObservation(
+		t.Context(), renamed.Repository.ID, db.RepoProviderMetadata{
+			CloneURL:      "https://github.com/acme-renamed/widget-renamed.git",
+			DefaultBranch: "main",
+		}, nil, nil,
 	))
 	server.now = func() time.Time { return renameTime.Add(time.Minute) }
 
@@ -115,9 +112,9 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 	cloneURL := "http://" + platformHost + "/acme/widget.git"
 
 	hubDB := dbtest.Open(t)
-	repoID, err := hubDB.UpsertRepo(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), hubDB, db.RepoIdentity{
 		Platform: "gitlab", PlatformHost: platformHost,
-		PlatformRepoID: "gid://gitlab/Project/7",
+		PlatformRepoID: 7,
 		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(err)
@@ -129,11 +126,10 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 	require.NoError(hubDB.UpdateDiffSHAs(
 		t.Context(), repoID, mrNumber, headSHA, baseSHA, baseSHA,
 	))
-	require.NoError(hubDB.UpdateRepoProviderMetadata(
+	require.NoError(hubDB.UpdateRepoProviderObservation(
 		t.Context(), repoID, db.RepoProviderMetadata{
-			PlatformRepoID: "gid://gitlab/Project/7",
-			CloneURL:       cloneURL, DefaultBranch: "main",
-		},
+			CloneURL: cloneURL, DefaultBranch: "main",
+		}, nil, nil,
 	))
 
 	hubCredentials, err := federationauth.Open(
@@ -205,12 +201,11 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(repo)
-	require.NoError(hubDB.UpdateRepoProviderMetadata(
+	require.NoError(hubDB.UpdateRepoProviderObservation(
 		t.Context(), repo.ID, db.RepoProviderMetadata{
-			PlatformRepoID: repo.PlatformRepoID,
-			CloneURL:       "https://github.com/acme/widget.git",
-			DefaultBranch:  "main",
-		},
+			CloneURL:      "https://github.com/acme/widget.git",
+			DefaultBranch: "main",
+		}, nil, nil,
 	))
 
 	hubCredentials, err := federationauth.Open(
@@ -272,7 +267,9 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	assert.Equal(observedAt, descriptor.Repository.ObservedAt)
 
 	observed, err := nodeDB.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", repo.PlatformRepoID,
+		t.Context(), platform.RepositoryIdentity{
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+		},
 	)
 	require.NoError(err)
 	require.NotNil(observed)
@@ -289,17 +286,16 @@ func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
-	repoID, err := hubDB.UpsertRepo(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), hubDB, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
-	require.NoError(hubDB.UpdateRepoProviderMetadata(
+	require.NoError(hubDB.UpdateRepoProviderObservation(
 		t.Context(), repoID, db.RepoProviderMetadata{
-			PlatformRepoID: "repo-acme-widget",
-			CloneURL:       "https://github.com/acme/widget.git",
-			DefaultBranch:  "main",
-		},
+			CloneURL:      "https://github.com/acme/widget.git",
+			DefaultBranch: "main",
+		}, nil, nil,
 	))
 
 	hubCredentials, err := federationauth.Open(
@@ -351,82 +347,14 @@ func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
 
 	require.Equal(http.StatusAccepted, response.Code, response.Body.String())
 	observed, err := spokeDB.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "repo-acme-widget",
+		t.Context(), platform.RepositoryIdentity{
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		},
 	)
 	require.NoError(err)
 	require.NotNil(observed)
 	assert.Equal("acme", observed.Repository.Owner)
 	assert.Equal("widget", observed.Repository.Name)
-}
-
-func TestRepositoryDescriptorOrdersObservationTimeWithRepositoryIdentity(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := dbtest.Open(t)
-	seedPR(t, database, "acme", "widget", 42)
-	identity := verifiedGitHubRepoIdentity("github.com", "acme", "widget")
-
-	server := New(database, nil, nil, "/", nil, ServerOptions{
-		DisableWorkspaceBackgroundMonitors: true,
-	})
-	t.Cleanup(func() { gracefulShutdown(t, server) })
-	clockCalled := make(chan struct{}, 1)
-	observedAt := time.Date(2026, time.August, 22, 18, 0, 0, 0, time.UTC)
-	server.now = func() time.Time {
-		clockCalled <- struct{}{}
-		return observedAt
-	}
-	descriptorAdmitted := make(chan struct{})
-	server.providerDescriptorBeforeSnapshotForTest = func() {
-		close(descriptorAdmitted)
-	}
-
-	releaseRead, err := database.LockRepositoryReconciliationRead(t.Context())
-	require.NoError(err)
-	releaseReadOnce := sync.OnceFunc(releaseRead)
-	defer releaseReadOnce()
-	writeAttempted := make(chan struct{})
-	restoreHook := database.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
-		close(writeAttempted)
-	})
-	t.Cleanup(restoreHook)
-	writeDone := make(chan error, 1)
-	go func() {
-		_, _, writeErr := database.ReconcileRepositoryObservation(
-			context.Background(), identity, observedAt,
-		)
-		writeDone <- writeErr
-	}()
-	<-writeAttempted
-
-	type descriptorResult struct {
-		output *federationRepositoryDescriptorOutput
-		err    error
-	}
-	descriptorDone := make(chan descriptorResult, 1)
-	go func() {
-		output, descriptorErr := server.federationRepositoryDescriptor(
-			context.Background(), &federationRepositoryDescriptorInput{Body: providerplane.RepositoryRoute{
-				Provider: "github", PlatformHost: "github.com",
-				Owner: "acme", Name: "widget",
-			}},
-		)
-		descriptorDone <- descriptorResult{output: output, err: descriptorErr}
-	}()
-	<-descriptorAdmitted
-	select {
-	case <-clockCalled:
-		require.Fail("descriptor clock ran before the queued identity writer")
-	case <-time.After(100 * time.Millisecond):
-	}
-
-	releaseReadOnce()
-	require.NoError(<-writeDone)
-	result := <-descriptorDone
-	require.NoError(result.err)
-	require.NotNil(result.output)
-	assert.Equal(identity.PlatformRepoID, result.output.Body.PlatformRepoID)
-	assert.Equal(observedAt, result.output.Body.ObservedAt)
 }
 
 func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
@@ -496,11 +424,13 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 		},
 	)
 	require.NoError(err)
-	assert.Equal("repo-acme-widgets", spec.Repository.PlatformRepoID)
+	assert.Equal(testutil.FixtureRepoID("acme", "widgets"), spec.Repository.PlatformRepoID)
 	assert.Equal(issuedAt, spec.IssuedAt)
 
 	observed, err := nodeDB.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "repo-acme-widgets",
+		t.Context(), platform.RepositoryIdentity{
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widgets"),
+		},
 	)
 	require.NoError(err)
 	require.NotNil(observed)
@@ -527,7 +457,7 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 		},
 	)
 	require.Error(err)
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(ok)
 	assert.Equal(httpapi.CodeGitCredentialUnavailable, problem.Code)
 }
@@ -540,7 +470,7 @@ func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
@@ -579,7 +509,7 @@ func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
 		},
 	)
 	require.Error(err)
-	problem, ok := err.(*httpapi.ProblemError)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(ok)
 	assert.Equal(httpapi.CodeGitCredentialUnavailable, problem.Code)
 	assert.Equal("contributor/widget", problem.Details["repoPath"])
@@ -599,15 +529,17 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	)
 	require.NoError(err)
 	repository, err := hubDB.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", diffRepo.PlatformRepoID,
+		t.Context(), platform.RepositoryIdentity{
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: diffRepo.PlatformRepoID,
+		},
 	)
 	require.NoError(err)
 	require.NotNil(repository)
-	require.NoError(hubDB.UpdateRepoProviderMetadata(
+	require.NoError(hubDB.UpdateRepoProviderObservation(
 		t.Context(), repository.Repository.ID, db.RepoProviderMetadata{
 			WebURL: "https://github.com/acme/widgets", CloneURL: hostedCloneURL,
 			DefaultBranch: "main",
-		},
+		}, nil, nil,
 	))
 
 	hubCredentials, err := federationauth.Open(
@@ -682,7 +614,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 		require.NoError(runErr, string(stderr))
 	}
 	seedNodeClone(nodeClone)
-	browserNamespaceInput := "github\x00github.com\x00acme/widgets\x00" + diffRepo.PlatformRepoID
+	browserNamespaceInput := "github\x00github.com\x00acme/widgets\x00" + strconv.FormatInt(diffRepo.PlatformRepoID, 10)
 	browserNamespaceSum := sha256.Sum256([]byte(browserNamespaceInput))
 	browserClone, err := nodeClones.ClonePathInNamespace(
 		"repo-browser-"+hex.EncodeToString(browserNamespaceSum[:8]),
@@ -712,7 +644,9 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	}
 
 	observed, err := nodeDB.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", diffRepo.PlatformRepoID,
+		t.Context(), platform.RepositoryIdentity{
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: diffRepo.PlatformRepoID,
+		},
 	)
 	require.NoError(err)
 	require.NotNil(observed)
@@ -772,7 +706,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	assert.Equal(httpapi.CodeHubUnavailable, problem.Code)
 
 	localCtx := gitclone.WithRepositoryIdentity(
-		context.Background(), diffRepo.PlatformRepoID,
+		t.Context(), diffRepo.PlatformRepoID,
 	)
 	localDiff, err := nodeClones.Diff(
 		localCtx, "github", "github.com", "acme", "widgets",

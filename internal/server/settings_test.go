@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go.kenn.io/forge/internal/apiclient/generated"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/apiclient/generated"
+
 	"go.kenn.io/forge/internal/platformdb"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -26,6 +27,7 @@ import (
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
@@ -37,6 +39,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
@@ -46,6 +49,7 @@ import (
 func setupTestServerWithConfig(
 	t *testing.T,
 ) (*Server, *db.DB, string) {
+	t.Helper()
 	return setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -63,6 +67,7 @@ func setupTestServerWithConfigContent(
 	cfgContent string,
 	mock *mockGH,
 ) (*Server, *db.DB, string) {
+	t.Helper()
 	return setupTestServerWithConfigContentAndOptions(
 		t, cfgContent, mock, ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
@@ -267,6 +272,13 @@ func (t *gitealikeImportTransport) GetRepository(
 	return t.repository, t.repositoryErr
 }
 
+func (t *gitealikeImportTransport) GetRepositoryByID(
+	context.Context,
+	int64,
+) (gitealike.RepositoryDTO, error) {
+	return t.repository, t.repositoryErr
+}
+
 func (t *gitealikeImportTransport) ListUserRepositories(
 	context.Context,
 	string,
@@ -404,7 +416,7 @@ command = ["codex", "--full-auto"]
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("acme", resp.Repos[0].Owner)
-	assert.Equal("repo-acme-widget", resp.Repos[0].PlatformRepoID)
+	assert.Equal(testutil.FixtureRepoID("acme", "widget"), resp.Repos[0].PlatformRepoID)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
 	assert.True(resp.Repos[0].IssuePRReferences)
 	assert.Equal("threaded", resp.Activity.ViewMode)
@@ -427,6 +439,34 @@ command = ["codex", "--full-auto"]
 	require.Len(resp.Agents, 1)
 	assert.Equal("codex", resp.Agents[0].Key)
 	assert.Equal([]string{"codex", "--full-auto"}, resp.Agents[0].Command)
+	assert.True(resp.ProviderSettingsLoaded, "a Forge that owns its provider settings always has them loaded")
+}
+
+func TestHandleGetSettingsReportsRepositoryCurrentlyAtUnpinnedRoute(t *testing.T) {
+	require := require.New(t)
+	srv, database, _ := setupTestServerWithConfigContent(t, `
+[[repos]]
+owner = "acme"
+name = "widget"
+`, &mockGH{})
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002,
+		Owner: "acme", Name: "widget",
+	})
+	require.NoError(err)
+
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var resp settingsResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+	require.Len(resp.Repos, 1)
+	assert.Equal(t, int64(1002), resp.Repos[0].PlatformRepoID)
 }
 
 func TestHandleGetSettingsReportsMCPDesiredAndActiveState(t *testing.T) {
@@ -633,10 +673,10 @@ func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 	first := config.RepoPreset{Name: "Review queue", Repos: []config.RepoPresetRepository{{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widgets", RepoPath: "acme/widgets",
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001, RepoPath: "acme/widgets",
 	}}}
 	second := config.RepoPreset{Name: "Docs", Repos: []config.RepoPresetRepository{{
-		Provider: "gitlab", PlatformHost: "git.example.com", PlatformRepoID: "42", RepoPath: "group/docs",
+		Provider: "gitlab", PlatformHost: "git.example.com", PlatformRepoID: 42, RepoPath: "group/docs",
 	}}}
 
 	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", first)
@@ -645,7 +685,7 @@ func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 	require.Equal(http.StatusCreated, rr.Code, rr.Body.String())
 
 	updatedRepos := []config.RepoPresetRepository{{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_tools", RepoPath: "acme/tools",
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1002, RepoPath: "acme/tools",
 	}}
 	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings/repo-presets/Review%20queue", struct {
 		Repos []config.RepoPresetRepository `json:"repos"`
@@ -682,19 +722,19 @@ name = "widget"
 
 [[repo_presets]]
 name = "Existing"
-repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = "R_widget", repo_path = "acme/widget" }]
+repos = [{ provider = "github", platform_host = "github.com", platform_repo_id = 1004, repo_path = "acme/widget" }]
 `, &mockGH{})
 
 	srv.configReloadMu.Lock()
 	srv.cfgPath = t.TempDir()
 	srv.configReloadMu.Unlock()
 	replacement := config.RepoPreset{Name: "Replacement", Repos: []config.RepoPresetRepository{{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_other", RepoPath: "acme/other",
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1003, RepoPath: "acme/other",
 	}}}
 	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/settings/repo-presets", replacement)
 	require.Equal(http.StatusInternalServerError, rr.Code, rr.Body.String())
 	require.Equal([]config.RepoPreset{{Name: "Existing", Repos: []config.RepoPresetRepository{{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_widget", RepoPath: "acme/widget",
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1004, RepoPath: "acme/widget",
 	}}}}, srv.cfg.RepoPresets)
 }
 
@@ -796,7 +836,7 @@ func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {
 	started := make(chan struct{})
 	go func() {
 		close(started)
-		_, err := srv.updateSettings(context.Background(), &updateSettingsInput{
+		_, err := srv.updateSettings(t.Context(), &updateSettingsInput{
 			Body: updateSettingsRequest{
 				Activity: &config.Activity{TimeRange: "30d", ViewMode: "threaded"},
 			},
@@ -1515,7 +1555,7 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
-				NodeID:   new("repo-acme-" + repo),
+				ID:       new(testutil.FixtureRepoID("acme", repo)),
 				Name:     new(repo),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(repo == "widget" && archivedNow.Load()),
@@ -1526,13 +1566,13 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
-					NodeID:   new("repo-acme-widget"),
+					ID:       new(testutil.FixtureRepoID("acme", "widget")),
 					Name:     new("widget"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(archivedNow.Load()),
 				},
 				{
-					NodeID:   new("repo-acme-tools"),
+					ID:       new(testutil.FixtureRepoID("acme", "tools")),
 					Name:     new("tools"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -1556,9 +1596,9 @@ name = "*"
 `, mock)
 	recentActivity := time.Now().UTC().Add(-10 * time.Minute)
 	for i, name := range []string{"widget", "tools"} {
-		repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+		repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-acme-" + name, Owner: "acme", Name: name,
+			PlatformRepoID: testutil.FixtureRepoID("acme", name), Owner: "acme", Name: name,
 		})
 		require.NoError(err)
 		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -1621,7 +1661,7 @@ func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T)
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "old-name",
 		PlatformHost: "github.com", RepoPath: "acme/old-name",
-		PlatformExternalID: "repo-x",
+		PlatformRepoID: 1001,
 	}})
 
 	// The same stable provider id resolves under a renamed route: the
@@ -1629,7 +1669,7 @@ func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T)
 	srv.mergeTrackedRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "new-name",
 		PlatformHost: "github.com", RepoPath: "acme/new-name",
-		PlatformExternalID: "repo-x", Archived: true,
+		PlatformRepoID: 1001, Archived: true,
 	}})
 
 	tracked := srv.syncer.TrackedRepos()
@@ -1645,7 +1685,7 @@ func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// A settings-resolved duplicate (glob refresh, API add) carries no
@@ -1654,7 +1694,7 @@ func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 	srv.mergeTrackedRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformExternalID: "repo-x", Archived: true,
+		PlatformRepoID: 1001, Archived: true,
 	}})
 
 	tracked := srv.syncer.TrackedRepos()
@@ -1670,7 +1710,7 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
 		PlatformHost: "github.com", RepoPath: "acme/tools",
-		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// The tracked repo was renamed away and its old route reused by a
@@ -1682,12 +1722,12 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 			PlatformHost: "github.com", RepoPath: "acme/tools-new",
-			PlatformExternalID: "repo-x",
+			PlatformRepoID: 1001,
 		},
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
 			PlatformHost: "github.com", RepoPath: "acme/tools",
-			PlatformExternalID: "repo-y",
+			PlatformRepoID: 1002,
 		},
 	})
 
@@ -1703,30 +1743,6 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 		"a different repository reusing the route must not inherit provenance")
 }
 
-func TestMergeTrackedReposTreatsCaseDifferingProviderIdsAsDistinct(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, _, _ := setupTestServerWithConfig(t)
-	srv.syncer.SetRepos([]ghclient.RepoRef{{
-		Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
-		PlatformHost: "github.com", RepoPath: "acme/tools",
-		PlatformExternalID: "repo-X", ConfiguredRepoPath: "acme/tools",
-	}})
-
-	// Provider ids are opaque, case-sensitive identities (identity keys
-	// compare them exactly); a case-only difference is a different
-	// repository and must not inherit route provenance.
-	srv.mergeTrackedRepos([]ghclient.RepoRef{{
-		Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
-		PlatformHost: "github.com", RepoPath: "acme/tools",
-		PlatformExternalID: "repo-x",
-	}})
-
-	tracked := srv.syncer.TrackedRepos()
-	require.Len(tracked, 1)
-	assert.Empty(tracked[0].ConfiguredRepoPath)
-}
-
 func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1734,14 +1750,14 @@ func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 	}})
 
 	glob := config.Repo{Owner: "acme", Name: "*"}
 	srv.replaceGlobRepos(glob, []ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformExternalID: "repo-x", Archived: true,
+		PlatformRepoID: 1001, Archived: true,
 	}}, []config.Repo{{Owner: "acme", Name: "tools"}, glob})
 
 	tracked := srv.syncer.TrackedRepos()
@@ -2149,14 +2165,12 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 			repos := []*gh.Repository{
 				{
 					ID:       new(int64(101)),
-					NodeID:   new("repo-101"),
 					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
 				{
 					ID:       new(int64(102)),
-					NodeID:   new("repo-102"),
 					Name:     new("archived"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(true),
@@ -2165,7 +2179,6 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 			if includeRefreshRepo.Load() {
 				repos = append(repos, &gh.Repository{
 					ID:       new(int64(103)),
-					NodeID:   new("repo-103"),
 					Name:     new("review-bot"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -2345,12 +2358,12 @@ name = "*"
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 			PlatformHost: "github.com", RepoPath: "acme/tools-new",
-			PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+			PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 		},
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "widgets",
 			PlatformHost: "github.com", RepoPath: "acme/widgets",
-			PlatformExternalID: "repo-w",
+			PlatformRepoID: 1003,
 		},
 	})
 
@@ -2401,7 +2414,7 @@ name = "*"
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// Removing the exact entry keeps the repo through the glob, but its
@@ -2459,7 +2472,7 @@ platform_host = "ghe.example.com"
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// The remaining acme/tools entry lives on a different host; it cannot
@@ -2517,7 +2530,7 @@ name = "tools"
 	srv.syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformExternalID: "repo-x", ConfiguredRepoPath: "acme/tools",
+		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// The remaining acme/tools entry shares the host but belongs to a
@@ -2788,7 +2801,7 @@ name = "*"
 	go func() {
 		// Inline the request (no testify helpers) so the
 		// linter does not flag assertions inside the goroutine.
-		req := httptest.NewRequest(
+		req := httptest.NewRequestWithContext(t.Context(),
 			http.MethodPost,
 			"/api/v1/repo/gh/roborev-dev/*/refresh", nil,
 		)
@@ -3477,27 +3490,24 @@ func TestHandleBulkAddReposPersistsGitLabProviderIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "Group/Subgroup",
-		Name:               "Project",
-		RepoPath:           "Group/Subgroup/Project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		WebURL:             "https://gitlab.example.com/Group/Subgroup/Project",
-		CloneURL:           "https://gitlab.example.com/Group/Subgroup/Project.git",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "Group/Subgroup",
+		Name:          "Project",
+		RepoPath:      "Group/Subgroup/Project",
+		PlatformID:    4242,
+		WebURL:        "https://gitlab.example.com/Group/Subgroup/Project",
+		CloneURL:      "https://gitlab.example.com/Group/Subgroup/Project.git",
+		DefaultBranch: "main",
 	}
 	provider := repoImportTestProvider{
 		kind: platform.KindGitLab,
 		host: "gitlab.example.com",
 		repos: []platform.Repository{{
-			Ref:                ref,
-			PlatformID:         ref.PlatformID,
-			PlatformExternalID: ref.PlatformExternalID,
-			WebURL:             ref.WebURL,
-			CloneURL:           ref.CloneURL,
-			DefaultBranch:      ref.DefaultBranch,
+			Ref:           ref,
+			WebURL:        ref.WebURL,
+			CloneURL:      ref.CloneURL,
+			DefaultBranch: ref.DefaultBranch,
 		}},
 	}
 	srv, database, cfgPath := setupTestServerWithConfigProviders(t, `
@@ -3554,7 +3564,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 		{
 			Platform:         "github",
 			PlatformHost:     "forge.example.com",
-			PlatformRepoID:   "github-widget",
+			PlatformRepoID:   1001,
 			Owner:            "acme",
 			Name:             "widget",
 			WorktreeBasePath: "/tmp/github-widget",
@@ -3562,7 +3572,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 		{
 			Platform:         "gitlab",
 			PlatformHost:     "forge.example.com",
-			PlatformRepoID:   "gitlab-widget",
+			PlatformRepoID:   1002,
 			Owner:            "acme",
 			Name:             "widget",
 			WorktreeBasePath: "/tmp/gitlab-widget",
@@ -3572,7 +3582,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 	got, ok, err := srv.worktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "gitlab", PlatformHost: "forge.example.com",
-			PlatformRepoID: "gitlab-widget", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1002, Owner: "acme", Name: "widget",
 		},
 	)
 
@@ -3583,7 +3593,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 	_, ok, err = srv.worktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "gitlab", PlatformHost: "forge.example.com",
-			PlatformRepoID: "replacement-widget", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1003, Owner: "acme", Name: "widget",
 		},
 	)
 	require.NoError(err)
@@ -3594,9 +3604,9 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: 1004, Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
@@ -3609,7 +3619,7 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 	got, ok, err := srv.worktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "provider-widget", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1004, Owner: "acme", Name: "widget",
 		},
 	)
 	require.NoError(err)
@@ -3619,7 +3629,7 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 	_, ok, err = srv.worktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "replacement-widget", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1003, Owner: "acme", Name: "widget",
 		},
 	)
 	require.NoError(err)
@@ -3630,23 +3640,23 @@ func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) 
 	local := settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
 		{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 			WorktreeBasePath: "/work/widget",
 		},
 		{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-old", Owner: "acme", Name: "reused",
+			PlatformRepoID: 1002, Owner: "acme", Name: "reused",
 			WorktreeBasePath: "/work/old",
 		},
 	}}
 	provider := settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
 		{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-widget", Owner: "acme-renamed", Name: "widget-renamed",
+			PlatformRepoID: 1001, Owner: "acme-renamed", Name: "widget-renamed",
 		},
 		{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-new", Owner: "acme", Name: "reused",
+			PlatformRepoID: 1003, Owner: "acme", Name: "reused",
 		},
 	}}
 
@@ -3657,156 +3667,33 @@ func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) 
 	assert.Empty(t, local.Repos[1].WorktreeBasePath)
 }
 
-func TestProviderSettingsRepositoryObservationUsesHubTime(t *testing.T) {
+func TestProviderSettingsProjectionCarriesCatalogObservation(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	hubObservedAt := time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)
-	srv := &Server{
-		db:  database,
-		now: func() time.Time { return hubObservedAt.Add(24 * time.Hour) },
-	}
-	provider := providerSettingsProjection{
-		Settings: settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{{
-			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
-			RepoPath: "acme/widget", TrackedRepoPath: "acme/widget",
-		}}},
-		RepositoryObservations: []providerRepositoryObservation{{
-			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
-			RepoPath: "acme/widget", ObservedAt: hubObservedAt,
-		}},
-	}
-
-	changed, err := srv.observeProviderSettingsRepositories(
-		t.Context(), provider.RepositoryObservations,
-	)
-	require.NoError(err)
-	require.True(changed)
-
-	source := hubProviderSource{db: database}
-	require.NoError(source.observeRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
-		ProtocolVersion: federation.ProtocolVersion,
-		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
-		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
-		DefaultBranch: "main", ObservedAt: hubObservedAt.Add(time.Minute),
-	}))
-}
-
-func TestRepositoryDescriptorAcceptsSupersededSameRouteObservation(t *testing.T) {
-	require := require.New(t)
-	database := dbtest.Open(t)
-	newer := time.Date(2026, time.August, 24, 12, 1, 0, 0, time.UTC)
-	identity := db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
-	}
-	_, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), identity, newer,
-	)
-	require.NoError(err)
-	require.True(accepted)
-
-	source := hubProviderSource{db: database}
-	require.NoError(source.observeRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
-		ProtocolVersion: federation.ProtocolVersion,
-		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
-		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
-		DefaultBranch: "main", SnapshotRevision: 1, ObservedAt: newer.Add(-time.Second),
-	}))
-
-	identity.Owner = "acme-renamed"
-	_, accepted, err = database.ReconcileRepositoryObservation(
-		t.Context(), identity, newer.Add(time.Minute),
-	)
-	require.NoError(err)
-	require.True(accepted)
-	require.Error(source.observeRepositoryDescriptor(t.Context(), providerplane.RepositoryDescriptor{
-		ProtocolVersion: federation.ProtocolVersion,
-		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-widget",
-		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
-		DefaultBranch: "main", SnapshotRevision: 1, ObservedAt: newer,
-	}))
-}
-
-func TestProviderSettingsProjectionCarriesCatalogObservationTime(t *testing.T) {
-	require := require.New(t)
-	database := dbtest.Open(t)
-	observedAt := time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)
-	_, accepted, err := database.ReconcileRepositoryObservation(
+	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
-			RepoPath: "acme/widget",
-		}, observedAt,
+			PlatformRepoID: 1001, Owner: "acme-renamed", Name: "widget-renamed",
+			RepoPath: "acme-renamed/widget-renamed",
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 	srv := &Server{db: database}
 
 	projection, err := srv.buildProviderSettingsProjection(
 		t.Context(), settingsResponse{Repos: []ghclient.ConfiguredRepoStatus{{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 			RepoPath: "acme/widget", TrackedRepoPath: "acme/widget",
 		}}},
 	)
 
 	require.NoError(err)
-	require.Len(projection.RepositoryObservations, 1)
-	assert.Equal(t, observedAt, projection.RepositoryObservations[0].ObservedAt)
-}
-
-func TestLocalSettingsCorrelateRenamedRepositoryThroughCatalog(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database, _ := setupTestServerWithConfig(t)
-	srv.cfg.Repos[0].WorktreeBasePath = "/work/widget"
-	observedAt := time.Now().UTC()
-	seedVerifiedRepo(t, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-widget", Owner: "acme", Name: "widget",
-	})
-	_, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-widget", Owner: "acme-renamed", Name: "widget-renamed",
-		}, observedAt.Add(time.Minute),
-	)
-	require.NoError(err)
-	require.True(accepted)
-	srv.syncer = nil
-
-	settings, err := srv.buildLocalSettingsResponse(t.Context())
-	require.NoError(err)
-	require.Len(settings.Repos, 1)
-	assert.Equal("repo-widget", settings.Repos[0].PlatformRepoID)
-	assert.Equal("acme-renamed/widget-renamed", settings.Repos[0].TrackedRepoPath)
-}
-
-func TestLocalSettingsDoNotCorrelateReusedRepositoryRoute(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database, _ := setupTestServerWithConfig(t)
-	seedVerifiedRepo(t, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-old", Owner: "acme", Name: "widget",
-	})
-	_, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-new", Owner: "acme", Name: "widget",
-		}, time.Now().UTC().Add(time.Minute),
-	)
-	require.NoError(err)
-	require.True(accepted)
-	srv.syncer = nil
-
-	settings, err := srv.buildLocalSettingsResponse(t.Context())
-	require.NoError(err)
-	require.Len(settings.Repos, 1)
-	assert.Empty(settings.Repos[0].PlatformRepoID)
-	assert.Empty(settings.Repos[0].TrackedRepoPath)
+	assert.Equal(t, []providerRepositoryObservation{{
+		Provider: "github", PlatformHost: "github.com",
+		PlatformRepoID: 1001, Owner: "acme-renamed", Name: "widget-renamed",
+		RepoPath: "acme-renamed/widget-renamed",
+	}}, projection.RepositoryObservations)
 }
 
 func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {
@@ -3865,13 +3752,12 @@ port = 8091
 	assert.True(srv.syncer.IsTrackedRepoOnHost("Team", "Service", "gitea.example.com"))
 
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitea,
-		Host:               "gitea.example.com",
-		Owner:              "Team",
-		Name:               "Service",
-		RepoPath:           "Team/Service",
-		PlatformID:         6262,
-		PlatformExternalID: "6262",
+		Platform:   platform.KindGitea,
+		Host:       "gitea.example.com",
+		Owner:      "Team",
+		Name:       "Service",
+		RepoPath:   "Team/Service",
+		PlatformID: 6262,
 	}
 	dbRepo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
@@ -4042,7 +3928,7 @@ name = "widget"
 	done := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
 		// Inline request avoids testify assertions inside this goroutine.
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/repos/bulk", bytes.NewReader(bulkBody.Bytes()))
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/repos/bulk", bytes.NewReader(bulkBody.Bytes()))
 		req.Host = "127.0.0.1:8091"
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
@@ -4084,7 +3970,7 @@ func TestSetActiveWorktreeRoute(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	put := func(body string) *http.Response {
-		req, err := http.NewRequest(
+		req, err := http.NewRequestWithContext(t.Context(),
 			http.MethodPut,
 			ts.URL+"/api/v1/ui/active-worktree",
 			strings.NewReader(body),
@@ -4386,6 +4272,14 @@ base_url = %q
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
 	assert.Equal(canonicalWorktreeBase, settings.Repos[0].WorktreeBasePath)
+
+	response = testutil.DoJSON(t, spoke, http.MethodGet, "/api/v1/settings/local", nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.Equal(25, settings.Detail.InitialTimelineEntryLimit)
+	assert.True(settings.Workspaces.AutoAssignOnCreate)
+	assert.Equal(config.FleetRoleSpoke, settings.Fleet.Role)
+	assert.False(settings.ProviderSettingsLoaded)
 }
 
 func TestNodeWorktreeBaseOverrideFollowsHubRepositoryIdentity(t *testing.T) {
@@ -4396,17 +4290,16 @@ host = "127.0.0.1"
 port = 8091
 `, &mockGH{})
 	srv.syncer = nil
-	observedAt := time.Now().UTC().Truncate(time.Second)
 	projection := providerSettingsResponse{
 		Repos: []ghclient.ConfiguredRepoStatus{{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-late", Owner: "acme", Name: "late",
+			PlatformRepoID: 1005, Owner: "acme", Name: "late",
 			RepoPath: "acme/late", TrackedRepoPath: "acme/late",
 		}},
 		RepositoryObservations: []providerRepositoryObservation{{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-late", Owner: "acme", Name: "late",
-			RepoPath: "acme/late", ObservedAt: observedAt,
+			PlatformRepoID: 1005, Owner: "acme", Name: "late",
+			RepoPath: "acme/late",
 		}},
 		RepoPresets: []config.RepoPreset{},
 	}
@@ -4453,7 +4346,6 @@ port = 8091
 	projection.RepositoryObservations[0].Owner = "renamed"
 	projection.RepositoryObservations[0].Name = "late-renamed"
 	projection.RepositoryObservations[0].RepoPath = "renamed/late-renamed"
-	projection.RepositoryObservations[0].ObservedAt = observedAt.Add(time.Minute)
 	response = testutil.DoJSON(
 		t, srv, http.MethodPut,
 		"/api/v1/repo/github/renamed/late-renamed/worktree-base",
@@ -4470,15 +4362,16 @@ port = 8091
 	assert.Empty(configuredRepos[0].WorktreeBasePath)
 	contents, err := os.ReadFile(configPath)
 	require.NoError(err)
-	assert.Contains(string(contents), `platform_repo_id = "repo-late"`)
+	assert.Contains(string(contents), `platform_repo_id = 1005`)
 	var settings settingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
-	assert.Equal("repo-late", settings.Repos[0].PlatformRepoID)
+	assert.Equal(int64(1005), settings.Repos[0].PlatformRepoID)
 	assert.Empty(settings.Repos[0].WorktreeBasePath)
+	assert.True(settings.ProviderSettingsLoaded)
 }
 
-func TestNodeLocalSettingsDoNotCommitWhenHubSnapshotIsUnavailable(t *testing.T) {
+func TestNodeLocalSettingsCommitWhileHubIsUnavailable(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, configPath := setupTestServerWithConfigContent(t, `
@@ -4501,11 +4394,51 @@ auto_assign_on_create = false
 		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
 	})
 
-	require.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
-	assert.False(srv.cfg.Workspaces.AutoAssignOnCreate)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.True(settings.Workspaces.AutoAssignOnCreate)
+	assert.False(settings.ProviderSettingsLoaded)
 	persisted, err := config.Load(configPath)
 	require.NoError(err)
-	assert.False(persisted.Workspaces.AutoAssignOnCreate)
+	assert.True(persisted.Workspaces.AutoAssignOnCreate)
+}
+
+func TestNodeLocalSettingsSaveStopsWaitingForHubAtPeerTimeout(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, configPath := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+
+[fleet]
+peer_timeout = "50ms"
+`, &mockGH{})
+	srv.providerSource = &hubProviderSource{
+		client: providerPlaneClientFunc(func(
+			ctx context.Context, _ federationauth.Scope, _ *http.Request,
+		) (*http.Response, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}),
+	}
+	callerContext, cancelCaller := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancelCaller()
+	autoAssign := true
+	started := time.Now()
+
+	output, err := srv.updateSettings(callerContext, &updateSettingsInput{Body: updateSettingsRequest{
+		Workspaces: &workspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+	}})
+
+	require.NoError(err)
+	assert.Less(time.Since(started), 5*time.Second,
+		"a committed spoke-local save must not wait on the hub past the peer timeout")
+	assert.True(output.Body.Workspaces.AutoAssignOnCreate)
+	assert.False(output.Body.ProviderSettingsLoaded)
+	persisted, err := config.Load(configPath)
+	require.NoError(err)
+	assert.True(persisted.Workspaces.AutoAssignOnCreate)
 }
 
 func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
@@ -4529,6 +4462,8 @@ func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
 	var settings settingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.False(settings.Fleet.Enabled)
+	require.False(settings.ProviderSettingsLoaded,
+		"a spoke without its hub's settings must not present local values as hub-owned")
 }
 
 func TestInactiveSpokeSettingsStayLocal(t *testing.T) {
@@ -4642,7 +4577,7 @@ prefer_github_native_stacks = true
 		PullRequests: &config.PullRequests{},
 	}))
 	reqCtx, cancel := context.WithCancel(ctx)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", &buf).WithContext(reqCtx)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/v1/settings", &buf).WithContext(reqCtx)
 	req.Host = "127.0.0.1:8091"
 	req.Header.Set("Content-Type", "application/json")
 	// The client disconnects while the request is being served.
@@ -4887,4 +4822,78 @@ func TestHandleGetSettingsReportsEmptyQuickActionsArray(t *testing.T) {
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &raw))
 	require.Contains(raw, "quick_actions")
 	assert.JSONEq("[]", string(raw["quick_actions"]))
+}
+
+func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, `
+host = "127.0.0.1"
+port = 8091
+`, &mockGH{})
+	srv.syncer = nil
+	srv.cfg.Fleet.Enabled = true
+	srv.fleetEnabledAtBoot = true
+	hubSettings := providerSettingsResponse{
+		Repos: []ghclient.ConfiguredRepoStatus{}, RepoPresets: []config.RepoPreset{},
+		RepositoryObservations: []providerRepositoryObservation{},
+		Sync:                   syncSettingsResponse{BudgetPerHour: 2400},
+	}
+	var forwarded providerSettingsUpdate
+	srv.providerSource = &hubProviderSource{
+		client: providerPlaneClientFunc(func(
+			_ context.Context, _ federationauth.Scope, request *http.Request,
+		) (*http.Response, error) {
+			if request.Method == http.MethodPut {
+				require.NoError(json.NewDecoder(request.Body).Decode(&forwarded))
+				hubSettings.Sync.BudgetPerHour = *forwarded.Sync.BudgetPerHour
+			}
+			encoded, err := json.Marshal(hubSettings)
+			require.NoError(err)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(bytes.NewReader(encoded)),
+				Request:    request,
+			}, nil
+		}),
+	}
+
+	response := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.Equal(2400, settings.Sync.BudgetPerHour)
+
+	budget := 1800
+	response = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", updateSettingsRequest{
+		Sync: &syncSettingsUpdate{BudgetPerHour: &budget},
+	})
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	require.NotNil(forwarded.Sync)
+	require.NotNil(forwarded.Sync.BudgetPerHour)
+	assert.Equal(1800, *forwarded.Sync.BudgetPerHour)
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.Equal(1800, settings.Sync.BudgetPerHour)
+}
+
+func TestHubAppliesSyncBudgetFromSpoke(t *testing.T) {
+	require := require.New(t)
+	srv, _, configPath := setupTestServerWithConfig(t)
+	srv.syncer = nil
+	ctx := federationauth.WithPrincipal(t.Context(), federationauth.Principal{
+		NodeID: proxyTestNodeID,
+		Scopes: map[federationauth.Scope]struct{}{federationauth.ScopeProviderWrite: {}},
+	})
+	budget := 1800
+
+	output, err := srv.federationUpdateProviderSettings(ctx, &federationUpdateProviderSettingsInput{
+		Body: providerSettingsUpdate{Sync: &syncSettingsUpdate{BudgetPerHour: &budget}},
+	})
+
+	require.NoError(err)
+	require.Equal(1800, output.Body.Sync.BudgetPerHour)
+	persisted, err := config.Load(configPath)
+	require.NoError(err)
+	require.Equal(1800, persisted.SyncBudgetPerHour)
 }

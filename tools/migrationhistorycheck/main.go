@@ -25,8 +25,9 @@ var gitEnv []string
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	os.Exit(run(ctx, os.Stderr))
+	code := run(ctx, os.Stderr)
+	stop()
+	os.Exit(code)
 }
 
 func run(ctx context.Context, stderr io.Writer) int {

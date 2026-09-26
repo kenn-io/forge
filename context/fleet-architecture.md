@@ -29,9 +29,9 @@ or remote workspace and session operations.
   devbox selections while disconnected. (`internal/config/devbox.go::ValidateDefaultExecutionTarget`)
 - Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
   belong only on the direct tailnet connection. (`internal/server/devboxes.go::registerDevboxTerminalAPI`)
-- Devbox repository admission and launch context use GitHub node IDs, matching the controller's
-  catalog; numeric REST IDs scope App installation tokens, not workspace identity.
-  (`internal/server/workspaceapi/execution_worker.go::Handler.admitWorkerRepository`)
+- Devbox repository admission and launch context use GitHub's integer repository ID, the same
+  ID that scopes App installation tokens
+  (`internal/server/workspaceapi/execution_worker.go::Handler.admitWorkerRepository`).
 
 ## Ownership And Topology
 
@@ -60,6 +60,10 @@ or remote workspace and session operations.
 - Disabling federation must leave local settings readable so the operator can
   re-enable it; hub-owned settings may be absent while disabled
   (`internal/server/settings_handlers.go::Server.getSettings`).
+- Spoke Settings loads node-local controls without hub I/O; hub-owned controls
+  stay unavailable until a settings response reports `provider_settings_loaded`
+  (`frontend/src/lib/components/settings/SettingsPage.svelte`,
+  `internal/server/settings_handlers.go::Server.settingsOutputResponseWithProvider`).
 - Raw snapshots contain only producer-local facts; they never contain fetched
   aggregates or observer permissions (`internal/server/fleetapi/fleet_adapter.go::Handler.buildLocalRaw`).
 - Hub provider enrichment keys by stable repository identity and item
@@ -113,6 +117,9 @@ or remote workspace and session operations.
 - A spoke supplies its aggregate member budget; the hub uses the smaller local
   or requested timeout, while the spoke reserves twice that budget for the full
   response (`internal/server/fleetapi/fleet_routes.go::Handler.getSnapshotAggregate`).
+- Member REST requests use the current `fleet.peer_timeout` on each request;
+  fixed transport deadlines must not cap hot-reloaded values
+  (`internal/server/fleetapi/fleet_enrollment.go::hardenedFederationMemberHTTPClient`).
 - Hubs show the fleet-wide workspace surface. Spokes retain the full host
   directory for navigation but project only their own actionable workspace data
   (`internal/fleet/enrich.go::ProjectForObserver`).
@@ -322,7 +329,7 @@ change-driven and idle-cheap:
   (`internal/db/queries_workspace_launch_specs.go::DB.CreateWorkspaceWithLaunchSpec`,
   `internal/workspace/launch_spec.go::Manager.lifecycleSummary`).
 - Launch-spec refresh follows stable provider identity across renames and
-  commits the verified route with the specification; reused routes stay fenced
+  commits the verified route with the specification
   (`internal/db/queries_workspace_launch_specs.go::DB.PutRefreshedWorkspaceLaunchSpec`).
 - Source visibility is a strict 15-minute hub lease for setup and
   provider-backed Git work. Once it expires, those operations must refresh it;

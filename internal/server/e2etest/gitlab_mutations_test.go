@@ -17,6 +17,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -79,7 +80,7 @@ func (rec *gitlabAPIRecorder) findEventually(method, path string) bool {
 		if time.Now().After(deadline) {
 			return false
 		}
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(25 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 	}
 }
 
@@ -307,10 +308,10 @@ func setupGitLabMutationServer(
 	require.NoError(err)
 
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.com",
-		PlatformRepoID: "4242",
+		PlatformRepoID: 4242,
 		Owner:          "acme",
 		Name:           "widget",
 		RepoPath:       "acme/widget",
@@ -374,13 +375,12 @@ func setupGitLabMutationServer(
 	}}))
 
 	repo := ghclient.RepoRef{
-		Platform:           platform.KindGitLab,
-		Owner:              "acme",
-		Name:               "widget",
-		PlatformHost:       "gitlab.com",
-		RepoPath:           "acme/widget",
-		PlatformRepoID:     4242,
-		PlatformExternalID: "4242",
+		Platform:       platform.KindGitLab,
+		Owner:          "acme",
+		Name:           "widget",
+		PlatformHost:   "gitlab.com",
+		RepoPath:       "acme/widget",
+		PlatformRepoID: 4242,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -440,7 +440,7 @@ func doGitLabJSON(
 	if body != "" {
 		reader = strings.NewReader(body)
 	}
-	req := httptest.NewRequest(method, path, reader)
+	req := httptest.NewRequestWithContext(t.Context(), method, path, reader)
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -1190,7 +1190,7 @@ func TestGitLabMutationGenericMergeConflictDoesNotResync(t *testing.T) {
 	assert.Equal("conflict", problem.Details["reason"])
 
 	// Give a wrongly-scheduled background sync time to surface.
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 	_, synced := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
 	assert.False(synced, "generic conflicts must not resync on head-binding providers")
 }

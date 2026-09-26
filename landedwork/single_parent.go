@@ -104,6 +104,8 @@ func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candid
 }
 
 func squashLanding(c Candidate, before string) Landing {
-	return Landing{CandidateID: c.ID, Proofs: []string{"squash"}, Before: before, Terminal: c.Terminal,
-		Spine: []string{c.Terminal}, Source: slices.Clone(c.Source), Introduced: []string{c.Terminal}}
+	return Landing{
+		CandidateID: c.ID, Proofs: []string{"squash"}, Before: before, Terminal: c.Terminal,
+		Spine: []string{c.Terminal}, Source: slices.Clone(c.Source), Introduced: []string{c.Terminal},
+	}
 }

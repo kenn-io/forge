@@ -18,12 +18,18 @@ func TestProjectForObserverSuppressesTwoHopMutation(t *testing.T) {
 	nodeA := NodeID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	nodeB := NodeID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	nodeC := NodeID("cccccccccccccccccccccccccccccccc")
-	rawA := RawSnapshot{ProtocolVersion: 3, NodeID: nodeA,
-		Host: RawHost{Hostname: "hub", Platform: "linux"}, Capabilities: &full}
-	rawB := RawSnapshot{ProtocolVersion: 3, NodeID: nodeB,
-		Host: RawHost{Hostname: "spoke-b", Platform: "linux"}, Capabilities: &full}
-	rawC := RawSnapshot{ProtocolVersion: 3, NodeID: nodeC,
-		Host: RawHost{Hostname: "spoke-c", Platform: "linux"}, Capabilities: &full}
+	rawA := RawSnapshot{
+		ProtocolVersion: 3, NodeID: nodeA,
+		Host: RawHost{Hostname: "hub", Platform: "linux"}, Capabilities: &full,
+	}
+	rawB := RawSnapshot{
+		ProtocolVersion: 3, NodeID: nodeB,
+		Host: RawHost{Hostname: "spoke-b", Platform: "linux"}, Capabilities: &full,
+	}
+	rawC := RawSnapshot{
+		ProtocolVersion: 3, NodeID: nodeC,
+		Host: RawHost{Hostname: "spoke-c", Platform: "linux"}, Capabilities: &full,
+	}
 	aggregate := BuildNeutralAggregate(rawA, []PeerResult{
 		{NodeID: nodeB, Name: "spoke-b", Reachable: true, Raw: &rawB},
 		{NodeID: nodeC, Name: "spoke-c", Reachable: true, Raw: &rawC},
@@ -72,8 +78,10 @@ func fullCommandCaps() CommandCapabilities {
 // read-only policy still suppresses write operations regardless of host
 // capabilities.
 func TestHubReadOnlyPolicyCanForceMutationOpsUnavailable(t *testing.T) {
-	caps := Capabilities{Dependencies: DependencyCapabilities{Git: true, Tmux: true, Gh: true},
-		Commands: CommandCapabilities{WorktreeCreate: true, WorktreeDelete: true, SessionEnsure: true, SessionKill: true, WorktreeImportPR: true}}
+	caps := Capabilities{
+		Dependencies: DependencyCapabilities{Git: true, Tmux: true, Gh: true},
+		Commands:     CommandCapabilities{WorktreeCreate: true, WorktreeDelete: true, SessionEnsure: true, SessionKill: true, WorktreeImportPR: true},
+	}
 	avail := OperationAvailabilityFromState(nil, caps.Commands, true, hubPolicy())
 	for _, op := range []string{"worktreeCreate", "worktreeDelete", "sessionEnsure", "sessionKill", "pullRequestImport", "repositoryClone", "projectAdd", "projectRemove"} {
 		assert.False(t, avail[op].Available, "%s must be unavailable under read-only policy", op)

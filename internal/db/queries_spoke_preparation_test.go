@@ -67,6 +67,8 @@ func TestSpokePreparationStateIsDurableBoundAndRetrySafe(t *testing.T) {
 }
 
 func TestSpokePreparationReceiptsAndSealsRejectSemanticChanges(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -101,6 +103,8 @@ func TestSpokePreparationReceiptsAndSealsRejectSemanticChanges(t *testing.T) {
 }
 
 func TestSpokePreparationSealRejectsDigestThatDoesNotCoverBinding(t *testing.T) {
+	t.Parallel()
+
 	database := openTestDB(t)
 	request := spokePreparationSealRequestForTest()
 	request.ReceiptsDigest = "changed-after-digest"
@@ -110,6 +114,8 @@ func TestSpokePreparationSealRejectsDigestThatDoesNotCoverBinding(t *testing.T) 
 }
 
 func TestSpokePreparationLocalSealCannotBeRebound(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)

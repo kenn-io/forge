@@ -51,8 +51,8 @@ func (p *Provider) classifyRepositoryFeatureError(
 		return p.mapError(err), false
 	}
 
-	var httpErr *HTTPError
-	if !errors.As(err, &httpErr) || httpErr == nil ||
+	httpErr, ok := errors.AsType[*HTTPError](err)
+	if !ok || httpErr == nil ||
 		(httpErr.StatusCode != http.StatusForbidden &&
 			httpErr.StatusCode != http.StatusNotFound &&
 			httpErr.StatusCode != http.StatusGone) {

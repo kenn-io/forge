@@ -72,17 +72,18 @@ func TestBackgroundEnrichmentSkipsGitWhileFingerprintUnchanged(t *testing.T) {
 		now = now.Add(d)
 	}
 	handler := New(Deps{DB: database, Workspaces: manager, Now: clock})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	handler.Start(ctx, true)
 	t.Cleanup(func() {
 		cancel()
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer shutdownCancel()
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})
 
 	summary := &db.WorkspaceSummary{
-		ID: "ws-fingerprint", Status: "ready", WorktreePath: worktree}
+		ID: "ws-fingerprint", Status: "ready", WorktreePath: worktree,
+	}
 	waitForRefresh := func(after time.Time) workspaceResponse {
 		t.Helper()
 		var resp workspaceResponse

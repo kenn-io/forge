@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -51,7 +50,7 @@ func TestGitLabCLITokenForHostReadsGlabConfig(t *testing.T) {
 	require := require.New(t)
 	argvPath := setFakeGlabCLIScript(t, fakeGHCLIOptions{Stdout: "glpat-secret"})
 
-	got, err := GitLabCLITokenForHost(context.Background(), "gitlab.example.test")
+	got, err := GitLabCLITokenForHost(t.Context(), "gitlab.example.test")
 	require.NoError(err)
 	assert.Equal("glpat-secret", got)
 
@@ -64,7 +63,7 @@ func TestGitLabCLITokenForHostIsEmptyWhenHostUnset(t *testing.T) {
 	// glab prints nothing and exits zero for an unset key.
 	setFakeGlabCLIScript(t, fakeGHCLIOptions{})
 
-	got, err := GitLabCLITokenForHost(context.Background(), "gitlab.example.test")
+	got, err := GitLabCLITokenForHost(t.Context(), "gitlab.example.test")
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -74,19 +73,19 @@ func TestGitLabCLITokenForHostIgnoresFailuresAndProse(t *testing.T) {
 		setFakeGlabCLIScript(t, fakeGHCLIOptions{
 			Stdout: "glpat-secret", Stderr: "boom", ExitCode: 1,
 		})
-		got, err := GitLabCLITokenForHost(context.Background(), "gitlab.example.test")
+		got, err := GitLabCLITokenForHost(t.Context(), "gitlab.example.test")
 		require.NoError(t, err)
 		assert.Empty(t, got)
 	})
 	t.Run("prose on stdout", func(t *testing.T) {
 		setFakeGlabCLIScript(t, fakeGHCLIOptions{Stdout: "Update available: v2"})
-		got, err := GitLabCLITokenForHost(context.Background(), "gitlab.example.test")
+		got, err := GitLabCLITokenForHost(t.Context(), "gitlab.example.test")
 		require.NoError(t, err)
 		assert.Empty(t, got)
 	})
 	t.Run("binary missing", func(t *testing.T) {
 		t.Setenv("PATH", t.TempDir())
-		got, err := GitLabCLITokenForHost(context.Background(), "gitlab.example.test")
+		got, err := GitLabCLITokenForHost(t.Context(), "gitlab.example.test")
 		require.NoError(t, err)
 		assert.Empty(t, got)
 	})
@@ -209,7 +208,7 @@ func TestForgejoCLITokenForHostReadsKeysFile(t *testing.T) {
 		{"unknown.example.test", ""},
 	} {
 		t.Run(tc.host, func(t *testing.T) {
-			got, err := ForgejoCLITokenForHost(context.Background(), tc.host)
+			got, err := ForgejoCLITokenForHost(t.Context(), tc.host)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})
@@ -242,7 +241,7 @@ func TestForgejoCLITokenForHostSkipsExpiredOAuth(t *testing.T) {
 		{"opaque.example.test", "fj-opaque"},
 	} {
 		t.Run(tc.host, func(t *testing.T) {
-			got, err := ForgejoCLITokenForHost(context.Background(), tc.host)
+			got, err := ForgejoCLITokenForHost(t.Context(), tc.host)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})
@@ -254,12 +253,12 @@ func TestForgejoCLITokenForHostMissingOrMalformedFile(t *testing.T) {
 	require := require.New(t)
 	path := isolateForgejoCLIKeys(t)
 
-	got, err := ForgejoCLITokenForHost(context.Background(), "codeberg.org")
+	got, err := ForgejoCLITokenForHost(t.Context(), "codeberg.org")
 	require.NoError(err)
 	assert.Empty(got, "missing keys file is a missing credential")
 
 	writeForgejoCLIKeys(t, path, `{"hosts": [`)
-	_, err = ForgejoCLITokenForHost(context.Background(), "codeberg.org")
+	_, err = ForgejoCLITokenForHost(t.Context(), "codeberg.org")
 	require.Error(err)
 	assert.Contains(err.Error(), "fj keys file")
 }

@@ -2,15 +2,17 @@ package apitest
 
 import (
 	"encoding/json"
-	"go.kenn.io/forge/internal/apiclient/generated"
 	"net/http"
 	"testing"
 	"time"
+
+	"go.kenn.io/forge/internal/apiclient/generated"
 
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func decodeIssueWorkflowBody(t *testing.T, body []byte, target any) {
@@ -121,8 +123,8 @@ func TestIssueSyncResponseIncludesWorkflow(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
 
-	repoID, err := database.UpsertRepo(
-		ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		ctx, database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	_, err = database.SetItemWorkflowState(ctx, db.SetItemWorkflowStateParams{

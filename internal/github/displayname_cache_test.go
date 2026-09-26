@@ -9,12 +9,16 @@ import (
 )
 
 func TestDisplayNameCacheGetMiss(t *testing.T) {
+	t.Parallel()
+
 	c := newDisplayNameCache(4, time.Hour, time.Minute)
 	_, fresh := c.get("missing")
 	require.False(t, fresh)
 }
 
 func TestDisplayNameCacheSuccessHit(t *testing.T) {
+	t.Parallel()
+
 	c := newDisplayNameCache(4, time.Hour, time.Minute)
 	c.putSuccess("k", "Alice")
 
@@ -26,6 +30,8 @@ func TestDisplayNameCacheSuccessHit(t *testing.T) {
 }
 
 func TestDisplayNameCacheFailureHit(t *testing.T) {
+	t.Parallel()
+
 	c := newDisplayNameCache(4, time.Hour, time.Minute)
 	c.putFailure("k")
 
@@ -37,6 +43,8 @@ func TestDisplayNameCacheFailureHit(t *testing.T) {
 }
 
 func TestDisplayNameCacheExpiry(t *testing.T) {
+	t.Parallel()
+
 	fakeNow := time.Unix(0, 0)
 	c := newDisplayNameCache(4, time.Hour, time.Minute)
 	c.now = func() time.Time { return fakeNow }
@@ -52,6 +60,8 @@ func TestDisplayNameCacheExpiry(t *testing.T) {
 }
 
 func TestDisplayNameCacheFailureShorterTTL(t *testing.T) {
+	t.Parallel()
+
 	fakeNow := time.Unix(0, 0)
 	c := newDisplayNameCache(4, time.Hour, time.Minute)
 	c.now = func() time.Time { return fakeNow }
@@ -64,6 +74,8 @@ func TestDisplayNameCacheFailureShorterTTL(t *testing.T) {
 }
 
 func TestDisplayNameCacheLRUEviction(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	c := newDisplayNameCache(3, time.Hour, time.Minute)
 
@@ -92,6 +104,8 @@ func TestDisplayNameCacheLRUEviction(t *testing.T) {
 }
 
 func TestDisplayNameCacheUpdate(t *testing.T) {
+	t.Parallel()
+
 	c := newDisplayNameCache(4, time.Hour, time.Minute)
 	c.putSuccess("k", "Old")
 	c.putSuccess("k", "New")

@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -105,7 +106,7 @@ func (p *blockingPriorityProvider) GetRepository(
 	context.Context, platform.RepoRef,
 ) (platform.Repository, error) {
 	return platform.Repository{
-		Ref: p.ref, PlatformID: 1, PlatformExternalID: "repo-1",
+		Ref:           p.ref,
 		DefaultBranch: "main",
 	}, nil
 }
@@ -183,6 +184,7 @@ func (*archiveWorkerProvider) Capabilities() platform.Capabilities {
 		},
 	}
 }
+
 func (p *archiveWorkerProvider) archivedIssue() platform.Issue {
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 	return platform.Issue{
@@ -191,21 +193,26 @@ func (p *archiveWorkerProvider) archivedIssue() platform.Issue {
 		Author: "alice", State: "closed", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	}
 }
+
 func (p *archiveWorkerProvider) ListIssuesPage(_ context.Context, _ platform.RepoRef, query platform.ItemPageQuery) (platform.Page[platform.Issue], error) {
 	if query.UpdatedSince != nil {
 		return platform.Page[platform.Issue]{Exhausted: true}, nil
 	}
 	return platform.Page[platform.Issue]{Items: []platform.Issue{p.archivedIssue()}, Exhausted: true}, nil
 }
+
 func (*archiveWorkerProvider) ListMergeRequestsPage(context.Context, platform.RepoRef, platform.ItemPageQuery) (platform.Page[platform.MergeRequest], error) {
 	return platform.Page[platform.MergeRequest]{Exhausted: true}, nil
 }
+
 func (*archiveWorkerProvider) ListOpenIssues(context.Context, platform.RepoRef) ([]platform.Issue, error) {
 	return nil, nil
 }
+
 func (p *archiveWorkerProvider) GetIssue(context.Context, platform.RepoRef, int) (platform.Issue, error) {
 	return p.archivedIssue(), nil
 }
+
 func (*archiveWorkerProvider) ListIssueEvents(
 	context.Context,
 	platform.RepoRef,
@@ -268,7 +275,7 @@ func testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "R_widget",
+		PlatformID: 1,
 	}
 	var hydrationCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -290,8 +297,8 @@ func testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
 			default:
 				http.Error(w, `{"message":"unexpected GraphQL query"}`, http.StatusBadRequest)
 			}
-		case "/api/v3/repos/acme/widget":
-			_, _ = w.Write([]byte(`{"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget","owner":{"login":"acme"}}`))
+		case "/api/v3/repos/acme/widget", "/api/v3/repositories/1":
+			_, _ = w.Write([]byte(`{"id":1,"name":"widget","full_name":"acme/widget","owner":{"login":"acme"}}`))
 		case "/api/v3/repos/acme/widget/pulls":
 			_, _ = w.Write([]byte(`[]`))
 		case "/api/v3/repos/acme/widget/issues/11":
@@ -312,7 +319,7 @@ func testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
 		[]RepoRef{{
 			Platform: ref.Platform, PlatformHost: ref.Host,
 			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-			PlatformExternalID: ref.PlatformExternalID,
+			PlatformRepoID: ref.PlatformID,
 		}},
 		time.Hour, nil, nil,
 	)
@@ -436,8 +443,10 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "repo-1",
+		PlatformID: 1001,
 	}
+	_, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
+	require.NoError(err)
 	provider := &preemptibleArchiveProvider{
 		archiveWorkerProvider: &archiveWorkerProvider{ref: ref},
 		readStarted:           make(chan struct{}),
@@ -453,7 +462,7 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-		PlatformExternalID: ref.PlatformExternalID,
+		PlatformRepoID: ref.PlatformID,
 	}}, time.Hour, map[string]*RateTracker{key: tracker}, map[string]*SyncBudget{key: budget})
 	syncer.now = func() time.Time { return now }
 
@@ -812,15 +821,17 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "repo-1",
+		PlatformID: 1001,
 	}
+	_, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
+	require.NoError(err)
 	provider := &archiveWorkerProvider{ref: ref}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-		PlatformExternalID: ref.PlatformExternalID,
+		PlatformRepoID: ref.PlatformID,
 	}}, time.Hour, nil, nil)
 	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
 	require.NoError(err)
@@ -850,7 +861,7 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 			assert.Equal(1, itemCount)
 			return
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) //nolint:kennlint // waits for archive worker HTTP fixture to persist inventory
 	}
 	require.Fail("archive worker did not advance the real archive service")
 }
@@ -892,8 +903,12 @@ func TestSetReposSeedsActiveArchiveForArchivedRepo(t *testing.T) {
 	ref := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.test",
 		Owner: "acme", Name: "frozen", RepoPath: "acme/frozen",
-		PlatformExternalID: "repo-frozen", Archived: true,
+		PlatformRepoID: 1003, Archived: true,
 	}
+	_, err = reposeed.Seed(
+		t.Context(), database, platformdb.DBRepoIdentity(platformRepoRef(ref)),
+	)
+	require.NoError(err)
 
 	require.NoError(syncer.SetReposWithContext(t.Context(), []RepoRef{ref}, false))
 
@@ -941,7 +956,7 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	configured := RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
 		Owner: "group", Name: "project", RepoPath: "group/project",
-		PlatformExternalID: "gid://gitlab/Project/old",
+		PlatformRepoID: 1001,
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
@@ -951,8 +966,8 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 			Ref: platform.RepoRef{
 				Platform: platform.KindGitLab, Host: "gitlab.test",
 				Owner: "group", Name: "project", RepoPath: "group/project",
+				PlatformID: 1001,
 			},
-			PlatformExternalID: "gid://gitlab/Project/old",
 		},
 	}
 	registry, err := platform.NewRegistry(provider)
@@ -968,16 +983,16 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	)
 	require.NoError(err)
 	oldEntry, err := database.GetRepositoryByProviderID(
-		ctx, "gitlab", "gitlab.test", "gid://gitlab/Project/old",
+		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", PlatformRepoID: 1001},
 	)
 	require.NoError(err)
 	require.NotNil(oldEntry)
 
-	provider.repository.PlatformExternalID = "gid://gitlab/Project/new"
+	provider.repository.Ref.PlatformID = 1002
 	require.NoError(syncer.syncRepo(ctx, configured))
 
 	newEntry, err := database.GetRepositoryByProviderID(
-		ctx, "gitlab", "gitlab.test", "gid://gitlab/Project/new",
+		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", PlatformRepoID: 1002},
 	)
 	require.NoError(err)
 	require.NotNil(newEntry)
@@ -1003,35 +1018,36 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	)
 }
 
-func TestSyncReusedRouteResolvingSuccessorKeepsBothReposTracked(t *testing.T) {
+func TestSyncStaleRouteSnapshotFollowsRepositoryIDKeepsBothReposTracked(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	database := dbtest.Open(t)
 	// The renamed repository moved to a new route; a different repository
-	// reused its old route. Both are tracked. A sync of the old route
-	// whose snapshot still carries the renamed repository's id resolves
-	// the successor — neither repository may be lost or duplicated.
+	// reused its old route. Both are tracked. A sync of the old route whose
+	// snapshot still carries the renamed repository's id resolves that id
+	// to its current route — neither repository may be lost or duplicated.
 	renamed := RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
 		Owner: "group", Name: "project-moved", RepoPath: "group/project-moved",
-		PlatformExternalID: "gid://gitlab/Project/old",
+		PlatformRepoID: 1001,
 	}
 	successor := RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
 		Owner: "group", Name: "project", RepoPath: "group/project",
-		PlatformExternalID: "gid://gitlab/Project/new",
+		PlatformRepoID: 1002,
 	}
+	providerRepos := map[int64]RepoRef{1001: renamed, 1002: successor}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
 			kind: platform.KindGitLab, host: "gitlab.test",
 		},
-		repository: platform.Repository{
-			Ref: platform.RepoRef{
-				Platform: platform.KindGitLab, Host: "gitlab.test",
-				Owner: "group", Name: "project", RepoPath: "group/project",
-			},
-			PlatformExternalID: "gid://gitlab/Project/new",
+		getRepositoryFn: func(_ context.Context, ref platform.RepoRef) (platform.Repository, error) {
+			repo, ok := providerRepos[ref.PlatformID]
+			if !ok {
+				return platform.Repository{}, platform.ErrNotFound
+			}
+			return platform.Repository{Ref: platformRepoRef(repo)}, nil
 		},
 	}
 	registry, err := platform.NewRegistry(provider)
@@ -1048,26 +1064,26 @@ func TestSyncReusedRouteResolvingSuccessorKeepsBothReposTracked(t *testing.T) {
 	require.NoError(err)
 
 	stale := successor
-	stale.PlatformExternalID = renamed.PlatformExternalID
+	stale.PlatformRepoID = renamed.PlatformRepoID
 	require.NoError(syncer.syncRepo(ctx, stale))
 
 	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 2, "neither repository may be lost or duplicated")
-	byID := map[string]RepoRef{}
+	byID := map[int64]RepoRef{}
 	for _, repo := range tracked {
-		byID[repo.PlatformExternalID] = repo
+		byID[repo.PlatformRepoID] = repo
 	}
-	assert.Equal("project-moved", byID["gid://gitlab/Project/old"].Name,
+	assert.Equal("project-moved", byID[1001].Name,
 		"the renamed repository keeps its tracked entry")
-	assert.Equal("project", byID["gid://gitlab/Project/new"].Name)
+	assert.Equal("project", byID[1002].Name)
 
 	oldEntry, err := database.GetRepositoryByProviderID(
-		ctx, "gitlab", "gitlab.test", "gid://gitlab/Project/old",
+		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", PlatformRepoID: 1001},
 	)
 	require.NoError(err)
 	require.NotNil(oldEntry)
 	newEntry, err := database.GetRepositoryByProviderID(
-		ctx, "gitlab", "gitlab.test", "gid://gitlab/Project/new",
+		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", PlatformRepoID: 1002},
 	)
 	require.NoError(err)
 	require.NotNil(newEntry)
@@ -1087,7 +1103,7 @@ func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
 	displaced := RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
 		Owner: "group", Name: "project", RepoPath: "group/project",
-		PlatformExternalID: "gid://gitlab/Project/old", Archived: true,
+		PlatformRepoID: 1001, Archived: true,
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
@@ -1097,9 +1113,9 @@ func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
 			Ref: platform.RepoRef{
 				Platform: platform.KindGitLab, Host: "gitlab.test",
 				Owner: "group", Name: "project", RepoPath: "group/project",
+				PlatformID: 1002,
 			},
-			PlatformExternalID: "gid://gitlab/Project/new",
-			Archived:           false,
+			Archived: false,
 		},
 	}
 	registry, err := platform.NewRegistry(provider)
@@ -1121,7 +1137,7 @@ func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
 
 	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
-	assert.Equal("gid://gitlab/Project/new", tracked[0].PlatformExternalID)
+	assert.Equal(int64(1002), tracked[0].PlatformRepoID)
 	assert.False(tracked[0].Archived,
 		"the replacement keeps its authoritative unarchived state")
 }
@@ -1645,6 +1661,7 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+		PlatformID: 1001,
 	}
 	provider := &blockingPriorityProvider{
 		kind: ref.Platform, host: ref.Host,
@@ -1655,9 +1672,9 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	t.Cleanup(releaseProvider)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform: string(ref.Platform), PlatformHost: ref.Host,
-		PlatformRepoID: "repo-1", Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+		PlatformRepoID: 1001, Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 	})
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -1669,7 +1686,7 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	key := RateBucketKey(string(ref.Platform), ref.Host, "host")
 	syncer := NewSyncerWithRegistry(
 		registry, database, nil, []RepoRef{{
-			Platform: ref.Platform, PlatformHost: ref.Host, PlatformExternalID: "repo-1",
+			Platform: ref.Platform, PlatformHost: ref.Host, PlatformRepoID: 1001,
 			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 		}}, time.Hour, nil, map[string]*SyncBudget{key: NewSyncBudget(10)},
 	)
@@ -1741,6 +1758,7 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 			ref := platform.RepoRef{
 				Platform: platform.KindGitLab, Host: "gitlab.test",
 				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+				PlatformID: 1001,
 			}
 			provider := &blockingPriorityProvider{
 				kind: ref.Platform, host: ref.Host,
@@ -1841,10 +1859,9 @@ func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *tes
 			getRepoOnce.Do(func() { close(getRepoStarted) })
 			owner := "acme"
 			name := "widget"
-			nodeID := "repo-new"
-			id := int64(1)
+			id := int64(1002)
 			return &gh.Repository{
-				ID: &id, NodeID: &nodeID, Owner: &gh.User{Login: &owner}, Name: &name,
+				ID: &id, Owner: &gh.User{Login: &owner}, Name: &name,
 			}, nil
 		},
 		listNotificationsFn: func(
@@ -1880,7 +1897,7 @@ func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *tes
 	require.NoError(err)
 	router.RegisterRepoCredentialAlias("acme", "widget", RouteKey{
 		Host: "github.com", Owner: "legacy",
-	}, "repo-old")
+	}, 1001)
 	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
 
 	oldReadBucket := RateBucketKey("github", "github.com", "installation:11")
@@ -1959,8 +1976,8 @@ func TestProcessQueuedNotificationReadsHoldsWriteIdentityProviderWork(t *testing
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -2057,7 +2074,7 @@ func TestArchiveAdmitNotDeferredByDisplacedRepositoryCooldown(t *testing.T) {
 	syncer.now = func() time.Time { return now }
 	displaced := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.test",
-		Owner: "acme", Name: "widget", PlatformExternalID: "R_old",
+		Owner: "acme", Name: "widget", PlatformRepoID: 1001,
 	}
 	syncer.featureCooldowns.deferUntil(
 		displaced, platform.RepositoryFeatureIssues, now.Add(time.Hour),
@@ -2065,7 +2082,7 @@ func TestArchiveAdmitNotDeferredByDisplacedRepositoryCooldown(t *testing.T) {
 
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test",
-		Owner: "acme", Name: "widget", PlatformExternalID: "R_new",
+		Owner: "acme", Name: "widget", PlatformID: 1002,
 	}
 	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
@@ -2081,14 +2098,14 @@ func TestConfiguredRepositoriesCarryStableProviderIdentity(t *testing.T) {
 	syncer := NewSyncer(
 		nil, database, nil, []RepoRef{{
 			Platform: platform.KindGitHub, PlatformHost: "github.test",
-			Owner: "acme", Name: "widget", PlatformExternalID: "R_1",
+			Owner: "acme", Name: "widget", PlatformRepoID: 1001,
 		}}, time.Minute, nil, nil,
 	)
 
 	refs, err := syncer.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 	require.Len(refs, 1)
-	require.Equal("R_1", refs[0].PlatformExternalID,
+	require.Equal(int64(1001), refs[0].PlatformID,
 		"archive scheduling needs the stable provider identity for cooldown keys")
 }
 

@@ -42,6 +42,7 @@ type API interface {
 	DeleteIssueComment(ctx context.Context, owner, repo string, commentID int64) error
 	CreatePullRequestReviewCommentReply(ctx context.Context, owner, repo string, number int, body string, commentID int64) (*gh.PullRequestComment, error)
 	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
+	GetRepositoryByID(ctx context.Context, owner string, id int64) (*gh.Repository, error)
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
 	CreateReviewWithComments(
 		ctx context.Context,
@@ -268,7 +269,7 @@ func (p *Provider) authenticatedViewerLoginForRepo(
 	} else {
 		client, ok := p.client.(ViewerAPI)
 		if !ok {
-			return "", fmt.Errorf("github client does not resolve authenticated viewer")
+			return "", errors.New("github client does not resolve authenticated viewer")
 		}
 		login, err = client.AuthenticatedViewerLogin(ctx)
 	}
@@ -277,7 +278,7 @@ func (p *Provider) authenticatedViewerLoginForRepo(
 	}
 	login = strings.TrimSpace(login)
 	if login == "" {
-		return "", fmt.Errorf("authenticated viewer login is empty")
+		return "", errors.New("authenticated viewer login is empty")
 	}
 	if p.viewerLogins == nil {
 		p.viewerLogins = make(map[string]authenticatedViewerLoginCacheEntry)
@@ -371,9 +372,7 @@ func (p *Provider) GetNotificationThreadForRepo(
 		GetNotificationThread(context.Context, string) (platform.NotificationThread, error)
 	})
 	if !ok {
-		return platform.NotificationThread{}, fmt.Errorf(
-			"github client does not fetch notification threads",
-		)
+		return platform.NotificationThread{}, errors.New("github client does not fetch notification threads")
 	}
 	return getter.GetNotificationThread(ctx, threadID)
 }
@@ -395,6 +394,13 @@ func (p *Provider) GetRepository(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) (platform.Repository, error) {
+	if ref.PlatformID != 0 {
+		repo, err := p.client.GetRepositoryByID(ctx, ref.Owner, ref.PlatformID)
+		if err != nil {
+			return platform.Repository{}, err
+		}
+		return GitHubPlatformRepository(p.host, ref.Owner, repo), nil
+	}
 	repo, err := p.client.GetRepository(ctx, ref.Owner, ref.Name)
 	if err != nil {
 		return platform.Repository{}, err
@@ -423,27 +429,24 @@ func GitHubPlatformRepository(
 	}
 	return platform.Repository{
 		Ref: platform.RepoRef{
-			Platform:           platform.KindGitHub,
-			Host:               host,
-			Owner:              strings.ToLower(owner),
-			Name:               strings.ToLower(repo.GetName()),
-			RepoPath:           strings.ToLower(owner) + "/" + strings.ToLower(repo.GetName()),
-			PlatformID:         repo.GetID(),
-			PlatformExternalID: repo.GetNodeID(),
-			WebURL:             repo.GetHTMLURL(),
-			CloneURL:           repo.GetCloneURL(),
-			DefaultBranch:      repo.GetDefaultBranch(),
+			Platform:      platform.KindGitHub,
+			Host:          host,
+			Owner:         strings.ToLower(owner),
+			Name:          strings.ToLower(repo.GetName()),
+			RepoPath:      strings.ToLower(owner) + "/" + strings.ToLower(repo.GetName()),
+			PlatformID:    repo.GetID(),
+			WebURL:        repo.GetHTMLURL(),
+			CloneURL:      repo.GetCloneURL(),
+			DefaultBranch: repo.GetDefaultBranch(),
 		},
-		PlatformID:         repo.GetID(),
-		PlatformExternalID: repo.GetNodeID(),
-		Description:        repo.GetDescription(),
-		Private:            repo.GetPrivate(),
-		Archived:           repo.GetArchived(),
-		MergeSettings:      mergeSettings,
-		ViewerCanMerge:     viewerCanMerge,
-		DefaultBranch:      repo.GetDefaultBranch(),
-		WebURL:             repo.GetHTMLURL(),
-		CloneURL:           repo.GetCloneURL(),
+		Description:    repo.GetDescription(),
+		Private:        repo.GetPrivate(),
+		Archived:       repo.GetArchived(),
+		MergeSettings:  mergeSettings,
+		ViewerCanMerge: viewerCanMerge,
+		DefaultBranch:  repo.GetDefaultBranch(),
+		WebURL:         repo.GetHTMLURL(),
+		CloneURL:       repo.GetCloneURL(),
 	}
 }
 
@@ -475,25 +478,22 @@ func (p *Provider) ListRepositories(
 		repoName := repo.GetName()
 		out = append(out, platform.Repository{
 			Ref: platform.RepoRef{
-				Platform:           platform.KindGitHub,
-				Host:               p.host,
-				Owner:              strings.ToLower(repoOwner),
-				Name:               strings.ToLower(repoName),
-				RepoPath:           strings.ToLower(repoOwner) + "/" + strings.ToLower(repoName),
-				PlatformID:         repo.GetID(),
-				PlatformExternalID: repo.GetNodeID(),
-				WebURL:             repo.GetHTMLURL(),
-				CloneURL:           repo.GetCloneURL(),
-				DefaultBranch:      repo.GetDefaultBranch(),
+				Platform:      platform.KindGitHub,
+				Host:          p.host,
+				Owner:         strings.ToLower(repoOwner),
+				Name:          strings.ToLower(repoName),
+				RepoPath:      strings.ToLower(repoOwner) + "/" + strings.ToLower(repoName),
+				PlatformID:    repo.GetID(),
+				WebURL:        repo.GetHTMLURL(),
+				CloneURL:      repo.GetCloneURL(),
+				DefaultBranch: repo.GetDefaultBranch(),
 			},
-			PlatformID:         repo.GetID(),
-			PlatformExternalID: repo.GetNodeID(),
-			Description:        repo.GetDescription(),
-			Private:            repo.GetPrivate(),
-			Archived:           repo.GetArchived(),
-			DefaultBranch:      repo.GetDefaultBranch(),
-			WebURL:             repo.GetHTMLURL(),
-			CloneURL:           repo.GetCloneURL(),
+			Description:   repo.GetDescription(),
+			Private:       repo.GetPrivate(),
+			Archived:      repo.GetArchived(),
+			DefaultBranch: repo.GetDefaultBranch(),
+			WebURL:        repo.GetHTMLURL(),
+			CloneURL:      repo.GetCloneURL(),
 		})
 	}
 	return out, nil
@@ -515,13 +515,13 @@ func (p *Provider) mergeRequestsDisabledByRepository(
 		return nil
 	}
 	repo, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name)
-	if repoErr != nil || repo == nil || repo.HasPullRequests == nil ||
-		repo.GetHasPullRequests() {
-		return nil
+	if repoErr == nil && repo != nil && repo.HasPullRequests != nil &&
+		!repo.GetHasPullRequests() {
+		return platform.RepositoryFeatureDisabled(
+			platform.KindGitHub, p.host, platform.RepositoryFeatureMergeRequests, err,
+		)
 	}
-	return platform.RepositoryFeatureDisabled(
-		platform.KindGitHub, p.host, platform.RepositoryFeatureMergeRequests, err,
-	)
+	return nil
 }
 
 func (p *Provider) ListOpenMergeRequests(
@@ -911,7 +911,7 @@ func (p *Provider) CreateMergeRequestComment(
 		return platform.MergeRequestEvent{}, err
 	}
 	if comment == nil {
-		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no comment")
+		return platform.MergeRequestEvent{}, errors.New("provider returned no comment")
 	}
 	return NormalizeCommentEvent(ref, number, comment), nil
 }
@@ -928,7 +928,7 @@ func (p *Provider) EditMergeRequestComment(
 		return platform.MergeRequestEvent{}, err
 	}
 	if comment == nil {
-		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no comment")
+		return platform.MergeRequestEvent{}, errors.New("provider returned no comment")
 	}
 	return NormalizeCommentEvent(ref, number, comment), nil
 }
@@ -951,7 +951,7 @@ func (p *Provider) ReplyToThread(
 ) (platform.MergeRequestEvent, error) {
 	commentID, err := strconv.ParseInt(strings.TrimSpace(threadID), 10, 64)
 	if err != nil || commentID <= 0 {
-		return platform.MergeRequestEvent{}, fmt.Errorf("invalid review comment ID")
+		return platform.MergeRequestEvent{}, errors.New("invalid review comment ID")
 	}
 	comment, err := p.client.CreatePullRequestReviewCommentReply(
 		ctx, ref.Owner, ref.Name, number, body, commentID,
@@ -960,7 +960,7 @@ func (p *Provider) ReplyToThread(
 		return platform.MergeRequestEvent{}, err
 	}
 	if comment == nil {
-		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review comment")
+		return platform.MergeRequestEvent{}, errors.New("provider returned no review comment")
 	}
 	return NormalizeReviewCommentEvent(ref, number, comment), nil
 }
@@ -976,7 +976,7 @@ func (p *Provider) CreateIssueComment(
 		return platform.IssueEvent{}, err
 	}
 	if comment == nil {
-		return platform.IssueEvent{}, fmt.Errorf("provider returned no comment")
+		return platform.IssueEvent{}, errors.New("provider returned no comment")
 	}
 	return NormalizeIssueCommentEvent(ref, number, comment), nil
 }
@@ -993,7 +993,7 @@ func (p *Provider) EditIssueComment(
 		return platform.IssueEvent{}, err
 	}
 	if comment == nil {
-		return platform.IssueEvent{}, fmt.Errorf("provider returned no comment")
+		return platform.IssueEvent{}, errors.New("provider returned no comment")
 	}
 	return NormalizeIssueCommentEvent(ref, number, comment), nil
 }
@@ -1020,7 +1020,7 @@ func (p *Provider) SetMergeRequestState(
 		return platform.MergeRequest{}, err
 	}
 	if ghPR == nil {
-		return platform.MergeRequest{}, fmt.Errorf("provider returned no pull request")
+		return platform.MergeRequest{}, errors.New("provider returned no pull request")
 	}
 	return NormalizePullRequest(ref, ghPR)
 }
@@ -1036,7 +1036,7 @@ func (p *Provider) SetIssueState(
 		return platform.Issue{}, err
 	}
 	if ghIssue == nil {
-		return platform.Issue{}, fmt.Errorf("provider returned no issue")
+		return platform.Issue{}, errors.New("provider returned no issue")
 	}
 	return NormalizeIssue(ref, ghIssue)
 }
@@ -1069,7 +1069,7 @@ func (p *Provider) MergeMergeRequest(
 		return platform.MergeResult{}, err
 	}
 	if result == nil {
-		return platform.MergeResult{}, fmt.Errorf("provider returned no merge result")
+		return platform.MergeResult{}, errors.New("provider returned no merge result")
 	}
 	return platform.MergeResult{
 		Merged:  result.GetMerged(),
@@ -1082,8 +1082,8 @@ func (p *Provider) MergeMergeRequest(
 // sha-mismatch refusal ("Head branch was modified. Review and try the
 // merge again.").
 func IsGitHubHeadModified(err error) bool {
-	var ghErr *gh.ErrorResponse
-	if !errors.As(err, &ghErr) || ghErr == nil || ghErr.Response == nil {
+	ghErr, ok := errors.AsType[*gh.ErrorResponse](err)
+	if !ok || ghErr == nil || ghErr.Response == nil {
 		return false
 	}
 	if ghErr.Response.StatusCode != http.StatusConflict &&
@@ -1115,7 +1115,7 @@ func (p *Provider) MarkReadyForReview(
 		return platform.MergeRequest{}, err
 	}
 	if pr == nil {
-		return platform.MergeRequest{}, fmt.Errorf("provider returned no pull request")
+		return platform.MergeRequest{}, errors.New("provider returned no pull request")
 	}
 	return NormalizePullRequest(ref, pr)
 }
@@ -1130,10 +1130,10 @@ func (p *Provider) ConvertMergeRequestToDraft(
 		return time.Time{}, err
 	}
 	if pr == nil {
-		return time.Time{}, fmt.Errorf("provider returned no pull request")
+		return time.Time{}, errors.New("provider returned no pull request")
 	}
 	if pr.UpdatedAt == nil || pr.UpdatedAt.IsZero() {
-		return time.Time{}, fmt.Errorf("provider returned pull request without updated time")
+		return time.Time{}, errors.New("provider returned pull request without updated time")
 	}
 	return pr.UpdatedAt.UTC(), nil
 }
@@ -1149,7 +1149,7 @@ func (p *Provider) CreateIssue(
 		return platform.Issue{}, err
 	}
 	if issue == nil {
-		return platform.Issue{}, fmt.Errorf("provider returned no issue")
+		return platform.Issue{}, errors.New("provider returned no issue")
 	}
 	return NormalizeIssue(ref, issue)
 }
@@ -1222,7 +1222,7 @@ func (p *Provider) setIssueLikeAssignees(
 		return nil, err
 	}
 	if issue == nil {
-		return nil, fmt.Errorf("provider returned no issue")
+		return nil, errors.New("provider returned no issue")
 	}
 	assignees := make([]string, 0, len(issue.Assignees))
 	for _, user := range issue.Assignees {
@@ -1251,7 +1251,7 @@ func (p *Provider) RequestMergeRequestReviewers(
 			return nil, err
 		}
 		if pr == nil {
-			return nil, fmt.Errorf("provider returned no pull request")
+			return nil, errors.New("provider returned no pull request")
 		}
 		return GithubRequestedReviewerLogins(pr), nil
 	}
@@ -1260,7 +1260,7 @@ func (p *Provider) RequestMergeRequestReviewers(
 		return nil, err
 	}
 	if pr == nil {
-		return nil, fmt.Errorf("provider returned no pull request")
+		return nil, errors.New("provider returned no pull request")
 	}
 	return GithubRequestedReviewerLogins(pr), nil
 }
@@ -1285,7 +1285,7 @@ func (p *Provider) RemoveMergeRequestReviewers(
 		return nil, err
 	}
 	if pr == nil {
-		return nil, fmt.Errorf("provider returned no pull request")
+		return nil, errors.New("provider returned no pull request")
 	}
 	return GithubRequestedReviewerLogins(pr), nil
 }
@@ -1321,7 +1321,7 @@ func (p *Provider) ApproveMergeRequest(
 		return platform.MergeRequestEvent{}, err
 	}
 	if review == nil {
-		return platform.MergeRequestEvent{}, fmt.Errorf("provider returned no review")
+		return platform.MergeRequestEvent{}, errors.New("provider returned no review")
 	}
 	return NormalizeReviewEvent(ref, number, review), nil
 }
@@ -1346,7 +1346,7 @@ func (p *Provider) RequestChanges(
 		return err
 	}
 	if review == nil {
-		return fmt.Errorf("provider returned no review")
+		return errors.New("provider returned no review")
 	}
 	return nil
 }
@@ -1391,6 +1391,7 @@ func GithubReviewThreadComment(
 		ProviderCommentID: FirstNonEmpty(GithubInt64ID(comment.DatabaseID), comment.NodeID),
 		Body:              comment.Body,
 		AuthorLogin:       comment.AuthorLogin,
+		AuthorAssociation: comment.AuthorAssociation,
 		DirectURL:         comment.URL,
 		Range:             GithubReviewLineRange(thread, comment),
 		Resolved:          thread.IsResolved,
@@ -1502,7 +1503,7 @@ func (p *Provider) PublishDiffReviewDraft(
 		return nil, err
 	}
 	if review == nil {
-		return nil, fmt.Errorf("provider returned no review")
+		return nil, errors.New("provider returned no review")
 	}
 	submittedAt := review.GetSubmittedAt() // zero Timestamp when GitHub omits submitted_at
 	return &platform.PublishedDiffReview{
@@ -1579,7 +1580,7 @@ func (p *Provider) EditMergeRequestContent(
 		return platform.MergeRequest{}, err
 	}
 	if pr == nil {
-		return platform.MergeRequest{}, fmt.Errorf("provider returned no pull request")
+		return platform.MergeRequest{}, errors.New("provider returned no pull request")
 	}
 	return NormalizePullRequest(ref, pr)
 }
@@ -1598,7 +1599,7 @@ func (p *Provider) EditIssueContent(
 		return platform.Issue{}, err
 	}
 	if ghIssue == nil {
-		return platform.Issue{}, fmt.Errorf("provider returned no issue")
+		return platform.Issue{}, errors.New("provider returned no issue")
 	}
 	return NormalizeIssue(ref, ghIssue)
 }

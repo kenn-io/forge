@@ -11,10 +11,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func providerHandoffServerFixture(
@@ -23,7 +25,7 @@ func providerHandoffServerFixture(
 	t.Helper()
 	database := dbtest.Open(t)
 	identity := verifiedGitHubRepoIdentity("github.com", "acme", "widget")
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
 	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -93,12 +95,22 @@ func TestProviderStateHandoffHTTPRequiresHandoffScopeAndReturnsStableReceipt(t *
 		t, ts, readToken,
 		"/api/v1/federation/provider-state/review-drafts/import", payload,
 	)
+	t.Cleanup(func() {
+		if denied != nil && denied.Body != nil {
+			_ = denied.Body.Close()
+		}
+	})
 	assert.Equal(http.StatusForbidden, denied.StatusCode)
 
 	first := postProviderHandoff(
 		t, ts, handoffToken,
 		"/api/v1/federation/provider-state/review-drafts/import", payload,
 	)
+	t.Cleanup(func() {
+		if first != nil && first.Body != nil {
+			_ = first.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, first.StatusCode)
 	var firstResult db.ProviderStateImportResult
 	require.NoError(json.NewDecoder(first.Body).Decode(&firstResult))
@@ -109,6 +121,11 @@ func TestProviderStateHandoffHTTPRequiresHandoffScopeAndReturnsStableReceipt(t *
 		t, ts, handoffToken,
 		"/api/v1/federation/provider-state/review-drafts/import", payload,
 	)
+	t.Cleanup(func() {
+		if retry != nil && retry.Body != nil {
+			_ = retry.Body.Close()
+		}
+	})
 	require.Equal(http.StatusOK, retry.StatusCode)
 	var retryResult db.ProviderStateImportResult
 	require.NoError(json.NewDecoder(retry.Body).Decode(&retryResult))

@@ -221,7 +221,7 @@ func parsePorcelainV1(data []byte) ([]GitStatusEntry, error) {
 		path := string(record[3:])
 		if isRenameOrCopy(x) || isRenameOrCopy(y) {
 			if !scanner.Scan() {
-				return nil, fmt.Errorf("malformed rename entry: missing source path")
+				return nil, errors.New("malformed rename entry: missing source path")
 			}
 		}
 		entries = append(entries, GitStatusEntry{

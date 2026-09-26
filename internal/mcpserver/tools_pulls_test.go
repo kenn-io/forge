@@ -28,10 +28,12 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 					assert.Equal("bug", query.Label)
 					assert.Equal(3, query.Limit)
 					rows := []Pull{
-						{Number: 1, State: "open", Repository: repo, MergeableState: "clean", WorkflowStatus: "awaiting_merge",
+						{
+							Number: 1, State: "open", Repository: repo, MergeableState: "clean", WorkflowStatus: "awaiting_merge",
 							ReviewDecision: "APPROVED", CIStatus: "success", HeadSHA: "head-one",
 							Labels: []string{"bug", "priority: high"}, Checks: []Check{{Name: "unit", Conclusion: "success"}}, Body: "large description",
-							DetailLoaded: true, DetailFetchedAt: "2026-09-12T12:00:00Z"},
+							DetailLoaded: true, DetailFetchedAt: "2026-09-12T12:00:00Z",
+						},
 						{Number: 2, State: "open", Repository: repo, MergeableState: "dirty", Stack: &Stack{Position: 2, Size: 3}},
 						{Number: 3, State: "open", Repository: repo},
 					}
@@ -99,7 +101,7 @@ func TestListPullContextsIncludesRequestedReviewEvidence(t *testing.T) {
 		},
 	}
 	out, err := newMCPTestServer(t, backend).listPullContexts(t.Context(), listPullContextsInput{
-		Repo:          repoFilterInput{Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget"},
+		Repo:          repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"},
 		IncludeEvents: true, EventLimit: 1, IncludeBody: true,
 	})
 	require.NoError(err)
@@ -119,9 +121,9 @@ func TestListPullContextsRequiresRepositoryAndBoundsPages(t *testing.T) {
 	}{
 		{name: "missing repo", wantErr: "repo is required"},
 		{name: "missing stable ID", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", Owner: "acme", Name: "widget"}}, wantErr: "platform_repo_id"},
-		{name: "negative offset", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: "repo-1", Owner: "acme", Name: "widget"}, Offset: -1}, wantErr: "offset"},
-		{name: "default page", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: "repo-1", Owner: "acme", Name: "widget"}}, wantLimit: 26},
-		{name: "capped page", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: "repo-1", Owner: "acme", Name: "widget"}, Limit: 1000}, wantLimit: 101},
+		{name: "negative offset", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"}, Offset: -1}, wantErr: "offset"},
+		{name: "default page", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"}}, wantLimit: 26},
+		{name: "capped page", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"}, Limit: 1000}, wantLimit: 101},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotLimit int
@@ -170,7 +172,7 @@ func TestListPullContextsReportsMoreEvents(t *testing.T) {
 			result, err := client.CallTool(t.Context(), &mcp.CallToolParams{
 				Name: "kenn_forge_list_pull_contexts",
 				Arguments: listPullContextsInput{
-					Repo:          repoFilterInput{Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget"},
+					Repo:          repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"},
 					IncludeEvents: tc.include, EventLimit: tc.limit,
 				},
 			})

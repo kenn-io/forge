@@ -3,6 +3,7 @@ package workspaceapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -34,7 +35,7 @@ func expandHomeCWD(cwd string) string {
 
 func (s *Handler) lookupRepoByProviderRoute(
 	ctx context.Context, provider, platformHost, owner, name string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	if s.lookupRepo != nil {
 		return s.lookupRepo(ctx, provider, platformHost, owner, name)
 	}
@@ -53,8 +54,7 @@ func providerRouteLookupError(err error) error {
 	if errors.Is(err, httpapi.ErrRepoNotFound) {
 		return httpapi.NotFound(httpapi.CodeRepoNotFound, "repo not found", nil)
 	}
-	if strings.Contains(err.Error(), "platform_host is required") ||
-		strings.Contains(err.Error(), "unsupported platform") {
+	if errors.Is(err, httpapi.ErrPlatformHostRequired) || errors.Is(err, httpapi.ErrUnsupportedPlatform) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 	}
 	return httpapi.Internal("get repo failed")
@@ -118,7 +118,7 @@ func normalizeRouteProvider(raw string) (string, error) {
 	}
 	kind, err := platform.NormalizeKind(raw)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", httpapi.ErrUnsupportedPlatform, err)
 	}
 	return string(kind), nil
 }

@@ -1,7 +1,7 @@
 package mcpserver
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -30,7 +30,7 @@ type Server struct {
 
 func New(opts Options) (*Server, error) {
 	if opts.Backend == nil {
-		return nil, fmt.Errorf("MCP backend is required")
+		return nil, errors.New("MCP backend is required")
 	}
 	diffCacheBytes := opts.DiffCacheBytes
 	if diffCacheBytes <= 0 {
@@ -69,9 +69,23 @@ func (s *Server) registerTools() {
 
 // HTTPHandler serves the single stateless Streamable HTTP MCP endpoint.
 func (s *Server) HTTPHandler() http.Handler {
+	return s.httpHandler(&mcp.StreamableHTTPOptions{Stateless: true})
+}
+
+// TailnetHTTPHandler serves the MCP endpoint behind Tailscale Serve. Serve
+// reaches the loopback listener with the public Host, which the SDK's
+// localhost DNS-rebinding guard rejects. The caller must validate Host
+// against the configured public authority before dispatching here.
+func (s *Server) TailnetHTTPHandler() http.Handler {
+	return s.httpHandler(&mcp.StreamableHTTPOptions{
+		Stateless: true, DisableLocalhostProtection: true,
+	})
+}
+
+func (s *Server) httpHandler(options *mcp.StreamableHTTPOptions) http.Handler {
 	stream := mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return s.mcp },
-		&mcp.StreamableHTTPOptions{Stateless: true},
+		options,
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/mcp" {

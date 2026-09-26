@@ -23,6 +23,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -55,10 +56,8 @@ func (p *deferredMergeProviderBase) GetRepository(
 	platform.RepoRef,
 ) (platform.Repository, error) {
 	return platform.Repository{
-		Ref:                p.ref,
-		PlatformID:         p.ref.PlatformID,
-		PlatformExternalID: p.ref.PlatformExternalID,
-		DefaultBranch:      p.ref.DefaultBranch,
+		Ref:           p.ref,
+		DefaultBranch: p.ref.DefaultBranch,
 	}, nil
 }
 
@@ -280,7 +279,7 @@ func newDeferredMergeHTTPFixture(
 	httpServer := httptest.NewServer(mux)
 	t.Cleanup(httpServer.Close)
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		require.NoError(t, handler.Shutdown(shutdownCtx))
 	})
@@ -305,7 +304,7 @@ func newDeferredMergeRouteServer(
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(t, err)
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
+	repoID, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(ref))
 	require.NoError(t, err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
@@ -333,13 +332,12 @@ func newDeferredMergeRouteServer(
 		database,
 		nil,
 		[]ghclient.RepoRef{{
-			Platform:           platform.KindGitLab,
-			PlatformHost:       ref.Host,
-			Owner:              ref.Owner,
-			Name:               ref.Name,
-			RepoPath:           ref.RepoPath,
-			PlatformRepoID:     ref.PlatformID,
-			PlatformExternalID: ref.PlatformExternalID,
+			Platform:       platform.KindGitLab,
+			PlatformHost:   ref.Host,
+			Owner:          ref.Owner,
+			Name:           ref.Name,
+			RepoPath:       ref.RepoPath,
+			PlatformRepoID: ref.PlatformID,
 		}},
 		time.Minute,
 		nil,
@@ -368,14 +366,13 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref: ref,
@@ -409,7 +406,7 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
+	repoID, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
@@ -538,14 +535,13 @@ func TestPullDetailReportsDeferredMergePendingWhileQueued(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref: ref,
@@ -591,14 +587,13 @@ func TestImmediateMergeSupersedesQueuedDeferredMerge(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref: ref,
@@ -680,14 +675,13 @@ func TestImmediateUnmergedResponsePreservesQueueUntilDeferredProviderRejects(t *
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
@@ -794,14 +788,13 @@ func TestDeferMergeEndpointRejectsInvalidMergeMethodBeforeQueueing(t *testing.T)
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref:     ref,
@@ -828,14 +821,13 @@ func TestDeferMergeEndpointRejectsWithoutPendingChecks(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref:     ref,
@@ -872,14 +864,13 @@ func TestDeferMergeEndpointRejectsMissingBaseSHA(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref:     ref,
@@ -929,14 +920,13 @@ func TestDeferMergeEndpointRejectsFailedAggregateCIWithPassingRows(t *testing.T)
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref:     ref,
@@ -973,14 +963,13 @@ func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *tes
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref:      ref,
@@ -1044,14 +1033,13 @@ func TestDeferMergeEndpointFailsWhenGranularPendingRefreshHasUnknownAggregate(t 
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref:      ref,
@@ -1114,14 +1102,13 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref: ref,
@@ -1157,14 +1144,13 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCIRefreshWarns(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref:     ref,
@@ -1213,14 +1199,13 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCurrentChecksFail(t *testing.T) 
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref: ref,
@@ -1273,14 +1258,13 @@ func TestDeferMergeEndpointBroadcastsFailureWhenHeadChangesWhileWaiting(t *testi
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
@@ -1368,14 +1352,13 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderBaseChangesBeforeMerge(t
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
@@ -1459,14 +1442,13 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref: ref,
@@ -1533,14 +1515,13 @@ func TestDeferMergeEndpointRejectsClosedPullRequest(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
 		ref:     ref,
@@ -1593,14 +1574,13 @@ func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *test
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
@@ -1690,14 +1670,13 @@ func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *tes
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
@@ -1779,14 +1758,13 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *tes
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
 	ciRelease := make(chan struct{})
@@ -1880,14 +1858,13 @@ func TestImmediateMergeRecordsMergedActor(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		PlatformExternalID: "gid://gitlab/Project/4242",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		DefaultBranch: "main",
 	}
 	mergedAt := now.Add(time.Minute)
 	provider := &deferredMergeTestProvider{

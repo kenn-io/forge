@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
@@ -826,7 +827,7 @@ func TestSelectedGitHubAppSupportsOwnerPreviewWithoutPATFallback(t *testing.T) {
 		TokenSources: set, HostCheckAllowLoopbackAnyPort: true,
 	})
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost, "/api/v1/repos/preview",
 		strings.NewReader(fmt.Sprintf(
 			`{"provider":"github","host":%q,"owner":"acme","pattern":"*"}`,
@@ -1195,14 +1196,14 @@ func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {
 	assert.Equal("user:123", uncoveredRoute.writeIdentity.Principal)
 
 	repos := []github.RepoRef{
-		{Owner: "acme", Name: "covered", PlatformHost: "github.com", PlatformExternalID: "repo-acme-covered"},
-		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com", PlatformExternalID: "repo-acme-uncovered"},
+		{Owner: "acme", Name: "covered", PlatformHost: "github.com", PlatformRepoID: 1001},
+		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com", PlatformRepoID: 1002},
 	}
 	for _, repo := range repos {
-		_, err := database.UpsertRepo(
-			t.Context(), db.RepoIdentity{
+		_, err := reposeed.Seed(
+			t.Context(), database, db.RepoIdentity{
 				Platform: "github", PlatformHost: repo.PlatformHost,
-				PlatformRepoID: repo.PlatformExternalID, Owner: repo.Owner, Name: repo.Name,
+				PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
 			},
 		)
 		require.NoError(err)
@@ -1226,7 +1227,14 @@ func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {
 	// the PAT-backed owner route through the real repository API.
 	t.Setenv("ACME_PAT", "writer-b")
 	for _, name := range []string{"covered", "uncovered"} {
-		resp, err := http.Get(httpServer.URL + "/api/v1/repo/github/acme/" + name)
+		req, err := http.NewRequestWithContext(
+			t.Context(),
+			http.MethodGet,
+			httpServer.URL+"/api/v1/repo/github/acme/"+name,
+			nil,
+		)
+		require.NoError(err)
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 		require.NoError(err)
 		var body struct {
 			Operations struct {
@@ -1375,7 +1383,7 @@ func TestBuildProviderControlPlaneReportsSafeGitHubIdentityResolutionFailure(t *
 	_, err = buildProviderControlPlane(
 		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
 		fakeGitHubIdentityResolver{err: map[string]error{
-			"ORG_A_TOKEN": fmt.Errorf("identity lookup failed"),
+			"ORG_A_TOKEN": errors.New("identity lookup failed"),
 		}},
 	)
 	require.Error(err)
@@ -1613,7 +1621,7 @@ func TestSelectedGitHubAppKeepsOwnerDiscoveryWhenRepoOverridesPAT(t *testing.T) 
 		},
 	)
 
-	req := httptest.NewRequest(
+	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost, "/api/v1/repos/preview",
 		strings.NewReader(fmt.Sprintf(
 			`{"provider":"github","host":%q,"owner":"acme","pattern":"*"}`,

@@ -2,6 +2,7 @@ package workspaceapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,11 +15,11 @@ import (
 
 func (h *Handler) resumeWorkspaceAgent(ctx context.Context, stored db.WorkspaceRuntimeSession, restored localruntime.RestoredRuntimeSession) error {
 	if h.agentActivity == nil || restored.Kind != localruntime.LaunchTargetAgent {
-		return fmt.Errorf("no saved agent conversation")
+		return errors.New("no saved agent conversation")
 	}
 	reports := h.agentActivity.LiveReportsForWorkspace(restored.CWD, []string{restored.SessionKey})
 	if len(reports) == 0 {
-		return fmt.Errorf("no saved agent conversation")
+		return errors.New("no saved agent conversation")
 	}
 	report := reports[0]
 	if err := h.workspaces.ValidateExecutionIdentity(ctx, restored.CWD); err != nil {

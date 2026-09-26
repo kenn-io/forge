@@ -2,6 +2,7 @@ package workspaceapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -82,7 +83,7 @@ func (s *Handler) applyWorkspaceAutoAssignment(
 	}
 	username = strings.TrimSpace(username)
 	if username == "" {
-		return fmt.Errorf("authenticated username is empty")
+		return errors.New("authenticated username is empty")
 	}
 
 	if issue {
@@ -143,7 +144,7 @@ func (s *Handler) AutoAssignProviderWorkspaceItem(
 		return providerRouteLookupError(err)
 	}
 	return s.applyWorkspaceAutoAssignment(
-		ctx, *repo, request.ItemNumber, issue,
+		ctx, repo.Repo, request.ItemNumber, issue,
 	)
 }
 

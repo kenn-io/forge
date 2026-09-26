@@ -108,8 +108,10 @@ var validKanbanStates = map[string]bool{
 	"awaiting_merge": true,
 }
 
-type diffResponse = httpapi.DiffResponse
-type filesResponse = httpapi.FilesResponse
+type (
+	diffResponse  = httpapi.DiffResponse
+	filesResponse = httpapi.FilesResponse
+)
 
 type diffReviewLineRange struct {
 	Path        string `json:"path"`
@@ -185,8 +187,10 @@ type mrImportMetadataResponse struct {
 	Title            string `json:"title"`
 }
 
-type commitResponse = httpapi.CommitResponse
-type commitsResponse = httpapi.CommitsResponse
+type (
+	commitResponse  = httpapi.CommitResponse
+	commitsResponse = httpapi.CommitsResponse
+)
 
 type stackMemberResponse struct {
 	Number         int    `json:"number"`

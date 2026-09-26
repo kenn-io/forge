@@ -29,11 +29,12 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testing.T) {
-	const repositoryNodeID = "R_kgDOExample"
+	const repositoryID int64 = 42
 	if len(workspaceTestTmuxCommand) == 0 {
 		t.Skip("tmux is required")
 	}
@@ -41,7 +42,7 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	ctx := t.Context()
 	directory := t.TempDir()
 	socket := filepath.Join(directory, "broker.sock")
-	listener, err := net.Listen("unix", socket)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", socket)
 	require.NoError(err)
 	broker := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request devbox.CredentialRequest
@@ -49,14 +50,14 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 			return
 		}
 		assert.Equal("example-org/project", request.Repository)
-		assert.NoError(json.MarshalWrite(w, devbox.Credential{Token: "fixture-token", ExpiresAt: time.Now().Add(time.Hour), Writable: true, GitHubUserID: 1234, RepositoryID: 42, RepositoryNodeID: repositoryNodeID, DefaultBranch: "main"}))
+		assert.NoError(json.MarshalWrite(w, devbox.Credential{Token: "fixture-token", ExpiresAt: time.Now().Add(time.Hour), Writable: true, GitHubUserID: 1234, RepositoryID: repositoryID, DefaultBranch: "main"}))
 	})}
 	go func() { _ = broker.Serve(listener) }()
 	t.Cleanup(func() { _ = broker.Close() })
 	credentials := devbox.NewBrokerClient(socket)
 	t.Cleanup(credentials.Close)
 	clones := gitclone.New(filepath.Join(directory, "clones"), credentials)
-	bare, err := clones.ClonePathForContext(gitclone.WithRepositoryIdentity(ctx, repositoryNodeID), "github", "github.com", "example-org", "project")
+	bare, err := clones.ClonePathForContext(gitclone.WithRepositoryIdentity(ctx, repositoryID), "github", "github.com", "example-org", "project")
 	require.NoError(err)
 	work := gitfixture.DivergenceWorktree(t)
 	remote := filepath.Join(filepath.Dir(work), "remote.git")
@@ -71,12 +72,14 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	require.NoError(os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexec "+shellquote.Join(realGit, "-c", "url."+remote+".insteadOf=https://github.com/example-org/project.git")+" \"$@\"\n"), 0o700))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	database := dbtest.Open(t)
-	cfg := &config.Config{DataDir: directory, Host: "127.0.0.1", Port: 8091, BasePath: "/",
+	cfg := &config.Config{
+		DataDir: directory, Host: "127.0.0.1", Port: 8091, BasePath: "/",
 		ExecutionWorker: config.ExecutionWorker{Enabled: true, UID: 1001, GitHubUserID: 1234, BrokerSocket: socket, CommitName: "Developer A", CommitEmail: "1234+developer-a@users.noreply.github.com"},
 		Tmux:            config.Tmux{Command: workspaceTestTmuxCommand},
 		Agents:          []config.Agent{{Key: "fixture", Label: "Fixture shell", Command: []string{"/bin/bash", "--noprofile", "--norc"}}},
 	}
-	opts := server.ServerOptions{ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef", Clones: clones, WorktreeDir: filepath.Join(directory, "worktrees"), HostCheckAllowLoopbackAnyPort: true,
+	opts := server.ServerOptions{
+		ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef", Clones: clones, WorktreeDir: filepath.Join(directory, "worktrees"), HostCheckAllowLoopbackAnyPort: true,
 		DaemonAccess: server.DaemonAccessOptions{Token: "worker-bearer", RequireAPIAuth: true}, DisableWorkspaceBackgroundMonitors: true, DetachRuntimeSessionsForRestart: true, PtyOwnerInProcess: true,
 	}
 	srv := server.New(database, nil, nil, "/", cfg, opts)
@@ -96,8 +99,8 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	t.Cleanup(connections.Close)
 	controllerDB := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "example-org", "project")
-	identity.PlatformRepoID = repositoryNodeID
-	_, err = controllerDB.UpsertRepo(ctx, identity)
+	identity.PlatformRepoID = repositoryID
+	_, err = reposeed.Seed(ctx, controllerDB, identity)
 	require.NoError(err)
 	controller := server.New(controllerDB, nil, nil, "/", &config.Config{DataDir: controllerDir, Host: "127.0.0.1", Port: 8092, BasePath: "/", Tmux: config.Tmux{Command: workspaceTestTmuxCommand}}, server.ServerOptions{
 		Devboxes: connections, HostCheckAllowLoopbackAnyPort: true, DisableWorkspaceBackgroundMonitors: true,

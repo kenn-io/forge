@@ -87,8 +87,7 @@ func worktreeDivergenceFrom(
 		// anything yet. Treat that as a normal "no data" outcome
 		// instead of a hard error.
 		stderrText := stderr.String()
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && isNoUpstreamMessage(stderrText) {
+		if _, ok := errors.AsType[*exec.ExitError](err); ok && isNoUpstreamMessage(stderrText) {
 			return Divergence{}, false, nil
 		}
 		return Divergence{}, false, fmt.Errorf(
@@ -155,8 +154,7 @@ func WorktreeUnpushedSHAs(
 
 	if err := cmd.Run(); err != nil {
 		stderrText := stderr.String()
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && isNoUpstreamMessage(stderrText) {
+		if _, ok := errors.AsType[*exec.ExitError](err); ok && isNoUpstreamMessage(stderrText) {
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf(

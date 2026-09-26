@@ -122,9 +122,11 @@ Interactive surfaces must agree on which item is selected.
   their automatically opened empty fallback while the launch intent is pending and may discard only unclaimed intents
   (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`,
   `frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::reconcileAcceptedLaunch`).
-- Quick actions keep the automatic session picker closed for that workspace during the browser session,
-  regardless of launch outcome or session exit. Opening it remains an explicit user action
-  (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaces`).
+- Quick actions keep the automatic session picker closed for that workspace, local or devbox, during the
+  browser session, regardless of launch outcome or session exit. Opening it remains an explicit user action
+  (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaceKey`).
+- Every quick-action list is ordered by action title, ignoring case, not by settings order
+  (`frontend/src/lib/stores/workspace-quick-actions.ts::sortQuickActionsByLabel`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and
@@ -253,6 +255,29 @@ Persisted controls must state their scope clearly.
 - The workspace details tab is keyed by host-aware workspace identity; an unsupported
   tab may fall back only for the current live workspace, never rewrite another
   workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
+- The PR / Issue default leaves unlinked workspace details closed; only an explicit
+  Diff selection opens them (`frontend/src/lib/components/terminal/workspace-sidebar-default.ts::defaultWorkspaceSidebarTab`).
+- Visible workspace PR details consume provider updates independently of diff watching
+  and airplane-mode polling (`frontend/src/lib/app-stores.svelte.ts::refreshVisibleData`).
+- Workspace item search remembers separate browser-local PR and issue choices per
+  workspace and host, preserving the selected item's full repository reference;
+  it must never change workspace associations or the diff merge target
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
+- PR and Issue tabs require a linked item or a remembered choice of that type;
+  search remains available without either
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::isSidebarTabSupported`).
+- Workspace item search spans all repositories and defaults to open PRs and issues;
+  Include closed is opt-in for each search popover
+  (`frontend/src/lib/components/workspace/WorkspaceItemSearch.svelte::searchItems`).
+- Opening and typing in the open-item picker must use the shared, preloaded list;
+  sync refreshes queue behind pending loads and retain usable results; closed history loads on demand
+  (`frontend/src/lib/stores/workspace-item-search.svelte.ts::createWorkspaceItemSearchStore`).
+- Workspace item search opens on demand from the toolbar; occasional navigation
+  must not reserve a permanent row above the details
+  (`frontend/src/lib/components/workspace/WorkspaceItemSearch.svelte::mountSearchPopover`).
+- Zero-padded PR searches such as `0001` opt into exact number matching before
+  pagination, so newer substring matches cannot hide old PRs
+  (`internal/db/queries.go::ListMergeRequests`).
 - URL query state belongs in the route only when deep-linking or back/forward
   navigation is part of the feature contract.
 - Activity detail selection uses one URL-backed slot for pull requests, issues,
@@ -544,6 +569,9 @@ Keyboard handlers must have one clear owner for each key press.
   clickable tab header. The URL wins over stored layout state on load: it
   activates the pane it names and drops a zoom held elsewhere
   (`frontend/src/lib/views/PRListView.svelte::routePanesSplitApart`).
+- Desktop PRs with a workspace keep their saved pane arrangement at narrow widths;
+  agent launch visibility, session tabs, and dragging must not change with viewport width
+  (`frontend/src/lib/views/PRListView.svelte::workspaceClaim`).
 - The stored pane tree is intent, not what is on screen: below the flatten width
   one pane renders however the tree is split, hidden panes stay in the tree, and
   a zoom covers every other leaf. Anything acting on the arrangement — palette
@@ -653,8 +681,8 @@ Keyboard handlers must have one clear owner for each key press.
   (supplied through `InlineWorkspaceController`, since only the frontend knows the
   sessions), and its reopen strip follows. Two sessions, none, or a promoted sole
   session bring the chrome and the "Workspace" label back. A flattened surface keeps
-  the chrome: it suppresses per-leaf strips, so the toolbar is the only thing left to
-  carry the controls
+  the chrome: it suppresses per-leaf strips, so the title row remains to carry
+  the controls
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSession`).
   The bare render also requires the surface's strip to actually name the session:
   in a solo-chrome leaf that strip is gone, so a sole WORKFLOW session keeps its
@@ -686,11 +714,20 @@ Keyboard handlers must have one clear owner for each key press.
 - An empty workflow container retires behind its surface-hosted bottom dock instead
   of resizing the recursive tree. Promoted panes then fill the stored branch, and
   demotion restores the untouched arrangement (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneRowOnlyFor`).
+- Workspace controls belong beside the workspace title so splitting panes never adds
+  a toolbar row; keep Presets and Launch icon-only, with accessible names and tooltips
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceControls`).
 - A detail pane NEVER shows the workspace's own header bar (name, branch, Expand and
   Collapse Terminal, Delete). The pane's tab strip already names the workspace and
   carries its controls. A flattened surface keeps the chrome, since it has no
   per-leaf strip to carry any of it
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
+- Push identity confirmation is supporting metadata, not a workspace banner. Keep
+  details on demand and describe the last pushed commit, not the current login
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceControls`).
+- A refresh that drops push identity must close the last-push dialog and unfreeze
+  the workspace in that same update. A later refresh must not reopen the dialog
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::attributionDialogOpen`).
 - A pane's tab strip carries ONE structural control, Maximize. Split right and Split
   down were removed: a single-tab leaf cannot split, so on the panes that most need
   it they were permanently greyed, and elsewhere they duplicated the two routes that

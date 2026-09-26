@@ -94,10 +94,14 @@ func rangeAlternatives(ctx context.Context, v *objectView, p *Interval, c Candid
 	}
 	a := proofAttempt{gap: Gap{CandidateID: c.ID, ObjectID: object, Reason: editReason(err)}}
 	if err == nil {
-		a = proofAttempt{state: attemptMatch,
+		a = proofAttempt{
+			state:       attemptMatch,
 			crossesBase: slices.Index(p.spine, c.Terminal)+1 < len(c.Source),
-			landing: Landing{CandidateID: c.ID, Proofs: []string{"rebase"}, Before: r.before, Terminal: c.Terminal,
-				Source: slices.Clone(c.Source), Spine: r.commits, Introduced: slices.Clone(r.commits)}}
+			landing: Landing{
+				CandidateID: c.ID, Proofs: []string{"rebase"}, Before: r.before, Terminal: c.Terminal,
+				Source: slices.Clone(c.Source), Spine: r.commits, Introduced: slices.Clone(r.commits),
+			},
+		}
 	}
 	fastForward := proofAttempt{state: attemptMismatch}
 	if identical {

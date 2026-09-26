@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"go.kenn.io/forge/internal/platformdb"
 
 	"go.kenn.io/forge/internal/db"
@@ -83,8 +84,8 @@ func archiveTerminalSyncOutcome(
 	if !errors.Is(err, platform.ErrLookupNotPresent) {
 		return "", nil, false
 	}
-	var platformErr *platform.Error
-	if !errors.As(err, &platformErr) {
+	platformErr, ok := errors.AsType[*platform.Error](err)
+	if !ok {
 		return "", nil, false
 	}
 	switch platformErr.Code {

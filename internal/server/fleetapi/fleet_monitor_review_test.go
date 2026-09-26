@@ -1,7 +1,6 @@
 package fleetapi
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +22,7 @@ func seedStatsProject(t *testing.T) (*db.DB, *db.Project, string) {
 	t.Helper()
 	repoDir, featDir := seedFingerprintRepo(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(featDir, "feature.txt"), []byte("x\ny\n"), 0o644,
 	))
@@ -43,7 +42,7 @@ func seedStatsProject(t *testing.T) (*db.DB, *db.Project, string) {
 func TestFleetWorktreeStatsForcedPassMeasuresUnstagedEdits(t *testing.T) {
 	require := require.New(t)
 	database, _, featDir := seedStatsProject(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	sampler := &fleetWorktreeStatsSampler{db: database}
 
 	sampler.runOnce(ctx)
@@ -71,7 +70,7 @@ func TestFleetWorktreeStatsForcedPassMeasuresUnstagedEdits(t *testing.T) {
 func TestFleetWorktreeStatsResamplesWhenDefaultBranchChanges(t *testing.T) {
 	require := require.New(t)
 	database, proj, featDir := seedStatsProject(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	sampler := &fleetWorktreeStatsSampler{db: database}
 	sampler.runOnce(ctx)
 	stats, err := database.ListWorktreeStats(ctx)
@@ -95,7 +94,7 @@ func TestFleetWorktreeStatsResamplesWhenDefaultBranchChanges(t *testing.T) {
 func TestFleetWorktreeStatsFingerprintAgeBoundsStaleness(t *testing.T) {
 	require := require.New(t)
 	database, _, featDir := seedStatsProject(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	sampler := &fleetWorktreeStatsSampler{db: database, now: func() time.Time { return now }}
 	sampler.runOnce(ctx)
@@ -120,7 +119,7 @@ func TestFleetWorktreeDiscoveryFingerprintAgeBoundsStaleness(t *testing.T) {
 	require := require.New(t)
 	repoDir, _ := seedFingerprintRepo(t)
 	database := dbtest.Open(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	project, err := database.CreateProject(ctx, db.CreateProjectInput{
 		DisplayName: "app", LocalPath: repoDir,
 	})
@@ -160,7 +159,7 @@ func TestFleetMonitorsStayActiveAfterSnapshotReadWithoutSubscribers(t *testing.T
 
 	// A hub consuming this daemon as a spoke reads the raw snapshot without
 	// opening a local event stream; that read is demand.
-	_, err := handler.getSnapshotRaw(context.Background(), nil)
+	_, err := handler.getSnapshotRaw(t.Context(), nil)
 	require.NoError(err)
 	assert.True(handler.fleetWorktreeStatsSampler.gate.active())
 	assert.True(handler.fleetWorktreeDiscoverer.gate.active())
@@ -186,11 +185,11 @@ func TestFleetProcessProbeOutputExitStatusSemantics(t *testing.T) {
 	noMatch := write("nomatch", "exit 1\n")
 	usage := write("usage", "echo 'usage: bad flags' >&2\nexit 2\n")
 
-	out, err := fleetProcessProbeOutput(context.Background(), "test", noMatch)
+	out, err := fleetProcessProbeOutput(t.Context(), "test", noMatch)
 	require.NoError(err, "exit status 1 is the documented no-match outcome")
 	assert.Empty(out)
 
-	_, err = fleetProcessProbeOutput(context.Background(), "test", usage)
+	_, err = fleetProcessProbeOutput(t.Context(), "test", usage)
 	assert.Error(err, "a usage failure must not be published as an empty tree")
 }
 
@@ -210,7 +209,7 @@ func TestProbeFleetProcessTreesFollowsDescendants(t *testing.T) {
 	var processes map[int]fleetProcessInfo
 	require.Eventually(func() bool {
 		var err error
-		processes, err = probeFleetProcessTrees(context.Background(), []int{cmd.Process.Pid})
+		processes, err = probeFleetProcessTrees(t.Context(), []int{cmd.Process.Pid})
 		return err == nil && len(processes) >= 3
 	}, 5*time.Second, 100*time.Millisecond,
 		"the root, its shell child, and the sleep grandchild are all collected")

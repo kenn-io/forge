@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	Require "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
 
@@ -76,7 +76,7 @@ func TestProviderCapabilitiesDoNotAdvertiseInlineReviewDraftSupportByDefault(t *
 
 func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	ref := platform.RepoRef{Platform: platform.KindForgejo, Host: "codeberg.org", Owner: "forgejo", Name: "forgejo", RepoPath: "forgejo/forgejo"}
 	transport := &fakeTransport{
@@ -90,25 +90,25 @@ func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 	}
 	provider := NewProvider(platform.KindForgejo, "codeberg.org", transport, WithMutations())
 
-	mrComment, err := provider.CreateMergeRequestComment(context.Background(), ref, 7, "done")
+	mrComment, err := provider.CreateMergeRequestComment(t.Context(), ref, 7, "done")
 	require.NoError(err)
-	issueComment, err := provider.CreateIssueComment(context.Background(), ref, 8, "done")
+	issueComment, err := provider.CreateIssueComment(t.Context(), ref, 8, "done")
 	require.NoError(err)
-	editedComment, err := provider.EditIssueComment(context.Background(), ref, 8, 10, "edited")
+	editedComment, err := provider.EditIssueComment(t.Context(), ref, 8, 10, "edited")
 	require.NoError(err)
-	require.NoError(provider.DeleteMergeRequestComment(context.Background(), ref, 7, 10))
-	require.NoError(provider.DeleteIssueComment(context.Background(), ref, 8, 10))
-	issue, err := provider.CreateIssue(context.Background(), ref, "issue", "body")
+	require.NoError(provider.DeleteMergeRequestComment(t.Context(), ref, 7, 10))
+	require.NoError(provider.DeleteIssueComment(t.Context(), ref, 8, 10))
+	issue, err := provider.CreateIssue(t.Context(), ref, "issue", "body")
 	require.NoError(err)
-	closedPR, err := provider.SetMergeRequestState(context.Background(), ref, 7, "closed")
+	closedPR, err := provider.SetMergeRequestState(t.Context(), ref, 7, "closed")
 	require.NoError(err)
-	closedIssue, err := provider.SetIssueState(context.Background(), ref, 8, "closed")
+	closedIssue, err := provider.SetIssueState(t.Context(), ref, 8, "closed")
 	require.NoError(err)
-	merged, err := provider.MergeMergeRequest(context.Background(), ref, 7, "title", "body", "squash", "")
+	merged, err := provider.MergeMergeRequest(t.Context(), ref, 7, "title", "body", "squash", "")
 	require.NoError(err)
 	prTitle := "new title"
 	prBody := "new body"
-	editedPR, err := provider.EditMergeRequestContent(context.Background(), ref, 7, &prTitle, &prBody)
+	editedPR, err := provider.EditMergeRequestContent(t.Context(), ref, 7, &prTitle, &prBody)
 	require.NoError(err)
 
 	assert.Equal("done", mrComment.Body)
@@ -131,7 +131,7 @@ func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 
 func TestProviderPaginatesAndNormalizesReadMethods(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	ref := platform.RepoRef{
 		Platform: platform.KindForgejo,
@@ -170,36 +170,36 @@ func TestProviderPaginatesAndNormalizesReadMethods(t *testing.T) {
 	}
 	provider := NewProvider(platform.KindForgejo, "codeberg.org", transport)
 
-	repo, err := provider.GetRepository(context.Background(), ref)
+	repo, err := provider.GetRepository(t.Context(), ref)
 	require.NoError(err)
 	assert.Equal("forgejo/forgejo", repo.Ref.RepoPath)
 
-	repos, err := provider.ListRepositories(context.Background(), "forgejo", platform.RepositoryListOptions{})
+	repos, err := provider.ListRepositories(t.Context(), "forgejo", platform.RepositoryListOptions{})
 	require.NoError(err)
 	assert.Equal([]string{"one", "two"}, []string{repos[0].Ref.Name, repos[1].Ref.Name})
 	assert.Equal([]int{1, 2}, transport.userRepoPages)
 
-	mrs, err := provider.ListOpenMergeRequests(context.Background(), ref)
+	mrs, err := provider.ListOpenMergeRequests(t.Context(), ref)
 	require.NoError(err)
 	assert.Equal([]int{1, 2}, []int{mrs[0].Number, mrs[1].Number})
 	assert.Equal([]int{1, 2}, transport.pullPages)
 
-	issues, err := provider.ListOpenIssues(context.Background(), ref)
+	issues, err := provider.ListOpenIssues(t.Context(), ref)
 	require.NoError(err)
 	require.Len(issues, 1)
 	assert.Equal(3, issues[0].Number)
 
-	releases, err := provider.ListReleases(context.Background(), ref)
+	releases, err := provider.ListReleases(t.Context(), ref)
 	require.NoError(err)
 	require.Len(releases, 1)
 	assert.Equal("v1", releases[0].TagName)
 
-	tags, err := provider.ListTags(context.Background(), ref)
+	tags, err := provider.ListTags(t.Context(), ref)
 	require.NoError(err)
 	require.Len(tags, 1)
 	assert.Equal("abc", tags[0].SHA)
 
-	checks, err := provider.ListCIChecks(context.Background(), ref, "abc")
+	checks, err := provider.ListCIChecks(t.Context(), ref, "abc")
 	require.NoError(err)
 	require.Len(checks, 1)
 	assert.Equal("success", checks[0].Conclusion)
@@ -207,7 +207,7 @@ func TestProviderPaginatesAndNormalizesReadMethods(t *testing.T) {
 
 func TestProviderMergesActionRunsWithStatusesWithoutDuplicates(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	base := time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC)
 	ref := platform.RepoRef{
 		Platform: platform.KindForgejo,
@@ -257,7 +257,7 @@ func TestProviderMergesActionRunsWithStatusesWithoutDuplicates(t *testing.T) {
 	}
 	provider := NewProvider(platform.KindForgejo, "codeberg.org", transport, WithReadActions())
 
-	checks, err := provider.ListCIChecks(context.Background(), ref, "abc")
+	checks, err := provider.ListCIChecks(t.Context(), ref, "abc")
 	require.NoError(err)
 
 	require.Len(checks, 3)
@@ -277,7 +277,7 @@ func TestProviderMergesActionRunsWithStatusesWithoutDuplicates(t *testing.T) {
 
 func TestProviderFallsBackFromUserToOrgRepositoryImport(t *testing.T) {
 	assert := assert.New(t)
-	require := Require.New(t)
+	require := require.New(t)
 	transport := &fakeTransport{
 		userRepoErr: &HTTPError{StatusCode: 404, Message: "user missing"},
 		orgRepos: [][]RepositoryDTO{
@@ -286,13 +286,55 @@ func TestProviderFallsBackFromUserToOrgRepositoryImport(t *testing.T) {
 	}
 	provider := NewProvider(platform.KindGitea, "gitea.com", transport)
 
-	repos, err := provider.ListRepositories(context.Background(), "org", platform.RepositoryListOptions{})
+	repos, err := provider.ListRepositories(t.Context(), "org", platform.RepositoryListOptions{})
 	require.NoError(err)
 
 	require.Len(repos, 1)
 	assert.Equal("org/repo", repos[0].Ref.RepoPath)
 	assert.Equal([]int{1}, transport.userRepoPages)
 	assert.Equal([]int{1}, transport.orgRepoPages)
+}
+
+func TestProviderGetRepositoryLooksUpPinnedIDAndReturnsRenamedRoute(t *testing.T) {
+	tests := []struct {
+		name          string
+		ref           platform.RepoRef
+		wantIDCalls   []int64
+		wantRouteCall []string
+	}{
+		{
+			name:        "pinned id follows rename",
+			ref:         platform.RepoRef{Owner: "old-owner", Name: "old-name", PlatformID: 1001},
+			wantIDCalls: []int64{1001},
+		},
+		{
+			name:          "unpinned route lookup",
+			ref:           platform.RepoRef{Owner: "new-owner", Name: "new-name"},
+			wantRouteCall: []string{"new-owner/new-name"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			transport := &fakeTransport{repo: RepositoryDTO{
+				ID:       1001,
+				Owner:    UserDTO{UserName: "new-owner"},
+				Name:     "new-name",
+				FullName: "new-owner/new-name",
+			}}
+			provider := NewProvider(platform.KindGitea, "gitea.example.com", transport)
+
+			repo, err := provider.GetRepository(t.Context(), tt.ref)
+			require.NoError(err)
+
+			assert.Equal(tt.wantIDCalls, transport.repoByIDCalls)
+			assert.Equal(tt.wantRouteCall, transport.repoByRouteCalls)
+			assert.Equal("new-owner", repo.Ref.Owner)
+			assert.Equal("new-name", repo.Ref.Name)
+			assert.Equal(int64(1001), repo.Ref.PlatformID)
+		})
+	}
 }
 
 func TestProviderMapsHTTPStatusErrorsToTypedPlatformErrors(t *testing.T) {
@@ -309,12 +351,12 @@ func TestProviderMapsHTTPStatusErrorsToTypedPlatformErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
-			require := Require.New(t)
+			require := require.New(t)
 			provider := NewProvider(platform.KindForgejo, "codeberg.org", &fakeTransport{
 				repoErr: &HTTPError{StatusCode: tt.statusCode, Message: "failed"},
 			})
 
-			_, err := provider.GetRepository(context.Background(), platform.RepoRef{
+			_, err := provider.GetRepository(t.Context(), platform.RepoRef{
 				Owner: "forgejo",
 				Name:  "forgejo",
 			})
@@ -354,14 +396,22 @@ type fakeTransport struct {
 	review      ReviewDTO
 	reviewErr   error
 
-	userRepoPages []int
-	orgRepoPages  []int
-	pullPages     []int
-	actionPages   []int
-	mutationCalls []string
+	repoByIDCalls    []int64
+	repoByRouteCalls []string
+	userRepoPages    []int
+	orgRepoPages     []int
+	pullPages        []int
+	actionPages      []int
+	mutationCalls    []string
 }
 
-func (t *fakeTransport) GetRepository(context.Context, string, string) (RepositoryDTO, error) {
+func (t *fakeTransport) GetRepository(_ context.Context, owner, repo string) (RepositoryDTO, error) {
+	t.repoByRouteCalls = append(t.repoByRouteCalls, owner+"/"+repo)
+	return t.repo, t.repoErr
+}
+
+func (t *fakeTransport) GetRepositoryByID(_ context.Context, id int64) (RepositoryDTO, error) {
+	t.repoByIDCalls = append(t.repoByIDCalls, id)
 	return t.repo, t.repoErr
 }
 
@@ -525,14 +575,14 @@ func pageFor[T any](pages [][]T, page int) ([]T, Page, error) {
 }
 
 func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
 
 	transport := &fakeTransport{merge: MergeResultDTO{Merged: true}}
 	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
 
-	_, err := provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+	_, err := provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
 	require.NoError(err)
 	assert.Equal("reviewed-head", transport.mergeOpts.ExpectedHeadSHA,
 		"merge must send the reviewed head as head_commit_id")
@@ -541,7 +591,7 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 	// releases said "head target does not match". Both must classify.
 	for _, message := range []string{"head out of date", "Head target does not match. Please try again."} {
 		transport.mergeErr = &HTTPError{StatusCode: 409, Message: message}
-		_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+		_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
 		var platformErr *platform.Error
 		require.ErrorAs(err, &platformErr)
 		assert.Equal(platform.ErrCodeStaleState, platformErr.Code, message)
@@ -551,18 +601,18 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 	// Confirm the current head before classifying that ambiguous response.
 	transport.mergeErr = &HTTPError{StatusCode: 405, Message: "Please try again later"}
 	transport.pr.Head.SHA = "current-head"
-	_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+	_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
 	require.ErrorIs(err, platform.ErrStaleState)
 
 	transport.pr.Head.SHA = "reviewed-head"
-	_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+	_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
 	require.NotErrorIs(err, platform.ErrStaleState)
 
 	// The merge endpoint answers 409 for ordinary merge conflicts too;
 	// those must stay generic so the UI shows the provider message
 	// instead of a stale-head re-review flow.
 	transport.mergeErr = &HTTPError{StatusCode: 409, Message: "merge conflict detected"}
-	_, err = provider.MergeMergeRequest(context.Background(), ref, 7, "t", "m", "squash", "reviewed-head")
+	_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
 	require.NotErrorIs(err, platform.ErrStaleState,
 		"a non-head-mismatch 409 must not classify as stale_state")
 	var conflictErr *HTTPError
@@ -571,7 +621,7 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 }
 
 func TestProviderApproveSubmitsReview(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
 
@@ -583,7 +633,7 @@ func TestProviderApproveSubmitsReview(t *testing.T) {
 	}
 	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
 
-	event, err := provider.ApproveMergeRequest(context.Background(), ref, 7, "ship it", "reviewed-head")
+	event, err := provider.ApproveMergeRequest(t.Context(), ref, 7, "ship it", "reviewed-head")
 	require.NoError(err)
 	assert.Equal("review", event.EventType)
 	assert.Equal("APPROVED", event.Summary)
@@ -591,18 +641,18 @@ func TestProviderApproveSubmitsReview(t *testing.T) {
 }
 
 func TestProviderRequestChangesSubmitsReviewAndMapsErrors(t *testing.T) {
-	require := Require.New(t)
+	require := require.New(t)
 	assert := assert.New(t)
 	ref := platform.RepoRef{Owner: "acme", Name: "widget"}
 	transport := &fakeTransport{}
 	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
 
-	err := provider.RequestChanges(context.Background(), ref, 7, "needs work", "reviewed-head")
+	err := provider.RequestChanges(t.Context(), ref, 7, "needs work", "reviewed-head")
 	require.NoError(err)
 	assert.Equal("review:REQUEST_CHANGES:reviewed-head", transport.mutationCalls[len(transport.mutationCalls)-1])
 
 	transport.reviewErr = &HTTPError{StatusCode: 403, Message: "forbidden"}
-	err = provider.RequestChanges(context.Background(), ref, 7, "needs work", "reviewed-head")
+	err = provider.RequestChanges(t.Context(), ref, 7, "needs work", "reviewed-head")
 	require.Error(err)
 	assert.ErrorIs(err, platform.ErrPermissionDenied)
 }

@@ -15,6 +15,8 @@ import (
 )
 
 func TestBudgetTransport_CountsSyncContext(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -27,9 +29,12 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 
 	ctx := WithSyncBudget(t.Context())
 	req, _ := http.NewRequestWithContext(
-		ctx, "GET", "https://api.github.com/repos/o/n/pulls", nil,
+		ctx, http.MethodGet, "https://api.github.com/repos/o/n/pulls", nil,
 	)
-	_, err := bt.RoundTrip(req)
+	resp, err := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(t, err)
 
 	assert.Equal(1, budget.Spent())
@@ -37,6 +42,8 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 }
 
 func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	budget := NewSyncBudget(1)
@@ -66,7 +73,10 @@ func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
 				errors <- err
 				return
 			}
-			_, err = transport.RoundTrip(req)
+			resp, err := transport.RoundTrip(req)
+			if resp != nil {
+				defer resp.Body.Close()
+			}
 			errors <- err
 		})
 	}
@@ -88,6 +98,8 @@ func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
 }
 
 func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	budget := NewSyncBudget(1)
@@ -104,7 +116,10 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 		"https://api.github.com/repos/acme/widget/issues/1", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 
 	assert.Equal(1, budget.Spent())
@@ -113,6 +128,8 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 }
 
 func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	budget := NewSyncBudget(100)
 	bt := &budgetTransport{
@@ -129,7 +146,10 @@ func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-	_, err = bt.RoundTrip(req)
+	resp, err := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(t, err)
 
 	assert.Equal(1, budget.Spent())
@@ -138,6 +158,8 @@ func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
 }
 
 func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -157,7 +179,10 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 			"https://api.github.com/repos/acme/widget/pulls", nil,
 		)
 		require.NoError(err)
-		_, err = bt.RoundTrip(req)
+		resp, err := bt.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -177,6 +202,8 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 }
 
 func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -191,9 +218,12 @@ func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
 
 	ctx := WithSyncBudget(t.Context())
 	req, _ := http.NewRequestWithContext(
-		ctx, "GET", "https://api.github.com/repos/o/n/pulls", nil,
+		ctx, http.MethodGet, "https://api.github.com/repos/o/n/pulls", nil,
 	)
-	_, err := bt.RoundTrip(req)
+	resp, err := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(t, err)
 
 	assert.Equal(0, budget.Spent(),
@@ -201,6 +231,8 @@ func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
 }
 
 func TestBudgetTransport_SkipsNonSyncContext(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -212,10 +244,13 @@ func TestBudgetTransport_SkipsNonSyncContext(t *testing.T) {
 	}
 
 	req, _ := http.NewRequestWithContext(
-		t.Context(), "GET",
+		t.Context(), http.MethodGet,
 		"https://api.github.com/repos/o/n/pulls", nil,
 	)
-	_, err := bt.RoundTrip(req)
+	resp, err := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(t, err)
 
 	assert.Equal(0, budget.Spent(),
@@ -223,6 +258,8 @@ func TestBudgetTransport_SkipsNonSyncContext(t *testing.T) {
 }
 
 func TestBudgetTransport_CountsMultipleRequests(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -236,10 +273,13 @@ func TestBudgetTransport_CountsMultipleRequests(t *testing.T) {
 	ctx := WithSyncBudget(t.Context())
 	for range 5 {
 		req, _ := http.NewRequestWithContext(
-			ctx, "GET",
+			ctx, http.MethodGet,
 			"https://api.github.com/repos/o/n/pulls", nil,
 		)
-		_, err := bt.RoundTrip(req)
+		resp, err := bt.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		require.NoError(t, err)
 	}
 
@@ -247,6 +287,8 @@ func TestBudgetTransport_CountsMultipleRequests(t *testing.T) {
 }
 
 func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	budget := NewSyncBudget(100)
@@ -259,16 +301,21 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 
 	ctx := WithSyncBudget(t.Context())
 	req, _ := http.NewRequestWithContext(
-		ctx, "GET",
+		ctx, http.MethodGet,
 		"https://api.github.com/repos/o/n/pulls", nil,
 	)
-	_, _ = bt.RoundTrip(req)
+	resp, _ := bt.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 
 	assert.Equal(1, budget.Spent(),
 		"budget should count even when base transport errors")
 }
 
 func TestWithSyncBudget_PreservesExistingValues(t *testing.T) {
+	t.Parallel()
+
 	type customKey struct{}
 	base := context.WithValue(
 		t.Context(), customKey{}, "hello",
@@ -284,6 +331,8 @@ func TestWithSyncBudget_PreservesExistingValues(t *testing.T) {
 // provider response can never arrive to release an exhausted budget. Recovery
 // must therefore come from the budget's own window rollover.
 func TestBudgetTransportRecoversAfterWindowWithoutProviderResponse(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	budget := NewSyncBudget(1)
@@ -308,7 +357,10 @@ func TestBudgetTransportRecoversAfterWindowWithoutProviderResponse(t *testing.T)
 			"https://api.github.com/repos/acme/widget", nil,
 		)
 		require.NoError(err)
-		_, err = transport.RoundTrip(req)
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		return err
 	}
 
@@ -326,6 +378,8 @@ func TestBudgetTransportRecoversAfterWindowWithoutProviderResponse(t *testing.T)
 // the quota registry alone: the local sync budget keeps metering live sync
 // and must not debit for it.
 func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	budget := NewSyncBudget(100)
@@ -351,7 +405,10 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 		"https://api.github.com/repos/acme/widget/issues/1", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 	assert.Zero(budget.Spent())
 	assert.Zero(budget.ArchiveSpent())
@@ -363,7 +420,10 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 		"https://api.github.com/repos/acme/widget/issues/2", nil,
 	)
 	require.NoError(err)
-	_, err = transport.RoundTrip(unreserved)
+	resp, err = transport.RoundTrip(unreserved)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.NoError(err)
 	assert.Equal(1, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())

@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
@@ -45,11 +46,11 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 				Provider: "github", PlatformHost: "github.com",
 				Owner: "acme", Name: "widget",
 			}, route)
-			entry, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+			entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 				Platform: route.Provider, PlatformHost: route.PlatformHost,
-				PlatformRepoID: "stable-provider-id",
+				PlatformRepoID: 1003,
 				Owner:          route.Owner, Name: route.Name,
-			}, time.Now().UTC())
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -58,7 +59,7 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 		EnrichmentDisabled: true,
 	})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(ctx))
 	})
@@ -74,9 +75,9 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 	require.NoError(err)
 	assert.True(resolved)
 	assert.NotEmpty(result.Workspace.ID)
-	entry, err := database.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "stable-provider-id",
-	)
+	entry, err := database.GetRepositoryByProviderID(t.Context(), platform.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1003,
+	})
 	require.NoError(err)
 	require.NotNil(entry)
 	assert.Equal("acme", entry.Repository.Owner)
@@ -99,9 +100,9 @@ func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
-	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	resolver := stubLaunchSpecResolver{}
@@ -132,7 +133,7 @@ func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
 		LaunchSpecResolver: resolver, EnrichmentDisabled: true,
 	})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})
@@ -159,16 +160,14 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	base := t.TempDir()
-	observedAt := time.Now().UTC().Add(-3 * time.Minute)
 	oldIdentity := db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-old-widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
 	}
-	oldRepo, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), oldIdentity, observedAt,
+	oldRepo, err := database.ObserveRepository(
+		t.Context(), oldIdentity,
 	)
 	require.NoError(err)
-	require.True(accepted)
 	require.NotNil(oldRepo)
 	displacedPath := filepath.Join(
 		base, "github", "github.com", "acme", "widget", "pr-42",
@@ -182,20 +181,15 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	}))
 	oldIdentity.Owner = "acme-archive"
 	oldIdentity.Name = "widget-old"
-	_, accepted, err = database.ReconcileRepositoryObservation(
-		t.Context(), oldIdentity, observedAt.Add(time.Minute),
+	_, err = database.ObserveRepository(
+		t.Context(), oldIdentity,
 	)
 	require.NoError(err)
-	require.True(accepted)
-	newRepo, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
-		}, observedAt.Add(2*time.Minute),
-	)
+	newRepoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
-	require.True(accepted)
-	require.NotNil(newRepo)
 
 	resolver := stubLaunchSpecResolver{}
 	manager := workspace.NewManager(database, base)
@@ -204,7 +198,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 		DB: database, Workspaces: manager,
 		LaunchSpecResolver: resolver, EnrichmentDisabled: true,
 	})
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 	require.NoError(handler.Shutdown(shutdownCtx))
 	cancel()
 
@@ -225,7 +219,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	assert.Equal(
 		filepath.Join(
 			base, "github", "github.com", "acme",
-			fmt.Sprintf("widget-%d", newRepo.Repository.ID), "pr-42",
+			fmt.Sprintf("widget-%d", newRepoID), "pr-42",
 		),
 		replacement.WorktreePath,
 		"a replacement repository on a reused route must not share the "+
@@ -240,9 +234,9 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 	ctx := t.Context()
 	repoIdentity := db.RepoIdentity{
 		Platform: "gitlab", PlatformHost: "git.example.test",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, repoIdentity)
+	repoID, err := reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -270,7 +264,7 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 		EnrichmentDisabled: true,
 	})
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})
@@ -319,9 +313,9 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			database := dbtest.Open(t)
-			_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+			_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				Owner: "acme", Name: "widget",
 			})
 			require.NoError(err)
 			resolver := stubLaunchSpecResolver{}
@@ -339,7 +333,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 				EnrichmentDisabled:          true,
 			})
 			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 				defer cancel()
 				require.NoError(handler.Shutdown(ctx))
 			})

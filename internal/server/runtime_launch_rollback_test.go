@@ -181,7 +181,7 @@ agent_sessions = true
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	project := createRuntimeTestProject(t, database, t.TempDir())
 	worktree, err := database.CreateProjectWorktree(
-		context.Background(), db.CreateProjectWorktreeInput{
+		t.Context(), db.CreateProjectWorktreeInput{
 			ProjectID: project.ID,
 			Branch:    "runtime",
 			Path:      t.TempDir(),
@@ -212,7 +212,7 @@ func serveRuntimeRequestAsync(
 	body []byte,
 ) <-chan *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(method, path, bytes.NewReader(body)).WithContext(ctx)
+	request := httptest.NewRequestWithContext(ctx, method, path, bytes.NewReader(body))
 	request.Host = "127.0.0.1:8091"
 	if method == http.MethodPost {
 		request.Header.Set("Content-Type", "application/json")
@@ -296,6 +296,7 @@ func TestCommandSameKeyPersistenceOwnership(t *testing.T) {
 				session localruntime.SessionInfo,
 				cwd string,
 			) {
+				t.Helper()
 				rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(t.Context())
 				require.NoError(t, err)
 				require.Len(t, rows, 1)
@@ -324,6 +325,7 @@ func TestCommandSameKeyPersistenceOwnership(t *testing.T) {
 				session localruntime.SessionInfo,
 				_ string,
 			) {
+				t.Helper()
 				rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
 					t.Context(), fixture.worktreeID,
 				)
@@ -483,7 +485,7 @@ func TestProjectWorktreeShellPersistenceOwnership(t *testing.T) {
 		assert.NotEqual(launches[1], killed)
 	}
 	rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
-		context.Background(), fixture.worktreeID,
+		t.Context(), fixture.worktreeID,
 	)
 	require.NoError(err)
 	require.Len(rows, 1)
@@ -532,7 +534,7 @@ func TestHostRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 	assert.NoFileExists(fixture.tmux.statePath)
 	assertFakeTmuxKilledSession(t, fixture.tmux.recordPath, launched.TmuxSession)
 	assert.Empty(fixture.server.runtime.ListSessions(hostRuntimeScope))
-	rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(context.Background())
+	rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(t.Context())
 	require.NoError(err)
 	assert.Empty(rows)
 }
@@ -575,7 +577,7 @@ func TestHostRuntimeLaunchPersistenceFailurePreservesReusedTmuxSession(
 	assert.NotContains(
 		string(record), "kill-session\x00-t\x00"+original.TmuxSession,
 	)
-	rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(context.Background())
+	rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(t.Context())
 	require.NoError(err)
 	require.Len(rows, 1)
 	assert.Equal(original.Key, rows[0].SessionKey)
@@ -624,7 +626,7 @@ func TestHostRuntimeLaunchPersistenceFailurePreservesReattachedTmuxBackend(
 	assert.NotContains(
 		string(record), "kill-session\x00-t\x00"+original.TmuxSession,
 	)
-	rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(context.Background())
+	rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(t.Context())
 	require.NoError(err)
 	require.Len(rows, 1)
 	assert.Equal(original.Key, rows[0].SessionKey)
@@ -700,6 +702,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 					"/worktrees/" + worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
 				return mustMarshal(t, map[string]any{"target_key": "helper"})
 			},
 		},
@@ -710,6 +713,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 					"/worktrees/" + worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
 				return mustMarshal(t, map[string]any{
 					"session_key": "surface:project:rollback:command",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
@@ -759,7 +763,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 			assertFakeTmuxKilledSession(t, fixture.tmux.recordPath, launched.TmuxSession)
 			assert.Empty(fixture.server.runtime.ListSessions(scope))
 			rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
-				context.Background(), fixture.worktreeID,
+				t.Context(), fixture.worktreeID,
 			)
 			require.NoError(err)
 			assert.Empty(rows)
@@ -791,6 +795,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReusedTmuxSessio
 					"/worktrees/" + worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
 				return mustMarshal(t, map[string]any{
 					"session_key": "surface:project:rollback:reused",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
@@ -842,7 +847,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReusedTmuxSessio
 				string(record), "kill-session\x00-t\x00"+original.TmuxSession,
 			)
 			rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
-				context.Background(), fixture.worktreeID,
+				t.Context(), fixture.worktreeID,
 			)
 			require.NoError(err)
 			require.Len(rows, 1)
@@ -904,7 +909,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReattachedComman
 		string(record), "kill-session\x00-t\x00"+original.TmuxSession,
 	)
 	rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
-		context.Background(), fixture.worktreeID,
+		t.Context(), fixture.worktreeID,
 	)
 	require.NoError(err)
 	require.Len(rows, 1)
@@ -981,6 +986,7 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 				return "/api/v1/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
 				return mustMarshal(t, map[string]any{
 					"session_key": "surface:exit-race:host",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
@@ -992,8 +998,9 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 				return hostRuntimeScope
 			},
 			countRows: func(t *testing.T, fixture runtimeLaunchRollbackFixture) int {
+				t.Helper()
 				rows, err := fixture.server.db.ListHostRuntimeTmuxSessions(
-					context.Background(),
+					t.Context(),
 				)
 				require.NoError(t, err)
 				return len(rows)
@@ -1010,8 +1017,9 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 				return workspaceapi.ProjectWorktreeRuntimeScope(fixture.worktreeID)
 			},
 			countRows: func(t *testing.T, fixture runtimeLaunchRollbackFixture) int {
+				t.Helper()
 				rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
-					context.Background(), fixture.worktreeID,
+					t.Context(), fixture.worktreeID,
 				)
 				require.NoError(t, err)
 				return len(rows)
@@ -1024,14 +1032,16 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 					"/worktrees/" + fixture.worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
 				return mustMarshal(t, map[string]any{"target_key": "helper"})
 			},
 			scope: func(fixture runtimeLaunchRollbackFixture) string {
 				return workspaceapi.ProjectWorktreeRuntimeScope(fixture.worktreeID)
 			},
 			countRows: func(t *testing.T, fixture runtimeLaunchRollbackFixture) int {
+				t.Helper()
 				rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
-					context.Background(), fixture.worktreeID,
+					t.Context(), fixture.worktreeID,
 				)
 				require.NoError(t, err)
 				return len(rows)
@@ -1044,6 +1054,7 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 					"/worktrees/" + fixture.worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
 				return mustMarshal(t, map[string]any{
 					"session_key": "surface:exit-race:project",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
@@ -1055,8 +1066,9 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 				return workspaceapi.ProjectWorktreeRuntimeScope(fixture.worktreeID)
 			},
 			countRows: func(t *testing.T, fixture runtimeLaunchRollbackFixture) int {
+				t.Helper()
 				rows, err := fixture.server.db.ListProjectWorktreeTmuxSessions(
-					context.Background(), fixture.worktreeID,
+					t.Context(), fixture.worktreeID,
 				)
 				require.NoError(t, err)
 				return len(rows)
@@ -1108,7 +1120,7 @@ func TestForgetHostRuntimeCommandSessionIfExitedKeepsLiveAndNewerRows(
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupRuntimeLaunchRollbackFixture(t, false)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	responses := serveRuntimeRequestAsync(
 		fixture.server, t.Context(), http.MethodPost, "/api/v1/runtime/sessions",

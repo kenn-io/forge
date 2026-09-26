@@ -111,6 +111,11 @@ func TestRegisterWorktree_RejectsBlankFields(t *testing.T) {
 
 	regBody := mustMarshal(t, map[string]any{"local_path": repoDir})
 	resp := httpDo(t, ts, http.MethodPost, "/api/v1/projects", regBody)
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
 	require.Equal(http.StatusCreated, resp.StatusCode)
 	var registered map[string]any
 	require.NoError(json.NewDecoder(resp.Body).Decode(&registered))

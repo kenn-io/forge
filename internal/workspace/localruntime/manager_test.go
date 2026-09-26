@@ -341,7 +341,7 @@ func TestStartTmuxAttachSessionKeepsBackingTmuxSession(t *testing.T) {
 	require.NoError(err)
 	go s.watch()
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 2*time.Second)
 		defer cancel()
 		require.NoError(s.stop(ctx))
 		waitSessionDone(s)

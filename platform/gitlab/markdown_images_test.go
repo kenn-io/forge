@@ -81,7 +81,7 @@ func TestGetMarkdownImageRejectsUntrustedSourcesAndActiveContent(t *testing.T) {
 				server.Listener.Addr().String(), testTokenSource("token"),
 				WithBaseURLForTesting(server.URL+"/api/v4"), WithTransport(http.DefaultTransport))
 			require.NoError(err)
-			_, err = client.GetMarkdownImage(context.Background(), platform.RepoRef{
+			_, err = client.GetMarkdownImage(t.Context(), platform.RepoRef{
 				Platform: platform.KindGitLab, RepoPath: "group/project", PlatformID: 42,
 			}, server.URL+tc.source)
 			require.Error(err)

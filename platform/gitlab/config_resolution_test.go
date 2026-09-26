@@ -1,7 +1,6 @@
 package gitlab
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,7 +28,7 @@ func TestConfiguredGlobResolutionIncludesArchivedProjects(t *testing.T) {
 	require.NoError(err)
 
 	status, refs, err := ghsync.ResolveConfiguredRepoWithRegistry(
-		context.Background(), registry, config.Repo{
+		t.Context(), registry, config.Repo{
 			Platform:     "gitlab",
 			PlatformHost: "gitlab.example.com",
 			Owner:        "kenn-forge",

@@ -39,10 +39,25 @@ func (c repoMetadataClient) GetRepository(
 	if err != nil {
 		return nil, err
 	}
+	return withRepoMetadata(r), nil
+}
+
+func (c repoMetadataClient) GetRepositoryByID(
+	ctx context.Context, owner string, id int64,
+) (*gh.Repository, error) {
+	r, err := c.Client.GetRepositoryByID(ctx, owner, id)
+	if err != nil {
+		return nil, err
+	}
+	return withRepoMetadata(r), nil
+}
+
+func withRepoMetadata(r *gh.Repository) *gh.Repository {
+	fullName := r.GetOwner().GetLogin() + "/" + r.GetName()
 	r.DefaultBranch = new("main")
-	r.HTMLURL = new("https://github.com/" + owner + "/" + repo)
-	r.CloneURL = new("https://github.com/" + owner + "/" + repo + ".git")
-	return r, nil
+	r.HTMLURL = new("https://github.com/" + fullName)
+	r.CloneURL = new("https://github.com/" + fullName + ".git")
+	return r
 }
 
 func runGit(t *testing.T, dir string, args ...string) {
@@ -64,7 +79,7 @@ func TestFleetSnapshotDetachedWorktreeDiffForSyncedRepoE2E(t *testing.T) {
 		t.Skip("git not available")
 	}
 	require := require.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init", "-q")
@@ -86,16 +101,15 @@ func TestFleetSnapshotDetachedWorktreeDiffForSyncedRepoE2E(t *testing.T) {
 	runGit(t, featDir, "checkout", "--detach")
 
 	database := dbtest.Open(t)
-	// The pre-filled external id reproduces the modern resolution shape:
-	// syncRepoIdentity short-circuits and the settings refresh is the only
-	// path that can persist the default branch.
+	// A tracked repository already carries its provider ID, so sync resolves
+	// it by ID and must still persist the provider default branch.
 	repoRef := ghclient.RepoRef{
-		Platform:           platform.KindGitHub,
-		PlatformHost:       "github.com",
-		Owner:              "acme",
-		Name:               "widgets",
-		RepoPath:           "acme/widgets",
-		PlatformExternalID: "repo-acme-widgets",
+		Platform:       platform.KindGitHub,
+		PlatformHost:   "github.com",
+		Owner:          "acme",
+		Name:           "widgets",
+		RepoPath:       "acme/widgets",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widgets"),
 	}
 	client := repoMetadataClient{Client: testutil.NewFixtureClient()}
 	syncer := ghclient.NewSyncer(

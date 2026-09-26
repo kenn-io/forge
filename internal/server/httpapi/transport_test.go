@@ -41,7 +41,7 @@ func TestValidateTransportAccept(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodGet, tt.target, nil)
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, tt.target, nil)
 			require.NoError(t, err)
 			if tt.accept != "" {
 				req.Header.Set("Accept", tt.accept)

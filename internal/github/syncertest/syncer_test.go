@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -33,6 +35,10 @@ type mockClient struct {
 	listOpenPRsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listOpenPRsCalled bool
 	getRepositoryFn   func(context.Context, string, string) (*gh.Repository, error)
+	// reposByID maps provider repository IDs to the route GetRepositoryByID
+	// serves; GetRepository records every repository it returns.
+	reposByIDMu sync.Mutex
+	reposByID   map[int64][2]string
 }
 
 func (m *mockClient) ListOpenPullRequests(
@@ -48,18 +54,40 @@ func (m *mockClient) ListOpenPullRequests(
 func (m *mockClient) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {
-	if m.getRepositoryFn != nil {
-		return m.getRepositoryFn(ctx, owner, repo)
-	}
-	id := int64(1)
-	nodeID := "repo-" + owner + "-" + repo
-	return &gh.Repository{
-		ID:       &id,
-		NodeID:   &nodeID,
+	result := &gh.Repository{
+		ID:       new(reposeed.SyntheticID(db.GitHubRepoIdentity("github.com", owner, repo))),
 		Name:     &repo,
 		Owner:    &gh.User{Login: &owner},
 		Archived: new(bool),
-	}, nil
+	}
+	if m.getRepositoryFn != nil {
+		var err error
+		if result, err = m.getRepositoryFn(ctx, owner, repo); err != nil {
+			return nil, err
+		}
+	}
+	m.reposByIDMu.Lock()
+	defer m.reposByIDMu.Unlock()
+	if m.reposByID == nil {
+		m.reposByID = make(map[int64][2]string)
+	}
+	m.reposByID[result.GetID()] = [2]string{owner, result.GetName()}
+	return result, nil
+}
+
+func (m *mockClient) GetRepositoryByID(
+	ctx context.Context, _ string, id int64,
+) (*gh.Repository, error) {
+	m.reposByIDMu.Lock()
+	route, ok := m.reposByID[id]
+	m.reposByIDMu.Unlock()
+	if !ok {
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotFound},
+			Message:  "Not Found",
+		}
+	}
+	return m.GetRepository(ctx, route[0], route[1])
 }
 
 func (m *mockClient) GetPullRequest(context.Context, string, string, int) (*gh.PullRequest, error) {
@@ -69,71 +97,93 @@ func (m *mockClient) GetUser(context.Context, string) (*gh.User, error) { return
 func (m *mockClient) ListRepositoriesByOwner(context.Context, string) ([]*gh.Repository, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListReleases(context.Context, string, string, int) ([]*gh.RepositoryRelease, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListTags(context.Context, string, string, int) ([]*gh.RepositoryTag, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListOpenIssues(context.Context, string, string) ([]*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) GetIssue(context.Context, string, string, int) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) CreateIssue(context.Context, string, string, string, string) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListIssueComments(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListIssueCommentsIfChanged(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListReviews(context.Context, string, string, int) ([]*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListPullRequestReviewThreads(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListCommits(context.Context, string, string, int) ([]*gh.RepositoryCommit, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListPullRequestTimelineEvents(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListForcePushEvents(context.Context, string, string, int) ([]platformgithub.ForcePushEvent, error) {
 	return nil, nil
 }
+
 func (m *mockClient) GetCombinedStatus(context.Context, string, string, string) (*gh.CombinedStatus, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListCheckRunsForRef(context.Context, string, string, string) ([]*gh.CheckRun, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListWorkflowRunsForHeadSHA(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ApproveWorkflowRun(context.Context, string, string, int64) error {
 	return nil
 }
+
 func (m *mockClient) CreateIssueComment(context.Context, string, string, int, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) EditIssueComment(context.Context, string, string, int64, string) (*gh.IssueComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) DeleteIssueComment(context.Context, string, string, int64) error {
 	return nil
 }
+
 func (m *mockClient) CreatePullRequestReviewCommentReply(
 	context.Context, string, string, int, string, int64,
 ) (*gh.PullRequestComment, error) {
 	return nil, nil
 }
+
 func (m *mockClient) CreateReview(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockClient) CreateReviewWithComments(
 	context.Context,
 	string,
@@ -146,6 +196,7 @@ func (m *mockClient) CreateReviewWithComments(
 ) (*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ApplyReviewSuggestions(
 	_ context.Context,
 	_ string,
@@ -155,33 +206,43 @@ func (m *mockClient) ApplyReviewSuggestions(
 ) (*platform.AppliedReviewSuggestions, error) {
 	return nil, nil
 }
+
 func (m *mockClient) MarkPullRequestReadyForReview(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ConvertPullRequestToDraft(context.Context, string, string, int) (*gh.PullRequest, error) {
 	return nil, nil
 }
+
 func (m *mockClient) DismissReview(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error) {
 	return nil, nil
 }
+
 func (m *mockClient) MergePullRequest(context.Context, string, string, int, string, string, string, string) (*gh.PullRequestMergeResult, error) {
 	return nil, nil
 }
+
 func (m *mockClient) EditPullRequest(context.Context, string, string, int, platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
 	return nil, nil
 }
+
 func (m *mockClient) EditIssue(context.Context, string, string, int, string) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) EditIssueContent(context.Context, string, string, int, *string, *string) (*gh.Issue, error) {
 	return nil, nil
 }
+
 func (m *mockClient) ListPullRequestsPage(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error) {
 	return nil, false, nil
 }
+
 func (m *mockClient) ListIssuesPage(context.Context, string, string, string, int) ([]*gh.Issue, bool, error) {
 	return nil, false, nil
 }
+
 func (m *mockClient) ListNotifications(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error) {
 	return nil, false, nil
 }
@@ -189,6 +250,8 @@ func (m *mockClient) MarkNotificationThreadRead(context.Context, string) error {
 func (m *mockClient) InvalidateListETagsForRepo(string, string, ...string)     {}
 
 func TestSyncerStopIsIdempotent(t *testing.T) {
+	t.Parallel()
+
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &mockClient{}},
 		nil, nil, nil, time.Minute, nil, nil,
@@ -217,6 +280,8 @@ func (b *blockingMockClient) ListOpenPullRequests(
 }
 
 func TestSyncerStopWaitsForRunOnce(t *testing.T) {
+	t.Parallel()
+
 	entered := make(chan struct{})
 	blocked := make(chan struct{})
 	mock := &blockingMockClient{
@@ -228,10 +293,9 @@ func TestSyncerStopWaitsForRunOnce(t *testing.T) {
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock}, database, nil,
 		[]ghclient.RepoRef{{
-			Owner:              "o",
-			Name:               "r",
-			PlatformHost:       "github.com",
-			PlatformExternalID: "repo-o-r",
+			Owner:        "o",
+			Name:         "r",
+			PlatformHost: "github.com",
 		}},
 		time.Hour, nil, nil,
 	)
@@ -289,6 +353,8 @@ func (p *parallelMockClient) ListOpenPullRequests(
 }
 
 func TestRunOnceSyncesReposInParallel(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -347,6 +413,8 @@ func TestRunOnceSyncesReposInParallel(t *testing.T) {
 }
 
 func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -407,6 +475,8 @@ func TestRunOnceCancelDuringBackoffDoesNotReportSuccess(t *testing.T) {
 }
 
 func TestRunOnceCancelAfterCompleteReportsSuccess(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -463,6 +533,8 @@ func (c *cancelDuringSyncMockClient) GetRepository(
 }
 
 func TestRunOnceCancelDuringSyncRepoDoesNotReportSuccess(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -522,6 +594,8 @@ func (c *deadlineExceededMockClient) ListOpenPullRequests(
 }
 
 func TestRunOncePerRequestDeadlineRecordsError(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -561,7 +635,7 @@ func (sw *syncedWriter) Write(p []byte) (int, error) {
 	return sw.w.Write(p)
 }
 
-func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) {
+func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	assert := assert.New(t)
 	d := openTestDB(t)
 
@@ -606,10 +680,12 @@ func TestRunOnceDispatchHonorsCanceledCtx(t *testing.T) {
 }
 
 func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	mock := &mockClient{openPRs: []*gh.PullRequest{}}
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "o", "n"))
+	_, err := reposeed.Seed(t.Context(), d, db.GitHubRepoIdentity("github.com", "o", "n"))
 	require.NoError(t, err)
 	repos := []ghclient.RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
 	s := ghclient.NewSyncer(
@@ -640,6 +716,8 @@ func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
 }
 
 func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	const completionTimeout = 30 * time.Second
@@ -665,10 +743,8 @@ func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
 				"third":  3,
 			}
 			id := ids[repo]
-			nodeID := "repo-" + owner + "-" + repo
 			return &gh.Repository{
 				ID:       &id,
-				NodeID:   &nodeID,
 				Name:     &repo,
 				Owner:    &gh.User{Login: &owner},
 				Archived: new(bool),
@@ -721,6 +797,8 @@ func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
 }
 
 func TestSyncerTriggerRunForReposSyncsOnlySelectedRepos(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -745,10 +823,8 @@ func TestSyncerTriggerRunForReposSyncsOnlySelectedRepos(t *testing.T) {
 				"third":  3,
 			}
 			id := ids[repo]
-			nodeID := "repo-" + owner + "-" + repo
 			return &gh.Repository{
 				ID:       &id,
-				NodeID:   &nodeID,
 				Name:     &repo,
 				Owner:    &gh.User{Login: &owner},
 				Archived: new(bool),
@@ -799,6 +875,8 @@ func TestSyncerTriggerRunForReposSyncsOnlySelectedRepos(t *testing.T) {
 // If an accepted trigger is dropped behind an in-flight provider snapshot,
 // data changed after that snapshot stays stale until an unrelated later run.
 func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		trigger func(*ghclient.Syncer, context.Context, []ghclient.RepoRef)
@@ -829,15 +907,15 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 			database := openTestDB(t)
 			ctx := t.Context()
 			repos := []ghclient.RepoRef{{
-				Owner:              "o",
-				Name:               "r",
-				PlatformHost:       "github.com",
-				PlatformExternalID: "repo-o-r",
+				Owner:          "o",
+				Name:           "r",
+				PlatformHost:   "github.com",
+				PlatformRepoID: 1001,
 			}}
-			repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+			repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 				Platform:       "github",
 				PlatformHost:   "github.com",
-				PlatformRepoID: "repo-o-r",
+				PlatformRepoID: 1001,
 				Owner:          "o",
 				Name:           "r",
 			})
@@ -850,6 +928,7 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 			var listCalls atomic.Int32
 			var providerFresh atomic.Bool
 			mock := &mockClient{
+				reposByID: map[int64][2]string{1001: {"o", "r"}},
 				listOpenPRsFn: func(
 					ctx context.Context, _, _ string,
 				) ([]*gh.PullRequest, error) {
@@ -870,15 +949,13 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 				getRepositoryFn: func(
 					_ context.Context, owner, repo string,
 				) (*gh.Repository, error) {
-					id := int64(1)
-					nodeID := "repo-o-r"
+					id := int64(1001)
 					defaultBranch := "stale"
 					if providerFresh.Load() {
 						defaultBranch = "fresh"
 					}
 					return &gh.Repository{
 						ID:            &id,
-						NodeID:        &nodeID,
 						Name:          &repo,
 						Owner:         &gh.User{Login: &owner},
 						Archived:      new(bool),
@@ -945,6 +1022,8 @@ func (b *blockingCtxMockClient) ListOpenPullRequests(
 }
 
 func TestSyncerStopCancelsTriggerRun(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
 

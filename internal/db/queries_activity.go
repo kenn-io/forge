@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -94,12 +95,8 @@ func (d *DB) ListActivity(
 	return listActivityWithQueryer(ctx, d.roStmts, opts)
 }
 
-type activityQueryer interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
 func listActivityWithQueryer(
-	ctx context.Context, queryer activityQueryer, opts ListActivityOpts,
+	ctx context.Context, queryer queryer, opts ListActivityOpts,
 ) ([]ActivityItem, error) {
 	limit := opts.Limit
 	if limit <= 0 {
@@ -587,7 +584,7 @@ func (d *DB) ListActivitySubjects(
 }
 
 func listActivitySubjectsWithQueryer(
-	ctx context.Context, queryer activityQueryer, opts ListActivitySubjectsOpts,
+	ctx context.Context, queryer queryer, opts ListActivitySubjectsOpts,
 ) ([]ActivitySubject, error) {
 	limit := opts.Limit
 	if limit <= 0 {
@@ -1114,7 +1111,7 @@ func DecodeCursor(cursor string) (
 	nanoseconds, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil || nanoseconds < 0 || nanoseconds >= int64(time.Second) {
 		return time.Time{}, "", 0,
-			fmt.Errorf("invalid cursor nanoseconds")
+			errors.New("invalid cursor nanoseconds")
 	}
 	sourceID, err := strconv.ParseInt(parts[3], 10, 64)
 	if err != nil {

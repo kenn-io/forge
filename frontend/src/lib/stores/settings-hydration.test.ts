@@ -33,9 +33,7 @@ const settingsPayload = makeStartupSnapshot({
   repo_presets: [
     {
       name: "Review queue",
-      repos: [
-        { provider: "github", platform_host: "github.com", platform_repo_id: "R_widgets", repo_path: "acme/widgets" },
-      ],
+      repos: [{ provider: "github", platform_host: "github.com", platform_repo_id: 1102, repo_path: "acme/widgets" }],
     },
   ],
   activity: activitySettings,

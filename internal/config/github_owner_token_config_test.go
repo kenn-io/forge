@@ -398,7 +398,7 @@ token_env = "REPO_PAT"
 			return "ghs_installation", time.Now().Add(time.Hour), nil
 		}},
 	)
-	ctx := tokenauth.WithGitHubOwner(context.Background(), "acme")
+	ctx := tokenauth.WithGitHubOwner(t.Context(), "acme")
 
 	read, err := source.Token(ctx)
 	require.NoError(err)

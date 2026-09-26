@@ -62,7 +62,7 @@ func (s *mutableRuntimeAuthTokenSource) Invalidates() int {
 	return s.invalidates
 }
 
-func TestArchiveBudgetCountsEveryAuthenticationAttempt(t *testing.T) {
+func TestArchiveBudgetCountsEveryAuthenticationAttempt(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
 	assert := assert.New(t)
 	require := require.New(t)
 	source := newMutableRuntimeAuthTokenSource("first-token")
@@ -87,7 +87,7 @@ func TestArchiveBudgetCountsEveryAuthenticationAttempt(t *testing.T) {
 	assert.Equal(2, budget.ArchiveSpent())
 }
 
-func TestGraphQLArchiveBudgetCountsEveryAuthenticationAttempt(t *testing.T) {
+func TestGraphQLArchiveBudgetCountsEveryAuthenticationAttempt(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
 	assert := assert.New(t)
 	require := require.New(t)
 	source := newMutableRuntimeAuthTokenSource("first-token")
@@ -126,7 +126,7 @@ func withGitHubAuthTLSServer(t *testing.T, handler http.Handler) string {
 	return strings.TrimPrefix(srv.URL, "https://")
 }
 
-func TestNewClientReadsRotatedTokenOnNextRequest(t *testing.T) {
+func TestNewClientReadsRotatedTokenOnNextRequest(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
 	assert := assert.New(t)
 	source := newMutableRuntimeAuthTokenSource("first-token")
 	var authorizations []string
@@ -150,7 +150,7 @@ func TestNewClientReadsRotatedTokenOnNextRequest(t *testing.T) {
 	assert.Equal(0, source.Invalidates())
 }
 
-func TestNewClientRetriesUnauthorizedWithFreshToken(t *testing.T) {
+func TestNewClientRetriesUnauthorizedWithFreshToken(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
 	assert := assert.New(t)
 	source := newMutableRuntimeAuthTokenSource("first-token")
 	var authorizations []string
@@ -175,7 +175,7 @@ func TestNewClientRetriesUnauthorizedWithFreshToken(t *testing.T) {
 	assert.Equal(1, source.Invalidates())
 }
 
-func TestNewClientDoesNotRetryForbidden(t *testing.T) {
+func TestNewClientDoesNotRetryForbidden(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
 	assert := assert.New(t)
 	source := newMutableRuntimeAuthTokenSource("first-token")
 	calls := 0
@@ -208,7 +208,7 @@ func queryRuntimeAuthViewer(t *testing.T, fetcher *GraphQLFetcher) (string, erro
 	return string(query.Viewer.Login), err
 }
 
-func TestNewGraphQLFetcherReadsRotatedTokenOnNextRequest(t *testing.T) {
+func TestNewGraphQLFetcherReadsRotatedTokenOnNextRequest(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
 	assert := assert.New(t)
 	source := newMutableRuntimeAuthTokenSource("first-token")
 	var authorizations []string
@@ -231,7 +231,7 @@ func TestNewGraphQLFetcherReadsRotatedTokenOnNextRequest(t *testing.T) {
 	assert.Equal(0, source.Invalidates())
 }
 
-func TestNewGraphQLFetcherRetriesUnauthorizedWithFreshToken(t *testing.T) {
+func TestNewGraphQLFetcherRetriesUnauthorizedWithFreshToken(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
 	assert := assert.New(t)
 	source := newMutableRuntimeAuthTokenSource("first-token")
 	var authorizations []string
@@ -255,7 +255,7 @@ func TestNewGraphQLFetcherRetriesUnauthorizedWithFreshToken(t *testing.T) {
 	assert.Equal(1, source.Invalidates())
 }
 
-func TestNewGraphQLFetcherDoesNotRetryForbidden(t *testing.T) {
+func TestNewGraphQLFetcherDoesNotRetryForbidden(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
 	assert := assert.New(t)
 	source := newMutableRuntimeAuthTokenSource("first-token")
 	calls := 0

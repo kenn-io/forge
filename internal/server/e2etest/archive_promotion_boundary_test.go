@@ -101,7 +101,7 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
 		case "/api/v3/repos/acme/widget/pulls":
 			_, _ = w.Write([]byte(`[]`))
-		case "/api/v3/repos/acme/widget":
+		case "/api/v3/repos/acme/widget", "/api/v3/repositories/1":
 			_, _ = w.Write([]byte(`{
 				"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget",
 				"owner":{"login":"acme"}
@@ -151,14 +151,14 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "R_widget",
+		PlatformID: 1,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil,
 		[]ghclient.RepoRef{{
 			Platform: ref.Platform, PlatformHost: ref.Host,
 			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-			PlatformExternalID: ref.PlatformExternalID,
+			PlatformRepoID: ref.PlatformID,
 		}},
 		time.Hour, nil, nil,
 	)

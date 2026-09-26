@@ -8,10 +8,12 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 type federationImportReviewDraftInput struct {
@@ -136,16 +138,19 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 		)
 	}
 	request.Repository = route
-	var repo *db.Repo
-	if platformRepoID := strings.TrimSpace(request.PlatformRepoID); platformRepoID != "" {
-		entry, lookupErr := s.db.GetRepositoryByProviderID(
-			ctx, route.Provider, route.PlatformHost, platformRepoID,
-		)
+	var repo *db.ActiveRepo
+	if platformRepoID := request.PlatformRepoID; platformRepoID != 0 {
+		entry, lookupErr := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+			Provider: route.Provider, PlatformHost: route.PlatformHost,
+			PlatformRepoID: platformRepoID,
+		})
 		if lookupErr != nil {
 			return db.WorkspaceLaunchSpec{}, httpapi.ProviderRouteLookupError(lookupErr)
 		}
-		if entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive {
-			repo = &entry.Repository
+		if entry != nil {
+			if repo, err = entry.ActiveRepo(); err != nil {
+				return db.WorkspaceLaunchSpec{}, httpapi.Internal("resolve repository failed")
+			}
 		}
 	} else {
 		repo, err = s.repoResolver.LookupRoute(
@@ -155,8 +160,7 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 			return db.WorkspaceLaunchSpec{}, httpapi.ProviderRouteLookupError(err)
 		}
 	}
-	if repo == nil || strings.TrimSpace(repo.PlatformRepoID) == "" ||
-		strings.TrimSpace(repo.CloneURL) == "" ||
+	if repo == nil || strings.TrimSpace(repo.CloneURL) == "" ||
 		strings.TrimSpace(repo.DefaultBranch) == "" {
 		return db.WorkspaceLaunchSpec{}, httpapi.NotFound(
 			httpapi.CodeRepoNotFound,
@@ -267,7 +271,7 @@ func (s *Server) RefreshWorkspaceLaunchSpec(
 	if err != nil {
 		return db.WorkspaceLaunchSpec{}, err
 	}
-	if current.Repository.PlatformRepoID != "" &&
+	if current.Repository.PlatformRepoID != 0 &&
 		refreshed.Repository.PlatformRepoID != current.Repository.PlatformRepoID {
 		return db.WorkspaceLaunchSpec{}, httpapi.Conflict(
 			httpapi.CodeConflict,

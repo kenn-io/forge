@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"go.kenn.io/forge/internal/apiclient/generated"
@@ -15,7 +16,7 @@ type Client struct {
 }
 
 func New(baseURL string) (*Client, error) {
-	return NewWithHTTPClient(baseURL, http.DefaultClient)
+	return NewWithHTTPClient(baseURL, &http.Client{Timeout: 30 * time.Second})
 }
 
 func NewWithHTTPClient(baseURL string, httpClient *http.Client, options ...runtime.APIClientOption) (*Client, error) {

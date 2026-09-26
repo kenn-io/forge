@@ -2,18 +2,25 @@
   import {
     autoReposition,
     Button,
+    HarnessIcon,
+    Menu,
+    MenuContent,
+    MenuItem,
+    MenuTrigger,
     dismissable,
     floatingPopoverStyle,
   } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import ZapIcon from "@lucide/svelte/icons/zap";
+  import { launchTargetHarness } from "../terminal/agentHarness";
   import LaunchTargetName from "../terminal/LaunchTargetName.svelte";
   import { Effect } from "effect";
   import { tick } from "svelte";
   import type { LaunchTarget, QuickAction } from "../../api/types.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { sortQuickActionsByLabel } from "../../stores/workspace-quick-actions.js";
 
   interface Props {
     label: string;
@@ -33,8 +40,6 @@
     onQuickAction?: (action: QuickAction) => void;
   }
 
-  type MenuKind = "agents" | "quick";
-
   let {
     label,
     busyLabel = "Creating…",
@@ -53,17 +58,20 @@
   const runtime = getAppRuntime();
 
   let open = $state(false);
-  let menuKind = $state<MenuKind>("agents");
+  let agentMenuOpen = $state(false);
   let root = $state<HTMLDivElement>();
   let trigger = $state<HTMLButtonElement>();
   let menu = $state<HTMLUListElement>();
   let menuStyle = $state("");
   let openExecution: AppExecution<void, never> | null = null;
   const agentTargets = $derived(
-    launchTargets.filter((target) => target.kind === "agent" && target.available),
+    launchTargets
+      .filter((target) => target.kind === "agent" && target.available)
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "accent" })),
   );
   const blocked = $derived(disabled || busy);
   const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
+  const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
 
   function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
     return launchTargets.find((target) => target.key === action.agent && target.kind === "agent");
@@ -88,21 +96,16 @@
       viewportHeight: window.innerHeight,
       popoverWidth: menu.offsetWidth,
       popoverHeight: menu.offsetHeight,
-      // The agent menu hangs off the trailing chevron, so its right edge
-      // lines up with the control. The quick-actions segment sits mid-control,
-      // so its menu opens from the segment's own left edge instead.
-      align: menuKind === "quick" ? "start" : "end",
+      align: "start",
       triggerGap: 2,
     });
   }
 
-  function openMenu(kind: MenuKind = "agents"): void {
-    if (blocked) return;
-    if (kind === "agents" && agentTargets.length === 0) return;
-    if (kind === "quick" && !showQuickActions) return;
-    trigger = root?.querySelector<HTMLButtonElement>(triggerSelector(kind)) ?? undefined;
+  function openMenu(): void {
+    if (blocked || !showQuickActions) return;
+    agentMenuOpen = false;
+    trigger = root?.querySelector<HTMLButtonElement>(".create-quick-actions-button") ?? undefined;
     openExecution?.interrupt();
-    menuKind = kind;
     open = true;
     openExecution = runtime.runCommand(
       Effect.promise(() => tick()).pipe(
@@ -131,32 +134,20 @@
     return () => node.remove();
   }
 
-  // Both segments carry the shared create-options-button class for sizing, so
-  // lookups must use the segment-specific class or they resolve to whichever
-  // segment renders first.
-  function triggerSelector(kind: MenuKind): string {
-    return kind === "quick" ? ".create-quick-actions-button" : ".create-agent-options-button";
-  }
-
-  function optionsButton(node: HTMLElement, kind: MenuKind = "agents"): () => void {
-    const button = node.querySelector<HTMLButtonElement>(triggerSelector(kind));
+  function optionsButton(node: HTMLElement): () => void {
+    const button = node.querySelector<HTMLButtonElement>(".create-quick-actions-button");
     if (!button) return () => {};
     button.setAttribute("aria-haspopup", "menu");
     function handle(event: KeyboardEvent): void {
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        void openMenu(kind);
+        void openMenu();
       } else if (event.key === "Tab" && open) {
         closeMenu();
       }
     }
     button.addEventListener("keydown", handle);
     return () => button.removeEventListener("keydown", handle);
-  }
-
-  function selectTarget(targetKey: string): void {
-    closeMenu();
-    onCreate(targetKey);
   }
 
   function selectQuickAction(action: QuickAction): void {
@@ -213,7 +204,10 @@
   });
 
   $effect(() => {
-    if (blocked) open = false;
+    if (blocked) {
+      open = false;
+      agentMenuOpen = false;
+    }
   });
 </script>
 
@@ -236,7 +230,7 @@
     <span>{busy ? busyLabel : label}</span>
   </Button>
   {#if showQuickActions}
-    <span class="create-options create-quick-actions" {@attach (node) => optionsButton(node, "quick")}>
+    <span class="create-options create-quick-actions" {@attach optionsButton}>
       <Button
         surface={surface === "solid" ? "solid" : "soft"}
         tone="info"
@@ -244,36 +238,58 @@
         class="create-options-button create-quick-actions-button"
         ariaLabel="Quick actions"
         title={disabledReason || "Create, launch an agent, and send a preset prompt"}
-        ariaExpanded={open && menuKind === "quick"}
+        ariaExpanded={open}
         disabled={blocked}
         onclick={() => {
-          if (open && menuKind === "quick") closeMenu();
-          else void openMenu("quick");
+          if (open) closeMenu();
+          else void openMenu();
         }}
       >
         <ZapIcon size="12" strokeWidth="2.2" aria-hidden="true" />
       </Button>
     </span>
   {/if}
-  <span class="create-options" {@attach optionsButton}>
-    <Button
-      surface={surface === "solid" ? "solid" : "soft"}
-      tone="info"
-      {size}
-      class="create-options-button create-agent-options-button"
-      ariaLabel={`${label} options`}
-      title={disabledReason || "Create and launch an agent"}
-      ariaExpanded={open && menuKind === "agents"}
-      disabled={blocked || agentTargets.length === 0}
-      onclick={() => {
-        if (open && menuKind === "agents") closeMenu();
-        else void openMenu("agents");
-      }}
-    >
-      <ChevronDownIcon size="12" strokeWidth="2" aria-hidden="true" />
-    </Button>
-  </span>
-  {#if open && menuKind === "quick"}
+  <Menu bind:open={agentMenuOpen} align="end" class="agent-create-menu" onopenchange={(next) => { if (next) closeMenu(); }}>
+    <MenuTrigger ariaLabel={`${label} options`} title={disabledReason || "Create and launch an agent"} disabled={blocked || agentTargets.length === 0}>
+      {#snippet child({ attachment })}
+        <span class="create-options" {@attach (node) => {
+          const button = node.querySelector("button");
+          if (button) return attachment(button);
+        }}>
+          <Button
+            surface={surface === "solid" ? "solid" : "soft"}
+            tone="info"
+            {size}
+            class="create-options-button create-agent-options-button"
+            ariaLabel={`${label} options`}
+            ariaExpanded={agentMenuOpen}
+            disabled={blocked || agentTargets.length === 0}
+          >
+            <ChevronDownIcon size="12" strokeWidth="2" aria-hidden="true" />
+          </Button>
+        </span>
+      {/snippet}
+    </MenuTrigger>
+    {#if agentMenuOpen}
+      <div {@attach (node) => {
+        const content = node.querySelector<HTMLElement>('[role="menu"]');
+        return content ? portalMenu(content) : undefined;
+      }}>
+        <MenuContent ariaLabel="Create and launch">
+          {#each agentTargets as target (target.key)}
+            <MenuItem onselect={() => onCreate(target.key)} textValue={target.label}>
+              {#snippet icon()}
+                {@const harness = launchTargetHarness(target)}
+                {#if harness}<HarnessIcon {harness} size={12} decorative />{/if}
+              {/snippet}
+              {target.label}
+            </MenuItem>
+          {/each}
+        </MenuContent>
+      </div>
+    {/if}
+  </Menu>
+  {#if open}
     <ul
       bind:this={menu}
       class="create-menu create-menu--quick kit-popover-card"
@@ -282,7 +298,7 @@
       style={menuStyle}
       {@attach portalMenu}
     >
-      {#each quickActions as action (action.label)}
+      {#each sortedQuickActions as action (action.label)}
         {@const reason = quickActionDisabledReason(action)}
         <li role="none">
           <button
@@ -302,30 +318,6 @@
             <span class={["quick-action-agent", reason !== "" && "quick-action-agent--unavailable"]}>
               {reason || quickActionTarget(action)?.label || action.agent}
             </span>
-          </button>
-        </li>
-      {/each}
-    </ul>
-  {:else if open}
-    <ul
-      bind:this={menu}
-      class="create-menu kit-popover-card"
-      role="menu"
-      aria-label="Create and launch"
-      style={menuStyle}
-      {@attach portalMenu}
-    >
-      {#each agentTargets as target (target.key)}
-        <li role="none">
-          <button
-            type="button"
-            role="menuitem"
-            disabled={!target.available}
-            title={target.disabled_reason || target.label}
-            onclick={() => selectTarget(target.key)}
-            onkeydown={handleItemKeydown}
-          >
-            <LaunchTargetName {target} label={target.label} iconSize={12} />
           </button>
         </li>
       {/each}
@@ -366,6 +358,10 @@
 
   /* Sized by its button: phone hit-target rules widen the button beyond the
    * square cap, and a fixed wrapper width would let it overflow the control. */
+  .workspace-create-split :global(.agent-create-menu) {
+    display: flex;
+  }
+
   .create-options {
     display: inline-flex;
     flex: 0 0 auto;

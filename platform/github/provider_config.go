@@ -21,8 +21,10 @@ type ProviderConfig struct {
 func NewProvider(config ProviderConfig) (*Provider, error) {
 	host := config.Host
 	if config.Client == nil || config.Clock == nil {
-		return nil, &platform.Error{Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub,
-			PlatformHost: host, Err: errors.New("a GitHub client and clock are required")}
+		return nil, &platform.Error{
+			Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub,
+			PlatformHost: host, Err: errors.New("a GitHub client and clock are required"),
+		}
 	}
 	return &Provider{host: host, client: config.Client, now: config.Clock, viewerCacheTTL: config.ViewerCacheTTL, warning: config.Warning}, nil
 }

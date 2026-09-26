@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -82,7 +83,7 @@ func runList(args []string, env *appEnv) error {
 			owner = s.Owner
 		}
 		if s.InstallationID != 0 {
-			install = fmt.Sprintf("%d", s.InstallationID)
+			install = strconv.FormatInt(s.InstallationID, 10)
 		}
 		if s.InstallationAccount != "" {
 			account = s.InstallationAccount

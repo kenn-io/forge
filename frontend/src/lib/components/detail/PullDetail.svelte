@@ -237,7 +237,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoPath: string;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -643,7 +643,7 @@
   });
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
-  let lastDetailLoadPlatformRepoId: string | undefined;
+  let lastDetailLoadPlatformRepoId: number | undefined;
   let lastDetailLoadAutoSync: DetailSyncMode | undefined;
   let lastDetailLoadWorkflowApprovalSync: boolean | undefined;
 
@@ -3245,8 +3245,8 @@
           ciFailed={ciStatusHasFailed(p.CIStatus)}
           alreadyQueued={deferredMergePending}
           workspaceId={d.workspace?.id}
-          midStackWarning={midStackBlocker
-            ? `This is stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}. Branch #${midStackBlocker.number} below it has not been merged.`
+          stackNote={midStackBlocker
+            ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`
             : undefined}
           onstateconflict={handleStateConflict}
           onclose={() => { showMergeModal = false; }}

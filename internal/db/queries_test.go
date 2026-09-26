@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -83,7 +82,7 @@ func TestStartWorkspaceRetryPreservesBranchUntilCleanupSucceeds(t *testing.T) {
 	require := require.New(t)
 
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	errMsg := "tmux new-session failed"
 	ws := &Workspace{
 		ID:              "ws-retry-preserve-branch",
@@ -115,10 +114,10 @@ func TestStartWorkspaceRetryPreservesBranchUntilCleanupSucceeds(t *testing.T) {
 
 func insertTestRepo(t *testing.T, d *DB, owner, name string) int64 {
 	t.Helper()
-	id, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	id, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", "github.com", owner, name,
 	))
-	require.NoErrorf(t, err, "UpsertRepo(%s/%s)", owner, name)
+	require.NoErrorf(t, err, "seedTestRepo(%s/%s)", owner, name)
 	return id
 }
 
@@ -127,10 +126,10 @@ func insertTestRepoWithHost(
 	t *testing.T, d *DB, owner, name, host string,
 ) int64 {
 	t.Helper()
-	id, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	id, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", host, owner, name,
 	))
-	require.NoErrorf(t, err, "UpsertRepo(%s/%s on %s)", owner, name, host)
+	require.NoErrorf(t, err, "seedTestRepo(%s/%s on %s)", owner, name, host)
 	return id
 }
 
@@ -138,9 +137,7 @@ func verifiedTestRepoIdentity(platform, host, owner, name string) RepoIdentity {
 	identity := RepoIdentity{
 		Platform: platform, PlatformHost: host, Owner: owner, Name: name,
 	}
-	identity.PlatformRepoID = strings.ToLower(
-		"test-" + platform + "-" + host + "-" + owner + "-" + name,
-	)
+	identity.PlatformRepoID = syntheticTestRepoID(identity)
 	return identity
 }
 
@@ -1087,14 +1084,14 @@ func TestUpsertAndListRepos(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	id1, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "alice", "alpha"))
+	id1, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "alice", "alpha"))
 	require.NoError(err)
-	id2, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "bob", "beta"))
+	id2, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "bob", "beta"))
 	require.NoError(err)
 	assert.NotEqual(id1, id2)
 
 	// Idempotency: re-inserting should return the same ID.
-	id1Again, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "alice", "alpha"))
+	id1Again, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "alice", "alpha"))
 	require.NoError(err)
 	assert.Equal(id1, id1Again)
 
@@ -1108,13 +1105,13 @@ func TestUpsertAndListRepos(t *testing.T) {
 	assert.Equal("beta", repos[1].Name)
 }
 
-func TestUpsertRepoDefaultsToGitHubIdentity(t *testing.T) {
+func TestObserveRepositoryDefaultsToGitHubIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	id, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "Alice", "Alpha"))
+	id, err := seedTestRepo(ctx, d, GitHubRepoIdentity("github.com", "Alice", "Alpha"))
 	require.NoError(err)
 
 	repo, err := d.GetRepoByID(ctx, id)
@@ -1128,30 +1125,30 @@ func TestUpsertRepoDefaultsToGitHubIdentity(t *testing.T) {
 	assert.Equal("alice", repo.OwnerKey)
 	assert.Equal("alpha", repo.NameKey)
 	assert.Equal("alice/alpha", repo.RepoPathKey)
-	assert.Empty(repo.PlatformRepoID)
+	assert.Equal(syntheticTestRepoID(GitHubRepoIdentity("github.com", "alice", "alpha")), repo.PlatformRepoID)
 	assert.Empty(repo.WebURL)
 	assert.Empty(repo.CloneURL)
 	assert.Empty(repo.DefaultBranch)
 }
 
-func TestUpsertRepoSupportsProviderIdentity(t *testing.T) {
+func TestObserveRepositorySupportsProviderIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	githubID, err := d.UpsertRepo(ctx, RepoIdentity{
+	githubID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "example.com",
-		PlatformRepoID: "github-widget",
+		PlatformRepoID: 1001,
 		Owner:          "acme",
 		Name:           "widget",
 	})
 	require.NoError(err)
-	gitlabID, err := d.UpsertRepo(ctx, RepoIdentity{
+	gitlabID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "example.com",
-		PlatformRepoID: "gitlab-widget",
+		PlatformRepoID: 1002,
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -1173,13 +1170,13 @@ func TestUpsertRepoSupportsProviderIdentity(t *testing.T) {
 	}
 }
 
-func TestUpsertRepoPreservesNonGitHubDisplayIdentity(t *testing.T) {
+func TestObserveRepositoryPreservesNonGitHubDisplayIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	id, err := d.UpsertRepo(ctx, RepoIdentity{
+	id, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:     "gitlab",
 		PlatformHost: "gitlab.example.com",
 		Owner:        "Group/SubGroup",
@@ -1205,10 +1202,10 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, RepoIdentity{
+	repoID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "gitlab-project-name",
+		PlatformRepoID: 1001,
 		Owner:          "Group/SubGroup",
 		Name:           "ProjectName",
 		RepoPath:       "Group/SubGroup/ProjectName",
@@ -1306,21 +1303,20 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	assert.Equal(mrID, stackMembers[0].MergeRequestID)
 }
 
-func TestUpdateRepoProviderMetadataPreservesIdentity(t *testing.T) {
+func TestUpdateRepoProviderObservationPreservesIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := seedTestRepo(ctx, d, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	err = d.UpdateRepoProviderMetadata(ctx, repoID, RepoProviderMetadata{
-		PlatformRepoID: "R_123",
-		WebURL:         "https://github.com/acme/widget",
-		CloneURL:       "https://github.com/acme/widget.git",
-		DefaultBranch:  "main",
-	})
+	err = d.UpdateRepoProviderObservation(ctx, repoID, RepoProviderMetadata{
+		WebURL:        "https://github.com/acme/widget",
+		CloneURL:      "https://github.com/acme/widget.git",
+		DefaultBranch: "main",
+	}, nil, nil)
 	require.NoError(err)
 
 	repo, err := d.GetRepoByID(ctx, repoID)
@@ -1331,21 +1327,15 @@ func TestUpdateRepoProviderMetadataPreservesIdentity(t *testing.T) {
 	assert.Equal("acme", repo.Owner)
 	assert.Equal("widget", repo.Name)
 	assert.Equal("acme/widget", repo.RepoPath)
-	assert.Equal("R_123", repo.PlatformRepoID)
+	assert.Equal(syntheticTestRepoID(GitHubRepoIdentity("github.com", "acme", "widget")), repo.PlatformRepoID)
 	assert.Equal("https://github.com/acme/widget", repo.WebURL)
 	assert.Equal("https://github.com/acme/widget.git", repo.CloneURL)
 	assert.Equal("main", repo.DefaultBranch)
 
-	sameID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
+	sameID, err := seedTestRepo(ctx, d, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	assert.Equal(repoID, sameID)
 }
-
-// UpsertRepoByProviderID deliberately does not apply renames: cached
-// identities resolve read-only, and route moves happen only through
-// ReconcileRepositoryObservation (see
-// TestUpsertRepoCachedIdentityDoesNotReclaimReusedRoute and
-// TestReconcileRepositoryObservationRenamesSameProviderID).
 
 func TestReplaceRepoLabelCatalogKeepsAssignedHistoricalLabels(t *testing.T) {
 	assert := assert.New(t)
@@ -1611,16 +1601,16 @@ func TestRepoLabelCatalogFreshnessTracksCheckedSyncedAndErrors(t *testing.T) {
 	assert.Empty(freshness.SyncError)
 }
 
-func TestUpsertRepoCasefoldsOwnerAndName(t *testing.T) {
+func TestObserveRepositoryCasefoldsOwnerAndName(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	id, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "Org", "Foo"))
+	id, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "Org", "Foo"))
 	require.NoError(err)
 
-	sameID, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "org", "foo"))
+	sameID, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "org", "foo"))
 	require.NoError(err)
 	assert.Equal(id, sameID)
 
@@ -1637,10 +1627,10 @@ func TestUpdateRepoSync(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	id, err := d.UpsertRepoByProviderID(ctx, RepoIdentity{
+	id, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "repo-o-r",
+		PlatformRepoID: 1001,
 		Owner:          "o",
 		Name:           "r",
 	})
@@ -1946,14 +1936,14 @@ func TestListPullRequestsFilterByRepoID(t *testing.T) {
 	ctx := t.Context()
 	base := baseTime()
 
-	githubRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+	githubRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:     "github",
 		PlatformHost: "code.example.com",
 		Owner:        "acme",
 		Name:         "widget",
 	})
 	require.NoError(err)
-	gitlabRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+	gitlabRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:     "gitlab",
 		PlatformHost: "code.example.com",
 		Owner:        "acme",
@@ -2185,6 +2175,39 @@ func TestListPullRequestsFilterBySearchNumber(t *testing.T) {
 	require.Len(prs, 3)
 }
 
+func TestListPullRequestsSearchZeroPaddedNumber(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	insertTestMR(t, d, repoID, 1, "original change", base)
+	insertTestMR(t, d, repoID, 4001, "newer change", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 10001, "latest change", base.Add(2*time.Hour))
+	insertTestMR(t, d, repoID, 2, "release 0001", base.Add(3*time.Hour))
+
+	for _, tt := range []struct {
+		query string
+		want  []int
+	}{
+		{query: "0001", want: []int{1}},
+		{query: "01", want: []int{1}},
+		{query: " #0001 ", want: []int{1}},
+		{query: "0009", want: []int{}},
+		{query: "1", want: []int{2}},
+		{query: "release 0001", want: []int{2}},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: tt.query, Limit: 1})
+			require.NoError(t, err)
+			numbers := make([]int, 0, len(prs))
+			for _, pr := range prs {
+				numbers = append(numbers, pr.Number)
+			}
+			assert.Equal(t, tt.want, numbers)
+		})
+	}
+}
+
 func TestListPullRequestsFilterBySearchLabel(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -2323,7 +2346,7 @@ func TestListMergeRequests_AttachesLabels(t *testing.T) {
 	ctx := t.Context()
 	now := baseTime()
 
-	repoID, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
+	repoID, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
 	require.NoError(err)
 
 	mrID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
@@ -2945,14 +2968,14 @@ func TestGetDiffSHAsByRepoIDScopesDuplicateProviderRepos(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	githubID, err := d.UpsertRepo(ctx, RepoIdentity{
+	githubID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:     "github",
 		PlatformHost: "code.example.com",
 		Owner:        "acme",
 		Name:         "widget",
 	})
 	require.NoError(err)
-	gitlabID, err := d.UpsertRepo(ctx, RepoIdentity{
+	gitlabID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:     "gitlab",
 		PlatformHost: "code.example.com",
 		Owner:        "acme",
@@ -3263,7 +3286,7 @@ func TestListIssues_AttachesLabels(t *testing.T) {
 	ctx := t.Context()
 	now := baseTime()
 
-	repoID, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
+	repoID, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
 	require.NoError(err)
 
 	issueID, err := d.UpsertIssue(ctx, &Issue{
@@ -3360,7 +3383,6 @@ func TestIssueRepoScopedQueriesCanonicalizeOwnerName(t *testing.T) {
 	require.NoError(err)
 	require.Len(filtered, 1)
 	assert.Equal(issueID, filtered[0].ID)
-
 }
 
 func TestListIssuesFilterByHostedRepoPath(t *testing.T) {
@@ -3612,9 +3634,9 @@ func TestListIssues_UsesRepoScopedLabels(t *testing.T) {
 	ctx := t.Context()
 	now := baseTime()
 
-	repoA, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
+	repoA, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
 	require.NoError(err)
-	repoB, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "gadget"))
+	repoB, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "acme", "gadget"))
 	require.NoError(err)
 
 	issueID, err := d.UpsertIssue(ctx, &Issue{
@@ -3845,10 +3867,10 @@ func TestListCommentAutocompleteUsersScopesByProvider(t *testing.T) {
 	base := baseTime()
 
 	githubRepoID := insertTestRepo(t, d, "acme", "widget")
-	giteaRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+	giteaRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "gitea",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "gitea-widget",
+		PlatformRepoID: 1001,
 		Owner:          "acme",
 		Name:           "widget",
 		RepoPath:       "acme/widget",
@@ -4006,10 +4028,10 @@ func TestListCommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 	base := baseTime()
 
 	githubRepoID := insertTestRepo(t, d, "acme", "widget")
-	giteaRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+	giteaRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "gitea",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "gitea-widget",
+		PlatformRepoID: 1001,
 		Owner:          "acme",
 		Name:           "widget",
 		RepoPath:       "acme/widget",
@@ -4309,13 +4331,11 @@ func TestWorkspaceCRUD(t *testing.T) {
 func TestListWorkspacesUsesOneReadConnection(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	now := baseTime()
 
 	identity := GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repo, accepted, err := d.ReconcileRepositoryObservation(t.Context(), identity, now)
+	identity.PlatformRepoID = 1001
+	repo, err := d.ObserveRepository(t.Context(), identity)
 	require.NoError(err)
-	require.True(accepted)
 	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
 		ID: "ws-list-one-connection", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget", RepoID: repo.Repository.ID,
@@ -4325,9 +4345,8 @@ func TestListWorkspacesUsesOneReadConnection(t *testing.T) {
 
 	renamed := GitHubRepoIdentity("github.com", "acme", "gadget")
 	renamed.PlatformRepoID = identity.PlatformRepoID
-	_, accepted, err = d.ReconcileRepositoryObservation(t.Context(), renamed, now.Add(time.Minute))
+	_, err = d.ObserveRepository(t.Context(), renamed)
 	require.NoError(err)
-	require.True(accepted)
 
 	d.ReadDB().SetMaxOpenConns(1)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
@@ -4920,7 +4939,7 @@ func TestGetWorkspaceByIssueForProviderDisambiguatesProvider(t *testing.T) {
 	ctx := t.Context()
 
 	for _, provider := range []string{"github", "gitlab"} {
-		_, err := d.UpsertRepo(ctx, RepoIdentity{
+		_, err := seedTestRepo(ctx, d, RepoIdentity{
 			Platform:     provider,
 			PlatformHost: "forge.example.com",
 			Owner:        "acme",
@@ -4979,7 +4998,7 @@ func TestGetWorkspaceByMRForProviderDisambiguatesProvider(t *testing.T) {
 	ctx := t.Context()
 
 	for _, provider := range []string{"github", "gitlab"} {
-		_, err := d.UpsertRepo(ctx, RepoIdentity{
+		_, err := seedTestRepo(ctx, d, RepoIdentity{
 			Platform:     provider,
 			PlatformHost: "forge.example.com",
 			Owner:        "acme",
@@ -5034,10 +5053,10 @@ func TestGetWorkspaceByMRForProviderDisambiguatesProvider(t *testing.T) {
 func workspaceLinkageTestDB(t *testing.T) *DB {
 	t.Helper()
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), RepoIdentity{
+	_, err := seedTestRepo(t.Context(), d, RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "repo-acme-widget",
+		PlatformRepoID: 1001,
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -5203,7 +5222,7 @@ func TestFreshWorkspaceRuntimeSessionSchemaIncludesTmuxSession(t *testing.T) {
 
 	d := openTestDB(t)
 	rows, err := d.ReadDB().QueryContext(
-		context.Background(),
+		t.Context(),
 		`PRAGMA table_info(forge_workspace_runtime_sessions)`,
 	)
 	require.NoError(err)
@@ -5270,10 +5289,10 @@ func TestWorkspaceCanonicalizationPreservesGitLabRepoDisplay(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	_, err := d.UpsertRepo(ctx, RepoIdentity{
+	_, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "gitlab-project-name",
+		PlatformRepoID: 1001,
 		Owner:          "Group/SubGroup",
 		Name:           "ProjectName",
 		RepoPath:       "Group/SubGroup/ProjectName",
@@ -5415,14 +5434,14 @@ func TestWorkspaceUniqueConstraintIncludesPlatform(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	_, err := d.UpsertRepo(ctx, RepoIdentity{
+	_, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:     "github",
 		PlatformHost: "code.example.com",
 		Owner:        "acme",
 		Name:         "widget",
 	})
 	require.NoError(err)
-	_, err = d.UpsertRepo(ctx, RepoIdentity{
+	_, err = seedTestRepo(ctx, d, RepoIdentity{
 		Platform:     "gitlab",
 		PlatformHost: "code.example.com",
 		Owner:        "acme",
@@ -5462,18 +5481,18 @@ func TestWorkspaceSummariesDoNotJoinAcrossProviders(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	githubRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+	githubRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "code.example.com",
-		PlatformRepoID: "github-widget",
+		PlatformRepoID: 1001,
 		Owner:          "acme",
 		Name:           "widget",
 	})
 	require.NoError(err)
-	gitlabRepoID, err := d.UpsertRepo(ctx, RepoIdentity{
+	gitlabRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "code.example.com",
-		PlatformRepoID: "gitlab-widget",
+		PlatformRepoID: 1002,
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -5540,12 +5559,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	// PR workspace with matching PR (earlier created_at).
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO forge_workspaces
-		    (id, platform_host, repo_owner, repo_name,
+		    (id, platform_host, repo_owner, repo_name, repo_id,
 		     item_type, item_number, item_key, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"ws-with-mr", "github.com", "acme", "widget",
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"ws-with-mr", "github.com", "acme", "widget", repoID,
 		WorkspaceItemTypePullRequest, 42, "42", "feat/workspace",
 		"/tmp/ws-with-mr", "ws-with-mr", "ready",
 		base,
@@ -5555,12 +5574,12 @@ func TestWorkspaceSummaries(t *testing.T) {
 	// Issue workspace with owner issue metadata and associated PR metadata.
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO forge_workspaces
-		    (id, platform_host, repo_owner, repo_name,
+		    (id, platform_host, repo_owner, repo_name, repo_id,
 		     item_type, item_number, item_key, associated_pr_number, git_head_ref,
 		     worktree_path, tmux_session, status,
 		     created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"ws-issue-with-pr", "github.com", "acme", "widget",
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"ws-issue-with-pr", "github.com", "acme", "widget", repoID,
 		WorkspaceItemTypeIssue, 7, "7", 42, "feature/from-issue",
 		"/tmp/ws-issue-with-pr", "ws-issue-with-pr", "ready",
 		base.Add(30*time.Minute),
@@ -5804,10 +5823,7 @@ func TestWorkspaceSummariesRetainWorkspaceWithoutRemovedPullMetadata(t *testing.
 func TestWorkspaceSummariesFollowStableRepositoryAcrossReusedRoute(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
-	observedAt := baseTime()
-	original := reconcileCatalogRepository(
-		t, d, "provider-original", "org-a", "project-a", observedAt,
-	)
+	original := observeCatalogRepository(t, d, 1001, "org-a", "project-a")
 	associatedPR := 42
 	headRepo := "https://github.com/contributor/project-a.git"
 	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
@@ -5820,12 +5836,8 @@ func TestWorkspaceSummariesFollowStableRepositoryAcrossReusedRoute(t *testing.T)
 		WorktreePath:       "/tmp/ws-reused-route",
 		Status:             "ready",
 	}))
-	reconcileCatalogRepository(
-		t, d, "provider-original", "org-a", "renamed-project", observedAt.Add(time.Minute),
-	)
-	reconcileCatalogRepository(
-		t, d, "provider-replacement", "org-a", "project-a", observedAt.Add(2*time.Minute),
-	)
+	observeCatalogRepository(t, d, 1001, "org-a", "renamed-project")
+	observeCatalogRepository(t, d, 1002, "org-a", "project-a")
 
 	summary, err := d.GetWorkspaceSummary(t.Context(), "ws-reused-route")
 	require.NoError(err)
@@ -5846,7 +5858,7 @@ func TestSetWorkspaceAssociatedPRNumberIfNull(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := d.WriteDB().ExecContext(ctx, `
 		INSERT INTO forge_workspaces
@@ -5886,7 +5898,7 @@ func TestSetWorkspaceAssociatedPRNumberIfNull(t *testing.T) {
 }
 
 func TestUpdateMRTitleBody(t *testing.T) {
-	assert := require.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
@@ -5911,26 +5923,26 @@ func TestUpdateMRTitleBody(t *testing.T) {
 		LastActivityAt: base,
 	}
 	id, err := d.UpsertMergeRequest(ctx, mr)
-	assert.NoError(err)
+	require.NoError(err)
 
 	ghUpdatedAt := base.Add(10 * time.Minute)
-	assert.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", ghUpdatedAt))
+	require.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", ghUpdatedAt))
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-	assert.NoError(err)
-	assert.NotNil(got)
-	assert.Equal("new title", got.Title)
-	assert.Equal("new body", got.Body)
-	assert.True(got.UpdatedAt.Equal(ghUpdatedAt), "UpdatedAt should be ghUpdatedAt")
-	assert.True(got.LastActivityAt.Equal(ghUpdatedAt), "LastActivityAt should be ghUpdatedAt")
+	require.NoError(err)
+	require.NotNil(got)
+	require.Equal("new title", got.Title)
+	require.Equal("new body", got.Body)
+	require.True(got.UpdatedAt.Equal(ghUpdatedAt), "UpdatedAt should be ghUpdatedAt")
+	require.True(got.LastActivityAt.Equal(ghUpdatedAt), "LastActivityAt should be ghUpdatedAt")
 	// Derived fields must be preserved.
-	assert.Equal(5, got.CommentCount)
-	assert.Equal("success", got.CIStatus)
-	assert.Equal("APPROVED", got.ReviewDecision)
+	require.Equal(5, got.CommentCount)
+	require.Equal("success", got.CIStatus)
+	require.Equal("APPROVED", got.ReviewDecision)
 }
 
 func TestUpdateMRTitleBodyReplacesSyntheticActivityWithProviderTime(t *testing.T) {
-	assert := require.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
@@ -5952,24 +5964,24 @@ func TestUpdateMRTitleBodyReplacesSyntheticActivityWithProviderTime(t *testing.T
 		LastActivityAt: futureActivity,
 	}
 	id, err := d.UpsertMergeRequest(ctx, mr)
-	assert.NoError(err)
+	require.NoError(err)
 
 	// updatedAt is 30 min, newer than base so the update applies.
 	updatedAt := base.Add(30 * time.Minute)
-	assert.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", updatedAt))
+	require.NoError(d.UpdateMRTitleBody(ctx, id, "new title", "new body", updatedAt))
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 2)
-	assert.NoError(err)
-	assert.NotNil(got)
+	require.NoError(err)
+	require.NotNil(got)
 	// UpdatedAt gets the 30-min value.
-	assert.True(got.UpdatedAt.Equal(updatedAt), "UpdatedAt should be updatedAt")
+	require.True(got.UpdatedAt.Equal(updatedAt), "UpdatedAt should be updatedAt")
 	// The provider parent timestamp is authoritative even when an older local
 	// child-derived value had inflated activity beyond it.
-	assert.True(got.LastActivityAt.Equal(updatedAt), "LastActivityAt should use provider updatedAt")
+	require.True(got.LastActivityAt.Equal(updatedAt), "LastActivityAt should use provider updatedAt")
 }
 
 func TestUpdateMRTitleBodyIgnoresStaleUpdate(t *testing.T) {
-	assert := require.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
@@ -5992,22 +6004,22 @@ func TestUpdateMRTitleBodyIgnoresStaleUpdate(t *testing.T) {
 		LastActivityAt: newerUpdatedAt,
 	}
 	id, err := d.UpsertMergeRequest(ctx, mr)
-	assert.NoError(err)
+	require.NoError(err)
 
 	// Stale update: updatedAt is older than existing row.
 	staleAt := base.Add(30 * time.Minute)
-	assert.NoError(d.UpdateMRTitleBody(ctx, id, "stale title", "stale body", staleAt))
+	require.NoError(d.UpdateMRTitleBody(ctx, id, "stale title", "stale body", staleAt))
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 3)
-	assert.NoError(err)
-	assert.NotNil(got)
-	assert.Equal("current title", got.Title, "stale update should be ignored")
-	assert.Equal("current body", got.Body, "stale update should be ignored")
-	assert.True(got.UpdatedAt.Equal(newerUpdatedAt), "updated_at should not regress")
+	require.NoError(err)
+	require.NotNil(got)
+	require.Equal("current title", got.Title, "stale update should be ignored")
+	require.Equal("current body", got.Body, "stale update should be ignored")
+	require.True(got.UpdatedAt.Equal(newerUpdatedAt), "updated_at should not regress")
 }
 
 func TestHTTPEtagPersistence(t *testing.T) {
-	assert := require.New(t)
+	require := require.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 
@@ -6015,10 +6027,10 @@ func TestHTTPEtagPersistence(t *testing.T) {
 		ctx, "github", "github.com", "OWNER", "Repo",
 		"pull_request", 7,
 	)
-	assert.NoError(err)
-	assert.Empty(etag)
+	require.NoError(err)
+	require.Empty(etag)
 
-	assert.NoError(d.UpsertHTTPEtag(
+	require.NoError(d.UpsertHTTPEtag(
 		ctx, "github", "github.com", "OWNER", "Repo",
 		"pull_request", 7, `"etag-v1"`,
 	))
@@ -6026,10 +6038,10 @@ func TestHTTPEtagPersistence(t *testing.T) {
 		ctx, "github", "github.com", "owner", "repo",
 		"pull_request", 7,
 	)
-	assert.NoError(err)
-	assert.Equal(`"etag-v1"`, etag)
+	require.NoError(err)
+	require.Equal(`"etag-v1"`, etag)
 
-	assert.NoError(d.UpsertHTTPEtag(
+	require.NoError(d.UpsertHTTPEtag(
 		ctx, "github", "github.com", "owner", "repo",
 		"pull_request", 7, `"etag-v2"`,
 	))
@@ -6037,75 +6049,8 @@ func TestHTTPEtagPersistence(t *testing.T) {
 		ctx, "github", "github.com", "OWNER", "Repo",
 		"pull_request", 7,
 	)
-	assert.NoError(err)
-	assert.Equal(`"etag-v2"`, etag)
-}
-
-func TestUpsertHTTPEtagIfRouteFenceRejectsConcurrentPathReuse(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	database := openTestDB(t)
-	observedAt := time.Now().UTC()
-	originalIdentity := RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "original-repo",
-		Owner: "acme", Name: "alpha", RepoPath: "acme/alpha",
-	}
-	original, _, err := database.ReconcileRepositoryObservation(
-		ctx, originalIdentity, observedAt,
-	)
 	require.NoError(err)
-	fence, found, err := database.CurrentRepositoryRouteFence(
-		ctx, originalIdentity, original.Repository.ID,
-	)
-	require.NoError(err)
-	require.True(found)
-
-	started := make(chan struct{})
-	release := make(chan struct{})
-	type result struct {
-		committed bool
-		err       error
-	}
-	done := make(chan result, 1)
-	go func() {
-		close(started)
-		<-release
-		committed, upsertErr := database.UpsertHTTPEtagIfRouteFence(
-			ctx, originalIdentity, fence,
-			"pull_request", 7, `"stale-etag"`,
-		)
-		done <- result{committed: committed, err: upsertErr}
-	}()
-	<-started
-	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "original-repo",
-		Owner: "acme", Name: "beta", RepoPath: "acme/beta",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement-repo",
-		Owner: "acme", Name: "alpha", RepoPath: "acme/alpha",
-	}, observedAt.Add(2*time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement-repo",
-		Owner: "acme", Name: "gamma", RepoPath: "acme/gamma",
-	}, observedAt.Add(3*time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(ctx, originalIdentity,
-		observedAt.Add(4*time.Minute))
-	require.NoError(err)
-	close(release)
-	got := <-done
-	require.NoError(got.err)
-	assert.False(got.committed)
-
-	etag, err := database.GetHTTPEtag(
-		ctx, "github", "github.com", "acme", "alpha", "pull_request", 7,
-	)
-	require.NoError(err)
-	assert.Empty(etag)
+	require.Equal(`"etag-v2"`, etag)
 }
 
 func TestUpsertIssue_StoresAssignees(t *testing.T) {

@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,9 +9,11 @@ import (
 )
 
 func TestSetProjectWorktreeSessionBackendRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: proj.ID, Branch: "feat", Path: filepath.Join(t.TempDir(), "wt"),
@@ -34,9 +35,11 @@ func TestSetProjectWorktreeSessionBackendRoundTrip(t *testing.T) {
 }
 
 func TestSetProjectWorktreeSessionBackendWrongProjectIsNotFound(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wt, err := d.CreateProjectWorktree(ctx, CreateProjectWorktreeInput{
 		ProjectID: proj.ID, Branch: "feat", Path: filepath.Join(t.TempDir(), "wt"),
@@ -53,9 +56,11 @@ func TestSetProjectWorktreeSessionBackendWrongProjectIsNotFound(t *testing.T) {
 // survive discovery reconciliation, which refreshes branch/staleness but must
 // never clear the override.
 func TestReconcileProjectInventoryPreservesSessionBackend(t *testing.T) {
+	t.Parallel()
+
 	require := require.New(t)
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	proj := createDiscoveryTestProject(t, d, "app")
 	wtPath := filepath.Join(t.TempDir(), "feature")
 

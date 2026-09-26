@@ -154,10 +154,10 @@ func loadMCPQuickstart(
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: decode settings: %w", err)
 	}
 	if err := json.UnmarshalDecode(decoder, &struct{}{}); !errors.Is(err, io.EOF) {
-		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: decode settings: trailing JSON data")
+		return mcpQuickstartInfo{}, errors.New("mcp quickstart: decode settings: trailing JSON data")
 	}
 	if settings.MCP == nil {
-		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: daemon did not publish MCP settings")
+		return mcpQuickstartInfo{}, errors.New("mcp quickstart: daemon did not publish MCP settings")
 	}
 	info := daemonMCPQuickstart(*settings.MCP, daemon.TokenPath)
 	info.pid = status.Metadata.PID

@@ -1,10 +1,11 @@
 package github
 
 import (
-	"github.com/stretchr/testify/require"
-	platformgithub "go.kenn.io/forge/platform/github"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 func newTestGitHubProvider(t *testing.T, host string, client Client) *platformgithub.Provider {

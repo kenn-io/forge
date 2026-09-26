@@ -1,7 +1,6 @@
 package e2etest
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"os/exec"
@@ -180,7 +179,7 @@ func TestPrimaryRootWorktreeInheritsProjectStaleE2E(t *testing.T) {
 	require.NotEmpty(projectID)
 
 	require.NoError(database.MarkProjectStale(
-		context.Background(), projectID, time.Now(),
+		t.Context(), projectID, time.Now(),
 	))
 
 	getJSON(t, ts, "/api/v1/snapshot/raw", &raw)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,7 +21,7 @@ type listReposInput struct {
 type repoRow struct {
 	Provider            string `json:"provider"`
 	PlatformHost        string `json:"platform_host"`
-	PlatformRepoID      string `json:"platform_repo_id"`
+	PlatformRepoID      int64  `json:"platform_repo_id"`
 	Owner               string `json:"owner"`
 	Name                string `json:"name"`
 	RepoPath            string `json:"repo_path"`
@@ -212,14 +213,14 @@ func (s *Server) listActivity(ctx context.Context, in listActivityInput) (listAc
 
 func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchItemsOutput, error) {
 	if strings.TrimSpace(in.Query) == "" {
-		return searchItemsOutput{}, fmt.Errorf("query is required")
+		return searchItemsOutput{}, errors.New("query is required")
 	}
 	state := strings.TrimSpace(in.State)
 	if state == "" {
 		state = "open"
 	}
 	if state != "open" && state != "closed" && state != "merged" && state != "all" {
-		return searchItemsOutput{}, fmt.Errorf("state must be open, closed, merged, or all")
+		return searchItemsOutput{}, errors.New("state must be open, closed, merged, or all")
 	}
 	limit := clampLimit(in.Limit, 25, 100)
 	repo, err := in.Repo.repositoryIdentity()
@@ -349,7 +350,7 @@ func itemTypeSelection(values []string) (bool, bool, error) {
 		case "issue":
 			includeIssue = true
 		default:
-			return false, false, fmt.Errorf("item_types must contain only pr or issue")
+			return false, false, errors.New("item_types must contain only pr or issue")
 		}
 	}
 	return includePR, includeIssue, nil
@@ -373,7 +374,7 @@ func itemSortKey(item itemRef) string {
 	return strings.Join([]string{
 		item.Provider,
 		item.PlatformHost,
-		item.PlatformRepoID,
+		strconv.FormatInt(item.PlatformRepoID, 10),
 		item.RepoPath,
 		item.Type,
 		fmt.Sprintf("%08d", item.Number),
@@ -387,12 +388,12 @@ func sinceToRFC3339(raw string) string {
 	return raw
 }
 
-func clampLimit(value int, def int, max int) int {
+func clampLimit(value int, def int, limit int) int {
 	if value <= 0 {
 		return def
 	}
-	if value > max {
-		return max
+	if value > limit {
+		return limit
 	}
 	return value
 }

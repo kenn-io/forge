@@ -1,7 +1,6 @@
 package docsapi
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -37,7 +36,7 @@ func TestCreateFolderRollsBackRegistryWhenConfigSaveFails(t *testing.T) {
 	in.Body.Name = "New"
 	in.Body.Path = t.TempDir()
 
-	_, err := h.createDocsFolder(context.Background(), in)
+	_, err := h.createDocsFolder(t.Context(), in)
 
 	require.Error(t, err)
 	folders := h.Folders()

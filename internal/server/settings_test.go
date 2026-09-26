@@ -1268,6 +1268,7 @@ prefer_github_native_stacks = true
 	assert.Equal([]int64{11, 10}, serverfake.StackMemberNumbers(after.JSON200.Members),
 		"a superseded disable must not overwrite the projection the current preference produced")
 }
+
 func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

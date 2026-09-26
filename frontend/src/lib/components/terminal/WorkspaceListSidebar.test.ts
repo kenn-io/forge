@@ -344,6 +344,39 @@ describe("WorkspaceListSidebar", () => {
     }
   });
 
+  it.each([false, true])("restores a cached list before a remount refresh completes (empty: %s)", async (empty) => {
+    const initial = empty ? [] : sortFixtures();
+    mockGet.mockResolvedValue({ data: { workspaces: initial } });
+    const onWorkspaceListStateChange = vi.fn();
+    const view = render(WorkspaceListSidebar, {
+      props: { selectedId: "", onWorkspaceListStateChange },
+    });
+    await waitFor(() =>
+      expect(onWorkspaceListStateChange).toHaveBeenLastCalledWith({
+        status: "loaded",
+        total: initial.length,
+      }),
+    );
+    await view.rerender({ showSidebar: false });
+
+    const refresh = deferred<{ data: { workspaces: ReturnType<typeof sortFixtures> } }>();
+    mockGet.mockReturnValue(refresh.promise);
+    mockGet.mockClear();
+    onWorkspaceListStateChange.mockClear();
+    await view.rerender({ showSidebar: true });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/snapshot", expect.anything()));
+    await waitFor(() =>
+      expect(onWorkspaceListStateChange).toHaveBeenLastCalledWith({
+        status: "loaded",
+        total: initial.length,
+      }),
+    );
+    expect(rowTitles(view.container)).toHaveLength(initial.length);
+
+    refresh.resolve({ data: { workspaces: [sortFixtures()[0]!] } });
+    await waitFor(() => expect(rowTitles(view.container)).toEqual(["Newest created"]));
+  });
+
   it.each(["remote", "devbox"])("labels %s workspace rows with their execution machine on the hub", async (kind) => {
     const hostKey = kind === "devbox" ? "devbox:compute-a" : "peer-a";
     mockGet.mockImplementation((path: string) => {

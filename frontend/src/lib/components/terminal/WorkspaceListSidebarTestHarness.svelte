@@ -5,7 +5,9 @@
   import { setAppRuntime } from "../../app/runtime-context.js";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
 
-  const props: ComponentProps<typeof WorkspaceListSidebar> = $props();
+  const { showSidebar = true, ...props }: ComponentProps<typeof WorkspaceListSidebar> & {
+    showSidebar?: boolean;
+  } = $props();
   const runtime = makeAppRuntime();
   setAppRuntime(runtime);
   onDestroy(() => {
@@ -13,4 +15,6 @@
   });
 </script>
 
-<WorkspaceListSidebar {...props} />
+{#if showSidebar}
+  <WorkspaceListSidebar {...props} />
+{/if}

@@ -219,6 +219,73 @@ describe("view navigation", () => {
     expect(window.location.search).toContain("selected=pr%3A");
   });
 
+  it("shows cached Activity and Workspaces while navigation refreshes are held open", async () => {
+    const workspace = {
+      id: "ws-cached",
+      repo: repoRef("acme", "widgets"),
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets",
+      item_type: "pull_request",
+      item_number: 42,
+      source_item_visible: true,
+      git_head_ref: "feature/cached-navigation",
+      worktree_path: "/tmp/ws-cached",
+      status: "ready",
+      created_at: "2026-03-30T14:00:00Z",
+      tmux_activity_source: "unknown",
+      tmux_last_output_at: null,
+      tmux_working: false,
+      mr_title: "Cached workspace",
+    };
+    let holdRefreshes = false;
+    const releases: Array<() => void> = [];
+    const heldPaths = new Set<string>();
+    const routes: MockRouteOverride = (req) => {
+      const path = req.url.pathname;
+      if (req.method !== "GET" || (path !== "/api/v1/snapshot" && path !== "/api/v1/activity")) return null;
+      const body =
+        path === "/api/v1/snapshot"
+          ? {
+              hosts: [],
+              workspaces: [{ ...workspace, mr_title: holdRefreshes ? "Updated workspace" : "Cached workspace" }],
+            }
+          : { capped: false, items: [activityEvent()] };
+      if (!holdRefreshes) return jsonResponse(body);
+      heldPaths.add(path);
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            releases.push(() => {
+              controller.enqueue(new TextEncoder().encode(JSON.stringify(body)));
+              controller.close();
+            });
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    };
+    mounted = await mountBrowserApp("/", { overrides: [routes, ...overrides()] });
+    const activityRow = page.getByText("Add browser regression coverage", { exact: true });
+    await expect.element(activityRow).toBeVisible();
+    await page.elementLocator(viewTab("Workspaces")).click();
+    await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
+
+    holdRefreshes = true;
+    try {
+      await page.elementLocator(viewTab("Activity")).click();
+      await vi.waitFor(() => expect(heldPaths.has("/api/v1/activity")).toBe(true));
+      await expect.element(activityRow).toBeVisible();
+      await page.elementLocator(viewTab("Workspaces")).click();
+      await vi.waitFor(() => expect(heldPaths.has("/api/v1/snapshot")).toBe(true));
+      await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
+    } finally {
+      holdRefreshes = false;
+      releases.forEach((release) => release());
+    }
+    await expect.element(page.getByText("Updated workspace", { exact: true })).toBeVisible();
+  });
+
   it("returning to Activity from the settings gear restores the selected item", async () => {
     mounted = await mountBrowserApp("/", { overrides: overrides() });
     await vi.waitFor(() => expect(document.querySelector(".activity-table .activity-row")).not.toBeNull(), WAIT);

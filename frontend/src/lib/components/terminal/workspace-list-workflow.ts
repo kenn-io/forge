@@ -3,8 +3,18 @@ import type * as Duration from "effect/Duration";
 import type { Scope } from "effect/Scope";
 
 import { pollWhileVisible } from "../../effect/poll-while-visible.js";
+import type { HostSummary } from "../../api/fleet-snapshot.js";
+import type { WorkspaceListItem } from "./workspace-list-schema.js";
+
+export interface WorkspaceListSnapshot {
+  workspaces: WorkspaceListItem[];
+  hosts: HostSummary[];
+  aggregateComplete: boolean;
+}
 
 export interface WorkspaceListWorkflowService {
+  // Presentation survives sidebar unmounts; each mount still revalidates.
+  snapshot: WorkspaceListSnapshot | undefined;
   readonly claim: (owner: string, refresh: () => void) => Effect.Effect<void, never, Scope>;
   readonly request: () => void;
 }
@@ -18,6 +28,7 @@ export const makeWorkspaceListWorkflow = Effect.sync(() => {
   let pending = false;
 
   return {
+    snapshot: undefined as WorkspaceListSnapshot | undefined,
     claim: (owner: string, refresh: () => void) =>
       Effect.acquireRelease(
         Effect.sync(() => {

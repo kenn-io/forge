@@ -946,20 +946,20 @@
     launcherState = { workspaceKey: viewWorkspaceKey, auto: false, ...(leaf ? { leaf } : {}) };
   }
 
-  function explicitLaunchIntentPending(): boolean {
+  function explicitLaunchTargetKey(): string | null {
     const identity = workspaceIdentitySnapshot(workspaceId);
     return (
-      (identity !== undefined && pendingWorkspaceCreateLaunch(identity) !== null) ||
-      pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null
+      (identity !== undefined ? pendingWorkspaceCreateLaunch(identity) : null) ??
+      pendingWorkspaceLaunch(workspaceId, workspaceHostKey)?.targetKey ?? null
     );
   }
 
   function createOrLaunchPending(): boolean {
-    return explicitLaunchIntentPending() || launchingKey !== null;
+    return explicitLaunchTargetKey() !== null || launchingKey !== null;
   }
 
   const automaticLauncherBlocked = $derived(
-    explicitLaunchIntentPending() ||
+    explicitLaunchTargetKey() !== null ||
       quickActionWorkspaces.has(quickActionWorkspaceKey(workspaceId, workspaceHostKey)),
   );
   const launcherOverlayAllowed = $derived(
@@ -4616,6 +4616,13 @@
                   <div class="state-message">
                     <Spinner size={18} />
                     <span>Loading workspace runtime...</span>
+                  </div>
+                {:else if runtimeSessions.length === 0 && createOrLaunchPending()}
+                  {@const targetKey = explicitLaunchTargetKey() ?? launchingKey}
+                  {@const message = `Launching ${launchTargets.find((target) => target.key === targetKey)?.label ?? targetKey ?? "session"}...`}
+                  <div class="state-message">
+                    <Spinner size={18} label={message} />
+                    <span>{message}</span>
                   </div>
                 {:else}
                   {#if soleEmbeddedSessionHostKey !== null}

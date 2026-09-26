@@ -27,6 +27,7 @@
     WorkspaceListWorkflow,
     makeWorkspaceRefreshHub,
     workspaceListLifecycle,
+    type WorkspaceListSnapshot,
   } from "../terminal/workspace-list-workflow.js";
   import {
     decodeWorkspaceList,
@@ -133,24 +134,35 @@
 
   function loadWorkspaces() {
     return Effect.gen(function* () {
+      const workflow = yield* WorkspaceListWorkflow;
       const payload = yield* loadFleetSnapshot().pipe(Effect.timeout(loadTimeout));
       const decoded = yield* decodeWorkspaceList({ workspaces: payload.workspaces });
       const nextHosts = payload.hosts ?? [];
-      workspaces = retainDegradedHostWorkspaces(
+      const nextWorkspaces = retainDegradedHostWorkspaces(
         workspaces,
         decoded.filter((workspace) => workspace.visible !== false),
         nextHosts,
         payload.aggregateIncomplete ?? false,
       );
-      fleetHosts = nextHosts;
-      peerErrors = Object.fromEntries(
-        fleetHosts
-          .filter((host) => host.kind !== "self" && host.error)
-          .map((host) => [host.configKey, host.error ?? "Host unavailable"]),
-      );
-      fleetError = null;
-      listStatus = "loaded";
+      workflow.snapshot = {
+        workspaces: nextWorkspaces,
+        hosts: nextHosts,
+        aggregateComplete: !(payload.aggregateIncomplete ?? false),
+      };
+      applySnapshot(workflow.snapshot);
     });
+  }
+
+  function applySnapshot(snapshot: WorkspaceListSnapshot): void {
+    workspaces = snapshot.workspaces;
+    fleetHosts = snapshot.hosts;
+    peerErrors = Object.fromEntries(
+      fleetHosts
+        .filter((host) => host.kind !== "self" && host.error)
+        .map((host) => [host.configKey, host.error ?? "Host unavailable"]),
+    );
+    fleetError = null;
+    listStatus = "loaded";
   }
 
   const refreshWorkspaces = makeWorkspaceRefreshHub(
@@ -444,6 +456,7 @@
       Effect.scoped(
         Effect.gen(function* () {
           const workflow = yield* WorkspaceListWorkflow;
+          if (workflow.snapshot) applySnapshot(workflow.snapshot);
           yield* workflow.claim(refreshOwner, refreshWorkspaces.request);
           yield* workspaceListLifecycle({ refreshWorkspaces, refreshFleet, workspaceEvents: events });
         }),

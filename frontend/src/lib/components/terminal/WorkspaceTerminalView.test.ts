@@ -3551,6 +3551,47 @@ describe("WorkspaceTerminalView", () => {
     expect(new TextDecoder().decode(payload)).toBe("\x1b[A");
   });
 
+  it("shows the selected launch until its session is ready instead of Worktree Home", async () => {
+    const launchRequest = deferred<typeof runningSession>();
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("region", { name: "Worktree Home" })).toBeNull();
+    expect(screen.getByRole("status", { name: "Launching Codex..." })).toBeTruthy();
+
+    const runtimeRefresh = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
+    mocks.getWorkspaceRuntime.mockReturnValue(runtimeRefresh.promise);
+    launchRequest.resolve(runningSession);
+
+    const sessionTab = await screen.findByRole("tab", { name: /Helper/ });
+    expect(sessionTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByText("Launching Codex...")).toBeNull();
+    runtimeRefresh.resolve(runtimeWithCodexTarget(true, [runningSession]));
+  });
+
+  it("returns to Worktree Home when an explicit launch fails", async () => {
+    const launchRequest = deferred<void>();
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
+    mocks.launchWorkspaceSession.mockImplementation(async () => {
+      await launchRequest.promise;
+      throw new Error("Codex could not start");
+    });
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await screen.findByRole("status", { name: "Launching Codex..." });
+    launchRequest.resolve();
+
+    expect(await screen.findByRole("region", { name: "Worktree Home" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Codex" }).hasAttribute("disabled")).toBe(false);
+    expect(mocks.showFlash).toHaveBeenCalledWith("Codex could not start", { tone: "danger" });
+  });
+
   it("keeps the empty-workspace launcher closed while an explicit launch starts", async () => {
     const launchRequest = deferred<typeof runningSession>();
     queueWorkspaceLaunch("ws-1", "codex", undefined);
@@ -3564,6 +3605,7 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+    expect(screen.getByRole("status", { name: "Launching Codex..." })).toBeTruthy();
   });
 
   it("keeps an accepted create-and-launch intent across an empty refresh and remount", async () => {
@@ -3866,7 +3908,7 @@ describe("WorkspaceTerminalView", () => {
     mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
     queueWorkspaceLaunch("ws-1", "codex", undefined);
     await view.rerender({ workspaceId: "ws-1" });
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("status", { name: "Launching Codex..." });
     expect(pendingWorkspaceLaunch("ws-1", undefined)?.targetKey).toBe("codex");
     expect(mocks.showFlash).not.toHaveBeenCalled();
 
@@ -4961,6 +5003,7 @@ describe("WorkspaceTerminalView", () => {
       beginWorkspaceCreate(workspaceItemIdentity, "helper");
 
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull());
+      expect(screen.getByRole("status", { name: "Launching Helper..." })).toBeTruthy();
 
       const launcherAppearances: Element[] = [];
       const selector = '[role="dialog"][aria-label="Launch a session"]';

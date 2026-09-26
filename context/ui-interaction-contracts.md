@@ -56,6 +56,9 @@ Interactive surfaces must agree on which item is selected.
 - Recent detail snapshots stay read-only until that visit's revalidation succeeds;
   preserve the original workspace lifecycle tick. Settled mutations invalidate saved views
   so hidden optimistic state cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
+- Workspace lists retain their last successful snapshot across view changes, including empty lists;
+  restore it before revalidation without keeping hidden sidebar polling alive
+  (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflowService`).
 - Restore recent details only with a verified provider/host/repository ID; an unknown
   ID requires a fresh response because owner/name routes can be reused
   (`frontend/src/lib/stores/detail.svelte.ts::loadDetail`).

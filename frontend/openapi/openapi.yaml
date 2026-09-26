@@ -3323,6 +3323,27 @@ components:
         - sessions
         - restart_required
       type: object
+    GhShimResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/GhShimResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        handled:
+          type: boolean
+        output:
+          type: string
+        reason:
+          type: string
+      required:
+        - handled
+        - output
+        - reason
+      type: object
     GitChangesResponse:
       additionalProperties: false
       properties:
@@ -6739,6 +6760,52 @@ components:
         - branch
         - oid
         - pushed
+      type: object
+    Query:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/Query.json
+          format: uri
+          readOnly: true
+          type: string
+        base:
+          type: string
+        command:
+          type: string
+        fields:
+          items:
+            type: string
+          type: array
+        head:
+          type: string
+        host:
+          type: string
+        limit:
+          format: int64
+          type: integer
+        number:
+          format: int64
+          type: integer
+        owner:
+          type: string
+        repo:
+          type: string
+        state:
+          type: string
+      required:
+        - command
+        - host
+        - owner
+        - repo
+        - number
+        - state
+        - head
+        - base
+        - limit
+        - fields
       type: object
     QuickAction:
       additionalProperties: false
@@ -15768,6 +15835,31 @@ paths:
       summary: Abort pending spoke preparation and restore standalone writes
       tags:
         - Fleet
+  /gh/query:
+    post:
+      operationId: query-gh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Query"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GhShimResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Query GitHub CLI cached data
+      tags:
+        - Pull Requests
   /host/{platform_host}/actions/{provider}/{owner}/{name}/runs:
     get:
       operationId: list-workflow-runs-on-host

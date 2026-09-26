@@ -723,6 +723,7 @@ func pullConfigSnapshot(cfg *config.Config) pullapi.ConfigSnapshot {
 		return pullapi.ConfigSnapshot{}
 	}
 	return pullapi.ConfigSnapshot{
+		Repositories:                   slices.Clone(cfg.Repos),
 		AllowMidStackMerges:            cfg.PullRequests.AllowMidStackMerges,
 		UseWorkspaceActivityForRecency: cfg.Activity.UseWorkspaceActivityForRecency,
 	}

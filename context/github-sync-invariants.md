@@ -858,3 +858,16 @@ Also see [`context/testing.md`](./testing.md):
 - If you change GraphQL query shape in `internal/github/graphql.go` or
   `platform/github`, run the gated live GitHub validation for the owning
   package as well.
+
+## GitHub CLI shim
+
+- A partial sync/archive is not a complete `gh pr list` result. Obtain complete
+  lists through normal sync or delegate the original invocation; never silently
+  omit unsupported fields or filters (`internal/ghshim/storage.go::Read`).
+- Preserve upstream `gh` output bytes for intercepted commands; keep real-CLI
+  differential tests when growing coverage (`internal/ghshim/query_test.go::TestJSONMatchesRealGH`).
+- Shim reads use local stored data on hubs and spokes without requiring a syncer.
+  Missing numeric views may use the existing hub read API; otherwise delegate to
+  `gh`. Never add provider fetches or a TTL cache (`internal/server/pullapi/gh_shim.go`).
+- Keep full shim argument arrays in local usage logs; command-only counts cannot
+  identify which flags and fields need interception support.

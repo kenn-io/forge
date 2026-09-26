@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
@@ -23,6 +24,7 @@ type Event struct {
 }
 
 type ConfigSnapshot struct {
+	Repositories                   []config.Repo
 	AllowMidStackMerges            bool
 	UseWorkspaceActivityForRecency bool
 }
@@ -224,6 +226,7 @@ func (s *Handler) Shutdown(ctx context.Context) error {
 }
 
 func (s *Handler) Register(api huma.API) {
+	huma.Post(api, "/gh/query", s.ghShim, httpapi.DocumentOperation("query-gh", "Query GitHub CLI cached data", "Pull Requests"))
 	pullRepoPath := "/pulls/{provider}/{owner}/{name}"
 	hostPullRepoPath := "/host/{platform_host}/pulls/{provider}/{owner}/{name}"
 	pullPath := pullRepoPath + "/{number}"

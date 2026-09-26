@@ -281,7 +281,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     loaded: boolean;
     discussionLoaded: boolean;
     observedFetchedAt: string | undefined;
-  }>();
+  }>(100);
   // Provider synchronization is eventually complete. Keep a successfully
   // deleted comment hidden locally until an ordinary sync no longer returns it.
   const hiddenDeletedCommentIDs: Record<string, number[]> = {};

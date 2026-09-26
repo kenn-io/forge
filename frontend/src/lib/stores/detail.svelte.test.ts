@@ -215,13 +215,13 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.repo.platform_repo_id).toBe(1002);
   });
 
-  it("restores a recently viewed pull before its fresh read and retains its original workspace tick", async () => {
+  it("restores a pull after twenty other visits before its fresh read and retains its original workspace tick", async () => {
     const freshRead = deferred<{ data: PullDetail }>();
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({ data: pullDetail("cached-head") })
-      .mockResolvedValueOnce({ data: pullDetailFor("other", 8, "other-head") })
-      .mockReturnValueOnce(freshRead.promise);
+    const get = vi.fn().mockResolvedValueOnce({ data: pullDetail("cached-head") });
+    for (let number = 8; number < 28; number++) {
+      get.mockResolvedValueOnce({ data: pullDetailFor("widget", number, `head-${number}`) });
+    }
+    get.mockReturnValueOnce(freshRead.promise);
     const store = createDetailStore({ client: mockClient({ GET: get }) });
     const options = {
       provider: "github",
@@ -232,7 +232,9 @@ describe("createDetailStore", () => {
     await loadDetail(store, "acme", "widget", 7, options);
     const originalTick = store.getDetailEnvelopeTick();
     store.clearDetail();
-    await loadDetail(store, "acme", "other", 8, { ...options, repoPath: "acme/other" });
+    for (let number = 8; number < 28; number++) {
+      await loadDetail(store, "acme", "widget", number, options);
+    }
 
     store.loadDetail("acme", "widget", 7, options);
 

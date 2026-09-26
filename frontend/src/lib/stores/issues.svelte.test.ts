@@ -273,15 +273,14 @@ describe("createIssuesStore", () => {
     expect(store.getIssueDetail()?.repo.platform_repo_id).toBe(1002);
   });
 
-  it("restores a recently viewed issue before its fresh read and retains its original workspace tick", async () => {
+  it("restores an issue after twenty other visits before its fresh read and retains its original workspace tick", async () => {
     const freshRead = Promise.withResolvers<{ data: IssueDetail }>();
     const initial = issueDetail();
-    const other = { ...issueDetail(), issue: { ...initial.issue, Number: 8 } };
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({ data: initial })
-      .mockResolvedValueOnce({ data: other })
-      .mockReturnValueOnce(freshRead.promise);
+    const get = vi.fn().mockResolvedValueOnce({ data: initial });
+    for (let number = 8; number < 28; number++) {
+      get.mockResolvedValueOnce({ data: { ...initial, issue: { ...initial.issue, Number: number } } });
+    }
+    get.mockReturnValueOnce(freshRead.promise);
     const store = createIssuesStore({ client: mockClient({ GET: get }) });
     const options = {
       provider: "github",
@@ -292,7 +291,9 @@ describe("createIssuesStore", () => {
     await loadIssueDetail(store, "acme", "widget", 7, options);
     const originalTick = store.getIssueDetailEnvelopeTick();
     store.clearIssueDetail();
-    await loadIssueDetail(store, "acme", "widget", 8, options);
+    for (let number = 8; number < 28; number++) {
+      await loadIssueDetail(store, "acme", "widget", number, options);
+    }
 
     store.loadIssueDetail("acme", "widget", 7, options);
 

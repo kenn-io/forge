@@ -62,6 +62,9 @@ Interactive surfaces must agree on which item is selected.
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
   refreshed options must preserve the current choice or clear it, never silently select another repository
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
+- Treat backend latency as normal: gate each action only on the data it requires,
+  and verify cached navigation and local choices with responses held pending
+  (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
 - Workspace sidebars show cached details for the selected PR or issue during revalidation;
   a cache miss must hide the previous item's details (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
 - Restore recent details only with a verified provider/host/repository ID; an unknown

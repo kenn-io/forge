@@ -193,7 +193,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let activeIssueSelectionKey: string | null = null;
   let issuePollingGeneration = 0;
   let activeIssueDetailRef: IssueDetailRequestRef | null = null;
-  const recentDetails = createRecentDetails<{ detail: IssueDetail; envelopeTick: number; loaded: boolean }>();
+  const recentDetails = createRecentDetails<{ detail: IssueDetail; envelopeTick: number; loaded: boolean }>(100);
   // Provider synchronization is eventually complete. Keep a successfully
   // deleted comment hidden locally until an ordinary sync no longer returns it.
   const hiddenDeletedCommentIDs: Record<string, number[]> = {};

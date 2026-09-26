@@ -78,4 +78,21 @@ UPDATE forge_workspace_launch_specs
 SET spec_json = json_set(spec_json, '$.pull.base_repo_id', 0)
 WHERE json_type(spec_json, '$.pull.base_repo_id') = 'text';
 
+-- Issue-to-PR references name their source repository by route. Record the
+-- repository that held the route so a later rename keeps the reference linked.
+-- The current route owner is only trusted when no other repository ever held it.
+ALTER TABLE forge_issue_pr_references
+    ADD COLUMN source_repo_id INTEGER REFERENCES forge_repos(id) ON DELETE SET NULL;
+
+UPDATE forge_issue_pr_references AS ref
+SET source_repo_id = (
+    SELECT MIN(route.repo_id)
+    FROM forge_repo_routes AS route
+    JOIN forge_repos AS repo ON repo.id = route.repo_id
+    WHERE route.platform = ref.source_provider
+      AND route.platform_host = ref.source_platform_host
+      AND route.repo_path_key = lower(ref.source_owner || '/' || ref.source_repo)
+    HAVING COUNT(DISTINCT route.repo_id) = 1
+);
+
 DROP TABLE forge_repo_routes;

@@ -45,7 +45,7 @@ func LoadArchiveSnapshotRepository(ctx context.Context, tx *sql.Tx, identity Rep
 	var repo Repo
 	err := tx.QueryRowContext(ctx, `SELECT id,platform,platform_host,platform_repo_id,owner,name,repo_path,web_url,clone_url,default_branch,last_sync_completed_at,COALESCE(last_sync_error,'')
  FROM forge_repos WHERE lifecycle_state='active' AND platform=? AND platform_host=?
- AND ((?<>'' AND platform_repo_id=?) OR (?='' AND repo_path_key=?))`, identity.Platform, identity.PlatformHost, identity.PlatformRepoID, identity.PlatformRepoID, identity.PlatformRepoID, identity.RepoPathKey).Scan(&repo.ID, &repo.Platform, &repo.PlatformHost, &repo.PlatformRepoID, &repo.Owner, &repo.Name, &repo.RepoPath, &repo.WebURL, &repo.CloneURL, &repo.DefaultBranch, &repo.LastSyncCompletedAt, &repo.LastSyncError)
+ AND ((? > 0 AND platform_repo_id=?) OR (? = 0 AND repo_path_key=?))`, identity.Platform, identity.PlatformHost, identity.PlatformRepoID, identity.PlatformRepoID, identity.PlatformRepoID, identity.RepoPathKey).Scan(&repo.ID, &repo.Platform, &repo.PlatformHost, &repo.PlatformRepoID, &repo.Owner, &repo.Name, &repo.RepoPath, &repo.WebURL, &repo.CloneURL, &repo.DefaultBranch, &repo.LastSyncCompletedAt, &repo.LastSyncError)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -55,22 +55,24 @@ func LoadArchiveSnapshotRepository(ctx context.Context, tx *sql.Tx, identity Rep
 	return &repo, nil
 }
 
-// Historical routes can recover renamed references only when one catalog identity
-// has ever owned the route. Reuse is ambiguous even if only one owner is active.
+// A reference records the repository that held its source route when it was
+// observed, so renames keep it linked. A reference that names a pull's current
+// route but was recorded for another repository (route reuse) is a candidate
+// that never resolves.
 const archiveSnapshotLinks = `link_candidates AS (
- SELECT f.*, p.id AS merge_request_id, route.is_current AS current_route,
- NOT EXISTS (SELECT 1 FROM forge_repo_routes other
-   WHERE other.platform=route.platform AND other.platform_host=route.platform_host
-   AND other.repo_path_key=route.repo_path_key AND other.repo_id<>route.repo_id) AS resolved
+ SELECT f.*, p.id AS merge_request_id,
+ f.source_repo_id IS NOT NULL AND f.source_repo_id = p.repo_id AS resolved
  FROM forge_issue_pr_references f
- JOIN forge_repo_routes route ON route.platform=f.source_provider
-   AND route.platform_host=f.source_platform_host
-   AND route.repo_path_key=lower(f.source_owner || '/' || f.source_repo)
- JOIN pulls p ON p.repo_id=route.repo_id AND p.number=f.source_number
+ JOIN pulls p ON p.number = f.source_number
+ JOIN forge_repos pull_repo ON pull_repo.id = p.repo_id
+ WHERE f.source_repo_id = p.repo_id
+    OR (pull_repo.platform = f.source_provider
+        AND pull_repo.platform_host = f.source_platform_host
+        AND pull_repo.repo_path_key = lower(f.source_owner || '/' || f.source_repo))
 ), links AS (
  SELECT * FROM (
  SELECT *, ROW_NUMBER() OVER (PARTITION BY issue_id,merge_request_id,observed_event_key
- ORDER BY resolved DESC,current_route DESC,observed_at DESC,source_url) AS reference_rank
+ ORDER BY resolved DESC,observed_at DESC,source_url) AS reference_rank
  FROM link_candidates
  ) WHERE reference_rank=1
 )`

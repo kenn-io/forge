@@ -152,9 +152,10 @@ func TestSnapshotRetainsStableIdentityAndOneReadView(t *testing.T) {
 			require.NoError(err)
 			fourth, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
 			require.NoError(err)
-			assert.Empty(fourth.Relations, "a reused route cannot establish reference identity")
+			assert.Equal(first.Relations, fourth.Relations,
+				"a reference keeps the repository that held its route when observed, even after the route is reused")
 			require.Len(fourth.PullRequests, 1)
-			assert.Contains(fourth.PullRequests[0].Gaps, "unresolved_issue_reference")
+			assert.NotContains(fourth.PullRequests[0].Gaps, "unresolved_issue_reference")
 			require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issueID, EventType: "cross_referenced", DedupeKey: "reference-1", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"after","source_number":1,"source_url":"https://provider.test/owner/after/pull/1"}`}}))
 			refreshed, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
 			require.NoError(err)

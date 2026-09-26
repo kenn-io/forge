@@ -29,7 +29,7 @@ identity. Owner, name, and `repo_path` are the repository's current route.
 - Every repository row has a verified ID; nothing creates route-only rows.
   Callers holding only a route look up the active occupant or leave the link
   unset (`internal/server/workspaceapi/projects_handlers.go`).
-- GitHub rows stored before migration 59 hold `github_node_id` until a sync pass
+- GitHub rows stored before migration 60 hold `github_node_id` until a sync pass
   resolves it through GitHub (`node(id:)` -> `databaseId`); until then the
   catalog refuses GitHub observations for that host, so history cannot split
   across two rows (`internal/github/repository_id_conversion.go`,
@@ -254,6 +254,10 @@ registry helpers return typed errors for missing providers or capabilities.
 - Each edge keeps provider-supplied source identity and URL without requiring a
   tracked source repository or local PR row.
   (`internal/db/migrations/000052_issue_pr_references.up.sql:1`)
+- An edge also records the tracked repository holding its source route when
+  observed, so renames keep it linked and a later occupant of the route never
+  inherits it (`internal/db/queries.go::upsertIssueEventsTx`,
+  `internal/db/queries_archive_snapshot.go::archiveSnapshotLinks`).
 - Ingest provider-native issue-event payloads and backfill stored events. GitHub
   uses cross-reference timeline events, GitLab uses related merge requests, and
   Gitea/Forgejo use `pull_ref` timeline events. Never scan Markdown or add reads

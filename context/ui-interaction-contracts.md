@@ -286,6 +286,9 @@ Persisted controls must state their scope clearly.
 - Issue and PR links opened from Activity stay in Activity and enable the matching
   item-type filter so the sidebar agrees with the detail selection
   (`frontend/src/App.svelte::handleItemReference`).
+- Item references opened within Workspaces use the search control's remembered selection;
+  keep the current workspace and show the matching PR or Issue panel
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::attachWorkspaceItemReferences`).
 - Link navigation reveals the selected Activity row once it renders; later feed
   refreshes must preserve the user's scroll position
   (`frontend/src/lib/views/ActivityFeedView.svelte::revealSelectedActivityRow`).

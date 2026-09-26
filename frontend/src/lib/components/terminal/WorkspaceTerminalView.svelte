@@ -9,7 +9,9 @@
   import PlayIcon from "@lucide/svelte/icons/play";
   import SearchIcon from "@lucide/svelte/icons/search";
   import { onDestroy, tick, untrack } from "svelte";
-  import { navigate } from "../../stores/router.svelte.ts";
+  import { getRoute, navigate } from "../../stores/router.svelte.ts";
+  import { resolvedPlatformHost } from "../../api/provider-routes.js";
+  import { initItemRefHandler } from "../../utils/itemRefHandler.js";
   import { isNarrow } from "../../stores/container.svelte.js";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
@@ -2190,6 +2192,14 @@
     }
   }
 
+  function attachWorkspaceItemReferences(node: HTMLElement): (() => void) | undefined {
+    if (getRoute().page !== "terminal") return;
+    return initItemRefHandler(appRuntime, (item) => selectWorkspaceItem(item.itemType, {
+      ...item,
+      platformHost: resolvedPlatformHost(item.provider, item.platformHost),
+    }), node);
+  }
+
   function getWorkspacePRNumber(ws: Workspace): number | null {
     if (ws.item_type === "pull_request") return ws.item_number;
     return ws.associated_pr_number ?? null;
@@ -4169,6 +4179,7 @@
 <div
   class="terminal-view"
   bind:this={workspaceRoot}
+  {@attach attachWorkspaceItemReferences}
   tabindex="-1"
   inert={modalOpen}
 >

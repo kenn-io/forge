@@ -187,4 +187,56 @@ describe("item references through the timeline", () => {
     expect(String(openSpy.mock.calls[0]![0])).toBe("https://github.com/other/repo/pull/77");
     expect(window.location.pathname).toBe("/pulls/github/acme/widgets/1");
   });
+
+  it.each([
+    ["pr", "https://github.com/acme/tools/pull/1", "Add CLI flag parser"],
+    ["issue", "https://github.com/acme/widgets/issues/7", "Theme toggle does not stick"],
+  ] as const)("keeps a linked %s inside the current workspace", async (itemType, url, title) => {
+    const workspace = {
+      id: "ws-1",
+      repo: repoRef("acme", "widgets"),
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets",
+      item_type: "pull_request",
+      item_number: 1,
+      source_item_visible: true,
+      git_head_ref: "feature/x",
+      worktree_path: "/tmp/worktrees/ws-1",
+      tmux_session: "kenn-forge-ws-1",
+      status: "ready",
+      enrichment_status: "fresh",
+      created_at: "2026-03-30T14:00:00Z",
+    };
+    const initial = pullDetail("acme", "widgets", 1, "Add widget caching layer", widgetsEvents);
+    initial.merge_request.Body = `See [linked item](${url}).`;
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    localStorage.setItem("kenn-forge-workspace-sidebar-tab:ws-1", "pr");
+    mounted = await mountBrowserApp("/terminal/ws-1", {
+      overrides: [
+        (req) => {
+          const path = req.url.pathname;
+          if (path === "/api/v1/workspaces") return jsonResponse({ workspaces: [workspace] });
+          if (path === "/api/v1/workspaces/ws-1") return jsonResponse(workspace);
+          if (path === "/api/v1/workspaces/ws-1/runtime") return jsonResponse({ launch_targets: [], sessions: [] });
+          if (/^\/api\/v1\/pulls\/github\/acme\/widgets\/1(\/sync(?:\/async)?)?$/.test(path))
+            return jsonResponse(initial);
+          if (path === "/api/v1/repo/github/acme/widgets/resolve/7") {
+            return jsonResponse({ number: 7, item_type: "issue", repo_tracked: true });
+          }
+          return null;
+        },
+        ...overrides(),
+      ],
+    });
+
+    const sidebar = page.getByRole("region", { name: "Workspace details pane" });
+    await sidebar.getByRole("link", { name: itemType === "pr" ? title : "linked item" }).click();
+
+    await expect.element(sidebar.getByRole("heading", { name: title, exact: true })).toBeVisible();
+    expect(window.location.pathname).toBe("/terminal/ws-1");
+    expect(
+      JSON.parse(localStorage.getItem('kenn-forge-workspace-viewed-items:["self","ws-1"]')!)[itemType].number,
+    ).toBe(itemType === "pr" ? 1 : 7);
+  });
 });

@@ -65,6 +65,13 @@ The follow-up addresses additional browser work and waits:
 - **Terminal preferences separated from workspace preferences.** Terminal
   appearance and retention now live under Workspaces in Settings. Search keywords
   select that category, and switching categories preserves terminal drafts.
+- **New-workspace repository choices wait on every open.** The dialog discarded
+  its options on open and source changes; the global repository picker fetched
+  the same list independently. Both now share an app-owned successful catalog
+  and pending reads. The dialog restores choices while refreshing, retains them
+  on refresh failure, and preserves an in-flight user choice or clears it if
+  removed. A real-browser regression first loads the global picker, stalls the
+  dialog's refresh, and shows cached choices before releasing the read.
 
 ## Existing behavior verified or traced
 
@@ -86,8 +93,10 @@ The follow-up addresses additional browser work and waits:
 | Path | Source-backed cost | Next discriminating check |
 | --- | --- | --- |
 | Terminal cache miss | Fresh runtime precedes a new WebSocket attachment. Presentation retains 100 workspaces, while socket retention defaults to 50 **sessions**, configurable from 0–100. Several panes per workspace can exhaust socket retention first; disconnected sockets still require a fresh attachment. | Compare retained and evicted switches using `workspace-switch:*` timing entries under controlled RTT and bandwidth. |
+| PR/issue detail working set | These heavier presentation caches still retain ten entries each, independently of workspace and terminal retention. A session cycling through more distinct items can evict earlier details. | Measure retained detail size and revisit behavior with a twenty-workspace working set before choosing a larger bound. |
 | Agent launch | The mutation workflow reads a runtime baseline before its launch POST, even when the view just read runtime. That baseline supports uncertain-outcome reconciliation. | Measure this read separately; assess baseline reuse or server-owned launch identity before removing it. |
 | Fleet directory | The header still receives a full `/snapshot?include_peers=true` when it needs host names. Concurrent reads are now shared. | Measure payload bytes and assess whether a smaller directory response would materially reduce transfer. |
+| Repository picker payload | `/repos` reads the local catalog, then includes capabilities and mutation availability for every repository. Pickers need only identity and names. Availability can synchronously resolve a write credential when its cached result expires; the probe has a five-second timeout. | Measure response bytes and credential-probe duration before choosing a smaller picker response. This path is established by `listRepos`, `repoResponse`, and `cachedWriteCredentialGate`; its contribution to the reported delay is unmeasured. |
 | Expanded Activity threads | Refreshing a collapsed snapshot can trigger thread-history reads, with pages fetched sequentially. | Compare collapsed rows with individually expanded histories and record time to the last page. |
 
 Relevant sources are `WorkspaceTerminalView.svelte`,
@@ -157,3 +166,18 @@ currently impose a slow-link profile.
   lifecycle cases timed out; their full file then passed separately (26 tests)
   without code changes. No entirely green full Vitest run is claimed. Frontend
   formatting, lint, type and Effect checks, Go lint, formatting, and nilaway pass.
+
+## Repository picker verification
+
+- The reopen regression first failed with "Loading repositories" while the
+  response was held. It now restores options and preserves a new selection when
+  that response arrives. Cached options also remain selectable after a failed
+  refresh.
+- All eleven navigation browser cases pass, including reuse of the global
+  picker's catalog in the new-workspace dialog and clearing a removed choice.
+  The new case initially left the dialog open across tests; closing it through
+  Cancel before teardown resolved the suite stall.
+- All twenty full-stack workspace creation and launch cases pass in Chromium
+  and Firefox. Frontend formatting, lint, type, Svelte, and Effect checks pass.
+- The final full Vitest run passes 4,273 tests and skips one, with browser files
+  run serially and at most two workers.

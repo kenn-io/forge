@@ -623,25 +623,25 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("cannot submit against the previous selection while a reopen reloads", async () => {
+  it("restores repository choices on reopen and preserves a new selection during refresh", async () => {
     const { rerender } = await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
     await rerender({ open: false });
 
-    let resolveGet: (value: unknown) => void = () => {};
-    mockGet.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveGet = resolve;
-        }),
+    const response = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? response.promise : Promise.resolve({ data: { hosts: [] } }),
     );
     await rerender({ open: true });
 
-    await waitFor(() => expect(repoPicker().textContent).toContain("Loading repositories"));
-    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await pickRepo("acme/gadget");
 
-    resolveGet({ data: [repoFixture("acme", "gadget")] });
-    await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
+    response.resolve({ data: [repoFixture("acme", "new-repo"), repoFixture("acme", "gadget")] });
+    await fireEvent.click(repoPicker());
+    await screen.findByRole("option", { name: /acme\/new-repo/ });
+    await fireEvent.keyDown(screen.getByRole("combobox", { name: "Filter repositories" }), { key: "Escape" });
+    expect(repoPicker().textContent).toContain("acme/gadget");
     expect(mockPost).not.toHaveBeenCalled();
   });
 
@@ -660,6 +660,20 @@ describe("NewWorkspaceDialog", () => {
     await rerender({ open: false });
 
     expect(repositoryLoadInterrupted).toBe(true);
+  });
+
+  it("keeps cached repositories selectable when a background refresh fails", async () => {
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await rerender({ open: false });
+    mockGet.mockRejectedValue(new Error("network down"));
+    await rerender({ open: true });
+
+    await fireEvent.click(repoPicker());
+    await screen.findByRole("alert");
+    await fireEvent.mouseDown(screen.getByRole("option", { name: /acme\/gadget/ }));
+    expect(repoPicker().textContent).toContain("acme/gadget");
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("reports a rejected create instead of failing silently", async () => {

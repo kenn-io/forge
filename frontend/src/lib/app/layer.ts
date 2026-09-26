@@ -2,6 +2,7 @@ import { Clipboard } from "@effect/platform-browser";
 import { Layer } from "effect";
 import { GeneratedApiLive } from "../api/generated-api.js";
 import { FleetSnapshotReadsLive } from "../api/fleet-snapshot.js";
+import { RepositoryReadsLive } from "../api/repository-reads.js";
 import type { GeneratedApi } from "../api/generated-api.js";
 import { EventSourceFactoryLive } from "../browser/event-source.js";
 import { BrowserObserversLive } from "../browser/observers.js";
@@ -53,6 +54,7 @@ export function makeAppLiveLayer(generatedApiLayer: Layer.Layer<GeneratedApi>) {
   const startupLive = Layer.provideMerge(StartupWorkflowLive, browserBoundaryLive);
   const providerWorkflowsLive = Layer.mergeAll(
     FleetSnapshotReadsLive,
+    RepositoryReadsLive,
     PullsWorkflowLive,
     IssuesWorkflowLive,
     ActivityWorkflowLive,

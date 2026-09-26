@@ -309,6 +309,59 @@ describe("view navigation", () => {
     expect(window.location.search).toContain("selected=pr%3A");
   });
 
+  it("opens a new workspace from the global repository cache while its refresh is stalled", async () => {
+    let holdRefresh = false;
+    let held = false;
+    let release = () => {};
+    const routes: MockRouteOverride = (req) => {
+      if (req.method !== "GET" || req.url.pathname !== "/api/v1/repos") return null;
+      const body = [
+        {
+          ID: 9,
+          Platform: "github",
+          PlatformHost: "github.com",
+          PlatformRepoID: "9",
+          Owner: "acme",
+          Name: holdRefresh ? "updated-repo" : "cached-only",
+        },
+      ];
+      if (!holdRefresh) return jsonResponse(body);
+      held = true;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            release = () => {
+              controller.enqueue(new TextEncoder().encode(JSON.stringify(body)));
+              controller.close();
+            };
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    };
+    mounted = await mountBrowserApp("/workspaces", { overrides: [routes, ...overrides()] });
+    await page.getByRole("button", { name: /Select repository:/ }).click();
+    await expect.element(page.getByText("cached-only", { exact: true })).toBeVisible();
+    pressKey("Escape");
+
+    holdRefresh = true;
+    try {
+      await page.getByRole("button", { name: "New workspace", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "New workspace" });
+      await vi.waitFor(() => expect(held).toBe(true));
+      await expect.element(dialog.getByRole("button", { name: "Filter repositories: acme/cached-only" })).toBeVisible();
+      await dialog.getByRole("button", { name: "Filter repositories: acme/cached-only" }).click();
+      await expect.element(dialog.getByRole("option", { name: /acme\/cached-only/ })).toBeVisible();
+    } finally {
+      release();
+    }
+    const dialog = page.getByRole("dialog", { name: "New workspace" });
+    await expect.element(dialog.getByRole("option", { name: /acme\/updated-repo/ })).toBeVisible();
+    await expect.element(dialog.getByRole("button", { name: "Create workspace", exact: true })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect.element(dialog).not.toBeInTheDocument();
+  });
+
   it.each(
     [
       { source: "pr:42", enabled: "pr", target: "issue:7", number: 7, label: "Issues", detail: ".issue-detail" },

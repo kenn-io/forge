@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Effect } from "effect";
+  import { untrack } from "svelte";
   import { getStores } from "../../context.js";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
   import {
@@ -20,6 +21,7 @@
     type TransientTransportError,
   } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import { RepositoryReads } from "../../api/repository-reads.js";
   import { executeOpaqueGeneratedApiRequest } from "../../api/generated-api.js";
   import { loadFleetSnapshot, type HostSummary } from "../../api/fleet-snapshot.js";
   import { workspaceTargetUnavailableReason } from "../../stores/workspace-target.svelte.js";
@@ -89,7 +91,7 @@
     status?: string;
   };
 
-  let repos = $state<RepoOption[]>([]);
+  let repos = $state.raw<RepoOption[]>([]);
   let reposLoading = $state(false);
   let reposError = $state<string | null>(null);
   let selectedKey = $state("");
@@ -218,10 +220,44 @@
     return (lastUsed && repos.some((repo) => repo.key === lastUsed) ? lastUsed : repos[0]?.key) ?? "";
   }
 
-  // Each open starts a fresh request and fresh form state; a stale response
-  // from a previous open must not repopulate the list. The previous list and
-  // selection are dropped up front so a reopen cannot submit against the repo
-  // picked last time while the new list is still in flight, or if it fails.
+  function loadRepositories(session: object): void {
+    reposLoading = true;
+    repoLoadExecution = untrack(() => runtime.runCommand(
+      Effect.gen(function* () {
+        const reads = yield* RepositoryReads;
+        yield* Effect.sync(() => {
+          if (activeSession !== session || reads.snapshot === undefined) return;
+          repos = reads.snapshot.map(repoOption);
+          selectedKey = defaultRepoSelection();
+          reposLoading = false;
+        });
+        const loaded = yield* reads.refresh;
+        yield* Effect.sync(() => {
+          if (activeSession !== session) return;
+          reposLoading = false;
+          repos = loaded.map(repoOption);
+          // Refresh must not replace a choice made while the request was pending.
+          selectedKey = selectedKey
+            ? repos.some((repo) => repo.key === selectedKey) ? selectedKey : ""
+            : defaultRepoSelection();
+        });
+      }),
+      {
+        operation: "load repositories for a new workspace",
+        safeContext: {},
+        onFailure: (failure) => {
+          if (activeSession !== session) return;
+          reposLoading = false;
+          reposError = failure instanceof ApiProblemError
+            ? apiErrorMessage(failure.problem, "Could not load repositories")
+            : "Could not load repositories";
+        },
+      },
+    ));
+  }
+
+  // Each open resets form intent, then restores the app's repository snapshot
+  // while refreshing. Responses from a closed session cannot change this form.
   $effect(() => {
     if (!open) {
       activeSession = null;
@@ -264,32 +300,10 @@
       };
     }
     loadWorkspaceHosts(session);
-    const execution = runtime.runCommand(
-      executeGeneratedApiRequest("load repositories", (client, signal) => client.RepositoriesService.listRepos({ signal })).pipe(
-        Effect.flatMap((loaded) =>
-          Effect.sync(() => {
-            if (activeSession !== session) return;
-            reposLoading = false;
-            repos = (loaded ?? []).map(repoOption);
-            selectedKey = defaultRepoSelection();
-          }),
-        ),
-      ),
-      {
-        operation: "load repositories for a new workspace",
-        safeContext: {},
-        onFailure: (failure) => {
-          if (activeSession !== session) return;
-          reposLoading = false;
-          reposError = failure instanceof ApiProblemError
-            ? apiErrorMessage(failure.problem, "Could not load repositories")
-            : "Could not load repositories";
-        },
-      },
-    );
-    repoLoadExecution = execution;
+    loadRepositories(session);
+    const execution = repoLoadExecution;
     return () => {
-      execution.interrupt();
+      execution?.interrupt();
       if (repoLoadExecution === execution) repoLoadExecution = null;
       if (activeSession === session) activeSession = null;
     };
@@ -324,30 +338,7 @@
       return;
     }
     loadWorkspaceHosts(session);
-    reposLoading = true;
-    const execution = runtime.runCommand(
-      executeGeneratedApiRequest("load repositories", (client, signal) => client.RepositoriesService.listRepos({ signal })).pipe(
-        Effect.tap((loaded) => Effect.sync(() => {
-          if (activeSession !== session) return;
-          reposLoading = false;
-          repos = (loaded ?? []).map(repoOption);
-          selectedKey = defaultRepoSelection();
-        })),
-        Effect.asVoid,
-      ),
-      {
-        operation: "load repositories for a new workspace",
-        safeContext: {},
-        onFailure: (failure) => {
-          if (activeSession !== session) return;
-          reposLoading = false;
-          reposError = failure instanceof ApiProblemError
-            ? apiErrorMessage(failure.problem, "Could not load repositories")
-            : "Could not load repositories";
-        },
-      },
-    );
-    repoLoadExecution = execution;
+    loadRepositories(session);
   }
 
   const repoRows = $derived<TypeaheadOption[]>(

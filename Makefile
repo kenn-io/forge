@@ -18,7 +18,7 @@ GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/'
 
 ROBOREV_SRC ?= $(HOME)/code/roborev
 ROBOREV_REF ?= main
-HUMA_CHECK_VERSION := 3e1f59e9011e878ec595aa04aebc8a77c5292c4d
+HUMA_CHECK_VERSION := 532a5501741e6210c8d811a090771c1e77c1a691
 # golangci-lint is pinned in mise.toml and used to build ./custom-gcl with
 # the kit analyzers. check-mise fails with an install hint when mise is absent.
 GOLANGCI := mise exec -- golangci-lint
@@ -29,11 +29,20 @@ CUSTOM_GCL := ./custom-gcl
 KIT_MODULE := go.kenn.io/kit
 KIT_VERSION := $(shell go list -m -f '{{.Version}}' $(KIT_MODULE))
 KENNLINT := go run $(KIT_MODULE)/cmd/kennlint@$(KIT_VERSION)
+# Static-analysis and code-generation tools run with -trimpath. Without it the
+# Go build cache is keyed by absolute source path, so every new worktree
+# recompiles the whole module (~15s) before any check or generator runs.
+# Tests keep real paths because runtime.Caller-based fixtures depend on them.
+GO_ANALYSIS_ENV = GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-trimpath -buildvcs=false"
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
 	fi)
-NILAWAY_BIN := $(shell if command -v nilaway >/dev/null 2>&1; then command -v nilaway; \
+# Resolve the real NilAway binary, not a mise shim: go vet runs the tool from
+# dependency directories in the module cache, where a shim cannot find the
+# repository's mise.toml.
+NILAWAY_BIN := $(shell if command -v mise >/dev/null 2>&1 && mise which nilaway >/dev/null 2>&1; then mise which nilaway; \
+	elif command -v nilaway >/dev/null 2>&1; then command -v nilaway; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/nilaway$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/nilaway$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/nilaway$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/nilaway$(EXE_SUFFIX)"; \
 	fi)
@@ -183,7 +192,8 @@ frontend-check-no-deps: frontend-check-core-no-deps
 
 # The pre-commit hook uses this core target because frontend-deps already
 # installed dependencies and full-project Effect diagnostics are retained in
-# CI instead of blocking every local commit.
+# CI instead of blocking every local commit. svelte-check stays here because
+# tsgo keeps it at ~5s.
 frontend-check-core-no-deps: check-vite-plus-bin
 	node scripts/check-dev-auth-proxy.mjs
 	$(VITE_PLUS_BIN) fmt --check frontend packages/github-app-ui --no-error-on-unmatched-pattern --threads=1
@@ -230,7 +240,7 @@ font-size-token-check: check-vite-plus-bin
 
 # Prevent application HTTP routes from bypassing Huma registration
 huma-route-check:
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/nohttpmux ./...
+	$(GO_ANALYSIS_ENV) go run ./tools/nohttpmux ./...
 
 # Keep the browser CI image in lockstep with the Playwright, Bun, and Vite+ pins
 playwright-version-check: check-vite-plus-bin
@@ -252,19 +262,27 @@ migration-history-check:
 
 # Reject unreviewed sub-second test polling budgets.
 timing-budget-check:
-	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go run ./tools/timingbudgetcheck .
+	$(GO_ANALYSIS_ENV) go run ./tools/timingbudgetcheck .
 
 guardrail-check: check-vite-plus-bin
 	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests docs-branding-check timing-budget-check
 
 
-# Regenerate the checked-in OpenAPI document and generated clients
+# Regenerate the checked-in OpenAPI document and generated clients. Client
+# generators are skipped when their inputs and outputs are unchanged.
 api-generate: frontend-deps
-	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
-	cd frontend && $(VITE_PLUS_FRONTEND_BIN) build --logLevel warn
-	go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
-	go run ./cmd/kenn-forge-openapi -api devbox -out internal/apiclient/devbox/openapi.yaml
-	go generate ./internal/apiclient/...
+	set -e; tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; $(GO_ANALYSIS_ENV) go run ./cmd/kenn-forge-openapi -out "$$tmp" -format yaml; if [ -f frontend/openapi/openapi.yaml ] && cmp -s "$$tmp" frontend/openapi/openapi.yaml; then rm "$$tmp"; else mv "$$tmp" frontend/openapi/openapi.yaml; fi; trap - EXIT
+	./scripts/cached-generate.sh frontend-api-client \
+		frontend/openapi/openapi.yaml frontend/scripts/generate-api-client.mjs \
+		scripts/generate-schema-constraints.mjs package.json frontend/package.json bun.lock \
+		frontend/src/lib/api/generated \
+		-- node frontend/scripts/generate-api-client.mjs
+	$(GO_ANALYSIS_ENV) go run ./cmd/kenn-forge-openapi -api health -out internal/apiclient/health/openapi.yaml
+	$(GO_ANALYSIS_ENV) go run ./cmd/kenn-forge-openapi -api devbox -out internal/apiclient/devbox/openapi.yaml
+	$(GO_ANALYSIS_ENV) ./scripts/cached-generate.sh go-api-clients \
+		go.mod go.sum frontend/openapi/openapi.yaml frontend/src/lib/api/roborev/openapi.yaml \
+		internal/apiclient \
+		-- go generate ./internal/apiclient/...
 
 # Regenerate the roborev TypeScript client from the checked-in OpenAPI spec
 roborev-api-generate: frontend-deps
@@ -410,13 +428,14 @@ custom-gcl: check-mise
 	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through
-# custom-gcl (canonical golangci-lint plus kennlint analyzers).
+# custom-gcl (canonical golangci-lint plus kennlint analyzers). -trimpath lets
+# a fresh worktree reuse cached export data.
 lint: ensure-embed-dir lint-config-check custom-gcl
-	$(CUSTOM_GCL) run --fix ./...
+	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run --fix ./...
 
 # Check Go lint without mutating files; used by CI and pre-push.
 lint-check: ensure-embed-dir lint-config-check custom-gcl
-	$(CUSTOM_GCL) run ./...
+	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run ./...
 
 # Apply the v2 formatters (gofmt, goimports, gofumpt) to every file in place.
 fmt: custom-gcl
@@ -440,7 +459,10 @@ fmt-check: custom-gcl
 		exit 1; \
 	fi
 
-# Run NilAway against first-party Go packages
+# Run NilAway against first-party Go packages. Running it as a go vet tool
+# caches results per package in the Go build cache, so unchanged packages are
+# not re-analyzed (a clean re-run takes ~0.5s instead of ~8s). Vet always loads
+# test variants; -exclude-test-files drops diagnostics that involve them.
 nilaway: ensure-embed-dir
 	@if [ -z "$(NILAWAY_BIN)" ]; then \
 		echo "nilaway not found. Install with:" >&2; \
@@ -451,7 +473,7 @@ nilaway: ensure-embed-dir
 		echo "failed to determine module path" >&2; \
 		exit 1; \
 	}; \
-		"$(NILAWAY_BIN)" -include-pkgs="$$module_path" -test=false ./...
+		$(GO_ANALYSIS_ENV) go vet -vettool="$(NILAWAY_BIN)" -include-pkgs="$$module_path" -exclude-test-files ./...
 
 # Tidy dependencies
 tidy:
@@ -535,4 +557,4 @@ help:
 
 # Enforce the shared API contract without rewriting files during verification.
 huma-check:
-	go run go.kenn.io/kit/cmd/huma-check@$(HUMA_CHECK_VERSION) -fix=false ./...
+	$(GO_ANALYSIS_ENV) go run go.kenn.io/kit/cmd/huma-check@$(HUMA_CHECK_VERSION) -fix=false ./...

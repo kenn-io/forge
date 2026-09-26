@@ -14,16 +14,26 @@ fixtures, or changing shell-script coverage.
   `context.WithoutCancel(t.Context())` or `context.Background()`
   (`internal/testutil/servertest/servertest.go::registerCleanup`).
   Unix-socket fixtures keep a short `/tmp` root rather than `t.TempDir()`.
-- Routine local Go lanes and hooks bound package/processor concurrency and share
-  Go caches; `GO_TEST_P=` intentionally restores native package concurrency.
-  (`scripts/run-hook-go.sh`, `prek.toml`)
+- Direct Make test lanes bound package concurrency (`GO_TEST_P=` restores
+  native concurrency). Go hooks run uncapped and the read-only Go consumers run
+  concurrently after `golangci-lint --fix`; `KENN_FORGE_HOOK_GO_CONCURRENCY`
+  opts into a cap (`scripts/run-hook-go.sh`, `prek.toml`).
 - CI bounds Go package/test fan-out with `-p` and `-parallel`; do not cap
   `GOMAXPROCS` globally, because test-launched servers inherit that CPU limit.
 - Do not overlap frontend/e2e asset builds with Go compilation; replacing embedded
   assets mid-compile causes missing-file build failures (`internal/web/embed.go:9`).
-- Vite dev/build owns frontend API client and schema-constraint generation together;
-  Make and Air must not generate TypeScript independently
-  (`frontend/scripts/generate-api-client.mjs::frontendApiClient`).
+- Frontend API client and schema-constraint generation have one generator shared
+  by the Vite plugin and `make api-generate`; hooks must not run a full `vp build`
+  to trigger it (`frontend/scripts/generate-api-client.mjs::generateClient`).
+- `make api-generate` skips a client generator only when its inputs and its
+  generated output both match the last successful run; list every generator
+  input and output path (`scripts/cached-generate.sh`). The hook runs in
+  parallel with golangci-lint by maintainer decision; a rare one-off collision
+  is accepted for the time saved (`prek.toml`).
+- Go static-analysis targets run with `-trimpath` so fresh worktrees reuse cached
+  export data; tests keep real paths for `runtime.Caller` fixtures
+  (`Makefile::GO_ANALYSIS_ENV`). Run standalone analyzers such as NilAway as
+  `go vet -vettool` so results are cached per package (`Makefile::nilaway`).
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.
 - Repository-wide Go tests do not run from Git hooks. Any future fast hook
   lane must select a small set of packages rather than require per-test opt-outs.
@@ -40,6 +50,11 @@ fixtures, or changing shell-script coverage.
   completed writes (`internal/server/workspaceapi/agent_resume_test.go::TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss`).
 - Pre-commit runs frontend core checks without full-project Effect diagnostics;
   explicit frontend checks and CI retain Effect coverage (`Makefile::frontend-check-no-deps`).
+- `svelte-check` runs with `--tsgo`, which only sees Svelte types that ship
+  declarations; source-consumed Svelte dependencies must publish `.d.ts` files
+  (`vite.config.ts::svelte-check`).
+- Hook `files` patterns mirror what each checker reads (e.g. huma-route-check
+  skips test files); do not use `always_run` for whole-module checks (`prek.toml`).
 - Package-local `svelte-check` tasks must pass that package's Vite config explicitly;
   implicit discovery can load the root non-Svelte task config (`vite.config.ts:56`).
 - Do not use `-v` unless the user requests it or a particular failure genuinely

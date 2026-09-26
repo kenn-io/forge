@@ -14,16 +14,17 @@ import (
 var ErrWorkspaceSetupInProgress = errors.New("workspace setup is still in progress")
 
 // listSearchCondition returns a SQL condition and args for a free-text search.
-// Unquoted whitespace-separated terms are ANDed. Within each term, the title
-// is searched as "#{number} {title}" so substring queries can match the
-// number, the title, or both at once (e.g. "278" hits "#278 fix bug").
+// Unquoted whitespace-separated terms are ANDed; negated terms (see
+// ParseSearchQuery) must match none of the searched fields. Within each term,
+// the title is searched as "#{number} {title}" so substring queries can match
+// the number, the title, or both at once (e.g. "278" hits "#278 fix bug").
 // Author and repository path/name are matched separately. Labels are matched
 // by name for list aliases with item-label join tables. The alias is the table
 // alias used in the surrounding query (e.g. "p" for merge requests, "i" for
 // issues), and the repository table must be joined as alias "r".
 func listSearchCondition(alias, search string) (string, []any) {
-	terms := listSearchTerms(search)
-	if len(terms) == 0 {
+	query := ParseSearchQuery(search)
+	if query.Empty() {
 		return "", nil
 	}
 	labelCondition := ""
@@ -50,57 +51,16 @@ func listSearchCondition(alias, search string) (string, []any) {
 		)
 	}
 	termCondition := fmt.Sprintf(
-		"(('#' || %s.number || ' ' || %s.title) LIKE ? OR %s.author LIKE ? OR r.repo_path LIKE ? OR r.owner LIKE ? OR r.name LIKE ?%s)",
+		"('#' || %s.number || ' ' || %s.title) LIKE ? OR %s.author LIKE ? OR r.repo_path LIKE ? OR r.owner LIKE ? OR r.name LIKE ?%s",
 		alias, alias, alias, labelCondition,
 	)
-	conds := make([]string, 0, len(terms))
-	args := make([]any, 0, len(terms)*6)
-	for _, term := range terms {
-		conds = append(conds, termCondition)
-		like := "%" + term + "%"
-		args = append(args, like, like, like, like, like)
-		if labelCondition != "" {
-			args = append(args, like)
-		}
+	argsPerTerm := 5
+	if labelCondition != "" {
+		argsPerTerm++
 	}
-	return "(" + strings.Join(conds, " AND ") + ")", args
-}
-
-func listSearchTerms(search string) []string {
-	var terms []string
-	var b strings.Builder
-	var quote rune
-
-	flush := func() {
-		term := strings.TrimSpace(b.String())
-		if term != "" {
-			terms = append(terms, term)
-		}
-		b.Reset()
-	}
-
-	for _, r := range search {
-		switch {
-		case quote != 0:
-			if r == quote {
-				quote = 0
-				continue
-			}
-			b.WriteRune(r)
-		case r == '"' || r == '\'':
-			if b.Len() == 0 {
-				quote = r
-				continue
-			}
-			b.WriteRune(r)
-		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
-			flush()
-		default:
-			b.WriteRune(r)
-		}
-	}
-	flush()
-	return terms
+	return query.sqlCondition(termCondition, argsPerTerm, func(term string) string {
+		return "%" + term + "%"
+	})
 }
 
 func appendLimitOffset(query string, args *[]any, limit, offset int) string {

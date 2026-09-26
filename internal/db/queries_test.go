@@ -2212,6 +2212,40 @@ func TestListPullRequestsFilterBySearch(t *testing.T) {
 	assert.Equal(1, prs[0].Number)
 }
 
+func TestListPullRequestsSearchExcludesNegatedTerms(t *testing.T) {
+	t.Parallel()
+
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	insertTestMRWithOptions(t, d, testMR(repoID, 1,
+		withMRTitle("fix login"), withMRAuthor("alice"), withMRActivity(base)))
+	insertTestMRWithOptions(t, d, testMR(repoID, 2,
+		withMRTitle("fix logout"), withMRAuthor("bob"), withMRActivity(base.Add(time.Hour))))
+	insertTestMRWithOptions(t, d, testMR(repoID, 3,
+		withMRTitle("docs refresh"), withMRAuthor("bob"), withMRActivity(base.Add(2*time.Hour))))
+
+	for search, want := range map[string][]int{
+		"NOT alice":     {2, 3},
+		"!alice":        {2, 3},
+		"fix !alice":    {2},
+		"NOT fix":       {3},
+		`!"fix log"`:    {3},
+		"bob NOT login": {2, 3},
+	} {
+		t.Run(search, func(t *testing.T) {
+			t.Parallel()
+			prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Search: search})
+			require.NoError(t, err)
+			got := make([]int, 0, len(prs))
+			for _, pr := range prs {
+				got = append(got, pr.Number)
+			}
+			assert.ElementsMatch(t, want, got)
+		})
+	}
+}
+
 func TestListPullRequestsFilterBySearchPreservesApostrophesInTerms(t *testing.T) {
 	t.Parallel()
 
@@ -3658,6 +3692,25 @@ func TestListIssuesFilterBySearch(t *testing.T) {
 	issues, err = d.ListIssues(t.Context(), ListIssuesOpts{Search: "2"})
 	require.NoError(err)
 	require.Len(issues, 3)
+}
+
+func TestListIssuesSearchExcludesNegatedTerms(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	base := baseTime()
+	insertTestIssueWithOptions(t, d, testIssue(repoID, 1,
+		withIssueTitle("crash on start"), withIssueAuthor("alice"), withIssueActivity(base)))
+	insertTestIssueWithOptions(t, d, testIssue(repoID, 2,
+		withIssueTitle("crash on exit"), withIssueAuthor("bob"), withIssueActivity(base.Add(time.Hour))))
+
+	issues, err := d.ListIssues(t.Context(), ListIssuesOpts{Search: "crash NOT alice"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(2, issues[0].Number)
 }
 
 func TestListIssuesFilterBySearchRepoFragment(t *testing.T) {

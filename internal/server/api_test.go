@@ -23505,6 +23505,62 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 	assert.Equal("ws-41", got[0].Workspace.ID)
 }
 
+func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *testing.T) {
+	runParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	since := now.Add(-time.Hour)
+	repoID := int64(7)
+	keptKey := db.WorkspaceSubjectKey{
+		RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 41,
+	}
+	excludedKey := db.WorkspaceSubjectKey{
+		RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+	}
+	subject := func(key db.WorkspaceSubjectKey, author string) workspaceapi.SubjectActivity {
+		return workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+				Title: "Workspace work", Author: author, State: "open",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-" + strconv.Itoa(key.ItemNumber), Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+			keptKey:     subject(keptKey, "alice"),
+			excludedKey: subject(excludedKey, "Excluded-Author"),
+		},
+	}
+	srv := &Server{
+		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
+		cfg: &config.Config{Activity: config.Activity{
+			UseWorkspaceActivityForRecency: true,
+		}},
+	}
+	providerEvent := func(key db.WorkspaceSubjectKey) db.ActivityItem {
+		return db.ActivityItem{
+			RepoID: repoID, ItemType: "pr", ItemNumber: key.ItemNumber,
+			Author: "reviewer", BodyPreview: "matches the search",
+		}
+	}
+
+	got := srv.workspaceActivityResponse(
+		&listActivityInput{},
+		db.ListActivityOpts{Search: "reviewer NOT excluded-author", Since: &since},
+		snapshot,
+		[]db.ActivityItem{providerEvent(keptKey), providerEvent(excludedKey)},
+		true,
+	)
+
+	require.Len(got, 1)
+	assert.Equal(keptKey.ItemNumber, got[0].ItemNumber)
+}
+
 func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t *testing.T) {
 	runParallelServerTest(t)
 	require := require.New(t)

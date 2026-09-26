@@ -39,7 +39,7 @@ func (d *DB) ListCollapsedActivityProjection(
 	}
 
 	var searchMatched []WorkspaceSubjectKey
-	if opts.Search != "" {
+	if len(ParseSearchQuery(opts.Search).Include) > 0 {
 		searchOpts := opts.ListActivityOpts
 		if opts.SearchEventLimit > 0 {
 			searchOpts.Limit = opts.SearchEventLimit

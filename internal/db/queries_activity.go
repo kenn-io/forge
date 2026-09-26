@@ -153,18 +153,17 @@ func listActivityWithQueryer(
 			"("+strings.Join(itemTypeClauses, " OR ")+")")
 	}
 
-	if opts.Search != "" {
-		pattern := "%" + strings.ToLower(opts.Search) + "%"
-		whereClauses = append(whereClauses,
-			"((item_type IN ('pr', 'issue') AND LOWER('#' || item_number || ' ' || item_title) LIKE ?) OR "+
-				"LOWER(item_title) LIKE ? OR LOWER(body_preview) LIKE ? OR LOWER(branch_name) LIKE ? OR "+
-				"LOWER(commit_sha) LIKE ? OR LOWER(before_sha) LIKE ? OR LOWER(after_sha) LIKE ? OR "+
-				"LOWER(author) LIKE ? OR LOWER(item_author) LIKE ? OR "+
-				"LOWER(author_name) LIKE ? OR LOWER(author_email) LIKE ? OR "+
-				"LOWER(committer_name) LIKE ? OR LOWER(committer_email) LIKE ?)")
-		args = append(args,
-			pattern, pattern, pattern, pattern, pattern, pattern, pattern,
-			pattern, pattern, pattern, pattern, pattern, pattern)
+	if cond, condArgs := ParseSearchQuery(opts.Search).sqlCondition(
+		"(item_type IN ('pr', 'issue') AND LOWER('#' || item_number || ' ' || item_title) LIKE ?) OR "+
+			"LOWER(item_title) LIKE ? OR LOWER(body_preview) LIKE ? OR LOWER(branch_name) LIKE ? OR "+
+			"LOWER(commit_sha) LIKE ? OR LOWER(before_sha) LIKE ? OR LOWER(after_sha) LIKE ? OR "+
+			"LOWER(author) LIKE ? OR LOWER(item_author) LIKE ? OR "+
+			"LOWER(author_name) LIKE ? OR LOWER(author_email) LIKE ? OR "+
+			"LOWER(committer_name) LIKE ? OR LOWER(committer_email) LIKE ?",
+		13, lowerLikePattern,
+	); cond != "" {
+		whereClauses = append(whereClauses, cond)
+		args = append(args, condArgs...)
 	}
 
 	if opts.Author != "" {
@@ -630,14 +629,17 @@ func listActivitySubjectsWithQueryer(
 			whereClauses = append(whereClauses, "("+strings.Join(itemTypeClauses, " OR ")+")")
 		}
 	}
-	if opts.Search != "" {
-		pattern := "%" + strings.ToLower(opts.Search) + "%"
-		searchClauses := []string{
-			"LOWER('#' || item_number || ' ' || item_title) LIKE ?",
-			"LOWER(item_title) LIKE ?",
-			"LOWER(item_author) LIKE ?",
-		}
-		args = append(args, pattern, pattern, pattern)
+	// Included terms match the subject's own fields or any of its events
+	// (SearchMatchedSubjectKeys); excluded terms reject the subject by its own
+	// fields so one unrelated comment cannot resurface an excluded item.
+	searchQuery := ParseSearchQuery(opts.Search)
+	const subjectSearchTerm = "LOWER('#' || item_number || ' ' || item_title) LIKE ? OR " +
+		"LOWER(item_title) LIKE ? OR LOWER(item_author) LIKE ?"
+	if len(searchQuery.Include) > 0 {
+		includeCond, includeArgs := SearchQuery{Include: searchQuery.Include}.sqlCondition(
+			subjectSearchTerm, 3, lowerLikePattern)
+		searchClauses := []string{includeCond}
+		args = append(args, includeArgs...)
 
 		matchedSubjectPlaceholders := make([]string, 0, len(opts.SearchMatchedSubjectKeys))
 		seenMatchedSubjects := make(map[WorkspaceSubjectKey]struct{}, len(opts.SearchMatchedSubjectKeys))
@@ -658,6 +660,12 @@ func listActivitySubjectsWithQueryer(
 					strings.Join(matchedSubjectPlaceholders, ", ")+")")
 		}
 		whereClauses = append(whereClauses, "("+strings.Join(searchClauses, " OR ")+")")
+	}
+	if len(searchQuery.Exclude) > 0 {
+		excludeCond, excludeArgs := SearchQuery{Exclude: searchQuery.Exclude}.sqlCondition(
+			subjectSearchTerm, 3, lowerLikePattern)
+		whereClauses = append(whereClauses, excludeCond)
+		args = append(args, excludeArgs...)
 	}
 	if opts.Author != "" {
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
@@ -1119,4 +1127,8 @@ func DecodeCursor(cursor string) (
 			fmt.Errorf("invalid cursor source_id: %w", err)
 	}
 	return time.Unix(seconds, nanoseconds).UTC(), parts[2], sourceID, nil
+}
+
+func lowerLikePattern(term string) string {
+	return "%" + strings.ToLower(term) + "%"
 }

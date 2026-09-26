@@ -52,7 +52,8 @@ the complete ownership model and setup workflow.
 
 ## Use the workspace view
 
-The workspace sidebar can search, sort, and group workspaces. Rows show the
+The workspace sidebar can search, sort, and group workspaces. Prefix a search
+word with `!` or `NOT` to hide matching workspaces. Rows show the
 repository, branch, linked item, changed-line counts, and current agent state
 when lifecycle hooks report one.
 

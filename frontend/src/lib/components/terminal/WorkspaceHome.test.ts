@@ -123,4 +123,76 @@ describe("WorkspaceHome", () => {
     await fireEvent.click(screen.getByRole("button", { name: /Shell\s+Running/ }));
     expect(onOpenSession).toHaveBeenCalledWith("ws-1:shell");
   });
+
+  it("runs configured quick actions and disables ones whose agent cannot launch", async () => {
+    const onQuickAction = vi.fn();
+    const review = { label: "Review", agent: "codex", prompt: "Review this change" };
+    render(WorkspaceHome, {
+      props: {
+        launchTargets: [
+          { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true },
+          {
+            key: "missing",
+            label: "Missing",
+            kind: "agent",
+            source: "builtin",
+            available: false,
+            disabled_reason: "missing not found on PATH",
+          },
+        ],
+        sessions: [],
+        quickActions: [
+          review,
+          { label: "Unavailable", agent: "missing", prompt: "Summarize" },
+          { label: "Unknown", agent: "gone", prompt: "Summarize" },
+        ],
+        onQuickAction,
+      },
+    });
+
+    const reviewButton = screen.getByRole("button", { name: "Review" }) as HTMLButtonElement;
+    expect(reviewButton.disabled).toBe(false);
+    expect(reviewButton.textContent).toContain("Codex");
+    const unavailable = screen.getByRole("button", { name: "Unavailable" }) as HTMLButtonElement;
+    expect(unavailable.disabled).toBe(true);
+    expect(unavailable.title).toBe("missing not found on PATH");
+    const unknown = screen.getByRole("button", { name: "Unknown" }) as HTMLButtonElement;
+    expect(unknown.disabled).toBe(true);
+    expect(unknown.title).toBe('Agent "gone" is not configured');
+
+    await fireEvent.click(reviewButton);
+    expect(onQuickAction).toHaveBeenCalledWith(review);
+  });
+
+  it("lists quick actions by title, ignoring case", () => {
+    const codex = { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true };
+    render(WorkspaceHome, {
+      props: {
+        launchTargets: [codex],
+        sessions: [],
+        quickActions: [
+          { label: "rebase", agent: "codex", prompt: "rebase" },
+          { label: "Deep review", agent: "codex", prompt: "review" },
+          { label: "apply fixes", agent: "codex", prompt: "fix" },
+        ],
+        onQuickAction: vi.fn(),
+      },
+    });
+
+    const labels = Array.from(document.querySelectorAll(".quick-card"), (card) => card.getAttribute("aria-label"));
+    expect(labels).toEqual(["apply fixes", "Deep review", "rebase"]);
+  });
+
+  it("omits the quick actions section when none are configured", () => {
+    render(WorkspaceHome, {
+      props: {
+        launchTargets: [],
+        sessions: [],
+        quickActions: [],
+        onQuickAction: vi.fn(),
+      },
+    });
+
+    expect(screen.queryByText("Quick actions")).toBeNull();
+  });
 });

@@ -298,6 +298,29 @@ describe("WorkspaceCreateSplitButton quick actions", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("lists quick actions by title, ignoring case", async () => {
+    render(WorkspaceCreateSplitButton, {
+      props: {
+        label: "Create Workspace",
+        launchTargets: targets,
+        onCreate: vi.fn(),
+        onQuickAction: vi.fn(),
+        quickActions: [
+          { label: "rebase", agent: "codex", prompt: "rebase" },
+          { label: "Deep review", agent: "codex", prompt: "review" },
+          { label: "apply fixes", agent: "codex", prompt: "fix" },
+        ],
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+
+    const labels = screen
+      .getAllByRole("menuitem")
+      .map((item) => item.querySelector(".launch-target-label")?.textContent?.trim());
+    expect(labels).toEqual(["apply fixes", "Deep review", "rebase"]);
+  });
+
   it("keeps the agent menu and the quick-actions menu independent", async () => {
     render(WorkspaceCreateSplitButton, {
       props: {

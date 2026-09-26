@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { quickActionWorkspaces } from "../../stores/workspace-quick-actions.js";
+  import {
+    quickActionWorkspaceKey,
+    quickActionWorkspaces,
+    runWorkspaceQuickAction,
+  } from "../../stores/workspace-quick-actions.js";
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import { Context, Deferred, Duration, Effect, Fiber, Option, Schedule, Schema, Stream } from "effect";
   import PlayIcon from "@lucide/svelte/icons/play";
@@ -26,6 +30,7 @@
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import type {
     LaunchTarget,
+    QuickAction,
     RuntimeSession,
   } from "../../api/types.js";
   import {
@@ -950,7 +955,8 @@
   }
 
   const automaticLauncherBlocked = $derived(
-    explicitLaunchIntentPending() || (workspaceHostKey === undefined && quickActionWorkspaces.has(workspaceId)),
+    explicitLaunchIntentPending() ||
+      quickActionWorkspaces.has(quickActionWorkspaceKey(workspaceId, workspaceHostKey)),
   );
   const launcherOverlayAllowed = $derived(
     launcherState?.auto !== true || !automaticLauncherBlocked,
@@ -2759,6 +2765,19 @@
         },
       },
     );
+  }
+
+  // The agent handoff endpoint exists for local and devbox workspaces only;
+  // fleet peer workspaces keep the plain launch surface.
+  const workspaceQuickActions = $derived(
+    workspaceHostKey === undefined || workspaceHostKey.startsWith("devbox:")
+      ? settingsStore.getQuickActions()
+      : [],
+  );
+
+  function handleQuickAction(action: QuickAction): void {
+    if (!workspaceId || actionsBlocked) return;
+    runWorkspaceQuickAction(appRuntime, workspaceId, action, workspaceHostKey);
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(
@@ -4606,7 +4625,9 @@
                               displayLabels={sessionDisplayLabels}
                               {launchingKey}
                               readonly={actionsBlocked}
+                              quickActions={workspaceQuickActions}
                               onLaunch={(key) => void handleLaunch(key)}
+                              onQuickAction={handleQuickAction}
                               onOpenSession={openSession}
                             />
                           {/if}
@@ -4796,8 +4817,13 @@
     displayLabels={sessionDisplayLabels}
     {launchingKey}
     readonly={actionsBlocked}
+    quickActions={workspaceQuickActions}
     onClose={closeLauncher}
     onLaunch={(key) => void handleLaunch(key)}
+    onQuickAction={(action) => {
+      closeLauncher();
+      handleQuickAction(action);
+    }}
     onOpenSession={(sessionKey) => {
       closeLauncher();
       openSession(sessionKey);

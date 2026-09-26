@@ -481,7 +481,11 @@ shares the ordinary manual Launch-menu trust boundary
 (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::queueWorkspaceLaunch`).
 Quick actions are the one exception to frontend-owned launches: after ordinary
 creation, the detail header posts the configured agent and prompt to
-`POST /workspaces/{id}/runtime/agent-handoffs`, which waits for the workspace to
+`POST /workspaces/{id}/runtime/agent-handoffs`; the workspace launch surface
+offers the same actions for an existing local or devbox workspace, but not for a
+fleet peer, which has no handoff route
+(`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceQuickActions`).
+The endpoint waits for the workspace to
 become ready, launches the agent in the workflow region, and delivers the prompt
 through the initial-message path, retrying only the typed input-mode-not-ready
 signal. The readiness wait, the retry-while-input-not-ready loop, and the

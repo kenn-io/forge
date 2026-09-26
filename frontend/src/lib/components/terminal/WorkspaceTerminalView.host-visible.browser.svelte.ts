@@ -157,7 +157,8 @@ class NoopEventSource {
 describe("WorkspaceTerminalView hostVisible", () => {
   let runtime: OwnedAppRuntime;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await page.viewport(1200, 800);
     runtime = makeAppRuntime();
     controlledSockets.length = 0;
   });

@@ -378,7 +378,12 @@ test.describe("workspace tab persistence", () => {
         (response) =>
           response.url().includes(`/api/v1/workspaces/${workspace.id}/diff`) && response.request().method() === "GET",
       );
-      await page.locator(".panel-toggle-group .panel-toggle-btn", { hasText: "Diff" }).click();
+      await page.getByRole("button", { name: "Workspace controls", exact: true }).click();
+      await page
+        .getByRole("dialog", { name: "Workspace controls" })
+        .getByRole("button", { name: "Diff", exact: true })
+        .click();
+      await page.keyboard.press("Escape");
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       const workspaceScope = page.locator(".right-sidebar .workspace-diff-scope");
       await expect(workspaceScope.locator(".diff-scope-picker")).toHaveCount(0);

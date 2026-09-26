@@ -332,7 +332,7 @@ describe("WorkspaceHost", () => {
 
     await vi.waitFor(() => {
       expect(host.inert).toBe(false);
-      expect(host.querySelector(".header-end")).not.toBeNull();
+      expect(host.querySelector(".header-bar")).not.toBeNull();
     }, WAIT);
 
     // WorkspaceHost.svelte's inlineDockForSlot() only builds the inlineDock
@@ -360,7 +360,7 @@ describe("WorkspaceHost", () => {
     // which the surface renders outside this host.
     const prsScope = page.elementLocator(host);
     await vi.waitFor(() => {
-      expect(host.querySelector(".header-end")).toBeNull();
+      expect(host.querySelector(".header-bar")).toBeNull();
     }, WAIT);
     expect(prsScope.getByRole("button", { name: "Expand Terminal" }).query()).toBeNull();
     expect(prsScope.getByRole("button", { name: "Collapse Terminal" }).query()).toBeNull();

@@ -1618,6 +1618,7 @@
 
   let containerEl = $state<HTMLElement | null>(null);
   let containerWidth = $state(0);
+  const compactHeader = $derived(containerWidth > 0 && containerWidth < 800);
 
   function maxRightSidebarWidth(
     containerWidth: number,
@@ -4359,154 +4360,175 @@
              has always been: no per-leaf strip exists there, so the chrome is the
              only thing left to carry these. -->
         {#if !controlsInPane}
-          <div class="header-bar">
+          <div class="header-bar" class:header-bar--compact={compactHeader}>
             <div class="header-start">
-              <span class="header-name">
+              <span class="header-name" title={displayName(workspace)}>
                 {displayName(workspace)}
               </span>
-              <code class="header-branch">
+              <code class="header-branch" title={workspace.git_head_ref}>
                 {workspace.git_head_ref}
               </code>
             </div>
-            <div class="header-end">
-              <div class="workspace-actions">{@render workspaceControls()}</div>
-              {#if !hideRightSidebar}
-                <div class="panel-toggle-group">
+            {#snippet headerActions()}
+              {#if workspace}
+                <div class="header-end">
+                  <div class="workspace-actions">{@render workspaceControls(!compactHeader)}</div>
+                  {#if !hideRightSidebar}
+                    <div class="panel-toggle-group">
+                      <button
+                        class="panel-toggle-btn"
+                        class:active={sidebarOpen && sidebarTab === "diff"}
+                        disabled={actionsBlocked}
+                        onclick={() => handleSidebarToggleClick("diff")}
+                      >
+                        Diff
+                      </button>
+                      {#if isSidebarTabSupported(workspace, "issue")}
+                        <button
+                          class="panel-toggle-btn"
+                          class:active={sidebarOpen && sidebarTab === "issue"}
+                          disabled={actionsBlocked}
+                          onclick={() => handleSidebarToggleClick("issue")}
+                        >
+                          Issue
+                        </button>
+                      {/if}
+                      {#if workspaceHostKey === undefined}
+                        <button
+                          class="panel-toggle-btn"
+                          class:active={sidebarOpen && sidebarTab === "kata"}
+                          disabled={actionsBlocked}
+                          onclick={() => handleSidebarToggleClick("kata")}
+                        >
+                          Kata
+                        </button>
+                      {/if}
+                      {#if isSidebarTabSupported(workspace, "pr")}
+                        <button
+                          class="panel-toggle-btn"
+                          class:active={sidebarOpen && sidebarTab === "pr"}
+                          disabled={actionsBlocked}
+                          onclick={() => handleSidebarToggleClick("pr")}
+                        >
+                          PR
+                        </button>
+                      {/if}
+                      {#if workspace.item_type === "pull_request"}
+                        <button
+                          class="panel-toggle-btn"
+                          class:active={sidebarOpen && sidebarTab === "reviews"}
+                          disabled={actionsBlocked}
+                          onclick={() => handleSidebarToggleClick("reviews")}
+                        >
+                          Reviews
+                        </button>
+                      {/if}
+                    </div>
+                    <IconButton
+                      size="sm"
+                      disabled={actionsBlocked}
+                      ariaLabel="Search PRs and issues"
+                      ariaHaspopup="dialog"
+                      ariaExpanded={itemSearchAnchor !== null}
+                      onclick={(event) => {
+                        itemSearchAnchor = itemSearchAnchor ? null : event.currentTarget as HTMLElement;
+                      }}
+                    >
+                      <SearchIcon size={14} strokeWidth={2.2} aria-hidden="true" />
+                    </IconButton>
+                    {#if itemSearchAnchor}
+                      <WorkspaceItemSearch
+                        workspaceID={workspace.id}
+                        hasLinkedPR={getWorkspacePRNumber(workspace) !== null}
+                        hasLinkedIssue={workspace.item_type === "issue"}
+                        viewedPR={viewedItems.pr}
+                        viewedIssue={viewedItems.issue}
+                        searchAnchor={itemSearchAnchor}
+                        disabled={actionsBlocked}
+                        onselect={selectWorkspaceItem}
+                        onSearchClose={() => { itemSearchAnchor = null; }}
+                      />
+                    {/if}
+                    <IconButton
+                      class="workspace-refresh-button"
+                      size="sm"
+                      disabled={actionsBlocked || refreshingWorkspace}
+                      ariaLabel="Refresh workspace details"
+                      onclick={() => void handleRefreshWorkspace()}
+                    >
+                      {#if refreshingWorkspace}
+                        <Spinner size={14} label="Refreshing workspace" />
+                      {:else}
+                        <RefreshIcon
+                          class="header-icon"
+                          size="14"
+                          strokeWidth="2.2"
+                          aria-hidden="true"
+                        />
+                      {/if}
+                    </IconButton>
+                  {/if}
+                  {#if inlineDock && inlineDockMode !== null}
+                    <!-- Dock mode changes are pure local UI: they must stay
+                         available while server-side actions are blocked
+                         (deletes in flight), or the dock cannot be collapsed
+                         out of the way. Only the modal guard applies, and only
+                         to the expand direction. -->
+                    <button
+                      class="header-btn"
+                      disabled={inlineDockMode !== "expanded" && inlineDockExpandBlocked}
+                      title={
+                        inlineDockMode !== "expanded" && inlineDockExpandBlocked
+                          ? "Close the open dialog first."
+                          : undefined
+                      }
+                      onclick={() =>
+                        inlineDock?.setMode(inlineDockMode === "expanded" ? "split" : "expanded")}
+                    >
+                      {#if inlineDockMode === "expanded"}
+                        <ChevronsDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                        Show Details
+                      {:else}
+                        <ChevronsUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                        Expand Terminal
+                      {/if}
+                    </button>
+                    <button
+                      class="header-btn"
+                      onclick={() => inlineDock?.setMode("collapsed")}
+                    >
+                      <PanelBottomCloseIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                      Collapse Terminal
+                    </button>
+                  {/if}
                   <button
-                    class="panel-toggle-btn"
-                    class:active={sidebarOpen && sidebarTab === "diff"}
+                    class="header-btn danger"
                     disabled={actionsBlocked}
-                    onclick={() => handleSidebarToggleClick("diff")}
+                    onclick={(event) =>
+                      void handleDelete(event.currentTarget)}
                   >
-                    Diff
+                    Delete
                   </button>
-                  {#if isSidebarTabSupported(workspace, "issue")}
-                    <button
-                      class="panel-toggle-btn"
-                      class:active={sidebarOpen && sidebarTab === "issue"}
-                      disabled={actionsBlocked}
-                      onclick={() => handleSidebarToggleClick("issue")}
-                    >
-                      Issue
-                    </button>
-                  {/if}
-                  {#if workspaceHostKey === undefined}
-                    <button
-                      class="panel-toggle-btn"
-                      class:active={sidebarOpen && sidebarTab === "kata"}
-                      disabled={actionsBlocked}
-                      onclick={() => handleSidebarToggleClick("kata")}
-                    >
-                      Kata
-                    </button>
-                  {/if}
-                  {#if isSidebarTabSupported(workspace, "pr")}
-                    <button
-                      class="panel-toggle-btn"
-                      class:active={sidebarOpen && sidebarTab === "pr"}
-                      disabled={actionsBlocked}
-                      onclick={() => handleSidebarToggleClick("pr")}
-                    >
-                      PR
-                    </button>
-                  {/if}
-                  {#if workspace.item_type === "pull_request"}
-                    <button
-                      class="panel-toggle-btn"
-                      class:active={sidebarOpen && sidebarTab === "reviews"}
-                      disabled={actionsBlocked}
-                      onclick={() => handleSidebarToggleClick("reviews")}
-                    >
-                      Reviews
-                    </button>
-                  {/if}
                 </div>
-                <IconButton
-                  size="sm"
-                  disabled={actionsBlocked}
-                  ariaLabel="Search PRs and issues"
-                  ariaHaspopup="dialog"
-                  ariaExpanded={itemSearchAnchor !== null}
-                  onclick={(event) => {
-                    itemSearchAnchor = itemSearchAnchor ? null : event.currentTarget as HTMLElement;
-                  }}
-                >
-                  <SearchIcon size={14} strokeWidth={2.2} aria-hidden="true" />
-                </IconButton>
-                {#if itemSearchAnchor}
-                  <WorkspaceItemSearch
-                    workspaceID={workspace.id}
-                    hasLinkedPR={getWorkspacePRNumber(workspace) !== null}
-                    hasLinkedIssue={workspace.item_type === "issue"}
-                    viewedPR={viewedItems.pr}
-                    viewedIssue={viewedItems.issue}
-                    searchAnchor={itemSearchAnchor}
-                    disabled={actionsBlocked}
-                    onselect={selectWorkspaceItem}
-                    onSearchClose={() => { itemSearchAnchor = null; }}
-                  />
+              {/if}
+            {/snippet}
+            {#if compactHeader}
+              <div class="compact-header-actions">
+                {#if launcherMode}
+                  <Button size="sm" surface="soft" tone="neutral" label="Launch session" disabled={actionsBlocked} onclick={openLauncher}>
+                    <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
+                  </Button>
+                {:else}
+                  <LaunchMenu {launchTargets} {launchingKey} disabled={actionsBlocked} hostVisible={interactionVisible} onLaunch={(key) => void handleLaunch(key)} />
                 {/if}
-                <IconButton
-                  class="workspace-refresh-button"
-                  size="sm"
-                  disabled={actionsBlocked || refreshingWorkspace}
-                  ariaLabel="Refresh workspace details"
-                  onclick={() => void handleRefreshWorkspace()}
-                >
-                  {#if refreshingWorkspace}
-                    <Spinner size={14} label="Refreshing workspace" />
-                  {:else}
-                    <RefreshIcon
-                      class="header-icon"
-                      size="14"
-                      strokeWidth="2.2"
-                      aria-hidden="true"
-                    />
-                  {/if}
-                </IconButton>
-              {/if}
-              {#if inlineDock && inlineDockMode !== null}
-                <!-- Dock mode changes are pure local UI: they must stay
-                     available while server-side actions are blocked
-                     (deletes in flight), or the dock cannot be collapsed
-                     out of the way. Only the modal guard applies, and only
-                     to the expand direction. -->
-                <button
-                  class="header-btn"
-                  disabled={inlineDockMode !== "expanded" && inlineDockExpandBlocked}
-                  title={
-                    inlineDockMode !== "expanded" && inlineDockExpandBlocked
-                      ? "Close the open dialog first."
-                      : undefined
-                  }
-                  onclick={() =>
-                    inlineDock?.setMode(inlineDockMode === "expanded" ? "split" : "expanded")}
-                >
-                  {#if inlineDockMode === "expanded"}
-                    <ChevronsDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                    Show Details
-                  {:else}
-                    <ChevronsUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                    Expand Terminal
-                  {/if}
-                </button>
-                <button
-                  class="header-btn"
-                  onclick={() => inlineDock?.setMode("collapsed")}
-                >
-                  <PanelBottomCloseIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  Collapse Terminal
-                </button>
-              {/if}
-              <button
-                class="header-btn danger"
-                disabled={actionsBlocked}
-                onclick={(event) =>
-                  void handleDelete(event.currentTarget)}
-              >
-                Delete
-              </button>
-            </div>
+                <WorkspacePaneControls
+                  controls={interactionVisible ? { snippet: headerActions, workspaceKey: viewWorkspaceKey } : null}
+                  busy={terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset}
+                />
+              </div>
+            {:else}
+              {@render headerActions()}
+            {/if}
           </div>
         {/if}
         <div
@@ -4972,7 +4994,7 @@
 <!-- The workspace's own controls, defined here because every one of them is wired
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
-{#snippet workspaceControls()}
+{#snippet workspaceControls(showLaunch = true)}
   {#if workspace?.commit_attribution}
     {@const status = workspace.commit_attribution.status}
     <Button
@@ -5084,10 +5106,12 @@
     <!-- One opener rather than the menu: the overlay is the launch surface in a
          pane, and a second copy of the target list inside a popover inside a tab
          strip is the stacking this mode exists to remove. -->
-    <Button size="sm" surface="soft" tone="neutral" label="Launch session" onclick={openLauncher}>
-      <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
-    </Button>
-  {:else}
+    {#if showLaunch}
+      <Button size="sm" surface="soft" tone="neutral" label="Launch session" onclick={openLauncher}>
+        <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
+      </Button>
+    {/if}
+  {:else if showLaunch}
     <LaunchMenu
       launchTargets={launchTargets}
       {launchingKey}
@@ -5339,6 +5363,37 @@
     border-bottom: 1px solid var(--border-default);
     border-left: 1px solid var(--border-default);
     gap: var(--space-4);
+    flex-shrink: 0;
+  }
+
+  .header-bar--compact {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .header-bar--compact .header-start {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .header-bar--compact .header-name,
+  .header-bar--compact .header-branch {
+    max-width: 100%;
+  }
+
+  .header-bar--compact .header-branch {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .compact-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     flex-shrink: 0;
   }
 

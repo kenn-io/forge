@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -477,9 +478,9 @@ func setupArchiveTestServer(
 	database := dbtest.Open(t)
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test", Owner: "owner",
-		Name: "repo", RepoPath: "owner/repo", PlatformExternalID: "repo-owner-repo",
+		Name: "repo", RepoPath: "owner/repo", PlatformID: 1001,
 	}
-	_, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(ref))
+	_, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(t, err)
 	provider := &archiveAPITestProvider{}
 	wakeCount := &atomic.Int32{}
@@ -724,8 +725,8 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	outside := ref
 	outside.Name = "not-configured"
 	outside.RepoPath = "owner/not-configured"
-	outside.PlatformExternalID = "other-id"
-	_, err = database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(outside))
+	outside.PlatformID = 2002
+	_, err = reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(outside))
 	require.NoError(err)
 	query.Repo = []string{string(outside.Platform) + "|" + outside.Host + "/" + outside.RepoPath}
 	rejected, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestOpenUsesIsolatedCopiesOfCachedMigratedTemplate(t *testing.T) {
@@ -16,9 +17,7 @@ func TestOpenUsesIsolatedCopiesOfCachedMigratedTemplate(t *testing.T) {
 	first := Open(t)
 	second := Open(t)
 
-	firstRepoID, err := first.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widget"),
-	)
+	firstRepoID, err := reposeed.Seed(t.Context(), first, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotZero(firstRepoID)
 

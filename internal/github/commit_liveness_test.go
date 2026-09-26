@@ -9,13 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"go.kenn.io/forge/internal/platformdb"
-
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -108,15 +107,15 @@ func setupCommitLivenessFixture(t *testing.T) commitLivenessFixture {
 	history := setupLivenessTestHistory(t)
 	database := openTestDB(t)
 	repo := RepoRef{
-		Platform:           platform.KindGitHub,
-		PlatformHost:       "github.com",
-		PlatformExternalID: "repo-owner-repo",
-		Owner:              "owner",
-		Name:               "repo",
-		RepoPath:           "owner/repo",
-		CloneURL:           history.sourceDir,
+		Platform:       platform.KindGitHub,
+		PlatformHost:   "github.com",
+		PlatformRepoID: testRepoID("owner", "repo"),
+		Owner:          "owner",
+		Name:           "repo",
+		RepoPath:       "owner/repo",
+		CloneURL:       history.sourceDir,
 	}
-	repoID, err := database.UpsertRepo(t.Context(), verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(t, err)
 	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
 	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -932,16 +931,11 @@ func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
 	livenessTestGit(t, h.sourceDir, "commit", "-m", "repair head")
 	repairHead := livenessTestGit(t, h.sourceDir, "rev-parse", "HEAD")
 	existing := setLivenessFixtureHead(t, fixture, repairHead)
-	routeFence, found, err := fixture.database.CurrentRepositoryRouteFence(
-		t.Context(), platformdb.DBRepoIdentity(platformRepoRef(fixture.repo)), fixture.repoID,
-	)
-	require.NoError(err)
-	require.True(found)
 
 	// The clone does not yet contain the head, so the unchanged-detail round
 	// marks detail fetched without touching liveness metadata.
-	_, err = fixture.syncer.markUnchangedMRDetailFetched(
-		t.Context(), fixture.repo, fixture.repoID, 1, existing, routeFence, 1,
+	_, err := fixture.syncer.markUnchangedMRDetailFetched(
+		t.Context(), fixture.repo, fixture.repoID, 1, existing, 1,
 	)
 	require.NoError(err)
 	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: false})
@@ -955,7 +949,7 @@ func TestCommitLivenessRepairsThroughUnchangedDetail(t *testing.T) {
 	// Once the clone has the head, the next unchanged-detail round carries the
 	// liveness updates with its marker under the same revision guard.
 	_, err = fixture.syncer.markUnchangedMRDetailFetched(
-		t.Context(), fixture.repo, fixture.repoID, 1, existing, routeFence, 1,
+		t.Context(), fixture.repo, fixture.repoID, 1, existing, 1,
 	)
 	require.NoError(err)
 	assertLivenessCommitFlags(t, fixture, map[string]bool{h.a1: true})
@@ -969,28 +963,23 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	providerRepo := RepoRef{
-		Platform:           platform.KindForgejo,
-		PlatformHost:       platform.DefaultForgejoHost,
-		PlatformExternalID: "repo-1",
-		Owner:              "owner",
-		Name:               "repo",
-		RepoPath:           "owner/repo",
-		CloneURL:           h.sourceDir,
+		Platform:       platform.KindForgejo,
+		PlatformHost:   platform.DefaultForgejoHost,
+		PlatformRepoID: 1001,
+		Owner:          "owner",
+		Name:           "repo",
+		RepoPath:       "owner/repo",
+		CloneURL:       h.sourceDir,
 	}
 	barePath, err := h.manager.ClonePath(
 		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
 	)
 	require.NoError(err)
 	livenessTestGit(t, "", "clone", "--bare", h.sourceDir, barePath)
-	providerRepoID, err := fixture.database.UpsertRepo(
-		t.Context(), verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
+	providerRepoID, err := reposeed.Seed(
+		t.Context(), fixture.database, verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
 	)
 	require.NoError(err)
-	routeFence, found, err := fixture.database.CurrentRepositoryRouteFence(
-		t.Context(), platformdb.DBRepoIdentity(platformRepoRef(providerRepo)), providerRepoID,
-	)
-	require.NoError(err)
-	require.True(found)
 	now := time.Date(2026, 8, 5, 12, 1, 0, 0, time.UTC)
 	providerMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID:             providerRepoID,
@@ -1067,7 +1056,7 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	_, err = syncer.fetchProviderMRDetail(
-		t.Context(), provider, providerRepo, providerRepoID, 1, routeFence,
+		t.Context(), provider, providerRepo, providerRepoID, 1,
 	)
 	require.NoError(err)
 	assertLivenessCommitFlags(t, providerFixture, map[string]bool{
@@ -1092,22 +1081,22 @@ func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	providerRepo := RepoRef{
-		Platform:           platform.KindForgejo,
-		PlatformHost:       platform.DefaultForgejoHost,
-		PlatformExternalID: "repo-1",
-		Owner:              "owner",
-		Name:               "repo",
-		RepoPath:           "owner/repo",
-		CloneURL:           h.sourceDir,
+		Platform:       platform.KindForgejo,
+		PlatformHost:   platform.DefaultForgejoHost,
+		PlatformRepoID: 1001,
+		Owner:          "owner",
+		Name:           "repo",
+		RepoPath:       "owner/repo",
+		CloneURL:       h.sourceDir,
 	}
 	barePath, err := h.manager.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), providerRepo.PlatformExternalID),
+		gitclone.WithRepositoryIdentity(t.Context(), providerRepo.PlatformRepoID),
 		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
 	)
 	require.NoError(err)
 	livenessTestGit(t, "", "clone", "--bare", h.sourceDir, barePath)
-	providerRepoID, err := fixture.database.UpsertRepo(
-		t.Context(), verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
+	providerRepoID, err := reposeed.Seed(
+		t.Context(), fixture.database, verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
 	)
 	require.NoError(err)
 	now := time.Date(2026, 8, 5, 12, 1, 0, 0, time.UTC)

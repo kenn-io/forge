@@ -17,11 +17,10 @@ embedder protocol for arbitrary host state.
 - Persist provider workspaces by the internal repository catalog ID. Route
   requests resolve their current occupant before lookup or creation; a rename
   follows the same repository, while route reuse creates a separate workspace
-  identity. Migration backfills every unambiguous catalog route, including
-  route-only repositories. Provider lifecycle code retires legacy rows through
-  dirty-aware deletion and leaves failures stable for explicit user action; it
-  must neither discard uncommitted work nor resolve them through the current
-  occupant
+  identity. Workspaces whose repository row was deleted keep a null `repo_id`;
+  provider lifecycle code retires them through dirty-aware deletion and leaves
+  failures stable for explicit user action; it must neither discard uncommitted
+  work nor resolve them through the current occupant
   (`internal/server/workspaceapi/handler.go::New`,
   `internal/workspace/launch_spec.go::Manager.RequireWorkspaceLaunchSpec`).
 - A repository referenced by a workspace is a durable identity tombstone.
@@ -33,12 +32,10 @@ embedder protocol for arbitrary host state.
   and its owned state instead of adding another legacy path (`internal/db/migrations/000055_workspace_repository_identity.up.sql:15`).
 - Setup verifies the stable repository ID independently of its mutable route.
   Managed clones partition storage by that ID, and configured bases must match
-  it; route reuse must not share checkout state. Network Git work also captures
-  the route generation and fails closed if that route changes before setup
-  completes, restoring refs and retargeted origins after a rejected fetch.
-  Recovery and cleanup discover identity-scoped clones across every route
-  owned by that repository; network reuse retargets a historical origin to the
-  fenced current route
+  it; route reuse must not share checkout state. Setup re-verifies the
+  repository after cloning. Recovery and cleanup accept every bare clone in the
+  repository's identity namespace, whatever route it was cloned under; network
+  reuse retargets an earlier origin to the current route
   (`internal/workspace/manager.go::Manager.workspaceSetupGitDir`,
   `internal/gitclone/clone.go::Manager.EnsureCloneValidated`,
   `internal/server/settings_handlers.go::Server.worktreeBasePathForRepo`,
@@ -206,13 +203,8 @@ embedder protocol for arbitrary host state.
 - Activity events and parent summaries key that snapshot by stable repo ID and
   canonical item type; normalize wire `"pr"` to workspace `"pull_request"`
   before lookup so route reuse stays fail-closed (`internal/server/helpers.go::workspaceItemTypeFromActivity`).
-- The shared subject snapshot holds the repository-reconciliation read barrier
-  across both its workspace-summary and subject-metadata reads, so a route move
-  cannot split one response across repository identities
-  (`internal/server/workspaceapi/subject_activity.go::Handler.WorkspaceSubjectSnapshot`).
-- Hub and standalone Activity reads hold one reconciliation barrier
-  across events and workspace subjects; spokes overlay a separate local snapshot
-  by stable identity (`internal/server/huma_routes.go::Server.listActivity`).
+- Spokes overlay their local workspace subject snapshot on hub Activity by
+  stable identity (`internal/server/huma_routes.go::Server.listActivity`).
 - Subject metadata and opt-in Issue/PR activity ordering use JSON-backed SQLite
   relations, so retained workspaces cannot exhaust bind variables. Lists always
   expose `last_workspace_activity_at`; provider activity is authoritative by default
@@ -325,7 +317,7 @@ embedder protocol for arbitrary host state.
   (`internal/db/queries.go::DB.GetWorkspaceLinkedToMRForProvider`).
 - Merge-request sync limits head-repo trust writes to direct PR workspaces;
   association-only rows are presentation links, not sync write targets
-  (`internal/github/sync.go::Syncer.reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead`).
+  (`internal/github/sync.go::Syncer.reclassifyWorkspaceHeadRepoTrust`).
 
 These fields exist so PR-backed workspaces show PR/Reviews sidebars, while
 issue-backed workspaces show the issue sidebar and disable the PR/reviews path.
@@ -443,14 +435,12 @@ workspace rows from the post-upsert snapshot; an unknown-head snapshot cannot
 downgrade an already-known fork classification. This cache projection is
 best-effort, while the launch-specification lifecycle path is fail-closed
 (`internal/github/sync.go::CommitMergeRequestParentSnapshot`,
-`internal/github/sync.go::reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead`,
+`internal/github/sync.go::reclassifyWorkspaceHeadRepoTrust`,
 `internal/workspace/manager.go::WorkspaceHeadRepo`).
 
 Head-repo classification reads and writes stay on the workspace repository ID;
 persisted provider workspaces without one fail unresolved. Parent snapshot
-commits use the per-MR snapshot lock; repository-ID reconciliation holds the
-exclusive side of the stable barrier that every snapshot lock holds shared, so
-moving an MR cannot change its lock identity during a snapshot commit
+commits use the per-MR snapshot lock
 (`internal/workspace/manager.go::Manager.RefreshWorkspaceHeadRepoSnapshot`,
 `internal/db/queries.go::UpdateWorkspaceMRHeadRepoForSnapshot`).
 Launch-spec refresh preserves the workspace's stable repository and branch

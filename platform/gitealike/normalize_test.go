@@ -44,7 +44,6 @@ func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
 	assert.Equal("forgejo", repo.Ref.Name)
 	assert.Equal("forgejo/forgejo", repo.Ref.RepoPath)
 	assert.Equal(int64(42), repo.Ref.PlatformID)
-	assert.Equal("42", repo.Ref.PlatformExternalID)
 	assert.Equal("https://codeberg.org/forgejo/forgejo", repo.Ref.WebURL)
 	assert.Equal("https://codeberg.org/forgejo/forgejo.git", repo.Ref.CloneURL)
 	assert.Equal("forgejo", repo.Ref.DefaultBranch)

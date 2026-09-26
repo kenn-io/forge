@@ -333,7 +333,7 @@ func TestArchiveReportRepositoriesAreSnapshotCoverageOrderedByFullIdentity(t *te
 
 func insertArchiveReportRepo(t *testing.T, database *DB, identity RepoIdentity) int64 {
 	t.Helper()
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	repoID, err := seedTestRepo(t.Context(), database, identity)
 	require.NoError(t, err)
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, database.EnsureDiscoveryArchives(t.Context(), []int64{repoID}, now))

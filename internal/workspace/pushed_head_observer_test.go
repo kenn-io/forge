@@ -150,40 +150,6 @@ func TestPushedHeadObserverSkipsWorkspaceForInactiveRepository(t *testing.T) {
 	require.Zero(reader.branchCalls)
 }
 
-func TestPushedHeadObserverLegacyWorkspaceSkipsHistoricallyReusedRoute(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	insertPushedHeadWorkspace(
-		t, database, "ws-legacy-pr", db.WorkspaceItemTypePullRequest, 42, nil,
-	)
-	workspace, err := database.GetWorkspace(t.Context(), "ws-legacy-pr")
-	require.NoError(err)
-	require.Zero(workspace.RepoID)
-
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
-		Owner: "acme", Name: "widget",
-	}, observedAt)
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
-		Owner: "acme", Name: "moved-away",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-replacement",
-		Owner: "acme", Name: "widget",
-	}, observedAt.Add(2*time.Minute))
-	require.NoError(err)
-
-	repo, err := NewPushedHeadObserver(database).workspaceRepository(
-		t.Context(), workspace, nil,
-	)
-	require.NoError(err)
-	require.Nil(repo)
-}
-
 func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -230,7 +196,7 @@ func TestLaunchSpecPushedHeadObserverUsesHubCandidatesWithoutProviderItemRows(
 			Version: WorkspaceLaunchSpecVersion,
 			Repository: WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				PlatformRepoID: testRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,

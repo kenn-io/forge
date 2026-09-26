@@ -21,6 +21,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -304,7 +305,7 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 
 func seedServerWorkspaceRepo(t *testing.T, d *db.DB) int64 {
 	t.Helper()
-	repoID, err := d.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 	seedRepoLaunchMetadata(t, d, repoID)
 	return repoID

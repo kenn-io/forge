@@ -72,7 +72,7 @@ func TestRunPassIdleRepositoriesReportNoWorkWithoutRepositoryResolution(t *testi
 	require.Error(err)
 }
 
-func TestWorkerRepositoriesCacheFollowsConfigurationAndReconciliation(t *testing.T) {
+func TestWorkerRepositoriesCacheFollowsConfigurationAndRetriesUnresolvedRefs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -83,20 +83,24 @@ func TestWorkerRepositoriesCacheFollowsConfigurationAndReconciliation(t *testing
 	provider := newArchiveServiceProvider(first.Platform, first.Host)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	source := &archiveMutableSource{refs: []platform.RepoRef{first, second}}
+	source := &archiveMutableSource{refs: []platform.RepoRef{first}}
 	service, err := NewService(database, registry, &archiveTestAdmission{}, source, nil, fixedClock{value: now})
 	require.NoError(err)
 
 	resolved, err := service.workerRepositories(t.Context())
 	require.NoError(err)
-	require.Len(resolved, 1, "an unseeded configured repository is skipped")
+	require.Len(resolved, 1)
 	again, err := service.workerRepositories(t.Context())
 	require.NoError(err)
 	require.Len(again, 1)
 	assert.Same(&resolved[0], &again[0], "unchanged configuration reuses the cached resolution")
 
-	// Seeding the second repository is a repository reconciliation write and
-	// must make the next pass resolve it.
+	// An unseeded configured repository is skipped, and a pass that skipped
+	// a ref is not cached, so seeding it later takes effect.
+	source.refs = []platform.RepoRef{first, second}
+	resolved, err = service.workerRepositories(t.Context())
+	require.NoError(err)
+	require.Len(resolved, 1, "an unseeded configured repository is skipped")
 	archiveServiceSeedRepo(t, database, second)
 	resolved, err = service.workerRepositories(t.Context())
 	require.NoError(err)

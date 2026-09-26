@@ -28,14 +28,14 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	now := time.Now().UTC()
 
 	// --- Repos ---
-	widgetsID, err := d.UpsertRepo(ctx, fixtureRepoIdentity("acme", "widgets"))
+	widgetsID, err := upsertFixtureRepo(ctx, d, fixtureRepoIdentity("acme", "widgets"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/widgets: %w", err)
 	}
 	if err := d.UpdateRepoViewerCanMerge(ctx, widgetsID, true); err != nil {
 		return nil, fmt.Errorf("grant fixture merge permission for acme/widgets: %w", err)
 	}
-	toolsID, err := d.UpsertRepo(ctx, fixtureRepoIdentity("acme", "tools"))
+	toolsID, err := upsertFixtureRepo(ctx, d, fixtureRepoIdentity("acme", "tools"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/tools: %w", err)
 	}
@@ -43,14 +43,14 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		return nil, fmt.Errorf("grant fixture merge permission for acme/tools: %w", err)
 	}
 	const toolsCloneURL = "https://github.com/acme/tools.git"
-	if err := d.UpdateRepoProviderMetadata(ctx, toolsID, db.RepoProviderMetadata{
+	if err := d.UpdateRepoProviderObservation(ctx, toolsID, db.RepoProviderMetadata{
 		WebURL:        "https://github.com/acme/tools",
 		CloneURL:      toolsCloneURL,
 		DefaultBranch: "main",
-	}); err != nil {
+	}, nil, nil); err != nil {
 		return nil, fmt.Errorf("update acme/tools metadata: %w", err)
 	}
-	_, err = d.UpsertRepo(ctx, fixtureRepoIdentity("acme", "archived"))
+	_, err = upsertFixtureRepo(ctx, d, fixtureRepoIdentity("acme", "archived"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/archived: %w", err)
 	}
@@ -1343,11 +1343,19 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	return result, nil
 }
 
+func upsertFixtureRepo(ctx context.Context, d *db.DB, identity db.RepoIdentity) (int64, error) {
+	entry, err := d.ObserveRepository(ctx, identity)
+	if err != nil {
+		return 0, err
+	}
+	return entry.Repository.ID, nil
+}
+
 func fixtureRepoIdentity(owner, name string) db.RepoIdentity {
 	return db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "repo-" + owner + "-" + name,
+		PlatformRepoID: FixtureRepoID(owner, name),
 		Owner:          owner,
 		Name:           name,
 	}

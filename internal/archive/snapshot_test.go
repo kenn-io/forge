@@ -44,7 +44,7 @@ func TestSnapshotReadsConfiguredCachedWork(t *testing.T) {
 	require.NoError(err)
 	assert.Len(provider.calls, before)
 	require.Len(result.Repositories, 1)
-	assert.Equal(ref.PlatformExternalID, result.Repositories[0].ProviderID)
+	assert.Equal(ref.PlatformID, result.Repositories[0].ProviderID)
 	require.Len(result.PullRequests, 1)
 	pr := result.PullRequests[0]
 	assert.True(pr.Draft)
@@ -126,9 +126,8 @@ func TestSnapshotRetainsStableIdentityAndOneReadView(t *testing.T) {
 			renamed := ref
 			renamed.Name = "after"
 			renamed.RepoPath = "owner/after"
-			entry, accepted, err := database.ReconcileRepositoryObservation(t.Context(), platformdb.DBRepoIdentity(renamed), time.Now().Add(time.Hour))
+			entry, err := database.ObserveRepository(t.Context(), platformdb.DBRepoIdentity(renamed))
 			require.NoError(err)
-			require.True(accepted)
 			assert.Equal(repoID, entry.Repository.ID)
 			second, err := service.snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now}, func() error {
 				_, writeErr := database.UpsertIssue(t.Context(), &db.Issue{RepoID: repoID, Number: 2, Title: "Concurrent", State: "open", CreatedAt: now.Add(-time.Minute), UpdatedAt: now})
@@ -146,10 +145,9 @@ func TestSnapshotRetainsStableIdentityAndOneReadView(t *testing.T) {
 			assert.Len(third.Issues, 2)
 
 			replacement := ref
-			replacement.PlatformExternalID = "replacement-id"
-			entry, accepted, err = database.ReconcileRepositoryObservation(t.Context(), platformdb.DBRepoIdentity(replacement), time.Now().Add(2*time.Hour))
+			replacement.PlatformID = ref.PlatformID + 1
+			entry, err = database.ObserveRepository(t.Context(), platformdb.DBRepoIdentity(replacement))
 			require.NoError(err)
-			require.True(accepted)
 			_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: entry.Repository.ID, Number: 1, Title: "Different repository", State: db.MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now})
 			require.NoError(err)
 			fourth, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})

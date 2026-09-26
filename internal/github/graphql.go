@@ -549,6 +549,37 @@ func NewGraphQLFetcherWithClient(
 	}
 }
 
+type gqlRepositoryNodeQuery struct {
+	Node *struct {
+		Repository struct {
+			DatabaseID int64 `graphql:"databaseId"`
+		} `graphql:"... on Repository"`
+	} `graphql:"node(id: $id)"`
+}
+
+// RepositoryDatabaseID resolves a GitHub repository node ID to the integer
+// repository ID. found is false when GitHub reports no such node: the
+// repository was deleted or is not visible to this credential.
+func (g *GraphQLFetcher) RepositoryDatabaseID(
+	ctx context.Context, nodeID string,
+) (int64, bool, error) {
+	var q gqlRepositoryNodeQuery
+	if err := g.client.Query(ctx, &q, map[string]any{
+		"id": githubv4.ID(nodeID),
+	}); err != nil {
+		// githubv4 reports GraphQL errors as an unexported type, so the
+		// message is the only signal that the node no longer exists.
+		if strings.Contains(err.Error(), "Could not resolve to a node") { //nolint:kennlint // no typed error to match
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("resolve repository node %s: %w", nodeID, err)
+	}
+	if q.Node == nil || q.Node.Repository.DatabaseID <= 0 {
+		return 0, false, nil
+	}
+	return q.Node.Repository.DatabaseID, true, nil
+}
+
 func (g *GraphQLFetcher) ShouldBackoff() (bool, time.Duration) {
 	if g.rateTracker == nil {
 		return false, 0

@@ -70,7 +70,7 @@ func seedHotReadDatabase(b *testing.B, repos, mrsPerRepo, eventsPerMR int) strin
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for r := range repos {
 		identity := verifiedTestRepoIdentity("github", "github.com", "acme", fmt.Sprintf("service-%03d", r))
-		repoID, err := d.UpsertRepo(ctx, identity)
+		repoID, err := seedTestRepo(ctx, d, identity)
 		require.NoError(b, err)
 		events := make([]MREvent, 0, mrsPerRepo*eventsPerMR)
 		for n := 1; n <= mrsPerRepo; n++ {

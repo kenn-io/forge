@@ -22,16 +22,17 @@ const (
 )
 
 type RepoRef struct {
-	Platform           Kind
-	Host               string
-	Owner              string
-	Name               string
-	RepoPath           string
-	PlatformID         int64
-	PlatformExternalID string
-	WebURL             string
-	CloneURL           string
-	DefaultBranch      string
+	Platform Kind
+	Host     string
+	Owner    string
+	Name     string
+	RepoPath string
+	// PlatformID is the provider's integer repository ID. It is the only
+	// repository ID: stable across renames and transfers, unique per host.
+	PlatformID    int64
+	WebURL        string
+	CloneURL      string
+	DefaultBranch string
 }
 
 func (r RepoRef) DisplayName() string {
@@ -53,20 +54,18 @@ type RepositoryFeatures struct {
 }
 
 type Repository struct {
-	Ref                RepoRef
-	PlatformID         int64
-	PlatformExternalID string
-	Description        string
-	Private            bool
-	Archived           bool
-	Features           RepositoryFeatures
-	MergeSettings      *RepositoryMergeSettings
-	ViewerCanMerge     *bool
-	DefaultBranch      string
-	WebURL             string
-	CloneURL           string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	Ref            RepoRef
+	Description    string
+	Private        bool
+	Archived       bool
+	Features       RepositoryFeatures
+	MergeSettings  *RepositoryMergeSettings
+	ViewerCanMerge *bool
+	DefaultBranch  string
+	WebURL         string
+	CloneURL       string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 func (r Repository) FeatureEnabled(feature string) (bool, bool) {

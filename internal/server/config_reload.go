@@ -819,7 +819,7 @@ func (s *Server) resolveReposForReload(
 		kind := platform.Kind(raw.PlatformOrDefault())
 		if _, err := s.syncer.RepositoryReader(kind, host); err != nil {
 			for _, repo := range ghclient.FallbackConfiguredRepoRefs(previous, raw) {
-				if repo.PlatformExternalID != "" || slices.Contains(previous, repo) {
+				if repo.PlatformRepoID != 0 || slices.Contains(previous, repo) {
 					set.Add(repo, false)
 				}
 			}

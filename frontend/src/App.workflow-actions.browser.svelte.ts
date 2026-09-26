@@ -52,6 +52,8 @@ const capable = {
 
 const workflowOperation = { available: true };
 
+const repoIds: Record<string, number> = { widgets: 1005, legacy: 1020 };
+
 function summary(name: string, supportsActions: boolean) {
   return {
     owner: "acme",
@@ -64,7 +66,7 @@ function summary(name: string, supportsActions: boolean) {
       owner: "acme",
       name,
       repo_path: `acme/${name}`,
-      platform_repo_id: `${name}-repo-id`,
+      platform_repo_id: repoIds[name] ?? 0,
       capabilities: supportsActions
         ? capable
         : {

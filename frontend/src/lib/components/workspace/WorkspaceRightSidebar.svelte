@@ -15,7 +15,7 @@
     workspaceHostKey?: string | undefined;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoOwner: string;
     repoName: string;
     repoPath: string;

@@ -35,24 +35,21 @@ func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, erro
 		return platform.Repository{}, err
 	}
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               host,
-		Owner:              owner,
-		Name:               name,
-		RepoPath:           repoPath,
-		PlatformID:         p.ID,
-		PlatformExternalID: strconv.FormatInt(p.ID, 10),
-		WebURL:             p.WebURL,
-		CloneURL:           p.HTTPURLToRepo,
-		DefaultBranch:      p.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		Host:          host,
+		Owner:         owner,
+		Name:          name,
+		RepoPath:      repoPath,
+		PlatformID:    p.ID,
+		WebURL:        p.WebURL,
+		CloneURL:      p.HTTPURLToRepo,
+		DefaultBranch: p.DefaultBranch,
 	}
 	return platform.Repository{
-		Ref:                ref,
-		PlatformID:         p.ID,
-		PlatformExternalID: strconv.FormatInt(p.ID, 10),
-		Description:        p.Description,
-		Private:            p.Visibility == gitlab.PrivateVisibility,
-		Archived:           p.Archived,
+		Ref:         ref,
+		Description: p.Description,
+		Private:     p.Visibility == gitlab.PrivateVisibility,
+		Archived:    p.Archived,
 		Features: platform.RepositoryFeatures{
 			IssuesEnabled:        gitLabFeatureEnabled(p.IssuesAccessLevel),
 			MergeRequestsEnabled: gitLabFeatureEnabled(p.MergeRequestsAccessLevel),

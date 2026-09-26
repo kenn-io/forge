@@ -23,6 +23,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/browserlogin"
@@ -57,7 +59,6 @@ import (
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var crossOriginProtection http.CrossOriginProtection
@@ -257,14 +258,8 @@ type Server struct {
 	spokeActivationLease   *hubEventLifecycle
 	providerRouteSpoke     bool
 	providerWriteGate      *providerplane.ProviderWriteGate
-	// activityAfterItemsForTest pauses Activity between its two identity reads
-	// so tests can prove the request-wide repository reconciliation fence.
-	activityAfterItemsForTest func()
-	// providerDescriptorBeforeSnapshotForTest marks descriptor admission before
-	// the reconciliation lease so tests can queue an identity writer first.
-	providerDescriptorBeforeSnapshotForTest func()
-	markdownImages                          *markdownImageCache
-	roborevRepositories                     *roborevRepositoryProbe
+	markdownImages         *markdownImageCache
+	roborevRepositories    *roborevRepositoryProbe
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.

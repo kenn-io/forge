@@ -687,11 +687,9 @@ func queueArchivePromptByIdentity(
 		  AND repo_id = (
 			SELECT r.id
 			FROM forge_repos r
-			JOIN forge_repo_routes rr
-			  ON rr.repo_id = r.id AND rr.is_current = 1
 			WHERE r.lifecycle_state = 'active'
-			  AND rr.platform = ? AND rr.platform_host = ?
-			  AND rr.repo_path_key = ?
+			  AND r.platform = ? AND r.platform_host = ?
+			  AND r.repo_path_key = ?
 		  )`, now.UTC(), identity.Platform, identity.PlatformHost, identity.RepoPathKey)
 	if err != nil {
 		return fmt.Errorf("queue archive prompt destination: %w", err)

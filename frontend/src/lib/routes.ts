@@ -3,7 +3,7 @@ import { providerRouteParams, type ProviderRouteRef as APIProviderRouteRef } fro
 export type RepositoryRouteRef = {
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: string | undefined;
+  platformRepoId?: number | undefined;
   owner: string;
   name: string;
   repoPath: string;

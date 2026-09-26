@@ -5,8 +5,9 @@ package server
 import (
 	"time"
 
-	"go.kenn.io/forge/internal/procutil"
 	"golang.org/x/sys/unix"
+
+	"go.kenn.io/forge/internal/procutil"
 )
 
 func init() {

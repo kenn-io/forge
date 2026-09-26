@@ -30,7 +30,7 @@
     itemType: "pr" | "issue";
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoPath: string;
     owner: string;
     name: string;

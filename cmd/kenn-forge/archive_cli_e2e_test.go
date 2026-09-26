@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -77,9 +78,9 @@ token_env = "KENN_FORGE_ARCHIVE_E2E_TOKEN"
 	database := dbtest.OpenAt(t, filepath.Join(dataDir, "forge.db"))
 	ref := platform.RepoRef{
 		Platform: platform.KindGitLab, Host: host, Owner: "owner",
-		Name: "archive", RepoPath: "owner/archive", PlatformExternalID: "1",
+		Name: "archive", RepoPath: "owner/archive", PlatformID: 1,
 	}
-	repoID, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(ref))
+	repoID, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NoError(database.EnsureDiscoveryArchives(t.Context(), []int64{repoID}, now))
 	require.NoError(database.ReconcileArchiveCoverage(t.Context(), repoID, db.ArchiveCoverageSet{

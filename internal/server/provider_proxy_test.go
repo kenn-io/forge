@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
 )
@@ -258,7 +259,7 @@ func TestHubWorkflowMutationTransportFailureIsAmbiguous(t *testing.T) {
 	_, err := server.MCPBackend().SetWorkflowState(
 		t.Context(), mcpserver.ItemIdentity{
 			Type: "pr", Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 42,
+			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget", Number: 42,
 		},
 		mcpserver.WorkflowUpdate{Status: "reviewing", ExpectedStatus: "new"},
 	)
@@ -396,7 +397,7 @@ func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
 	for i := range subjects {
 		subjects[i] = providerplane.ItemIdentity{
 			Repository: platform.RepositoryIdentity{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 			},
 			ItemType: "pr", ItemNumber: i + 1,
 		}
@@ -474,8 +475,8 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	))
 
 	spoke, spokeDatabase := setupTestServer(t)
-	spokeRepoID, err := spokeDatabase.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	spokeRepoID, err := reposeed.Seed(
+		t.Context(), spokeDatabase, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	spoke.providerSource = &hubProviderSource{client: providerPlaneClientFunc(func(
@@ -510,14 +511,14 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 				{
 					Repo: activityRepoRefResponse{
 						Provider: "github", PlatformHost: "github.com",
-						PlatformRepoID: "repo-acme-widget",
+						PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 					},
 					ItemType: "issue", ItemNumber: 7,
 				},
 				{
 					Repo: activityRepoRefResponse{
 						Provider: "github", PlatformHost: "github.com",
-						PlatformRepoID: "repo-acme-widget",
+						PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 					},
 					ItemType: "issue", ItemNumber: 8,
 				},

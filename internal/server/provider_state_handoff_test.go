@@ -11,10 +11,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func providerHandoffServerFixture(
@@ -23,7 +25,7 @@ func providerHandoffServerFixture(
 	t.Helper()
 	database := dbtest.Open(t)
 	identity := verifiedGitHubRepoIdentity("github.com", "acme", "widget")
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
 	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{

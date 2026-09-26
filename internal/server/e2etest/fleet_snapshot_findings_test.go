@@ -16,6 +16,7 @@ import (
 
 	dbpkg "go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func putJSON(
@@ -54,7 +55,7 @@ func seedLinkedProject(
 	t.Helper()
 	ctx := t.Context()
 	identity = verifiedRepoIdentity(identity)
-	repoID, err := database.UpsertRepo(ctx, identity)
+	repoID, err := reposeed.Seed(ctx, database, identity)
 	require.NoError(t, err)
 	project, err := database.CreateProject(ctx, dbpkg.CreateProjectInput{
 		DisplayName:   identity.Name,
@@ -67,9 +68,8 @@ func seedLinkedProject(
 }
 
 func verifiedRepoIdentity(identity dbpkg.RepoIdentity) dbpkg.RepoIdentity {
-	if identity.PlatformRepoID == "" {
-		identity.PlatformRepoID = "test-" + identity.Platform + "-" +
-			identity.PlatformHost + "-" + identity.Owner + "-" + identity.Name
+	if identity.PlatformRepoID == 0 {
+		identity.PlatformRepoID = reposeed.SyntheticID(identity)
 	}
 	return identity
 }

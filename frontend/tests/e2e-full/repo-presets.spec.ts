@@ -27,7 +27,7 @@ test("repository presets persist, overwrite atomically, and delete without clear
     await expect(page.getByRole("button", { name: "Select repository: Review queue" })).toBeVisible();
     let configText = await readFile(server.info.config_path, "utf8");
     expect(configText).toContain('name = "Review queue"');
-    expect(configText).toContain('platform_repo_id = "');
+    expect(configText).toMatch(/platform_repo_id = \d+/);
 
     await page.getByRole("button", { name: "Select repository: Review queue" }).click();
     await page

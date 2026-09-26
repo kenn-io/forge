@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -20,8 +21,8 @@ func TestBuildLocalRawCorrelatesRenamedRepositoryByStableIdentity(t *testing.T) 
 	require := require.New(t)
 	database := dbtest.Open(t)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 		Owner: "acme", Name: "widget-renamed", RepoPath: "acme/widget-renamed",
 	})
 	require.NoError(err)
@@ -37,7 +38,7 @@ func TestBuildLocalRawCorrelatesRenamedRepositoryByStableIdentity(t *testing.T) 
 			ID: "ws-renamed",
 			Repository: fleet.RepositoryIdentity{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget",
+				PlatformRepoID: 1001,
 				Owner:          "acme", Name: "widget",
 			},
 			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7, ItemKey: "7",
@@ -108,16 +109,16 @@ func TestBuildLocalRawSynthesizedProjectFillsDefaultBranchFromSyncedRepo(t *test
 	database := dbtest.Open(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-o-synced",
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002,
 		Owner: "o", Name: "synced", RepoPath: "o/synced",
 	})
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+	require.NoError(database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
 		WebURL:        "https://github.com/o/synced",
 		CloneURL:      "https://github.com/o/synced.git",
 		DefaultBranch: "trunk",
-	}))
+	}, nil, nil))
 
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 		ID: "ws-synced", Platform: "github", PlatformHost: "github.com",
@@ -147,8 +148,8 @@ func TestBuildLocalRawOverlaysWorkspaceOntoProjectWorktree(t *testing.T) {
 		DisplayName: "app", LocalPath: filepath.Join(t.TempDir(), "app"), DefaultBranch: "main",
 	})
 	require.NoError(err)
-	_, err = database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-o-app",
+	_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1003,
 		Owner: "o", Name: "app", RepoPath: "o/app",
 	})
 	require.NoError(err)

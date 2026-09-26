@@ -323,12 +323,6 @@ func (o *PushedHeadObserver) workspaceRepository(
 			DefaultBranch:  launchSpec.Repository.DefaultBranch,
 		}, nil
 	}
-	collision, err := o.db.WorkspaceRepoRouteHasHistoricalOccupants(
-		ctx, workspaceProvider(ws), ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-	)
-	if err != nil || collision {
-		return nil, err
-	}
 	repo, err := o.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     workspaceProvider(ws),
 		PlatformHost: ws.PlatformHost,

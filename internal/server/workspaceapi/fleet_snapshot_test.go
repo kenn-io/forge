@@ -10,6 +10,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
@@ -18,9 +19,9 @@ func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
 	require := require.New(t)
 
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepoByProviderID(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "octo", Name: "repo",
+		PlatformRepoID: 1001, Owner: "octo", Name: "repo",
 	})
 	require.NoError(err)
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
@@ -33,11 +34,11 @@ func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_workspaces
-		    (id, platform, platform_host, repo_owner, repo_name,
+		    (id, platform, platform_host, repo_owner, repo_name, repo_id,
 		     item_type, item_number, item_key, git_head_ref, worktree_path,
 		     tmux_session, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		"ws-fleet", "github", "github.com", "octo", "repo",
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"ws-fleet", "github", "github.com", "octo", "repo", repoID,
 		db.WorkspaceItemTypePullRequest, 7, "7", "feature", t.TempDir(),
 		"ws-fleet", "ready",
 	)
@@ -49,7 +50,7 @@ func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
 	require.Len(snapshot.Workspaces, 1)
 	workspace := snapshot.Workspaces[0]
 	assert.Equal("ws-fleet", workspace.ID)
-	assert.Equal("R_widget", workspace.Repository.PlatformRepoID)
+	assert.Equal(int64(1001), workspace.Repository.PlatformRepoID)
 	assert.True(workspace.SourceItemVisible)
 	assert.Nil(workspace.MRTitle, "spoke raw state must omit provider title")
 	assert.Nil(workspace.MRState, "spoke raw state must omit provider state")

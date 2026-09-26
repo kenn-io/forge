@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
@@ -83,15 +84,13 @@ func TestAcceptedFullSyncStaysRunningUntilQueuedProviderDataPersistsE2E(t *testi
 		getRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
-			id := int64(1)
-			nodeID := "repo-acme-widget"
+			id := testutil.FixtureRepoID(owner, repo)
 			defaultBranch := "stale"
 			if providerFresh.Load() {
 				defaultBranch = "fresh"
 			}
 			return &gh.Repository{
 				ID:            &id,
-				NodeID:        &nodeID,
 				Name:          &repo,
 				Owner:         &gh.User{Login: &owner},
 				Archived:      new(bool),
@@ -119,11 +118,10 @@ func TestAcceptedFullSyncStaysRunningUntilQueuedProviderDataPersistsE2E(t *testi
 		database,
 		nil,
 		[]ghclient.RepoRef{{
-			Platform:           platform.KindGitHub,
-			Owner:              "acme",
-			Name:               "widget",
-			PlatformHost:       "github.com",
-			PlatformExternalID: "repo-acme-widget",
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "widget",
+			PlatformHost: "github.com",
 		}},
 		time.Minute,
 		nil,
@@ -216,11 +214,7 @@ func TestQueuedScopedHTTPRefreshKeepsBypassRepositoryBoundE2E(t *testing.T) {
 		getRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
-			id := int64(1)
-			if repo == "unrelated" {
-				id = 2
-			}
-			nodeID := "repo-acme-" + repo
+			id := testutil.FixtureRepoID(owner, repo)
 			defaultBranch := "seed"
 			if repo == "selected" {
 				switch phase.Load() {
@@ -232,7 +226,6 @@ func TestQueuedScopedHTTPRefreshKeepsBypassRepositoryBoundE2E(t *testing.T) {
 			}
 			return &gh.Repository{
 				ID:            &id,
-				NodeID:        &nodeID,
 				Name:          &repo,
 				Owner:         &gh.User{Login: &owner},
 				Archived:      new(bool),
@@ -263,18 +256,16 @@ func TestQueuedScopedHTTPRefreshKeepsBypassRepositoryBoundE2E(t *testing.T) {
 	bucket := ghclient.RateBucketKey("github", "github.com", "host")
 	repos := []ghclient.RepoRef{
 		{
-			Platform:           platform.KindGitHub,
-			Owner:              "acme",
-			Name:               "selected",
-			PlatformHost:       "github.com",
-			PlatformExternalID: "repo-acme-selected",
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "selected",
+			PlatformHost: "github.com",
 		},
 		{
-			Platform:           platform.KindGitHub,
-			Owner:              "acme",
-			Name:               "unrelated",
-			PlatformHost:       "github.com",
-			PlatformExternalID: "repo-acme-unrelated",
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "unrelated",
+			PlatformHost: "github.com",
 		},
 	}
 	syncer := ghclient.NewSyncer(
@@ -402,9 +393,8 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 		nil,
 		[]ghclient.RepoRef{{
 			Owner: "acme", Name: "widget",
-			PlatformHost:       "github.com",
-			PlatformRepoID:     101,
-			PlatformExternalID: "R_101",
+			PlatformHost:   "github.com",
+			PlatformRepoID: 101,
 		}},
 		time.Minute,
 		map[string]*ghclient.RateTracker{"github.com": restTracker},
@@ -544,9 +534,8 @@ func TestSyncItemBudgetExhaustionIdentifiesLocalCeilingE2E(t *testing.T) {
 		nil,
 		[]ghclient.RepoRef{{
 			Owner: "acme", Name: "widget",
-			PlatformHost:       "github.com",
-			PlatformRepoID:     101,
-			PlatformExternalID: "R_101",
+			PlatformHost:   "github.com",
+			PlatformRepoID: 101,
 		}},
 		time.Minute,
 		map[string]*ghclient.RateTracker{"github.com": restTracker},
@@ -621,13 +610,12 @@ func TestGitLabSyncBudgetExhaustionIncludesWindowE2E(t *testing.T) {
 		database,
 		nil,
 		[]ghclient.RepoRef{{
-			Platform:           platform.KindGitLab,
-			PlatformHost:       "gitlab.example.com",
-			PlatformRepoID:     42,
-			PlatformExternalID: "42",
-			Owner:              "group",
-			Name:               "project",
-			RepoPath:           "group/project",
+			Platform:       platform.KindGitLab,
+			PlatformHost:   "gitlab.example.com",
+			PlatformRepoID: 42,
+			Owner:          "group",
+			Name:           "project",
+			RepoPath:       "group/project",
 		}},
 		time.Minute,
 		nil,

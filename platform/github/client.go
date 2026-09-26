@@ -100,6 +100,7 @@ type Client struct {
 	now                     func() time.Time
 	viewerCacheTTL          time.Duration
 	readOnlyContext         func(context.Context) bool
+	ownerContext            func(context.Context, string) context.Context
 	graphQLContext          func(context.Context) context.Context
 	progressFactory         func(string, string, string) Progress
 	warning                 func(string, ...any)
@@ -2104,6 +2105,30 @@ func (c *Client) GetRepository(
 	if err != nil {
 		return nil, fmt.Errorf("getting repository %s/%s: %w", owner, repo, err)
 	}
+	return c.withViewerOverlay(ctx, r)
+}
+
+// GetRepositoryByID reads a repository by its integer ID, so a renamed or
+// transferred repository resolves to its current route. owner, the last known
+// owner, only selects credentials; the ID alone decides the repository.
+func (c *Client) GetRepositoryByID(
+	ctx context.Context, owner string, id int64,
+) (*gh.Repository, error) {
+	if c.ownerContext != nil {
+		ctx = c.ownerContext(ctx, owner)
+	}
+	r, resp, err := c.gh.Repositories.GetByID(ctx, id)
+	c.trackRate(resp)
+	if err != nil {
+		return nil, fmt.Errorf("getting repository %d: %w", id, err)
+	}
+	return c.withViewerOverlay(ctx, r)
+}
+
+func (c *Client) withViewerOverlay(
+	ctx context.Context, r *gh.Repository,
+) (*gh.Repository, error) {
+	owner, repo := r.GetOwner().GetLogin(), r.GetName()
 	if !c.splitAuthActive() {
 		return r, nil
 	}

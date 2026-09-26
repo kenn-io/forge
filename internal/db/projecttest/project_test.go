@@ -10,6 +10,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -53,7 +54,7 @@ func TestCreateProjectLinkedToRepo(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
+	repoID, err := reposeed.Seed(ctx, d, db.GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
 	require.NoError(err)
 
 	project, err := d.CreateProject(ctx, db.CreateProjectInput{
@@ -85,7 +86,7 @@ func TestCreateProjectFKSetNullOnRepoDelete(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, db.GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
+	repoID, err := reposeed.Seed(ctx, d, db.GitHubRepoIdentity("github.com", "wesm", "examplerepo"))
 	require.NoError(err)
 
 	project, err := d.CreateProject(ctx, db.CreateProjectInput{

@@ -19,7 +19,7 @@ func gitLabPagesTestRef() platform.RepoRef {
 	return platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.example.com",
 		Owner: "group", Name: "project", RepoPath: "group/project", PlatformID: 42,
-		PlatformExternalID: "42", WebURL: "https://gitlab.example.com/group/project",
+		WebURL: "https://gitlab.example.com/group/project",
 	}
 }
 

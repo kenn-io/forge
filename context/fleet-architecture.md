@@ -29,9 +29,9 @@ or remote workspace and session operations.
   devbox selections while disconnected. (`internal/config/devbox.go::ValidateDefaultExecutionTarget`)
 - Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
   belong only on the direct tailnet connection. (`internal/server/devboxes.go::registerDevboxTerminalAPI`)
-- Devbox repository admission and launch context use GitHub node IDs, matching the controller's
-  catalog; numeric REST IDs scope App installation tokens, not workspace identity.
-  (`internal/server/workspaceapi/execution_worker.go::Handler.admitWorkerRepository`)
+- Devbox repository admission and launch context use GitHub's integer repository ID, the same
+  ID that scopes App installation tokens
+  (`internal/server/workspaceapi/execution_worker.go::Handler.admitWorkerRepository`).
 
 ## Ownership And Topology
 
@@ -329,7 +329,7 @@ change-driven and idle-cheap:
   (`internal/db/queries_workspace_launch_specs.go::DB.CreateWorkspaceWithLaunchSpec`,
   `internal/workspace/launch_spec.go::Manager.lifecycleSummary`).
 - Launch-spec refresh follows stable provider identity across renames and
-  commits the verified route with the specification; reused routes stay fenced
+  commits the verified route with the specification
   (`internal/db/queries_workspace_launch_specs.go::DB.PutRefreshedWorkspaceLaunchSpec`).
 - Source visibility is a strict 15-minute hub lease for setup and
   provider-backed Git work. Once it expires, those operations must refresh it;

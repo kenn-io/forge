@@ -237,7 +237,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoPath: string;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -643,7 +643,7 @@
   });
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
-  let lastDetailLoadPlatformRepoId: string | undefined;
+  let lastDetailLoadPlatformRepoId: number | undefined;
   let lastDetailLoadAutoSync: DetailSyncMode | undefined;
   let lastDetailLoadWorkflowApprovalSync: boolean | undefined;
 

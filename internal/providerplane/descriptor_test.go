@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/federation"
 )
 
@@ -14,21 +15,19 @@ func TestRepositoryDescriptorValidatesHubFacts(t *testing.T) {
 	require := require.New(t)
 	observedAt := time.Date(2026, time.August, 22, 12, 0, 0, 0, time.UTC)
 	descriptor, err := BuildRepositoryDescriptor(RepositorySnapshot{
-		Provider:         "github",
-		PlatformHost:     "github.com",
-		PlatformRepoID:   "R_1",
-		Owner:            "acme",
-		Name:             "widget",
-		CloneURL:         "https://github.com/acme/widget.git",
-		DefaultBranch:    "main",
-		SnapshotRevision: 7,
-		ObservedAt:       observedAt,
-		Stale:            true,
+		Provider:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: 1001,
+		Owner:          "acme",
+		Name:           "widget",
+		CloneURL:       "https://github.com/acme/widget.git",
+		DefaultBranch:  "main",
+		ObservedAt:     observedAt,
+		Stale:          true,
 	})
 	require.NoError(err)
 	assert.Equal(federation.ProtocolVersion, descriptor.ProtocolVersion)
-	assert.Equal("R_1", descriptor.PlatformRepoID)
-	assert.Equal(uint64(7), descriptor.SnapshotRevision)
+	assert.Equal(int64(1001), descriptor.PlatformRepoID)
 	assert.Equal(observedAt, descriptor.ObservedAt)
 	assert.True(descriptor.Stale)
 	require.NoError(descriptor.Validate())
@@ -40,15 +39,14 @@ func TestRepositoryDescriptorValidatesHubFacts(t *testing.T) {
 
 func TestRepositoryDescriptorRejectsUntrustedFacts(t *testing.T) {
 	valid := RepositoryDescriptor{
-		ProtocolVersion:  federation.ProtocolVersion,
-		Provider:         "github",
-		PlatformHost:     "github.com",
-		PlatformRepoID:   "R_1",
-		Owner:            "acme",
-		Name:             "widget",
-		CloneURL:         "https://github.com/acme/widget.git",
-		DefaultBranch:    "main",
-		SnapshotRevision: 1,
+		ProtocolVersion: federation.ProtocolVersion,
+		Provider:        "github",
+		PlatformHost:    "github.com",
+		PlatformRepoID:  1001,
+		Owner:           "acme",
+		Name:            "widget",
+		CloneURL:        "https://github.com/acme/widget.git",
+		DefaultBranch:   "main",
 		ObservedAt: time.Date(
 			2026, time.August, 22, 12, 0, 0, 0, time.UTC,
 		),
@@ -56,7 +54,7 @@ func TestRepositoryDescriptorRejectsUntrustedFacts(t *testing.T) {
 
 	tests := map[string]func(*RepositoryDescriptor){
 		"missing stable identity": func(value *RepositoryDescriptor) {
-			value.PlatformRepoID = ""
+			value.PlatformRepoID = 0
 		},
 		"invalid clone URL": func(value *RepositoryDescriptor) {
 			value.CloneURL = "https://github.com/other/widget.git"
@@ -83,11 +81,10 @@ func TestDiffDescriptorUsesOneHubSnapshot(t *testing.T) {
 	require := require.New(t)
 	descriptor, err := BuildDiffDescriptor(DiffSnapshot{
 		Repository: RepositorySnapshot{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_1",
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 			Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
-			SnapshotRevision: 7,
-			ObservedAt:       time.Date(2026, time.August, 22, 12, 0, 0, 0, time.UTC),
+			ObservedAt: time.Date(2026, time.August, 22, 12, 0, 0, 0, time.UTC),
 		},
 		PullNumber:       42,
 		SnapshotRevision: 19,
@@ -99,7 +96,7 @@ func TestDiffDescriptorUsesOneHubSnapshot(t *testing.T) {
 		Stale:            true,
 	})
 	require.NoError(err)
-	assert.Equal("R_1", descriptor.Repository.PlatformRepoID)
+	assert.Equal(int64(1001), descriptor.Repository.PlatformRepoID)
 	assert.Equal("base-sha", descriptor.DiffBaseSHA)
 	assert.Equal("merge-base-sha", descriptor.MergeBaseSHA)
 	assert.Equal("head-sha", descriptor.DiffHeadSHA)

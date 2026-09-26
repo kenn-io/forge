@@ -233,13 +233,6 @@ func (m *PRMonitor) listOpenPullCandidates(
 			State:  "open",
 		})
 	}
-	collision, err := m.db.WorkspaceRepoRouteHasHistoricalOccupants(
-		ctx, workspaceProvider(workspace), workspace.PlatformHost,
-		workspace.RepoOwner, workspace.RepoName,
-	)
-	if err != nil || collision {
-		return nil, err
-	}
 	repo, err := m.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:     workspaceProvider(workspace),
 		PlatformHost: workspace.PlatformHost,

@@ -17,9 +17,10 @@ require user authorization and are outside this MCP server's capabilities.
 
 Recommended flow:
 
-1. Call `kenn_forge_list_repos` first to discover valid repo filters, stable
-   `platform_repo_id` values, and sync freshness. Copy the stable ID into every
-   later repository or item reference; do not reconstruct references from routes.
+1. Call `kenn_forge_list_repos` first to discover valid repo filters,
+   `platform_repo_id` values (the provider's integer repository ID), and sync
+   freshness. Copy that integer ID into every later repository or item
+   reference; do not reconstruct references from routes.
 2. For all open PRs in a repository, use `kenn_forge_list_pull_contexts` with
    the repository filter. Use `kenn_forge_find_review_candidates` for recent PR
    and issue activity instead.

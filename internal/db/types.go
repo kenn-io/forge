@@ -37,7 +37,7 @@ type Repo struct {
 	ID                    int64
 	Platform              string
 	PlatformHost          string
-	PlatformRepoID        string `json:"-"`
+	PlatformRepoID        int64 `json:"-"`
 	Owner                 string
 	Name                  string
 	RepoPath              string `json:"-"`
@@ -94,10 +94,13 @@ func newActiveRepo(repo Repo) (*ActiveRepo, error) {
 	return &ActiveRepo{Repo: repo, identity: identity}, nil
 }
 
+// RepoIdentity is a repository route (owner/name) plus, once the provider has
+// verified it, the provider's integer repository ID. Lookups by route resolve
+// user input; the provider ID is the key everywhere else.
 type RepoIdentity struct {
 	Platform       string
 	PlatformHost   string
-	PlatformRepoID string
+	PlatformRepoID int64
 	Owner          string
 	Name           string
 	RepoPath       string
@@ -106,11 +109,18 @@ type RepoIdentity struct {
 	RepoPathKey    string
 }
 
+// ProviderIdentity returns the provider identity part of the route.
+func (r RepoIdentity) ProviderIdentity() platform.RepositoryIdentity {
+	return platform.RepositoryIdentity{
+		Provider: r.Platform, PlatformHost: r.PlatformHost,
+		PlatformRepoID: r.PlatformRepoID,
+	}.Canonical()
+}
+
 type RepoProviderMetadata struct {
-	PlatformRepoID string
-	WebURL         string
-	CloneURL       string
-	DefaultBranch  string
+	WebURL        string
+	CloneURL      string
+	DefaultBranch string
 }
 
 type RepoMergeSettings struct {
@@ -858,7 +868,7 @@ type ListWorkflowStatesOpts struct {
 type WorkflowStateListRow struct {
 	Platform       string
 	PlatformHost   string
-	PlatformRepoID string
+	PlatformRepoID int64
 	Owner          string
 	Name           string
 	RepoPath       string
@@ -916,7 +926,7 @@ type WorkspaceSubjectMetadata struct {
 	Key            WorkspaceSubjectKey
 	Platform       string
 	PlatformHost   string
-	PlatformRepoID string
+	PlatformRepoID int64
 	RepoOwner      string
 	RepoName       string
 	RepoPath       string
@@ -936,7 +946,7 @@ type RepoViewerLogin struct {
 type RepoFilter struct {
 	Platform       string
 	PlatformHost   string
-	PlatformRepoID string
+	PlatformRepoID int64
 	RepoOwner      string
 	RepoName       string
 	RepoPath       string
@@ -1128,7 +1138,7 @@ type ActivityItem struct {
 	RepoID         int64
 	Platform       string
 	PlatformHost   string
-	PlatformRepoID string
+	PlatformRepoID int64
 	RepoOwner      string
 	RepoName       string
 	RepoPath       string
@@ -1344,15 +1354,23 @@ var (
 type WorkspaceLaunchRepository struct {
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 	CloneURL       string `json:"clone_url"`
 	DefaultBranch  string `json:"default_branch"`
 }
 
+// Identity returns the launch repository's provider identity.
+func (r WorkspaceLaunchRepository) Identity() platform.RepositoryIdentity {
+	return platform.RepositoryIdentity{
+		Provider: r.Provider, PlatformHost: r.PlatformHost,
+		PlatformRepoID: r.PlatformRepoID,
+	}.Canonical()
+}
+
 type WorkspaceLaunchPull struct {
-	BaseRepoID       string `json:"base_repo_id,omitempty"`
+	BaseRepoID       int64  `json:"base_repo_id,omitempty"`
 	BaseBranch       string `json:"base_branch,omitempty"`
 	BaseOID          string `json:"base_oid,omitempty"`
 	HeadOID          string `json:"head_oid,omitempty"`
@@ -1390,11 +1408,13 @@ func (spec WorkspaceLaunchSpec) Validate() error {
 	}{
 		{name: "provider", value: spec.Repository.Provider},
 		{name: "platform_host", value: spec.Repository.PlatformHost},
-		{name: "platform_repo_id", value: spec.Repository.PlatformRepoID},
 		{name: "owner", value: spec.Repository.Owner},
 		{name: "name", value: spec.Repository.Name},
 		{name: "clone_url", value: spec.Repository.CloneURL},
 		{name: "default_branch", value: spec.Repository.DefaultBranch},
+	}
+	if spec.Repository.PlatformRepoID <= 0 {
+		return errors.New("workspace launch repository platform_repo_id is required")
 	}
 	for _, field := range repositoryFields {
 		if strings.TrimSpace(field.value) == "" {
@@ -1498,14 +1518,14 @@ func (spec WorkspaceLaunchSpec) RequireVisible(now time.Time) error {
 type UnpreparedWorkspace struct {
 	Workspace      Workspace `json:"workspace"`
 	Reason         string    `json:"reason"`
-	PlatformRepoID string    `json:"-"`
+	PlatformRepoID int64     `json:"-"`
 }
 
 // WorkspaceSummary extends Workspace with joined source-item metadata.
 type WorkspaceSummary struct {
 	Workspace
 	RepoID         int64
-	RepoPlatformID string
+	RepoPlatformID int64
 	// SourceItemVisible and AssociatedPRVisible are false only at the public
 	// removed-upstream boundary. Inaccessible and not-yet-synced items remain
 	// visible by number, matching the rest of the public read contract.

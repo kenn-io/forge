@@ -42,6 +42,7 @@ import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filte
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { readIssuePRReferenceFilter, writeIssuePRReferenceFilter } from "./issue-pr-reference-filter.js";
 import { createRecentDetails } from "./recent-details.js";
+import { repoIdentityKey } from "../utils/repo-label.js";
 
 export type { IssueDetailSyncMode } from "./issues-workflow.js";
 
@@ -58,7 +59,7 @@ export interface IssueDetailRequestOptions {
   sync?: IssueDetailSyncMode;
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: string | undefined;
+  platformRepoId?: number | undefined;
   repoPath: string;
 }
 
@@ -68,7 +69,7 @@ type IssueDetailRequestRef = {
   number: number;
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: string | undefined;
+  platformRepoId?: number | undefined;
   repoPath: string;
 };
 
@@ -179,7 +180,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   type UnsavedIssueTarget = {
     provider: string;
     platformHost: string | undefined;
-    platformRepoId: string | undefined;
+    platformRepoId: number | undefined;
     owner: string;
     name: string;
     number: number;
@@ -243,7 +244,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function issuesByRepo(): Map<string, Issue[]> {
     const map = new Map<string, Issue[]>();
     for (const issue of getIssues()) {
-      const key = issueIdentityKey(issueRef(issue));
+      const key = issueRepoKey(issue);
       const existing = map.get(key);
       if (existing) existing.push(issue);
       else map.set(key, [issue]);
@@ -253,18 +254,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   // --- detail reads ---
 
-  function issueIdentityKey(ref: Pick<ProviderRouteRef, "provider" | "platformHost" | "repoPath">): string {
-    return JSON.stringify([ref.provider, ref.platformHost ?? "", ref.repoPath]);
-  }
-
-  function issueRef(issue: Issue): ProviderRouteRef {
-    return {
+  function issueRepoKey(issue: Issue): string {
+    return repoIdentityKey({
       provider: issue.repo.provider,
       platformHost: issue.repo.platform_host,
+      platformRepoId: issue.repo.platform_repo_id,
       owner: issue.repo.owner,
       name: issue.repo.name,
       repoPath: issue.repo.repo_path,
-    };
+    });
   }
 
   function issueMatchesSelection(issue: Issue, sel: IssueSelection): boolean {

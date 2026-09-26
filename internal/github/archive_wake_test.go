@@ -60,7 +60,7 @@ func (r *pacedArchiveRunner) recorded() []time.Time {
 // bubble so the syncer's channels and the loop's timers are all virtual.
 func startPacedArchiveLoop(t *testing.T, runner *pacedArchiveRunner) (*Syncer, func()) {
 	t.Helper()
-	syncer := NewSyncerWithRegistry(nil, nil, nil, nil, time.Hour, nil, nil)
+	syncer := NewSyncerWithRegistry(nil, openTestDB(t), nil, nil, time.Hour, nil, nil)
 	syncer.SetArchiveService(runner)
 	syncer.SetArchivePollIntervalForTesting(time.Second)
 	ctx, cancel := context.WithCancel(t.Context())

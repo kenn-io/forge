@@ -114,7 +114,7 @@
     kind: "branch";
     row: ActivityRow;
     provider: string;
-    platformRepoId: string;
+    platformRepoId?: number | undefined;
     repoOwner: string;
     repoName: string;
     repoPath: string;
@@ -422,7 +422,7 @@
       kind: "branch",
       row,
       provider: item.repo.provider,
-      platformRepoId: item.repo.platform_repo_id ?? "",
+      platformRepoId: item.repo.platform_repo_id,
       repoOwner: item.repo.owner,
       repoName: item.repo.name,
       repoPath: item.repo.repo_path,

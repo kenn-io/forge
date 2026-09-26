@@ -89,7 +89,7 @@ func TestCollectQueryRecordsChargedOnce(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 	s := &script{t: t, steps: []step{
-		{key: "repository", value: platform.Repository{Ref: route, PlatformID: 12}},
+		{key: "repository", value: observedRepository(12)},
 		{key: "association/" + head + "/", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}},
 		{key: "association/" + source + "/", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}},
 	}}
@@ -142,7 +142,7 @@ func mergedScript(t *testing.T) *script {
 	t.Helper()
 	detail := platform.LandingChange{Ref: platform.LandingChangeRef{ID: 7, Number: 3, TargetID: 12}, TargetID: 12, TargetBranch: "main", Merged: new(true), MergeSHA: new(head), SourceHead: new(source), SourceCount: new(int64(1)), Terminal: head, TerminalEvidence: "merged_commit_sha"}
 	s := &script{t: t, policy: platform.LandingSourcePolicy{RequireCount: true, MaxCommits: 250}, steps: []step{
-		{key: "repository", value: platform.Repository{Ref: route, PlatformID: 12}},
+		{key: "repository", value: observedRepository(12)},
 		{key: "association/" + head + "/", value: platform.Page[platform.LandingChangeRef]{Items: []platform.LandingChangeRef{{ID: 7, Number: 3, TargetID: 12}}, NextCursor: "next"}},
 		{key: "association/" + head + "/next", value: platform.Page[platform.LandingChangeRef]{Items: []platform.LandingChangeRef{{ID: 7, Number: 3, TargetID: 12}}, Exhausted: true}},
 		{key: "association/" + source + "/", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}},
@@ -372,7 +372,7 @@ func TestCollectNoResultOnInvalidInput(t *testing.T) {
 			case "canceled":
 				cancel()
 			case "identity":
-				s.steps[0].value = platform.Repository{Ref: route, PlatformID: 99}
+				s.steps[0].value = observedRepository(99)
 			case "reader identity":
 				s.steps[4] = step{key: "detail", err: platform.ErrLandingIdentityMismatch}
 			case "output":
@@ -429,4 +429,10 @@ func TestCollectCursorCycle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "repeated_cursor", got.Evidence.Inventory.Reason)
 	assert.False(t, got.Evidence.Inventory.Complete)
+}
+
+func observedRepository(id int64) platform.Repository {
+	ref := route
+	ref.PlatformID = id
+	return platform.Repository{Ref: ref}
 }

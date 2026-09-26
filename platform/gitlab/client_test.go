@@ -20,6 +20,7 @@ import (
 	ghsync "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/ratelimit"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -69,6 +70,38 @@ func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) 
 		"/api/v4/projects/group%2Fsubgroup%2Fproject",
 		"/api/v4/projects/42/merge_requests",
 	}, paths)
+}
+
+func TestClientGetRepositoryWithPinnedIDFetchesProjectByIDAndReturnsRenamedRoute(t *testing.T) {
+	assert := assert.New(t)
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.EscapedPath())
+		if r.URL.EscapedPath() != "/api/v4/projects/1001" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, `{
+			"id": 1001,
+			"path": "new-name",
+			"path_with_namespace": "new-group/new-name",
+			"name": "New Name"
+		}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	repo, err := client.GetRepository(t.Context(), platform.RepoRef{
+		Platform: platform.KindGitLab, Host: "gitlab.example.com",
+		RepoPath: "old-group/old-name", PlatformID: 1001,
+	})
+	require.NoError(t, err)
+
+	assert.Equal([]string{"/api/v4/projects/1001"}, paths)
+	assert.Equal("new-group", repo.Ref.Owner)
+	assert.Equal("new-name", repo.Ref.Name)
+	assert.Equal("new-group/new-name", repo.Ref.RepoPath)
+	assert.Equal(int64(1001), repo.Ref.PlatformID)
 }
 
 func TestClientTestHelperDisablesRetries(t *testing.T) {
@@ -238,6 +271,8 @@ func TestClientListOpenMergeRequestsContinuesWhenForkHeadRepoLookupFails(t *test
 			ref := platform.RepoRef{
 				Platform:   platform.KindGitLab,
 				Host:       "gitlab.example.com",
+				Owner:      "group",
+				Name:       "project",
 				RepoPath:   "group/project",
 				PlatformID: 42,
 				CloneURL:   "https://gitlab.example.com/group/project.git",
@@ -252,7 +287,7 @@ func TestClientListOpenMergeRequestsContinuesWhenForkHeadRepoLookupFails(t *test
 				"an unavailable fork project must preserve any stored clone URL")
 
 			database := dbtest.Open(t)
-			repoID, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(ref))
+			repoID, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 			require.NoError(err)
 			known := platformdb.DBMergeRequest(repoID, mrs[0])
 			known.HeadRepoCloneURL = "https://gitlab.example.com/fork/project.git"

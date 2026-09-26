@@ -622,7 +622,7 @@
   const ViewedItem = Schema.Struct({
     provider: Schema.NonEmptyString,
     platformHost: Schema.NonEmptyString,
-    platformRepoId: Schema.optional(Schema.NonEmptyString),
+    platformRepoId: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
     owner: Schema.NonEmptyString,
     name: Schema.NonEmptyString,
     repoPath: Schema.NonEmptyString,

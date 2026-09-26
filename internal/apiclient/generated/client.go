@@ -48126,7 +48126,7 @@ type ListActivityAuthorsQuery struct {
 type ListActivityThreadEventsQuery struct {
 	Provider       *string                                `json:"provider,omitempty"`
 	PlatformHost   *string                                `json:"platform_host,omitempty"`
-	PlatformRepoID *string                                `json:"platform_repo_id,omitempty"`
+	PlatformRepoID *int64                                 `json:"platform_repo_id,omitempty"`
 	ItemType       *ListActivityThreadEventsQueryItemType `json:"item_type,omitempty"`
 	ItemNumber     *int64                                 `json:"item_number,omitempty"`
 	Types          []string                               `json:"types,omitempty"`
@@ -53197,12 +53197,12 @@ type ActivityItemResponse struct {
 }
 
 type ActivityRepoRefResponse struct {
-	Name           string  `json:"name"`
-	Owner          string  `json:"owner"`
-	PlatformHost   string  `json:"platform_host"`
-	PlatformRepoID *string `json:"platform_repo_id,omitempty"`
-	Provider       string  `json:"provider"`
-	RepoPath       string  `json:"repo_path"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID *int64 `json:"platform_repo_id,omitempty"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type ActivityResponse struct {
@@ -53652,7 +53652,7 @@ type ConfiguredRepoStatus struct {
 	Name              string  `json:"name"`
 	Owner             string  `json:"owner"`
 	PlatformHost      string  `json:"platform_host"`
-	PlatformRepoID    *string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID    *int64  `json:"platform_repo_id,omitempty"`
 	Provider          string  `json:"provider"`
 	RepoPath          string  `json:"repo_path"`
 	TrackedRepoPath   *string `json:"tracked_repo_path,omitempty"`
@@ -54166,7 +54166,7 @@ type FeatureCapabilities struct {
 
 type FederationActivityRepositoryIdentity struct {
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 }
 
@@ -54226,7 +54226,7 @@ type FederationWorkflowItemIdentity struct {
 	Number         int64  `json:"number"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 	Type           string `json:"type"`
 }
@@ -54260,7 +54260,7 @@ type FederationWorkflowRepositoryIdentity struct {
 	Name           string `json:"name"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 	RepoPath       string `json:"repo_path"`
 }
@@ -55579,13 +55579,12 @@ type ProviderCapabilitiesResponse struct {
 }
 
 type ProviderRepositoryObservation struct {
-	Name           string    `json:"name"`
-	ObservedAt     time.Time `json:"observed_at"`
-	Owner          string    `json:"owner"`
-	PlatformHost   string    `json:"platform_host"`
-	PlatformRepoID string    `json:"platform_repo_id"`
-	Provider       string    `json:"provider"`
-	RepoPath       string    `json:"repo_path"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type ProviderSettingsResponse struct {
@@ -55631,7 +55630,7 @@ type ProviderStateRepository struct {
 	Name           string `json:"name"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 }
 
@@ -56135,7 +56134,7 @@ type RepoPreset struct {
 
 type RepoPresetRepository struct {
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 	RepoPath       string `json:"repo_path"`
 }
@@ -56180,7 +56179,7 @@ type RepoRefResponse struct {
 	Operations     *RepoOperations              `json:"operations,omitempty"`
 	Owner          string                       `json:"owner"`
 	PlatformHost   string                       `json:"platform_host"`
-	PlatformRepoID *string                      `json:"platform_repo_id,omitempty"`
+	PlatformRepoID *int64                       `json:"platform_repo_id,omitempty"`
 	Provider       string                       `json:"provider"`
 	RepoPath       string                       `json:"repo_path"`
 }
@@ -56200,7 +56199,7 @@ type RepoResponse struct {
 	Owner               string                       `json:"Owner"`
 	Platform            string                       `json:"Platform"`
 	PlatformHost        string                       `json:"PlatformHost"`
-	PlatformRepoID      string                       `json:"PlatformRepoID"`
+	PlatformRepoID      int64                        `json:"PlatformRepoID"`
 	ViewerCanMerge      bool                         `json:"ViewerCanMerge"`
 	Capabilities        ProviderCapabilitiesResponse `json:"capabilities"`
 	Operations          RepoOperations               `json:"operations"`
@@ -56274,25 +56273,24 @@ type RepoWorktreeBaseRequest struct {
 
 type RepositoryDescriptor struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string   `json:"$schema,omitempty"`
-	CloneURL         string    `json:"clone_url"`
-	DefaultBranch    string    `json:"default_branch"`
-	Name             string    `json:"name"`
-	ObservedAt       time.Time `json:"observed_at"`
-	Owner            string    `json:"owner"`
-	PlatformHost     string    `json:"platform_host"`
-	PlatformRepoID   string    `json:"platform_repo_id"`
-	ProtocolVersion  int64     `json:"protocol_version"`
-	Provider         string    `json:"provider"`
-	SnapshotRevision int64     `json:"snapshot_revision"`
-	Stale            bool      `json:"stale"`
+	Schema          *string   `json:"$schema,omitempty"`
+	CloneURL        string    `json:"clone_url"`
+	DefaultBranch   string    `json:"default_branch"`
+	Name            string    `json:"name"`
+	ObservedAt      time.Time `json:"observed_at"`
+	Owner           string    `json:"owner"`
+	PlatformHost    string    `json:"platform_host"`
+	PlatformRepoID  int64     `json:"platform_repo_id"`
+	ProtocolVersion int64     `json:"protocol_version"`
+	Provider        string    `json:"provider"`
+	Stale           bool      `json:"stale"`
 }
 
 type RepositoryIdentity struct {
 	Name           *string `json:"name,omitempty"`
 	Owner          *string `json:"owner,omitempty"`
 	PlatformHost   string  `json:"platformHost"`
-	PlatformRepoID string  `json:"platformRepoID"`
+	PlatformRepoID int64   `json:"platformRepoID"`
 	Provider       string  `json:"provider"`
 }
 
@@ -57125,7 +57123,7 @@ type WorkspaceKataSummary struct {
 type WorkspaceLaunchPull struct {
 	BaseBranch       *string                         `json:"base_branch,omitempty"`
 	BaseOid          *string                         `json:"base_oid,omitempty"`
-	BaseRepoID       *string                         `json:"base_repo_id,omitempty"`
+	BaseRepoID       *int64                          `json:"base_repo_id,omitempty"`
 	HeadBranch       string                          `json:"head_branch"`
 	HeadOid          *string                         `json:"head_oid,omitempty"`
 	HeadRepoCloneURL string                          `json:"head_repo_clone_url"`
@@ -57139,7 +57137,7 @@ type WorkspaceLaunchRepository struct {
 	Name           string `json:"name"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 }
 
@@ -57151,7 +57149,7 @@ type WorkspaceLaunchRequest struct {
 	ItemKey         *string         `json:"item_key,omitempty"`
 	ItemNumber      int64           `json:"item_number"`
 	ItemType        string          `json:"item_type"`
-	PlatformRepoID  *string         `json:"platform_repo_id,omitempty"`
+	PlatformRepoID  *int64          `json:"platform_repo_id,omitempty"`
 	Repository      RepositoryRoute `json:"repository"`
 }
 
@@ -57180,12 +57178,12 @@ type WorkspaceRef struct {
 }
 
 type WorkspaceRepositorySummary struct {
-	Name           string  `json:"name"`
-	Owner          string  `json:"owner"`
-	PlatformHost   string  `json:"platform_host"`
-	PlatformRepoID *string `json:"platform_repo_id,omitempty"`
-	Provider       string  `json:"provider"`
-	RepoPath       string  `json:"repo_path"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID *int64 `json:"platform_repo_id,omitempty"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type WorkspaceResponse struct {

@@ -33,7 +33,9 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -191,8 +193,8 @@ func TestFleetSnapshotLocalE2E(t *testing.T) {
 	})
 	require.NoError(err)
 	repoIdentity := dbpkg.GitHubRepoIdentity("github.com", "acme", "widget")
-	repoIdentity.PlatformRepoID = "repo-acme-widget"
-	_, err = database.UpsertRepo(ctx, repoIdentity)
+	repoIdentity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	_, err = reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	require.NoError(database.InsertWorkspace(ctx, &dbpkg.Workspace{
 		ID: "ws-1", Platform: "github", PlatformHost: "github.com",
@@ -243,8 +245,8 @@ func TestFleetSnapshotRetainsWorktreeWithoutRemovedPullMetadataE2E(t *testing.T)
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(
-		ctx, dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		ctx, database, dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -304,8 +306,8 @@ func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {
 	ctx := t.Context()
 
 	repoIdentity := dbpkg.GitHubRepoIdentity("github.com", "acme", "widget")
-	repoIdentity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(ctx, repoIdentity)
+	repoIdentity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoID, err := reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertIssue(ctx, &dbpkg.Issue{
@@ -1076,10 +1078,10 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 	hubTS, database := bootFleetServer(t, hubCfg)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, dbpkg.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, dbpkg.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.com",
-		PlatformRepoID: "gid://gitlab/Project/7007",
+		PlatformRepoID: 7007,
 		Owner:          "group/subgroup",
 		Name:           "widget",
 	})
@@ -1393,7 +1395,7 @@ func TestFleetSnapshotDraftFoldE2E(t *testing.T) {
 	ts, database := bootFleetServer(t, nil)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, verifiedRepoIdentity(
+	repoID, err := reposeed.Seed(ctx, database, verifiedRepoIdentity(
 		dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
 	))
 	require.NoError(err)

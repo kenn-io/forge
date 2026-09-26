@@ -113,7 +113,7 @@ func (s *hubProviderSource) WorkspaceProviderState(
 	out := append([]fleet.RawWorkspace(nil), workspaces...)
 	subjects := make([]generated.FederationWorkspaceProviderSubject, 0, len(workspaces))
 	for _, workspace := range workspaces {
-		if strings.TrimSpace(workspace.Repository.PlatformRepoID) == "" {
+		if workspace.Repository.PlatformRepoID == 0 {
 			continue
 		}
 		subject := generated.FederationWorkspaceProviderSubject{

@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/archive/report"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -105,8 +106,8 @@ func TestArchiveServiceEnsureConfiguredSkipsUnresolvableRef(t *testing.T) {
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 	good := archiveServiceRef(platform.KindGitHub, "github.test", "good")
-	// No provider id, no stored route, and the provider fake has no
-	// repository reader: the seed path cannot identify this ref.
+	// No provider id, no stored route, and the provider does not find it:
+	// the seed path cannot identify this ref.
 	ghost := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test",
 		Owner: "owner", Name: "ghost", RepoPath: "owner/ghost",
@@ -197,56 +198,82 @@ func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
 	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
 }
 
-func TestArchiveServiceEnsureConfiguredPreservesRenamedRepositoryAtExistingDestination(t *testing.T) {
+func TestArchiveServiceEnsureConfiguredUsesStoredRowForPinnedID(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
-	previous := archiveServiceRef(platform.KindGitHub, "github.test", "previous")
-	previous.PlatformExternalID = "repo-current"
-	current := archiveServiceRef(platform.KindGitHub, "github.test", "current")
-	current.PlatformExternalID = "repo-current"
-	staleDestination := current
-	staleDestination.PlatformExternalID = "repo-obsolete"
-
-	sourceID, err := database.UpsertRepoByProviderID(t.Context(), platformdb.DBRepoIdentity(previous))
-	require.NoError(err)
-	destinationID, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(staleDestination))
-	require.NoError(err)
-	provider := newArchiveServiceProvider(current.Platform, current.Host)
+	stored := archiveServiceRef(platform.KindGitHub, "github.test", "previous")
+	stored.PlatformID = 1001
+	configured := archiveServiceRef(platform.KindGitHub, "github.test", "current")
+	configured.PlatformID = 1001
+	storedID := archiveServiceSeedRepo(t, database, stored)
+	provider := newArchiveServiceProvider(configured.Platform, configured.Host)
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	service := newArchiveTestService(t, database, registry, []platform.RepoRef{current}, nil, now)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{configured}, nil, now)
 
-	requireEnsureConfigured(t, service, []platform.RepoRef{current})
-	repos, err := database.ListRepositoryCatalog(
-		t.Context(), db.RepositoryCatalogFilter{},
-	)
-	require.NoError(err)
-	require.Len(repos, 2)
-	assert.NotEqual(sourceID, destinationID)
+	requireEnsureConfigured(t, service, []platform.RepoRef{configured})
 
-	active, err := database.ResolveActiveRepositoryRoute(
-		t.Context(), platformdb.DBRepoIdentity(current),
-	)
-	require.NoError(err)
-	require.NotNil(active)
-	assert.Equal(sourceID, active.Repository.ID)
-	assert.Equal("repo-current", active.Repository.PlatformRepoID)
-	assert.Equal("current", active.Repository.Name)
-
-	stale, err := database.GetRepositoryByProviderID(
-		t.Context(), "github", "github.test", "repo-obsolete",
-	)
-	require.NoError(err)
-	require.NotNil(stale)
-	assert.Equal(destinationID, stale.Repository.ID)
-	assert.Equal(db.RepositoryLifecycleInactive, stale.Lifecycle)
-
-	states, err := database.ListArchiveRepoStates(t.Context(), []int64{sourceID, destinationID})
+	assert.Empty(provider.lookups, "a stored pinned ID needs no provider lookup")
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{storedID})
 	require.NoError(err)
 	require.Len(states, 1)
-	assert.Equal(sourceID, states[0].RepoID)
+	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
+}
+
+func TestArchiveServiceEnsureConfiguredResolvesUnstoredPinnedIDThroughProvider(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	configured := archiveServiceRef(platform.KindGitHub, "github.test", "previous")
+	configured.PlatformID = 1001
+	renamed := archiveServiceRef(platform.KindGitHub, "github.test", "current")
+	renamed.PlatformID = 1001
+	provider := newArchiveServiceProvider(configured.Platform, configured.Host)
+	provider.repositories = []platform.Repository{{Ref: renamed}}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{configured}, nil, now)
+
+	requireEnsureConfigured(t, service, []platform.RepoRef{configured})
+
+	require.Len(provider.lookups, 1)
+	assert.Equal(int64(1001), provider.lookups[0].PlatformID)
+	entry, err := database.GetRepositoryByProviderID(t.Context(), platform.RepositoryIdentity{
+		Provider: string(platform.KindGitHub), PlatformHost: "github.test", PlatformRepoID: 1001,
+	})
+	require.NoError(err)
+	require.NotNil(entry)
+	assert.Equal("current", entry.Repository.Name, "the row records the provider's current route")
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{entry.Repository.ID})
+	require.NoError(err)
+	require.Len(states, 1)
+}
+
+func TestArchiveServiceEnsureConfiguredRejectsProviderIDMismatch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	configured := archiveServiceRef(platform.KindGitHub, "github.test", "widget")
+	configured.PlatformID = 1001
+	other := configured
+	other.PlatformID = 1002
+	provider := newArchiveServiceProvider(configured.Platform, configured.Host)
+	provider.repositories = []platform.Repository{{Ref: other}}
+	provider.byRoute = true
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{configured}, nil, now)
+
+	seeded, err := service.EnsureConfigured(t.Context(), []platform.RepoRef{configured})
+	require.NoError(err)
+	assert.Empty(seeded)
+	repos, err := database.ListRepositoryCatalog(t.Context(), db.RepositoryCatalogFilter{})
+	require.NoError(err)
+	assert.Empty(repos, "a repository with a different ID must not be recorded for the pinned entry")
 }
 
 func TestArchiveServiceAllScopeAndWakeLifecycle(t *testing.T) {
@@ -1014,6 +1041,9 @@ type archiveServiceProvider struct {
 	updatedMRErrors       map[string]error
 	updatedIssueSince     []time.Time
 	updatedMRSince        []time.Time
+	repositories          []platform.Repository
+	byRoute               bool
+	lookups               []platform.RepoRef
 }
 
 func newArchiveServiceProvider(kind platform.Kind, host string) *archiveServiceProvider {
@@ -1108,17 +1138,48 @@ func newArchiveTestService(t *testing.T, database *db.DB, registry *platform.Reg
 }
 
 func archiveServiceRef(kind platform.Kind, host, name string) platform.RepoRef {
-	return platform.RepoRef{
+	ref := platform.RepoRef{
 		Platform: kind, Host: host, Owner: "owner", Name: name,
-		RepoPath: "owner/" + name, PlatformExternalID: "repo-" + host + "-" + name,
+		RepoPath: "owner/" + name,
 	}
+	ref.PlatformID = reposeed.SyntheticID(platformdb.DBRepoIdentity(ref))
+	return ref
 }
 
 func archiveServiceSeedRepo(t *testing.T, database *db.DB, ref platform.RepoRef) int64 {
 	t.Helper()
-	id, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(ref))
+	id, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(t, err)
 	return id
+}
+
+// GetRepository resolves the configured repositories by ID, or by route when
+// byRoute is set. Without configured repositories it reports a pinned ref
+// back unchanged; a ref without an ID is not found.
+func (p *archiveServiceProvider) GetRepository(
+	_ context.Context, ref platform.RepoRef,
+) (platform.Repository, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lookups = append(p.lookups, ref)
+	if len(p.repositories) == 0 && ref.PlatformID != 0 {
+		return platform.Repository{Ref: ref}, nil
+	}
+	for _, repository := range p.repositories {
+		if p.byRoute && repository.Ref.RepoPath == ref.RepoPath {
+			return repository, nil
+		}
+		if !p.byRoute && ref.PlatformID != 0 && repository.Ref.PlatformID == ref.PlatformID {
+			return repository, nil
+		}
+	}
+	return platform.Repository{}, platform.ErrNotFound
+}
+
+func (p *archiveServiceProvider) ListRepositories(
+	context.Context, string, platform.RepositoryListOptions,
+) ([]platform.Repository, error) {
+	return p.repositories, nil
 }
 
 func archiveTestTime() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }

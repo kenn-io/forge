@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -114,6 +115,9 @@ func TestKataLinkCreateKeepsResolvedSubjectAcrossRouteReuse(t *testing.T) {
 		t, database, platform.KindGitHub, platform.DefaultGitHubHost,
 		"widget", 42, db.KataLinkSubjectIssue, "item-original",
 	)
+	oldRepo, err := database.GetRepoByID(t.Context(), oldRepoID)
+	require.NoError(err)
+	oldRepoProviderID := oldRepo.PlatformRepoID
 
 	body := bytes.NewBufferString(`{"daemon_id":"primary","project_uid":"project-a","issue_uid":"issue-a"}`)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/issues/github/acme/widget/42/kata-links", body)
@@ -131,25 +135,23 @@ func TestKataLinkCreateKeepsResolvedSubjectAcrossRouteReuse(t *testing.T) {
 		require.FailNow("Kata validation did not start")
 	}
 	observedAt := time.Now().UTC().Add(time.Hour)
-	renamed, accepted, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+	renamed, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform:       string(platform.KindGitHub),
 		PlatformHost:   platform.DefaultGitHubHost,
-		PlatformRepoID: "repo-github-github.com-widget",
+		PlatformRepoID: oldRepoProviderID,
 		Owner:          "acme",
 		Name:           "widget-renamed",
-	}, observedAt)
+	})
 	require.NoError(err)
-	require.True(accepted)
 	require.Equal(oldRepoID, renamed.Repository.ID)
-	replacement, accepted, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+	replacement, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform:       string(platform.KindGitHub),
 		PlatformHost:   platform.DefaultGitHubHost,
-		PlatformRepoID: "repo-replacement",
+		PlatformRepoID: 2002,
 		Owner:          "acme",
 		Name:           "widget",
-	}, observedAt.Add(time.Hour))
+	})
 	require.NoError(err)
-	require.True(accepted)
 	_, err = database.UpsertIssue(t.Context(), &db.Issue{
 		RepoID: replacement.Repository.ID, PlatformID: 42, PlatformExternalID: "item-replacement",
 		Number: 42, URL: "https://github.com/acme/widget/issues/42",
@@ -311,10 +313,9 @@ func insertKataProviderSubject(
 	externalID string,
 ) int64 {
 	t.Helper()
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: string(provider), PlatformHost: host,
-		PlatformRepoID: "repo-" + string(provider) + "-" + host + "-" + repoName,
-		Owner:          "acme", Name: repoName,
+		Owner: "acme", Name: repoName,
 	})
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)

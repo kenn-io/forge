@@ -20,6 +20,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -28,6 +29,7 @@ import (
 	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
@@ -981,9 +983,17 @@ token_env = "KENN_FORGE_MISSING_REPO_TOKEN"
 func TestConfigReload_AirplaneModeOmitsUnresolvedPinnedRepository(t *testing.T) {
 	require := require.New(t)
 	initialConfig := "airplane_mode = true\n" + validReloadConfig +
-		"platform_repo_id = \"repo-acme-widget\"\n"
+		"platform_repo_id = 1001\n"
+	mock := &mockGH{getRepositoryFn: func(
+		_ context.Context, owner, name string,
+	) (*gh.Repository, error) {
+		return &gh.Repository{
+			ID: new(int64(1001)), Name: new(name), Owner: &gh.User{Login: new(owner)},
+			Archived: new(false),
+		}, nil
+	}}
 	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
-		t, initialConfig, &mockGH{}, ServerOptions{
+		t, initialConfig, mock, ServerOptions{
 			HostCheckAllowLoopbackAnyPort:      true,
 			WorktreeDir:                        t.TempDir(),
 			DisableWorkspaceBackgroundMonitors: true,
@@ -991,7 +1001,7 @@ func TestConfigReload_AirplaneModeOmitsUnresolvedPinnedRepository(t *testing.T) 
 	)
 	previous := srv.syncer.TrackedRepos()
 	require.Len(previous, 1)
-	require.Equal("repo-acme-widget", previous[0].PlatformExternalID)
+	require.Equal(int64(1001), previous[0].PlatformRepoID)
 	previous[0].Name = "widget-next"
 	previous[0].RepoPath = "acme/widget-next"
 	previous[0].ConfiguredRepoPath = ""
@@ -1004,7 +1014,7 @@ func TestConfigReload_AirplaneModeOmitsUnresolvedPinnedRepository(t *testing.T) 
 [[repos]]
 owner = "acme"
 name = "replacement"
-platform_repo_id = "R_pinned"
+platform_repo_id = 1002
 `)
 	event := waitForConfigEvent(t, stream, 2*time.Second)
 	require.True(event.Valid, event.Error)
@@ -1012,7 +1022,7 @@ platform_repo_id = "R_pinned"
 	configured := slices.Clone(srv.cfg.Repos)
 	srv.cfgMu.Unlock()
 	require.Len(configured, 2)
-	require.Equal("R_pinned", configured[1].PlatformRepoID)
+	require.Equal(int64(1002), configured[1].PlatformRepoID)
 	previous[0].ConfiguredRepoPath = "acme/widget"
 	assert.Equal(t, previous, srv.syncer.TrackedRepos(),
 		"keep the verified repository without adopting the unresolved pinned route")
@@ -1043,7 +1053,7 @@ platform = "gitlab"
 platform_host = "gitlab.example.com"
 owner = "acme"
 name = "backend"
-platform_repo_id = "gid://gitlab/Project/42"
+platform_repo_id = 42
 
 [[repos]]
 platform = "gitlab"
@@ -1064,7 +1074,7 @@ name = "service-*"
 		{
 			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
 			Owner: "acme", Name: "backend", RepoPath: "acme/backend",
-			PlatformExternalID: "gid://gitlab/Project/42",
+			PlatformRepoID: 42,
 		},
 		{
 			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
@@ -1075,7 +1085,7 @@ name = "service-*"
 	for i, repo := range startupFallbacks {
 		seedVerifiedRepo(t, database, db.RepoIdentity{
 			Platform: string(repo.Platform), PlatformHost: repo.PlatformHost,
-			PlatformRepoID: fmt.Sprintf("gid://gitlab/Project/%d", 42+i),
+			PlatformRepoID: int64(42 + i),
 			Owner:          repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
 		})
 	}
@@ -1993,7 +2003,7 @@ func TestConfigReload_ResolvedArchivedStateReplacesFallbackDuplicate(t *testing.
 				_ context.Context, owner string,
 			) ([]*gh.Repository, error) {
 				return []*gh.Repository{{
-					NodeID:   new("repo-acme-widget"),
+					ID:       new(testutil.FixtureRepoID("acme", "widget")),
 					Name:     new("widget"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(true),
@@ -2009,9 +2019,9 @@ func TestConfigReload_ResolvedArchivedStateReplacesFallbackDuplicate(t *testing.
 			},
 		},
 	)
-	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	waitForConfigWatcher(t, srv, 2*time.Second)
@@ -2063,7 +2073,7 @@ func TestConfigReload_FallbackKeepsRenamedArchivedTrackedRepo(t *testing.T) {
 		Name:               "widget-next",
 		PlatformHost:       "github.com",
 		RepoPath:           "acme/widget-next",
-		PlatformExternalID: "repo-acme-widget",
+		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
 		ConfiguredRepoPath: "acme/widget",
 		Archived:           true,
 	}})
@@ -2098,7 +2108,7 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 				return nil, errors.New("temporary repo lookup failure")
 			}
 			return &gh.Repository{
-				NodeID:   new("repo-x"),
+				ID:       new(int64(1001)),
 				Name:     new(repo),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(false),
@@ -2109,7 +2119,7 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 		) ([]*gh.Repository, error) {
 			if !renamed.Load() {
 				return []*gh.Repository{{
-					NodeID:   new("repo-x"),
+					ID:       new(int64(1001)),
 					Name:     new("widget"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -2117,13 +2127,13 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 			}
 			return []*gh.Repository{
 				{
-					NodeID:   new("repo-x"),
+					ID:       new(int64(1001)),
 					Name:     new("widget-next"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
 				{
-					NodeID:   new("repo-y"),
+					ID:       new(int64(1002)),
 					Name:     new("widget"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -2157,11 +2167,11 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 	for _, repo := range tracked {
 		byName[repo.Name] = repo
 	}
-	assert.Equal("repo-x", byName["widget-next"].PlatformExternalID)
+	assert.Equal(int64(1001), byName["widget-next"].PlatformRepoID)
 	assert.Equal("acme/widget", byName["widget-next"].ConfiguredRepoPath,
 		"the renamed repo keeps the exact entry's provenance through the"+
 			" API refresh and the failed reload")
-	assert.Equal("repo-y", byName["widget"].PlatformExternalID)
+	assert.Equal(int64(1002), byName["widget"].PlatformRepoID)
 	assert.Empty(byName["widget"].ConfiguredRepoPath,
 		"the route successor must not claim the exact entry")
 }
@@ -2944,7 +2954,7 @@ func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.
 			case <-release:
 			case <-ctx.Done():
 			}
-			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "discovered", PlatformExternalID: "12345"}}
+			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "discovered", PlatformRepoID: 12345}}
 		})
 	}()
 	<-entered
@@ -2957,7 +2967,7 @@ func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.
 	require.NoError(<-done)
 	repos := srv.syncer.TrackedRepos()
 	require.Len(repos, 1)
-	require.Equal("12345", repos[0].PlatformExternalID)
+	require.Equal(int64(12345), repos[0].PlatformRepoID)
 }
 
 func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.T) {
@@ -2973,7 +2983,7 @@ func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.
 			case <-release:
 			case <-ctx.Done():
 			}
-			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget", PlatformExternalID: "12345"}}
+			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget", PlatformRepoID: 12345}}
 		})
 	}()
 	<-entered

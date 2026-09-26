@@ -134,10 +134,7 @@ func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) 
 	}
 	upsert := func(state MergeRequestState, title string, updatedAt time.Time) bool {
 		t.Helper()
-		release, err := database.LockRepositoryReconciliationRead(ctx)
-		require.NoError(t, err)
-		defer release()
-		_, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead(
+		_, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
 			ctx, &MergeRequest{
 				RepoID: repoID, PlatformID: 1, Number: 1, Title: title,
 				State: state, PlatformHeadSHA: "head", PlatformBaseSHA: "base",

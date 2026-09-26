@@ -6,7 +6,7 @@ import type { WorkspaceLaunchPullHeadRepoKind } from "./workspaceLaunchPullHeadR
 export interface WorkspaceLaunchPull {
   base_branch?: string;
   base_oid?: string;
-  base_repo_id?: string;
+  base_repo_id?: number;
   head_branch: string;
   head_oid?: string;
   head_repo_clone_url: string;

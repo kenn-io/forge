@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -378,9 +379,9 @@ func TestKataEffectiveWorkspaceLinksMergeIntrinsicDirectAndInheritedProvenance(t
 	configureKataLinkTestDaemon(t, daemon.URL)
 	srv, database := setupTestServer(t)
 
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: string(platform.KindGitHub), PlatformHost: platform.DefaultGitHubHost,
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -468,8 +469,8 @@ func TestKataWorkspaceLinksDoNotInheritAcrossReusedRepositoryRoute(t *testing.T)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	originalRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
+	originalRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
@@ -486,13 +487,13 @@ func TestKataWorkspaceLinksDoNotInheritAcrossReusedRepositoryRoute(t *testing.T)
 		WorktreePath: t.TempDir(), TmuxSession: "workspace-route-reuse", Status: "ready",
 	}))
 
-	_, err = database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
+	_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 		Owner: "acme", Name: "widget-renamed",
 	})
 	require.NoError(err)
-	replacementRepoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-replacement",
+	replacementRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002,
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)

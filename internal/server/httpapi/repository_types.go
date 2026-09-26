@@ -75,7 +75,7 @@ type RepoOperations struct {
 type RepoRefResponse struct {
 	Provider       string                       `json:"provider"`
 	PlatformHost   string                       `json:"platform_host"`
-	PlatformRepoID string                       `json:"platform_repo_id,omitempty"`
+	PlatformRepoID int64                        `json:"platform_repo_id,omitempty"`
 	RepoPath       string                       `json:"repo_path"`
 	Owner          string                       `json:"owner"`
 	Name           string                       `json:"name"`

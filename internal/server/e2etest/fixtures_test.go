@@ -2,8 +2,11 @@ package e2etest
 
 import (
 	"context"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
@@ -170,6 +174,9 @@ func gracefulShutdown(t *testing.T, srv *server.Server) {
 type mockGH struct {
 	getRateLimitSnapshotFn     func(context.Context) (*platformgithub.RateLimitSnapshot, error)
 	getRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
+	getRepositoryByIDFn        func(context.Context, string, int64) (*gh.Repository, error)
+	servedRoutesMu             sync.Mutex
+	servedRoutes               map[int64]mockGHRoute
 	getPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
 	listOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listReposByOwnerFn         func(context.Context, string) ([]*gh.Repository, error)
@@ -315,18 +322,59 @@ func (m *mockGH) MarkNotificationThreadRead(ctx context.Context, threadID string
 func (m *mockGH) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {
+	var (
+		repository *gh.Repository
+		err        error
+	)
 	if m.getRepositoryFn != nil {
-		return m.getRepositoryFn(ctx, owner, repo)
+		repository, err = m.getRepositoryFn(ctx, owner, repo)
+	} else {
+		repository = &gh.Repository{
+			ID:       new(testutil.FixtureRepoID(owner, repo)),
+			Name:     &repo,
+			Owner:    &gh.User{Login: &owner},
+			Archived: new(bool),
+		}
 	}
-	id := int64(1)
-	nodeID := "repo-" + owner + "-" + repo
-	return &gh.Repository{
-		ID:       &id,
-		NodeID:   &nodeID,
-		Name:     &repo,
-		Owner:    &gh.User{Login: &owner},
-		Archived: new(bool),
-	}, nil
+	if err == nil && repository.GetID() != 0 {
+		m.servedRoutesMu.Lock()
+		if m.servedRoutes == nil {
+			m.servedRoutes = map[int64]mockGHRoute{}
+		}
+		m.servedRoutes[repository.GetID()] = mockGHRoute{owner: owner, name: repo}
+		m.servedRoutesMu.Unlock()
+	}
+	return repository, err
+}
+
+type mockGHRoute struct {
+	owner string
+	name  string
+}
+
+// GetRepositoryByID answers by-ID lookups for repositories this mock has
+// already served by route, or for fixture routes whose FixtureRepoID is id,
+// re-reading the route so getRepositoryFn stays the single source of
+// repository state.
+func (m *mockGH) GetRepositoryByID(
+	ctx context.Context, owner string, id int64,
+) (*gh.Repository, error) {
+	if m.getRepositoryByIDFn != nil {
+		return m.getRepositoryByIDFn(ctx, owner, id)
+	}
+	m.servedRoutesMu.Lock()
+	route, ok := m.servedRoutes[id]
+	m.servedRoutesMu.Unlock()
+	if !ok {
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{
+				StatusCode: http.StatusNotFound,
+				Request:    &http.Request{Method: http.MethodGet, URL: &url.URL{Path: "/repositories"}},
+			},
+			Message: "Not Found",
+		}
+	}
+	return m.GetRepository(ctx, route.owner, route.name)
 }
 
 func (m *mockGH) CreateReview(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error) {

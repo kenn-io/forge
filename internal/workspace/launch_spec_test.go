@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/testutil/reposeed"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -53,7 +55,7 @@ func launchSpecForTest() WorkspaceLaunchSpec {
 		Version: WorkspaceLaunchSpecVersion,
 		Repository: WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-1", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1009, Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
@@ -71,7 +73,7 @@ func seedLaunchSpecRepository(
 	t *testing.T, database *db.DB, spec WorkspaceLaunchSpec,
 ) int64 {
 	t.Helper()
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 		PlatformRepoID: spec.Repository.PlatformRepoID,
 		Owner:          spec.Repository.Owner, Name: spec.Repository.Name,
@@ -93,7 +95,7 @@ func TestWorkspaceLaunchSpecValidatesHeadRepositorySemantics(t *testing.T) {
 		edit func(*WorkspaceLaunchSpec)
 	}{
 		{name: "wrong version", edit: func(spec *WorkspaceLaunchSpec) { spec.Version++ }},
-		{name: "missing stable repository id", edit: func(spec *WorkspaceLaunchSpec) { spec.Repository.PlatformRepoID = "" }},
+		{name: "missing stable repository id", edit: func(spec *WorkspaceLaunchSpec) { spec.Repository.PlatformRepoID = 0 }},
 		{name: "fork without clone url", edit: func(spec *WorkspaceLaunchSpec) { spec.Pull.HeadRepoKind = "fork" }},
 		{name: "same repository with clone url", edit: func(spec *WorkspaceLaunchSpec) { spec.Pull.HeadRepoCloneURL = "https://example.test/fork.git" }},
 		{name: "wrong lease", edit: func(spec *WorkspaceLaunchSpec) { spec.SourceVisibleUntil = spec.SourceVisibleUntil.Add(time.Second) }},
@@ -258,16 +260,14 @@ func TestRefreshWorkspaceLaunchSpecAdoptsVerifiedRepositoryRename(t *testing.T) 
 	assert := assert.New(t)
 	database := openTestDB(t)
 	current := launchSpecForTest()
-	observedAt := current.IssuedAt.Add(-time.Minute)
-	_, accepted, err := database.ReconcileRepositoryObservation(
+	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
 			PlatformRepoID: current.Repository.PlatformRepoID,
 			Owner:          current.Repository.Owner, Name: current.Repository.Name,
-		}, observedAt,
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 
 	workspace := &db.Workspace{
 		ID: "ws-renamed-launch", Platform: current.Repository.Provider,
@@ -287,15 +287,14 @@ func TestRefreshWorkspaceLaunchSpecAdoptsVerifiedRepositoryRename(t *testing.T) 
 	refreshed.Repository.CloneURL = "https://github.com/acme-renamed/widget-renamed.git"
 	refreshed.IssuedAt = current.IssuedAt.Add(time.Minute)
 	refreshed.SourceVisibleUntil = refreshed.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
-	_, accepted, err = database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: refreshed.Repository.Provider, PlatformHost: refreshed.Repository.PlatformHost,
 			PlatformRepoID: refreshed.Repository.PlatformRepoID,
 			Owner:          refreshed.Repository.Owner, Name: refreshed.Repository.Name,
-		}, refreshed.IssuedAt,
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 
 	manager := NewManager(database, t.TempDir())
 	manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: refreshed})
@@ -331,15 +330,14 @@ func TestRequireWorkspaceLaunchSpecRefreshesVerifiedRepositoryRename(t *testing.
 			assert := assert.New(t)
 			database := openTestDB(t)
 			current := launchSpecForTest()
-			_, accepted, err := database.ReconcileRepositoryObservation(
+			_, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
 					PlatformRepoID: current.Repository.PlatformRepoID,
 					Owner:          current.Repository.Owner, Name: current.Repository.Name,
-				}, current.IssuedAt,
+				},
 			)
 			require.NoError(err)
-			require.True(accepted)
 
 			workspace := &db.Workspace{
 				ID: workspaceID, Platform: current.Repository.Provider,
@@ -363,15 +361,14 @@ func TestRequireWorkspaceLaunchSpecRefreshesVerifiedRepositoryRename(t *testing.
 			refreshed.Repository.CloneURL = "https://github.com/acme-renamed/widget-renamed.git"
 			refreshed.IssuedAt = now
 			refreshed.SourceVisibleUntil = now.Add(WorkspaceLaunchSpecVisibilityLease)
-			_, accepted, err = database.ReconcileRepositoryObservation(
+			_, err = database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: refreshed.Repository.Provider, PlatformHost: refreshed.Repository.PlatformHost,
 					PlatformRepoID: refreshed.Repository.PlatformRepoID,
 					Owner:          refreshed.Repository.Owner, Name: refreshed.Repository.Name,
-				}, current.IssuedAt.Add(time.Minute),
+				},
 			)
 			require.NoError(err)
-			require.True(accepted)
 
 			resolver := &staticLaunchSpecResolver{spec: refreshed}
 			manager := NewManager(database, t.TempDir())
@@ -397,15 +394,14 @@ func TestCreateFromLaunchSpecDedupesRenamedRepositoryByStableIdentity(t *testing
 	assert := assert.New(t)
 	database := openTestDB(t)
 	original := launchSpecForTest()
-	_, accepted, err := database.ReconcileRepositoryObservation(
+	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
 			PlatformRepoID: original.Repository.PlatformRepoID,
 			Owner:          original.Repository.Owner, Name: original.Repository.Name,
-		}, original.IssuedAt,
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 
 	now := original.IssuedAt
 	manager := NewManager(database, t.TempDir())
@@ -420,15 +416,14 @@ func TestCreateFromLaunchSpecDedupesRenamedRepositoryByStableIdentity(t *testing
 	renamed.IssuedAt = original.IssuedAt.Add(time.Minute)
 	renamed.SourceVisibleUntil = renamed.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
 	now = renamed.IssuedAt
-	_, accepted, err = database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: renamed.Repository.Provider, PlatformHost: renamed.Repository.PlatformHost,
 			PlatformRepoID: renamed.Repository.PlatformRepoID,
 			Owner:          renamed.Repository.Owner, Name: renamed.Repository.Name,
-		}, now,
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 
 	_, err = manager.CreateFromLaunchSpec(t.Context(), renamed)
 	require.ErrorIs(err, ErrWorkspaceDuplicate)
@@ -456,13 +451,12 @@ func TestProviderWorkspaceCreationKeepsDisplacedRouteOwner(t *testing.T) {
 				original.Pull = nil
 				original.GitHeadRef = "kenn-forge/issue-7"
 			}
-			observedAt := original.IssuedAt.Add(-time.Minute)
-			originalEntry, _, err := database.ReconcileRepositoryObservation(
+			originalEntry, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
 					PlatformRepoID: original.Repository.PlatformRepoID,
 					Owner:          original.Repository.Owner, Name: original.Repository.Name,
-				}, observedAt,
+				},
 			)
 			require.NoError(err)
 			require.NotNil(originalEntry)
@@ -479,24 +473,24 @@ func TestProviderWorkspaceCreationKeepsDisplacedRouteOwner(t *testing.T) {
 			}
 			require.NoError(err)
 
-			_, _, err = database.ReconcileRepositoryObservation(
+			_, err = database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
 					PlatformRepoID: original.Repository.PlatformRepoID,
 					Owner:          original.Repository.Owner, Name: "moved-away",
-				}, observedAt.Add(time.Minute),
+				},
 			)
 			require.NoError(err)
 			replacement := original
-			replacement.Repository.PlatformRepoID = "repo-replacement"
+			replacement.Repository.PlatformRepoID = 1022
 			replacement.IssuedAt = original.IssuedAt.Add(time.Minute)
 			replacement.SourceVisibleUntil = replacement.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
-			replacementEntry, _, err := database.ReconcileRepositoryObservation(
+			replacementEntry, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: replacement.Repository.Provider, PlatformHost: replacement.Repository.PlatformHost,
 					PlatformRepoID: replacement.Repository.PlatformRepoID,
 					Owner:          replacement.Repository.Owner, Name: replacement.Repository.Name,
-				}, observedAt.Add(2*time.Minute),
+				},
 			)
 			require.NoError(err)
 			require.NotNil(replacementEntry)
@@ -537,12 +531,12 @@ func TestRequireWorkspaceLaunchSpecRefreshesCurrentRouteAfterRepositoryRename(t 
 	require := require.New(t)
 	database := openTestDB(t)
 	original := launchSpecForTest()
-	entry, _, err := database.ReconcileRepositoryObservation(
+	entry, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
 			PlatformRepoID: original.Repository.PlatformRepoID,
 			Owner:          original.Repository.Owner, Name: original.Repository.Name,
-		}, original.IssuedAt.Add(-time.Minute),
+		},
 	)
 	require.NoError(err)
 	require.NotNil(entry)
@@ -558,12 +552,12 @@ func TestRequireWorkspaceLaunchSpecRefreshesCurrentRouteAfterRepositoryRename(t 
 	renamed.Repository.CloneURL = "https://github.com/acme-renamed/widget-renamed.git"
 	renamed.IssuedAt = original.IssuedAt.Add(time.Minute)
 	renamed.SourceVisibleUntil = renamed.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
-	_, _, err = database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: renamed.Repository.Provider, PlatformHost: renamed.Repository.PlatformHost,
 			PlatformRepoID: renamed.Repository.PlatformRepoID,
 			Owner:          renamed.Repository.Owner, Name: renamed.Repository.Name,
-		}, renamed.IssuedAt,
+		},
 	)
 	require.NoError(err)
 
@@ -596,29 +590,28 @@ func TestProviderWorkspaceCreationAllowsCurrentRepositoryOnReusedRoute(t *testin
 				spec.Pull = nil
 				spec.GitHeadRef = "kenn-forge/issue-7"
 			}
-			observedAt := spec.IssuedAt.Add(-2 * time.Minute)
-			_, _, err := database.ReconcileRepositoryObservation(
+			_, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
-					PlatformRepoID: "displaced-repository", Owner: spec.Repository.Owner,
+					PlatformRepoID: 1001, Owner: spec.Repository.Owner,
 					Name: spec.Repository.Name,
-				}, observedAt,
+				},
 			)
 			require.NoError(err)
-			_, _, err = database.ReconcileRepositoryObservation(
+			_, err = database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
-					PlatformRepoID: "displaced-repository", Owner: "acme",
+					PlatformRepoID: 1001, Owner: "acme",
 					Name: "moved-away",
-				}, observedAt.Add(time.Minute),
+				},
 			)
 			require.NoError(err)
-			current, _, err := database.ReconcileRepositoryObservation(
+			current, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 					PlatformRepoID: spec.Repository.PlatformRepoID, Owner: spec.Repository.Owner,
 					Name: spec.Repository.Name,
-				}, observedAt.Add(2*time.Minute),
+				},
 			)
 			require.NoError(err)
 			require.NotNil(current)
@@ -646,7 +639,6 @@ func TestRefreshWorkspaceLaunchSpecAcceptsVerifiedIdentityAtReusedRoute(t *testi
 	assert := assert.New(t)
 	database := openTestDB(t)
 	current := launchSpecForTest()
-	observedAt := current.IssuedAt.Add(-2 * time.Minute)
 	for _, identity := range []db.RepoIdentity{
 		{
 			Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
@@ -655,15 +647,14 @@ func TestRefreshWorkspaceLaunchSpecAcceptsVerifiedIdentityAtReusedRoute(t *testi
 		},
 		{
 			Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
-			PlatformRepoID: "repo-previous-target",
+			PlatformRepoID: 1021,
 			Owner:          "acme", Name: "renamed-target",
 		},
 	} {
-		_, accepted, err := database.ReconcileRepositoryObservation(
-			t.Context(), identity, observedAt,
+		_, err := database.ObserveRepository(
+			t.Context(), identity,
 		)
 		require.NoError(err)
-		require.True(accepted)
 	}
 	workspace := &db.Workspace{
 		ID: "ws-reused-route", Platform: current.Repository.Provider,
@@ -677,30 +668,28 @@ func TestRefreshWorkspaceLaunchSpecAcceptsVerifiedIdentityAtReusedRoute(t *testi
 	require.NoError(database.InsertWorkspace(t.Context(), workspace))
 	require.NoError(database.PutWorkspaceLaunchSpec(t.Context(), workspace.ID, current))
 
-	_, accepted, err := database.ReconcileRepositoryObservation(
+	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
-			PlatformRepoID: "repo-previous-target",
+			PlatformRepoID: 1021,
 			Owner:          "acme", Name: "moved-away",
-		}, observedAt.Add(time.Minute),
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 	refreshed := current
 	refreshed.Repository.Owner = "acme"
 	refreshed.Repository.Name = "renamed-target"
 	refreshed.Repository.CloneURL = "https://github.com/acme/renamed-target.git"
 	refreshed.IssuedAt = current.IssuedAt.Add(time.Minute)
 	refreshed.SourceVisibleUntil = refreshed.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
-	_, accepted, err = database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: refreshed.Repository.Provider, PlatformHost: refreshed.Repository.PlatformHost,
 			PlatformRepoID: refreshed.Repository.PlatformRepoID,
 			Owner:          refreshed.Repository.Owner, Name: refreshed.Repository.Name,
-		}, observedAt.Add(2*time.Minute),
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 	manager := NewManager(database, t.TempDir())
 	manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: refreshed})
 	manager.SetNow(func() time.Time { return refreshed.IssuedAt })

@@ -49,7 +49,7 @@ func TestArchiveWorkerSkipsUnresolvableTrackedRepoE2E(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`))
 		case "/api/v3/repos/acme/widget/pulls":
 			_, _ = w.Write([]byte(`[]`))
-		case "/api/v3/repos/acme/widget":
+		case "/api/v3/repos/acme/widget", "/api/v3/repositories/1":
 			_, _ = w.Write([]byte(`{"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget","owner":{"login":"acme"}}`))
 		default:
 			// The ghost repository resolves nowhere, matching a renamed or
@@ -72,7 +72,7 @@ func TestArchiveWorkerSkipsUnresolvableTrackedRepoE2E(t *testing.T) {
 	healthy := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "R_widget",
+		PlatformID: 1,
 	}
 	ghost := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
@@ -84,8 +84,8 @@ func TestArchiveWorkerSkipsUnresolvableTrackedRepoE2E(t *testing.T) {
 			{
 				Platform: healthy.Platform, PlatformHost: healthy.Host,
 				Owner: healthy.Owner, Name: healthy.Name,
-				RepoPath:           healthy.RepoPath,
-				PlatformExternalID: healthy.PlatformExternalID,
+				RepoPath:       healthy.RepoPath,
+				PlatformRepoID: healthy.PlatformID,
 			},
 			{
 				Platform: ghost.Platform, PlatformHost: ghost.Host,

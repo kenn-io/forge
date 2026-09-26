@@ -295,6 +295,48 @@ func TestProviderFallsBackFromUserToOrgRepositoryImport(t *testing.T) {
 	assert.Equal([]int{1}, transport.orgRepoPages)
 }
 
+func TestProviderGetRepositoryLooksUpPinnedIDAndReturnsRenamedRoute(t *testing.T) {
+	tests := []struct {
+		name          string
+		ref           platform.RepoRef
+		wantIDCalls   []int64
+		wantRouteCall []string
+	}{
+		{
+			name:        "pinned id follows rename",
+			ref:         platform.RepoRef{Owner: "old-owner", Name: "old-name", PlatformID: 1001},
+			wantIDCalls: []int64{1001},
+		},
+		{
+			name:          "unpinned route lookup",
+			ref:           platform.RepoRef{Owner: "new-owner", Name: "new-name"},
+			wantRouteCall: []string{"new-owner/new-name"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			transport := &fakeTransport{repo: RepositoryDTO{
+				ID:       1001,
+				Owner:    UserDTO{UserName: "new-owner"},
+				Name:     "new-name",
+				FullName: "new-owner/new-name",
+			}}
+			provider := NewProvider(platform.KindGitea, "gitea.example.com", transport)
+
+			repo, err := provider.GetRepository(t.Context(), tt.ref)
+			require.NoError(err)
+
+			assert.Equal(tt.wantIDCalls, transport.repoByIDCalls)
+			assert.Equal(tt.wantRouteCall, transport.repoByRouteCalls)
+			assert.Equal("new-owner", repo.Ref.Owner)
+			assert.Equal("new-name", repo.Ref.Name)
+			assert.Equal(int64(1001), repo.Ref.PlatformID)
+		})
+	}
+}
+
 func TestProviderMapsHTTPStatusErrorsToTypedPlatformErrors(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -354,14 +396,22 @@ type fakeTransport struct {
 	review      ReviewDTO
 	reviewErr   error
 
-	userRepoPages []int
-	orgRepoPages  []int
-	pullPages     []int
-	actionPages   []int
-	mutationCalls []string
+	repoByIDCalls    []int64
+	repoByRouteCalls []string
+	userRepoPages    []int
+	orgRepoPages     []int
+	pullPages        []int
+	actionPages      []int
+	mutationCalls    []string
 }
 
-func (t *fakeTransport) GetRepository(context.Context, string, string) (RepositoryDTO, error) {
+func (t *fakeTransport) GetRepository(_ context.Context, owner, repo string) (RepositoryDTO, error) {
+	t.repoByRouteCalls = append(t.repoByRouteCalls, owner+"/"+repo)
+	return t.repo, t.repoErr
+}
+
+func (t *fakeTransport) GetRepositoryByID(_ context.Context, id int64) (RepositoryDTO, error) {
+	t.repoByIDCalls = append(t.repoByIDCalls, id)
 	return t.repo, t.repoErr
 }
 

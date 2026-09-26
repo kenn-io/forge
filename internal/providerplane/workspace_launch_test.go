@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/db"
 )
 
@@ -22,7 +23,7 @@ func workspaceLaunchResponseForTest() (WorkspaceLaunchRequest, db.WorkspaceLaunc
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
@@ -110,7 +111,7 @@ func TestWorkspaceLaunchRefreshAcceptsRenamedStableRepository(t *testing.T) {
 
 	require.NoError(t, ValidateFederationWorkspaceLaunchSpecResponse(request, spec))
 
-	spec.Repository.PlatformRepoID = "different-repository"
+	spec.Repository.PlatformRepoID = 1002
 	require.ErrorContains(
 		t, ValidateFederationWorkspaceLaunchSpecResponse(request, spec),
 		"repository identity",

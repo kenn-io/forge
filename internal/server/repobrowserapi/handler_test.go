@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -25,41 +24,12 @@ import (
 	"go.kenn.io/forge/internal/server/repobrowserapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
-	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"golang.org/x/sync/semaphore"
 )
 
 var repoBrowserTestSlots = semaphore.NewWeighted(2)
-
-type blockingRepoBrowserRefreshRoutes struct {
-	mu      sync.Mutex
-	block   bool
-	started chan struct{}
-	release chan struct{}
-	once    sync.Once
-}
-
-func (r *blockingRepoBrowserRefreshRoutes) SourceForRepo(_, _, _, _ string) tokenauth.Source {
-	r.mu.Lock()
-	block := r.block
-	r.mu.Unlock()
-	if block {
-		r.once.Do(func() {
-			close(r.started)
-			<-r.release
-		})
-	}
-	return nil
-}
-
-func (*blockingRepoBrowserRefreshRoutes) FallbackSource(string) tokenauth.Source { return nil }
-
-func (r *blockingRepoBrowserRefreshRoutes) enable() {
-	r.mu.Lock()
-	r.block = true
-	r.mu.Unlock()
-}
 
 func acquireRepoBrowserTestSlot(t *testing.T) {
 	t.Helper()
@@ -162,23 +132,22 @@ func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T
 		{provider: "github", cloneURL: githubRemote},
 		{provider: "gitlab", cloneURL: gitlabRemote},
 	} {
-		repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
-			Platform:       repo.provider,
-			PlatformHost:   "git.example.com",
-			PlatformRepoID: "repo-" + repo.provider + "-acme-widgets",
-			Owner:          "acme",
-			Name:           "widgets",
-			RepoPath:       "acme/widgets",
+		repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+			Platform:     repo.provider,
+			PlatformHost: "git.example.com",
+			Owner:        "acme",
+			Name:         "widgets",
+			RepoPath:     "acme/widgets",
 		})
 		require.NoError(err)
-		require.NoError(database.UpdateRepoProviderMetadata(
+		require.NoError(database.UpdateRepoProviderObservation(
 			t.Context(),
 			repoID,
 			db.RepoProviderMetadata{
 				WebURL:        "https://git.example.com/acme/widgets",
 				CloneURL:      repo.cloneURL,
 				DefaultBranch: "main",
-			},
+			}, nil, nil,
 		))
 	}
 	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
@@ -206,120 +175,6 @@ func TestRepoBrowserCloneCacheSeparatesProvidersWithSameHostAndPath(t *testing.T
 	var gitlabBody repobrowserapi.RepoBrowserBlobResponse
 	require.NoError(json.Unmarshal(gitlabBlob.Body.Bytes(), &gitlabBody))
 	assert.Equal("gitlab repo\n", gitlabBody.Blob.Content)
-}
-
-func TestRepoBrowserRefreshDoesNotContaminateReturnedRouteAfterABAReuse(t *testing.T) {
-	acquireRepoBrowserTestSlot(t)
-	require := require.New(t)
-	assert := assert.New(t)
-	database := dbtest.Open(t)
-	routeRemote, workA := setupServerRepoBrowserGitRepo(t)
-	_, workB := setupServerRepoBrowserGitRepo(t)
-
-	require.NoError(os.WriteFile(filepath.Join(workA, "README.md"), []byte("repository A\n"), 0o644))
-	serverRepoBrowserGit(t, workA, "add", ".")
-	serverRepoBrowserGit(t, workA, "commit", "-m", "identify repository A")
-	serverRepoBrowserGit(t, workA, "push", "origin", "main")
-	require.NoError(os.WriteFile(filepath.Join(workB, "README.md"), []byte("repository B\n"), 0o644))
-	require.NoError(os.WriteFile(filepath.Join(workB, "ONLY_B.md"), []byte("only repository B\n"), 0o644))
-	serverRepoBrowserGit(t, workB, "add", ".")
-	serverRepoBrowserGit(t, workB, "commit", "-m", "identify repository B")
-
-	observedAt := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
-	repoA := db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-repository-a",
-		Owner:          "acme", Name: "widgets", RepoPath: "acme/widgets",
-	}
-	entryA, applied, err := database.ReconcileRepositoryObservation(t.Context(), repoA, observedAt)
-	require.NoError(err)
-	require.True(applied)
-	require.NoError(database.UpdateRepoProviderMetadata(
-		t.Context(), entryA.Repository.ID, db.RepoProviderMetadata{
-			WebURL:        "https://github.com/acme/widgets",
-			CloneURL:      routeRemote,
-			DefaultBranch: "main",
-		},
-	))
-
-	routes := &blockingRepoBrowserRefreshRoutes{
-		started: make(chan struct{}),
-		release: make(chan struct{}),
-	}
-	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), routes)
-	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
-	t.Cleanup(syncer.Stop)
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{
-		Clones:                             clones,
-		DisableWorkspaceBackgroundMonitors: true,
-	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-
-	initial := repoBrowserRequest(t, srv, http.MethodGet,
-		"/api/v1/repo/github/acme/widgets/browser/blob?ref_type=branch&ref_name=main&path=README.md",
-	)
-	require.Equal(http.StatusOK, initial.Code, initial.Body.String())
-	var initialBody repobrowserapi.RepoBrowserBlobResponse
-	require.NoError(json.Unmarshal(initial.Body.Bytes(), &initialBody))
-	require.Equal("repository A\n", initialBody.Blob.Content)
-
-	serverRepoBrowserGit(t, workB, "push", "--force", routeRemote, "main:main")
-	routes.enable()
-	refreshDone := make(chan struct{})
-	go func() {
-		clones.RefreshRepoBrowserClones(t.Context())
-		close(refreshDone)
-	}()
-	<-routes.started
-
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-repository-a",
-		Owner:          "acme", Name: "widgets-renamed", RepoPath: "acme/widgets-renamed",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-	entryB, applied, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-repository-b",
-		Owner:          "acme", Name: "widgets", RepoPath: "acme/widgets",
-	}, observedAt.Add(2*time.Minute))
-	require.NoError(err)
-	require.True(applied)
-	require.NoError(database.UpdateRepoProviderMetadata(
-		t.Context(), entryB.Repository.ID, db.RepoProviderMetadata{
-			WebURL:        "https://github.com/acme/widgets",
-			CloneURL:      routeRemote,
-			DefaultBranch: "main",
-		},
-	))
-	close(routes.release)
-	<-refreshDone
-
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-repository-b",
-		Owner:          "acme", Name: "widgets-elsewhere", RepoPath: "acme/widgets-elsewhere",
-	}, observedAt.Add(3*time.Minute))
-	require.NoError(err)
-	_, applied, err = database.ReconcileRepositoryObservation(
-		t.Context(), repoA, observedAt.Add(4*time.Minute),
-	)
-	require.NoError(err)
-	require.True(applied)
-	serverRepoBrowserGit(t, workA, "push", "--force", routeRemote, "main:main")
-
-	returned := repoBrowserRequest(t, srv, http.MethodGet,
-		"/api/v1/repo/github/acme/widgets/browser/blob?ref_type=branch&ref_name=main&path=README.md",
-	)
-	require.Equal(http.StatusOK, returned.Code, returned.Body.String())
-	var returnedBody repobrowserapi.RepoBrowserBlobResponse
-	require.NoError(json.Unmarshal(returned.Body.Bytes(), &returnedBody))
-	assert.Equal("repository A\n", returnedBody.Blob.Content)
-
-	bOnly := repoBrowserRequest(t, srv, http.MethodGet,
-		"/api/v1/repo/github/acme/widgets/browser/blob?ref_type=branch&ref_name=main&path=ONLY_B.md",
-	)
-	assert.Equal(http.StatusNotFound, bOnly.Code, bOnly.Body.String())
 }
 
 func TestRepoBrowserBlobReturnsTypedLargeAndBinaryStates(t *testing.T) {
@@ -769,16 +624,16 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(
+	require.NoError(database.UpdateRepoProviderObservation(
 		t.Context(),
 		repoID,
 		db.RepoProviderMetadata{
 			WebURL:        "https://github.com/acme/widgets",
 			CloneURL:      remote,
 			DefaultBranch: "main",
-		},
+		}, nil, nil,
 	))
 	cloneBase := filepath.Join(t.TempDir(), "clones")
 	initialClones := gitclone.New(cloneBase, nil)
@@ -835,16 +690,16 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 
 	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
-	repoID, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(
+	require.NoError(database.UpdateRepoProviderObservation(
 		t.Context(),
 		repoID,
 		db.RepoProviderMetadata{
 			WebURL:        "https://github.com/acme/widgets",
 			CloneURL:      remote,
 			DefaultBranch: "main",
-		},
+		}, nil, nil,
 	))
 	cloneBase := filepath.Join(t.TempDir(), "clones")
 	initialClones := gitclone.New(cloneBase, nil)
@@ -889,69 +744,6 @@ func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T)
 	}
 }
 
-func TestRepoBrowserStartupAdoptsLegacyClonesWithoutProviderAccess(t *testing.T) {
-	acquireRepoBrowserTestSlot(t)
-	require := require.New(t)
-	assert := assert.New(t)
-	database := dbtest.Open(t)
-	remote, work := setupServerRepoBrowserGitRepo(t)
-	wantSHA := testGitSHA(t, work, "main")
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"),
-	)
-	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(
-		t.Context(), repoID, db.RepoProviderMetadata{
-			WebURL:        "https://github.com/acme/widgets",
-			CloneURL:      remote,
-			DefaultBranch: "main",
-		},
-	))
-
-	cloneBase := filepath.Join(t.TempDir(), "clones")
-	legacyClones := gitclone.New(cloneBase, nil)
-	require.NoError(legacyClones.EnsureClone(
-		t.Context(), "github", "github.com", "acme", "widgets", remote,
-	))
-	legacyRepo := gitclone.RepoBrowserRepoRef{
-		Provider: "github", Host: "github.com",
-		Owner: "acme", Name: "widgets", RepoPath: "acme/widgets",
-		RemoteURL: remote,
-	}
-	require.NoError(legacyClones.EnsureRepoBrowserClone(t.Context(), legacyRepo))
-	require.NoError(os.Rename(remote, remote+".offline"))
-
-	restartedClones := gitclone.New(cloneBase, nil)
-	restartedSyncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
-	t.Cleanup(restartedSyncer.Stop)
-	restartedServer := server.New(database, restartedSyncer, nil, "/", nil, server.ServerOptions{
-		Clones:                             restartedClones,
-		DisableWorkspaceBackgroundMonitors: true,
-	})
-	t.Cleanup(func() { gracefulShutdown(t, restartedServer) })
-
-	stableCtx := gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widgets")
-	legacyMainSHA, err := restartedClones.RevParse(
-		t.Context(), "github", "github.com", "acme", "widgets", "HEAD",
-	)
-	require.NoError(err)
-	assert.Equal(wantSHA, legacyMainSHA,
-		"workspace path-scoped clone must remain available after adoption")
-	mainSHA, err := restartedClones.RevParse(
-		stableCtx, "github", "github.com", "acme", "widgets", "HEAD",
-	)
-	require.NoError(err)
-	assert.Equal(wantSHA, mainSHA)
-	stableRepo := legacyRepo
-	stableRepo.ProviderRepoID = "repo-acme-widgets"
-	resolved, err := restartedClones.ResolveRepoBrowserRef(
-		t.Context(), stableRepo,
-		gitclone.RepoBrowserRef{Type: gitclone.RepoBrowserRefBranch, Name: "main"},
-	)
-	require.NoError(err)
-	assert.Equal(wantSHA, resolved.SHA)
-}
-
 func TestRepoBrowserRejectsUnsafePath(t *testing.T) {
 	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
@@ -990,23 +782,22 @@ func setupRepoBrowserServerWithClones(
 	database := dbtest.Open(t)
 	remote, work := setupServerRepoBrowserGitRepo(t)
 	owner, name := splitServerRepoPathForTest(repoPath)
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
-		Platform:       provider,
-		PlatformHost:   host,
-		PlatformRepoID: "repo-" + provider + "-" + owner + "-" + name,
-		Owner:          owner,
-		Name:           name,
-		RepoPath:       repoPath,
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform:     provider,
+		PlatformHost: host,
+		Owner:        owner,
+		Name:         name,
+		RepoPath:     repoPath,
 	})
 	require.NoError(t, err)
-	require.NoError(t, database.UpdateRepoProviderMetadata(
+	require.NoError(t, database.UpdateRepoProviderObservation(
 		t.Context(),
 		repoID,
 		db.RepoProviderMetadata{
 			WebURL:        "https://" + host + "/" + repoPath,
 			CloneURL:      remote,
 			DefaultBranch: "main",
-		},
+		}, nil, nil,
 	))
 	clones := gitclone.New(filepath.Join(t.TempDir(), "clones"), nil)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
@@ -1022,7 +813,7 @@ func setupRepoBrowserServerWithClones(
 
 func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = "repo-" + owner + "-" + name
+	identity.PlatformRepoID = reposeed.SyntheticID(identity)
 	return identity
 }
 

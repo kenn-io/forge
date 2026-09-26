@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"

@@ -945,7 +945,7 @@ func (s *Handler) adHocWorkspaceForBranch(
 // fence-guarded write layer reports this before any row is persisted for the
 // replacement repository.
 func repositoryRouteFenceProblem(err error) error {
-	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+	if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 		return httpapi.NotFound(httpapi.CodeRepoNotFound,
 			"repository identity changed during workspace creation", nil)
 	}

@@ -13,9 +13,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
@@ -38,7 +40,7 @@ func TestMarkdownImageRouteServesRepositorySVG(t *testing.T) {
 	require.NoError(err)
 	srv, database := setupTestServerWithMock(t, &mockGH{getMarkdownImageFn: client.GetMarkdownImage})
 	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err = database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	_, err = reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	const source = "https://github.com/acme/widgets/raw/main/diagram.svg"
 	for range 2 {
@@ -80,7 +82,7 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
 	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	rr := repoBrowserRequest(t, srv, http.MethodGet,
@@ -142,8 +144,8 @@ func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err = database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	_, err = reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 
@@ -169,7 +171,7 @@ func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
 	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 
 	rr := repoBrowserRequest(
@@ -203,10 +205,10 @@ func TestMarkdownImageRouteMapsGitLabServerErrorToUpstreamError(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	database := dbtest.Open(t)
-	_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "42",
+		PlatformRepoID: 42,
 		Owner:          "group",
 		Name:           "project",
 		RepoPath:       "group/project",
@@ -229,77 +231,6 @@ func TestMarkdownImageRouteMapsGitLabServerErrorToUpstreamError(t *testing.T) {
 	require.Equal(http.StatusBadGateway, rr.Code, rr.Body.String())
 }
 
-func TestMarkdownImageRouteResolvesOpaqueGitLabProjectID(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	imageBytes := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
-	var paths []string
-	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.URL.EscapedPath())
-		assert.Equal("gitlab-token", r.Header.Get("PRIVATE-TOKEN"))
-		switch r.URL.EscapedPath() {
-		case "/api/v4/projects/group%2Fproject":
-			w.Header().Set("Content-Type", "application/json")
-			_, err := w.Write([]byte(`{
-				"id": 42,
-				"path": "project",
-				"path_with_namespace": "group/project",
-				"name": "Project"
-			}`))
-			assert.NoError(err)
-		case "/api/v4/projects/42/uploads/secret/private.png":
-			w.Header().Set("Content-Type", "image/png")
-			_, err := w.Write(imageBytes)
-			assert.NoError(err)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(gitlabServer.Close)
-
-	provider, err := platformgitlab.NewClient(
-		"gitlab.example.com",
-		testTokenSource("gitlab-token"),
-		platformgitlab.WithBaseURLForTesting(gitlabServer.URL+"/api/v4"),
-		platformgitlab.WithoutRetriesForTesting(), platformgitlab.
-			WithTransport(http.DefaultTransport),
-	)
-	require.NoError(err)
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(err)
-	database := dbtest.Open(t)
-	_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "gid://gitlab/Project/4242",
-		Owner:          "group",
-		Name:           "project",
-		RepoPath:       "group/project",
-	})
-	require.NoError(err)
-	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
-	t.Cleanup(syncer.Stop)
-	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	source := gitlabServer.URL + "/group/project/uploads/secret/private.png"
-
-	rr := repoBrowserRequest(
-		t,
-		srv,
-		http.MethodGet,
-		"/api/v1/host/gitlab.example.com/repo/gitlab/group/project/markdown-image?source="+url.QueryEscape(source),
-	)
-
-	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	assert.Equal("image/png", rr.Header().Get("Content-Type"))
-	assert.Equal(imageBytes, rr.Body.Bytes())
-	assert.Equal([]string{
-		"/api/v4/projects/group%2Fproject",
-		"/api/v4/projects/42/uploads/secret/private.png",
-	}, paths)
-}
-
 // Owner/name is a mutable route. When a different repository takes over the
 // route, the cache must not hand it the previous occupant's private bytes.
 func TestMarkdownImageCacheDoesNotFollowRouteReuse(t *testing.T) {
@@ -317,7 +248,7 @@ func TestMarkdownImageCacheDoesNotFollowRouteReuse(t *testing.T) {
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
 	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	target := "/api/v1/repo/github/acme/widget/markdown-image?source=" + url.QueryEscape(source)
 
@@ -326,8 +257,8 @@ func TestMarkdownImageCacheDoesNotFollowRouteReuse(t *testing.T) {
 	assert.Equal("bytes-1", first.Body.String())
 
 	replacement := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	replacement.PlatformRepoID = "repo-acme-widget-replacement"
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), replacement, time.Now().UTC().Add(time.Second))
+	replacement.PlatformRepoID = 1002
+	_, err = database.ObserveRepository(t.Context(), replacement)
 	require.NoError(err)
 
 	second := repoBrowserRequest(t, srv, http.MethodGet, target)
@@ -356,7 +287,7 @@ func TestMarkdownImageRouteCachesMutableImagesBriefly(t *testing.T) {
 	}}
 	srv, database := setupTestServerWithMock(t, mock)
 	srv.markdownImages = newMarkdownImageCache(t.TempDir())
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	request := func(source string) *httptest.ResponseRecorder {
 		return repoBrowserRequest(t, srv, http.MethodGet,

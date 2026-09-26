@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/platform"
 )
@@ -84,7 +85,8 @@ func (s *Server) getMarkdownImageFor(
 // route: a replacement repository at a reused route must never be served the
 // previous occupant's private bytes.
 func markdownImageCacheKey(ref platform.RepoRef, source string) string {
-	return string(ref.Platform) + "\x00" + ref.Host + "\x00" + ref.PlatformExternalID + "\x00" + source
+	return string(ref.Platform) + "\x00" + ref.Host + "\x00" +
+		strconv.FormatInt(ref.PlatformID, 10) + "\x00" + source
 }
 
 func markdownImageCacheControl(image platform.MarkdownImage) string {

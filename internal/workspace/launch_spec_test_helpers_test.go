@@ -10,6 +10,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/platform"
 )
 
 type databaseLaunchSpecResolver struct {
@@ -22,10 +23,13 @@ func (r databaseLaunchSpecResolver) ResolveWorkspaceLaunchSpec(
 ) (db.WorkspaceLaunchSpec, error) {
 	var repo *db.Repo
 	var err error
-	if strings.TrimSpace(request.PlatformRepoID) != "" {
+	if request.PlatformRepoID != 0 {
 		entry, lookupErr := r.db.GetRepositoryByProviderID(
-			ctx, request.Repository.Provider, request.Repository.PlatformHost,
-			request.PlatformRepoID,
+			ctx, platform.RepositoryIdentity{
+				Provider:       request.Repository.Provider,
+				PlatformHost:   request.Repository.PlatformHost,
+				PlatformRepoID: request.PlatformRepoID,
+			},
 		)
 		err = lookupErr
 		if entry != nil {

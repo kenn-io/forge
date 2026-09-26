@@ -16,6 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	gh "github.com/google/go-github/v91/github"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
@@ -158,7 +159,7 @@ type listActivityInput struct {
 	HideDefaultBranch    bool     `query:"hide_default_branch"`
 	parentProvider       string
 	parentPlatformHost   string
-	parentPlatformRepoID string
+	parentPlatformRepoID int64
 	parentItemType       string
 	parentItemNumber     int
 }
@@ -166,7 +167,7 @@ type listActivityInput struct {
 type listActivityThreadEventsInput struct {
 	Provider          string   `query:"provider"`
 	PlatformHost      string   `query:"platform_host"`
-	PlatformRepoID    string   `query:"platform_repo_id"`
+	PlatformRepoID    int64    `query:"platform_repo_id"`
 	ItemType          string   `query:"item_type" enum:"pr,issue"`
 	ItemNumber        int      `query:"item_number" minimum:"1"`
 	Types             []string `query:"types"`
@@ -1180,15 +1181,15 @@ func (s *Server) syncPRCI(ctx context.Context, input *repoNumberInput) (*syncPRC
 	warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
 		ctx,
 		ghclient.RepoRef{
-			Platform:           httpapi.ProviderKind(repo.Repo),
-			Owner:              repo.Owner,
-			Name:               repo.Name,
-			PlatformHost:       httpapi.ProviderHost(repo.Repo),
-			RepoPath:           repo.RepoPath,
-			PlatformExternalID: repo.PlatformRepoID,
-			WebURL:             repo.WebURL,
-			CloneURL:           repo.CloneURL,
-			DefaultBranch:      repo.DefaultBranch,
+			Platform:       httpapi.ProviderKind(repo.Repo),
+			Owner:          repo.Owner,
+			Name:           repo.Name,
+			PlatformHost:   httpapi.ProviderHost(repo.Repo),
+			RepoPath:       repo.RepoPath,
+			PlatformRepoID: repo.PlatformRepoID,
+			WebURL:         repo.WebURL,
+			CloneURL:       repo.CloneURL,
+			DefaultBranch:  repo.DefaultBranch,
 		},
 		repo.ID,
 		input.Number,
@@ -1719,22 +1720,18 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		opts.AtOrBeforeSourceID = sourceID
 	}
 
-	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		slog.Error("lock activity repository snapshot failed", "err", err)
-		return nil, httpapi.Internal("list activity failed")
-	}
-	defer releaseReconciliation()
+	var err error
 	if s.cfg != nil {
-		opts.AllowedRepoIDs, err = s.trackedActivityRepoIDsUnderRepositoryReconciliationRead(ctx)
+		opts.AllowedRepoIDs, err = s.trackedActivityRepoIDs(ctx)
 		if err != nil {
 			return nil, httpapi.Internal("load tracked activity repos failed")
 		}
 	}
-	if input.parentPlatformRepoID != "" {
-		repository, lookupErr := s.db.GetRepositoryByProviderIDUnderRepositoryReconciliationRead(
-			ctx, input.parentProvider, input.parentPlatformHost, input.parentPlatformRepoID,
-		)
+	if input.parentPlatformRepoID != 0 {
+		repository, lookupErr := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+			Provider: input.parentProvider, PlatformHost: input.parentPlatformHost,
+			PlatformRepoID: input.parentPlatformRepoID,
+		})
 		if lookupErr != nil {
 			return nil, httpapi.Internal("resolve activity thread repository failed")
 		}
@@ -1828,10 +1825,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 			return nil, httpapi.Internal("list activity failed")
 		}
 	}
-	if s.activityAfterItemsForTest != nil {
-		s.activityAfterItemsForTest()
-	}
-	workspaceSnapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshotUnderRepositoryReconciliationRead(ctx)
+	workspaceSnapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshot(ctx)
 	if err != nil {
 		slog.Error("list workspace activity failed", "err", err)
 		return nil, httpapi.Internal("list workspace activity failed")
@@ -2065,7 +2059,7 @@ func (s *Server) listActivityThreadEvents(
 	if strings.TrimSpace(input.PlatformHost) == "" {
 		return nil, httpapi.Validation("query.platform_host", "platform host is required")
 	}
-	if strings.TrimSpace(input.PlatformRepoID) == "" {
+	if input.PlatformRepoID == 0 {
 		return nil, httpapi.Validation("query.platform_repo_id", "platform repository id is required")
 	}
 	if input.ItemType != "pr" && input.ItemType != "issue" {
@@ -2245,13 +2239,8 @@ func (s *Server) listActivityAuthors(
 		)
 		return &listActivityAuthorsOutput{Body: response}, nil
 	}
-	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		slog.Error("lock activity author repository snapshot failed", "err", err)
-		return nil, httpapi.Internal("list activity authors failed")
-	}
-	defer releaseReconciliation()
-	opts.AllowedRepoIDs, err = s.trackedActivityRepoIDsUnderRepositoryReconciliationRead(ctx)
+	var err error
+	opts.AllowedRepoIDs, err = s.trackedActivityRepoIDs(ctx)
 	if err != nil {
 		return nil, httpapi.Internal("load tracked activity repos failed")
 	}
@@ -2269,7 +2258,7 @@ func (s *Server) listActivityAuthors(
 			},
 		}, nil
 	}
-	workspaceSnapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshotUnderRepositoryReconciliationRead(ctx)
+	workspaceSnapshot, err := s.workspaceAPI.WorkspaceSubjectSnapshot(ctx)
 	if err != nil {
 		slog.Error("list workspace activity authors failed", "err", err)
 		return nil, httpapi.Internal("list activity authors failed")
@@ -2383,7 +2372,7 @@ func mergeWorkspaceActivityAuthors(
 	return authors
 }
 
-func (s *Server) trackedActivityRepoIDsUnderRepositoryReconciliationRead(
+func (s *Server) trackedActivityRepoIDs(
 	ctx context.Context,
 ) ([]int64, error) {
 	repoIDs := make([]int64, 0)
@@ -2396,23 +2385,21 @@ func (s *Server) trackedActivityRepoIDsUnderRepositoryReconciliationRead(
 	for _, repo := range tracked {
 		repoID := repo.RepoID
 		if repoID == 0 {
-			resolvedID, found, err := s.db.ResolveRepositoryIDUnderRepositoryReconciliationRead(
-				ctx, db.RepoIdentity{
-					Platform:       string(repo.Platform),
-					PlatformHost:   repo.PlatformHost,
-					PlatformRepoID: repo.PlatformExternalID,
-					Owner:          repo.Owner,
-					Name:           repo.Name,
-					RepoPath:       repo.RepoPath,
-				},
-			)
+			resolved, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
+				Platform:       string(repo.Platform),
+				PlatformHost:   repo.PlatformHost,
+				PlatformRepoID: repo.PlatformRepoID,
+				Owner:          repo.Owner,
+				Name:           repo.Name,
+				RepoPath:       repo.RepoPath,
+			})
 			if err != nil {
 				return nil, err
 			}
-			if !found {
+			if resolved == nil {
 				continue
 			}
-			repoID = resolvedID
+			repoID = resolved.ID
 		}
 		if repoID <= 0 {
 			continue

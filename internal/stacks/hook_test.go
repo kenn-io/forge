@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	realdb "go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -17,26 +18,26 @@ func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	_, err := d.UpsertRepo(ctx, realdb.RepoIdentity{
+	_, err := reposeed.Seed(ctx, d, realdb.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "code.example.com",
-		PlatformRepoID: "github-org-repo",
+		PlatformRepoID: 1001,
 		Owner:          "org",
 		Name:           "repo",
 	})
 	require.NoError(err)
-	gitlabRepoID, err := d.UpsertRepo(ctx, realdb.RepoIdentity{
+	gitlabRepoID, err := reposeed.Seed(ctx, d, realdb.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "code.example.com",
-		PlatformRepoID: "gitlab-org-repo",
+		PlatformRepoID: 1002,
 		Owner:          "org",
 		Name:           "repo",
 	})
 	require.NoError(err)
-	require.NoError(d.UpdateRepoProviderMetadata(ctx, gitlabRepoID, realdb.RepoProviderMetadata{
+	require.NoError(d.UpdateRepoProviderObservation(ctx, gitlabRepoID, realdb.RepoProviderMetadata{
 		CloneURL:      "https://code.example.com/org/repo.git",
 		DefaultBranch: "main",
-	}))
+	}, nil, nil))
 
 	now := time.Now().UTC()
 	for i, pr := range []struct {
@@ -110,18 +111,18 @@ func TestSyncCompletedHookDistinguishesPartialScopeFailures(t *testing.T) {
 			d := openTestDB(t)
 			ctx := t.Context()
 
-			repoID, err := d.UpsertRepo(ctx, realdb.RepoIdentity{
+			repoID, err := reposeed.Seed(ctx, d, realdb.RepoIdentity{
 				Platform:       "github",
 				PlatformHost:   "github.com",
-				PlatformRepoID: "github-org-repo",
+				PlatformRepoID: 1001,
 				Owner:          "org",
 				Name:           "repo",
 			})
 			require.NoError(err)
-			require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+			require.NoError(d.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{
 				CloneURL:      "https://github.com/org/repo.git",
 				DefaultBranch: "main",
-			}))
+			}, nil, nil))
 			now := time.Now().UTC()
 			for i, pr := range []struct {
 				number     int

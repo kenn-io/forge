@@ -93,7 +93,7 @@ type HostRouter struct {
 // stable provider ID) created the mapping.
 type repoCredentialAlias struct {
 	configured     RouteKey
-	providerRepoID string
+	providerRepoID int64
 }
 
 func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
@@ -1042,6 +1042,14 @@ func (c *RoutedClient) GetRepository(ctx context.Context, owner, repo string) (*
 	return client.GetRepository(ctx, owner, repo)
 }
 
+func (c *RoutedClient) GetRepositoryByID(ctx context.Context, owner string, id int64) (*gh.Repository, error) {
+	client, err := c.routeForOwnerContext(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	return client.GetRepositoryByID(ctx, owner, id)
+}
+
 func (c *RoutedClient) CreateReview(ctx context.Context, owner, repo string, number int, event, body string) (*gh.PullRequestReview, error) {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {
@@ -1251,7 +1259,7 @@ func (c *RoutedClient) ListIssueTimelineEvents(ctx context.Context, owner, repo 
 // records which repository the alias belongs to, so a replacement repository
 // reusing the route can displace it.
 func (r *HostRouter) RegisterRepoCredentialAlias(
-	owner, name string, configured RouteKey, providerRepoID string,
+	owner, name string, configured RouteKey, providerRepoID int64,
 ) {
 	if r == nil {
 		return
@@ -1279,9 +1287,9 @@ func (r *HostRouter) RegisterRepoCredentialAlias(
 // replacement repository cannot inherit the displaced repository's
 // credential. An unknown occupant identity leaves the alias untouched.
 func (r *HostRouter) ClearDisplacedRepoCredentialAlias(
-	owner, name, providerRepoID string,
+	owner, name string, providerRepoID int64,
 ) {
-	if r == nil || providerRepoID == "" {
+	if r == nil || providerRepoID == 0 {
 		return
 	}
 	key := repoRouteMapKey(owner, name)

@@ -12,7 +12,7 @@ import (
 
 func TestFleetActivityWorkspaceMatching(t *testing.T) {
 	repo := activityRepoRefResponse{
-		Provider: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: "42",
+		Provider: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: 42,
 		Owner: "acme", Name: "renamed",
 	}
 	workspace := fleet.WorkspaceSummary{
@@ -39,9 +39,9 @@ func TestFleetActivityWorkspaceMatching(t *testing.T) {
 		{"different item type", repo, "pr", 7, nil, nil},
 		{"different number", repo, "issue", 9, nil, nil},
 		{"local takes precedence", repo, "issue", 7, local, local},
-		{"reused route", activityRepoRefResponse{Provider: repo.Provider, PlatformHost: repo.PlatformHost, PlatformRepoID: "43", Owner: repo.Owner, Name: repo.Name}, "issue", 7, nil, nil},
-		{"different provider", activityRepoRefResponse{Provider: "gitea", PlatformHost: repo.PlatformHost, PlatformRepoID: "42"}, "issue", 7, nil, nil},
-		{"different host", activityRepoRefResponse{Provider: repo.Provider, PlatformHost: "other.example.test", PlatformRepoID: "42"}, "issue", 7, nil, nil},
+		{"reused route", activityRepoRefResponse{Provider: repo.Provider, PlatformHost: repo.PlatformHost, PlatformRepoID: 43, Owner: repo.Owner, Name: repo.Name}, "issue", 7, nil, nil},
+		{"different provider", activityRepoRefResponse{Provider: "gitea", PlatformHost: repo.PlatformHost, PlatformRepoID: 42}, "issue", 7, nil, nil},
+		{"different host", activityRepoRefResponse{Provider: repo.Provider, PlatformHost: "other.example.test", PlatformRepoID: 42}, "issue", 7, nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response := activityResponse{

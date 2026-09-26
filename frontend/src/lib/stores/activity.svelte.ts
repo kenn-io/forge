@@ -641,7 +641,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function stableParentKey(item: ActivityItem | ActivitySubject): string | undefined {
     const repo = item.repo;
     if (!repo) return undefined;
-    const platformRepoId = repo.platform_repo_id?.trim();
+    const platformRepoId = repo.platform_repo_id;
     if (!platformRepoId || (item.item_type !== "pr" && item.item_type !== "issue")) return undefined;
     return activityItemKey({
       provider: repo.provider,
@@ -893,7 +893,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function loadThreadEvents(key: string, loadAllPages = true): void {
     if (loadedThreadKeys.has(key) || loadingThreadKeys.has(key)) return;
     const subject = itemActivity.find((candidate) => stableParentKey(candidate) === key);
-    const platformRepoID = subject?.repo.platform_repo_id?.trim();
+    const platformRepoID = subject?.repo.platform_repo_id;
     if (!subject || !platformRepoID || (subject.item_type !== "pr" && subject.item_type !== "issue")) return;
     const itemType: "pr" | "issue" = subject.item_type === "pr" ? "pr" : "issue";
 

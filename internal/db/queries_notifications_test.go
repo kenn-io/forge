@@ -6,12 +6,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/platform"
 )
 
 func seedNotificationRepo(t *testing.T, d *DB) int64 {
 	t.Helper()
 	require := require.New(t)
-	repoID, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	repoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", "github.com", "acme", "widget",
 	))
 	require.NoError(err)
@@ -41,8 +43,6 @@ func notificationFixture(threadID, reason string, updated time.Time) Notificatio
 }
 
 func TestLatestOpenPRNotificationActivity(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -50,10 +50,7 @@ func TestLatestOpenPRNotificationActivity(t *testing.T) {
 	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
 
 	repoID := seedNotificationRepo(t, d)
-	otherRepoID, err := d.UpsertRepo(
-		ctx,
-		GitHubRepoIdentity("ghe.example.com", "acme", "widget"),
-	)
+	otherRepoID, err := seedTestRepo(ctx, d, GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
 	require.NoError(err)
 
 	seedMR := func(repoID int64, number int, state MergeRequestState, activity time.Time) int64 {
@@ -110,18 +107,16 @@ func TestLatestOpenPRNotificationActivity(t *testing.T) {
 }
 
 func TestLatestOpenPRNotificationActivityFollowsLinkedRepositoryRename(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
 
-	entry, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	entry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
-	}, now)
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
 	require.NotNil(entry)
 	repoID := entry.Repository.ID
@@ -136,10 +131,10 @@ func TestLatestOpenPRNotificationActivityFollowsLinkedRepositoryRename(t *testin
 	notification := notificationFixture("rename", "comment", now.Add(time.Minute))
 	require.NoError(d.UpsertNotifications(ctx, []Notification{notification}))
 
-	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
-	}, now.Add(2*time.Minute))
+		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+	})
 	require.NoError(err)
 
 	got, err := d.LatestOpenPRNotificationActivity(ctx, now.Add(-time.Hour))
@@ -150,18 +145,16 @@ func TestLatestOpenPRNotificationActivityFollowsLinkedRepositoryRename(t *testin
 }
 
 func TestLatestOpenPRNotificationActivityKeepsLinkedIdentityAcrossRouteReuse(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
 
-	oldEntry, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	oldEntry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_old", Owner: "acme", Name: "widget",
-	}, now)
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
 	require.NotNil(oldEntry)
 	oldMRID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
@@ -175,15 +168,15 @@ func TestLatestOpenPRNotificationActivityKeepsLinkedIdentityAcrossRouteReuse(t *
 	linked := notificationFixture("linked-old", "comment", now.Add(time.Minute))
 	require.NoError(d.UpsertNotifications(ctx, []Notification{linked}))
 
-	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_old", Owner: "acme", Name: "gadget",
-	}, now.Add(2*time.Minute))
+		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+	})
 	require.NoError(err)
-	newEntry, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	newEntry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_new", Owner: "acme", Name: "widget",
-	}, now.Add(3*time.Minute))
+		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
 	require.NotNil(newEntry)
 	newMRID, err := d.UpsertMergeRequest(ctx, &MergeRequest{
@@ -210,8 +203,6 @@ func TestLatestOpenPRNotificationActivityKeepsLinkedIdentityAcrossRouteReuse(t *
 }
 
 func TestNotificationsListFiltersSearchAndPriority(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
@@ -249,8 +240,6 @@ func TestNotificationsListFiltersSearchAndPriority(t *testing.T) {
 }
 
 func TestNotificationSummaryIgnoresListState(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -278,8 +267,6 @@ func TestNotificationSummaryIgnoresListState(t *testing.T) {
 }
 
 func TestNotificationsReadQueuesWithoutDone(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -311,13 +298,11 @@ func TestNotificationsReadQueuesWithoutDone(t *testing.T) {
 }
 
 func TestMarkNotificationsAcknowledgedScopesThreadIDsToPlatformHost(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
-	repoID, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	repoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", "ghe.example.com", "acme", "widget",
 	))
 	require.NoError(err)
@@ -343,8 +328,6 @@ func TestMarkNotificationsAcknowledgedScopesThreadIDsToPlatformHost(t *testing.T
 }
 
 func TestNotificationsQueueReadPropagation(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -401,8 +384,6 @@ func TestNotificationsQueueReadPropagation(t *testing.T) {
 }
 
 func TestSpokePreparationDrainsOnlyFrozenNotificationAckGeneration(t *testing.T) {
-	t.Parallel()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -447,8 +428,6 @@ func TestSpokePreparationDrainsOnlyFrozenNotificationAckGeneration(t *testing.T)
 }
 
 func TestSpokePreparationCountsUndeliverableNotificationAcks(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	database := openTestDB(t)
 	repoID := seedNotificationRepo(t, database)
@@ -479,10 +458,10 @@ func TestSpokePreparationCountsUndeliverableNotificationAcks(t *testing.T) {
 	repo, err := database.GetRepoByID(t.Context(), repoID)
 	require.NoError(err)
 	require.NotNil(repo)
-	_, err = database.DeactivateRepositoryObservation(
-		t.Context(), repo.Platform, repo.PlatformHost, repo.PlatformRepoID,
-		now.Add(3*time.Minute),
-	)
+	_, err = database.DeactivateRepository(t.Context(), platform.RepositoryIdentity{
+		Provider: repo.Platform, PlatformHost: repo.PlatformHost,
+		PlatformRepoID: repo.PlatformRepoID,
+	})
 	require.NoError(err)
 
 	undrained, err := database.CountUndrainedNotificationAcks(t.Context())
@@ -491,8 +470,6 @@ func TestSpokePreparationCountsUndeliverableNotificationAcks(t *testing.T) {
 }
 
 func TestReadPropagationGenerationPreservesReadStateForStaleUnreadSync(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -533,8 +510,6 @@ func TestReadPropagationGenerationPreservesReadStateForStaleUnreadSync(t *testin
 }
 
 func TestReadPropagationGenerationKeepsDoneWhenGitHubShowsNewerReadActivity(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -580,8 +555,6 @@ func TestReadPropagationGenerationKeepsDoneWhenGitHubShowsNewerReadActivity(t *t
 }
 
 func TestGitHubReportedReadRecordsGenerationForStaleUnreadSync(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -610,8 +583,6 @@ func TestGitHubReportedReadRecordsGenerationForStaleUnreadSync(t *testing.T) {
 }
 
 func TestReadPropagationFailureDoesNotMarkNewerUnreadActivityForRetry(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -645,8 +616,6 @@ func TestReadPropagationFailureDoesNotMarkNewerUnreadActivityForRetry(t *testing
 }
 
 func TestReadPropagationSuccessDoesNotClearNewerUnreadActivity(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -679,8 +648,6 @@ func TestReadPropagationSuccessDoesNotClearNewerUnreadActivity(t *testing.T) {
 }
 
 func TestReopenNotificationAckPropagationRestoresUnreadAndClearsGeneration(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -713,8 +680,6 @@ func TestReopenNotificationAckPropagationRestoresUnreadAndClearsGeneration(t *te
 }
 
 func TestUpsertNotificationsIgnoresStaleSourceUpdates(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -738,8 +703,6 @@ func TestUpsertNotificationsIgnoresStaleSourceUpdates(t *testing.T) {
 }
 
 func TestNotificationMutationsReturnOnlyUpdatedIDs(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
@@ -765,13 +728,11 @@ func TestNotificationMutationsReturnOnlyUpdatedIDs(t *testing.T) {
 }
 
 func TestNotificationsHideUnmonitoredRepos(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
-	otherRepoID, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	otherRepoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", "github.com", "acme", "tools",
 	))
 	require.NoError(err)
@@ -814,13 +775,11 @@ func TestNotificationsHideUnmonitoredRepos(t *testing.T) {
 }
 
 func TestNotificationSummaryRepoFacetsIncludePlatformHost(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
 	seedNotificationRepo(t, d)
-	repoID, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	repoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", "ghe.example.com", "acme", "widget",
 	))
 	require.NoError(err)
@@ -840,8 +799,6 @@ func TestNotificationSummaryRepoFacetsIncludePlatformHost(t *testing.T) {
 }
 
 func TestUpsertNotificationsPreservesQueuedReadUntilNewerActivity(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -880,8 +837,6 @@ func TestUpsertNotificationsPreservesQueuedReadUntilNewerActivity(t *testing.T) 
 }
 
 func TestUpsertNotificationsClearsQueuedReadForActivityAfterQueuedGeneration(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -909,8 +864,6 @@ func TestUpsertNotificationsClearsQueuedReadForActivityAfterQueuedGeneration(t *
 }
 
 func TestUpsertNotificationsRejectsBlankPlatform(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedNotificationRepo(t, d)
@@ -940,8 +893,6 @@ func TestUpsertNotificationsRejectsBlankPlatform(t *testing.T) {
 }
 
 func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -972,8 +923,6 @@ func TestNotificationPlatformScopedOperationsRejectBlankPlatform(t *testing.T) {
 }
 
 func TestNotificationSyncWatermarksAreScopedByRepoIdentity(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
@@ -1007,68 +956,7 @@ func TestNotificationSyncWatermarksAreScopedByRepoIdentity(t *testing.T) {
 	require.Nil(missing)
 }
 
-func TestConditionalNotificationWritesRejectABARouteReuse(t *testing.T) {
-	t.Parallel()
-
-	require := require.New(t)
-	ctx := t.Context()
-	database := openTestDB(t)
-	observedAt := time.Now().UTC()
-	originalIdentity := RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "original-repo", Owner: "acme", Name: "alpha",
-		RepoPath: "acme/alpha",
-	}
-	original, _, err := database.ReconcileRepositoryObservation(
-		ctx, originalIdentity, observedAt,
-	)
-	require.NoError(err)
-	fence, found, err := database.CurrentRepositoryRouteFence(
-		ctx, originalIdentity, original.Repository.ID,
-	)
-	require.NoError(err)
-	require.True(found)
-
-	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "original-repo", Owner: "acme", Name: "beta",
-		RepoPath: "acme/beta",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "replacement-repo", Owner: "acme", Name: "alpha",
-		RepoPath: "acme/alpha",
-	}, observedAt.Add(2*time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(ctx, RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "replacement-repo", Owner: "acme", Name: "gamma",
-		RepoPath: "acme/gamma",
-	}, observedAt.Add(3*time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(
-		ctx, originalIdentity, observedAt.Add(4*time.Minute),
-	)
-	require.NoError(err)
-
-	committed, err := database.UpsertNotificationsIfRouteFence(
-		ctx, nil, originalIdentity, fence,
-	)
-	require.NoError(err)
-	require.False(committed)
-
-	committed, err = database.UpdateNotificationSyncWatermarkIfRouteFence(
-		ctx, "github", "github.com", "acme", "alpha",
-		fence, observedAt.Add(5*time.Minute), nil,
-	)
-	require.NoError(err)
-	require.False(committed)
-}
-
 func TestQueuedNotificationAcksStayWithinPlatformAndHost(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	d := openTestDB(t)
 	repoID := seedNotificationRepo(t, d)
@@ -1116,16 +1004,14 @@ func TestQueuedNotificationAcksStayWithinPlatformAndHost(t *testing.T) {
 }
 
 func TestMarkClosedLinkedNotificationsDoneRespectsNotificationPlatform(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	githubRepoID, err := d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	githubRepoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"github", "code.example.com", "acme", "widget",
 	))
 	require.NoError(err)
-	_, err = d.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
+	_, err = seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
 		"gitlab", "code.example.com", "acme", "widget",
 	))
 	require.NoError(err)
@@ -1177,8 +1063,6 @@ func TestMarkClosedLinkedNotificationsDoneRespectsNotificationPlatform(t *testin
 }
 
 func TestUpsertNotificationsReopensDoneReadForActivityAfterDoneGeneration(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
@@ -1208,25 +1092,23 @@ func TestUpsertNotificationsReopensDoneReadForActivityAfterDoneGeneration(t *tes
 }
 
 func TestNotificationsRouteFilterFollowsRepositoryRename(t *testing.T) {
-	t.Parallel()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	_, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
+	_, err := d.ObserveRepository(t.Context(), RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
-	}, now)
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
 	require.NoError(d.UpsertNotifications(t.Context(), []Notification{
 		notificationFixture("thread-rename", "mention", now),
 	}))
 
-	_, _, err = d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
+	_, err = d.ObserveRepository(t.Context(), RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
-	}, now.Add(time.Hour))
+		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+	})
 	require.NoError(err)
 
 	renamed, err := d.ListNotifications(t.Context(), ListNotificationsOpts{
@@ -1246,24 +1128,22 @@ func TestNotificationsRouteFilterFollowsRepositoryRename(t *testing.T) {
 }
 
 func TestNotificationSummaryGroupsByCurrentRoute(t *testing.T) {
-	t.Parallel()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	_, _, err := d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
+	_, err := d.ObserveRepository(t.Context(), RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
-	}, now)
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
 	require.NoError(d.UpsertNotifications(t.Context(), []Notification{
 		notificationFixture("thread-summary", "mention", now),
 	}))
-	_, _, err = d.ReconcileRepositoryObservation(t.Context(), RepoIdentity{
+	_, err = d.ObserveRepository(t.Context(), RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
-	}, now.Add(time.Hour))
+		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+	})
 	require.NoError(err)
 
 	summary, err := d.NotificationSummary(t.Context(), ListNotificationsOpts{})
@@ -1279,19 +1159,16 @@ func TestNotificationSummaryGroupsByCurrentRoute(t *testing.T) {
 // propagation fences and routed mark-read calls do not fail against the
 // cached historical route.
 func TestListQueuedNotificationAcksFollowsRenamedRepositoryRoute(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	entry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
-	}, now)
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
-	require.True(accepted)
 	repoID := entry.Repository.ID
 	number := 7
 	require.NoError(d.UpsertNotifications(ctx, []Notification{{
@@ -1309,12 +1186,11 @@ func TestListQueuedNotificationAcksFollowsRenamedRepositoryRoute(t *testing.T) {
 	_, err = d.MarkNotificationsDone(ctx, []int64{items[0].ID}, now.Add(time.Minute), true)
 	require.NoError(err)
 
-	_, accepted, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "renamed",
-	}, now.Add(2*time.Minute))
+		PlatformRepoID: 1001, Owner: "acme", Name: "renamed",
+	})
 	require.NoError(err)
-	require.True(accepted)
 
 	queued, err := d.ListQueuedNotificationAcks(
 		ctx, "github", "github.com", 10, now.Add(3*time.Minute),
@@ -1326,20 +1202,17 @@ func TestListQueuedNotificationAcksFollowsRenamedRepositoryRoute(t *testing.T) {
 }
 
 func TestListQueuedNotificationAcksDoesNotLetUnroutableLinkedRowsConsumeLimit(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 
-	stale, accepted, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	stale, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_stale", Owner: "acme", Name: "widget",
-	}, now)
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
-	require.True(accepted)
 	staleNotification := notificationFixture("stale-thread", "mention", now)
 	staleNotification.RepoID = &stale.Repository.ID
 	require.NoError(d.UpsertNotifications(ctx, []Notification{staleNotification}))
@@ -1355,19 +1228,17 @@ func TestListQueuedNotificationAcksDoesNotLetUnroutableLinkedRowsConsumeLimit(t 
 
 	// Reusing the route leaves the original repository and its queued
 	// acknowledgement linked by stable ID, but without a current route.
-	_, accepted, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_replacement", Owner: "acme", Name: "widget",
-	}, now.Add(2*time.Minute))
+		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
-	require.True(accepted)
 
-	current, accepted, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	current, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_current", Owner: "acme", Name: "gadget",
-	}, now.Add(3*time.Minute))
+		PlatformRepoID: 1003, Owner: "acme", Name: "gadget",
+	})
 	require.NoError(err)
-	require.True(accepted)
 	currentNotification := notificationFixture(
 		"current-thread", "mention", now.Add(3*time.Minute),
 	)
@@ -1402,19 +1273,16 @@ func TestListQueuedNotificationAcksDoesNotLetUnroutableLinkedRowsConsumeLimit(t 
 }
 
 func TestDeferQueuedNotificationAcksUsesStableRepoIDAfterRename(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	entry, accepted, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	entry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
-	}, now)
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
-	require.True(accepted)
 	repoID := entry.Repository.ID
 	number := 7
 	require.NoError(d.UpsertNotifications(ctx, []Notification{{
@@ -1426,12 +1294,11 @@ func TestDeferQueuedNotificationAcksUsesStableRepoIDAfterRename(t *testing.T) {
 		Unread: true, SourceUpdatedAt: now, SyncedAt: now,
 	}}))
 
-	_, accepted, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "renamed",
-	}, now.Add(time.Minute))
+		PlatformRepoID: 1001, Owner: "acme", Name: "renamed",
+	})
 	require.NoError(err)
-	require.True(accepted)
 	require.NoError(d.UpsertNotifications(ctx, []Notification{{
 		Platform: "github", PlatformHost: "github.com",
 		PlatformNotificationID: "legacy-current-route",

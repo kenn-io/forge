@@ -580,7 +580,7 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
             {
               provider: "github",
               platform_host: "github.com",
-              platform_repo_id: "R_widgets",
+              platform_repo_id: 1102,
               repo_path: "acme/widgets",
             },
           ],
@@ -615,7 +615,7 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
             {
               provider: "github",
               platform_host: "github.com",
-              platform_repo_id: "R_widgets",
+              platform_repo_id: 1102,
               repo_path: "acme/widgets",
             },
           ],

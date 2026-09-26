@@ -455,7 +455,7 @@ test("authoritative Activity reloads keep renamed routes distinct and reconcile 
         return false;
       }
       const snapshot = (await response.json()) as {
-        item_activity?: Array<{ repo: { platform_repo_id?: string; repo_path?: string } }>;
+        item_activity?: Array<{ repo: { platform_repo_id?: number; repo_path?: string } }>;
       };
       return (snapshot.item_activity ?? []).some(
         (subject) => subject.repo.platform_repo_id && subject.repo.repo_path === "acme/widgets-renamed",
@@ -497,13 +497,13 @@ test("authoritative Activity reloads keep renamed routes distinct and reconcile 
       const snapshot = (await response.json()) as {
         item_activity?: Array<{
           item_title: string;
-          repo: { platform_repo_id?: string; repo_path?: string };
+          repo: { platform_repo_id?: number; repo_path?: string };
         }>;
       };
       return (snapshot.item_activity ?? []).some(
         (subject) =>
           subject.item_title === "Replacement route pull request" &&
-          subject.repo.platform_repo_id === "e2e-replacement-widgets" &&
+          subject.repo.platform_repo_id === 990100 &&
           subject.repo.repo_path === "acme/widgets",
       );
     });

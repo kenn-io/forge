@@ -89,12 +89,12 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) { //nolint:paral
 			if r.Header.Get("Authorization") == "Bearer user-pat" {
 				record("repo:viewer-overlay", r)
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":true}}`))
+				_, _ = w.Write([]byte(`{"id":1,"name":"widgets","owner":{"login":"acme"},"permissions":{"push":true}}`))
 				return
 			}
 			record("repo:metadata", r)
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":false}}`))
+			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","owner":{"login":"acme"},"permissions":{"push":false}}`))
 		})
 	mux.HandleFunc("PUT /api/v3/repos/acme/widgets/pulls/5/merge-async",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -357,10 +357,10 @@ func TestViewerPermissionOverlayChargesWriteBudget(t *testing.T) { //nolint:para
 					return
 				}
 				w.Header().Set("ETag", `W/"viewer"`)
-				_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":true}}`))
+				_, _ = w.Write([]byte(`{"id":1,"name":"widgets","owner":{"login":"acme"},"permissions":{"push":true}}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","permissions":{"push":false}}`))
+			_, _ = w.Write([]byte(`{"id":1,"name":"widgets","owner":{"login":"acme"},"permissions":{"push":false}}`))
 		})
 	mux.HandleFunc("POST /api/v3/repos/acme/widgets/issues/5/comments",
 		func(w http.ResponseWriter, _ *http.Request) {

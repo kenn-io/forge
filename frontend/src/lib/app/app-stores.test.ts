@@ -156,7 +156,7 @@ describe("app store composition", () => {
     async (page) => {
       const initialResponse = await createMockApiFetch().fetch("/api/v1/issues/github/acme/widgets/7");
       let updatedDetail: IssueDetail = await initialResponse.json();
-      updatedDetail.repo.platform_repo_id = "repo-acme-widgets";
+      updatedDetail.repo.platform_repo_id = 1018;
       const api = createMockApiFetch([
         ({ method, url }) =>
           method === "GET" && url.pathname === "/api/v1/activity/authors"

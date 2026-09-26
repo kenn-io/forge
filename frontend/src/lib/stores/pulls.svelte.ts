@@ -21,6 +21,7 @@ import { providerItemKey, providerMutationKey } from "./provider-key.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
+import { repoIdentityKey } from "../utils/repo-label.js";
 
 export type { FetchPullResult } from "./pulls-workflow.js";
 
@@ -103,8 +104,15 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return selectedPR;
   }
 
-  function pullIdentityKey(ref: Pick<PullIdentityRef, "provider" | "platformHost" | "repoPath">): string {
-    return JSON.stringify([ref.provider, ref.platformHost ?? "", ref.repoPath]);
+  function pullRepoKey(pr: PullRequest): string {
+    return repoIdentityKey({
+      provider: pr.repo.provider,
+      platformHost: pr.repo.platform_host,
+      platformRepoId: pr.repo.platform_repo_id,
+      owner: pr.repo.owner,
+      name: pr.repo.name,
+      repoPath: pr.repo.repo_path,
+    });
   }
 
   function pullRef(pr: PullRequest): PullIdentityRef {
@@ -142,7 +150,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   function pullsByRepo(): Map<string, PullRequest[]> {
     const map = new Map<string, PullRequest[]>();
     for (const pr of getFilteredPulls()) {
-      const key = pullIdentityKey(pullRef(pr));
+      const key = pullRepoKey(pr);
       const existing = map.get(key);
       if (existing !== undefined) {
         existing.push(pr);

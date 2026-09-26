@@ -17,7 +17,7 @@ const repositoryFeatureProbeInterval = 24 * time.Hour
 type repositoryFeatureCooldownKey struct {
 	platform       platform.Kind
 	host           string
-	providerRepoID string
+	providerRepoID int64
 	repoPath       string
 	feature        string
 }
@@ -34,8 +34,8 @@ type repositoryFeatureCooldownState struct {
 	generation  uint64
 	reservation uint64
 	// providerRepoID identifies the repository that recorded the state;
-	// empty when it was recorded from a route-only (unresolved) ref.
-	providerRepoID string
+	// zero when it was recorded from a route-only (unresolved) ref.
+	providerRepoID int64
 }
 
 type repositoryFeatureProbe struct {
@@ -108,13 +108,13 @@ func repositoryFeatureKeys(repo RepoRef, feature string) []repositoryFeatureCool
 		repoPath: ref.RepoPath,
 		feature:  feature,
 	}
-	if ref.PlatformExternalID == "" {
+	if ref.PlatformID == 0 {
 		return []repositoryFeatureCooldownKey{routeKey}
 	}
 	idKey := repositoryFeatureCooldownKey{
 		platform:       ref.Platform,
 		host:           ref.Host,
-		providerRepoID: ref.PlatformExternalID,
+		providerRepoID: ref.PlatformID,
 		feature:        feature,
 	}
 	return []repositoryFeatureCooldownKey{idKey, routeKey}
@@ -136,7 +136,7 @@ func (c *repositoryFeatureCooldowns) lookupState(
 		if !ok {
 			continue
 		}
-		if state.providerRepoID == "" || state.providerRepoID == primary.providerRepoID {
+		if state.providerRepoID == 0 || state.providerRepoID == primary.providerRepoID {
 			return key, state, true
 		}
 	}

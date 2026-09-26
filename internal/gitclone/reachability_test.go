@@ -35,7 +35,7 @@ func TestCommitsReachableFromUsesRepositoryIdentityNamespace(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	mgr, shas := setupAncestryClone(t)
-	ctx := WithRepositoryIdentity(t.Context(), "provider-repo-1")
+	ctx := WithRepositoryIdentity(t.Context(), 1001)
 	legacyPath, err := mgr.ClonePath(
 		"github", "example.com", "acme", "widgets",
 	)

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/testutil/reposeed"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -123,9 +125,9 @@ func seedIssue(
 func replaceMonitorRepoRoute(t *testing.T, d *db.DB) int64 {
 	t.Helper()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget-replacement"
-	replacement, _, err := d.ReconcileRepositoryObservation(
-		t.Context(), identity, time.Now().UTC().Add(time.Hour),
+	identity.PlatformRepoID = 1012
+	replacement, err := d.ObserveRepository(
+		t.Context(), identity,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, replacement)
@@ -152,41 +154,6 @@ func TestPRMonitorRunOnceSkipsWorkspaceForInactiveRepository(t *testing.T) {
 	workspace, err := d.GetWorkspace(t.Context(), "ws-issue")
 	require.NoError(err)
 	require.Nil(workspace.AssociatedPRNumber)
-}
-
-func TestPRMonitorLegacyWorkspaceSkipsHistoricallyReusedRoute(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	insertMonitorWorkspace(t, database, t.TempDir(), nil)
-	workspace, err := database.GetWorkspace(t.Context(), "ws-issue")
-	require.NoError(err)
-	require.Zero(workspace.RepoID)
-
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
-		Owner: "acme", Name: "widget",
-	}, observedAt)
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-original",
-		Owner: "acme", Name: "moved-away",
-	}, observedAt.Add(time.Minute))
-	require.NoError(err)
-	replacement, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-replacement",
-		Owner: "acme", Name: "widget",
-	}, observedAt.Add(2*time.Minute))
-	require.NoError(err)
-	require.NotNil(replacement)
-	seedMRWithHeadRepo(
-		t, database, replacement.Repository.ID, 42,
-		"feature/replacement", "https://github.com/acme/widget.git",
-	)
-
-	candidates, err := NewPRMonitor(database).listOpenPullCandidates(t.Context(), workspace)
-	require.NoError(err)
-	require.Empty(candidates)
 }
 
 func TestPRMonitorRetiresWorkspaceWithoutRepositoryIdentity(t *testing.T) {
@@ -288,7 +255,7 @@ func TestLaunchSpecMonitorUsesHubCandidatesWithoutProviderItemRows(t *testing.T)
 			Version: WorkspaceLaunchSpecVersion,
 			Repository: WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				PlatformRepoID: testRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
@@ -410,10 +377,10 @@ func TestPRMonitorRunOnceFallsBackToLocalHeadSHAWhenUpstreamRepoMetadataMissing(
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.com",
-		PlatformRepoID: "gid://gitlab/Project/42",
+		PlatformRepoID: 1002,
 		Owner:          "Group/SubGroup",
 		Name:           "Project",
 		RepoPath:       "Group/SubGroup/Project",
@@ -736,18 +703,18 @@ func TestPRMonitorRunOnceScopesCandidatesByWorkspaceProvider(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	githubRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	githubRepoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "git.example.com",
-		PlatformRepoID: "repo-github-widget",
+		PlatformRepoID: 1015,
 		Owner:          "acme",
 		Name:           "widget",
 	})
 	require.NoError(err)
-	gitlabRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	gitlabRepoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "git.example.com",
-		PlatformRepoID: "repo-gitlab-widget",
+		PlatformRepoID: 1017,
 		Owner:          "acme",
 		Name:           "widget",
 	})

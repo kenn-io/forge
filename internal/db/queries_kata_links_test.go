@@ -221,11 +221,8 @@ func TestKataIssueLinksSurviveRepoRenameAndCascadeWithOwners(t *testing.T) {
 	identity := verifiedTestRepoIdentity("github", "github.com", "acme", "widget")
 	identity.Owner = "renamed"
 	identity.Name = "renamed-widget"
-	entry, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), identity, time.Now().UTC().Add(time.Hour),
-	)
+	entry, err := database.ObserveRepository(t.Context(), identity)
 	require.NoError(err)
-	assert.True(accepted)
 	require.NotNil(entry)
 	assert.Equal(repoID, entry.Repository.ID)
 	repoLinks, err := database.ListKataIssueLinks(t.Context(), repoSubject)

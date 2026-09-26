@@ -19,7 +19,9 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -104,12 +106,12 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	syncRef := ghclient.RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "repo-acme-widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 	}
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "repo-acme-widget",
+		PlatformID: testutil.FixtureRepoID("acme", "widget"),
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -141,6 +143,8 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	archiveService, err := archive.NewService(
 		database, registry, syncer, source, nil, nil,
 	)
+	require.NoError(err)
+	_, err = reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	requireEnsureConfigured(t, archiveService, []platform.RepoRef{ref})
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
@@ -240,12 +244,12 @@ func TestArchiveAPIDefersHydrationAtLargerPoolReserveE2E(t *testing.T) {
 	syncRef := ghclient.RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "repo-acme-widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 	}
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformExternalID: "repo-acme-widget",
+		PlatformID: testutil.FixtureRepoID("acme", "widget"),
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -279,6 +283,8 @@ func TestArchiveAPIDefersHydrationAtLargerPoolReserveE2E(t *testing.T) {
 	archiveService, err := archive.NewService(
 		database, registry, syncer, source, nil, nil,
 	)
+	require.NoError(err)
+	_, err = reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	requireEnsureConfigured(t, archiveService, []platform.RepoRef{ref})
 	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{

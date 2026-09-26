@@ -122,7 +122,7 @@ func TestArchiveHydrationRejectsInterveningMergeRequestSnapshotE2E(t *testing.T)
 	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/v3/repos/acme/widget":
+		case "/api/v3/repos/acme/widget", "/api/v3/repositories/1":
 			_, _ = w.Write([]byte(`{"id":1,"node_id":"R_widget","name":"widget","full_name":"acme/widget","owner":{"login":"acme"}}`))
 		case "/api/v3/repos/acme/widget/pulls/7":
 			_, _ = w.Write([]byte(`{
@@ -284,7 +284,7 @@ func testArchiveReactivationReclassifiesWorkspaceHeadRepo(
 			default:
 				http.Error(w, `{"message":"unexpected GraphQL query"}`, http.StatusBadRequest)
 			}
-		case "/api/v3/repos/acme/widget":
+		case "/api/v3/repos/acme/widget", "/api/v3/repositories/1":
 			assert.NoError(json.NewEncoder(w).Encode(baseRepo))
 		case "/api/v3/repos/acme/widget/pulls/7":
 			startOnce.Do(func() { close(pullStarted) })
@@ -459,7 +459,7 @@ func testArchiveReportRepairsMergedMetricsAcrossRepositoryRename(
 	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/v3/repos/acme/widget":
+		case "/api/v3/repos/acme/widget", "/api/v3/repositories/1":
 			if renamed.Load() {
 				_, _ = w.Write([]byte(`{"id":1,"node_id":"R_widget","name":"renamed","full_name":"acme/renamed","owner":{"login":"acme"}}`))
 				return

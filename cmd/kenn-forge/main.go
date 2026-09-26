@@ -1094,7 +1094,7 @@ func resolveStartupRepos(
 		}
 		ghclient.RegisterConfiguredRepoCredentialAliases(githubRouters, raw, repos)
 		for _, repo := range repos {
-			if repo.PlatformExternalID == "" {
+			if repo.PlatformRepoID == 0 {
 				continue
 			}
 			set.Add(repo, false)
@@ -1119,7 +1119,7 @@ func resolveProviderRepos(
 			// through its dedicated archive App on a fresh startup.
 			resolveCtx = ghclient.WithArchiveSyncBudget(ctx)
 		}
-		configuredProviderID := strings.TrimSpace(raw.PlatformRepoID)
+		configuredProviderID := raw.PlatformRepoID
 		var expanded []ghclient.RepoRef
 		var err error
 		if !cfg.AirplaneMode {
@@ -1138,7 +1138,7 @@ func resolveProviderRepos(
 			} else {
 				expanded = fallbackExactFromDB(ctx, database, raw)
 				if len(expanded) == 0 {
-					if configuredProviderID == "" {
+					if configuredProviderID == 0 {
 						expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
 					}
 				} else {
@@ -1197,7 +1197,7 @@ func fallbackExactFromDB(
 		PlatformHost: raw.PlatformHostOrDefault(),
 		Lifecycle:    db.RepositoryLifecycleActive,
 	}
-	if strings.TrimSpace(raw.PlatformRepoID) != "" {
+	if raw.PlatformRepoID != 0 {
 		filter.PlatformRepoID = raw.PlatformRepoID
 	} else {
 		filter.RepoPath = repoPath
@@ -1207,49 +1207,24 @@ func fallbackExactFromDB(
 		slog.Warn("fallback exact from db", "err", err)
 		return nil
 	}
-	var entry *db.RepositoryCatalogEntry
-	if filter.PlatformRepoID != "" {
-		if len(entries) == 1 {
-			entry = &entries[0]
-		}
-	} else {
-		entry = catalogEntryForConfiguredRoute(entries, repoPath)
-	}
-	if entry == nil {
+	// An ID filter matches one row, and a route has at most one active
+	// occupant.
+	if len(entries) != 1 {
 		return nil
 	}
+	entry := &entries[0]
 	return []ghclient.RepoRef{{
 		Platform:           platform.Kind(raw.PlatformOrDefault()),
 		Owner:              entry.Repository.Owner,
 		Name:               entry.Repository.Name,
 		PlatformHost:       entry.Repository.PlatformHost,
 		RepoPath:           entry.Repository.RepoPath,
-		PlatformExternalID: entry.Repository.PlatformRepoID,
+		PlatformRepoID:     entry.Repository.PlatformRepoID,
 		WebURL:             entry.Repository.WebURL,
 		CloneURL:           entry.Repository.CloneURL,
 		DefaultBranch:      entry.Repository.DefaultBranch,
 		ConfiguredRepoPath: repoPath,
 	}}
-}
-
-// catalogEntryForConfiguredRoute prefers the repository currently occupying
-// the configured route; a reused route may also historically match the
-// renamed repository that held it before. Multiple historical matches with
-// no current occupant cannot be attributed safely.
-func catalogEntryForConfiguredRoute(
-	entries []db.RepositoryCatalogEntry, repoPath string,
-) *db.RepositoryCatalogEntry {
-	for i := range entries {
-		for _, route := range entries[i].Routes {
-			if route.Current && strings.EqualFold(route.RepoPath, repoPath) {
-				return &entries[i]
-			}
-		}
-	}
-	if len(entries) == 1 {
-		return &entries[0]
-	}
-	return nil
 }
 
 // fallbackGlobFromDB returns repos from the database that match
@@ -1291,15 +1266,15 @@ func fallbackGlobFromDB(
 		)
 		if matched {
 			repo := ghclient.RepoRef{
-				Platform:           rawPlatform,
-				Owner:              r.Owner,
-				Name:               r.Name,
-				PlatformHost:       dbHost,
-				RepoPath:           r.RepoPath,
-				PlatformExternalID: r.PlatformRepoID,
-				WebURL:             r.WebURL,
-				CloneURL:           r.CloneURL,
-				DefaultBranch:      r.DefaultBranch,
+				Platform:       rawPlatform,
+				Owner:          r.Owner,
+				Name:           r.Name,
+				PlatformHost:   dbHost,
+				RepoPath:       r.RepoPath,
+				PlatformRepoID: r.PlatformRepoID,
+				WebURL:         r.WebURL,
+				CloneURL:       r.CloneURL,
+				DefaultBranch:  r.DefaultBranch,
 			}
 			matches = append(matches, repo)
 		}

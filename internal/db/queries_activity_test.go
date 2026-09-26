@@ -183,18 +183,18 @@ func TestListActivity(t *testing.T) {
 		ctx := t.Context()
 		base := baseTime()
 
-		githubRepo, err := d.UpsertRepo(ctx, RepoIdentity{
+		githubRepo, err := seedTestRepo(ctx, d, RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "github-widgets",
+			PlatformRepoID: 1001,
 			Owner:          "acme",
 			Name:           "widgets",
 		})
 		require.NoError(err)
-		giteaRepo, err := d.UpsertRepo(ctx, RepoIdentity{
+		giteaRepo, err := seedTestRepo(ctx, d, RepoIdentity{
 			Platform:       "gitea",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "gitea-widgets",
+			PlatformRepoID: 1002,
 			Owner:          "acme",
 			Name:           "widgets",
 		})
@@ -2176,10 +2176,10 @@ func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
 	base := baseTime()
 	number := 7
 
-	_, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	_, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
-	}, base)
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
 	require.NoError(d.UpsertNotifications(ctx, []Notification{{
 		Platform:               "github",
@@ -2198,10 +2198,10 @@ func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
 		SourceUpdatedAt:        base.Add(10 * time.Minute),
 		SyncedAt:               base.Add(10 * time.Minute),
 	}}))
-	_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
-	}, base.Add(time.Hour))
+		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+	})
 	require.NoError(err)
 
 	renamed, err := d.ListActivity(ctx, ListActivityOpts{
@@ -2278,10 +2278,10 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 			base := baseTime()
 			number := 7
 
-			entry, _, err := d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+			entry, err := d.ObserveRepository(ctx, RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "R_widget", Owner: "acme", Name: "widget",
-			}, base)
+				PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+			})
 			require.NoError(err)
 			require.NoError(d.UpsertNotifications(ctx, []Notification{{
 				Platform:               "github",
@@ -2300,10 +2300,10 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 				SourceUpdatedAt:        base.Add(10 * time.Minute),
 				SyncedAt:               base.Add(10 * time.Minute),
 			}}))
-			_, _, err = d.ReconcileRepositoryObservation(ctx, RepoIdentity{
+			_, err = d.ObserveRepository(ctx, RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "R_widget", Owner: "acme", Name: "gadget",
-			}, base.Add(time.Hour))
+				PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+			})
 			require.NoError(err)
 			tc.insertParent(t, d, entry.Repository.ID, number, tc.currentURL)
 

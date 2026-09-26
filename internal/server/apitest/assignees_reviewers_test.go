@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -363,10 +364,10 @@ func TestAPIAssigneeAndReviewerMutationsAreCapabilityGated(t *testing.T) {
 		require.NoError(srv.Shutdown(ctx))
 	})
 
-	_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform:       "forgejo",
 		PlatformHost:   "codeberg.org",
-		PlatformRepoID: "repo-acme-widget",
+		PlatformRepoID: 1001,
 		Owner:          "acme",
 		Name:           "widget",
 	})

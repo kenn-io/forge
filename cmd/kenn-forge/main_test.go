@@ -22,6 +22,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -30,6 +31,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
@@ -394,15 +396,14 @@ func TestResolveProviderReposAirplaneModeUsesCachedCatalog(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "R_widget"
-	repoID, err := database.UpsertRepoByProviderID(t.Context(), identity)
+	identity.PlatformRepoID = 1001
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(t.Context(), repoID, db.RepoProviderMetadata{
-		PlatformRepoID: identity.PlatformRepoID,
-		WebURL:         "https://github.com/acme/widget",
-		CloneURL:       "https://github.com/acme/widget.git",
-		DefaultBranch:  "main",
-	}))
+	require.NoError(database.UpdateRepoProviderObservation(t.Context(), repoID, db.RepoProviderMetadata{
+		WebURL:        "https://github.com/acme/widget",
+		CloneURL:      "https://github.com/acme/widget.git",
+		DefaultBranch: "main",
+	}, nil, nil))
 	called := false
 	client := &testutil.FixtureClient{ListRepositoriesByOwnerFn: func(context.Context, string) ([]*gh.Repository, error) {
 		called = true
@@ -422,7 +423,7 @@ func TestResolveProviderReposAirplaneModeUsesCachedCatalog(t *testing.T) {
 		Owner:              "acme",
 		Name:               "widget",
 		RepoPath:           "acme/widget",
-		PlatformExternalID: "R_widget",
+		PlatformRepoID:     1001,
 		WebURL:             "https://github.com/acme/widget",
 		CloneURL:           "https://github.com/acme/widget.git",
 		DefaultBranch:      "main",
@@ -522,6 +523,12 @@ func (getRepoFailingClient) GetRepository(
 	return nil, errors.New("transient resolve failure")
 }
 
+func (getRepoFailingClient) GetRepositoryByID(
+	context.Context, string, int64,
+) (*gh.Repository, error) {
+	return nil, errors.New("transient resolve failure")
+}
+
 func TestResolveProviderReposPrefersResolvedOverFallbackDuplicates(t *testing.T) {
 	assert := assert.New(t)
 	// The exact entry fails resolution and falls back to a synthetic ref;
@@ -536,7 +543,7 @@ func TestResolveProviderReposPrefersResolvedOverFallbackDuplicates(t *testing.T)
 	client := getRepoFailingClient{&testutil.FixtureClient{
 		ReposByOwner: map[string][]*gh.Repository{
 			"acme": {{
-				NodeID:   new("repo-acme-archived"),
+				ID:       new(int64(1001)),
 				Name:     new("archived"),
 				Owner:    &gh.User{Login: new("acme")},
 				Archived: new(true),
@@ -558,7 +565,7 @@ func TestResolveProviderReposPrefersResolvedOverFallbackDuplicates(t *testing.T)
 		Name:               "archived",
 		PlatformHost:       "github.com",
 		RepoPath:           "acme/archived",
-		PlatformExternalID: "repo-acme-archived",
+		PlatformRepoID:     1001,
 		Archived:           true,
 		ConfiguredRepoPath: "acme/archived",
 	}}, repos)
@@ -588,81 +595,22 @@ func TestResolveProviderReposKeepsExactReposWhenResolutionFails(t *testing.T) {
 	}}, repos)
 }
 
-func TestResolveProviderReposRecoversRenamedExactEntryFromCatalog(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := dbtest.Open(t)
-	now := time.Now().UTC()
-	before := db.GitHubRepoIdentity("github.com", "acme", "tools")
-	before.PlatformRepoID = "repo-acme-tools"
-	_, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), before, now.Add(-time.Hour),
-	)
-	require.NoError(err)
-	after := db.GitHubRepoIdentity("github.com", "acme", "tools-new")
-	after.PlatformRepoID = "repo-acme-tools"
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), after, now)
-	require.NoError(err)
-
-	// The renamed repository resolves through the glob; the exact entry
-	// still lists the old path and fails transiently. Catalog route
-	// history recovers the stable identity so the fallback deduplicates
-	// instead of tracking an identity-less duplicate on the stale route.
-	cfg := &config.Config{Repos: []config.Repo{
-		{Owner: "acme", Name: "tools"},
-		{Owner: "acme", Name: "*"},
-	}}
-	client := getRepoFailingClient{&testutil.FixtureClient{
-		ReposByOwner: map[string][]*gh.Repository{
-			"acme": {{
-				NodeID:   new("repo-acme-tools"),
-				Name:     new("tools-new"),
-				Owner:    &gh.User{Login: new("acme")},
-				Archived: new(true),
-			}},
-		},
-	}}
-
-	repos := resolveProviderRepos(
-		t.Context(),
-		cfg,
-		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
-		database,
-		nil,
-	)
-
-	require.Len(repos, 1)
-	assert.Equal("tools-new", repos[0].Name)
-	assert.Equal("repo-acme-tools", repos[0].PlatformExternalID)
-	assert.True(repos[0].Archived)
-	assert.Equal("acme/tools", repos[0].ConfiguredRepoPath)
-}
-
 func TestResolveProviderReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	now := time.Now().UTC()
-	original := db.GitHubRepoIdentity("github.com", "acme", "tools")
-	original.PlatformRepoID = "repo-original"
-	_, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), original, now.Add(-2*time.Hour),
-	)
-	require.NoError(err)
 	renamed := db.GitHubRepoIdentity("github.com", "acme", "tools-renamed")
-	renamed.PlatformRepoID = original.PlatformRepoID
-	_, _, err = database.ReconcileRepositoryObservation(
-		t.Context(), renamed, now.Add(-time.Hour),
-	)
+	renamed.PlatformRepoID = 1001
+	_, err := database.ObserveRepository(t.Context(), renamed)
 	require.NoError(err)
 	replacement := db.GitHubRepoIdentity("github.com", "acme", "tools")
-	replacement.PlatformRepoID = "repo-replacement"
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), replacement, now)
+	replacement.PlatformRepoID = 1002
+	_, err = database.ObserveRepository(t.Context(), replacement)
 	require.NoError(err)
 
 	cfg := &config.Config{Repos: []config.Repo{{
-		Owner: "acme", Name: "tools", PlatformRepoID: original.PlatformRepoID,
+		Owner: "acme", Name: "tools", PlatformRepoID: renamed.PlatformRepoID,
 	}}}
-	client := &testutil.FixtureClient{}
+	client := getRepoFailingClient{&testutil.FixtureClient{}}
 	repos := resolveProviderRepos(
 		t.Context(), cfg,
 		mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}),
@@ -670,7 +618,7 @@ func TestResolveProviderReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
 	)
 
 	require.Len(repos, 1)
-	require.Equal(original.PlatformRepoID, repos[0].PlatformExternalID)
+	require.Equal(renamed.PlatformRepoID, repos[0].PlatformRepoID)
 	require.Equal("acme/tools-renamed", repos[0].RepoPath)
 
 	withoutCatalog := resolveProviderRepos(
@@ -684,16 +632,9 @@ func TestResolveProviderReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
 func TestResolveProviderReposRegistersCredentialAliasForCatalogFallback(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	now := time.Now().UTC()
-	before := db.GitHubRepoIdentity("github.com", "acme", "tools")
-	before.PlatformRepoID = "repo-acme-tools"
-	_, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), before, now.Add(-time.Hour),
-	)
-	require.NoError(err)
-	after := db.GitHubRepoIdentity("github.com", "acme", "tools-new")
-	after.PlatformRepoID = "repo-acme-tools"
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), after, now)
+	renamed := db.GitHubRepoIdentity("github.com", "acme", "tools-new")
+	renamed.PlatformRepoID = 1001
+	_, err := database.ObserveRepository(t.Context(), renamed)
 	require.NoError(err)
 
 	client := getRepoFailingClient{&testutil.FixtureClient{}}
@@ -702,7 +643,9 @@ func TestResolveProviderReposRegistersCredentialAliasForCatalogFallback(t *testi
 		Client: client,
 	})
 	require.NoError(err)
-	cfg := &config.Config{Repos: []config.Repo{{Owner: "acme", Name: "tools"}}}
+	cfg := &config.Config{Repos: []config.Repo{{
+		Owner: "acme", Name: "tools", PlatformRepoID: renamed.PlatformRepoID,
+	}}}
 
 	repos := resolveProviderRepos(
 		t.Context(),
@@ -730,12 +673,12 @@ func TestResolveProviderReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 
 	ctx := t.Context()
 	widgets := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	widgets.PlatformRepoID = "R_widgets"
-	_, err := database.UpsertRepoByProviderID(ctx, widgets)
+	widgets.PlatformRepoID = 1001
+	_, err := reposeed.Seed(ctx, database, widgets)
 	require.NoError(err)
 	tools := db.GitHubRepoIdentity("github.com", "acme", "tools")
-	tools.PlatformRepoID = "R_tools"
-	_, err = database.UpsertRepoByProviderID(ctx, tools)
+	tools.PlatformRepoID = 1002
+	_, err = reposeed.Seed(ctx, database, tools)
 	require.NoError(err)
 
 	cfg := &config.Config{
@@ -748,20 +691,20 @@ func TestResolveProviderReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 
 	assert.ElementsMatch([]ghclient.RepoRef{
 		{
-			Platform:           platform.KindGitHub,
-			Owner:              "acme",
-			Name:               "widgets",
-			PlatformHost:       "github.com",
-			RepoPath:           "acme/widgets",
-			PlatformExternalID: "R_widgets",
+			Platform:       platform.KindGitHub,
+			Owner:          "acme",
+			Name:           "widgets",
+			PlatformHost:   "github.com",
+			RepoPath:       "acme/widgets",
+			PlatformRepoID: 1001,
 		},
 		{
-			Platform:           platform.KindGitHub,
-			Owner:              "acme",
-			Name:               "tools",
-			PlatformHost:       "github.com",
-			RepoPath:           "acme/tools",
-			PlatformExternalID: "R_tools",
+			Platform:       platform.KindGitHub,
+			Owner:          "acme",
+			Name:           "tools",
+			PlatformHost:   "github.com",
+			RepoPath:       "acme/tools",
+			PlatformRepoID: 1002,
 		},
 	}, repos)
 }
@@ -1104,12 +1047,12 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	database := dbtest.Open(t)
 
 	forge := db.GitHubRepoIdentity("github.com", "roborev-dev", "kenn-forge")
-	forge.PlatformRepoID = "R_kenn_forge"
-	_, err := database.UpsertRepoByProviderID(t.Context(), forge)
+	forge.PlatformRepoID = 1001
+	_, err := reposeed.Seed(t.Context(), database, forge)
 	require.NoError(err)
 	worker := db.GitHubRepoIdentity("github.com", "roborev-dev", "worker")
-	worker.PlatformRepoID = "R_worker"
-	_, err = database.UpsertRepoByProviderID(t.Context(), worker)
+	worker.PlatformRepoID = 1002
+	_, err = reposeed.Seed(t.Context(), database, worker)
 	require.NoError(err)
 
 	cfgPath := filepath.Join(dir, "config.toml")
@@ -1659,14 +1602,14 @@ func TestResolveStartupReposDoesNotContactProvider(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "R_widget"
-	_, err := database.UpsertRepoByProviderID(t.Context(), identity)
+	identity.PlatformRepoID = 1001
+	_, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	repos := resolveStartupRepos(t.Context(), &config.Config{
 		Repos: []config.Repo{{Owner: "acme", Name: "*"}},
 	}, database, nil)
 	require.Len(repos, 1)
-	require.Equal("R_widget", repos[0].PlatformExternalID)
+	require.Equal(int64(1001), repos[0].PlatformRepoID)
 }
 
 func TestResolveStartupReposPreservesProviderIdentities(t *testing.T) {
@@ -1674,17 +1617,17 @@ func TestResolveStartupReposPreservesProviderIdentities(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			require := require.New(t)
 			database := dbtest.Open(t)
-			identity := db.RepoIdentity{Platform: provider, PlatformHost: "forge.example", PlatformRepoID: "12345", Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
-			_, err := database.UpsertRepoByProviderID(t.Context(), identity)
+			identity := db.RepoIdentity{Platform: provider, PlatformHost: "forge.example", PlatformRepoID: 12345, Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
+			_, err := reposeed.Seed(t.Context(), database, identity)
 			require.NoError(err)
 			cfg := &config.Config{Repos: []config.Repo{
-				{Platform: provider, PlatformHost: "forge.example", Owner: "acme", Name: "widget", PlatformRepoID: "12345"},
-				{Platform: provider, PlatformHost: "forge.example", Owner: "acme", Name: "widget", PlatformRepoID: "67890"},
+				{Platform: provider, PlatformHost: "forge.example", Owner: "acme", Name: "widget", PlatformRepoID: 12345},
+				{Platform: provider, PlatformHost: "forge.example", Owner: "acme", Name: "widget", PlatformRepoID: 67890},
 				{Platform: provider, PlatformHost: "forge.example", Owner: "acme", Name: "new"},
 			}}
 			repos := resolveStartupRepos(t.Context(), cfg, database, nil)
 			require.Len(repos, 1, "uncached configurations await background discovery")
-			require.Equal("12345", repos[0].PlatformExternalID)
+			require.Equal(int64(12345), repos[0].PlatformRepoID)
 			require.Equal(platform.Kind(provider), repos[0].Platform)
 		})
 	}

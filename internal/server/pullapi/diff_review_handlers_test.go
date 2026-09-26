@@ -15,6 +15,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 type countingReviewSyncClient struct {
@@ -34,8 +35,8 @@ func TestReviewBackgroundSyncsRecheckRemovedUpstream(t *testing.T) {
 	ctx := t.Context()
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(ctx, identity)
+	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoID, err := reposeed.Seed(ctx, database, identity)
 	require.NoError(err)
 	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -61,7 +62,7 @@ func TestReviewBackgroundSyncsRecheckRemovedUpstream(t *testing.T) {
 		map[string]ghclient.Client{"github.com": client}, database, nil,
 		[]ghclient.RepoRef{{
 			Platform: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", PlatformExternalID: "repo-acme-widget",
+			Owner: "acme", Name: "widget", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		}},
 		time.Minute, nil, nil,
 	)

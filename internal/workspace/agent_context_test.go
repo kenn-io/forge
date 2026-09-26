@@ -534,7 +534,7 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 			Version: WorkspaceLaunchSpecVersion,
 			Repository: WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				PlatformRepoID: testRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 42,

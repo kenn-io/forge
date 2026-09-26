@@ -160,7 +160,7 @@ func TestSpawnToolFailurePreservesPartialHandoffEvidenceThroughClientSession(t *
 					"type": "item",
 					"item": map[string]any{
 						"type": "pr", "provider": "github", "platform_host": "github.com",
-						"platform_repo_id": "repo-acme-widget",
+						"platform_repo_id": 1001,
 						"owner":            "acme", "name": "widget", "number": 42,
 					},
 				},

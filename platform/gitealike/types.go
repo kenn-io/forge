@@ -14,6 +14,7 @@ const defaultPageSize = 100
 
 type Transport interface {
 	GetRepository(ctx context.Context, owner, repo string) (RepositoryDTO, error)
+	GetRepositoryByID(ctx context.Context, id int64) (RepositoryDTO, error)
 	ListUserRepositories(ctx context.Context, owner string, opts PageOptions) ([]RepositoryDTO, Page, error)
 	ListOrgRepositories(ctx context.Context, owner string, opts PageOptions) ([]RepositoryDTO, Page, error)
 	ListOpenPullRequests(ctx context.Context, ref platform.RepoRef, opts PageOptions) ([]PullRequestDTO, Page, error)

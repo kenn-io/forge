@@ -193,25 +193,24 @@ func TestPRMonitorPreservesDirtyUnresolvedWorkspace(t *testing.T) {
 	insertDeletionTestWorkspace(
 		t, database, "ws-unresolved-dirty", worktreePath, "ready",
 	)
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	original := db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-original", Owner: "acme", Name: "widget",
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 	}
-	_, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), original, observedAt,
+	_, err := database.ObserveRepository(
+		t.Context(), original,
 	)
 	require.NoError(err)
 	original.Name = "widget-original"
-	_, _, err = database.ReconcileRepositoryObservation(
-		t.Context(), original, observedAt.Add(time.Minute),
+	_, err = database.ObserveRepository(
+		t.Context(), original,
 	)
 	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-replacement", Owner: "acme", Name: "widget",
-		}, observedAt.Add(2*time.Minute),
+			PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+		},
 	)
 	require.NoError(err)
 

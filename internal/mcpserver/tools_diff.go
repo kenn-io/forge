@@ -245,7 +245,7 @@ func isDiffIdentityNotFound(derr *Error, msg string) bool {
 func diffFileName(ref itemRefInput) string {
 	ref = canonicalDiffFileRef(ref)
 	identity := fmt.Sprintf(
-		"%s\x00%s\x00%s\x00%s\x00%s\x00%d",
+		"%s\x00%s\x00%d\x00%s\x00%s\x00%d",
 		ref.Provider,
 		ref.PlatformHost,
 		ref.PlatformRepoID,

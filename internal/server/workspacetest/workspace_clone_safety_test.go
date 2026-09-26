@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/workspace"
 	gitcmd "go.kenn.io/kit/git/cmd"
@@ -847,7 +848,7 @@ func TestWorkspaceRetryUnknownHeadRepoFailsClosedE2E(t *testing.T) {
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 2,

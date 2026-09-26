@@ -19,6 +19,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	gh "github.com/google/go-github/v91/github"
 	gitlabapi "gitlab.com/gitlab-org/api/client-go/v2"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
@@ -2334,15 +2335,6 @@ func (s *Handler) resolvePullCloneSnapshot(
 			repository.Provider, repository.PlatformHost,
 		)
 	}
-	fence, found, err := s.resolver.CaptureRepositoryRouteFence(ctx, repo.Repo)
-	if err != nil {
-		return nil, httpapi.Internal("capture repository route failed")
-	}
-	if !found {
-		return nil, httpapi.NotFound(
-			httpapi.CodeRepoNotFound, "repository route changed", nil,
-		)
-	}
 	if err := s.clones.RequireCredentialRoute(
 		ctx, repository.Provider, repository.PlatformHost,
 		repository.Owner, repository.Name,
@@ -2352,21 +2344,9 @@ func (s *Handler) resolvePullCloneSnapshot(
 	cloneCtx := gitclone.WithRequiredCredential(
 		gitclone.WithRepositoryIdentity(ctx, repository.PlatformRepoID),
 	)
-	validate := func(validationCtx context.Context) error {
-		matches, err := s.resolver.RepositoryRouteFenceMatches(
-			validationCtx, repo.Repo, fence,
-		)
-		if err != nil {
-			return err
-		}
-		if !matches {
-			return db.ErrRepositoryRouteFenceChanged
-		}
-		return nil
-	}
 	if err := s.clones.EnsureCloneValidated(
 		cloneCtx, repository.Provider, repository.PlatformHost,
-		repository.Owner, repository.Name, repository.CloneURL, validate,
+		repository.Owner, repository.Name, repository.CloneURL, nil,
 	); err != nil {
 		return nil, pullClonePreparationProblem(err, repository)
 	}
@@ -2375,9 +2355,6 @@ func (s *Handler) resolvePullCloneSnapshot(
 			cloneCtx, repository.Provider, repository.PlatformHost,
 			repository.Owner, repository.Name, item.Number,
 		); err != nil {
-			return nil, pullClonePreparationProblem(err, repository)
-		}
-		if err := validate(ctx); err != nil {
 			return nil, pullClonePreparationProblem(err, repository)
 		}
 	}
@@ -2404,7 +2381,7 @@ func pullClonePreparationProblem(
 			repository.Owner+"/"+repository.Name,
 		)
 	}
-	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+	if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 		return httpapi.NotFound(
 			httpapi.CodeRepoNotFound, "repository route changed", nil,
 		)

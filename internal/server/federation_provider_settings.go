@@ -4,14 +4,14 @@ import (
 	"context"
 	"net/http"
 	"slices"
-	"strings"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/platform"
 )
 
 type providerSettingsResponse struct {
@@ -27,13 +27,12 @@ type providerSettingsResponse struct {
 }
 
 type providerRepositoryObservation struct {
-	Provider       string    `json:"provider"`
-	PlatformHost   string    `json:"platform_host"`
-	PlatformRepoID string    `json:"platform_repo_id"`
-	Owner          string    `json:"owner"`
-	Name           string    `json:"name"`
-	RepoPath       string    `json:"repo_path"`
-	ObservedAt     time.Time `json:"observed_at"`
+	Provider       string `json:"provider"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
+	Owner          string `json:"owner"`
+	Name           string `json:"name"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type providerSettingsProjection struct {
@@ -118,44 +117,33 @@ func (s *Server) buildProviderSettingsProjection(
 	if s.db == nil {
 		return projection, nil
 	}
-	seen := make(map[string]struct{})
+	seen := make(map[platform.RepositoryIdentity]struct{})
 	for _, configured := range settings.Repos {
-		platformRepoID := strings.TrimSpace(configured.PlatformRepoID)
-		if platformRepoID == "" || configured.IsGlob {
+		if configured.PlatformRepoID == 0 || configured.IsGlob {
 			continue
 		}
-		key := strings.ToLower(configured.Provider) + "\x00" +
-			strings.ToLower(configured.PlatformHost) + "\x00" + platformRepoID
-		if _, ok := seen[key]; ok {
+		identity := platform.RepositoryIdentity{
+			Provider: configured.Provider, PlatformHost: configured.PlatformHost,
+			PlatformRepoID: configured.PlatformRepoID,
+		}.Canonical()
+		if _, ok := seen[identity]; ok {
 			continue
 		}
-		entry, err := s.db.GetRepositoryByProviderID(
-			ctx, configured.Provider, configured.PlatformHost, platformRepoID,
-		)
+		entry, err := s.db.GetRepositoryByProviderID(ctx, identity)
 		if err != nil {
 			return providerSettingsResponse{}, err
 		}
 		if entry == nil || entry.Lifecycle != db.RepositoryLifecycleActive {
 			continue
 		}
-		var observedAt time.Time
-		for _, route := range entry.Routes {
-			if route.Current {
-				observedAt = route.LastSeenAt
-				break
-			}
-		}
-		if observedAt.IsZero() {
-			continue
-		}
-		seen[key] = struct{}{}
+		seen[identity] = struct{}{}
 		projection.RepositoryObservations = append(
 			projection.RepositoryObservations,
 			providerRepositoryObservation{
 				Provider: entry.Repository.Platform, PlatformHost: entry.Repository.PlatformHost,
 				PlatformRepoID: entry.Repository.PlatformRepoID,
 				Owner:          entry.Repository.Owner, Name: entry.Repository.Name,
-				RepoPath: entry.Repository.RepoPath, ObservedAt: observedAt,
+				RepoPath: entry.Repository.RepoPath,
 			},
 		)
 	}

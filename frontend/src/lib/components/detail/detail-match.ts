@@ -5,7 +5,7 @@ import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-rout
 export interface DetailRefLike {
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: string | undefined;
+  platformRepoId?: number | undefined;
   owner: string;
   name: string;
   repoPath: string;
@@ -24,7 +24,7 @@ export function repoIdentityMatches(
   detail: {
     repo_owner: string;
     repo_name: string;
-    repo?: { provider?: string; platform_host?: string; platform_repo_id?: string; repo_path?: string };
+    repo?: { provider?: string; platform_host?: string; platform_repo_id?: number; repo_path?: string };
   },
   ref: DetailRefLike,
 ): boolean {

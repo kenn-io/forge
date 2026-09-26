@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -49,8 +50,8 @@ func TestE2E_WorktreeLinkChangeReachesSSE(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 
-	repoID, err := database.UpsertRepo(
-		ctx, verifiedRepoIdentity(
+	repoID, err := reposeed.Seed(
+		ctx, database, verifiedRepoIdentity(
 			dbpkg.GitHubRepoIdentity("github.com", "acme", "widget"),
 		),
 	)

@@ -1,9 +1,11 @@
 package mcpserver
 
 import (
+	"cmp"
 	"context"
 	"maps"
 	"sort"
+	"strconv"
 )
 
 type workflowLookupGroup struct {
@@ -75,7 +77,7 @@ func workflowLookupQuery(repo RepositoryIdentity, itemType string, cursor string
 func workflowRowKey(row WorkflowItem, group workflowLookupGroup) candidateKey {
 	provider := firstNonEmpty(row.Identity.Provider, row.Repository.Provider, group.repo.provider)
 	platformHost := firstNonEmpty(row.Identity.PlatformHost, row.Repository.PlatformHost, group.repo.platformHost)
-	platformRepoID := firstNonEmpty(
+	platformRepoID := cmp.Or(
 		row.Identity.PlatformRepoID, row.Repository.PlatformRepoID, group.repo.platformRepoID,
 	)
 	repoPath := firstNonEmpty(row.Repository.RepoPath, group.repo.repoPath)
@@ -123,7 +125,7 @@ func sortedWorkflowLookupGroups(groups map[workflowLookupGroup]map[candidateKey]
 func workflowLookupGroupSortKey(group workflowLookupGroup) string {
 	return group.repo.provider + "\x00" +
 		group.repo.platformHost + "\x00" +
-		group.repo.platformRepoID + "\x00" +
+		strconv.FormatInt(group.repo.platformRepoID, 10) + "\x00" +
 		group.repo.repoPath + "\x00" +
 		group.repo.owner + "\x00" +
 		group.repo.name + "\x00" +

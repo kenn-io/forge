@@ -12,10 +12,9 @@ import (
 func workspaceLaunchFixture(t *testing.T, database *DB, id string) (*Workspace, WorkspaceLaunchSpec) {
 	t.Helper()
 	repoID := insertTestRepo(t, database, "acme", "widget")
-	require.NoError(t, database.UpdateRepoProviderMetadata(t.Context(), repoID, RepoProviderMetadata{
-		PlatformRepoID: verifiedTestRepoIdentity("github", "github.com", "acme", "widget").PlatformRepoID,
-		CloneURL:       "https://github.com/acme/widget.git", DefaultBranch: "main",
-	}))
+	require.NoError(t, database.UpdateRepoProviderObservation(t.Context(), repoID, RepoProviderMetadata{
+		CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+	}, nil, nil))
 	issuedAt := time.Date(2026, 8, 22, 12, 0, 0, 123456000, time.UTC)
 	workspace := &Workspace{
 		ID: id, Platform: "github", PlatformHost: "github.com",
@@ -44,13 +43,11 @@ func workspaceLaunchFixture(t *testing.T, database *DB, id string) (*Workspace, 
 }
 
 func TestWorkspaceAndLaunchSpecPersistAtomically(t *testing.T) {
-	t.Parallel()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-atomic")
-	spec.Repository.PlatformRepoID = ""
+	spec.Repository.PlatformRepoID = 0
 	err := database.CreateWorkspaceWithLaunchSpec(t.Context(), workspace, spec)
 	require.Error(err)
 	stored, readErr := database.GetWorkspace(t.Context(), workspace.ID)
@@ -62,8 +59,6 @@ func TestWorkspaceAndLaunchSpecPersistAtomically(t *testing.T) {
 }
 
 func TestListUnpreparedProviderWorkspacesUsesOneReadConnection(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-unprepared-one-connection")
@@ -89,42 +84,38 @@ func TestCreateWorkspaceWithLaunchSpecRejectsCatalogIdentityMismatch(t *testing.
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-catalog-mismatch")
-	spec.Repository.PlatformRepoID = "replacement-repository"
+	spec.Repository.PlatformRepoID = 1002
 
 	err := database.CreateWorkspaceWithLaunchSpec(t.Context(), workspace, spec)
 
-	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
+	require.ErrorIs(err, ErrRepositoryIdentityChanged)
 	stored, readErr := database.GetWorkspace(t.Context(), workspace.ID)
 	require.NoError(readErr)
 	require.Nil(stored)
 }
 
 func TestPutWorkspaceLaunchSpecRejectsCatalogIdentityMismatch(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-put-mismatch")
 	require.NoError(database.InsertWorkspace(t.Context(), workspace))
-	spec.Repository.PlatformRepoID = "replacement-repository"
+	spec.Repository.PlatformRepoID = 1002
 
 	err := database.PutWorkspaceLaunchSpec(t.Context(), workspace.ID, spec)
 
-	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
+	require.ErrorIs(err, ErrRepositoryIdentityChanged)
 	stored, readErr := database.GetWorkspaceLaunchSpec(t.Context(), workspace.ID)
 	require.NoError(readErr)
 	require.Nil(stored)
 }
 
 func TestRefreshWorkspaceLaunchSpecRejectsSameRouteIdentityMismatch(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	database := openTestDB(t)
 	workspace, spec := workspaceLaunchFixture(t, database, "ws-refresh-mismatch")
 	require.NoError(database.CreateWorkspaceWithLaunchSpec(t.Context(), workspace, spec))
 	refreshed := spec
-	refreshed.Repository.PlatformRepoID = "replacement-repository"
+	refreshed.Repository.PlatformRepoID = 1002
 	refreshed.IssuedAt = spec.IssuedAt.Add(time.Minute)
 	refreshed.SourceVisibleUntil = refreshed.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
 
@@ -132,7 +123,7 @@ func TestRefreshWorkspaceLaunchSpecRejectsSameRouteIdentityMismatch(t *testing.T
 		t.Context(), workspace.ID, refreshed,
 	)
 
-	require.ErrorIs(err, ErrRepositoryRouteFenceChanged)
+	require.ErrorIs(err, ErrRepositoryIdentityChanged)
 	stored, readErr := database.GetWorkspaceLaunchSpec(t.Context(), workspace.ID)
 	require.NoError(readErr)
 	require.NotNil(stored)
@@ -140,8 +131,6 @@ func TestRefreshWorkspaceLaunchSpecRejectsSameRouteIdentityMismatch(t *testing.T
 }
 
 func TestWorkspaceLaunchSpecRoundTripsCanonicalUTCTimestamps(t *testing.T) {
-	t.Parallel()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	database := openTestDB(t)
@@ -160,16 +149,4 @@ func TestWorkspaceLaunchSpecRoundTripsCanonicalUTCTimestamps(t *testing.T) {
 	got, err = database.GetWorkspaceLaunchSpec(t.Context(), workspace.ID)
 	require.NoError(err)
 	assert.Equal(spec.Repository.PlatformRepoID, got.Repository.PlatformRepoID)
-}
-
-func TestHistoricalWorkspaceRepositoryIdentityRejectsReusedRoute(t *testing.T) {
-	t.Parallel()
-
-	database := openTestDB(t)
-	seedRepositoryCatalogCollision(t, database)
-	platformRepoID, err := database.ResolveUnambiguousHistoricalWorkspaceRepoID(
-		t.Context(), "github", "github.com", "org-a", "project-a",
-	)
-	require.NoError(t, err)
-	assert.Empty(t, platformRepoID)
 }

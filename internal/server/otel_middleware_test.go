@@ -7,13 +7,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/testutil"
-	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
 func TestHTTPSpansParentedOnTraceparent(t *testing.T) {

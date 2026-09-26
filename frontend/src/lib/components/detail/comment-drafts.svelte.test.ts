@@ -29,8 +29,8 @@ it.each(["pull", "issue"] as const)(
   "keeps a %s draft with its repository through route reuse and renames",
   async (target) => {
     const firstRuntime = await import("./comment-drafts.svelte.js");
-    const original = { ...ref, platformRepoId: "R_original" };
-    const replacement = { ...ref, platformRepoId: "R_replacement" };
+    const original = { ...ref, platformRepoId: 1104 };
+    const replacement = { ...ref, platformRepoId: 1103 };
     const originalKey = firstRuntime.getCommentDraftKey(target, original);
     firstRuntime.setCommentDraft(originalKey, "original repository draft");
     firstRuntime.beginCommentSubmit(originalKey);

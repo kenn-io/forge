@@ -3,31 +3,31 @@ package platform
 import "strings"
 
 // RepositoryIdentity is the provider-verified key for a repository:
-// provider kind, host, and the provider's stable repository ID. Owner and
-// name are mutable routes and are intentionally absent. Local numeric
-// database IDs are absent too, so the key is comparable across spokes.
+// provider kind, host, and the provider's integer repository ID. Every
+// supported provider assigns that ID once and keeps it across renames and
+// transfers, and IDs are unique per host. Owner and name are mutable routes
+// and are intentionally absent. Local database IDs are absent too, so the
+// key is comparable across spokes.
 //
 // Compare identities with ==; values produced by Canonical, and by the
 // Identity methods on stored and resolved repositories, are canonical.
 type RepositoryIdentity struct {
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 }
 
 // Canonical returns the comparable form of a repository identity.
-// Provider repository IDs remain case-sensitive.
 func (r RepositoryIdentity) Canonical() RepositoryIdentity {
 	r.Provider = strings.ToLower(strings.TrimSpace(r.Provider))
 	r.PlatformHost = strings.ToLower(strings.TrimSpace(r.PlatformHost))
-	r.PlatformRepoID = strings.TrimSpace(r.PlatformRepoID)
 	return r
 }
 
 // Valid reports whether the identity is complete.
 func (r RepositoryIdentity) Valid() bool {
 	r = r.Canonical()
-	return r.Provider != "" && r.PlatformHost != "" && r.PlatformRepoID != ""
+	return r.Provider != "" && r.PlatformHost != "" && r.PlatformRepoID > 0
 }
 
 // Identity returns the reference's canonical identity. It is incomplete
@@ -38,6 +38,6 @@ func (r RepositoryIdentity) Valid() bool {
 func (r RepoRef) Identity() RepositoryIdentity {
 	return RepositoryIdentity{
 		Provider: string(r.Platform), PlatformHost: r.Host,
-		PlatformRepoID: r.PlatformExternalID,
+		PlatformRepoID: r.PlatformID,
 	}.Canonical()
 }

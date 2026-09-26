@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -37,7 +38,7 @@ func newCompleteReviewSyncFixture(t *testing.T, reviewCount int) completeReviewS
 		Platform: platform.KindGitea, PlatformHost: "gitea.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}
-	repoID, err := database.UpsertRepo(t.Context(), verifiedDBRepoIdentity(platformRepoRef(repo)))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: 7, PlatformExternalID: "mr-7", Number: 7,

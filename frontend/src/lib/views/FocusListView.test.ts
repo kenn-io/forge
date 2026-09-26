@@ -107,7 +107,7 @@ vi.mock("../context.js", () => ({
           owner: "acme",
           name: "api",
           repo_path: "acme/api",
-          platform_repo_id: "R_api",
+          platform_repo_id: 1101,
           is_glob: false,
           matched_repo_count: 1,
           hidden_from_ui: false,
@@ -120,7 +120,7 @@ vi.mock("../context.js", () => ({
             {
               provider: "github",
               platform_host: "github.com",
-              platform_repo_id: "R_api",
+              platform_repo_id: 1101,
               repo_path: "acme/api",
             },
           ],

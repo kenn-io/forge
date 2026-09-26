@@ -77,6 +77,8 @@ const providerCapabilities = {
   workflow_approval: true,
 };
 
+const repoIds: Record<string, number> = { widgets: 1018, "squash-only": 1022 };
+
 function repoEnvelope(item: { repo_owner: string; repo_name: string; platform_host: string }) {
   return {
     provider: "github",
@@ -84,7 +86,7 @@ function repoEnvelope(item: { repo_owner: string; repo_name: string; platform_ho
     owner: item.repo_owner,
     name: item.repo_name,
     repo_path: `${item.repo_owner}/${item.repo_name}`,
-    platform_repo_id: `repo-${item.repo_owner}-${item.repo_name}`,
+    platform_repo_id: repoIds[item.repo_name] ?? 0,
     capabilities: providerCapabilities,
   };
 }
@@ -606,7 +608,7 @@ test.describe("detail load-error banner", () => {
                 });
               } else {
                 const detail = JSON.parse(entry.body);
-                if (refreshResult === "replacement") detail.repo.platform_repo_id = "R_replacement";
+                if (refreshResult === "replacement") detail.repo.platform_repo_id = 1103;
                 await route.fulfill({ contentType: "application/json", body: JSON.stringify(detail) });
               }
             } else {
@@ -681,7 +683,7 @@ test.describe("detail load-error banner", () => {
             return {
               ...(detail.merge_request ?? detail.issue),
               Title: replaced && entry === item.first ? "Replacement repository item" : entry.title,
-              repo: { ...detail.repo, ...(replaced && { platform_repo_id: "R_replacement" }) },
+              repo: { ...detail.repo, ...(replaced && { platform_repo_id: 1103 }) },
             };
           });
           await route.fulfill({ contentType: "application/json", body: JSON.stringify(rows) });
@@ -698,7 +700,7 @@ test.describe("detail load-error banner", () => {
             });
           } else {
             const detail = JSON.parse(entry.body);
-            if (replaced) detail.repo.platform_repo_id = "R_replacement";
+            if (replaced) detail.repo.platform_repo_id = 1103;
             await route.fulfill({ contentType: "application/json", body: JSON.stringify(detail) });
           }
         });

@@ -48,6 +48,13 @@ and the root event stream.
 
 ## Startup Contracts
 
+- Hub readiness must not wait for repository discovery: restore the verified catalog
+  locally, then resolve current configuration and start sync in the background
+  (`cmd/kenn-forge/main.go::resolveStartupRepos`). Background discovery holds
+  `configReloadMu` while it replaces the tracked set, so repository add, import,
+  refresh, and delete handlers take that lock before applying their change
+  (`internal/server/config_reload.go::InitializeProviderRepositories`).
+
 - Bare `kenn-forge` is help-only, `serve` is foreground, and background
   lifecycle management is under `daemon start|status|stop|restart`
   (`cmd/kenn-forge/cli.go::newRootCommand`).

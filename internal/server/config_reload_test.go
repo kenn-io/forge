@@ -2930,3 +2930,68 @@ name = "widget"
 	assert.NotContains(srv.workspaces.TmuxStripEnvVars(), "TMUX_TMPDIR",
 		"rejected collisions must never enter the strip sets")
 }
+
+func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.InitializeProviderRepositories(t.Context(), func(ctx context.Context, cfg *config.Config) []ghclient.RepoRef {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "discovered", PlatformExternalID: "12345"}}
+		})
+	}()
+	<-entered
+	response := httptest.NewRecorder()
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1:8091/healthz", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
+	srv.ServeHTTP(response, request)
+	assert.Equal(t, http.StatusOK, response.Code)
+	close(release)
+	require.NoError(<-done)
+	repos := srv.syncer.TrackedRepos()
+	require.Len(repos, 1)
+	require.Equal("12345", repos[0].PlatformExternalID)
+}
+
+func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.T) {
+	require := require.New(t)
+	srv, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &mockGH{})
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.InitializeProviderRepositories(t.Context(), func(ctx context.Context, cfg *config.Config) []ghclient.RepoRef {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget", PlatformExternalID: "12345"}}
+		})
+	}()
+	<-entered
+	added := make(chan int, 1)
+	go func() {
+		rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos", map[string]string{
+			"provider": "github", "host": "github.com", "owner": "other-org", "name": "other-repo",
+		})
+		added <- rr.Code
+	}()
+	require.Never(func() bool { return len(added) > 0 }, time.Second, 10*time.Millisecond,
+		"an add must wait for discovery instead of being overwritten by its stale snapshot")
+	close(release)
+	require.NoError(<-done)
+	require.Equal(http.StatusCreated, <-added)
+	var names []string
+	for _, repo := range srv.syncer.TrackedRepos() {
+		names = append(names, repo.Owner+"/"+repo.Name)
+	}
+	require.ElementsMatch([]string{"acme/widget", "other-org/other-repo"}, names)
+}

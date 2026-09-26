@@ -26,24 +26,21 @@ func NormalizeRepository(
 		return platform.Repository{}, err
 	}
 	ref := platform.RepoRef{
-		Platform:           kind,
-		Host:               host,
-		Owner:              owner,
-		Name:               name,
-		RepoPath:           repoPath,
-		PlatformID:         repo.ID,
-		PlatformExternalID: strconv.FormatInt(repo.ID, 10),
-		WebURL:             repo.HTMLURL,
-		CloneURL:           repo.CloneURL,
-		DefaultBranch:      repo.DefaultBranch,
+		Platform:      kind,
+		Host:          host,
+		Owner:         owner,
+		Name:          name,
+		RepoPath:      repoPath,
+		PlatformID:    repo.ID,
+		WebURL:        repo.HTMLURL,
+		CloneURL:      repo.CloneURL,
+		DefaultBranch: repo.DefaultBranch,
 	}
 	return platform.Repository{
-		Ref:                ref,
-		PlatformID:         repo.ID,
-		PlatformExternalID: strconv.FormatInt(repo.ID, 10),
-		Description:        repo.Description,
-		Private:            repo.Private,
-		Archived:           repo.Archived,
+		Ref:         ref,
+		Description: repo.Description,
+		Private:     repo.Private,
+		Archived:    repo.Archived,
 		Features: platform.RepositoryFeatures{
 			IssuesEnabled:        repo.IssuesEnabled,
 			MergeRequestsEnabled: repo.MergeRequestsEnabled,

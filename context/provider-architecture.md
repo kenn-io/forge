@@ -331,7 +331,7 @@ Repository label editing is provider-neutral:
   Git file content; the spoke never creates a provider-item cache from a
   descriptor (`internal/server/provider_descriptors.go`,
   `internal/server/pullapi/routes.go::Handler.resolvePullCloneSnapshot`).
-- Repository descriptors are route-generation snapshots. Diff descriptors add
+- Repository descriptors carry the repository's provider ID and current route. Diff descriptors add
   all platform, diff, and merge-base SHAs plus the pull snapshot revision from
   one serialized hub read. An invalid, mismatched, or older descriptor
   fails closed, and hub outage returns `hubUnavailable` even

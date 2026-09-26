@@ -16,6 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/devbox"
@@ -23,6 +24,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -35,8 +37,8 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	worktree := gitfixture.DivergenceWorktree(t)
 	commit := gitfixture.SHA(t, worktree, "HEAD")
 	identity := db.GitHubRepoIdentity("github.com", "example-org", "project")
-	identity.PlatformRepoID = "R_ExampleProject"
-	_, err := database.UpsertRepo(ctx, identity)
+	identity.PlatformRepoID = 1001
+	_, err := reposeed.Seed(ctx, database, identity)
 	require.NoError(err)
 	issuedAt := time.Now().UTC().Truncate(time.Second)
 	ws := &db.Workspace{ID: "work-a", Platform: "github", PlatformHost: "github.com", RepoOwner: "example-org", RepoName: "project", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7, ItemKey: "7", GitHeadRef: "feature", WorkspaceBranch: "feature", WorktreePath: worktree, Status: "ready"}
@@ -67,7 +69,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 			http.Error(w, "repository access denied", http.StatusForbidden)
 			return
 		}
-		assert.NoError(json.MarshalWrite(w, devbox.Credential{Token: "fixture-token", ExpiresAt: time.Now().Add(time.Hour), GitHubUserID: 1234, RepositoryNodeID: identity.PlatformRepoID, DefaultBranch: "main"}))
+		assert.NoError(json.MarshalWrite(w, devbox.Credential{Token: "fixture-token", ExpiresAt: time.Now().Add(time.Hour), GitHubUserID: 1234, RepositoryID: identity.PlatformRepoID, DefaultBranch: "main"}))
 	})}
 	go func() { _ = broker.Serve(listener) }()
 	t.Cleanup(func() { _ = broker.Close() })
@@ -109,9 +111,9 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(connections.Close)
 	controllerDB := dbtest.Open(t)
-	repoID, err := controllerDB.UpsertRepo(ctx, identity)
+	repoID, err := reposeed.Seed(ctx, controllerDB, identity)
 	require.NoError(err)
-	require.NoError(controllerDB.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{PlatformRepoID: identity.PlatformRepoID, CloneURL: spec.Repository.CloneURL, DefaultBranch: "main"}))
+	require.NoError(controllerDB.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{CloneURL: spec.Repository.CloneURL, DefaultBranch: "main"}, nil, nil))
 	_, err = controllerDB.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, PlatformID: 7, Number: 7, Title: "Update project", Author: "developer-a", State: "open",
 		URL: "https://github.com/example-org/project/pull/7", HeadBranch: "feature", BaseBranch: "main", SnapshotRevision: 1,

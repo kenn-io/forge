@@ -16,7 +16,9 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 // transferSyncMockGH overrides the issue read surface of the shared mockGH so
@@ -74,9 +76,9 @@ func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
 		},
 	}
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(err)
@@ -92,7 +94,6 @@ func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
 		map[string]ghclient.Client{"github.com": mock}, database, nil,
 		[]ghclient.RepoRef{{
 			Owner: "acme", Name: "widget", PlatformHost: "github.com",
-			PlatformExternalID: "repo-acme-widget",
 		}},
 		time.Minute, nil, nil,
 	)

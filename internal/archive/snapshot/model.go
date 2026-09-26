@@ -32,7 +32,7 @@ type SnapshotRepository struct {
 	ID            string            `json:"id"`
 	Provider      string            `json:"provider"`
 	Host          string            `json:"host"`
-	ProviderID    string            `json:"provider_id"`
+	ProviderID    int64             `json:"provider_id"`
 	Path          string            `json:"path"`
 	DefaultBranch string            `json:"default_branch"`
 	LastSyncAt    *time.Time        `json:"last_sync_at"`

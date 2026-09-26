@@ -141,14 +141,18 @@ func run(ctx context.Context, args []string) error {
 	return nil
 }
 
+// fleetWidgetRepoID is the synthetic provider repository ID of the seeded
+// fleet repository.
+const fleetWidgetRepoID = 7101
+
 func seedProviderState(
 	ctx context.Context, database *db.DB, platformHost, cloneURL string,
 	pullState db.MergeRequestState,
 ) error {
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   platformHost,
-		PlatformRepoID: "e2e-fleet-widget",
+		PlatformRepoID: fleetWidgetRepoID,
 		Owner:          "acme",
 		Name:           "fleet-widget",
 		RepoPath:       "acme/fleet-widget",
@@ -156,12 +160,12 @@ func seedProviderState(
 	if err != nil {
 		return fmt.Errorf("upsert repo: %w", err)
 	}
-	if err := database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
-		PlatformRepoID: "e2e-fleet-widget",
-		WebURL:         "https://" + platformHost + "/acme/fleet-widget",
-		CloneURL:       cloneURL,
-		DefaultBranch:  "main",
-	}); err != nil {
+	repoID := entry.Repository.ID
+	if err := database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
+		WebURL:        "https://" + platformHost + "/acme/fleet-widget",
+		CloneURL:      cloneURL,
+		DefaultBranch: "main",
+	}, nil, nil); err != nil {
 		return fmt.Errorf("update repo provider metadata: %w", err)
 	}
 	now := time.Now().UTC()

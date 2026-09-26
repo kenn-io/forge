@@ -24,6 +24,7 @@ import (
 	"github.com/cenkalti/backoff/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -31,6 +32,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestActivityRelayEndToEnd(t *testing.T) {
@@ -109,7 +111,7 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch strings.TrimPrefix(r.URL.Path, "/api/v3") {
-		case "/repos/team/project":
+		case "/repos/team/project", "/repositories/12345":
 			_, _ = io.WriteString(w, `{"id":12345,"node_id":"R_test_project","name":"project","full_name":"team/project","owner":{"login":"team"},"default_branch":"main","has_issues":true}`)
 		case "/repos/team/project/pulls/7":
 			detailReads.Add(1)
@@ -147,8 +149,8 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	}))
 	t.Cleanup(provider.Close)
 	database := dbtest.OpenWithMigrationsAt(t, filepath.Join(dir, "forge.db"))
-	repo := ghclient.RepoRef{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 12345, PlatformExternalID: "R_test_project", Owner: "team", Name: "project"}
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_test_project", Owner: "team", Name: "project"})
+	repo := ghclient.RepoRef{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 12345, Owner: "team", Name: "project"}
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 12345, Owner: "team", Name: "project"})
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, Number: 8, PlatformID: 800, PlatformExternalID: "PR_test_8", Title: "Unrelated",

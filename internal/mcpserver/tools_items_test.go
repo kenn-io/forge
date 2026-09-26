@@ -24,7 +24,7 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 					Number: 42, Title: "Retry budget", State: "open", Author: "alice",
 					URL: "https://git.example.test/group/project/pulls/42", Body: "full body",
 					WorkflowStatus: "reviewing", Repository: RepositoryIdentity{
-						Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test",
+						Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
 						RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 					},
 					LastActivityAt: time.Date(2026, 7, 1, 16, 0, 0, 0, time.UTC),
@@ -44,11 +44,11 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 		listWorkflowStatesFn: func(context.Context, WorkflowQuery) (WorkflowPage, error) {
 			return WorkflowPage{Items: []WorkflowItem{{
 				Identity: ItemIdentity{
-					Type: "pr", Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test",
+					Type: "pr", Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
 					Owner: "group/sub", Name: "project", Number: 42,
 				},
 				Repository: RepositoryIdentity{
-					Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test",
+					Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
 					RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 				},
 				Workflow: WorkflowState{Status: "reviewing", UpdatedSource: "mcp"},
@@ -57,7 +57,7 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 	}
 	s := newMCPTestServer(t, backend)
 	inputItem := itemRefInput{
-		Type: "pr", Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test",
+		Type: "pr", Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
 		Owner: "group/sub", Name: "project", Number: 42,
 	}
 
@@ -100,7 +100,7 @@ func TestGetItemContextIssueCanOmitEvents(t *testing.T) {
 	includeEvents := false
 
 	out, err := s.getItemContext(t.Context(), getItemContextInput{
-		Item:          itemRefInput{Type: "issue", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 7},
+		Item:          itemRefInput{Type: "issue", Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget", Number: 7},
 		IncludeEvents: &includeEvents,
 	})
 
@@ -123,11 +123,11 @@ func TestListItemsByWorkflowStateForwardsTypedQuery(t *testing.T) {
 		return WorkflowPage{
 			Items: []WorkflowItem{{
 				Identity: ItemIdentity{
-					Type: "pr", Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test",
+					Type: "pr", Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
 					Owner: "group/sub", Name: "project", Number: 42,
 				},
 				Repository: RepositoryIdentity{
-					Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test",
+					Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
 					RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 				},
 				Title: "Retry budget", State: "open", LastActivityAt: "2026-07-01T16:00:00Z",
@@ -141,7 +141,7 @@ func TestListItemsByWorkflowStateForwardsTypedQuery(t *testing.T) {
 	out, err := s.listItemsByWorkflowState(t.Context(), listByWorkflowInput{
 		States: []string{"reviewing", "waiting"}, ItemTypes: []string{"pr", "issue"},
 		Repo: repoFilterInput{
-			Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test", RepoPath: "group/sub/project",
+			Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test", RepoPath: "group/sub/project",
 		},
 		IncludeClosed: true, Limit: 10, Cursor: "cursor",
 	})
@@ -149,7 +149,7 @@ func TestListItemsByWorkflowStateForwardsTypedQuery(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(WorkflowQuery{
 		Repository: RepositoryIdentity{
-			Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test",
+			Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
 			RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 		},
 		ItemTypes: []string{"pr", "issue"}, States: []string{"reviewing", "waiting"},

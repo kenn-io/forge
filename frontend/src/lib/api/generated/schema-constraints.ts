@@ -34,9 +34,6 @@ export const schemaConstraints = {
   RawSnapshot: {
     generation: { minimum: 0 },
   },
-  RepositoryDescriptor: {
-    snapshot_revision: { minimum: 0 },
-  },
   Snapshot: {
     generation: { minimum: 0 },
   },

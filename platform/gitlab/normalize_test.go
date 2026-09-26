@@ -41,7 +41,6 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 	assert.Equal("Group/SubGroup", repo.Ref.Owner)
 	assert.Equal("project", repo.Ref.Name)
 	assert.Equal(int64(42), repo.Ref.PlatformID)
-	assert.Equal("42", repo.Ref.PlatformExternalID)
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
 	require.NotNil(t, repo.ViewerCanMerge)

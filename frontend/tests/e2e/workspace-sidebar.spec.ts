@@ -4409,7 +4409,7 @@ test.describe("sidebar PR tab", () => {
     const repo = {
       ...pullDetail.repo,
       ...workspaceRepoRef("other", "gadgets", "example.com"),
-      platform_repo_id: "repo-900",
+      platform_repo_id: 1900,
     };
     const identity = { repo, repo_owner: "other", repo_name: "gadgets", platform_host: "example.com" };
     const foreignPR = {

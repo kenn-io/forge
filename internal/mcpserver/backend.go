@@ -56,7 +56,7 @@ func NewFederatedBackend(provider ProviderBackend, local LocalBackend) Backend {
 type RepositoryIdentity struct {
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	RepoPath       string `json:"repo_path"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
@@ -169,7 +169,7 @@ type ItemIdentity struct {
 	Type           string `json:"type"`
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 	Number         int    `json:"number"`

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -33,6 +35,10 @@ type mockClient struct {
 	listOpenPRsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
 	listOpenPRsCalled bool
 	getRepositoryFn   func(context.Context, string, string) (*gh.Repository, error)
+	// reposByID maps provider repository IDs to the route GetRepositoryByID
+	// serves; GetRepository records every repository it returns.
+	reposByIDMu sync.Mutex
+	reposByID   map[int64][2]string
 }
 
 func (m *mockClient) ListOpenPullRequests(
@@ -48,18 +54,40 @@ func (m *mockClient) ListOpenPullRequests(
 func (m *mockClient) GetRepository(
 	ctx context.Context, owner, repo string,
 ) (*gh.Repository, error) {
-	if m.getRepositoryFn != nil {
-		return m.getRepositoryFn(ctx, owner, repo)
-	}
-	id := int64(1)
-	nodeID := "repo-" + owner + "-" + repo
-	return &gh.Repository{
-		ID:       &id,
-		NodeID:   &nodeID,
+	result := &gh.Repository{
+		ID:       new(reposeed.SyntheticID(db.GitHubRepoIdentity("github.com", owner, repo))),
 		Name:     &repo,
 		Owner:    &gh.User{Login: &owner},
 		Archived: new(bool),
-	}, nil
+	}
+	if m.getRepositoryFn != nil {
+		var err error
+		if result, err = m.getRepositoryFn(ctx, owner, repo); err != nil {
+			return nil, err
+		}
+	}
+	m.reposByIDMu.Lock()
+	defer m.reposByIDMu.Unlock()
+	if m.reposByID == nil {
+		m.reposByID = make(map[int64][2]string)
+	}
+	m.reposByID[result.GetID()] = [2]string{owner, result.GetName()}
+	return result, nil
+}
+
+func (m *mockClient) GetRepositoryByID(
+	ctx context.Context, _ string, id int64,
+) (*gh.Repository, error) {
+	m.reposByIDMu.Lock()
+	route, ok := m.reposByID[id]
+	m.reposByIDMu.Unlock()
+	if !ok {
+		return nil, &gh.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotFound},
+			Message:  "Not Found",
+		}
+	}
+	return m.GetRepository(ctx, route[0], route[1])
 }
 
 func (m *mockClient) GetPullRequest(context.Context, string, string, int) (*gh.PullRequest, error) {
@@ -265,10 +293,9 @@ func TestSyncerStopWaitsForRunOnce(t *testing.T) {
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock}, database, nil,
 		[]ghclient.RepoRef{{
-			Owner:              "o",
-			Name:               "r",
-			PlatformHost:       "github.com",
-			PlatformExternalID: "repo-o-r",
+			Owner:        "o",
+			Name:         "r",
+			PlatformHost: "github.com",
 		}},
 		time.Hour, nil, nil,
 	)
@@ -658,7 +685,7 @@ func TestSyncerTriggerRunRunsRunOnce(t *testing.T) {
 	assert := assert.New(t)
 	mock := &mockClient{openPRs: []*gh.PullRequest{}}
 	d := openTestDB(t)
-	_, err := d.UpsertRepo(t.Context(), db.GitHubRepoIdentity("github.com", "o", "n"))
+	_, err := reposeed.Seed(t.Context(), d, db.GitHubRepoIdentity("github.com", "o", "n"))
 	require.NoError(t, err)
 	repos := []ghclient.RepoRef{{Owner: "o", Name: "n", PlatformHost: "github.com"}}
 	s := ghclient.NewSyncer(
@@ -716,10 +743,8 @@ func TestSyncerTriggerRunWithPrioritySyncsSelectedReposFirst(t *testing.T) {
 				"third":  3,
 			}
 			id := ids[repo]
-			nodeID := "repo-" + owner + "-" + repo
 			return &gh.Repository{
 				ID:       &id,
-				NodeID:   &nodeID,
 				Name:     &repo,
 				Owner:    &gh.User{Login: &owner},
 				Archived: new(bool),
@@ -798,10 +823,8 @@ func TestSyncerTriggerRunForReposSyncsOnlySelectedRepos(t *testing.T) {
 				"third":  3,
 			}
 			id := ids[repo]
-			nodeID := "repo-" + owner + "-" + repo
 			return &gh.Repository{
 				ID:       &id,
-				NodeID:   &nodeID,
 				Name:     &repo,
 				Owner:    &gh.User{Login: &owner},
 				Archived: new(bool),
@@ -884,15 +907,15 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 			database := openTestDB(t)
 			ctx := t.Context()
 			repos := []ghclient.RepoRef{{
-				Owner:              "o",
-				Name:               "r",
-				PlatformHost:       "github.com",
-				PlatformExternalID: "repo-o-r",
+				Owner:          "o",
+				Name:           "r",
+				PlatformHost:   "github.com",
+				PlatformRepoID: 1001,
 			}}
-			repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+			repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 				Platform:       "github",
 				PlatformHost:   "github.com",
-				PlatformRepoID: "repo-o-r",
+				PlatformRepoID: 1001,
 				Owner:          "o",
 				Name:           "r",
 			})
@@ -905,6 +928,7 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 			var listCalls atomic.Int32
 			var providerFresh atomic.Bool
 			mock := &mockClient{
+				reposByID: map[int64][2]string{1001: {"o", "r"}},
 				listOpenPRsFn: func(
 					ctx context.Context, _, _ string,
 				) ([]*gh.PullRequest, error) {
@@ -925,15 +949,13 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 				getRepositoryFn: func(
 					_ context.Context, owner, repo string,
 				) (*gh.Repository, error) {
-					id := int64(1)
-					nodeID := "repo-o-r"
+					id := int64(1001)
 					defaultBranch := "stale"
 					if providerFresh.Load() {
 						defaultBranch = "fresh"
 					}
 					return &gh.Repository{
 						ID:            &id,
-						NodeID:        &nodeID,
 						Name:          &repo,
 						Owner:         &gh.User{Login: &owner},
 						Archived:      new(bool),

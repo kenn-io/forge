@@ -21,7 +21,7 @@ import (
 type PlatformIdentity struct {
 	Platform       string `json:"platform"`
 	Host           string `json:"platform_host"`
-	PlatformRepoID string `json:"-"`
+	PlatformRepoID int64  `json:"-"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 }
@@ -725,7 +725,7 @@ func scanProjectFields(scanner interface{ Scan(...any) error }) (*Project, error
 		isStale      int64
 		platform     sql.NullString
 		platformHost sql.NullString
-		platformID   sql.NullString
+		platformID   sql.NullInt64
 		repoOwner    sql.NullString
 		repoName     sql.NullString
 	)
@@ -749,7 +749,7 @@ func scanProjectFields(scanner interface{ Scan(...any) error }) (*Project, error
 		p.PlatformIdentity = &PlatformIdentity{
 			Platform:       platform.String,
 			Host:           platformHost.String,
-			PlatformRepoID: platformID.String,
+			PlatformRepoID: platformID.Int64,
 			Owner:          repoOwner.String,
 			Name:           repoName.String,
 		}

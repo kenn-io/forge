@@ -29,7 +29,7 @@ func TestSetItemWorkflowStateForwardsTypedMutation(t *testing.T) {
 
 	out, err := s.setItemWorkflowState(t.Context(), setWorkflowInput{
 		Item: itemRefInput{
-			Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", PlatformHost: "github.com",
+			Type: "pr", Provider: "github", PlatformRepoID: 1001, PlatformHost: "github.com",
 			Owner: "acme", Name: "widget", Number: 42,
 		},
 		Status: "reviewing", ExpectedStatus: "new",
@@ -59,7 +59,7 @@ func TestSetItemWorkflowStateForwardsForce(t *testing.T) {
 	s := newMCPTestServer(t, backend)
 
 	out, err := s.setItemWorkflowState(t.Context(), setWorkflowInput{
-		Item:   itemRefInput{Type: "issue", Provider: "gitlab", PlatformRepoID: "gitlab-project", PlatformHost: "git.example.test", Owner: "group/sub", Name: "project", Number: 7},
+		Item:   itemRefInput{Type: "issue", Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test", Owner: "group/sub", Name: "project", Number: 7},
 		Status: "waiting", Force: true,
 	})
 
@@ -73,11 +73,11 @@ func TestSetItemWorkflowStateRequiresOneMutationGuard(t *testing.T) {
 	s := newMCPTestServer(t, &fakeBackend{})
 	tests := []setWorkflowInput{
 		{
-			Item:   itemRefInput{Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 42},
+			Item:   itemRefInput{Type: "pr", Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget", Number: 42},
 			Status: "reviewing",
 		},
 		{
-			Item:   itemRefInput{Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 42},
+			Item:   itemRefInput{Type: "pr", Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget", Number: 42},
 			Status: "reviewing", ExpectedStatus: "new", Force: true,
 		},
 	}
@@ -99,7 +99,7 @@ func TestSetItemWorkflowStatePreservesConflictDetails(t *testing.T) {
 	s := newMCPTestServer(t, backend)
 
 	_, err := s.setItemWorkflowState(t.Context(), setWorkflowInput{
-		Item:   itemRefInput{Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 42},
+		Item:   itemRefInput{Type: "pr", Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget", Number: 42},
 		Status: "waiting", ExpectedStatus: "new",
 	})
 

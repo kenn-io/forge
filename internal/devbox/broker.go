@@ -49,13 +49,12 @@ type CredentialRequest struct {
 }
 
 type Credential struct {
-	Token            string    `json:"token"`
-	ExpiresAt        time.Time `json:"expires_at"`
-	Writable         bool      `json:"writable"`
-	GitHubUserID     int64     `json:"github_user_id"`
-	RepositoryID     int64     `json:"repository_id"`
-	RepositoryNodeID string    `json:"repository_node_id"`
-	DefaultBranch    string    `json:"default_branch"`
+	Token         string    `json:"token"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	Writable      bool      `json:"writable"`
+	GitHubUserID  int64     `json:"github_user_id"`
+	RepositoryID  int64     `json:"repository_id"`
+	DefaultBranch string    `json:"default_branch"`
 }
 
 type brokerCacheKey struct {
@@ -204,7 +203,7 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 	if err != nil {
 		return nil, fmt.Errorf("GitHub repository unavailable: %w", err)
 	}
-	if repo.GetID() != repoID || repo.GetOwner().GetID() != b.config.OrganizationID || repo.GetNodeID() == "" {
+	if repo.GetID() != repoID || repo.GetOwner().GetID() != b.config.OrganizationID {
 		return nil, errors.New("GitHub repository identity differs from the admitted repository")
 	}
 	permission, _, err := api.Repositories.GetPermissionLevel(ctx, owner, name, user.GetLogin())
@@ -236,7 +235,6 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 	return &Credential{
 		Token: token.Token, ExpiresAt: token.ExpiresAt, Writable: writable,
 		GitHubUserID: account.GitHubUserID, RepositoryID: repoID, DefaultBranch: repo.GetDefaultBranch(),
-		RepositoryNodeID: repo.GetNodeID(),
 	}, nil
 }
 

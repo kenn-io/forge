@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -27,7 +28,7 @@ type federationUnassignedActivitySubjectsResponse struct {
 type federationActivityRepositoryIdentity struct {
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 }
 
 type federationActivitySubjectIdentity struct {
@@ -92,12 +93,6 @@ func (s *Server) federationFilterUnassignedActivitySubjects(
 		identities = append(identities, identity)
 	}
 
-	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("filter activity subjects failed")
-	}
-	defer releaseReconciliation()
-
 	keys := make([]db.WorkspaceSubjectKey, 0, len(identities))
 	identityByKey := make(map[db.WorkspaceSubjectKey]providerplane.ItemIdentity, len(identities))
 	repositoryIDs := make(map[platform.RepositoryIdentity]int64)
@@ -105,12 +100,10 @@ func (s *Server) federationFilterUnassignedActivitySubjects(
 		repositoryIdentity := identity.Repository.Canonical()
 		repositoryID, resolved := repositoryIDs[repositoryIdentity]
 		if !resolved {
-			repository, lookupErr := s.db.GetRepositoryByProviderIDUnderRepositoryReconciliationRead(
-				ctx,
-				repositoryIdentity.Provider,
-				repositoryIdentity.PlatformHost,
-				repositoryIdentity.PlatformRepoID,
-			)
+			repository, lookupErr := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+				Provider: repositoryIdentity.Provider, PlatformHost: repositoryIdentity.PlatformHost,
+				PlatformRepoID: repositoryIdentity.PlatformRepoID,
+			})
 			if lookupErr != nil {
 				return nil, httpapi.Internal("filter activity subjects failed")
 			}

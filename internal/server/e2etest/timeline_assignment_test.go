@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 type timelineDetailResponse struct {
@@ -160,8 +162,8 @@ func seedAssignmentTimelineItems(t *testing.T, database *db.DB) (int64, int64) {
 	t.Helper()
 	ctx := t.Context()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(ctx, identity)
+	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoID, err := reposeed.Seed(ctx, database, identity)
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Second)

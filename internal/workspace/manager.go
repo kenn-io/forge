@@ -88,7 +88,7 @@ type Manager struct {
 type WorktreeBaseRepository struct {
 	Platform       string
 	PlatformHost   string
-	PlatformRepoID string
+	PlatformRepoID int64
 	Owner          string
 	Name           string
 }
@@ -702,29 +702,12 @@ func (m *Manager) CreateIssueFromLaunchSpec(
 func (m *Manager) repositoryForLaunchSpec(
 	ctx context.Context, spec WorkspaceLaunchSpec,
 ) (*db.Repo, error) {
-	repo, err := m.workspaceRepo(
-		ctx, spec.Repository.Provider, spec.Repository.PlatformHost,
-		spec.Repository.Owner, spec.Repository.Name,
-	)
+	repo, err := m.db.GetActiveRepoByProviderID(ctx, spec.Repository.Identity())
 	if err != nil {
 		return nil, err
 	}
 	if repo == nil {
-		if err := m.verifyRepoRouteUnoccupied(
-			ctx, spec.Repository.Provider, spec.Repository.PlatformHost,
-			spec.Repository.Owner, spec.Repository.Name,
-		); err != nil {
-			return nil, err
-		}
 		return nil, fmt.Errorf("%w: repository not tracked", ErrWorkspaceNotFound)
-	}
-	if strings.TrimSpace(repo.PlatformRepoID) !=
-		strings.TrimSpace(spec.Repository.PlatformRepoID) {
-		return nil, fmt.Errorf(
-			"%w: workspace repository identity changed for route: %s/%s",
-			db.ErrRepositoryRouteFenceChanged,
-			spec.Repository.Owner, spec.Repository.Name,
-		)
 	}
 	return repo.Row(), nil
 }
@@ -1057,9 +1040,39 @@ func (m *Manager) workspaceRepoDir(
 		return "", fmt.Errorf("check workspace route reuse: %w", err)
 	}
 	if !shared {
+		// The catalog keeps only current routes, so a repository that moved
+		// away no longer claims this one. Its workspaces still live under the
+		// plain route directory.
+		shared, err = m.routeDirHoldsOtherRepositoryWorkspace(ctx, routeDir, repo.ID)
+		if err != nil {
+			return "", err
+		}
+	}
+	if !shared {
 		return routeDir, nil
 	}
 	return filepath.Join(ownerDir, fmt.Sprintf("%s-%d", repo.Name, repo.ID)), nil
+}
+
+// routeDirHoldsOtherRepositoryWorkspace reports whether a stored workspace of
+// another repository has its worktree inside routeDir.
+func (m *Manager) routeDirHoldsOtherRepositoryWorkspace(
+	ctx context.Context, routeDir string, repoID int64,
+) (bool, error) {
+	workspaces, err := m.db.ListWorkspaces(ctx)
+	if err != nil {
+		return false, fmt.Errorf("check workspace route directory: %w", err)
+	}
+	for _, ws := range workspaces {
+		if ws.RepoID == repoID || ws.RepoID == 0 {
+			continue
+		}
+		rel, relErr := filepath.Rel(routeDir, ws.WorktreePath)
+		if relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // adHocWorkspaceBranch names a branch for work the user did not name. The
@@ -1137,7 +1150,7 @@ type workspaceRepoRef struct {
 	ID           int64
 	Platform     string
 	PlatformHost string
-	ProviderID   string
+	ProviderID   int64
 	Owner        string
 	Name         string
 	RemoteURL    string
@@ -1153,36 +1166,10 @@ func (m *Manager) branchInspectionDir(
 		return "", false, false, nil
 	}
 
-	var validateRoute func(context.Context) error
-	if repo.ID == 0 {
-		validateRoute = func(validationCtx context.Context) error {
-			return m.verifyRepoRouteUnoccupied(
-				validationCtx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
-			)
-		}
-	} else {
-		identity := db.RepoIdentity{
-			Platform: repo.Platform, PlatformHost: repo.PlatformHost,
-			Owner: repo.Owner, Name: repo.Name,
-		}
-		fence, found, fenceErr := m.db.CurrentRepositoryRouteFence(
-			ctx, identity, repo.ID,
-		)
-		if fenceErr != nil {
-			return "", false, false, fenceErr
-		}
-		if !found {
-			return "", false, false, fmt.Errorf(
-				"%w: workspace repository route changed",
-				db.ErrRepositoryRouteFenceChanged,
-			)
-		}
-		validateRoute = m.workspaceCloneRouteValidator(identity, repo.ID, fence)
-	}
 	cloneCtx := gitclone.WithRepositoryIdentity(ctx, repo.ProviderID)
 	if err := m.clones.EnsureCloneForInspection(
 		cloneCtx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name, repo.RemoteURL,
-		validateRoute,
+		nil,
 	); err != nil {
 		return "", false, false, fmt.Errorf("ensure clone: %w", err)
 	}
@@ -1301,12 +1288,6 @@ func (m *Manager) verifyWorkspaceRepository(
 	return m.verifyWorkspaceRepositoryCurrent(ctx, ws)
 }
 
-func (m *Manager) verifyWorkspaceRepositoryUnderReconciliationRead(
-	ctx context.Context, ws *Workspace,
-) error {
-	return m.verifyWorkspaceRepositoryCurrent(ctx, ws)
-}
-
 func (m *Manager) verifyWorkspaceRepositoryCurrent(
 	ctx context.Context, ws *Workspace,
 ) error {
@@ -1329,9 +1310,7 @@ func (m *Manager) verifyWorkspaceRepositoryCurrent(
 		}
 	}
 	if ws.RepoID == 0 {
-		return m.verifyRepoRouteUnoccupied(
-			ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-		)
+		return nil
 	}
 	repo, err := m.db.GetActiveRepoByID(ctx, ws.RepoID)
 	if err != nil {
@@ -1340,37 +1319,13 @@ func (m *Manager) verifyWorkspaceRepositoryCurrent(
 	if repo == nil {
 		return fmt.Errorf(
 			"%w: workspace repository identity changed for route: %s/%s",
-			db.ErrRepositoryRouteFenceChanged, ws.RepoOwner, ws.RepoName,
+			db.ErrRepositoryIdentityChanged, ws.RepoOwner, ws.RepoName,
 		)
 	}
 	ws.Platform = repo.Platform
 	ws.PlatformHost = repo.PlatformHost
 	ws.RepoOwner = repo.Owner
 	ws.RepoName = repo.Name
-	return nil
-}
-
-// verifyRepoRouteUnoccupied fails closed on routes with contested history so
-// network git operations cannot exchange data with a route's new occupant.
-// Managers without a database (unmanaged local checkouts) skip the check.
-func (m *Manager) verifyRepoRouteUnoccupied(
-	ctx context.Context, provider, platformHost, owner, name string,
-) error {
-	if m.db == nil {
-		return nil
-	}
-	collision, err := m.db.WorkspaceRepoRouteHasHistoricalOccupants(
-		ctx, provider, platformHost, owner, name,
-	)
-	if err != nil {
-		return fmt.Errorf("verify workspace repository route: %w", err)
-	}
-	if collision {
-		return fmt.Errorf(
-			"workspace repository route has historical occupants: %s/%s",
-			owner, name,
-		)
-	}
 	return nil
 }
 
@@ -1427,45 +1382,13 @@ func (m *Manager) SetupWithOptions(
 	if err := m.verifyWorkspaceRepository(ctx, ws); err != nil {
 		return m.failSetup(ctx, ws.ID, workspaceSetupStageSetup, err)
 	}
-	routeIdentity := db.RepoIdentity{
-		Platform: ws.Platform, PlatformHost: ws.PlatformHost,
-		Owner: ws.RepoOwner, Name: ws.RepoName,
-	}
-	var routeFence db.RepositoryRouteFence
-	var validateCloneRoute func(context.Context) error
-	if m.db != nil && ws.RepoID != 0 {
-		var found bool
-		routeFence, found, err = m.db.CurrentRepositoryRouteFence(
-			ctx, routeIdentity, ws.RepoID,
-		)
-		if err != nil {
-			return m.failSetup(ctx, ws.ID, workspaceSetupStageSetup, err)
-		}
-		if !found {
-			return m.failSetup(
-				ctx, ws.ID, workspaceSetupStageSetup,
-				fmt.Errorf("%w: workspace repository route changed", db.ErrRepositoryRouteFenceChanged),
-			)
-		}
-		validateCloneRoute = m.workspaceCloneRouteValidator(
-			routeIdentity, ws.RepoID, routeFence,
-		)
-	} else {
-		validateCloneRoute = func(validationCtx context.Context) error {
-			return m.verifyRepoRouteUnoccupied(
-				validationCtx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
-			)
-		}
-	}
 	if recoveryPending {
 		if err := m.validateExistingWorkspaceDirectory(ctx, ws); err != nil {
 			return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, err)
 		}
 	}
 
-	reuse, err := m.reuseExistingWorkspaceWorktreeDetails(
-		ctx, ws, launchSpec, validateCloneRoute,
-	)
+	reuse, err := m.reuseExistingWorkspaceWorktreeDetails(ctx, ws, launchSpec)
 	branch, reusedWorktree := reuse.branch, reuse.reused
 	// Preserve proven checkout recovery, not branch metadata alone. A fresh
 	// checkout of an adopted branch still rolls back; its empty returned
@@ -1500,7 +1423,7 @@ func (m *Manager) SetupWithOptions(
 		nextStage(workspaceSetupStageClone)
 		var gitSetupDir workspaceGitDir
 		gitSetupDir, err = m.workspaceSetupGitDir(
-			ctx, ws, worktreeBasePath, launchSpec, validateCloneRoute,
+			ctx, ws, worktreeBasePath, launchSpec,
 		)
 		if err != nil {
 			return m.failSetup(
@@ -1521,7 +1444,7 @@ func (m *Manager) SetupWithOptions(
 		var restored bool
 		branch, restored, err = m.addWorktree(
 			ctx, gitSetupDir, ws, workspaceGitFetchOptions{
-				launchSpec: launchSpec, validateRoute: validateCloneRoute,
+				launchSpec: launchSpec,
 			},
 		)
 		if err != nil {
@@ -1557,26 +1480,9 @@ func (m *Manager) SetupWithOptions(
 	if m.beforeSetupRouteRevalidation != nil {
 		m.beforeSetupRouteRevalidation()
 	}
-	// The route can be reconciled away while the clone runs (setup holds no
-	// reconciliation lock — clones can take minutes), so re-check before
-	// declaring the workspace ready.
-	var routeErr error
-	if routeFence.RepoID != 0 {
-		currentFence, found, fenceErr := m.db.CurrentRepositoryRouteFence(
-			ctx, routeIdentity, ws.RepoID,
-		)
-		if fenceErr != nil {
-			routeErr = fenceErr
-		} else if !found || currentFence != routeFence {
-			routeErr = fmt.Errorf(
-				"%w: workspace repository route changed during setup",
-				db.ErrRepositoryRouteFenceChanged,
-			)
-		}
-	}
-	if routeErr == nil {
-		routeErr = m.verifyWorkspaceRepository(ctx, ws)
-	}
+	// The repository can go inactive while the clone runs (clones can take
+	// minutes), so re-check before declaring the workspace ready.
+	routeErr := m.verifyWorkspaceRepository(ctx, ws)
 	if routeErr != nil {
 		if !preserveWorktree {
 			m.rollbackWorktree(ctx, gitDir, ws, branch)
@@ -1705,14 +1611,6 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 	if ws == nil {
 		return nil, ErrWorkspaceNotFound
 	}
-	releaseReconciliation, err := m.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"lock repository reconciliation for head classification: %w",
-			err,
-		)
-	}
-	defer releaseReconciliation()
 	if ws.ID != "" {
 		current, err := m.db.GetWorkspace(ctx, ws.ID)
 		if err != nil {
@@ -1736,10 +1634,11 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 			m.beforeHeadRepoSnapshotRepoLookup()
 		}
 		var repo *db.ActiveRepo
+		var err error
 		if ws.RepoID != 0 {
 			repo, err = m.db.GetActiveRepoByID(ctx, ws.RepoID)
 		} else {
-			repo, err = m.workspaceRepoUnderReconciliationRead(
+			repo, err = m.workspaceRepo(
 				ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 			)
 		}
@@ -1841,7 +1740,7 @@ type existingWorkspaceWorktreeResult struct {
 func (m *Manager) reuseExistingWorkspaceWorktree(
 	ctx context.Context, ws *Workspace, launchSpec *WorkspaceLaunchSpec,
 ) (string, bool, error) {
-	result, err := m.reuseExistingWorkspaceWorktreeDetails(ctx, ws, launchSpec, nil)
+	result, err := m.reuseExistingWorkspaceWorktreeDetails(ctx, ws, launchSpec)
 	return result.branch, result.reused, err
 }
 
@@ -1849,7 +1748,6 @@ func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
 	ctx context.Context,
 	ws *Workspace,
 	launchSpec *WorkspaceLaunchSpec,
-	validateCloneRoute func(context.Context) error,
 ) (existingWorkspaceWorktreeResult, error) {
 	info, err := os.Lstat(ws.WorktreePath)
 	if err != nil {
@@ -1904,7 +1802,7 @@ func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
 				return fmt.Errorf("snapshot managed clone origin: %w", originErr)
 			}
 			if err := m.retargetManagedCloneOrigin(
-				ctx, commonDir, ws, launchSpec, validateCloneRoute,
+				ctx, commonDir, ws, launchSpec,
 			); err != nil {
 				restoreErr := restoreGitConfigValues(
 					context.WithoutCancel(ctx), commonDir,
@@ -1917,7 +1815,7 @@ func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
 			}
 		}
 		useMergeRequestHeadRef, refreshErr := m.refreshExistingWorkspaceWorktree(
-			ctx, commonDir, prov.remote, ws, launchSpec, validateCloneRoute,
+			ctx, commonDir, prov.remote, ws, launchSpec,
 		)
 		if refreshErr != nil {
 			if prov.localBase {
@@ -2181,53 +2079,25 @@ func (m *Manager) workspaceManagedCloneCandidates(
 	); err != nil {
 		return nil, err
 	}
-	if repo.ProviderID != "" && m.db != nil {
-		entry, err := m.db.GetRepositoryByProviderID(
-			ctx, repo.Platform, repo.PlatformHost, repo.ProviderID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("load managed clone repository routes: %w", err)
-		}
-		if entry == nil || entry.Repository.ID != repo.ID {
-			return nil, fmt.Errorf(
-				"%w: managed clone repository identity changed",
-				ErrWorkspaceNotFound,
-			)
-		}
-		for _, route := range entry.Routes {
-			if err := appendCandidate(
-				cloneCtx,
-				route.Platform, route.PlatformHost, route.Owner, route.Name,
-			); err != nil {
-				return nil, err
-			}
-			collision, err := m.db.RepositoryRouteHasOtherRepository(
-				ctx, db.RepoIdentity{
-					Platform: route.Platform, PlatformHost: route.PlatformHost,
-					Owner: route.Owner, Name: route.Name,
-				}, repo.ID,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("verify legacy managed clone route: %w", err)
-			}
-			if !collision {
-				if err := appendCandidate(
-					ctx, route.Platform, route.PlatformHost,
-					route.Owner, route.Name,
-				); err != nil {
-					return nil, err
-				}
-			}
+	// Every bare clone in the repository's own identity namespace belongs to
+	// it, including clones left at an earlier route after a rename: linked
+	// worktrees cannot move between bare repositories.
+	clones, err := m.clones.ClonesForContext(cloneCtx, repo.Platform)
+	if err != nil {
+		return nil, fmt.Errorf("list managed clones: %w", err)
+	}
+	for _, clone := range clones {
+		if err := appendCandidate(
+			cloneCtx, repo.Platform, clone.Host, clone.Owner, clone.Name,
+		); err != nil {
+			return nil, err
 		}
 	}
 	return candidates, nil
 }
 
-// workspaceManagedClonePaths returns every route-keyed path within the stable
-// provider-identity namespace plus pre-identity paths for current or historical
-// routes that have never belonged to another repository. Existing linked
-// worktrees cannot be moved between bare repositories, so safe historical
-// locations remain valid until those workspaces are recreated.
+// workspaceManagedClonePaths returns every bare clone path within the
+// repository's provider-identity namespace.
 func (m *Manager) workspaceManagedClonePaths(
 	ctx context.Context, ws *Workspace,
 ) ([]string, error) {
@@ -2247,13 +2117,7 @@ func (m *Manager) retargetManagedCloneOrigin(
 	commonDir string,
 	ws *Workspace,
 	launchSpec *WorkspaceLaunchSpec,
-	validateCloneRoute func(context.Context) error,
 ) error {
-	if validateCloneRoute != nil {
-		if err := validateCloneRoute(ctx); err != nil {
-			return err
-		}
-	}
 	var remoteURL string
 	if launchSpec != nil {
 		remoteURL = launchSpec.Repository.CloneURL
@@ -2286,16 +2150,10 @@ func (m *Manager) refreshExistingWorkspaceWorktree(
 	remote string,
 	ws *Workspace,
 	launchSpec *WorkspaceLaunchSpec,
-	validateCloneRoute func(context.Context) error,
 ) (bool, error) {
-	if err := runRouteValidatedFetch(
-		ctx, commonDir, validateCloneRoute,
-		func() error {
-			return m.fetchWorkspaceBase(
-				ctx, commonDir, ws.Platform, ws.PlatformHost,
-				ws.RepoOwner, ws.RepoName, remote, false,
-			)
-		},
+	if err := m.fetchWorkspaceBase(
+		ctx, commonDir, ws.Platform, ws.PlatformHost,
+		ws.RepoOwner, ws.RepoName, remote, false,
 	); err != nil {
 		return false, err
 	}
@@ -2305,13 +2163,8 @@ func (m *Manager) refreshExistingWorkspaceWorktree(
 	if ws.ItemType != db.WorkspaceItemTypePullRequest {
 		return false, nil
 	}
-	fetchErr := runRouteValidatedFetch(
-		ctx, commonDir, validateCloneRoute,
-		func() error {
-			return m.fetchWorkspaceMergeRequestHeadRef(
-				ctx, commonDir, remote, ws, launchSpec,
-			)
-		},
+	fetchErr := m.fetchWorkspaceMergeRequestHeadRef(
+		ctx, commonDir, remote, ws, launchSpec,
 	)
 	if fetchErr != nil {
 		if ws.MRHeadRepo != nil {
@@ -2449,7 +2302,6 @@ func (m *Manager) workspaceSetupGitDir(
 	ws *Workspace,
 	worktreeBasePath string,
 	launchSpec *WorkspaceLaunchSpec,
-	validateCloneRoute func(context.Context) error,
 ) (workspaceGitDir, error) {
 	repo, err := m.workspaceRepositoryRef(ctx, ws)
 	if err != nil {
@@ -2490,7 +2342,7 @@ func (m *Manager) workspaceSetupGitDir(
 	cloneCtx := gitclone.WithRepositoryIdentity(ctx, repo.ProviderID)
 	if err := m.clones.EnsureCloneValidated(
 		cloneCtx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, remoteURL,
-		validateCloneRoute,
+		nil,
 	); err != nil {
 		return workspaceGitDir{}, err
 	}
@@ -2502,26 +2354,6 @@ func (m *Manager) workspaceSetupGitDir(
 		return workspaceGitDir{}, err
 	}
 	return workspaceGitDir{path: cloneDir, remote: originRemoteName}, nil
-}
-
-func (m *Manager) workspaceCloneRouteValidator(
-	identity db.RepoIdentity,
-	repoID int64,
-	fence db.RepositoryRouteFence,
-) func(context.Context) error {
-	return func(ctx context.Context) error {
-		current, found, err := m.db.CurrentRepositoryRouteFence(ctx, identity, repoID)
-		if err != nil {
-			return err
-		}
-		if !found || current != fence {
-			return fmt.Errorf(
-				"%w: workspace repository route changed during clone",
-				db.ErrRepositoryRouteFenceChanged,
-			)
-		}
-		return nil
-	}
 }
 
 func (m *Manager) workspaceSetupRemoteURL(
@@ -2683,19 +2515,6 @@ func (m *Manager) workspaceRepo(
 		return nil, err
 	}
 	return m.db.GetRepoByIdentity(ctx, identity)
-}
-
-// workspaceRepoUnderReconciliationRead is workspaceRepo for callers already
-// holding the repository reconciliation read lock.
-func (m *Manager) workspaceRepoUnderReconciliationRead(
-	ctx context.Context,
-	provider, platformHost, owner, name string,
-) (*db.ActiveRepo, error) {
-	identity, err := workspaceRepoIdentity(provider, platformHost, owner, name)
-	if err != nil {
-		return nil, err
-	}
-	return m.db.GetRepoByIdentityUnderRepositoryReconciliationRead(ctx, identity)
 }
 
 func workspaceRepoIdentity(
@@ -3130,8 +2949,7 @@ func localGitConfigKeysForScope(
 // per-repo lock. The lock prevents concurrent worktree mutations on
 // the same git repository from clobbering each other; see FileLockManager.
 type workspaceGitFetchOptions struct {
-	launchSpec    *WorkspaceLaunchSpec
-	validateRoute func(context.Context) error
+	launchSpec *WorkspaceLaunchSpec
 }
 
 type workspaceGitDir struct {
@@ -3150,15 +2968,10 @@ func (m *Manager) addWorktree(
 	var restored bool
 	err := m.withRepoLockForGitDir(ctx, gitDir.path, func() error {
 		if gitDir.localBase {
-			if err := runRouteValidatedFetch(
-				ctx, gitDir.path, fetchOptions.validateRoute,
-				func() error {
-					return m.fetchWorkspaceBase(
-						ctx, gitDir.path, ws.Platform, ws.PlatformHost,
-						ws.RepoOwner, ws.RepoName,
-						gitDir.remote, workspaceUsesOriginHead(ws),
-					)
-				},
+			if err := m.fetchWorkspaceBase(
+				ctx, gitDir.path, ws.Platform, ws.PlatformHost,
+				ws.RepoOwner, ws.RepoName,
+				gitDir.remote, workspaceUsesOriginHead(ws),
 			); err != nil {
 				return err
 			}
@@ -3225,13 +3038,8 @@ func (m *Manager) addWorktreeLocked(
 	}
 	mergeRequestHeadRefFetched := false
 	if ws.MRHeadRepo != nil {
-		if err := runRouteValidatedFetch(
-			ctx, gitDir.path, fetchOptions.validateRoute,
-			func() error {
-				return m.fetchWorkspaceMergeRequestHeadRef(
-					ctx, gitDir.path, gitDir.remote, ws, fetchOptions.launchSpec,
-				)
-			},
+		if err := m.fetchWorkspaceMergeRequestHeadRef(
+			ctx, gitDir.path, gitDir.remote, ws, fetchOptions.launchSpec,
 		); err != nil {
 			return "", fmt.Errorf("fetch merge request head ref: %w", err)
 		}
@@ -3251,13 +3059,8 @@ func (m *Manager) addWorktreeLocked(
 	var fetchHeadErr error
 	useMergeRequestHeadRef := mergeRequestHeadRefFetched
 	if !useMergeRequestHeadRef {
-		fetchHeadErr = runRouteValidatedFetch(
-			ctx, gitDir.path, fetchOptions.validateRoute,
-			func() error {
-				return m.fetchWorkspaceMergeRequestHeadRef(
-					ctx, gitDir.path, gitDir.remote, ws, fetchOptions.launchSpec,
-				)
-			},
+		fetchHeadErr = m.fetchWorkspaceMergeRequestHeadRef(
+			ctx, gitDir.path, gitDir.remote, ws, fetchOptions.launchSpec,
 		)
 		useMergeRequestHeadRef = fetchHeadErr == nil
 	}
@@ -5891,105 +5694,6 @@ func gitCombinedOutput(
 	return string(out), nil
 }
 
-type gitRefState struct {
-	objectName string
-	symref     string
-}
-
-func snapshotGitRefs(ctx context.Context, dir string) (map[string]gitRefState, error) {
-	out, err := gitCombinedOutput(
-		ctx, dir, "for-each-ref", "--format=%(refname)%09%(objectname)%09%(symref)",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("snapshot git refs: %w", err)
-	}
-	refs := make(map[string]gitRefState)
-	for line := range strings.SplitSeq(strings.TrimSuffix(out, "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\t", 3)
-		if len(parts) != 3 {
-			return nil, fmt.Errorf("snapshot git refs: malformed ref record %q", line)
-		}
-		refs[parts[0]] = gitRefState{objectName: parts[1], symref: parts[2]}
-	}
-	return refs, nil
-}
-
-func restoreGitRefs(ctx context.Context, dir string, before map[string]gitRefState) error {
-	current, err := snapshotGitRefs(ctx, dir)
-	if err != nil {
-		return err
-	}
-	var deleteRefs []string
-	for ref := range current {
-		if _, ok := before[ref]; !ok {
-			deleteRefs = append(deleteRefs, ref)
-		}
-	}
-	slices.Sort(deleteRefs)
-	slices.Reverse(deleteRefs)
-	var restoreErr error
-	for _, ref := range deleteRefs {
-		restoreErr = errors.Join(
-			restoreErr,
-			runGitWithoutHooks(ctx, dir, "update-ref", "--no-deref", "-d", ref),
-		)
-	}
-	var refs []string
-	for ref := range before {
-		refs = append(refs, ref)
-	}
-	slices.Sort(refs)
-	for _, ref := range refs {
-		state := before[ref]
-		if currentState, ok := current[ref]; ok && currentState == state {
-			continue
-		}
-		if state.symref != "" {
-			restoreErr = errors.Join(
-				restoreErr,
-				runGitWithoutHooks(ctx, dir, "symbolic-ref", ref, state.symref),
-			)
-			continue
-		}
-		restoreErr = errors.Join(
-			restoreErr,
-			runGitWithoutHooks(ctx, dir, "update-ref", "--no-deref", ref, state.objectName),
-		)
-	}
-	return restoreErr
-}
-
-func runRouteValidatedFetch(
-	ctx context.Context,
-	dir string,
-	validateRoute func(context.Context) error,
-	fetch func() error,
-) error {
-	if validateRoute == nil {
-		return fetch()
-	}
-	if err := validateRoute(ctx); err != nil {
-		return err
-	}
-	refs, err := snapshotGitRefs(ctx, dir)
-	if err != nil {
-		return err
-	}
-	fetchErr := fetch()
-	validationErr := validateRoute(ctx)
-	if fetchErr == nil && validationErr == nil {
-		return nil
-	}
-	restoreErr := restoreGitRefs(context.WithoutCancel(ctx), dir, refs)
-	if restoreErr != nil {
-		restoreErr = fmt.Errorf("restore git refs after rejected fetch: %w", restoreErr)
-	}
-	return errors.Join(fetchErr, validationErr, restoreErr)
-}
-
 func gitArgsWithoutHooks(args ...string) []string {
 	gitArgs := make([]string, 0, len(args)+2)
 	gitArgs = append(gitArgs, "-c", "core.hooksPath=/dev/null")
@@ -6145,15 +5849,10 @@ func (m *Manager) syncWorkspaceBaseBranch(
 		ws.RepoOwner == "" || ws.RepoName == "" {
 		return nil
 	}
-	releaseReconciliation, err := m.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return fmt.Errorf("lock repository reconciliation for base branch sync: %w", err)
-	}
-	defer releaseReconciliation()
-	if err := m.verifyWorkspaceRepositoryUnderReconciliationRead(ctx, ws); err != nil {
+	if err := m.verifyWorkspaceRepository(ctx, ws); err != nil {
 		return err
 	}
-	repo, err := m.workspaceRepoUnderReconciliationRead(
+	repo, err := m.workspaceRepo(
 		ctx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
 	if err != nil {

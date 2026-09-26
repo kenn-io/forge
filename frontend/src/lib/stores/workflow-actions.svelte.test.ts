@@ -12,19 +12,19 @@ import { WorkflowDispatchProgressEvent } from "./provider-events-workflow.js";
 import { createWorkflowActionsStore, type WorkflowActionsStore } from "./workflow-actions.svelte.js";
 
 const ref = {
-  platformRepoId: "repo-app",
+  platformRepoId: 1014,
   provider: "github",
   platformHost: "github.com",
   owner: "acme",
   name: "app",
   repoPath: "acme/app",
 };
-const otherRef = { ...ref, platformRepoId: "repo-other", name: "other", repoPath: "acme/other" };
+const otherRef = { ...ref, platformRepoId: 1016, name: "other", repoPath: "acme/other" };
 
 const repo = {
   provider: "github",
   platform_host: "github.com",
-  platform_repo_id: "repo-app",
+  platform_repo_id: 1014,
   owner: "acme",
   name: "app",
   repo_path: "acme/app",
@@ -100,7 +100,7 @@ function progress(
   return new WorkflowDispatchProgressEvent({
     provider: "github",
     platform_host: "github.com",
-    platform_repo_id: "repo-app",
+    platform_repo_id: 1014,
     repo_path: "acme/app",
     owner: "acme",
     name: "app",
@@ -185,13 +185,13 @@ describe("workflow actions store", () => {
     expect(store.getCatalog(renamed)).toBe(store.getCatalog(ref));
     expect(store.getJobs(renamed, "run-old")).toEqual(jobs);
 
-    const replacement = { ...ref, platformRepoId: "repo-replacement" };
+    const replacement = { ...ref, platformRepoId: 1012 };
     fixture.repository = { ...repo, platform_repo_id: replacement.platformRepoId };
     expect(store.getSnapshot(replacement)).toBeNull();
     store.loadCatalog(replacement);
     await settle();
     expect(fixture.catalogReads).toBe(2);
-    expect(store.getCatalog(replacement)?.repo.platform_repo_id).toBe("repo-replacement");
+    expect(store.getCatalog(replacement)?.repo.platform_repo_id).toBe(1012);
     expect(store.getRuns(replacement)).toEqual([]);
     expect(store.getJobs(replacement, "run-old")).toEqual([]);
     expect(store.getDispatch(replacement, "deploy.yml")).toBeNull();
@@ -212,7 +212,7 @@ describe("workflow actions store", () => {
       store.loadCatalog(ref);
       await settle();
     }
-    fixture.repository = { ...repo, platform_repo_id: "repo-replacement" };
+    fixture.repository = { ...repo, platform_repo_id: 1012 };
     api = createMockApiFetch([
       (request) =>
         request.url.pathname.endsWith("/jobs")
@@ -557,7 +557,7 @@ describe("workflow actions store", () => {
 
     store.applyDispatchProgress({
       ...progress("located", "dispatch-1", run("run-x", "queued")),
-      platform_repo_id: "repo-other",
+      platform_repo_id: 1016,
     } as WorkflowDispatchProgressEvent);
     expect(store.getDispatch(ref, "deploy.yml")).toEqual({ kind: "locating", dispatchId: "dispatch-1" });
     expect(store.getSnapshot(otherRef)).toBeNull();

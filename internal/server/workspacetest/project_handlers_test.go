@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestW1SliceAGate(t *testing.T) {
@@ -255,6 +256,11 @@ func TestRegisterProject_PreservesExplicitProviderIdentity(t *testing.T) {
 	srv, database := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform: "gitlab", PlatformHost: "git.example.com",
+		PlatformRepoID: 3001, Owner: "platform", Name: "runner",
+	})
+	require.NoError(err)
 
 	repoDir := t.TempDir()
 	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
@@ -289,10 +295,11 @@ func TestRegisterProject_PreservesExplicitProviderIdentity(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(project.PlatformIdentity)
 	assert.Equal(&db.PlatformIdentity{
-		Platform: "gitlab",
-		Host:     "git.example.com",
-		Owner:    "platform",
-		Name:     "runner",
+		Platform:       "gitlab",
+		Host:           "git.example.com",
+		PlatformRepoID: 3001,
+		Owner:          "platform",
+		Name:           "runner",
 	}, project.PlatformIdentity)
 }
 
@@ -304,7 +311,7 @@ func TestRegisterProject_UsesConfiguredProviderForRemoteIdentity(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, _, _ := setupProjectServerWithConfigContent(t, `
+	srv, database, _ := setupProjectServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 host = "127.0.0.1"
@@ -316,6 +323,11 @@ host = "code.example.com"
 `, nil)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform: "gitlab", PlatformHost: "code.example.com",
+		Owner: "group/subgroup", Name: "project", RepoPath: "group/subgroup/project",
+	})
+	require.NoError(err)
 
 	repoDir := t.TempDir()
 	gitfixture.Run(t, repoDir, "init", "-q")
@@ -344,7 +356,7 @@ func TestRegisterProject_UsesDefaultPlatformHostForRemoteIdentity(t *testing.T) 
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, _, _ := setupProjectServerWithConfigContent(t, `
+	srv, database, _ := setupProjectServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
 default_platform_host = "ghe.example.com"
@@ -353,6 +365,8 @@ port = 8091
 `, nil)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
+	_, err := reposeed.Seed(t.Context(), database, db.GitHubRepoIdentity("ghe.example.com", "acme", "widget"))
+	require.NoError(err)
 
 	repoDir := t.TempDir()
 	gitfixture.Run(t, repoDir, "init", "-q")
@@ -421,18 +435,18 @@ func TestRegisterProject_AcceptsCallerProvidedIdentity(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	srv, _ := setupProjectServer(t)
+	srv, database := setupProjectServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
+	_, err := reposeed.Seed(t.Context(), database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
 
 	repoDir := t.TempDir()
 	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
 
 	// Even though the repo has no remote, the caller can provide
 	// platform_identity directly. Caller-provided wins, and the handler
-	// upserts a forge_repos row to give the project a stable FK
-	// target - no sync subscription is created (sync is driven by TOML
-	// config, not by forge_repos rows).
+	// links the project to the tracked forge_repos row at that route.
 	body := mustMarshal(t, map[string]any{
 		"local_path": repoDir,
 		"platform_identity": map[string]string{

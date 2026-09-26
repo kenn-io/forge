@@ -29,7 +29,7 @@ func TestRunProviderOnlySeedsLaunchSpecSourceWithoutWorkspace(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(repo)
-	require.Equal("e2e-fleet-widget", repo.PlatformRepoID)
+	require.Equal(int64(fleetWidgetRepoID), repo.PlatformRepoID)
 	require.Equal("https://github.com/acme/fleet-widget", repo.WebURL)
 	require.Equal(cloneURL, repo.CloneURL)
 	require.Equal("main", repo.DefaultBranch)

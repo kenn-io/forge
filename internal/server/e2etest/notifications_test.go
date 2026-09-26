@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -48,11 +48,11 @@ name = "tools"
 	client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
 	require.NoError(err)
 
-	widgetRepoID, err := database.UpsertRepo(t.Context(), verifiedRepoIdentity(
+	widgetRepoID, err := reposeed.Seed(t.Context(), database, verifiedRepoIdentity(
 		db.GitHubRepoIdentity("github.com", "acme", "widget"),
 	))
 	require.NoError(err)
-	toolsRepoID, err := database.UpsertRepo(t.Context(), verifiedRepoIdentity(
+	toolsRepoID, err := reposeed.Seed(t.Context(), database, verifiedRepoIdentity(
 		db.GitHubRepoIdentity("github.com", "acme", "tools"),
 	))
 	require.NoError(err)
@@ -174,7 +174,7 @@ func TestNotificationSyncReconcilesReusedRouteE2E(t *testing.T) {
 	mock := &mockGH{
 		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
 			return &gh.Repository{
-				ID: new(int64(2)), NodeID: new("R_replacement"), Name: &name,
+				ID: new(int64(1002)), Name: &name,
 				Owner: &gh.User{Login: &owner}, Archived: new(bool),
 				AllowSquashMerge: new(true), AllowMergeCommit: new(false),
 				AllowRebaseMerge: new(false),
@@ -220,8 +220,8 @@ name = "widget"
 		return nil
 	}
 
-	oldRepoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_old",
+	oldRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
@@ -249,7 +249,7 @@ name = "widget"
 	})
 	require.NoError(err)
 	require.NotNil(active)
-	assert.Equal("R_replacement", active.PlatformRepoID)
+	assert.Equal(int64(1002), active.PlatformRepoID)
 	assert.NotEqual(oldRepoID, active.ID)
 	repoResp, err := client.HTTP.GetRepoWithResponse(ctx, &generated.GetRepoRequestOptions{PathParams: &generated.GetRepoPath{Provider: "github", Owner: "acme", Name: "widget"}})
 	require.NoError(err)
@@ -322,267 +322,6 @@ name = "widget"
 	}, 10*time.Second, 10*time.Millisecond)
 }
 
-func TestNotificationAckRouteFenceReactivatesThroughAPIE2E(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	number := 7
-	providerID := "R_original"
-	sourceUpdatedAt := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var renamed atomic.Bool
-	var firstFetch sync.Once
-	mock := &mockGH{
-		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
-			if renamed.Load() {
-				name = "beta"
-			}
-			return &gh.Repository{
-				ID: new(int64(1)), NodeID: &providerID, Name: &name,
-				Owner: &gh.User{Login: &owner}, Archived: new(bool),
-			}, nil
-		},
-		getNotificationThreadFn: func(_ context.Context, threadID string) (github.NotificationThread, error) {
-			firstFetch.Do(func() {
-				close(started)
-				<-release
-			})
-			repoName := "alpha"
-			if renamed.Load() {
-				repoName = "beta"
-			}
-			return github.NotificationThread{
-				ID: threadID, RepoOwner: "acme", RepoName: repoName,
-				SubjectType: "PullRequest", SubjectTitle: "New activity",
-				WebURL: "https://github.com/acme/" + repoName + "/pull/7", ItemNumber: &number,
-				ItemType: "pr", Reason: "mention", Unread: true,
-				UpdatedAt: sourceUpdatedAt.Add(time.Hour),
-			}, nil
-		},
-	}
-	srv, database, _, syncer := setupTestServerWithConfigContentAndSyncer(t, `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[notifications]
-enabled = true
-sync_interval = "2m"
-propagation_interval = "1m"
-batch_size = 25
-
-[[repos]]
-owner = "acme"
-name = "alpha"
-`, mock)
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
-	client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
-	require.NoError(err)
-
-	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: providerID,
-		Owner: "acme", Name: "alpha",
-	})
-	require.NoError(err)
-	require.NoError(database.UpsertNotifications(ctx, []db.Notification{{
-		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1",
-		RepoID: &repoID, RepoOwner: "acme", RepoName: "alpha",
-		SubjectType: "PullRequest", SubjectTitle: "Please review",
-		WebURL: "https://github.com/acme/alpha/pull/7", ItemNumber: &number, ItemType: "pr",
-		Reason: "mention", Unread: true, SourceUpdatedAt: sourceUpdatedAt, SyncedAt: sourceUpdatedAt,
-	}}))
-
-	unreadResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
-	require.NoError(err)
-	require.NotNil(unreadResp.JSON200)
-	require.NotNil(unreadResp.JSON200.Items)
-	require.Len(unreadResp.JSON200.Items, 1)
-	notificationID := unreadResp.JSON200.Items[0].ID
-	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(ctx, &generated.MarkNotificationsDoneRequestOptions{Body: &generated.MarkNotificationsDoneBody{Ids: []int64{notificationID}}})
-	require.NoError(err)
-	require.NotNil(doneResp.JSON200)
-	require.ElementsMatch([]int64{notificationID}, doneResp.JSON200.Succeeded)
-	require.ElementsMatch([]int64{notificationID}, doneResp.JSON200.Queued)
-
-	propagationDone := make(chan error, 1)
-	go func() {
-		propagationDone <- syncer.ProcessQueuedNotificationReads(
-			ctx, platform.KindGitHub, "github.com", 10,
-		)
-	}()
-	<-started
-	renamed.Store(true)
-	require.NoError(syncer.SyncNotifications(ctx))
-	close(release)
-	require.NoError(<-propagationDone)
-
-	doneStateResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("done")}})
-	require.NoError(err)
-	require.NotNil(doneStateResp.JSON200)
-	require.NotNil(doneStateResp.JSON200.Items)
-	require.Len(doneStateResp.JSON200.Items, 1)
-	item := doneStateResp.JSON200.Items[0]
-	assert.Equal(notificationID, item.ID)
-	assert.Equal("beta", item.RepoName)
-	assert.False(item.Unread)
-	assert.NotNil(item.DoneAt)
-	assert.NotNil(item.GithubReadQueuedAt)
-	assert.Nil(item.GithubReadSyncedAt)
-	assert.Empty(item.GithubReadError)
-
-	require.NoError(syncer.ProcessQueuedNotificationReads(
-		ctx, platform.KindGitHub, "github.com", 10,
-	))
-	activeResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("active")}})
-	require.NoError(err)
-	require.NotNil(activeResp.JSON200)
-	require.NotNil(activeResp.JSON200.Items)
-	require.Len(activeResp.JSON200.Items, 1)
-	item = activeResp.JSON200.Items[0]
-	assert.Equal(notificationID, item.ID)
-	assert.Equal("beta", item.RepoName)
-	assert.True(item.Unread)
-	assert.Nil(item.DoneAt)
-	assert.Nil(item.GithubReadQueuedAt)
-	assert.Nil(item.GithubReadSyncedAt)
-}
-
-func TestNotificationAckSkipsMarkReadAfterABARouteReuseE2E(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	ctx := t.Context()
-	number := 7
-	providerID := "R_original"
-	observedAt := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var firstFetch sync.Once
-	var marked atomic.Int32
-	mock := &mockGH{
-		getNotificationThreadFn: func(_ context.Context, threadID string) (github.NotificationThread, error) {
-			firstFetch.Do(func() {
-				close(started)
-				<-release
-			})
-			return github.NotificationThread{
-				ID: threadID, RepoOwner: "acme", RepoName: "widget",
-				SubjectType: "PullRequest", SubjectTitle: "Please review",
-				WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &number,
-				ItemType: "pr", Reason: "mention", Unread: false,
-				UpdatedAt: observedAt,
-			}, nil
-		},
-		markNotificationReadFn: func(context.Context, string) error {
-			marked.Add(1)
-			return nil
-		},
-	}
-	srv, database, _, syncer := setupTestServerWithConfigContentAndSyncer(t, `
-sync_interval = "5m"
-github_token_env = "KENN_FORGE_GITHUB_TOKEN"
-host = "127.0.0.1"
-port = 8091
-
-[notifications]
-enabled = true
-sync_interval = "2m"
-propagation_interval = "1m"
-batch_size = 25
-
-[[repos]]
-owner = "acme"
-name = "widget"
-`, mock)
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
-	client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
-	require.NoError(err)
-
-	repoID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: providerID,
-		Owner: "acme", Name: "widget",
-	})
-	require.NoError(err)
-	require.NoError(database.UpsertNotifications(ctx, []db.Notification{{
-		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1",
-		RepoID: &repoID, RepoOwner: "acme", RepoName: "widget",
-		SubjectType: "PullRequest", SubjectTitle: "Please review",
-		WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &number, ItemType: "pr",
-		Reason: "mention", Unread: true, SourceUpdatedAt: observedAt, SyncedAt: observedAt,
-	}}))
-	unreadResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("unread")}})
-	require.NoError(err)
-	require.NotNil(unreadResp.JSON200)
-	require.NotNil(unreadResp.JSON200.Items)
-	require.Len(unreadResp.JSON200.Items, 1)
-	notificationID := unreadResp.JSON200.Items[0].ID
-	doneResp, err := client.HTTP.MarkNotificationsDoneWithResponse(ctx, &generated.MarkNotificationsDoneRequestOptions{Body: &generated.MarkNotificationsDoneBody{Ids: []int64{notificationID}}})
-	require.NoError(err)
-	require.NotNil(doneResp.JSON200)
-
-	propagationDone := make(chan error, 1)
-	go func() {
-		propagationDone <- syncer.ProcessQueuedNotificationReads(
-			ctx, platform.KindGitHub, "github.com", 10,
-		)
-	}()
-	<-started
-	routeChangedAt := time.Now().UTC().Add(time.Hour)
-	_, _, err = database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: providerID,
-		Owner: "acme", Name: "renamed",
-	}, routeChangedAt)
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_replacement",
-		Owner: "acme", Name: "widget",
-	}, routeChangedAt.Add(time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_replacement",
-		Owner: "acme", Name: "elsewhere",
-	}, routeChangedAt.Add(2*time.Minute))
-	require.NoError(err)
-	_, _, err = database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: providerID,
-		Owner: "acme", Name: "widget",
-	}, routeChangedAt.Add(3*time.Minute))
-	require.NoError(err)
-	close(release)
-	require.NoError(<-propagationDone)
-	assert.Zero(marked.Load())
-
-	allResp, err := client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("all")}})
-	require.NoError(err)
-	require.NotNil(allResp.JSON200)
-	require.NotNil(allResp.JSON200.Items)
-	require.Len(allResp.JSON200.Items, 1)
-	item := allResp.JSON200.Items[0]
-	assert.Equal(notificationID, item.ID)
-	assert.False(item.Unread)
-	assert.NotNil(item.DoneAt)
-	assert.NotNil(item.GithubReadQueuedAt)
-	assert.Nil(item.GithubReadSyncedAt)
-
-	require.NoError(syncer.ProcessQueuedNotificationReads(
-		ctx, platform.KindGitHub, "github.com", 10,
-	))
-	assert.Equal(int32(1), marked.Load())
-	allResp, err = client.HTTP.ListNotificationsWithResponse(ctx, &generated.ListNotificationsRequestOptions{Query: &generated.ListNotificationsQuery{State: new("all")}})
-	require.NoError(err)
-	require.NotNil(allResp.JSON200)
-	require.NotNil(allResp.JSON200.Items)
-	require.Len(allResp.JSON200.Items, 1)
-	item = allResp.JSON200.Items[0]
-	assert.False(item.Unread)
-	assert.NotNil(item.DoneAt)
-	assert.Nil(item.GithubReadQueuedAt)
-	assert.NotNil(item.GithubReadSyncedAt)
-}
-
 func TestNotificationReadPropagationDefersQueuedAcksOnRefetchRateLimitE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -628,7 +367,7 @@ name = "widget"
 	client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
 	require.NoError(err)
 
-	repoID, err := database.UpsertRepo(t.Context(), verifiedRepoIdentity(
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedRepoIdentity(
 		db.GitHubRepoIdentity("github.com", "acme", "widget"),
 	))
 	require.NoError(err)
@@ -724,7 +463,6 @@ func TestNotificationAckPropagatesAfterRepositoryRenameE2E(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 	number := 7
-	providerID := "R_original"
 	sourceUpdatedAt := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC)
 	var markedThreads []string
 	mock := &mockGH{
@@ -763,12 +501,11 @@ name = "widget"
 	client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
 	require.NoError(err)
 
-	entry, accepted, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: providerID,
+	entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 		Owner: "acme", Name: "widget",
-	}, time.Now().UTC().Add(-time.Hour))
+	})
 	require.NoError(err)
-	require.True(accepted)
 	repoID := entry.Repository.ID
 	require.NoError(database.UpsertNotifications(ctx, []db.Notification{{
 		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1",
@@ -789,12 +526,11 @@ name = "widget"
 	require.NotNil(doneResp.JSON200)
 	require.ElementsMatch([]int64{notificationID}, doneResp.JSON200.Queued)
 
-	_, accepted, err = database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: providerID,
+	_, err = database.ObserveRepository(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 		Owner: "acme", Name: "renamed",
-	}, time.Now().UTC())
+	})
 	require.NoError(err)
-	require.True(accepted)
 
 	require.NoError(syncer.ProcessQueuedNotificationReads(
 		ctx, platform.KindGitHub, "github.com", 10,

@@ -2,7 +2,6 @@ package workspaceapi
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/agentactivity"
@@ -10,6 +9,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
 )
 
 type CreatePullWorkspaceRequest struct {
@@ -143,10 +143,11 @@ func (s *Handler) RefreshProviderWorkspaceFacts(
 		return httpapi.BadRequest(httpapi.CodeValidationError, err.Error(), nil)
 	}
 	var repo *db.ActiveRepo
-	if platformRepoID := strings.TrimSpace(request.PlatformRepoID); platformRepoID != "" {
-		entry, lookupErr := s.db.GetRepositoryByProviderID(
-			ctx, route.Provider, route.PlatformHost, platformRepoID,
-		)
+	if request.PlatformRepoID != 0 {
+		entry, lookupErr := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+			Provider: route.Provider, PlatformHost: route.PlatformHost,
+			PlatformRepoID: request.PlatformRepoID,
+		})
 		if lookupErr != nil {
 			return providerRouteLookupError(lookupErr)
 		}

@@ -23,6 +23,7 @@ import (
 	forgeserver "go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -139,13 +140,13 @@ esac
 	repos := callTool[struct {
 		Repos []struct {
 			Provider       string `json:"provider"`
-			PlatformRepoID string `json:"platform_repo_id"`
+			PlatformRepoID int64  `json:"platform_repo_id"`
 			RepoPath       string `json:"repo_path"`
 		} `json:"repos"`
 	}](t, session, "kenn_forge_list_repos", map[string]any{})
 	require.Len(repos.Repos, 1)
 	assert.Equal("github", repos.Repos[0].Provider)
-	assert.Equal("repo-acme-widgets", repos.Repos[0].PlatformRepoID)
+	assert.Equal(testutil.FixtureRepoID("acme", "widgets"), repos.Repos[0].PlatformRepoID)
 	assert.Equal("acme/widgets", repos.Repos[0].RepoPath)
 
 	candidates := callTool[struct {
@@ -162,7 +163,7 @@ esac
 		"since": "2h", "item_types": []string{"pr", "issue"},
 		"repo": map[string]any{
 			"provider": "github", "platform_host": "github.com",
-			"platform_repo_id": "repo-acme-widgets", "repo_path": "acme/widgets",
+			"platform_repo_id": testutil.FixtureRepoID("acme", "widgets"), "repo_path": "acme/widgets",
 		},
 	})
 	require.Len(candidates.Candidates, 3)
@@ -180,7 +181,7 @@ esac
 
 	item := map[string]any{
 		"type": "pr", "provider": "github", "platform_host": "github.com",
-		"platform_repo_id": "repo-acme-widgets",
+		"platform_repo_id": testutil.FixtureRepoID("acme", "widgets"),
 		"owner":            "acme", "name": "widgets", "number": 1,
 	}
 	contextResult := callTool[struct {
@@ -360,8 +361,8 @@ func callTool[T any](t *testing.T, session *mcp.ClientSession, name string, args
 func seedPull(t *testing.T, database *db.DB, number int, title string) (int64, int64) {
 	t.Helper()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	identity.PlatformRepoID = "repo-acme-widgets"
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widgets")
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	pullID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -379,8 +380,8 @@ func seedPull(t *testing.T, database *db.DB, number int, title string) (int64, i
 func seedIssue(t *testing.T, database *db.DB, number int, title string) int64 {
 	t.Helper()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	identity.PlatformRepoID = "repo-acme-widgets"
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widgets")
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	issueID, err := database.UpsertIssue(t.Context(), &db.Issue{

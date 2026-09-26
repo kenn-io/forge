@@ -401,15 +401,15 @@ func (s *Handler) refreshPendingDeferredMergeCheckKeys(
 
 func mergeRequestRepoRef(repo db.Repo) ghclient.RepoRef {
 	return ghclient.RepoRef{
-		Platform:           repoProviderKind(repo),
-		Owner:              repo.Owner,
-		Name:               repo.Name,
-		PlatformHost:       repoProviderHost(repo),
-		RepoPath:           repo.RepoPath,
-		PlatformExternalID: repo.PlatformRepoID,
-		WebURL:             repo.WebURL,
-		CloneURL:           repo.CloneURL,
-		DefaultBranch:      repo.DefaultBranch,
+		Platform:       repoProviderKind(repo),
+		Owner:          repo.Owner,
+		Name:           repo.Name,
+		PlatformHost:   repoProviderHost(repo),
+		RepoPath:       repo.RepoPath,
+		PlatformRepoID: repo.PlatformRepoID,
+		WebURL:         repo.WebURL,
+		CloneURL:       repo.CloneURL,
+		DefaultBranch:  repo.DefaultBranch,
 	}
 }
 

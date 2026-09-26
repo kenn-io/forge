@@ -73,7 +73,7 @@ type findCandidatesOutput struct {
 type candidateKey struct {
 	provider       string
 	platformHost   string
-	platformRepoID string
+	platformRepoID int64
 	repoPath       string
 	owner          string
 	name           string
@@ -84,7 +84,7 @@ type candidateKey struct {
 type candidateRepoKey struct {
 	provider       string
 	platformHost   string
-	platformRepoID string
+	platformRepoID int64
 	repoPath       string
 	owner          string
 	name           string

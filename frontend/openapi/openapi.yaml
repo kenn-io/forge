@@ -205,7 +205,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         repo_path:
@@ -1465,7 +1466,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         repo_path:
@@ -2875,7 +2877,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
       required:
@@ -3034,7 +3037,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         type:
@@ -3131,7 +3135,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         repo_path:
@@ -6449,15 +6454,13 @@ components:
       properties:
         name:
           type: string
-        observed_at:
-          format: date-time
-          type: string
         owner:
           type: string
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         repo_path:
@@ -6469,7 +6472,6 @@ components:
         - owner
         - name
         - repo_path
-        - observed_at
       type: object
     ProviderSettingsResponse:
       additionalProperties: false
@@ -6583,7 +6585,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
       required:
@@ -7868,7 +7871,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         repo_path:
@@ -7988,7 +7992,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         repo_path:
@@ -8044,7 +8049,8 @@ components:
         PlatformHost:
           type: string
         PlatformRepoID:
-          type: string
+          format: int64
+          type: integer
         ViewerCanMerge:
           type: boolean
         capabilities:
@@ -8273,16 +8279,13 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         protocol_version:
           format: int64
           type: integer
         provider:
           type: string
-        snapshot_revision:
-          format: int64
-          minimum: 0
-          type: integer
         stale:
           type: boolean
       required:
@@ -8294,7 +8297,6 @@ components:
         - name
         - clone_url
         - default_branch
-        - snapshot_revision
         - observed_at
         - stale
       type: object
@@ -8308,7 +8310,8 @@ components:
         platformHost:
           type: string
         platformRepoID:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
       required:
@@ -10631,7 +10634,8 @@ components:
         base_oid:
           type: string
         base_repo_id:
-          type: string
+          format: int64
+          type: integer
         head_branch:
           type: string
         head_oid:
@@ -10668,7 +10672,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
       required:
@@ -10702,7 +10707,8 @@ components:
         item_type:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         repository:
           $ref: "#/components/schemas/RepositoryRoute"
       required:
@@ -10795,7 +10801,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         repo_path:
@@ -11685,7 +11692,8 @@ paths:
           in: query
           name: platform_repo_id
           schema:
-            type: string
+            format: int64
+            type: integer
         - explode: false
           in: query
           name: item_type

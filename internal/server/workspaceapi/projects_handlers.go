@@ -16,6 +16,9 @@ import (
 	"sync"
 	"time"
 
+	gitcmd "go.kenn.io/kit/git/cmd"
+	managedworktree "go.kenn.io/kit/git/managed"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
@@ -25,8 +28,6 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
-	gitcmd "go.kenn.io/kit/git/cmd"
-	managedworktree "go.kenn.io/kit/git/managed"
 )
 
 type platformIdentityPayload struct {
@@ -319,12 +320,11 @@ type projectWorktreeRuntimeSessionOutput struct {
 //     the project local-only.
 //
 // When an identity is established (caller-provided or parsed), the handler
-// calls db.UpsertRepo to ensure a forge_repos row exists for it and
-// stores the row's id as the project's repo_id FK. UpsertRepo is pure DDL
-// (INSERT ON CONFLICT DO NOTHING + SELECT id) and does NOT subscribe the
-// repo to sync; sync subscription remains driven by the user's TOML config
-// and the AddRepo settings handler. The forge_repos row exists solely
-// as a stable FK target so the project's identity cannot drift.
+// links the project's repo_id FK to the repository with that identity: the
+// hub-resolved repository when a hub is attached, otherwise the tracked
+// repository currently at that route. A route Forge does not track has no
+// provider-verified identity, so the project stays unlinked rather than
+// creating a forge_repos row; registration never subscribes a repo to sync.
 func (s *Handler) registerProject(
 	ctx context.Context, input *registerProjectInput,
 ) (*registerProjectOutput, error) {
@@ -389,23 +389,25 @@ func (s *Handler) registerProjectAtPath(
 			if resolveErr != nil {
 				return nil, resolveErr
 			}
-			if repository == nil || strings.TrimSpace(repository.PlatformRepoID) == "" {
+			if repository == nil || repository.PlatformRepoID == 0 {
 				return nil, httpapi.Internal("hub returned an incomplete repository identity")
 			}
 			id = repository.ID
 		} else {
-			var upsertErr error
-			id, upsertErr = s.db.UpsertRepo(ctx, db.RepoIdentity{
+			// Link the project only to a repository Forge tracks; an
+			// untracked remote has no provider-verified identity.
+			repository, lookupErr := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
 				Platform: identity.Platform, PlatformHost: identity.Host,
 				Owner: identity.Owner, Name: identity.Name,
 			})
-			if upsertErr != nil {
-				return nil, httpapi.Internal(
-					"upsert repo identity: " + upsertErr.Error(),
-				)
+			if lookupErr != nil {
+				return nil, httpapi.Internal("look up repo identity: " + lookupErr.Error())
+			}
+			if repository != nil {
+				id = repository.ID
 			}
 		}
-		repoID = sql.NullInt64{Int64: id, Valid: true}
+		repoID = sql.NullInt64{Int64: id, Valid: id != 0}
 	}
 
 	created, err := s.db.CreateProject(ctx, db.CreateProjectInput{

@@ -219,28 +219,35 @@ func TestOpenBackfillsIssuePRReferences(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "issue-pr-reference-backfill.db")
-	openAtVersionForTest(t, dbPath, 51, func(*sql.DB) {})
-
-	previous, err := OpenPreparedForTest(dbPath)
-	require.NoError(err)
-	repoID, err := previous.UpsertRepo(t.Context(), verifiedTestRepoIdentity(
-		"github", "github.com", "acme", "widget",
-	))
-	require.NoError(err)
-	var issueID int64
-	err = previous.WriteDB().QueryRowContext(t.Context(), `INSERT INTO forge_issues (repo_id, platform_id, number, title, state, created_at, updated_at, last_activity_at) VALUES (?, 7, 7, 'Fixture issue', 'open', ?, ?, ?) RETURNING id`, repoID, baseTime(), baseTime(), baseTime()).Scan(&issueID)
-	require.NoError(err)
-	_, err = previous.WriteDB().ExecContext(t.Context(), `
-		INSERT INTO forge_issue_events (
-			issue_id, event_type, metadata_json, created_at, dedupe_key
-		) VALUES (?, 'cross_referenced', ?, ?, ?)`,
-		issueID,
-		`{"source_type":"PullRequest","source_owner":"acme","source_repo":"client","source_number":42,"source_url":"https://github.com/acme/client/pull/42"}`,
-		baseTime(),
-		"cross-reference-42",
-	)
-	require.NoError(err)
-	require.NoError(previous.Close())
+	const issueID = 12
+	openAtVersionForTest(t, dbPath, 51, func(raw *sql.DB) {
+		_, err := raw.ExecContext(t.Context(), `
+			INSERT INTO forge_repos (
+				id, platform, platform_host, platform_repo_id,
+				owner, name, repo_path, owner_key, name_key, repo_path_key,
+				lifecycle_state
+			) VALUES (
+				1, 'gitlab', 'gitlab.com', '1001',
+				'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget',
+				'active'
+			);
+			INSERT INTO forge_issues (
+				id, repo_id, platform_id, number, state,
+				created_at, updated_at, last_activity_at
+			) VALUES (
+				12, 1, 102, 7, 'open',
+				datetime('now'), datetime('now'), datetime('now')
+			);
+			INSERT INTO forge_issue_events (
+				issue_id, event_type, metadata_json, created_at, dedupe_key
+			) VALUES (
+				12, 'cross_referenced',
+				'{"source_type":"PullRequest","source_owner":"acme","source_repo":"client","source_number":42,"source_url":"https://gitlab.com/acme/client/-/merge_requests/42"}',
+				datetime('now'), 'cross-reference-42'
+			);
+		`)
+		require.NoError(err)
+	})
 
 	migrated, err := Open(dbPath)
 	require.NoError(err)
@@ -248,7 +255,7 @@ func TestOpenBackfillsIssuePRReferences(t *testing.T) {
 	issues, err := migrated.ListIssues(t.Context(), ListIssuesOpts{ReferencedByPR: true})
 	require.NoError(err)
 	require.Len(issues, 1)
-	require.Equal(issueID, issues[0].ID)
+	require.EqualValues(issueID, issues[0].ID)
 	assertDatabaseIntegrityForTest(t, migrated.ReadDB())
 }
 
@@ -265,12 +272,12 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 				clone_url, default_branch, lifecycle_state, created_at
 			) VALUES
 			(
-				1, 'github', 'github.com', 'provider-repo-1',
+				1, 'gitlab', 'gitlab.com', '4201',
 				'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget',
 				'https://github.com/acme/widget.git', 'main', 'active', datetime('now')
 			),
 			(
-				2, 'github', 'github.com', 'provider-repo-renamed',
+				2, 'gitlab', 'gitlab.com', '4202',
 				'acme', 'renamed', 'acme/renamed', 'acme', 'renamed', 'acme/renamed',
 				'https://github.com/acme/renamed.git', 'main', 'active', datetime('now')
 			);
@@ -280,17 +287,17 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 				first_seen_at, last_seen_at, generation
 			) VALUES
 			(
-				1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+				1, 'gitlab', 'gitlab.com', 'acme', 'widget', 'acme/widget',
 				'acme', 'widget', 'acme/widget', 1,
 				datetime('now'), datetime('now'), 1
 			),
 			(
-				2, 'github', 'github.com', 'acme', 'legacy', 'acme/legacy',
+				2, 'gitlab', 'gitlab.com', 'acme', 'legacy', 'acme/legacy',
 				'acme', 'legacy', 'acme/legacy', 0,
 				datetime('now', '-1 day'), datetime('now', '-1 hour'), 1
 			),
 			(
-				2, 'github', 'github.com', 'acme', 'renamed', 'acme/renamed',
+				2, 'gitlab', 'gitlab.com', 'acme', 'renamed', 'acme/renamed',
 				'acme', 'renamed', 'acme/renamed', 1,
 				datetime('now'), datetime('now'), 1
 			);
@@ -317,31 +324,31 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 				item_type, item_number, item_key, git_head_ref,
 				workspace_branch, worktree_path, tmux_session, status
 			) VALUES
-				('ws-pr', 'github', 'github.com', 'acme', 'widget',
+				('ws-pr', 'gitlab', 'gitlab.com', 'acme', 'widget',
 				 'acme', 'widget', 'acme/widget',
 				 'pull_request', 7, '7', 'feature/seven',
 				 'feature/seven', '/tmp/ws-pr', 'ws-pr', 'ready'),
-				('ws-issue', 'github', 'github.com', 'acme', 'widget',
+				('ws-issue', 'gitlab', 'gitlab.com', 'acme', 'widget',
 				 'acme', 'widget', 'acme/widget',
 				 'issue', 8, '8', 'work/issue-8',
 				 'work/issue-8', '/tmp/ws-issue', 'ws-issue', 'ready'),
-				('ws-fork', 'github', 'github.com', 'acme', 'widget',
+				('ws-fork', 'gitlab', 'gitlab.com', 'acme', 'widget',
 				 'acme', 'widget', 'acme/widget',
 				 'pull_request', 9, '9', 'contributor/nine',
 				 'contributor/nine', '/tmp/ws-fork', 'ws-fork', 'ready'),
-				('ws-incomplete', 'github', 'github.com', 'acme', 'widget',
+				('ws-incomplete', 'gitlab', 'gitlab.com', 'acme', 'widget',
 				 'acme', 'widget', 'acme/widget',
 				 'pull_request', 99, '99', 'missing',
 				 'missing', '/tmp/ws-incomplete', 'ws-incomplete', 'ready'),
-				('ws-renamed', 'github', 'github.com', 'acme', 'legacy',
+				('ws-renamed', 'gitlab', 'gitlab.com', 'acme', 'legacy',
 				 'acme', 'legacy', 'acme/legacy',
 				 'pull_request', 10, '10', 'feature/ten',
 				 'feature/ten', '/tmp/ws-renamed', 'ws-renamed', 'ready'),
-				('ws-renamed-incomplete', 'github', 'github.com', 'acme', 'legacy',
+				('ws-renamed-incomplete', 'gitlab', 'gitlab.com', 'acme', 'legacy',
 				 'acme', 'legacy', 'acme/legacy',
 				 'pull_request', 11, '11', 'feature/eleven',
 				 'feature/eleven', '/tmp/ws-renamed-incomplete', 'ws-renamed-incomplete', 'ready'),
-				('ws-adhoc', 'github', 'github.com', 'acme', 'widget',
+				('ws-adhoc', 'gitlab', 'gitlab.com', 'acme', 'widget',
 				 'acme', 'widget', 'acme/widget',
 				 'adhoc', 0, 'adhoc:work/local', 'work/local',
 				 'work/local', '/tmp/ws-adhoc', 'ws-adhoc', 'ready')
@@ -372,7 +379,7 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 	renamed, err := database.GetWorkspaceLaunchSpec(t.Context(), "ws-renamed")
 	require.NoError(err)
 	require.NotNil(renamed)
-	assert.Equal("provider-repo-renamed", renamed.Repository.PlatformRepoID)
+	assert.EqualValues(4202, renamed.Repository.PlatformRepoID)
 	assert.Equal("renamed", renamed.Repository.Name)
 	adhoc, err := database.GetWorkspaceLaunchSpec(t.Context(), "ws-adhoc")
 	require.NoError(err)
@@ -381,7 +388,7 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 	require.NoError(err)
 	require.Len(unprepared, 6)
 	reasons := make(map[string]string, len(unprepared))
-	stableIDs := make(map[string]string, len(unprepared))
+	stableIDs := make(map[string]int64, len(unprepared))
 	for _, item := range unprepared {
 		reasons[item.Workspace.ID] = item.Reason
 		stableIDs[item.Workspace.ID] = item.PlatformRepoID
@@ -394,7 +401,7 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 		"ws-renamed":            "sourceVisibilityExpired",
 		"ws-renamed-incomplete": "launchSpecMissing",
 	}, reasons)
-	assert.Equal("provider-repo-renamed", stableIDs["ws-renamed-incomplete"])
+	assert.EqualValues(4202, stableIDs["ws-renamed-incomplete"])
 	assertDatabaseIntegrityForTest(t, database.ReadDB())
 }
 
@@ -512,47 +519,48 @@ func TestWorkspaceRepositoryIdentityMigration55BackfillsOnlyUnambiguousRoutes(
 		require.NoError(err)
 	})
 
-	database, err := Open(dbPath)
-	require.NoError(err)
+	// Migrate to 55 only: migration 59 later removes repositories that
+	// never had a provider ID, which would detach the route-only workspace.
+	migrated := migrateToVersionForTest(t, dbPath, 55)
 
 	var safeRepoID sql.NullInt64
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+	require.NoError(migrated.QueryRowContext(t.Context(), `
 		SELECT repo_id FROM forge_workspaces WHERE id = 'workspace-safe'
 	`).Scan(&safeRepoID))
 	require.True(safeRepoID.Valid)
 	require.Equal(int64(1), safeRepoID.Int64)
 
 	var routeOnlyRepoID sql.NullInt64
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+	require.NoError(migrated.QueryRowContext(t.Context(), `
 		SELECT repo_id FROM forge_workspaces WHERE id = 'workspace-route-only'
 	`).Scan(&routeOnlyRepoID))
 	require.True(routeOnlyRepoID.Valid)
 	require.Equal(int64(5), routeOnlyRepoID.Int64)
 
 	var contestedRepoID sql.NullInt64
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+	require.NoError(migrated.QueryRowContext(t.Context(), `
 		SELECT repo_id FROM forge_workspaces WHERE id = 'workspace-contested'
 	`).Scan(&contestedRepoID))
 	require.False(contestedRepoID.Valid)
 
 	var renamedRepoID int64
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+	require.NoError(migrated.QueryRowContext(t.Context(), `
 		SELECT repo_id FROM forge_workspaces WHERE id = 'workspace-renamed-new'
 	`).Scan(&renamedRepoID))
 	require.Equal(int64(4), renamedRepoID)
 	var deletedDuplicateCount int
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+	require.NoError(migrated.QueryRowContext(t.Context(), `
 		SELECT COUNT(*) FROM forge_workspaces WHERE id = 'workspace-renamed-old'
 	`).Scan(&deletedDuplicateCount))
 	require.Zero(deletedDuplicateCount)
 
 	var setupEventCount int
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+	require.NoError(migrated.QueryRowContext(t.Context(), `
 		SELECT COUNT(*) FROM forge_workspace_setup_events
 	`).Scan(&setupEventCount))
 	require.Equal(3, setupEventCount)
-	assertDatabaseIntegrityForTest(t, database.ReadDB())
-	require.NoError(database.Close())
+	assertDatabaseIntegrityForTest(t, migrated)
+	require.NoError(migrated.Close())
 
 	raw, migrator := openMigratorForTest(t, dbPath)
 	require.NoError(migrator.Migrate(54))
@@ -769,10 +777,10 @@ func TestOpenMigratesHistoricalActivityArchive(t *testing.T) {
 
 	openAtVersionForTest(t, path, 38, func(raw *sql.DB) {
 		_, err := raw.ExecContext(t.Context(), `INSERT INTO middleman_repos (
-			id, platform, platform_host, owner, name, repo_path,
+			id, platform, platform_host, platform_repo_id, owner, name, repo_path,
 			owner_key, name_key, repo_path_key, created_at
 		) VALUES (
-			1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+			1, 'github', 'github.com', 'R_kgDOwidget', 'acme', 'widget', 'acme/widget',
 			'acme', 'widget', 'acme/widget', datetime('now')
 		)`)
 		require.NoError(err)
@@ -880,11 +888,11 @@ func TestOpenMigratesKanbanRowsToItemWorkflowState(t *testing.T) {
 
 	openAtVersionForTest(t, path, 36, func(raw *sql.DB) {
 		_, err := raw.ExecContext(t.Context(), `INSERT INTO middleman_repos (
-				id, platform, platform_host, owner, name, repo_path,
+				id, platform, platform_host, platform_repo_id, owner, name, repo_path,
 				owner_key, name_key, repo_path_key, created_at
 			)
 			VALUES (
-				1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+				1, 'github', 'github.com', 'R_kgDOwidget', 'acme', 'widget', 'acme/widget',
 				'acme', 'widget', 'acme/widget', datetime('now')
 			)`)
 		require.NoError(t, err)
@@ -923,11 +931,11 @@ func TestOpenResyncsKanbanRowsBeforeDroppingKanbanState(t *testing.T) {
 
 	openAtVersionForTest(t, path, 37, func(raw *sql.DB) {
 		_, err := raw.ExecContext(t.Context(), `INSERT INTO middleman_repos (
-				id, platform, platform_host, owner, name, repo_path,
+				id, platform, platform_host, platform_repo_id, owner, name, repo_path,
 				owner_key, name_key, repo_path_key, created_at
 			)
 			VALUES (
-				1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+				1, 'github', 'github.com', 'R_kgDOwidget', 'acme', 'widget', 'acme/widget',
 				'acme', 'widget', 'acme/widget', datetime('now')
 			)`)
 		require.NoError(t, err)
@@ -965,11 +973,11 @@ func TestOpenNormalizesInvalidWorkflowStatusesDuringCutover(t *testing.T) {
 
 	openAtVersionForTest(t, path, 37, func(raw *sql.DB) {
 		_, err := raw.ExecContext(t.Context(), `INSERT INTO middleman_repos (
-				id, platform, platform_host, owner, name, repo_path,
+				id, platform, platform_host, platform_repo_id, owner, name, repo_path,
 				owner_key, name_key, repo_path_key, created_at
 			)
 			VALUES (
-				1, 'github', 'github.com', 'acme', 'widget', 'acme/widget',
+				1, 'github', 'github.com', 'R_kgDOwidget', 'acme', 'widget', 'acme/widget',
 				'acme', 'widget', 'acme/widget', datetime('now')
 			)`)
 		require.NoError(t, err)
@@ -1409,11 +1417,10 @@ func TestRepositoryCatalogMigrationPreservesDataAndIndexes(t *testing.T) {
 		require.NoError(err)
 	})
 
-	database, err := Open(dbPath)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
+	migrated := migrateToVersionForTest(t, dbPath, 45)
+	t.Cleanup(func() { require.NoError(migrated.Close()) })
 
-	rows, err := database.ReadDB().QueryContext(t.Context(), `
+	rows, err := migrated.QueryContext(t.Context(), `
 		SELECT r.id, r.platform_repo_id, r.lifecycle_state,
 		       rr.repo_path, rr.is_current
 		FROM forge_repos r
@@ -1448,16 +1455,16 @@ func TestRepositoryCatalogMigrationPreservesDataAndIndexes(t *testing.T) {
 	}, got)
 
 	var issueRepoID, mergeRequestRepoID, archiveRepoID, archiveItemRepoID int64
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(),
+	require.NoError(migrated.QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_issues WHERE id = 11`,
 	).Scan(&issueRepoID))
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(),
+	require.NoError(migrated.QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_merge_requests WHERE id = 12`,
 	).Scan(&mergeRequestRepoID))
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(),
+	require.NoError(migrated.QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_archive_repos WHERE repo_id = 1`,
 	).Scan(&archiveRepoID))
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(),
+	require.NoError(migrated.QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_archive_items WHERE provider_item_id = 'issue-101'`,
 	).Scan(&archiveItemRepoID))
 	assert.Equal(int64(1), issueRepoID)
@@ -1465,30 +1472,30 @@ func TestRepositoryCatalogMigrationPreservesDataAndIndexes(t *testing.T) {
 	assert.Equal(int64(1), archiveRepoID)
 	assert.Equal(int64(1), archiveItemRepoID)
 
-	assertIndexForTest(t, database.ReadDB(), "forge_repos",
+	assertIndexForTest(t, migrated, "forge_repos",
 		"idx_repos_platform_repo_id",
 		[]string{"platform", "platform_host", "platform_repo_id"}, true)
-	assertIndexForTest(t, database.ReadDB(), "forge_repo_routes",
+	assertIndexForTest(t, migrated, "forge_repo_routes",
 		"idx_repo_routes_current_path",
 		[]string{"platform", "platform_host", "repo_path_key"}, true)
-	assertIndexForTest(t, database.ReadDB(), "forge_repo_routes",
+	assertIndexForTest(t, migrated, "forge_repo_routes",
 		"idx_repo_routes_current_repo", []string{"repo_id"}, true)
-	assertUniqueIndexForTest(t, database.ReadDB(), "forge_repos",
+	assertUniqueIndexForTest(t, migrated, "forge_repos",
 		"idx_repos_platform_repo_id", true)
-	assertUniqueIndexForTest(t, database.ReadDB(), "forge_repo_routes",
+	assertUniqueIndexForTest(t, migrated, "forge_repo_routes",
 		"idx_repo_routes_current_path", true)
-	assertUniqueIndexForTest(t, database.ReadDB(), "forge_repo_routes",
+	assertUniqueIndexForTest(t, migrated, "forge_repo_routes",
 		"idx_repo_routes_current_repo", true)
 
 	var removedPathIndex int
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+	require.NoError(migrated.QueryRowContext(t.Context(), `
 		SELECT COUNT(*) FROM sqlite_schema
 		WHERE type = 'index' AND name = 'idx_repos_provider_path_key'
 	`).Scan(&removedPathIndex))
 	assert.Zero(removedPathIndex)
 
 	var repoTableSQL string
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+	require.NoError(migrated.QueryRowContext(t.Context(), `
 		SELECT sql FROM sqlite_schema
 		WHERE type = 'table' AND name = 'forge_repos'
 	`).Scan(&repoTableSQL))
@@ -1501,144 +1508,13 @@ func TestRepositoryCatalogMigrationPreservesDataAndIndexes(t *testing.T) {
 		"forge_workspaces_casefold_update",
 	} {
 		var triggerCount int
-		require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		require.NoError(migrated.QueryRowContext(t.Context(), `
 			SELECT COUNT(*) FROM sqlite_schema
 			WHERE type = 'trigger' AND name = ?`, trigger,
 		).Scan(&triggerCount))
 		assert.Equal(1, triggerCount)
 	}
-	assertDatabaseIntegrityForTest(t, database.ReadDB())
-}
-
-func TestRepositoryRouteGenerationMigrationClearsHistoricallyReusedRouteState(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	dbPath := filepath.Join(t.TempDir(), "repository-route-generation-v46.db")
-
-	openAtVersionForTest(t, dbPath, 46, func(raw *sql.DB) {
-		_, err := raw.ExecContext(t.Context(), `
-			INSERT INTO forge_repos (
-				id, platform, platform_host, platform_repo_id,
-				owner, name, repo_path, owner_key, name_key, repo_path_key,
-				lifecycle_state
-			) VALUES
-				(1, 'github', 'github.com', 'provider-old',
-				 'acme', 'renamed', 'acme/renamed',
-				 'acme', 'renamed', 'acme/renamed', 'active'),
-				(2, 'github', 'github.com', 'provider-current',
-				 'acme', 'widget', 'acme/widget',
-				 'acme', 'widget', 'acme/widget', 'active');
-
-			INSERT INTO forge_repo_routes (
-				repo_id, platform, platform_host,
-				owner, name, repo_path, owner_key, name_key, repo_path_key,
-				is_current, first_seen_at, last_seen_at
-			) VALUES
-				(1, 'github', 'github.com',
-				 'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget',
-				 0, '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z'),
-				(1, 'github', 'github.com',
-				 'acme', 'renamed', 'acme/renamed', 'acme', 'renamed', 'acme/renamed',
-				 1, '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z'),
-				(2, 'github', 'github.com',
-				 'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget',
-				 1, '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z');
-
-			INSERT INTO forge_notification_sync_watermarks (
-				platform, platform_host, repo_owner, repo_name,
-				last_successful_sync_at
-			) VALUES
-				('github', 'github.com', 'acme', 'widget', '2026-01-03T00:00:00Z'),
-				('github', 'github.com', 'acme', 'safe', '2026-01-03T00:00:00Z');
-
-			INSERT INTO forge_http_etags (
-				platform, platform_host, owner_key, name_key,
-				resource_type, resource_number, etag
-			) VALUES
-				('github', 'github.com', 'acme', 'widget', 'pull_request', 7, 'stale'),
-				('github', 'github.com', 'acme', 'safe', 'pull_request', 8, 'keep');
-
-			INSERT INTO forge_notification_items (
-				platform, platform_host, platform_notification_id, repo_id,
-				repo_owner, repo_name, subject_type, subject_title,
-				reason, source_updated_at, synced_at
-			) VALUES
-				('github', 'github.com', 'reused-unlinked', NULL,
-				 'acme', 'widget', 'PullRequest', 'stale',
-				 'mention', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z'),
-				('github', 'github.com', 'reused-linked', 2,
-				 'acme', 'widget', 'PullRequest', 'keep linked',
-				 'mention', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z'),
-				('github', 'github.com', 'safe-unlinked', NULL,
-				 'acme', 'safe', 'PullRequest', 'keep safe',
-				 'mention', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z');
-		`)
-		require.NoError(err)
-	})
-
-	database, err := Open(dbPath)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
-
-	entry, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "provider-current",
-			Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
-		},
-		time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC),
-	)
-	require.NoError(err)
-	require.True(accepted)
-	assert.Equal(int64(2), entry.Repository.ID)
-
-	var reusedWatermarks, safeWatermarks int
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT COUNT(*) FROM forge_notification_sync_watermarks
-		WHERE repo_owner = 'acme' AND repo_name = 'widget'
-	`).Scan(&reusedWatermarks))
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT COUNT(*) FROM forge_notification_sync_watermarks
-		WHERE repo_owner = 'acme' AND repo_name = 'safe'
-	`).Scan(&safeWatermarks))
-	assert.Zero(reusedWatermarks)
-	assert.Equal(1, safeWatermarks)
-
-	var reusedETags, safeETags int
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT COUNT(*) FROM forge_http_etags
-		WHERE owner_key = 'acme' AND name_key = 'widget'
-	`).Scan(&reusedETags))
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT COUNT(*) FROM forge_http_etags
-		WHERE owner_key = 'acme' AND name_key = 'safe'
-	`).Scan(&safeETags))
-	assert.Zero(reusedETags)
-	assert.Equal(1, safeETags)
-
-	rows, err := database.ReadDB().QueryContext(t.Context(), `
-		SELECT platform_notification_id
-		FROM forge_notification_items
-		ORDER BY platform_notification_id
-	`)
-	require.NoError(err)
-	defer rows.Close()
-	var notificationIDs []string
-	for rows.Next() {
-		var id string
-		require.NoError(rows.Scan(&id))
-		notificationIDs = append(notificationIDs, id)
-	}
-	require.NoError(rows.Err())
-	assert.Equal([]string{"reused-linked", "safe-unlinked"}, notificationIDs)
-
-	var minimumGeneration int64
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT MIN(generation) FROM forge_repo_routes
-	`).Scan(&minimumGeneration))
-	assert.Equal(int64(1), minimumGeneration)
-	assertDatabaseIntegrityForTest(t, database.ReadDB())
+	assertDatabaseIntegrityForTest(t, migrated)
 }
 
 func TestRepositoryCatalogMigrationDownRestoresRouteIdentity(t *testing.T) {
@@ -1652,7 +1528,7 @@ func TestRepositoryCatalogMigrationDownRestoresRouteIdentity(t *testing.T) {
 			platform, platform_host, platform_repo_id,
 			owner, name, repo_path, owner_key, name_key, repo_path_key
 		) VALUES (
-			'github', 'github.com', 'provider-1',
+			'github', 'github.com', 1001,
 			'org-a', 'project-a', 'org-a/project-a',
 			'org-a', 'project-a', 'org-a/project-a'
 		)`)
@@ -1697,9 +1573,8 @@ func TestRepositoryCatalogMigrationDownRejectsRouteCollisions(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "repository-catalog-collision-v45.db")
-	database, err := Open(dbPath)
-	require.NoError(err)
-	_, err = database.WriteDB().ExecContext(t.Context(), `
+	openAtVersionForTest(t, dbPath, 45, func(raw *sql.DB) {
+		_, err := raw.ExecContext(t.Context(), `
 		INSERT INTO forge_repos (
 			id, platform, platform_host, platform_repo_id,
 			owner, name, repo_path, owner_key, name_key, repo_path_key,
@@ -1732,12 +1607,12 @@ func TestRepositoryCatalogMigrationDownRejectsRouteCollisions(t *testing.T) {
 			'2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z',
 			'2026-01-03T00:00:00Z'
 		)`)
-	require.NoError(err)
-	require.NoError(database.Close())
+		require.NoError(err)
+	})
 
 	raw, migrator := openMigratorForTest(t, dbPath)
 	raw.SetMaxOpenConns(1)
-	_, err = raw.ExecContext(t.Context(), `PRAGMA foreign_keys = OFF`)
+	_, err := raw.ExecContext(t.Context(), `PRAGMA foreign_keys = OFF`)
 	require.NoError(err)
 	err = migrator.Migrate(44)
 	require.Error(err)
@@ -1827,12 +1702,13 @@ func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
 	defer func() { require.NoError(raw.Close()) }()
 	seedLegacyIssueForTest(t, raw, 1, 1, 101, 7, `[{"name":"bug","color":"d73a4a"}]`)
 
-	d, err := Open(path)
-	require.NoError(err)
+	// These legacy repositories never had provider IDs, so migration 59
+	// removes them; stop just before it to observe this migration's result.
+	d := migrateToVersionForTest(t, path, 58)
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	var issueLabelCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_issue_labels WHERE issue_id = ?`, 1).Scan(&issueLabelCount)
+	err := d.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_issue_labels WHERE issue_id = ?`, 1).Scan(&issueLabelCount)
 	require.NoError(err)
 	require.Equal(1, issueLabelCount)
 
@@ -1842,7 +1718,7 @@ func TestOpenBackfillsLegacyIssueLabelsIntoNormalizedTables(t *testing.T) {
 	var color string
 	var isDefault bool
 	var updatedAt string
-	err = d.ReadDB().QueryRowContext(t.Context(),
+	err = d.QueryRowContext(t.Context(),
 		`SELECT l.platform_id, l.name, l.description, l.color, l.is_default, l.updated_at
 		 FROM forge_labels l
 		 JOIN forge_issue_labels il ON il.label_id = l.id
@@ -1890,17 +1766,18 @@ func TestOpenBackfillsDuplicateLegacyIssueLabelsDeterministically(t *testing.T) 
 	seedLegacyIssueForTest(t, raw, 1, 1, 101, 7, `[{"name":"bug","color":"ff0000"}]`)
 	seedLegacyIssueForTest(t, raw, 2, 1, 102, 8, `[{"name":"bug","color":"00ff00"}]`)
 
-	d, err := Open(path)
-	require.NoError(err)
+	// These legacy repositories never had provider IDs, so migration 59
+	// removes them; stop just before it to observe this migration's result.
+	d := migrateToVersionForTest(t, path, 58)
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
 	var labelCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_labels WHERE repo_id = ? AND name = ?`, 1, "bug").Scan(&labelCount)
+	err := d.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_labels WHERE repo_id = ? AND name = ?`, 1, "bug").Scan(&labelCount)
 	require.NoError(err)
 	require.Equal(1, labelCount)
 
 	var color string
-	err = d.ReadDB().QueryRowContext(t.Context(),
+	err = d.QueryRowContext(t.Context(),
 		`SELECT color FROM forge_labels WHERE repo_id = ? AND name = ?`,
 		1,
 		"bug",
@@ -2042,33 +1919,36 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.NoError(err)
 	require.NoError(raw.Close())
 
-	d, err := Open(path)
-	require.NoError(err)
+	// These legacy repositories never had provider IDs, so migration 59
+	// removes them; stop just before it to observe this migration's result.
+	d := migrateToVersionForTest(t, path, 58)
 	t.Cleanup(func() { require.NoError(d.Close()) })
 
-	repos, err := d.ListRepositoryCatalog(
-		t.Context(), RepositoryCatalogFilter{},
-	)
-	require.NoError(err)
-	require.Len(repos, 1)
-	require.Equal("org", repos[0].Repository.Owner)
-	require.Equal("foo", repos[0].Repository.Name)
-	require.Equal(RepositoryLifecycleInactive, repos[0].Lifecycle)
+	var repoCount int
+	var owner, name, lifecycle string
+	require.NoError(d.QueryRowContext(t.Context(), `
+		SELECT COUNT(*), MIN(owner), MIN(name), MIN(lifecycle_state)
+		FROM forge_repos`,
+	).Scan(&repoCount, &owner, &name, &lifecycle))
+	require.Equal(1, repoCount)
+	require.Equal("org", owner)
+	require.Equal("foo", name)
+	require.Equal(string(RepositoryLifecycleInactive), lifecycle)
 
 	var prCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_merge_requests`).Scan(&prCount)
+	err = d.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_merge_requests`).Scan(&prCount)
 	require.NoError(err)
 	require.Equal(2, prCount)
 
 	var uniquePRRepoID int
-	err = d.ReadDB().QueryRowContext(t.Context(),
+	err = d.QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_merge_requests WHERE number = 2`,
 	).Scan(&uniquePRRepoID)
 	require.NoError(err)
 	require.Equal(1, uniquePRRepoID)
 
 	var uniquePREventCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `
+	err = d.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
 		FROM forge_mr_events e
 		JOIN forge_merge_requests mr ON mr.id = e.merge_request_id
@@ -2078,7 +1958,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal(1, uniquePREventCount)
 
 	var duplicatePREventCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `
+	err = d.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
 		FROM forge_mr_events e
 		JOIN forge_merge_requests mr ON mr.id = e.merge_request_id
@@ -2088,7 +1968,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal(1, duplicatePREventCount)
 
 	var kanbanStatus string
-	err = d.ReadDB().QueryRowContext(t.Context(), `
+	err = d.QueryRowContext(t.Context(), `
 		SELECT ws.status
 		FROM forge_item_workflow_state ws
 		JOIN forge_merge_requests mr
@@ -2100,7 +1980,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal("reviewing", kanbanStatus)
 
 	var mergedKanbanStatus string
-	err = d.ReadDB().QueryRowContext(t.Context(), `
+	err = d.QueryRowContext(t.Context(), `
 		SELECT ws.status
 		FROM forge_item_workflow_state ws
 		JOIN forge_merge_requests mr
@@ -2112,7 +1992,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal("reviewing", mergedKanbanStatus)
 
 	var duplicateIssueEventCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `
+	err = d.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
 		FROM forge_issue_events e
 		JOIN forge_issues i ON i.id = e.issue_id
@@ -2122,7 +2002,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal(1, duplicateIssueEventCount)
 
 	var duplicateIssueLabelCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `
+	err = d.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
 		FROM forge_issue_labels il
 		JOIN forge_issues i ON i.id = il.issue_id
@@ -2133,21 +2013,21 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal(1, duplicateIssueLabelCount)
 
 	var issueRepoID int
-	err = d.ReadDB().QueryRowContext(t.Context(),
+	err = d.QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_issues WHERE number = 9`,
 	).Scan(&issueRepoID)
 	require.NoError(err)
 	require.Equal(1, issueRepoID)
 
 	var labelRepoID int
-	err = d.ReadDB().QueryRowContext(t.Context(),
+	err = d.QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_labels WHERE platform_id = 700`,
 	).Scan(&labelRepoID)
 	require.NoError(err)
 	require.Equal(1, labelRepoID)
 
 	var issuePlatformLabelCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `
+	err = d.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
 		FROM forge_issue_labels il
 		JOIN forge_issues i ON i.id = il.issue_id
@@ -2158,7 +2038,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal(1, issuePlatformLabelCount)
 
 	var staleNamePlatformLabelCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `
+	err = d.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
 		FROM forge_labels
 		WHERE repo_id = 1 AND name = 'stale-label' AND platform_id = 702`,
@@ -2167,7 +2047,7 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal(1, staleNamePlatformLabelCount)
 
 	var mrPlatformLabelCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `
+	err = d.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
 		FROM forge_merge_request_labels mrl
 		JOIN forge_merge_requests mr ON mr.id = mrl.merge_request_id
@@ -2178,31 +2058,31 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.Equal(1, mrPlatformLabelCount)
 
 	var starredRepoID int
-	err = d.ReadDB().QueryRowContext(t.Context(),
+	err = d.QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_starred_items WHERE item_type = 'issue' AND number = 9`,
 	).Scan(&starredRepoID)
 	require.NoError(err)
 	require.Equal(1, starredRepoID)
 
 	var stackRepoID int
-	err = d.ReadDB().QueryRowContext(t.Context(),
+	err = d.QueryRowContext(t.Context(),
 		`SELECT repo_id FROM forge_stacks WHERE base_number = 2`,
 	).Scan(&stackRepoID)
 	require.NoError(err)
 	require.Equal(1, stackRepoID)
 
 	var workspaceCount int
-	err = d.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_workspaces`).Scan(&workspaceCount)
+	err = d.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_workspaces`).Scan(&workspaceCount)
 	require.NoError(err)
 	require.Equal(2, workspaceCount)
 
 	var integrityCheck string
-	err = d.ReadDB().QueryRowContext(t.Context(), `PRAGMA integrity_check`).Scan(&integrityCheck)
+	err = d.QueryRowContext(t.Context(), `PRAGMA integrity_check`).Scan(&integrityCheck)
 	require.NoError(err)
 	require.Equal("ok", integrityCheck)
 
 	var foreignKeyViolations int
-	err = d.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyViolations)
+	err = d.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&foreignKeyViolations)
 	require.NoError(err)
 	require.Zero(foreignKeyViolations)
 }
@@ -2277,7 +2157,7 @@ func TestOpenInitializesBranchActivitySchema(t *testing.T) {
 		}
 	}
 
-	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := seedTestRepo(ctx, d, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{{
 		RepoID:         repoID,
@@ -2342,13 +2222,11 @@ func TestOpenInitializesBranchActivitySchema(t *testing.T) {
 }
 
 func TestRepoTimestampWritesStoreUTC(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
 
-	repoID, err := d.UpsertRepo(ctx, GitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := seedTestRepo(ctx, d, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	//nolint:forbidigo // Test fixture intentionally uses a non-UTC zone to verify normalization.
@@ -2386,8 +2264,6 @@ func TestRepoTimestampWritesStoreUTC(t *testing.T) {
 }
 
 func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {
-	t.Parallel()
-
 	for _, tc := range []struct {
 		name    string
 		version int
@@ -2402,8 +2278,6 @@ func TestOpenRejectsUnsupportedLegacySchemaVersion(t *testing.T) {
 }
 
 func TestOpenReturnsRecreateGuidanceForDirtyMigrations(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
@@ -2426,8 +2300,6 @@ func TestOpenReturnsRecreateGuidanceForDirtyMigrations(t *testing.T) {
 }
 
 func TestOpenRejectsIncompleteLegacyDatabase(t *testing.T) {
-	t.Parallel()
-
 	require := require.New(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "broken-legacy.db")
@@ -2785,6 +2657,38 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 	require.NoError(raw.Close())
 }
 
+// migrateToVersionForTest applies migrations up to version, so a test of a
+// historical migration observes that migration's result rather than what
+// later migrations do to the same rows. Like Open, it runs the repository
+// catalog migration with foreign keys disabled.
+func migrateToVersionForTest(t *testing.T, dbPath string, version uint) *sql.DB {
+	t.Helper()
+	require := require.New(t)
+	raw, migrator := openMigratorForTest(t, dbPath)
+	raw.SetMaxOpenConns(1)
+	migrateTo := func(target uint) {
+		err := migrator.Migrate(target)
+		if !errors.Is(err, migrate.ErrNoChange) {
+			require.NoError(err)
+		}
+	}
+	current, _, err := migrator.Version()
+	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
+		require.NoError(err)
+	}
+	if current < repositoryCatalogMigrationVersion &&
+		version >= repositoryCatalogMigrationVersion {
+		migrateTo(repositoryCatalogMigrationVersion - 1)
+		_, err := raw.ExecContext(t.Context(), `PRAGMA foreign_keys = OFF`)
+		require.NoError(err)
+		migrateTo(repositoryCatalogMigrationVersion)
+		_, err = raw.ExecContext(t.Context(), `PRAGMA foreign_keys = ON`)
+		require.NoError(err)
+	}
+	migrateTo(version)
+	return raw
+}
+
 func openMigratorForTest(t *testing.T, dbPath string) (*sql.DB, *migrate.Migrate) {
 	t.Helper()
 	require := require.New(t)
@@ -2869,34 +2773,4 @@ func seedLegacyIssueForTest(
 		labelsJSON,
 	)
 	require.NoError(t, err)
-}
-
-func TestMigration59PreservesRowsWithoutInventingAuthorAssociations(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	path := filepath.Join(t.TempDir(), "author-association.db")
-	openAtVersionForTest(t, path, 58, func(raw *sql.DB) {
-		_, err := raw.ExecContext(t.Context(), `
-   INSERT INTO forge_repos (id, platform, platform_host, platform_repo_id, owner, name, repo_path, owner_key, name_key, repo_path_key, lifecycle_state, created_at)
-   VALUES (1, 'github', 'github.com', 'repo-1', 'acme', 'project', 'acme/project', 'acme', 'project', 'acme/project', 'active', datetime('now'));
-   INSERT INTO forge_merge_requests (id, repo_id, platform_id, number, author, created_at, updated_at, last_activity_at) VALUES (1, 1, 7, 7, 'author', datetime('now'), datetime('now'), datetime('now'));
-   INSERT INTO forge_issues (id, repo_id, platform_id, number, author, created_at, updated_at, last_activity_at) VALUES (1, 1, 8, 8, 'reporter', datetime('now'), datetime('now'), datetime('now'));
-   INSERT INTO forge_mr_events (id, merge_request_id, event_type, author, dedupe_key, created_at) VALUES (1, 1, 'review', 'reviewer', 'review-1', datetime('now'));
-  `)
-		require.NoError(err)
-	})
-	database, err := Open(path)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(database.Close()) })
-	for _, table := range []string{"forge_merge_requests", "forge_issues", "forge_mr_events"} {
-		var association *string
-		require.NoError(database.ReadDB().QueryRowContext(t.Context(), "SELECT author_association FROM "+table+" WHERE id=1").Scan(&association))
-		assert.Nil(association, table)
-		_, err := database.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET author_association='FUTURE_PROVIDER_VALUE' WHERE id=1")
-		require.NoError(err)
-		require.NoError(database.ReadDB().QueryRowContext(t.Context(), "SELECT author_association FROM "+table+" WHERE id=1").Scan(&association))
-		assert.Equal(new("FUTURE_PROVIDER_VALUE"), association)
-	}
-	assertDatabaseIntegrityForTest(t, database.ReadDB())
 }

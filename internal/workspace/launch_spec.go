@@ -168,10 +168,10 @@ func (m *Manager) validateWorkspaceLaunchSpec(
 	if repo == nil ||
 		!strings.EqualFold(repo.Platform, spec.Repository.Provider) ||
 		!strings.EqualFold(repo.PlatformHost, spec.Repository.PlatformHost) ||
-		strings.TrimSpace(repo.PlatformRepoID) != strings.TrimSpace(spec.Repository.PlatformRepoID) {
+		repo.PlatformRepoID != spec.Repository.PlatformRepoID {
 		return false, fmt.Errorf(
 			"%w: workspace launch specification repository identity changed",
-			db.ErrRepositoryRouteFenceChanged,
+			db.ErrRepositoryIdentityChanged,
 		)
 	}
 	routeChanged := !strings.EqualFold(repo.Owner, spec.Repository.Owner) ||

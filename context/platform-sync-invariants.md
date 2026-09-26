@@ -7,90 +7,73 @@ provider interfaces, and the checklist for adding a new provider, read
 
 ## Identity
 
-Provider-verified repository identity is
-`(platform, platform_host, platform_repo_id)`. Owner, name, and `repo_path` are
-mutable routes; route reuse must create a distinct catalog entry rather than
-combining repository-owned history
-(`internal/db/repository_catalog.go::ReconcileRepositoryObservation`).
+Repository identity is `(platform, platform_host, platform_repo_id)`, where
+`platform_repo_id` is the provider's integer repository ID. Every supported
+provider assigns it once per host and keeps it across renames and transfers;
+GitHub's `node_id` has more than one encoding for one repository and is never
+identity. Owner, name, and `repo_path` are the repository's current route.
 
+- Owner/name is edge input. Resolve it to a repository once where it enters
+  (HTTP params, MCP args, config entries, URLs) and key everything below by the
+  repository. A request that carries a provider ID resolves by that ID
+  (`internal/db/queries.go::DB.GetRepoByIdentity`,
+  `internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
+- Provider wrappers expose only the integer ID (`platform.RepoRef.PlatformID`);
+  `GetRepository` reads by ID once the ref carries one, so renames resolve to
+  the current route (`platform/github/provider.go::Provider.GetRepository`).
+- Observing a repository upserts its row by ID and moves owner/name in place;
+  another active row on that route is deactivated and re-resolves by its own ID
+  on its next read. There are no route generations, fences, or observation
+  watermarks: a route changing hands mid-pass self-heals on the next pass
+  (`internal/db/repository_catalog.go::DB.ObserveRepository`).
+- Every repository row has a verified ID; nothing creates route-only rows.
+  Callers holding only a route look up the active occupant or leave the link
+  unset (`internal/server/workspaceapi/projects_handlers.go`).
+- GitHub rows stored before migration 59 hold `github_node_id` until a sync pass
+  resolves it through GitHub (`node(id:)` -> `databaseId`); until then the
+  catalog refuses GitHub observations for that host, so history cannot split
+  across two rows (`internal/github/repository_id_conversion.go`,
+  `internal/db/repository_catalog.go::ErrGitHubRepositoryConversionPending`).
 - Saved repository-filter presets resolve by stable identity and use `repo_path` only for display; reject unverified members and never fall back to a new occupant of the stored route (`internal/config/config.go::RepoPresetRepository`, `frontend/src/lib/stores/repo-presets.ts`).
-
 - `platform` is the provider kind named in the canonical provider list in
   `CLAUDE.md`.
 - `platform_host` is the normalized host for that provider. Preserve ports.
 - Gitea `base_url` changes API transport only; `platform_host` remains identity, and repository reads plus every authenticated Git path reject mismatched or unacknowledged plain-HTTP clone URLs (`platform/gitea/client.go::validateRepositoryCloneURL`, `internal/gitclone/clone.go::validateRemoteTransport`).
 - `owner` and `name` are provider-canonical display/config fields.
 - `repo_path` carries the full provider path when `owner/name` is not enough.
-- `platform_repo_id` / provider external IDs are stable provider identities;
-  preserve human-readable route history across renames and replacements.
 - Offline startup and reload must preserve pinned repository identity: use a matching verified reference or leave the entry untracked.
   A saved route cannot establish identity (`cmd/kenn-forge/main.go::fallbackExactFromDB`,
   `internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`).
-- Rows without a verified provider ID remain inactive legacy records. Never
-  infer their identity from a matching route.
 - Active-route lookups return `db.ActiveRepo`, whose identity is always
   complete. Compare repositories with `platform.RepositoryIdentity` equality
-  through `Identity()` methods, never field by field, and do not re-check an
-  active repository's provider ID for emptiness
+  through `Identity()` methods, never field by field
   (`internal/db/types.go::ActiveRepo`, `platform/repository_identity.go`).
   `Row()` is not nil-safe: handle a `nil, nil` "not found" lookup before
   calling it, or `make nilaway` flags every downstream dereference.
-- Timestamp provider observations before the identity lookup starts; a delayed
-  response must not supersede a newer route observation
-  (`internal/github/sync.go::Syncer.syncRepoIdentity`).
-- Asynchronous provider responses fetched through a mutable route must fence the
-  exact ownership generation before snapshot, notification, or cache commits;
-  same-identity freshness observations do not advance that generation
-  (`internal/db/repository_catalog.go::RepositoryRouteFence`).
-- Workflow reads and dispatch fence route ownership after live provider work;
-  dispatch also re-reads definition state before its single write, so stale UI
-  authority cannot cross revisions (`internal/server/workflowapi/routes.go::Handler.dispatch`).
-- Hub descriptors are provider observations and use the same
-  reconciliation path as sync, enrollment, and project discovery. Spokes must
-  preserve stable provider identity and A-to-B-to-A route generations; they may
-  not create a catalog row from owner/name alone. Descriptor metadata writes
-  remain fenced to the descriptor's observation time
-  (`internal/server/provider_sources.go::hubProviderSource.observeRepositoryDescriptor`).
-- Parallel reads may receive same-identity, same-route descriptors out of order;
-  superseded metadata is skipped but the read remains usable. Identity or route
-  changes still fail closed (`internal/server/provider_sources.go::observeRepositoryDescriptor`).
-- Repository provider metadata and merge settings have a single sync-path
-  writer: commits go through the observation watermark so a delayed snapshot
-  never overwrites a newer same-route observation, and reconciled direct item
-  syncs persist their verified snapshot so a replacement repository row never
-  serves permissive schema defaults. Snapshot fields a provider omits must not
-  erase stored metadata — clone URLs seeded outside the provider resolve
-  clones — and permission-sensitive merge settings are authoritative only when
-  the provider returns the complete settings group; omission retains stored
-  values, while a later complete observation repairs them. A failed settings
-  write stops the item sync instead of
-  populating a row that still advertises default merge availability
-  (`internal/db/repository_catalog.go::UpdateRepoProviderObservation`).
-  Newly verified or legacy-adopted rows fail closed when viewer merge permission
-  is omitted; only an already verified row may preserve its stored permission
-  (`internal/db/repository_catalog.go::ReconcileRepositoryObservation`).
-  Concurrent identity-only observations (the archive lifecycle re-reconciles
-  tracked repositories during route changes and first encounters) advance the
-  watermark without writing settings, so a direct sync whose snapshot loses
-  the watermark must re-resolve rather than proceed unsettled
-  (`internal/github/sync.go::Syncer.reconcileRepoForDirectSync`). Periodic
-  repository sync holds the same line: an uncommitted settings refresh aborts
-  the sync before item indexing and records the aborted attempt on the
-  repository row's sync health; only a provider that cannot report settings
-  is a silent skip (`internal/github/sync.go::Syncer.refreshRepoSettings`,
-  `internal/github/sync.go::Syncer.recordAbortedRepoSync`).
-- Assigning a historically occupied route to another verified repository clears
-  route-scoped state even without an active occupant; migration 47 applies the same
-  cleanup to preexisting reuse, while legacy adoption remains in-place (`internal/db/repository_catalog.go::ReconcileRepositoryObservation`, `internal/db/migrations/000047_repository_route_generation.up.sql:1`).
+- Workflow dispatch re-reads definition state before its single write, so stale
+  UI authority cannot cross revisions (`internal/server/workflowapi/routes.go::Handler.dispatch`).
+- Hub descriptors are provider observations recorded through the same
+  `ObserveRepository` path as sync; spokes never create a catalog row from
+  owner/name alone
+  (`internal/server/provider_sources.go::observeRepositoryDescriptor`).
+- Repository metadata and merge settings are written from the provider snapshot
+  the identity read returned. Omitted fields keep stored values (clone URLs
+  seeded outside the provider resolve clones), and merge settings are written
+  only when the provider returns the complete group. A failed settings write
+  aborts the pass before item indexing and records the attempt on the row's sync
+  health; new rows start with viewer merge permission off
+  (`internal/db/repository_catalog.go::DB.UpdateRepoProviderObservation`,
+  `internal/github/sync.go::Syncer.refreshRepoSettings`).
+- A route that its repository leaves or that another repository takes clears
+  state keyed only by that route (unlinked notifications, HTTP ETags,
+  notification watermarks)
+  (`internal/db/repository_catalog.go::deleteRepositoryRouteScopedStateTx`).
 - Hidden-from-UI is an operator preference keyed by the stable internal catalog
   row, never by mutable config routes — renames keep it, route reuse must not
   inherit it, and only exact configured repositories can be hidden. Correlating
   hidden rows with configured entries and resolving visibility mutations must
   also use the stable provider id, not route keys: a displaced row keeps its
-  old display route. Mutations resolve, validate lifecycle, and write in one
-  critical section under the repository-reconciliation read lock, rejecting
-  non-active rows — a tracked snapshot lagging reconciliation still names the
-  displaced repository
+  old display route. Mutations reject non-active rows
   (`internal/server/settings_handlers.go::applyVisibilityUnderReconciliationRead`).
   Removing the last exact entry for a repository releases its hidden
   preference on every configuration-change path — startup, TOML hot reload,
@@ -117,12 +100,10 @@ opts into case folding (`platform/metadata.go::LowercaseRepoNames`).
 URL-parsed config or provider responses.
 
 Scope repository-owned data by internal repository ID; route-facing requests
-still carry the full provider ref. New provider workspaces persist that internal
-ID, so renames follow the same repository and a replacement repository can use
-the old route without inheriting workspaces. Unresolved legacy workspaces and
-route-only Git operations still fail closed once a route has historical
-occupants (`internal/db/queries.go::DB.workspaceRouteHasHistoricalOccupants`,
-`internal/workspace/manager.go::Manager.verifyWorkspaceRepository`).
+still carry the full provider ref. Workspaces persist that internal ID, so
+renames follow the same repository and a replacement repository can use the old
+route without inheriting workspaces
+(`internal/workspace/manager.go::Manager.verifyWorkspaceRepository`).
 
 ## Provider Hosts And Tokens
 
@@ -234,10 +215,8 @@ fallback. Clone storage and clone-coordination keys must partition providers sha
 distinct stable repository IDs sharing mutable routes
 (`internal/gitclone/clone.go::WithRepositoryIdentity`). Authenticated workspace operations
 must validate the effective origin fetch and push destinations before resolving a credential.
-Pre-stable-ID clone adoption stays offline and requires a catalog-verified stable owner with
-no other route history plus a matching stored origin (`internal/db/repository_catalog.go::DB.AdoptLegacyClonesIfSafe`).
-Stable main storage is an independent copy while the workspace path-scoped main clone remains
-(`internal/gitclone/repo_browser.go::Manager.AdoptLegacyClones`).
+A renamed repository keeps its earlier bare clones inside its identity namespace; linked worktrees
+cannot move between bare repositories (`internal/workspace/manager.go::Manager.workspaceManagedCloneCandidates`).
 Federation-spoke clone work first validates the descriptor remote against that
 exact identity, then requires the executing spoke's exact credential route.
 Credential-required contexts never fall back to anonymous Git if the route or
@@ -247,8 +226,7 @@ spoke credentials return the typed `gitCredentialUnavailable` problem
 `internal/workspace/manager.go::Manager.SetRequireProviderCredential`,
 `internal/server/httpapi/problems.go::GitCredentialUnavailable`).
 Repository-browser refreshes fetch only into unpublished same-filesystem staging and publish with a
-route-generation guard plus reader-exclusive rename swap; failures retain the prior clone. Current
-waiters retry only after stale staging cleanup (`internal/gitclone/repo_browser.go::refreshRepoBrowserClone`).
+reader-exclusive rename swap; failures retain the prior clone (`internal/gitclone/repo_browser.go::refreshRepoBrowserClone`).
 
 Minimum read scope should cover repository metadata, merge requests or pull
 requests, issues, comments, commits, tags, releases, and CI/status data. Write
@@ -401,7 +379,7 @@ registry helpers return typed errors for missing providers or capabilities.
   completed. (`internal/db/queries_archive.go::StartFullArchives`)
 - Configuration reconciliation pauses omitted repositories with a durable `configuration_removed` reason while retaining archive content and progress. Re-adding the same full identity clears only that automatic pause; an operator pause stays paused. (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`, `internal/db/queries_archive.go::EnsureDiscoveryArchives`)
 - Reconcile configured repositories only at startup or configuration reload; idle scheduler passes must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunPass`)
-- The worker caches resolved repositories keyed on configured refs plus the store's repository reconciliation generation, which every catalog write advances, so an unchanged pass runs no resolution queries. (`internal/archive/service.go::workerRepositories`)
+- The worker caches resolved repositories keyed on configured refs, kept only when every ref resolved, so an unchanged pass runs no resolution queries; repository rows keep their ID for life (`internal/archive/service.go::workerRepositories`)
 - Startup reconciliation reopens completed legacy known-item lookups once when
   lifecycle details are missing, independent of historical inventory coverage;
   a close actor is current only when the latest authored close event matches

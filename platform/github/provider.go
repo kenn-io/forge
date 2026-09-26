@@ -42,6 +42,7 @@ type API interface {
 	DeleteIssueComment(ctx context.Context, owner, repo string, commentID int64) error
 	CreatePullRequestReviewCommentReply(ctx context.Context, owner, repo string, number int, body string, commentID int64) (*gh.PullRequestComment, error)
 	GetRepository(ctx context.Context, owner, repo string) (*gh.Repository, error)
+	GetRepositoryByID(ctx context.Context, owner string, id int64) (*gh.Repository, error)
 	CreateReview(ctx context.Context, owner, repo string, number int, event string, body string) (*gh.PullRequestReview, error)
 	CreateReviewWithComments(
 		ctx context.Context,
@@ -393,6 +394,13 @@ func (p *Provider) GetRepository(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) (platform.Repository, error) {
+	if ref.PlatformID != 0 {
+		repo, err := p.client.GetRepositoryByID(ctx, ref.Owner, ref.PlatformID)
+		if err != nil {
+			return platform.Repository{}, err
+		}
+		return GitHubPlatformRepository(p.host, ref.Owner, repo), nil
+	}
 	repo, err := p.client.GetRepository(ctx, ref.Owner, ref.Name)
 	if err != nil {
 		return platform.Repository{}, err
@@ -421,27 +429,24 @@ func GitHubPlatformRepository(
 	}
 	return platform.Repository{
 		Ref: platform.RepoRef{
-			Platform:           platform.KindGitHub,
-			Host:               host,
-			Owner:              strings.ToLower(owner),
-			Name:               strings.ToLower(repo.GetName()),
-			RepoPath:           strings.ToLower(owner) + "/" + strings.ToLower(repo.GetName()),
-			PlatformID:         repo.GetID(),
-			PlatformExternalID: repo.GetNodeID(),
-			WebURL:             repo.GetHTMLURL(),
-			CloneURL:           repo.GetCloneURL(),
-			DefaultBranch:      repo.GetDefaultBranch(),
+			Platform:      platform.KindGitHub,
+			Host:          host,
+			Owner:         strings.ToLower(owner),
+			Name:          strings.ToLower(repo.GetName()),
+			RepoPath:      strings.ToLower(owner) + "/" + strings.ToLower(repo.GetName()),
+			PlatformID:    repo.GetID(),
+			WebURL:        repo.GetHTMLURL(),
+			CloneURL:      repo.GetCloneURL(),
+			DefaultBranch: repo.GetDefaultBranch(),
 		},
-		PlatformID:         repo.GetID(),
-		PlatformExternalID: repo.GetNodeID(),
-		Description:        repo.GetDescription(),
-		Private:            repo.GetPrivate(),
-		Archived:           repo.GetArchived(),
-		MergeSettings:      mergeSettings,
-		ViewerCanMerge:     viewerCanMerge,
-		DefaultBranch:      repo.GetDefaultBranch(),
-		WebURL:             repo.GetHTMLURL(),
-		CloneURL:           repo.GetCloneURL(),
+		Description:    repo.GetDescription(),
+		Private:        repo.GetPrivate(),
+		Archived:       repo.GetArchived(),
+		MergeSettings:  mergeSettings,
+		ViewerCanMerge: viewerCanMerge,
+		DefaultBranch:  repo.GetDefaultBranch(),
+		WebURL:         repo.GetHTMLURL(),
+		CloneURL:       repo.GetCloneURL(),
 	}
 }
 
@@ -473,25 +478,22 @@ func (p *Provider) ListRepositories(
 		repoName := repo.GetName()
 		out = append(out, platform.Repository{
 			Ref: platform.RepoRef{
-				Platform:           platform.KindGitHub,
-				Host:               p.host,
-				Owner:              strings.ToLower(repoOwner),
-				Name:               strings.ToLower(repoName),
-				RepoPath:           strings.ToLower(repoOwner) + "/" + strings.ToLower(repoName),
-				PlatformID:         repo.GetID(),
-				PlatformExternalID: repo.GetNodeID(),
-				WebURL:             repo.GetHTMLURL(),
-				CloneURL:           repo.GetCloneURL(),
-				DefaultBranch:      repo.GetDefaultBranch(),
+				Platform:      platform.KindGitHub,
+				Host:          p.host,
+				Owner:         strings.ToLower(repoOwner),
+				Name:          strings.ToLower(repoName),
+				RepoPath:      strings.ToLower(repoOwner) + "/" + strings.ToLower(repoName),
+				PlatformID:    repo.GetID(),
+				WebURL:        repo.GetHTMLURL(),
+				CloneURL:      repo.GetCloneURL(),
+				DefaultBranch: repo.GetDefaultBranch(),
 			},
-			PlatformID:         repo.GetID(),
-			PlatformExternalID: repo.GetNodeID(),
-			Description:        repo.GetDescription(),
-			Private:            repo.GetPrivate(),
-			Archived:           repo.GetArchived(),
-			DefaultBranch:      repo.GetDefaultBranch(),
-			WebURL:             repo.GetHTMLURL(),
-			CloneURL:           repo.GetCloneURL(),
+			Description:   repo.GetDescription(),
+			Private:       repo.GetPrivate(),
+			Archived:      repo.GetArchived(),
+			DefaultBranch: repo.GetDefaultBranch(),
+			WebURL:        repo.GetHTMLURL(),
+			CloneURL:      repo.GetCloneURL(),
 		})
 	}
 	return out, nil

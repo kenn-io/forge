@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -86,10 +87,7 @@ func seedMergeRequestForRepo(
 ) {
 	t.Helper()
 	ctx := t.Context()
-	if identity.PlatformRepoID == "" {
-		identity.PlatformRepoID = "repo-" + identity.Owner + "-" + identity.Name
-	}
-	repoID, err := database.UpsertRepo(ctx, identity)
+	repoID, err := reposeed.Seed(ctx, database, identity)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -329,8 +327,8 @@ func TestCreateWorktreeFromMergeRequestRouteUnknownNumber(t *testing.T) {
 	defer ts.Close()
 
 	repo := initLifecycleRouteRepo(t)
-	_, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	_, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	projectID := registerIdentifiedProject(t, ts, repo)
@@ -427,10 +425,10 @@ func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 	database := dbtest.Open(t)
 	ref := ghclient.RepoRef{
 		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
-		PlatformExternalID: "repo-acme-widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 	}
-	_, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	_, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	syncer := ghclient.NewSyncer(
@@ -502,8 +500,8 @@ func TestCreateWorktreeFromMergeRequestRouteDoesNotSyncRemovedItem(t *testing.T)
 		Base: &gh.PullRequestBranch{Ref: &baseRef},
 	}}
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
@@ -518,7 +516,7 @@ func TestCreateWorktreeFromMergeRequestRouteDoesNotSyncRemovedItem(t *testing.T)
 		map[string]ghclient.Client{"github.com": mock}, database, nil,
 		[]ghclient.RepoRef{{
 			Platform: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", PlatformExternalID: "repo-acme-widget",
+			Owner: "acme", Name: "widget", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		}},
 		time.Minute, nil, nil,
 	)

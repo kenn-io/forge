@@ -15,7 +15,9 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -26,11 +28,11 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	database := dbtest.Open(t)
-	providerID := "R_renamed_repo"
+	providerID := int64(1001)
 	previousSyncStartedAt := time.Now().UTC().Add(-time.Hour)
 	previousSyncCompletedAt := previousSyncStartedAt.Add(time.Minute)
 
-	sourceID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+	sourceID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: providerID,
@@ -65,10 +67,10 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 	})
 	require.NoError(err)
 
-	destinationID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+	destinationID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "R_obsolete_repo",
+		PlatformRepoID: 1003,
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -118,7 +120,7 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 	mock := &mockGH{
 		getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
 			return &gh.Repository{
-				ID: new(int64(7001)), NodeID: &providerID,
+				ID:    &providerID,
 				Owner: &gh.User{Login: new("acme")}, Name: new("widget"),
 				AllowSquashMerge: new(true), AllowMergeCommit: new(false),
 				AllowRebaseMerge: new(false),
@@ -127,12 +129,11 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 		},
 	}
 	ref := ghclient.RepoRef{
-		Platform:           platform.KindGitHub,
-		PlatformHost:       "github.com",
-		PlatformExternalID: providerID,
-		Owner:              "acme",
-		Name:               "widget",
-		RepoPath:           "acme/widget",
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	}
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -186,12 +187,12 @@ func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	database := dbtest.Open(t)
-	displacedProviderID := "R_displaced_repo"
-	incomingProviderID := "R_incoming_repo"
+	displacedProviderID := int64(1001)
+	incomingProviderID := int64(1002)
 	previousSyncStartedAt := time.Now().UTC().Add(-time.Hour)
 	previousSyncCompletedAt := previousSyncStartedAt.Add(time.Minute)
 
-	displacedID, err := database.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+	displacedID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
 		PlatformRepoID: displacedProviderID,
@@ -199,12 +200,11 @@ func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
 		Name:           "widget",
 	})
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(ctx, displacedID, db.RepoProviderMetadata{
-		PlatformRepoID: displacedProviderID,
-		WebURL:         "https://github.com/acme/obsolete-widget",
-		CloneURL:       "https://github.com/acme/obsolete-widget.git",
-		DefaultBranch:  "obsolete-main",
-	}))
+	require.NoError(database.UpdateRepoProviderObservation(ctx, displacedID, db.RepoProviderMetadata{
+		WebURL:        "https://github.com/acme/obsolete-widget",
+		CloneURL:      "https://github.com/acme/obsolete-widget.git",
+		DefaultBranch: "obsolete-main",
+	}, nil, nil))
 	require.NoError(database.UpdateRepoSettings(ctx, displacedID, false, false, false, false))
 	require.NoError(database.UpdateRepoSyncStarted(ctx, displacedID, previousSyncStartedAt))
 	require.NoError(database.UpdateRepoSyncCompleted(ctx, displacedID, previousSyncCompletedAt, ""))
@@ -240,7 +240,7 @@ func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
 	mock := &mockGH{
 		getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
 			return &gh.Repository{
-				ID: new(int64(8001)), NodeID: &incomingProviderID,
+				ID:    &incomingProviderID,
 				Owner: &gh.User{Login: new("acme")}, Name: new("widget"),
 				AllowSquashMerge: new(true), AllowMergeCommit: new(true),
 				AllowRebaseMerge: new(true),
@@ -249,12 +249,11 @@ func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
 		},
 	}
 	ref := ghclient.RepoRef{
-		Platform:           platform.KindGitHub,
-		PlatformHost:       "github.com",
-		PlatformExternalID: incomingProviderID,
-		Owner:              "acme",
-		Name:               "widget",
-		RepoPath:           "acme/widget",
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	}
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": mock},
@@ -317,8 +316,8 @@ func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	// Keep merge permission available so this fixture isolates the rate-limit
 	// gate instead of the fail-closed viewer permission gate.
@@ -362,81 +361,4 @@ func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
 	assert.Equal("github.com rate-limited", *merge.UnavailableReason)
 	require.NotNil(merge.RetryAt)
 	assert.Equal(resetAt.Format(time.RFC3339), *merge.RetryAt)
-}
-
-// TestRepoSyncHealthReportsSettingsFailureE2E drives the real sync entry
-// point over HTTP against SQLite. A catalog observation newer than anything
-// the sync can produce makes every settings commit lose the watermark, so the
-// sync aborts before item indexing; the repository API must expose that
-// failure instead of reporting the repository as healthy.
-func TestRepoSyncHealthReportsSettingsFailureE2E(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	database := dbtest.Open(t)
-	providerID := "R_health_repo"
-	previousSyncStartedAt := time.Now().UTC().Add(-time.Hour)
-	previousSyncCompletedAt := previousSyncStartedAt.Add(time.Minute)
-
-	entry, accepted, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: providerID,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
-	}, time.Now().UTC().Add(time.Hour))
-	require.NoError(err)
-	require.True(accepted)
-	require.NoError(database.UpdateRepoSyncStarted(
-		ctx, entry.Repository.ID, previousSyncStartedAt,
-	))
-	require.NoError(database.UpdateRepoSyncCompleted(
-		ctx, entry.Repository.ID, previousSyncCompletedAt, "",
-	))
-
-	mock := &mockGH{
-		getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
-			return &gh.Repository{
-				ID: new(int64(9001)), NodeID: &providerID,
-				Owner: &gh.User{Login: new("acme")}, Name: new("widget"),
-				AllowSquashMerge: new(true), AllowMergeCommit: new(true),
-				AllowRebaseMerge: new(true),
-				Permissions:      &gh.RepositoryPermissions{Push: new(true)},
-			}, nil
-		},
-	}
-	ref := ghclient.RepoRef{
-		Platform:           platform.KindGitHub,
-		PlatformHost:       "github.com",
-		PlatformExternalID: providerID,
-		Owner:              "acme",
-		Name:               "widget",
-		RepoPath:           "acme/widget",
-	}
-	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": mock},
-		database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
-	)
-	t.Cleanup(syncer.Stop)
-	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{
-		HostCheckAllowLoopbackAnyPort: true,
-	})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	forge := httptest.NewServer(srv)
-	t.Cleanup(forge.Close)
-
-	status, body := postJSON(t, forge.Client(), forge.URL+"/api/v1/sync", nil)
-	require.Equal(http.StatusAccepted, status, body)
-	repo := waitForRepoSynced(t, database, "acme", "widget", &previousSyncCompletedAt)
-	require.Contains(repo.LastSyncError, "kept losing")
-
-	client, err := apiclient.NewWithHTTPClient(forge.URL, forge.Client())
-	require.NoError(err)
-	response, err := client.HTTP.GetRepoWithResponse(ctx, &generated.GetRepoRequestOptions{PathParams: &generated.GetRepoPath{Provider: "github", Owner: "acme", Name: "widget"}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode, string(response.Body))
-	require.NotNil(response.JSON200)
-	assert.Contains(response.JSON200.LastSyncError, "kept losing")
 }

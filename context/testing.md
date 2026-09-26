@@ -413,7 +413,7 @@ concern. The main levers are:
   short polling loops that check immediately before waiting;
 - reuse migrated SQLite template databases for isolated non-migration tests;
 - prepare SQLite fixtures before starting a subprocess timeout and pass the file
-  to the child; process-local template caches are cold after exec (`internal/workspace/manager_test.go::TestSyncWorkspaceBaseBranchSurvivesQueuedReconciliationWriter`);
+  to the child; process-local template caches are cold after exec;
 - add `t.Parallel` only after proving the test does not touch process-global
   state, fixed external resources, shared tmux sessions, or shared database
   files.

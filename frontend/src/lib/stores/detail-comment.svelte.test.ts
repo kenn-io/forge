@@ -90,7 +90,7 @@ function makeDetail(events: unknown[] = [], number = 1): MockDetail {
     repo: {
       provider: pullRef.provider,
       platform_host: pullRef.platformHost,
-      platform_repo_id: "repo-octo-repo",
+      platform_repo_id: 1017,
       owner: "octo",
       name: "repo",
       repo_path: pullRef.repoPath,

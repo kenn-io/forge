@@ -14,9 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/forge/platform"
 	"go.kenn.io/kit/atomicfile"
 	"golang.org/x/sync/singleflight"
+
+	"go.kenn.io/forge/platform"
 )
 
 const (

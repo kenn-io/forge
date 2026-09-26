@@ -167,8 +167,7 @@ func reduce(event string, body []byte, allowed []int64) ([]Hint, error) {
 	}
 	var payload struct {
 		Repository struct {
-			ID     int64  `json:"id"`
-			NodeID string `json:"node_id"`
+			ID int64 `json:"id"`
 		} `json:"repository"`
 		PullRequest *pullReference `json:"pull_request"`
 		Issue       *struct {
@@ -185,7 +184,7 @@ func reduce(event string, body []byte, allowed []int64) ([]Hint, error) {
 	if json.Unmarshal(body, &payload) != nil || payload.Repository.ID <= 0 || !slices.Contains(allowed, payload.Repository.ID) {
 		return nil, errors.New("invalid webhook repository")
 	}
-	hint := Hint{Provider: "github", Host: "github.com", RepositoryID: payload.Repository.NodeID}
+	hint := Hint{Provider: "github", Host: "github.com", RepositoryID: payload.Repository.ID}
 	switch event {
 	case "pull_request", "pull_request_review", "pull_request_review_comment", "pull_request_review_thread":
 		if payload.PullRequest == nil {

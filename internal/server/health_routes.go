@@ -5,6 +5,7 @@ import (
 	"runtime/debug"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/server/httpapi"
 )
 

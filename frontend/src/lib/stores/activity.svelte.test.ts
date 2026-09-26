@@ -321,7 +321,7 @@ describe("activity store collapse state", () => {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: "repo-7",
+        platform_repo_id: 1007,
         repo_path: "acme/widgets",
         owner: "acme",
         name: "widgets",
@@ -355,7 +355,7 @@ describe("activity store collapse state", () => {
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
     expect(threadQueries).toHaveLength(0);
 
-    store.loadThreadPreview("github|github.com|id|repo-7:pr:7");
+    store.loadThreadPreview("github|github.com|id|1007:pr:7");
     await vi.waitFor(() => expect(threadQueries).toHaveLength(1));
 
     expect(threadQueries[0]).toEqual(expect.objectContaining({ limit: 10, at_or_before: "hidden:9" }));
@@ -427,7 +427,7 @@ describe("activity store collapse state", () => {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: "repo-7",
+        platform_repo_id: 1007,
         repo_path: "acme/widgets",
         owner: "acme",
         name: "widgets",
@@ -468,7 +468,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
-    const key = "github|github.com|id|repo-7:pr:7";
+    const key = "github|github.com|id|1007:pr:7";
     store.toggleThreadItem(key);
     await vi.waitFor(() => expect(threadQueries).toHaveLength(2));
     store.toggleThreadItem(key);
@@ -478,7 +478,7 @@ describe("activity store collapse state", () => {
       expect.objectContaining({
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: "repo-7",
+        platform_repo_id: 1007,
         item_type: "pr",
         item_number: 7,
         unassigned: true,
@@ -492,7 +492,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -543,7 +543,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
 
-    const key = "github|github.com|id|repo-7:pr:7";
+    const key = "github|github.com|id|1007:pr:7";
     store.toggleThreadItem(key);
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([firstEvent.id]));
 
@@ -559,7 +559,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -621,7 +621,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
 
-    const key = "github|github.com|id|repo-7:pr:7";
+    const key = "github|github.com|id|1007:pr:7";
     store.toggleThreadItem(key);
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([staleComment.id]));
 
@@ -657,7 +657,7 @@ describe("activity store collapse state", () => {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: "repo-7",
+        platform_repo_id: 1007,
         repo_path: "acme/widgets",
         owner: "acme",
         name: "widgets",
@@ -690,7 +690,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
     await vi.waitFor(() => expect(threadQuery).toBeDefined());
 
     expect(threadQuery).toEqual(
@@ -705,7 +705,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -770,7 +770,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -825,7 +825,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
 
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
     await vi.waitFor(() => expect(threadQueries).toHaveLength(1));
 
     if (runtime === undefined) throw new Error("test runtime was not created");
@@ -848,7 +848,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -902,7 +902,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
 
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
     await vi.waitFor(() => expect(threadReads).toBe(1));
 
     if (runtime === undefined) throw new Error("test runtime was not created");
@@ -932,7 +932,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -990,7 +990,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
 
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
     await vi.waitFor(() => expect(threadReads).toBe(1));
 
     if (runtime === undefined) throw new Error("test runtime was not created");
@@ -1010,7 +1010,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -1068,7 +1068,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
 
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([originalEvent.id]));
 
     if (runtime === undefined) throw new Error("test runtime was not created");
@@ -1079,7 +1079,7 @@ describe("activity store collapse state", () => {
     }).exit;
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([]));
 
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
 
     await runtime.runCommand(store.reconcileActivityEffect(), {
       operation: "reconcile reappeared activity parent in test",
@@ -1088,7 +1088,7 @@ describe("activity store collapse state", () => {
     }).exit;
 
     expect(threadReads).toBe(1);
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
 
     await vi.waitFor(() => expect(threadReads).toBe(2));
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([reappearedEvent.id]));
@@ -1098,7 +1098,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -1151,7 +1151,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -1215,7 +1215,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([originalSubject]));
 
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
     await vi.waitFor(() => expect(threadReads).toBe(1));
 
     if (runtime === undefined) throw new Error("test runtime was not created");
@@ -1239,7 +1239,7 @@ describe("activity store collapse state", () => {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: "repo-7",
+        platform_repo_id: 1007,
         repo_path: "acme/widgets",
         owner: "acme",
         name: "widgets",
@@ -1307,7 +1307,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
 
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
     await vi.waitFor(() => expect(store.getThreadLoadError()).toBe("thread history unavailable"));
     expect(store.getActivityItems()).toEqual([]);
 
@@ -1326,7 +1326,7 @@ describe("activity store collapse state", () => {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: "repo-7",
+        platform_repo_id: 1007,
         repo_path: "acme/widgets",
         owner: "acme",
         name: "widgets",
@@ -1363,7 +1363,7 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity()).toEqual([subject]));
 
-    store.toggleThreadItem("github|github.com|id|repo-7:pr:7");
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
     await vi.waitFor(() =>
       expect(get.mock.calls.filter(([path]) => path === "/activity/thread-events")).toHaveLength(1),
     );
@@ -1438,7 +1438,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -1522,7 +1522,7 @@ describe("activity store collapse state", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-7",
+      platform_repo_id: 1007,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -2928,7 +2928,7 @@ describe("activity polling recovery", () => {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: "repo-original",
+        platform_repo_id: 1013,
         owner: "acme",
         name: "widgets",
         repo_path: "acme/widgets",
@@ -2957,7 +2957,7 @@ describe("activity polling recovery", () => {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: "repo-original",
+        platform_repo_id: 1013,
         owner: "acme",
         name: "widgets-renamed",
         repo_path: "acme/widgets-renamed",
@@ -2971,7 +2971,7 @@ describe("activity polling recovery", () => {
       repo_name: "widgets",
       repo: {
         ...renamed.repo,
-        platform_repo_id: "repo-replacement",
+        platform_repo_id: 1012,
         name: "widgets",
         repo_path: "acme/widgets",
       },
@@ -3264,7 +3264,7 @@ describe("activity polling recovery", () => {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: "repo-1",
+        platform_repo_id: 1011,
         owner: "acme",
         name: "widgets",
         repo_path: "acme/widgets",
@@ -3285,7 +3285,7 @@ describe("activity polling recovery", () => {
                   repo: {
                     provider: "github",
                     platform_host: "github.com",
-                    platform_repo_id: "repo-1",
+                    platform_repo_id: 1011,
                     owner: "acme",
                     name: "widgets",
                     repo_path: "acme/widgets",
@@ -3374,7 +3374,7 @@ describe("activity polling recovery", () => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-1",
+      platform_repo_id: 1011,
       owner: "acme",
       name: "widgets",
       repo_path: "acme/widgets",

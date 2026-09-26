@@ -102,14 +102,14 @@ export class PRCIRefreshedEvent extends Schema.Class<PRCIRefreshedEvent>("PRCIRe
 export class WorkflowRunsChangedEvent extends Schema.Class<WorkflowRunsChangedEvent>("WorkflowRunsChangedEvent")({
   provider: Schema.String,
   platform_host: Schema.String,
-  platform_repo_id: Schema.String,
+  platform_repo_id: Schema.Number,
 }) {}
 
 export class WorkflowDispatchProgressEvent extends Schema.Class<WorkflowDispatchProgressEvent>(
   "WorkflowDispatchProgressEvent",
 )({
   provider: Schema.String,
-  platform_repo_id: Schema.String,
+  platform_repo_id: Schema.Number,
   platform_host: Schema.String,
   repo_path: Schema.String,
   owner: Schema.String,

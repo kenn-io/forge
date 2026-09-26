@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,7 +51,7 @@ func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	replacementBare, err := fixture.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), "repo-current-occupant"),
+		gitclone.WithRepositoryIdentity(t.Context(), 2002),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)
@@ -66,16 +65,15 @@ func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
 		t, replacementBare, "config", "--add",
 		"url."+fixture.remote+".insteadOf", "https://github.com/acme/widget.git",
 	)
-	current, _, err := fixture.database.ReconcileRepositoryObservation(
+	current, err := fixture.database.ObserveRepository(
 		t.Context(),
 		db.RepoIdentity{
 			Platform:       "github",
 			PlatformHost:   "github.com",
-			PlatformRepoID: "repo-current-occupant",
+			PlatformRepoID: 2002,
 			Owner:          "acme",
 			Name:           "widget",
 		},
-		time.Now().UTC().Add(time.Hour),
 	)
 	require.NoError(err)
 	require.NotNil(current)

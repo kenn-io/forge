@@ -21,6 +21,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"go.kenn.io/forge/internal/testutil/reposeed"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,6 +34,7 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/platform"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -56,12 +59,17 @@ func seedRepo(
 ) int64 {
 	t.Helper()
 	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = "repo-" + owner + "-" + name
-	id, err := d.UpsertRepo(
-		t.Context(), identity,
+	identity.PlatformRepoID = testRepoID(owner, name)
+	id, err := reposeed.Seed(
+		t.Context(), d, identity,
 	)
 	require.NoError(t, err)
 	return id
+}
+
+// testRepoID is the provider repository ID seedRepo assigns to owner/name.
+func testRepoID(owner, name string) int64 {
+	return reposeed.SyntheticID(db.GitHubRepoIdentity("github.com", owner, name))
 }
 
 func seedMR(
@@ -124,7 +132,7 @@ func pullLaunchSpecForWorkspace(
 		Version: WorkspaceLaunchSpecVersion,
 		Repository: WorkspaceLaunchRepository{
 			Provider: ws.Platform, PlatformHost: ws.PlatformHost,
-			PlatformRepoID: "repo-test", Owner: firstNonEmpty(ws.RepoOwner, "acme"),
+			PlatformRepoID: 1023, Owner: firstNonEmpty(ws.RepoOwner, "acme"),
 			Name: firstNonEmpty(ws.RepoName, "widget"),
 			CloneURL: "https://" + ws.PlatformHost + "/" +
 				firstNonEmpty(ws.RepoOwner, "acme") + "/" +
@@ -329,13 +337,12 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 			if repoName == "" {
 				repoName = "widget"
 			}
-			repoID, err := d.UpsertRepo(t.Context(), db.RepoIdentity{
-				Platform:       provider,
-				PlatformHost:   platformHost,
-				PlatformRepoID: "repo-" + provider + "-" + owner + "-" + repoName,
-				Owner:          owner,
-				Name:           repoName,
-				RepoPath:       owner + "/" + repoName,
+			repoID, err := reposeed.Seed(t.Context(), d, db.RepoIdentity{
+				Platform:     provider,
+				PlatformHost: platformHost,
+				Owner:        owner,
+				Name:         repoName,
+				RepoPath:     owner + "/" + repoName,
 			})
 			require.NoError(err)
 			seedMRWithHeadRepo(
@@ -460,8 +467,8 @@ func TestRefreshWorkspaceHeadRepoFollowsStableRepositoryAfterRename(
 	assert := assert.New(t)
 	d := openTestDB(t)
 	ctx := t.Context()
-	providerRepoID := "gid://gitlab/Project/42"
-	repoID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
+	providerRepoID := int64(1002)
+	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.com",
 		PlatformRepoID: providerRepoID,
@@ -485,13 +492,13 @@ func TestRefreshWorkspaceHeadRepoFollowsStableRepositoryAfterRename(
 	}
 	require.NoError(d.InsertWorkspace(ctx, ws))
 
-	_, _, err = d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+	_, err = d.ObserveRepository(ctx, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.com",
 		PlatformRepoID: providerRepoID,
 		Owner:          "new-group",
 		Name:           "new-name",
-	}, time.Now().UTC())
+	})
 	require.NoError(err)
 
 	mgr := NewManager(d, t.TempDir())
@@ -515,12 +522,11 @@ func TestRefreshWorkspaceHeadRepoRejectsReplacementAtInactiveRepositoryRoute(
 ) {
 	require := require.New(t)
 	database := openTestDB(t)
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	original, _, err := database.ReconcileRepositoryObservation(
+	original, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-original", Owner: "acme", Name: "widget",
-		}, observedAt,
+			PlatformRepoID: 1020, Owner: "acme", Name: "widget",
+		},
 	)
 	require.NoError(err)
 	require.NotNil(original)
@@ -536,16 +542,17 @@ func TestRefreshWorkspaceHeadRepoRejectsReplacementAtInactiveRepositoryRoute(
 	}
 	require.NoError(database.InsertWorkspace(t.Context(), workspace))
 	require.Equal(original.Repository.ID, workspace.RepoID)
-	_, err = database.DeactivateRepositoryObservation(
-		t.Context(), "github", "github.com", "repo-original",
-		observedAt.Add(time.Minute),
+	_, err = database.DeactivateRepository(
+		t.Context(), platform.RepositoryIdentity{
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1020,
+		},
 	)
 	require.NoError(err)
-	replacement, _, err := database.ReconcileRepositoryObservation(
+	replacement, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-replacement", Owner: "acme", Name: "widget",
-		}, observedAt.Add(2*time.Minute),
+			PlatformRepoID: 1022, Owner: "acme", Name: "widget",
+		},
 	)
 	require.NoError(err)
 	require.NotNil(replacement)
@@ -562,112 +569,6 @@ func TestRefreshWorkspaceHeadRepoRejectsReplacementAtInactiveRepositoryRoute(
 	require.NoError(err)
 	require.NotNil(stored)
 	require.Nil(stored.MRHeadRepo)
-}
-
-func TestRefreshWorkspaceHeadRepoBlocksRepositoryReconciliation(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	providerRepoID := "gid://gitlab/Project/42"
-	sourceID, err := d.UpsertRepoByProviderID(ctx, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: providerRepoID,
-		Owner:          "old-group",
-		Name:           "old-name",
-	})
-	require.NoError(err)
-	forkURL := "https://gitlab.com/contributor/widget.git"
-	seedMRWithHeadRepo(t, d, sourceID, 42, "feature/thing", forkURL)
-	_, err = d.UpsertRepo(ctx, db.RepoIdentity{
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.com",
-		Owner:        "new-group",
-		Name:         "new-name",
-	})
-	require.NoError(err)
-	ws := &Workspace{
-		ID:           "ws-reconciliation-barrier",
-		Platform:     "gitlab",
-		PlatformHost: "gitlab.com",
-		RepoOwner:    "old-group",
-		RepoName:     "old-name",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feature/thing",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-	}
-	require.NoError(d.InsertWorkspace(ctx, ws))
-
-	snapshotRead := make(chan struct{})
-	continueRefresh := make(chan struct{})
-	var signalSnapshot sync.Once
-	mgr := NewManager(d, t.TempDir())
-	mgr.afterHeadRepoSnapshotRead = func() {
-		signalSnapshot.Do(func() { close(snapshotRead) })
-		<-continueRefresh
-	}
-	refreshDone := make(chan error, 1)
-	go func() {
-		refreshDone <- mgr.RefreshWorkspaceHeadRepo(ctx, ws)
-	}()
-	select {
-	case <-snapshotRead:
-	case <-time.After(5 * time.Second):
-		require.Fail("head-repository refresh did not reach snapshot read")
-	}
-
-	writeLockAttempted := make(chan struct{})
-	restoreWriteLockHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(
-		func() { close(writeLockAttempted) },
-	)
-	defer restoreWriteLockHook()
-	reconciliationDone := make(chan error, 1)
-	go func() {
-		_, _, reconcileErr := d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-			Platform:       "gitlab",
-			PlatformHost:   "gitlab.com",
-			PlatformRepoID: providerRepoID,
-			Owner:          "new-group",
-			Name:           "new-name",
-		}, time.Now().UTC())
-		reconciliationDone <- reconcileErr
-	}()
-	select {
-	case <-writeLockAttempted:
-	case <-time.After(5 * time.Second):
-		require.Fail("repository reconciliation did not attempt its write lock")
-	}
-	select {
-	case upsertErr := <-reconciliationDone:
-		require.NoError(upsertErr)
-		require.Fail("repository reconciliation bypassed the active refresh barrier")
-	default:
-	}
-
-	close(continueRefresh)
-	select {
-	case refreshErr := <-refreshDone:
-		require.NoError(refreshErr)
-	case <-time.After(5 * time.Second):
-		require.Fail("head-repository refresh did not finish")
-	}
-	select {
-	case upsertErr := <-reconciliationDone:
-		require.NoError(upsertErr)
-	case <-time.After(5 * time.Second):
-		require.Fail("repository reconciliation did not resume")
-	}
-
-	stored, err := d.GetWorkspace(ctx, ws.ID)
-	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal("new-group", stored.RepoOwner)
-	assert.Equal("new-name", stored.RepoName)
-	require.NotNil(stored.MRHeadRepo)
-	assert.Equal(forkURL, *stored.MRHeadRepo)
 }
 
 func TestRefreshWorkspaceHeadRepoRejectsLegacyWorkspaceWhenRouteAppearsLater(t *testing.T) {
@@ -1298,7 +1199,7 @@ func TestCreateIssueRecoveryRejectsManagedCloneWithWrongOrigin(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		gitclone.WithRepositoryIdentity(t.Context(), testRepoID("acme", "widget")),
 		"github", host, owner, name,
 	)
 	require.NoError(err)
@@ -1358,7 +1259,7 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		gitclone.WithRepositoryIdentity(t.Context(), testRepoID("acme", "widget")),
 		"github", host, owner, name,
 	)
 	require.NoError(err)
@@ -1389,68 +1290,7 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 	assert.Equal("error", stored.Status)
 }
 
-func TestSetupReusesPreIdentityManagedCloneAfterRepositoryBackfill(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	worktreeRoot := t.TempDir()
-	_, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
-		t, "feature/seven",
-	)
-	remoteURL := "http://" + platformHost + "/acme/widget.git"
-	repoID := seedRepo(t, database, platformHost, "acme", "widget")
-	require.NoError(database.UpdateRepoProviderMetadata(
-		t.Context(), repoID, db.RepoProviderMetadata{
-			CloneURL: remoteURL, DefaultBranch: "main",
-		},
-	))
-
-	spec := launchSpecForTest()
-	spec.Repository.PlatformHost = platformHost
-	spec.Repository.PlatformRepoID = "repo-acme-widget"
-	spec.Repository.CloneURL = remoteURL
-	manager := NewManager(database, worktreeRoot)
-	manager.SetNow(func() time.Time { return spec.IssuedAt })
-	workspace, err := manager.CreateFromLaunchSpec(t.Context(), spec)
-	require.NoError(err)
-
-	clones := gitclone.New(t.TempDir(), nil)
-	require.NoError(clones.EnsureClone(
-		t.Context(), "github", platformHost, "acme", "widget", remoteURL,
-	))
-	legacyClone, err := clones.ClonePath("github", platformHost, "acme", "widget")
-	require.NoError(err)
-	runWorkspaceTestGit(
-		t, legacyClone, "worktree", "add", "-b", syntheticPRWorktreeBranch(spec.ItemNumber),
-		workspace.WorktreePath, "refs/remotes/origin/"+spec.GitHeadRef,
-	)
-	manager.SetClones(clones)
-
-	err = manager.Setup(t.Context(), workspace)
-
-	require.NoError(err)
-	persisted, err := database.GetWorkspace(t.Context(), workspace.ID)
-	require.NoError(err)
-	require.NotNil(persisted)
-	require.Equal("ready", persisted.Status)
-	commonDir, err := worktreeCommonGitDir(t.Context(), workspace.WorktreePath)
-	require.NoError(err)
-	canonicalLegacyClone, err := canonicalFilesystemPath(legacyClone)
-	require.NoError(err)
-	require.Equal(canonicalLegacyClone, commonDir)
-}
-
 func TestSetupReusesIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
-	testSetupReusesManagedCloneAfterRepositoryRename(t, true)
-}
-
-func TestSetupReusesPreIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
-	testSetupReusesManagedCloneAfterRepositoryRename(t, false)
-}
-
-func testSetupReusesManagedCloneAfterRepositoryRename(
-	t *testing.T, identityScoped bool,
-) {
-	t.Helper()
 	require := require.New(t)
 	database := openTestDB(t)
 	worktreeRoot := t.TempDir()
@@ -1459,21 +1299,18 @@ func testSetupReusesManagedCloneAfterRepositoryRename(
 	)
 	renamedRemote := filepath.Join(filepath.Dir(remote), "renamed.git")
 	require.NoError(os.Symlink(remote, renamedRemote))
-	twiceRenamedRemote := filepath.Join(filepath.Dir(remote), "twice-renamed.git")
-	require.NoError(os.Symlink(remote, twiceRenamedRemote))
 	oldRemoteURL := "http://" + platformHost + "/acme/widget.git"
 	newRemoteURL := "http://" + platformHost + "/acme/renamed.git"
-	twiceRenamedRemoteURL := "http://" + platformHost + "/acme/twice-renamed.git"
 	repoID := seedRepo(t, database, platformHost, "acme", "widget")
-	require.NoError(database.UpdateRepoProviderMetadata(
+	require.NoError(database.UpdateRepoProviderObservation(
 		t.Context(), repoID, db.RepoProviderMetadata{
 			CloneURL: oldRemoteURL, DefaultBranch: "main",
-		},
+		}, nil, nil,
 	))
 
 	spec := launchSpecForTest()
 	spec.Repository.PlatformHost = platformHost
-	spec.Repository.PlatformRepoID = "repo-acme-widget"
+	spec.Repository.PlatformRepoID = testRepoID("acme", "widget")
 	spec.Repository.CloneURL = oldRemoteURL
 	manager := NewManager(database, worktreeRoot)
 	manager.SetTmuxCommand([]string{"/usr/bin/true"})
@@ -1482,12 +1319,9 @@ func testSetupReusesManagedCloneAfterRepositoryRename(
 	require.NoError(err)
 
 	clones := gitclone.New(t.TempDir(), nil)
-	cloneCtx := t.Context()
-	if identityScoped {
-		cloneCtx = gitclone.WithRepositoryIdentity(
-			cloneCtx, spec.Repository.PlatformRepoID,
-		)
-	}
+	cloneCtx := gitclone.WithRepositoryIdentity(
+		t.Context(), spec.Repository.PlatformRepoID,
+	)
 	require.NoError(clones.EnsureClone(
 		cloneCtx, "github", platformHost, "acme", "widget", oldRemoteURL,
 	))
@@ -1501,18 +1335,18 @@ func testSetupReusesManagedCloneAfterRepositoryRename(
 	)
 	manager.SetClones(clones)
 
-	_, _, err = database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: platformHost,
 			PlatformRepoID: spec.Repository.PlatformRepoID,
 			Owner:          "acme", Name: "renamed",
-		}, time.Now().UTC().Add(time.Hour),
+		},
 	)
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(
+	require.NoError(database.UpdateRepoProviderObservation(
 		t.Context(), repoID, db.RepoProviderMetadata{
 			CloneURL: newRemoteURL, DefaultBranch: "main",
-		},
+		}, nil, nil,
 	))
 	renamedSpec := spec
 	renamedSpec.Repository.Name = "renamed"
@@ -1527,23 +1361,6 @@ func testSetupReusesManagedCloneAfterRepositoryRename(
 	err = manager.Setup(t.Context(), workspace)
 
 	require.NoError(err)
-	runWorkspaceTestGit(t, oldClone, "remote", "set-url", "origin", oldRemoteURL)
-	validationCalls := 0
-	_, err = manager.reuseExistingWorkspaceWorktreeDetails(
-		t.Context(), workspace, &renamedSpec,
-		func(context.Context) error {
-			validationCalls++
-			if validationCalls == 3 {
-				return db.ErrRepositoryRouteFenceChanged
-			}
-			return nil
-		},
-	)
-	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
-	originURLs, err := gitConfigValues(t.Context(), oldClone, "remote.origin.url")
-	require.NoError(err)
-	require.Equal([]string{oldRemoteURL}, originURLs,
-		"a rejected refresh must restore the historical origin")
 	require.NoError(manager.Setup(t.Context(), workspace),
 		"a retargeted historical clone must remain reusable")
 	persisted, err := database.GetWorkspace(t.Context(), workspace.ID)
@@ -1555,82 +1372,36 @@ func testSetupReusesManagedCloneAfterRepositoryRename(
 	canonicalOldClone, err := canonicalFilesystemPath(oldClone)
 	require.NoError(err)
 	require.Equal(canonicalOldClone, commonDir)
-	originURLs, err = gitConfigValues(t.Context(), oldClone, "remote.origin.url")
+	originURLs, err := gitConfigValues(t.Context(), oldClone, "remote.origin.url")
 	require.NoError(err)
 	require.Equal([]string{newRemoteURL}, originURLs)
-
-	_, _, err = database.ReconcileRepositoryObservation(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: platformHost,
-			PlatformRepoID: spec.Repository.PlatformRepoID,
-			Owner:          "acme", Name: "twice-renamed",
-		}, time.Now().UTC().Add(2*time.Hour),
-	)
-	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(
-		t.Context(), repoID, db.RepoProviderMetadata{
-			CloneURL: twiceRenamedRemoteURL, DefaultBranch: "main",
-		},
-	))
-	twiceRenamedSpec := renamedSpec
-	twiceRenamedSpec.Repository.Name = "twice-renamed"
-	twiceRenamedSpec.Repository.CloneURL = twiceRenamedRemoteURL
-	twiceRenamedSpec.IssuedAt = renamedSpec.IssuedAt.Add(time.Minute)
-	twiceRenamedSpec.SourceVisibleUntil = twiceRenamedSpec.IssuedAt.Add(
-		WorkspaceLaunchSpecVisibilityLease,
-	)
-	manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: twiceRenamedSpec})
-	manager.SetNow(func() time.Time { return twiceRenamedSpec.IssuedAt })
-
-	require.NoError(manager.Setup(t.Context(), workspace),
-		"a clone retargeted by an earlier rename must survive another rename")
-	commonDir, err = worktreeCommonGitDir(t.Context(), workspace.WorktreePath)
-	require.NoError(err)
-	require.Equal(canonicalOldClone, commonDir)
-	originURLs, err = gitConfigValues(t.Context(), oldClone, "remote.origin.url")
-	require.NoError(err)
-	require.Equal([]string{twiceRenamedRemoteURL}, originURLs)
 }
 
-func TestManagedClonePathsExcludeLegacyRouteAfterReuse(t *testing.T) {
+func TestManagedClonePathsIncludeEveryCloneInIdentityNamespace(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	original := db.RepoIdentity{
+	entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-original", Owner: "acme", Name: "widget",
-	}
-	entry, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), original, observedAt,
-	)
+		PlatformRepoID: 1020, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
 	require.NotNil(entry)
 
-	original.Name = "widget-original"
-	_, _, err = database.ReconcileRepositoryObservation(
-		t.Context(), original, observedAt.Add(time.Minute),
-	)
-	require.NoError(err)
-	replacement := db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-replacement", Owner: "acme", Name: "widget",
-	}
-	_, _, err = database.ReconcileRepositoryObservation(
-		t.Context(), replacement, observedAt.Add(2*time.Minute),
-	)
-	require.NoError(err)
-	replacement.Name = "widget-replacement"
-	_, _, err = database.ReconcileRepositoryObservation(
-		t.Context(), replacement, observedAt.Add(3*time.Minute),
-	)
-	require.NoError(err)
-	original.Name = "widget"
-	_, _, err = database.ReconcileRepositoryObservation(
-		t.Context(), original, observedAt.Add(4*time.Minute),
-	)
-	require.NoError(err)
-
 	clones := gitclone.New(t.TempDir(), nil)
+	initBare := func(ctx context.Context, owner, name string) string {
+		path, err := clones.ClonePathForContext(ctx, "github", "github.com", owner, name)
+		require.NoError(err)
+		runWorkspaceTestGit(t, t.TempDir(), "init", "--bare", path)
+		return path
+	}
+	ownCtx := gitclone.WithRepositoryIdentity(t.Context(), 1020)
+	earlierRoute := initBare(ownCtx, "acme", "widget-original")
+	transferredRoute := initBare(ownCtx, "other-org", "widget")
+	otherRepository := initBare(
+		gitclone.WithRepositoryIdentity(t.Context(), 1022), "acme", "widget",
+	)
+	routeKeyed := initBare(t.Context(), "acme", "widget")
+
 	manager := NewManager(database, t.TempDir())
 	manager.SetClones(clones)
 	paths, err := manager.workspaceManagedClonePaths(t.Context(), &Workspace{
@@ -1639,21 +1410,15 @@ func TestManagedClonePathsExcludeLegacyRouteAfterReuse(t *testing.T) {
 	})
 
 	require.NoError(err)
-	require.Len(paths, 3)
-	legacyPath, err := clones.ClonePath("github", "github.com", "acme", "widget")
-	require.NoError(err)
-	require.NotContains(paths, legacyPath)
-	historicalPath, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), original.PlatformRepoID),
-		"github", "github.com", "acme", "widget-original",
+	currentRoute, err := clones.ClonePathForContext(
+		ownCtx, "github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)
-	require.Contains(paths, historicalPath)
-	historicalLegacyPath, err := clones.ClonePath(
-		"github", "github.com", "acme", "widget-original",
+	require.ElementsMatch(
+		[]string{currentRoute, earlierRoute, transferredRoute}, paths,
 	)
-	require.NoError(err)
-	require.Contains(paths, historicalLegacyPath)
+	require.NotContains(paths, otherRepository)
+	require.NotContains(paths, routeKeyed)
 }
 
 func TestCreateIssueReportsRecoverableDirectoryBranch(t *testing.T) {
@@ -2087,15 +1852,15 @@ func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
 			)
 			remote := "http://" + platformHost + "/acme/widget.git"
 			repoID := seedRepo(t, d, platformHost, "acme", "widget")
-			require.NoError(d.UpdateRepoProviderMetadata(
+			require.NoError(d.UpdateRepoProviderObservation(
 				ctx, repoID, db.RepoProviderMetadata{
 					CloneURL:      remote,
 					DefaultBranch: "main",
-				},
+				}, nil, nil,
 			))
 
 			clones := gitclone.New(t.TempDir(), nil)
-			cloneCtx := gitclone.WithRepositoryIdentity(ctx, "repo-acme-widget")
+			cloneCtx := gitclone.WithRepositoryIdentity(ctx, testRepoID("acme", "widget"))
 			require.NoError(clones.EnsureClone(
 				cloneCtx, "github", platformHost, "acme", "widget", remote,
 			))
@@ -2286,21 +2051,8 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 	err = mgr.setupManagedRepositoryHooks(secondCtx, cloneDir, ws)
 	require.ErrorIs(err, context.DeadlineExceeded)
 	require.Equal(int32(1), requests.Load())
-	observedAt := time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)
-	_, _, err = d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-old",
-		Owner: "acme", Name: "widget",
-	}, observedAt)
-	require.NoError(err)
-	_, _, err = d.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
-		Owner: "acme", Name: "widget",
-	}, observedAt.Add(time.Hour))
-	require.NoError(err)
 	release()
-	require.ErrorContains(<-firstDone, "historical occupants")
-	require.NoFileExists(filepath.Join(cloneDir, "hooks", "post-commit"))
-	require.NoFileExists(filepath.Join(cloneDir, "hooks", "post-rewrite"))
+	require.NoError(<-firstDone)
 }
 
 func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
@@ -3232,18 +2984,18 @@ func TestCreateIssueUsesProviderQualifiedRepo(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	_, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	_, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "forge.example.com",
-		PlatformRepoID: "repo-github-widget",
+		PlatformRepoID: 1015,
 		Owner:          "acme",
 		Name:           "widget",
 	})
 	require.NoError(err)
-	gitlabRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	gitlabRepoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "forge.example.com",
-		PlatformRepoID: "repo-gitlab-widget",
+		PlatformRepoID: 1017,
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -3270,19 +3022,19 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 		t, "feature/thing",
 	)
 
-	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: "repo-gitlab-project",
+		PlatformRepoID: 1016,
 		Owner:          "group",
 		Name:           "project",
 	})
 	require.NoError(err)
-	require.NoError(d.UpdateRepoProviderMetadata(
+	require.NoError(d.UpdateRepoProviderObservation(
 		ctx, repoID, db.RepoProviderMetadata{
 			CloneURL:      remote,
 			DefaultBranch: "main",
-		},
+		}, nil, nil,
 	))
 	seedIssue(t, d, repoID, 11, "GitLab issue")
 
@@ -3299,7 +3051,7 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 	require.NotNil(ws)
 	assert.Equal("gitlab", ws.Platform)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, "repo-gitlab-project"),
+		gitclone.WithRepositoryIdentity(ctx, 1016),
 		"gitlab", "gitlab.example.com", "group", "project",
 	)
 	require.NoError(err)
@@ -3322,19 +3074,19 @@ func TestCreateIssueClonesExplicitlyAllowedGiteaHTTPRemote(t *testing.T) {
 	)
 	cloneURL := "http://" + platformHost + "/acme/widget.git"
 
-	repoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "gitea",
 		PlatformHost:   platformHost,
-		PlatformRepoID: "repo-gitea-widget",
+		PlatformRepoID: 1014,
 		Owner:          "acme",
 		Name:           "widget",
 	})
 	require.NoError(err)
-	require.NoError(d.UpdateRepoProviderMetadata(
+	require.NoError(d.UpdateRepoProviderObservation(
 		ctx, repoID, db.RepoProviderMetadata{
 			CloneURL:      cloneURL,
 			DefaultBranch: "main",
-		},
+		}, nil, nil,
 	))
 	seedIssue(t, d, repoID, 11, "Gitea issue")
 
@@ -3351,7 +3103,7 @@ func TestCreateIssueClonesExplicitlyAllowedGiteaHTTPRemote(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(ws)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, "repo-gitea-widget"),
+		gitclone.WithRepositoryIdentity(ctx, 1014),
 		"gitea", platformHost, "acme", "widget",
 	)
 	require.NoError(err)
@@ -3377,7 +3129,7 @@ func TestBranchInspectionPartitionsManagedCloneByProviderIdentity(t *testing.T) 
 
 	repo := workspaceRepoRef{
 		ID: repoID, Platform: "github", PlatformHost: platformHost,
-		ProviderID: "provider-repo-a", Owner: "acme", Name: "widget",
+		ProviderID: 1007, Owner: "acme", Name: "widget",
 		RemoteURL: remote,
 	}
 	firstDir, ok, localBase, err := mgr.branchInspectionDir(ctx, repo)
@@ -3385,7 +3137,7 @@ func TestBranchInspectionPartitionsManagedCloneByProviderIdentity(t *testing.T) 
 	require.True(ok)
 	assert.False(localBase)
 
-	repo.ProviderID = "provider-repo-b"
+	repo.ProviderID = 1008
 	secondDir, ok, localBase, err := mgr.branchInspectionDir(ctx, repo)
 	require.NoError(err)
 	require.True(ok)
@@ -3409,9 +3161,9 @@ func TestWorkspaceBranchInspectionDoesNotRefreshExistingClone(t *testing.T) {
 	parsed, err := url.Parse(server.URL)
 	require.NoError(err)
 	repoID := seedRepo(t, d, parsed.Host, "acme", "widget")
-	require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+	require.NoError(d.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
 		CloneURL: server.URL + "/acme/widget.git", DefaultBranch: "main",
-	}))
+	}, nil, nil))
 	clones := gitclone.New(t.TempDir(), nil)
 	clones.SetAllowInsecureHTTP("github", parsed.Host, true)
 	manager := newTestManager(t, d, t.TempDir())
@@ -3425,7 +3177,7 @@ func TestWorkspaceBranchInspectionDoesNotRefreshExistingClone(t *testing.T) {
 	require.NoError(err)
 	require.Positive(requests.Load())
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, "repo-acme-widget"),
+		gitclone.WithRepositoryIdentity(ctx, testRepoID("acme", "widget")),
 		"github", parsed.Host, "acme", "widget",
 	)
 	require.NoError(err)
@@ -3450,50 +3202,6 @@ func TestWorkspaceBranchInspectionDoesNotRefreshExistingClone(t *testing.T) {
 	assert.Equal("ready", ws.Status)
 }
 
-func TestWorkspaceSetupGitDirRemovesCloneWhenRouteChangesDuringClone(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	database := openTestDB(t)
-	_, remote := setupLocalWorktreeBaseWithRemoteForWorkspaceGitTest(
-		t, "feature/thing",
-	)
-	repoID := seedRepo(t, database, "github.com", "acme", "widget")
-	require.NoError(database.UpdateRepoProviderMetadata(
-		t.Context(), repoID, db.RepoProviderMetadata{
-			CloneURL: remote, DefaultBranch: "main",
-		},
-	))
-	clones := gitclone.New(t.TempDir(), nil)
-	manager := newTestManager(t, database, t.TempDir())
-	manager.SetClones(clones)
-	workspace := &Workspace{
-		RepoID: repoID, Platform: "github", PlatformHost: "github.com",
-		RepoOwner: "acme", RepoName: "widget",
-	}
-	routeChanged := errors.New("repository route changed")
-	validations := 0
-
-	_, err := manager.workspaceSetupGitDir(
-		t.Context(), workspace, "", nil,
-		func(context.Context) error {
-			validations++
-			if validations == 1 {
-				return nil
-			}
-			return routeChanged
-		},
-	)
-
-	require.ErrorIs(err, routeChanged)
-	assert.Equal(2, validations)
-	clonePath, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
-		"github", "github.com", "acme", "widget",
-	)
-	require.NoError(err)
-	assert.NoDirExists(clonePath)
-}
-
 func TestCreateUsesProviderQualifiedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3501,18 +3209,18 @@ func TestCreateUsesProviderQualifiedRepo(t *testing.T) {
 	ctx := t.Context()
 	worktreeDir := t.TempDir()
 
-	_, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	_, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "forge.example.com",
-		PlatformRepoID: "repo-github-widget",
+		PlatformRepoID: 1015,
 		Owner:          "acme",
 		Name:           "widget",
 	})
 	require.NoError(err)
-	gitlabRepoID, err := d.UpsertRepo(ctx, db.RepoIdentity{
+	gitlabRepoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "forge.example.com",
-		PlatformRepoID: "repo-gitlab-widget",
+		PlatformRepoID: 1017,
 		Owner:          "acme",
 		Name:           "widget",
 	})
@@ -3561,7 +3269,7 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 	)
 	clones := gitclone.New(cloneBaseDir, nil)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		gitclone.WithRepositoryIdentity(t.Context(), testRepoID("acme", "widget")),
 		"github", host, owner, name,
 	)
 	require.NoError(err)
@@ -3787,116 +3495,13 @@ func TestAddAndRefreshPRWorktreeFastForwardLocalBaseBranch(t *testing.T) {
 	runWorkspaceTestGit(t, remote, "update-server-info")
 
 	_, err = mgr.refreshExistingWorkspaceWorktree(
-		t.Context(), localRepo, originRemoteName, ws, launchSpec, nil,
+		t.Context(), localRepo, originRemoteName, ws, launchSpec,
 	)
 	require.NoError(err)
 	localBaseSHA = strings.TrimSpace(string(runWorkspaceTestGit(
 		t, localRepo, "rev-parse", "refs/heads/main",
 	)))
 	assert.Equal(secondBaseSHA, localBaseSHA)
-}
-
-func TestAddWorktreeRestoresBaseRefsWhenRouteChangesDuringFetch(t *testing.T) {
-	require := require.New(t)
-	localRepo, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
-		t, "feature/route-fence",
-	)
-	originalSHA, exists, err := gitRefSHA(
-		t.Context(), localRepo, "refs/remotes/origin/main",
-	)
-	require.NoError(err)
-	require.True(exists)
-	runWorkspaceTestGit(t, remote, "config", "user.email", "test@test.com")
-	runWorkspaceTestGit(t, remote, "config", "user.name", "Test")
-	newSHA := strings.TrimSpace(string(runWorkspaceTestGit(
-		t, remote, "commit-tree", "refs/heads/main^{tree}",
-		"-p", "refs/heads/main", "-m", "replacement base",
-	)))
-	runWorkspaceTestGit(t, remote, "update-ref", "refs/heads/main", newSHA)
-	runWorkspaceTestGit(t, remote, "update-server-info")
-
-	validationCalls := 0
-	validateRoute := func(context.Context) error {
-		validationCalls++
-		if validationCalls > 1 {
-			return db.ErrRepositoryRouteFenceChanged
-		}
-		return nil
-	}
-	ws := &Workspace{
-		ID: "ws-base-route-fence", Platform: "github", PlatformHost: platformHost,
-		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
-		ItemNumber: 42, GitHeadRef: "issue-42",
-		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
-	}
-	mgr := newTestManager(t, openTestDB(t), t.TempDir())
-
-	_, _, err = mgr.addWorktree(
-		t.Context(), workspaceGitDir{
-			path: localRepo, remote: originRemoteName, localBase: true,
-		}, ws, workspaceGitFetchOptions{
-			validateRoute: validateRoute,
-		},
-	)
-
-	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
-	restoredSHA, exists, refErr := gitRefSHA(
-		t.Context(), localRepo, "refs/remotes/origin/main",
-	)
-	require.NoError(refErr)
-	require.True(exists)
-	require.Equal(originalSHA, restoredSHA)
-	_, statErr := os.Stat(ws.WorktreePath)
-	require.ErrorIs(statErr, os.ErrNotExist)
-}
-
-func TestAddWorktreeRestoresPullRefWhenRouteChangesDuringFetch(t *testing.T) {
-	require := require.New(t)
-	const prNumber = 43
-	localRepo, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
-		t, "feature/route-fence",
-	)
-	pullRef := fmt.Sprintf("refs/pull/%d/head", prNumber)
-	runWorkspaceTestGit(
-		t, remote, "update-ref", pullRef, "refs/heads/feature/route-fence",
-	)
-	runWorkspaceTestGit(t, remote, "update-server-info")
-	_, exists, err := gitRefSHA(t.Context(), localRepo, pullRef)
-	require.NoError(err)
-	require.False(exists)
-
-	validationCalls := 0
-	validateRoute := func(context.Context) error {
-		validationCalls++
-		if validationCalls > 1 {
-			return db.ErrRepositoryRouteFenceChanged
-		}
-		return nil
-	}
-	headRepo := "http://" + platformHost + "/acme/widget.git"
-	ws := &Workspace{
-		ID: "ws-pull-route-fence", Platform: "github", PlatformHost: platformHost,
-		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
-		ItemNumber: prNumber, GitHeadRef: "feature/route-fence",
-		MRHeadRepo: &headRepo, WorktreePath: filepath.Join(t.TempDir(), "worktree"),
-	}
-	mgr := newTestManager(t, openTestDB(t), t.TempDir())
-
-	_, err = mgr.addWorktreeLocked(
-		t.Context(), workspaceGitDir{
-			path: localRepo, remote: originRemoteName, localBase: true,
-		}, ws, workspaceGitFetchOptions{
-			launchSpec:    pullLaunchSpecForWorkspace(ws, "same_repo", ""),
-			validateRoute: validateRoute,
-		},
-	)
-
-	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
-	_, exists, refErr := gitRefSHA(t.Context(), localRepo, pullRef)
-	require.NoError(refErr)
-	require.False(exists)
-	_, statErr := os.Stat(ws.WorktreePath)
-	require.ErrorIs(statErr, os.ErrNotExist)
 }
 
 func TestSyncLocalBaseBranchSkipsCheckedOutAndDivergedBranches(t *testing.T) {
@@ -3982,55 +3587,6 @@ func TestSyncLocalBaseBranchSkipsOccupiedRefNamespace(t *testing.T) {
 	assert.False(mainExists)
 	assert.Equal(mainSHA, strings.TrimSpace(string(runWorkspaceTestGit(
 		t, localRepo, "rev-parse", "refs/heads/main/topic",
-	))))
-}
-
-func TestSyncWorkspaceBaseBranchRejectsReplacedRepositoryRoute(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/base-sync")
-	localMainSHA := strings.TrimSpace(string(runWorkspaceTestGit(
-		t, localRepo, "rev-parse", "refs/heads/main",
-	)))
-	remoteMainSHA := strings.TrimSpace(string(runWorkspaceTestGit(
-		t, localRepo, "commit-tree", localMainSHA+"^{tree}",
-		"-p", localMainSHA, "-m", "replacement base",
-	)))
-	runWorkspaceTestGit(
-		t, localRepo, "update-ref", "refs/remotes/origin/main", remoteMainSHA,
-	)
-	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
-
-	d := openTestDB(t)
-	seedRepo(t, d, "github.com", "acme", "widget")
-	replacement, _, err := d.ReconcileRepositoryObservation(
-		t.Context(), db.RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: "repo-acme-widget-replacement",
-			Owner:          "acme",
-			Name:           "widget",
-		}, time.Now().UTC(),
-	)
-	require.NoError(err)
-	require.NotNil(replacement)
-	seedMR(t, d, replacement.Repository.ID, 968, "feature/base-sync")
-	mgr := NewManager(d, t.TempDir())
-	ws := &Workspace{
-		ID:           "ws-base-sync-replaced-route",
-		Platform:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   968,
-	}
-
-	err = mgr.syncWorkspaceBaseBranch(t.Context(), localRepo, originRemoteName, ws)
-	require.ErrorContains(err, "historical occupants")
-	assert.Equal(localMainSHA, strings.TrimSpace(string(runWorkspaceTestGit(
-		t, localRepo, "rev-parse", "refs/heads/main",
 	))))
 }
 
@@ -4200,13 +3756,12 @@ func TestCleanupFindsManagedCloneAfterRepositoryRename(t *testing.T) {
 func TestCleanupFindsMissingIdentityManagedWorktreeAfterRepositoryRename(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	identity := db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: testRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 	}
-	entry, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), identity, observedAt,
+	entry, err := database.ObserveRepository(
+		t.Context(), identity,
 	)
 	require.NoError(err)
 	require.NotNil(entry)
@@ -4238,8 +3793,8 @@ func TestCleanupFindsMissingIdentityManagedWorktreeAfterRepositoryRename(t *test
 	require.NoError(os.RemoveAll(worktreePath))
 
 	identity.Name = "renamed"
-	_, _, err = database.ReconcileRepositoryObservation(
-		t.Context(), identity, observedAt.Add(time.Minute),
+	_, err = database.ObserveRepository(
+		t.Context(), identity,
 	)
 	require.NoError(err)
 	ws.RepoName = identity.Name
@@ -6018,48 +5573,6 @@ func setupForkStyleHTTPWorktreeBaseForWorkspaceGitTest(
 		"https://"+platformHost+"/forker/widget.git",
 	)
 	return repo, remote, platformHost
-}
-
-func setupRouteChangingCloneRemoteForWorkspaceTest(
-	t *testing.T, onFirstRequest func() error,
-) (platformHost, cloneURL string) {
-	t.Helper()
-	root := t.TempDir()
-	remote := filepath.Join(root, "acme", "widget.git")
-	work := filepath.Join(root, "work")
-	require.NoError(t, os.MkdirAll(filepath.Dir(remote), 0o755))
-	runWorkspaceTestGit(t, root, "init", "--bare", "--initial-branch=main", remote)
-	runWorkspaceTestGit(t, root, "init", "--initial-branch=main", work)
-	runWorkspaceTestGit(t, work, "config", "user.email", "test@test.com")
-	runWorkspaceTestGit(t, work, "config", "user.name", "Test")
-	require.NoError(t, os.WriteFile(
-		filepath.Join(work, "base.txt"), []byte("base\n"), 0o644,
-	))
-	runWorkspaceTestGit(t, work, "add", ".")
-	runWorkspaceTestGit(t, work, "commit", "-m", "base commit")
-	runWorkspaceTestGit(t, work, "remote", "add", "origin", remote)
-	runWorkspaceTestGit(t, work, "push", "origin", "main")
-	runWorkspaceTestGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
-	runWorkspaceTestGit(t, remote, "update-server-info")
-
-	files := http.FileServer(http.Dir(root))
-	var once sync.Once
-	var routeChangeErr error
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		once.Do(func() { routeChangeErr = onFirstRequest() })
-		if routeChangeErr != nil {
-			http.Error(w, routeChangeErr.Error(), http.StatusInternalServerError)
-			return
-		}
-		files.ServeHTTP(w, r)
-	}))
-	t.Cleanup(func() {
-		server.Close()
-		require.NoError(t, routeChangeErr)
-	})
-	parsed, err := url.Parse(server.URL)
-	require.NoError(t, err)
-	return parsed.Host, server.URL + "/acme/widget.git"
 }
 
 func setupRemoteForForkPRWorktreeTest(
@@ -8562,12 +8075,11 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
-	observedAt := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
-	_, _, err := d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+	_, err := d.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-old",
+		PlatformRepoID: 1004,
 		Owner:          "acme", Name: "widget",
-	}, observedAt)
+	})
 	require.NoError(err)
 	ws := &Workspace{
 		ID: "ws-route-reuse", Platform: "github",
@@ -8585,7 +8097,7 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 		Version: WorkspaceLaunchSpecVersion,
 		Repository: WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "provider-old", Owner: "acme", Name: "widget",
+			PlatformRepoID: 1004, Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: ws.ItemType, ItemNumber: ws.ItemNumber,
@@ -8596,11 +8108,11 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 		SourceVisible: true, IssuedAt: issuedAt,
 		SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
 	}))
-	_, _, err = d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+	_, err = d.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "provider-new",
+		PlatformRepoID: 1003,
 		Owner:          "acme", Name: "widget",
-	}, observedAt.Add(time.Hour))
+	})
 	require.NoError(err)
 
 	mgr := newTestManager(t, d, t.TempDir())
@@ -8610,112 +8122,6 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 	require.NoError(getErr)
 	require.NotNil(stored)
 	assert.Equal("error", stored.Status)
-}
-
-func TestSetupRemovesManagedCloneWhenRepositoryRouteChangesDuringFetch(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	var platformHost string
-	platformHost, cloneURL := setupRouteChangingCloneRemoteForWorkspaceTest(
-		t, func() error {
-			_, _, err := database.ReconcileRepositoryObservation(
-				t.Context(), db.RepoIdentity{
-					Platform: "github", PlatformHost: platformHost,
-					PlatformRepoID: "provider-replacement",
-					Owner:          "acme", Name: "widget",
-				}, observedAt.Add(time.Hour),
-			)
-			return err
-		},
-	)
-	entry, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: platformHost,
-			PlatformRepoID: "provider-original",
-			Owner:          "acme", Name: "widget",
-		}, observedAt,
-	)
-	require.NoError(err)
-	require.NotNil(entry)
-	require.NoError(database.UpdateRepoProviderMetadata(
-		t.Context(), entry.Repository.ID, db.RepoProviderMetadata{
-			CloneURL: cloneURL, DefaultBranch: "main",
-		},
-	))
-	workspace := &Workspace{
-		ID: "ws-route-change-during-fetch", Platform: "github",
-		PlatformHost: platformHost, RepoOwner: "acme", RepoName: "widget",
-		ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: "spike/route-change",
-		GitHeadRef: "spike/route-change", WorkspaceBranch: "spike/route-change",
-		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
-		TmuxSession:  "forge-ws-route-change-during-fetch", Status: "creating",
-	}
-	require.NoError(database.InsertWorkspace(t.Context(), workspace))
-	require.Equal(entry.Repository.ID, workspace.RepoID)
-
-	clones := gitclone.New(t.TempDir(), nil)
-	manager := NewManager(database, t.TempDir())
-	manager.SetClones(clones)
-	cloneCtx := gitclone.WithRepositoryIdentity(t.Context(), "provider-original")
-	cloneDir, err := clones.ClonePathForContext(
-		cloneCtx, "github", platformHost, "acme", "widget",
-	)
-	require.NoError(err)
-
-	err = manager.Setup(t.Context(), workspace)
-	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
-	require.NoDirExists(cloneDir)
-}
-
-func TestCreateIssueRemovesManagedCloneWhenRepositoryRouteChangesDuringFetch(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	observedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	var platformHost string
-	platformHost, cloneURL := setupRouteChangingCloneRemoteForWorkspaceTest(
-		t, func() error {
-			_, _, err := database.ReconcileRepositoryObservation(
-				t.Context(), db.RepoIdentity{
-					Platform: "github", PlatformHost: platformHost,
-					PlatformRepoID: "provider-replacement",
-					Owner:          "acme", Name: "widget",
-				}, observedAt.Add(time.Hour),
-			)
-			return err
-		},
-	)
-	entry, _, err := database.ReconcileRepositoryObservation(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: platformHost,
-			PlatformRepoID: "provider-original",
-			Owner:          "acme", Name: "widget",
-		}, observedAt,
-	)
-	require.NoError(err)
-	require.NotNil(entry)
-	require.NoError(database.UpdateRepoProviderMetadata(
-		t.Context(), entry.Repository.ID, db.RepoProviderMetadata{
-			CloneURL: cloneURL, DefaultBranch: "main",
-		},
-	))
-	seedIssue(t, database, entry.Repository.ID, 7, "Route changes during clone")
-
-	clones := gitclone.New(t.TempDir(), nil)
-	manager := newTestManager(t, database, t.TempDir())
-	manager.SetClones(clones)
-	cloneCtx := gitclone.WithRepositoryIdentity(t.Context(), "provider-original")
-	cloneDir, err := clones.ClonePathForContext(
-		cloneCtx, "github", platformHost, "acme", "widget",
-	)
-	require.NoError(err)
-
-	_, err = manager.CreateIssue(
-		t.Context(), platformHost, "acme", "widget", 7,
-		CreateIssueOptions{Provider: "github"},
-	)
-	require.Error(err)
-	require.NoDirExists(cloneDir)
 }
 
 func TestSetupFailsBeforeGitWhenSourceItemWasRemovedUpstream(t *testing.T) {
@@ -8790,146 +8196,4 @@ func TestSetupFailsBeforeGitWhenSourceItemWasRemovedUpstream(t *testing.T) {
 			require.Equal("error", stored.Status)
 		})
 	}
-}
-
-func TestRefreshWorkspaceHeadRepoSnapshotSurvivesQueuedReconciliation(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMRWithHeadRepo(
-		t, d, repoID, 42, "feature/thing", "https://github.com/acme/widget.git",
-	)
-	ws := &Workspace{
-		ID:           "ws-refresh-queued-writer",
-		Platform:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		ItemType:     db.WorkspaceItemTypePullRequest,
-		ItemNumber:   42,
-		GitHeadRef:   "feature/thing",
-		WorktreePath: t.TempDir(),
-		Status:       "ready",
-	}
-	require.NoError(d.InsertWorkspace(t.Context(), ws))
-
-	mgr := NewManager(d, t.TempDir())
-	writerQueued := make(chan struct{})
-	restoreHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
-		close(writerQueued)
-	})
-	defer restoreHook()
-	writerDone := make(chan error, 1)
-	var interleaved bool
-	mgr.beforeHeadRepoSnapshotRepoLookup = func() {
-		if interleaved {
-			return
-		}
-		interleaved = true
-		go func() {
-			_, _, err := d.ReconcileRepositoryObservation(
-				t.Context(), db.RepoIdentity{
-					Platform: "github", PlatformHost: "github.com",
-					PlatformRepoID: "repo-acme-other",
-					Owner:          "acme", Name: "other",
-					RepoPath: "acme/other",
-				}, time.Now().UTC(),
-			)
-			writerDone <- err
-		}()
-		<-writerQueued
-	}
-
-	refreshDone := make(chan error, 1)
-	go func() {
-		_, err := mgr.RefreshWorkspaceHeadRepoSnapshot(t.Context(), ws)
-		refreshDone <- err
-	}()
-	select {
-	case err := <-refreshDone:
-		require.NoError(err)
-	case <-time.After(10 * time.Second):
-		require.Fail("head-repo refresh deadlocked behind a queued reconciliation writer")
-	}
-	select {
-	case err := <-writerDone:
-		require.NoError(err)
-	case <-time.After(10 * time.Second):
-		require.Fail("reconciliation writer never completed")
-	}
-}
-
-func TestSyncWorkspaceBaseBranchSurvivesQueuedReconciliationWriter(t *testing.T) {
-	if os.Getenv("KENN_FORGE_TEST_SYNC_BASE_BRANCH_QUEUED_WRITER") != "1" {
-		preparedDBPath := filepath.Join(t.TempDir(), "prepared.db")
-		preparedDB := dbtest.OpenAt(t, preparedDBPath)
-		require.NoError(t, preparedDB.Close())
-		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-		defer cancel()
-		cmd := procutil.CommandContext(
-			ctx, os.Args[0],
-			"-test.run=^TestSyncWorkspaceBaseBranchSurvivesQueuedReconciliationWriter$",
-		)
-		cmd.Env = append(
-			os.Environ(),
-			"KENN_FORGE_TEST_SYNC_BASE_BRANCH_QUEUED_WRITER=1",
-			"KENN_FORGE_TEST_SYNC_BASE_BRANCH_DB="+preparedDBPath,
-		)
-		output, err := cmd.CombinedOutput()
-		require.NoError(t, ctx.Err(),
-			"workspace base-branch sync deadlocked behind a queued reconciliation writer: %s", output,
-		)
-		require.NoError(t, err, string(output))
-		return
-	}
-
-	require := require.New(t)
-	preparedDBPath := os.Getenv("KENN_FORGE_TEST_SYNC_BASE_BRANCH_DB")
-	require.NotEmpty(preparedDBPath)
-	d := dbtest.OpenPreparedAt(t, preparedDBPath)
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	ws := &Workspace{
-		ID: "ws-verify-queued-writer", Platform: "github", PlatformHost: "github.com",
-		RepoOwner: "acme", RepoName: "widget", RepoID: repoID,
-		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
-		WorktreePath: t.TempDir(), Status: "ready",
-	}
-	require.NoError(d.InsertWorkspace(t.Context(), ws))
-
-	d.ReadDB().SetMaxOpenConns(1)
-	readConn, err := d.ReadDB().Conn(t.Context())
-	require.NoError(err)
-	syncDone := make(chan error, 1)
-	mgr := NewManager(d, t.TempDir())
-	go func() {
-		syncDone <- mgr.syncWorkspaceBaseBranch(
-			t.Context(), ws.WorktreePath, originRemoteName, ws,
-		)
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for d.ReadDB().Stats().WaitCount == 0 && time.Now().Before(deadline) {
-		runtime.Gosched()
-	}
-	require.Positive(d.ReadDB().Stats().WaitCount, "base-branch sync never reached its repository read")
-
-	writerQueued := make(chan struct{})
-	restoreHook := d.SetBeforeRepositoryReconciliationWriteLockForTest(func() {
-		close(writerQueued)
-	})
-	defer restoreHook()
-	writerDone := make(chan error, 1)
-	go func() {
-		_, _, err := d.ReconcileRepositoryObservation(
-			t.Context(), db.RepoIdentity{
-				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-other", Owner: "acme", Name: "other",
-				RepoPath: "acme/other",
-			}, time.Now().UTC(),
-		)
-		writerDone <- err
-	}()
-	<-writerQueued
-	require.NoError(readConn.Close())
-	require.NoError(<-syncDone)
-	require.NoError(<-writerDone)
 }

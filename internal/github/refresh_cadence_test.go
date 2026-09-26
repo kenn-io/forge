@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestDormantCommentRefreshWaitsForDailyDeadline(t *testing.T) {
@@ -18,7 +19,7 @@ func TestDormantCommentRefreshWaitsForDailyDeadline(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	now := time.Now().UTC()
 	updated := now.Add(-14 * 24 * time.Hour)
@@ -59,7 +60,7 @@ func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T)
 			ctx := t.Context()
 			d := openTestDB(t)
 			repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
-			repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+			repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 			require.NoError(err)
 			now := time.Now().UTC()
 			fetched := now.Add(-25 * time.Hour)
@@ -107,7 +108,7 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 				ctx := t.Context()
 				d := openTestDB(t)
 				repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
-				repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+				repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 				require.NoError(err)
 				now := time.Now().UTC().Truncate(time.Second)
 				updated := now.Add(-2 * time.Hour)
@@ -190,7 +191,7 @@ func TestSyncReportsDailyBacklogWhenBudgetCannotCoverOpenItems(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(t, err)
 	now := time.Now().UTC()
 	for number, state := range []string{"open", "closed"} {
@@ -218,7 +219,7 @@ func TestDetailDrainHydratesRecentNeverFetchedBeforeActiveWork(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	repoID, err := d.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	fetched := now.Add(-2 * time.Hour)

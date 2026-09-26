@@ -21,11 +21,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
+	"go.kenn.io/kit/atomicfile"
+
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
 	platformpkg "go.kenn.io/forge/platform"
-	"go.kenn.io/kit/atomicfile"
 )
 
 const (
@@ -101,7 +102,7 @@ type Repo struct {
 	RepoPath         string `toml:"repo_path,omitempty" json:"repo_path,omitempty"`
 	Platform         string `toml:"platform,omitempty" json:"platform,omitempty"`
 	PlatformHost     string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
-	PlatformRepoID   string `toml:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
+	PlatformRepoID   int64  `toml:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
 	TokenEnv         string `toml:"token_env,omitempty" json:"token_env,omitempty"`
 	TokenFile        string `toml:"token_file,omitempty" json:"token_file,omitempty"`
 	WorktreeBasePath string `toml:"worktree_base_path,omitempty" json:"worktree_base_path,omitempty"`
@@ -127,7 +128,7 @@ type RepoPreset struct {
 type RepoPresetRepository struct {
 	Provider       string `toml:"provider" json:"provider"`
 	PlatformHost   string `toml:"platform_host" json:"platform_host"`
-	PlatformRepoID string `toml:"platform_repo_id" json:"platform_repo_id"`
+	PlatformRepoID int64  `toml:"platform_repo_id" json:"platform_repo_id"`
 	RepoPath       string `toml:"repo_path" json:"repo_path"`
 }
 
@@ -179,8 +180,8 @@ func normalizeRepoPresets(presets []RepoPreset) error {
 			}
 			host := strings.TrimSpace(raw.PlatformHost)
 			repoPath := cleanPath(strings.TrimSpace(raw.RepoPath))
-			platformRepoID := strings.TrimSpace(raw.PlatformRepoID)
-			if platformRepoID == "" {
+			platformRepoID := raw.PlatformRepoID
+			if platformRepoID <= 0 {
 				return fmt.Errorf(
 					"repo_presets[%d].repos[%d]: platform_repo_id is required", i, j,
 				)
@@ -200,7 +201,7 @@ func normalizeRepoPresets(presets []RepoPreset) error {
 					"repo_presets[%d].repos[%d]: repository identity must be provider|platform_host/repo_path", i, j,
 				)
 			}
-			canonical := provider + "|" + host + "|" + platformRepoID
+			canonical := provider + "|" + host + "|" + strconv.FormatInt(platformRepoID, 10)
 			if _, exists := seenRepos[canonical]; exists {
 				continue
 			}
@@ -376,7 +377,9 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	if r.Owner == "" || r.Name == "" {
 		return errors.New("must have owner and name")
 	}
-	r.PlatformRepoID = strings.TrimSpace(r.PlatformRepoID)
+	if r.PlatformRepoID < 0 {
+		return errors.New("platform_repo_id must be the provider's positive integer repository ID")
+	}
 	r.WorktreeBasePath = strings.TrimSpace(r.WorktreeBasePath)
 	if r.WorktreeBasePath != "" && r.HasNameGlob() {
 		return errors.New("worktree_base_path is only supported for exact repositories")

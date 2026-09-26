@@ -14,10 +14,12 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gitcmd "go.kenn.io/kit/git/cmd"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 // gitRun runs a git command in the given dir and returns trimmed stdout.
@@ -69,9 +71,7 @@ func syncTestClonePath(
 ) string {
 	t.Helper()
 	path, err := mgr.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(
-			t.Context(), "repo-"+strings.ToLower(owner+"-"+name),
-		),
+		gitclone.WithRepositoryIdentity(t.Context(), testRepoID(owner, name)),
 		"github", "github.com", owner, name,
 	)
 	require.NoError(t, err)
@@ -577,8 +577,8 @@ func TestIntegrationSyncClosedMROnProviderRepairsDiffFromStableIdentityClone(t *
 		"the mutation resync must not depend on a legacy route clone")
 
 	database := openTestDB(t)
-	repoID, err := database.UpsertRepo(
-		ctx, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
+	repoID, err := reposeed.Seed(
+		ctx, database, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
 	)
 	require.NoError(err)
 	now := time.Now().UTC()
@@ -606,8 +606,8 @@ func TestIntegrationSyncClosedMROnProviderRepairsDiffFromStableIdentityClone(t *
 		map[string]Client{"github.com": client}, database, mgr,
 		[]RepoRef{{
 			Platform: platform.KindGitHub, PlatformHost: "github.com",
-			PlatformExternalID: "repo-owner-repo",
-			Owner:              "owner", Name: "repo", RepoPath: "owner/repo",
+			PlatformRepoID: testRepoID("owner", "repo"),
+			Owner:          "owner", Name: "repo", RepoPath: "owner/repo",
 		}},
 		time.Minute, nil, testBudget(100),
 	)

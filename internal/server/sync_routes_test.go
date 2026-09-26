@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil"
 )

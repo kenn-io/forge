@@ -12,21 +12,21 @@ const catalog: RepoPresetCatalogEntry[] = [
     value: "github|github.com/acme/widgets",
     provider: "github",
     platform_host: "github.com",
-    platform_repo_id: "R_widgets",
+    platform_repo_id: 1102,
     repo_path: "acme/widgets",
   },
   {
     value: "gitlab|git.example.com/group/project",
     provider: "gitlab",
     platform_host: "git.example.com",
-    platform_repo_id: "42",
+    platform_repo_id: 42,
     repo_path: "group/project",
   },
   {
     value: "github|github.com/acme/docs",
     provider: "github",
     platform_host: "github.com",
-    platform_repo_id: "R_docs",
+    platform_repo_id: 1108,
     repo_path: "acme/docs",
   },
 ];
@@ -87,7 +87,7 @@ describe("repository presets", () => {
 
   it("refuses to save a selection without provider-verified identity", () => {
     expect(
-      repoPresetRepositoriesForSelection("github|github.com/acme/widgets", [{ ...catalog[0]!, platform_repo_id: "" }]),
+      repoPresetRepositoriesForSelection("github|github.com/acme/widgets", [{ ...catalog[0]!, platform_repo_id: 0 }]),
     ).toBeUndefined();
   });
 });

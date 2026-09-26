@@ -54,9 +54,6 @@ schema migrations.
   `stmtCache`, never `d.ro`/`d.rw` directly outside `BeginTx`; direct pool
   calls skip the prepared-statement cache and recompile on every call
   (`internal/db/stmt_cache.go::stmtCache`).
-- `rwExecContext` and its query siblings intentionally bypass the repository
-  route fence that `execContext` enforces; keep that split when moving a write
-  between them (`internal/db/db.go::rwExecContext`).
 - Per-connection pragmas live only in `connectionDSN`; idle limits equal open
   limits so pooled connections and their compiled statements persist
   (`internal/db/db.go::openPool`).

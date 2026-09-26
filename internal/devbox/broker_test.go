@@ -65,7 +65,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 			}
 		case "/repos/example-org/project":
-			_, _ = fmt.Fprint(w, `{"id":42,"node_id":"R_kgDOExample","name":"project","owner":{"id":99},"default_branch":"main"}`)
+			_, _ = fmt.Fprint(w, `{"id":42,"name":"project","owner":{"id":99},"default_branch":"main"}`)
 		case "/repos/example-org/project/collaborators/developer-a/permission":
 			_, _ = fmt.Fprintf(w, `{"permission":%q,"user":{"id":1234}}`, permission.Load())
 		default:
@@ -98,7 +98,6 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	assert.True(credential.Writable)
 	assert.Equal(int64(1234), credential.GitHubUserID)
 	assert.Equal(int64(42), credential.RepositoryID)
-	assert.Equal("R_kgDOExample", credential.RepositoryNodeID)
 	assert.Equal(int32(2), minted.Load())
 
 	_, err = broker.Credential(t.Context(), uid, request)

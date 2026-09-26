@@ -24,7 +24,7 @@ func TestRawSnapshotCarriesDetachedLocalWorkspacesOnly(t *testing.T) {
 		Workspaces: []RawWorkspace{{
 			ID: "ws-local", Status: "ready", ItemType: "pull_request", ItemNumber: 42,
 			Repository: RepositoryIdentity{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "R_1",
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 			},
 		}},
 	}

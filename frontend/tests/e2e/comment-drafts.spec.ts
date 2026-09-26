@@ -9,7 +9,7 @@ for (const [kind, path] of [
 ] as const) {
   test(`does not restore a ${kind} draft in a replacement repository at the same route`, async ({ page }) => {
     const api = createMockApiHandler();
-    let repositoryId = "R_original";
+    let repositoryId = 1104;
     await mockApi(page);
     await page.route(`**/api/v1${path}`, async (route) => {
       const response = api.handle({ method: "GET", url: new URL(route.request().url()), bodyText: "" });
@@ -22,12 +22,12 @@ for (const [kind, path] of [
     await expect(editor).toBeEditable();
     await editor.fill("Draft for the original repository");
 
-    repositoryId = "R_replacement";
+    repositoryId = 1103;
     await page.reload();
     await expect(editor).toBeEditable();
     await expect(editor).toHaveText("");
 
-    repositoryId = "R_original";
+    repositoryId = 1104;
     await page.reload();
     await expect(editor).toHaveText("Draft for the original repository");
   });

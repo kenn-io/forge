@@ -80,7 +80,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			if len(selected) > 0 {
 				continue
 			}
-			result.Repositories = append(result.Repositories, snapshot.SnapshotRepository{ID: "unresolved:" + string(ref.Platform) + ":" + ref.Host + ":" + ref.RepoPath, Provider: string(ref.Platform), Host: ref.Host, ProviderID: ref.PlatformExternalID, Path: ref.RepoPath, SyncError: "Configured repository has no active cached identity"})
+			result.Repositories = append(result.Repositories, snapshot.SnapshotRepository{ID: "unresolved:" + string(ref.Platform) + ":" + ref.Host + ":" + ref.RepoPath, Provider: string(ref.Platform), Host: ref.Host, ProviderID: ref.PlatformID, Path: ref.RepoPath, SyncError: "Configured repository has no active cached identity"})
 			continue
 		}
 		if len(selected) > 0 {
@@ -203,7 +203,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 }
 
 func snapshotRepositoryID(repo db.Repo) string {
-	return strings.Join([]string{url.QueryEscape(repo.Platform), url.QueryEscape(repo.PlatformHost), url.QueryEscape(repo.PlatformRepoID)}, ":")
+	return strings.Join([]string{url.QueryEscape(repo.Platform), url.QueryEscape(repo.PlatformHost), strconv.FormatInt(repo.PlatformRepoID, 10)}, ":")
 }
 
 func snapshotText(value string, limit int) (string, bool) {

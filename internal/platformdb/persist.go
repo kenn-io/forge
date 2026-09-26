@@ -111,7 +111,7 @@ func DBRepoIdentity(ref platform.RepoRef) db.RepoIdentity {
 	return db.RepoIdentity{
 		Platform:       string(ref.Platform),
 		PlatformHost:   ref.Host,
-		PlatformRepoID: ref.PlatformExternalID,
+		PlatformRepoID: ref.PlatformID,
 		Owner:          ref.Owner,
 		Name:           ref.Name,
 		RepoPath:       ref.RepoPath,
@@ -119,11 +119,7 @@ func DBRepoIdentity(ref platform.RepoRef) db.RepoIdentity {
 }
 
 func DBRepositoryIdentity(repo platform.Repository) db.RepoIdentity {
-	identity := DBRepoIdentity(repo.Ref)
-	if identity.PlatformRepoID == "" {
-		identity.PlatformRepoID = repo.PlatformExternalID
-	}
-	return identity
+	return DBRepoIdentity(repo.Ref)
 }
 
 func DBMergeRequest(repoID int64, mr platform.MergeRequest) *db.MergeRequest {

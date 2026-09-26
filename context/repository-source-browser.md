@@ -16,9 +16,9 @@ coherence, file history, previews, or refresh behavior.
   (`internal/gitclone/repo_browser.go::repoBrowserCloneNamespace`).
 - A federation spoke resolves a hub repository descriptor before every
   provider-page browser read. The descriptor supplies the verified provider
-  repository ID, current route, clone URL, default branch, route generation,
-  and observation time; the spoke reconciles those facts into its repository
-  catalog before selecting a clone. Descriptors never populate spoke-local pull
+  repository ID, current route, clone URL, default branch, and observation
+  time; the spoke records those facts in its repository catalog before
+  selecting a clone. Descriptors never populate spoke-local pull
   or issue tables (`internal/server/provider_sources.go::hubProviderSource.GetRepositoryDescriptor`).
 
 ## Coherent Reads

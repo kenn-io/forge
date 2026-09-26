@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/ratelimit"
@@ -18,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
@@ -422,8 +424,8 @@ func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, _ := newServerWithRateTracker(t)
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	// Keep merge available so this fixture isolates the healthy path.
@@ -446,8 +448,8 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, rt := newServerWithRateTracker(t)
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	// Keep merge available so this fixture isolates rate limiting.
@@ -497,8 +499,8 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	// Keep merge available so this fixture isolates GraphQL tracker state.
@@ -546,8 +548,8 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 		t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-		_, err := database.UpsertRepo(
-			t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+		_, err := reposeed.Seed(
+			t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 		)
 		require.NoError(err)
 		gqlRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
@@ -605,10 +607,12 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 		t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-		_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
+		_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
 			Platform:       "gitlab",
 			PlatformHost:   "gitlab.example.com",
-			PlatformRepoID: "gid://gitlab/Project/42",
+			PlatformRepoID: 42,
+			Owner:          "group",
+			Name:           "project",
 			RepoPath:       "group/project",
 		})
 		require.NoError(err)
@@ -670,10 +674,12 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 		t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-		_, err = database.UpsertRepo(t.Context(), db.RepoIdentity{
+		_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
 			Platform:       "gitlab",
 			PlatformHost:   "gitlab.example.com",
-			PlatformRepoID: "gid://gitlab/Project/42",
+			PlatformRepoID: 42,
+			Owner:          "group",
+			Name:           "project",
 			RepoPath:       "group/project",
 		})
 		require.NoError(err)
@@ -728,8 +734,8 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	// Keep merge available so this fixture isolates write tracker state.
@@ -888,8 +894,8 @@ func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
 	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	_, err = database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	_, err = reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 
@@ -927,8 +933,8 @@ func TestAPIRepoResponseDisablesWritesWhenConfiguredRouterHasNoRoute(t *testing.
 	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	_, err = database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "other", "widget"),
+	_, err = reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "other", "widget"),
 	)
 	require.NoError(err)
 
@@ -990,8 +996,8 @@ func newSplitTestServerWithMock(
 	set.Upsert(splitTestDescriptor(writeCandidate))
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{TokenSources: set})
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
-	_, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	_, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(t, err)
 	return srv, set
@@ -1002,8 +1008,8 @@ func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database := setupTestServer(t)
-	repoID, err := database.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	// Schema defaults viewer_can_merge to 1; flip to false so the

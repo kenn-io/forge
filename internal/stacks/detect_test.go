@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	realdb "go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 const (
@@ -278,12 +279,12 @@ func TestRunDetection(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
-	require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+	require.NoError(d.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{
 		CloneURL:      testRepoCloneURL,
 		DefaultBranch: "main",
-	}))
+	}, nil, nil))
 
 	// Create a 3-PR chain.
 	now := time.Now()
@@ -321,11 +322,11 @@ func TestRunDetectionWithNativeStacksClaimsMembersBeforeInference(t *testing.T) 
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	repoID, err := reposeed.Seed(ctx, database, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+	require.NoError(database.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{
 		CloneURL: testRepoCloneURL, DefaultBranch: "main",
-	}))
+	}, nil, nil))
 	now := time.Now().UTC()
 	prs := []struct {
 		number     int
@@ -377,11 +378,11 @@ func TestRunDetectionWithNativeStacksKeepsStackWithClosedMember(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	repoID, err := reposeed.Seed(ctx, database, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+	require.NoError(database.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{
 		CloneURL: testRepoCloneURL, DefaultBranch: "main",
-	}))
+	}, nil, nil))
 	now := time.Now().UTC()
 	prs := []struct {
 		number     int
@@ -427,11 +428,11 @@ func TestRunDetectionWithNativeStacksFallsBackWhenStacksOverlap(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	repoID, err := reposeed.Seed(ctx, database, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+	require.NoError(database.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{
 		CloneURL: testRepoCloneURL, DefaultBranch: "main",
-	}))
+	}, nil, nil))
 	now := time.Now().UTC()
 	prs := []struct {
 		number     int
@@ -490,11 +491,11 @@ func TestRunDetectionWithNativeStacksDetectsOverlapAfterUnresolvedMember(t *test
 	require := require.New(t)
 	database := openTestDB(t)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	repoID, err := reposeed.Seed(ctx, database, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+	require.NoError(database.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{
 		CloneURL: testRepoCloneURL, DefaultBranch: "main",
-	}))
+	}, nil, nil))
 	now := time.Now().UTC()
 	prs := []struct {
 		number     int
@@ -552,12 +553,12 @@ func TestRunDetection_ForkBranchNameDoesNotShadowUpstreamStackBranch(t *testing.
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
-	require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+	require.NoError(d.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{
 		CloneURL:      testRepoCloneURL,
 		DefaultBranch: "main",
-	}))
+	}, nil, nil))
 
 	now := time.Now()
 	prs := []realdb.MergeRequest{
@@ -603,12 +604,12 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 
-	repoID, err := d.UpsertRepo(ctx, realdb.GitHubRepoIdentity("", "org", "repo"))
+	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
 	require.NoError(err)
-	require.NoError(d.UpdateRepoProviderMetadata(ctx, repoID, realdb.RepoProviderMetadata{
+	require.NoError(d.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{
 		CloneURL:      testRepoCloneURL,
 		DefaultBranch: "main",
-	}))
+	}, nil, nil))
 
 	now := time.Now()
 	// Start with an open chain.

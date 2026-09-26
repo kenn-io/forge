@@ -72,7 +72,7 @@
     repo?: {
       provider?: string | undefined;
       platform_host?: string | undefined;
-      platform_repo_id?: string | undefined;
+      platform_repo_id?: number | undefined;
       repo_path?: string | undefined;
       owner?: string | undefined;
       name?: string | undefined;

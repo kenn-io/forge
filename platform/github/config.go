@@ -52,10 +52,13 @@ type ClientConfig struct {
 	GraphQLRate, WriteGraphQLRate         platform.RateObserver
 	ViewerCacheTTL                        time.Duration
 	ReadOnlyContext                       func(context.Context) bool
-	GraphQLContext                        func(context.Context) context.Context
-	InvalidateETags                       func(string, string, ...string)
-	Progress                              func(owner, repository, kind string) Progress
-	Warning                               func(string, ...any)
+	// OwnerContext names the repository owner for requests whose path carries
+	// none, such as reads by repository ID, so owner-scoped credentials apply.
+	OwnerContext    func(ctx context.Context, owner string) context.Context
+	GraphQLContext  func(context.Context) context.Context
+	InvalidateETags func(string, string, ...string)
+	Progress        func(owner, repository, kind string) Progress
+	Warning         func(string, ...any)
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -118,6 +121,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		rateTracker: config.ReadRate, writeRateTracker: config.WriteRate, notificationRateTracker: config.NotificationRate,
 		graphQLRateTracker: config.GraphQLRate, writeGraphQLRateTracker: config.WriteGraphQLRate,
 		viewerCacheTTL: config.ViewerCacheTTL, readOnlyContext: config.ReadOnlyContext,
+		ownerContext:   config.OwnerContext,
 		graphQLContext: graphQLContext, invalidateETags: config.InvalidateETags,
 		progressFactory: config.Progress, warning: config.Warning,
 	}, nil

@@ -192,7 +192,7 @@
       provider: canonicalProvider(repo.provider),
       platformHost: repo.platform_host,
       platform_host: repo.platform_host,
-      platform_repo_id: repo.platform_repo_id ?? "",
+      platform_repo_id: repo.platform_repo_id ?? 0,
       repoPath: path,
       repo_path: path,
     };

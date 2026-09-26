@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
@@ -1195,14 +1196,14 @@ func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {
 	assert.Equal("user:123", uncoveredRoute.writeIdentity.Principal)
 
 	repos := []github.RepoRef{
-		{Owner: "acme", Name: "covered", PlatformHost: "github.com", PlatformExternalID: "repo-acme-covered"},
-		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com", PlatformExternalID: "repo-acme-uncovered"},
+		{Owner: "acme", Name: "covered", PlatformHost: "github.com", PlatformRepoID: 1001},
+		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com", PlatformRepoID: 1002},
 	}
 	for _, repo := range repos {
-		_, err := database.UpsertRepo(
-			t.Context(), db.RepoIdentity{
+		_, err := reposeed.Seed(
+			t.Context(), database, db.RepoIdentity{
 				Platform: "github", PlatformHost: repo.PlatformHost,
-				PlatformRepoID: repo.PlatformExternalID, Owner: repo.Owner, Name: repo.Name,
+				PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
 			},
 		)
 		require.NoError(err)

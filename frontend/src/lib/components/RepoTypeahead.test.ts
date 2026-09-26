@@ -84,7 +84,7 @@ const putSettings = apiMocks.client.PUT;
 const postSettings = apiMocks.client.POST;
 const deleteSettings = apiMocks.client.DELETE;
 
-function presetRepo(repoPath: string, platformRepoId: string) {
+function presetRepo(repoPath: string, platformRepoId: number) {
   return {
     provider: "github",
     platform_host: "github.com",
@@ -206,7 +206,7 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
@@ -238,7 +238,7 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "archive",
         repo_path: "acme/archive",
-        platform_repo_id: "R_archive",
+        platform_repo_id: 1105,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: true,
@@ -249,7 +249,7 @@ describe("RepoTypeahead", () => {
         {
           Platform: "github",
           PlatformHost: "github.com",
-          PlatformRepoID: "R_archive",
+          PlatformRepoID: 1105,
           Owner: "acme",
           Name: "archive",
         },
@@ -275,7 +275,7 @@ describe("RepoTypeahead", () => {
           repo: {
             provider: "github",
             platform_host: "github.com",
-            platform_repo_id: "R_archive",
+            platform_repo_id: 1105,
             owner: "acme",
             name: "archive",
             repo_path: "acme/archive",
@@ -950,13 +950,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }] as RepoPreset[]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", 1101)] }] as RepoPreset[]);
 
     const view = render(RepoTypeahead, {
       props: { selected, onchange: vi.fn() },
@@ -984,13 +984,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", 1101)] }]);
     render(RepoTypeahead, { props: { selected: undefined, onchange } });
 
     await fireEvent.click(screen.getByRole("button", { name: /global/i }));
@@ -1009,13 +1009,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", 1101)] }]);
     render(RepoTypeahead, {
       props: { selected: undefined, onchange, allowPresetManagement: false },
     });
@@ -1038,19 +1038,19 @@ describe("RepoTypeahead", () => {
         name: "api",
         repo_path: "acme/api",
         tracked_repo_path: "acme/backend",
-        platform_repo_id: "R_original",
+        platform_repo_id: 1104,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_original")] }]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", 1104)] }]);
     getRepos.mockResolvedValue({
       data: [
         {
           Platform: "github",
           PlatformHost: "github.com",
-          PlatformRepoID: "R_replacement",
+          PlatformRepoID: 1103,
           Owner: "acme",
           Name: "api",
         },
@@ -1078,7 +1078,7 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
@@ -1106,7 +1106,7 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
@@ -1117,13 +1117,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "web",
         repo_path: "acme/web",
-        platform_repo_id: "R_web",
+        platform_repo_id: 1106,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", 1101)] }]);
     setGlobalRepoPresetSelection("Backend", `${api},${web}`);
     render(RepoTypeahead, {
       props: { selected: `${api},${web}`, onchange: vi.fn() },
@@ -1145,13 +1145,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
       },
     ]);
-    const repos = [presetRepo("acme/api", "R_api")];
+    const repos = [presetRepo("acme/api", 1101)];
     postSettings.mockResolvedValue({
       data: { repo_presets: [{ name: "Review", repos }], repos: [] },
       response: new Response(),
@@ -1185,7 +1185,7 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
@@ -1225,13 +1225,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", 1101)] }]);
     setGlobalRepoPresetSelection("Backend", selected);
     deleteSettings.mockResolvedValue({
       data: { repo_presets: [], repos: [] },
@@ -1259,13 +1259,13 @@ describe("RepoTypeahead", () => {
         owner: "acme",
         name: "api",
         repo_path: "acme/api",
-        platform_repo_id: "R_api",
+        platform_repo_id: 1101,
         is_glob: false,
         matched_repo_count: 1,
         hidden_from_ui: false,
       },
     ]);
-    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", "R_api")] }]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", 1101)] }]);
     deleteSettings.mockResolvedValue({
       error: {
         type: "about:blank",

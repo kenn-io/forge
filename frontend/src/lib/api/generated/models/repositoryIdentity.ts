@@ -6,6 +6,6 @@ export interface RepositoryIdentity {
   name?: string;
   owner?: string;
   platformHost: string;
-  platformRepoID: string;
+  platformRepoID: number;
   provider: string;
 }

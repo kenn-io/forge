@@ -18,10 +18,11 @@ import (
 
 	"go.kenn.io/forge/internal/apiclient/roborev"
 
+	gitenv "go.kenn.io/kit/git/env"
+
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/projects"
 	"go.kenn.io/forge/internal/server/httpapi"
-	gitenv "go.kenn.io/kit/git/env"
 )
 
 func (s *Server) listRoborevConfiguredRepositories(

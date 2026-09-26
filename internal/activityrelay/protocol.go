@@ -32,13 +32,13 @@ const (
 type Hint struct {
 	Provider     string `json:"provider"`
 	Host         string `json:"host"`
-	RepositoryID string `json:"repository_id"`
+	RepositoryID int64  `json:"repository_id"`
 	Target       string `json:"target"`
 	Number       int    `json:"number,omitempty"`
 }
 
 func (h Hint) Validate() error {
-	if h.Provider != "github" || h.Host != "github.com" || len(h.RepositoryID) == 0 || len(h.RepositoryID) > 256 {
+	if h.Provider != "github" || h.Host != "github.com" || h.RepositoryID <= 0 {
 		return errors.New("invalid relay repository identity")
 	}
 	switch h.Target {

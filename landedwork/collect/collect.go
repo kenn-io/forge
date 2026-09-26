@@ -87,7 +87,7 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 		c.stop(c.reason(readErr), "", "")
 		return c.result, nil
 	}
-	if repo.Ref.Platform != query.Bounds.Repository.Provider || repo.Ref.Host != query.Bounds.Repository.Host || repo.PlatformID <= 0 || strconv.FormatInt(repo.PlatformID, 10) != query.Bounds.Repository.ID {
+	if repo.Ref.Platform != query.Bounds.Repository.Provider || repo.Ref.Host != query.Bounds.Repository.Host || repo.Ref.PlatformID <= 0 || strconv.FormatInt(repo.Ref.PlatformID, 10) != query.Bounds.Repository.ID {
 		return Result{}, errors.New("landing repository identity mismatch")
 	}
 	if !c.records(1) {

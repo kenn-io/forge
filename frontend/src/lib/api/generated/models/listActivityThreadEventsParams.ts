@@ -6,7 +6,7 @@ import type { ListActivityThreadEventsItemType } from "./listActivityThreadEvent
 export type ListActivityThreadEventsParams = {
   provider?: string;
   platform_host?: string;
-  platform_repo_id?: string;
+  platform_repo_id?: number;
   item_type?: ListActivityThreadEventsItemType;
   /**
    * @minimum 1

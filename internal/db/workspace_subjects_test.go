@@ -77,15 +77,14 @@ func TestListWorkspaceSubjectMetadataUsesStableRepositoryAfterRename(t *testing.
 	)
 	require.NoError(err)
 	require.NotNil(repo)
-	_, accepted, err := database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
 			PlatformRepoID: spec.Repository.PlatformRepoID,
 			Owner:          "acme-renamed", Name: "widget-renamed",
-		}, time.Now().UTC().Add(time.Hour),
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 	key := WorkspaceSubjectKey{
 		RepoID: repo.ID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
 	}

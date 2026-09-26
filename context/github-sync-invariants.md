@@ -124,16 +124,15 @@ For pull requests, that means:
   `internal/server/huma_routes.go::syncPR`). Cadence control is still required
   because changed PRs correctly fall through to comments, reviews, commits, CI,
   and workflow approval refreshes.
-- MR snapshot publication and workspace head-repository reclassification share
-  one reconciliation barrier. Provider-ID collisions preserve the destination
+- MR snapshot publication reclassifies workspace head-repository trust from the
+  stored row. Provider-ID collisions preserve the destination
   MR ID and merge its dependent review data before applying the newest provider
   snapshot. A snapshot moved from the old repository identity carries a durable
   stale-identity marker while its revision continues to advance; manual refresh
   preserves the workspace's prior trust classification until a post-move
   provider snapshot with authoritative head-repository data clears that marker
   (`internal/github/sync.go::CommitMergeRequestParentSnapshot`,
-  `internal/db/queries.go::UpsertRepoByProviderID`,
-  `internal/github/sync.go::reclassifyWorkspaceHeadRepoTrustUnderRepositoryReconciliationRead`).
+  `internal/github/sync.go::reclassifyWorkspaceHeadRepoTrust`).
 
 ## Timeline Event Rules
 
@@ -194,10 +193,10 @@ Some PR-derived state is only valid for one head commit.
   SHA-256 (64-hex) repositories are out of scope and their commit events are
   never flagged
   (`internal/github/sync.go::computeCommitLiveness`,
-  `internal/db/queries.go::UpsertMergeRequestSnapshotWithLabelsUnderRepositoryReconciliationRead`,
+  `internal/db/queries.go::UpsertMergeRequestSnapshotWithLabelsAndEventMetadata`,
   `internal/gitclone/reachability.go::CommitsReachableFrom`).
-- Mutation-triggered closed-MR refetches capture the route generation before
-  provider I/O, carry stable clone identity, and fence all snapshot/diff writes
+- Mutation-triggered closed-MR refetches resolve the repository by its stored
+  provider ID and carry stable clone identity
   (`internal/github/sync.go::SyncClosedMROnProvider`).
 - Workflow-approval decisions must be tied to the correct PR identity, not just
   the head SHA. Shared SHAs across forks or sibling PRs must not leak approval
@@ -510,8 +509,8 @@ fallback repository listing.
   detail replaces stored merge SHA and file count while filling missing merge
   time without weakening snapshot ordering. (`internal/db/queries_merge_lifecycle.go::FillMissingMergedMRMetrics`)
 - Rejected canonical merged snapshots repair each available lifecycle field and
-  the merger event under one route-fence lease; stored parent timing remains
-  authoritative when GitHub omits it, and a rejected fence stays retryable. (`internal/github/sync.go::syncMRForRepoResolved`)
+  the merger event; stored parent timing remains authoritative when GitHub
+  omits it. (`internal/github/sync.go::syncMRForRepoResolved`)
 - Post-hydration completeness queries the repository ID resolved by that sync;
   never re-resolve the caller's mutable route after reconciliation.
   (`internal/github/sync.go::SyncArchiveItem`)
@@ -634,11 +633,7 @@ host, owner, and repository identity through clone/fetch and local reads, passin
 the normalized platform (`repoPlatform(repo)`) so an unqualified GitHub ref still
 picks its credential route instead of none. Partition sync, diff, and repository
 browser clone storage by stable provider repository identity
-(`internal/gitclone/repo_browser.go::repoBrowserCloneNamespace`). Only the shared fetch's starter discards
-a clone when its captured route generation no longer owns the path; later
-callers re-validate their own fences as pure gates so a stale caller never
-deletes a clone current-route callers are reading, and a follower rejected only
-by the starter's stale route retries with its own validated fetch. Workspace clones remain
+(`internal/gitclone/repo_browser.go::repoBrowserCloneNamespace`). Workspace clones remain
 path-scoped, so shared full-stack fixtures must seed both namespaces
 (`internal/testutil/diff_repo.go::SetupDiffRepo`). Before injecting
 a PAT into workspace fetch or push, require the branch upstream to be `origin`,
@@ -812,8 +807,8 @@ error or cancellation unchanged and never adopts.
 - `workflow_run` and `check_run` refresh checks only for explicit PR references;
   workflows also invalidate the repository's Actions run list. Never fan an unassociated
   event out across PRs. (`internal/activityrelay/http.go::reduce`)
-- Feed repository IDs are GitHub node IDs, matching the durable catalog; numeric REST IDs need
-  a fresh provider resolve and must not become the consumer's lookup key. (`internal/activityrelay/http.go::reduce`)
+- Feed repository IDs are GitHub's integer repository IDs, the durable catalog key; the
+  consumer matches tracked repositories by that ID directly. (`internal/activityrelay/http.go::reduce`)
 - Nothing about a hint is persisted. Received hints wait in a bounded in-memory queue that
   coalesces repeats for one target; a single worker refreshes ready hints so provider work
   never stalls the stream. A hint that cannot run now because of budget, cooldown, or catalog

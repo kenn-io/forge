@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,13 +88,10 @@ type Manager struct {
 	// Deterministic synchronization and failure-injection hooks for
 	// repository-browser concurrency tests and clone cleanup tests. Tests set
 	// these before starting goroutines.
-	repoBrowserReadWaitingForTest      func(string)
-	repoBrowserAfterReadLockForTest    func(string)
-	repoBrowserAfterRefreshJoinForTest func(RepoBrowserRouteFence)
-	repoBrowserFetchErrorForTest       func(RepoBrowserRouteFence) error
-	removeRepoBrowserStagingForTest    func(string) error
-	publishRepoBrowserStagingForTest   func(string, string) error
-	removeCloneAsideForTest            func(string) error
+	repoBrowserReadWaitingForTest    func(string)
+	repoBrowserAfterReadLockForTest  func(string)
+	publishRepoBrowserStagingForTest func(string, string) error
+	removeCloneAsideForTest          func(string) error
 }
 
 type ensureCloneFlight struct {
@@ -124,8 +122,7 @@ type (
 // stable repository identity. Callers should set this after reconciling a
 // mutable owner/name route so route reuse cannot share clone state or an
 // in-flight fetch between distinct repositories.
-func WithRepositoryIdentity(ctx context.Context, providerRepoID string) context.Context {
-	providerRepoID = strings.TrimSpace(providerRepoID)
+func WithRepositoryIdentity(ctx context.Context, providerRepoID int64) context.Context {
 	return context.WithValue(ctx, repositoryIdentityContextKey{}, providerRepoID)
 }
 
@@ -221,12 +218,11 @@ func cloneNamespaceForPlatform(platform string) string {
 
 func cloneNamespaceForContext(ctx context.Context, platform string) string {
 	namespace := cloneNamespaceForPlatform(platform)
-	providerRepoID, _ := ctx.Value(repositoryIdentityContextKey{}).(string)
-	providerRepoID = strings.TrimSpace(providerRepoID)
-	if providerRepoID == "" {
+	providerRepoID, _ := ctx.Value(repositoryIdentityContextKey{}).(int64)
+	if providerRepoID <= 0 {
 		return namespace
 	}
-	digest := sha256.Sum256([]byte(providerRepoID))
+	digest := sha256.Sum256([]byte(strconv.FormatInt(providerRepoID, 10)))
 	identityNamespace := fmt.Sprintf("repo-%x", digest[:16])
 	if namespace == "" {
 		return identityNamespace
@@ -242,6 +238,99 @@ func (m *Manager) ClonePathForContext(
 	return m.ClonePathInNamespace(
 		cloneNamespaceForContext(ctx, platform), host, owner, name,
 	)
+}
+
+// CloneLocation is one bare clone found on disk.
+type CloneLocation struct {
+	Host  string
+	Owner string
+	Name  string
+	Path  string
+}
+
+// ClonesForContext lists the bare clones already on disk in ctx's clone
+// namespace, the namespace ClonePathForContext uses for ctx and platform. A
+// renamed repository can leave clones at several owner/name routes inside one
+// identity namespace. When ctx carries no repository identity it returns nil:
+// route-keyed storage is shared across repositories, so it cannot be
+// enumerated per repository.
+func (m *Manager) ClonesForContext(
+	ctx context.Context, platform string,
+) ([]CloneLocation, error) {
+	if providerRepoID, _ := ctx.Value(repositoryIdentityContextKey{}).(int64); providerRepoID <= 0 {
+		return nil, nil
+	}
+	root := filepath.Join(m.baseDir, cloneNamespaceForContext(ctx, platform))
+	var clones []CloneLocation
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if path == root && errors.Is(walkErr, fs.ErrNotExist) {
+				return fs.SkipAll
+			}
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if path == root || !entry.IsDir() || !strings.HasSuffix(entry.Name(), ".git") {
+			return nil
+		}
+		if !looksLikeBareClone(path) {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		location, ok := cloneLocationFromRelative(filepath.ToSlash(rel))
+		if !ok {
+			return fs.SkipDir
+		}
+		location.Path = path
+		clones = append(clones, location)
+		return fs.SkipDir
+	})
+	if err != nil {
+		return nil, err
+	}
+	return clones, nil
+}
+
+// cloneLocationFromRelative inverts clonePath's {host}/{owner...}/{name}.git
+// layout, plus the {name}.git layout of local fixture clones. Owners may span
+// several segments (nested GitLab groups).
+func cloneLocationFromRelative(rel string) (CloneLocation, bool) {
+	parts := strings.Split(rel, "/")
+	name := strings.TrimSuffix(parts[len(parts)-1], ".git")
+	if name == "" {
+		return CloneLocation{}, false
+	}
+	switch {
+	case len(parts) == 1:
+		return CloneLocation{Name: name}, true
+	case len(parts) >= 3:
+		return CloneLocation{
+			Host:  parts[0],
+			Owner: strings.Join(parts[1:len(parts)-1], "/"),
+			Name:  name,
+		}, true
+	default:
+		return CloneLocation{}, false
+	}
+}
+
+func looksLikeBareClone(path string) bool {
+	head, err := os.Lstat(filepath.Join(path, "HEAD"))
+	if err != nil || !head.Mode().IsRegular() {
+		return false
+	}
+	for _, dir := range []string{"objects", "refs"} {
+		info, err := os.Lstat(filepath.Join(path, dir))
+		if err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Manager) clonePathForContext(

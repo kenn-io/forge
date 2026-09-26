@@ -29,22 +29,22 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestRegisterProjectUsesHubRepositoryIdentity(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	observedAt := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	handler := New(Deps{
 		DB: database,
 		ResolveRepository: func(
 			ctx context.Context, route providerplane.RepositoryRoute,
 		) (*db.Repo, error) {
-			entry, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+			entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 				Platform: route.Provider, PlatformHost: route.PlatformHost,
-				PlatformRepoID: "provider-repository-1",
+				PlatformRepoID: 1001,
 				Owner:          route.Owner, Name: route.Name,
-			}, observedAt)
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -65,13 +65,69 @@ func TestRegisterProjectUsesHubRepositoryIdentity(t *testing.T) {
 		"main",
 	)
 	require.NoError(err)
-	var platformRepoID string
+	var platformRepoID int64
 	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
 		SELECT r.platform_repo_id
 		FROM forge_projects p
 		JOIN forge_repos r ON r.id = p.repo_id
 		WHERE p.id = ?`, created.ID).Scan(&platformRepoID))
-	require.Equal("provider-repository-1", platformRepoID)
+	require.Equal(int64(1001), platformRepoID)
+}
+
+func TestRegisterProjectWithoutHubLinksOnlyTrackedRepository(t *testing.T) {
+	tests := []struct {
+		name       string
+		trackRoute bool
+	}{
+		{name: "tracked route links repository", trackRoute: true},
+		{name: "untracked route stays unlinked"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			database := dbtest.Open(t)
+			var trackedRepoID int64
+			if tt.trackRoute {
+				var err error
+				trackedRepoID, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
+					Platform: "github", PlatformHost: "github.com",
+					PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+				})
+				require.NoError(err)
+			}
+			handler := New(Deps{DB: database})
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
+				defer cancel()
+				require.NoError(handler.Shutdown(ctx))
+			})
+
+			created, err := handler.registerProjectAtPath(
+				t.Context(), t.TempDir(), "Widget",
+				&platformIdentityPayload{
+					Platform: "github", PlatformHost: "github.com",
+					Owner: "acme", Name: "widget",
+				},
+				"main",
+			)
+			require.NoError(err)
+
+			var repoID sql.NullInt64
+			require.NoError(database.ReadDB().QueryRowContext(t.Context(),
+				`SELECT repo_id FROM forge_projects WHERE id = ?`, created.ID,
+			).Scan(&repoID))
+			repos, err := database.ListRepos(t.Context())
+			require.NoError(err)
+			if tt.trackRoute {
+				assert.Equal(sql.NullInt64{Int64: trackedRepoID, Valid: true}, repoID)
+				assert.Len(repos, 1)
+				return
+			}
+			assert.False(repoID.Valid)
+			assert.Empty(repos, "registration must not create a repository row")
+		})
+	}
 }
 
 func TestWorktreeLifecycleProblemMapsExistingBranch(t *testing.T) {
@@ -147,9 +203,9 @@ func TestCreateProjectWorktreeFromMergeRequestUsesHubFacts(t *testing.T) {
 	runGit(filepath.Dir(projectRoot), "clone", "-q", origin, projectRoot)
 
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	project, err := database.CreateProject(t.Context(), db.CreateProjectInput{

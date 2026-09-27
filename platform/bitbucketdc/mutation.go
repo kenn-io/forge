@@ -2,6 +2,7 @@ package bitbucketdc
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -120,7 +121,7 @@ func (c *Client) ApproveMergeRequest(ctx context.Context, ref platform.RepoRef, 
 	}
 	if expected != "" {
 		latest, err := c.getPull(ctx, ref, number)
-		if err != nil || latest.From.LatestCommit != expected {
+		if err != nil || latest.From.LatestCommit != expected || row.LastReviewedCommit != expected {
 			_, revokeErr := request[participant](ctx, c, http.MethodDelete, path+"/approve", nil)
 			revoked := "succeeded"
 			if revokeErr != nil {
@@ -129,7 +130,13 @@ func (c *Client) ApproveMergeRequest(ctx context.Context, ref platform.RepoRef, 
 			return platform.MergeRequestEvent{}, &platform.Error{Code: platform.ErrCodeStaleState, Err: err, Details: map[string]string{"revocation": revoked}}
 		}
 	}
+	if row.User.ID <= 0 || row.LastReviewedCommit == "" {
+		return platform.MergeRequestEvent{}, platform.ProviderContract(c.Platform(), c.host, "approval identity", errors.New("missing approving user ID or reviewed commit"))
+	}
 	now := time.Now().UTC()
-	id := "approval:" + row.User.Name + ":" + now.Format(time.RFC3339Nano)
+	// The API returns participant state, not a distinct activity ID. The
+	// event is scoped to the PR by storage; repeated approval of the same
+	// commit must update that observation rather than create another event.
+	id := "approval:" + strconv.FormatInt(row.User.ID, 10) + ":" + row.LastReviewedCommit
 	return platform.MergeRequestEvent{Repo: ref, MergeRequestNumber: number, PlatformExternalID: id, DedupeKey: id, EventType: "review", Author: row.User.Name, Summary: "approved", CreatedAt: now}, nil
 }

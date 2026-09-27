@@ -72,9 +72,10 @@ type branch struct {
 	Repository   repository `json:"repository"`
 }
 type participant struct {
-	User     user   `json:"user"`
-	Status   string `json:"status"`
-	Approved bool   `json:"approved"`
+	User               user   `json:"user"`
+	Status             string `json:"status"`
+	Approved           bool   `json:"approved"`
+	LastReviewedCommit string `json:"lastReviewedCommit"`
 }
 type pull struct {
 	ID          int           `json:"id"`

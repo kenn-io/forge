@@ -54555,7 +54555,10 @@ type CreateAdHocWorkspaceHostInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// Branch Branch for the new worktree; generated when empty
-	Branch              *string `json:"branch,omitempty"`
+	Branch *string `json:"branch,omitempty"`
+
+	// PlatformRepoID Expected stable repository ID from the catalog
+	PlatformRepoID      *string `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }
 
@@ -54564,7 +54567,10 @@ type CreateAdHocWorkspaceInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// Branch Branch for the new worktree; generated when empty
-	Branch              *string `json:"branch,omitempty"`
+	Branch *string `json:"branch,omitempty"`
+
+	// PlatformRepoID Expected stable repository ID from the catalog
+	PlatformRepoID      *string `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }
 
@@ -54577,6 +54583,7 @@ type CreateDevboxWorkspaceInputBody struct {
 	Name                string  `json:"name"`
 	Owner               string  `json:"owner"`
 	PlatformHost        string  `json:"platform_host"`
+	PlatformRepoID      *string `json:"platform_repo_id,omitempty"`
 	Provider            string  `json:"provider"`
 	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }

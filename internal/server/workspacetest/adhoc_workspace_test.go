@@ -1,7 +1,9 @@
 package workspacetest
 
 import (
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,6 +92,30 @@ func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(workspace)
 	require.Equal(current.Repository.ID, workspace.RepoID)
+
+	// A picker may still hold the previous owner of this route. Neither a new
+	// branch nor reuse of the replacement repository's workspace may redirect it.
+	for _, route := range []string{
+		"/api/v1/repo/gh/acme/widget/workspaces",
+		"/api/v1/host/github.com/repo/gh/acme/widget/workspaces",
+	} {
+		for _, branch := range []string{"spike/route-reuse", "spike/stale-picker"} {
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://forge.test"+route,
+				strings.NewReader(fmt.Sprintf(`{"branch":%q,"platform_repo_id":"repo-acme-widget"}`, branch)))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			fixture.server.ServeHTTP(response, request)
+			require.Equal(http.StatusNotFound, response.Code, response.Body.String())
+			require.Contains(response.Body.String(), `"code":"repoNotFound"`)
+		}
+		request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://forge.test"+route,
+			strings.NewReader(`{"branch":"spike/route-reuse","platform_repo_id":"repo-current-occupant"}`))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		fixture.server.ServeHTTP(response, request)
+		require.Equal(http.StatusAccepted, response.Code, response.Body.String())
+		require.Contains(response.Body.String(), ready.ID)
+	}
 }
 
 func TestCreateAdHocWorkspaceGeneratesBranchWhenOmitted(t *testing.T) {

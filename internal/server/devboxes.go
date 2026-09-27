@@ -130,6 +130,7 @@ type createDevboxWorkspaceInput struct {
 	Body         struct {
 		Provider            string `json:"provider"`
 		PlatformHost        string `json:"platform_host"`
+		PlatformRepoID      string `json:"platform_repo_id,omitempty"`
 		Owner               string `json:"owner"`
 		Name                string `json:"name"`
 		MRNumber            int    `json:"mr_number,omitempty"`
@@ -159,6 +160,9 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *createDevboxW
 	}
 	if repo == nil {
 		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound, "add the repository to Forge before creating a remote workspace", nil)
+	}
+	if body.PlatformRepoID != "" && body.PlatformRepoID != repo.PlatformRepoID {
+		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound, "repository identity changed during workspace creation", nil)
 	}
 	if body.MRNumber == 0 && body.IssueNumber == 0 && strings.TrimSpace(body.Branch) == "" {
 		var entropy [8]byte

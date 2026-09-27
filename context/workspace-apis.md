@@ -96,6 +96,9 @@ embedder protocol for arbitrary host state.
   - Pending recovery uses a Git-invalid branch marker and must adopt that
     directory without create/cleanup fallback; retry/delete preserve it until setup
     publishes the real branch and ready status (`internal/workspace/manager.go::workspaceRequiresExistingDirectory`).
+- Cached repository selections must carry the provider's stable ID through local, fleet, and devbox creation;
+  validate it before branch reuse or creation so a reused route cannot redirect the choice
+  (`internal/server/workspaceapi/routes_handlers.go::createAdHocWorkspaceRouteCore`).
 - `POST /repo/{provider}/{owner}/{name}/workspaces`: create or reuse an ad-hoc
   workspace for new work with no source item. Its branch is its identity: the
   item key is `adhoc:<branch>` and `item_number` stays 0, so item-key fallbacks

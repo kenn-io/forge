@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
@@ -40,26 +41,18 @@ type labelWireResponse struct {
 	Labels []db.Label `json:"labels"`
 }
 
-type repoCapabilitiesWire []struct {
-	Owner        string `json:"owner"`
-	Name         string `json:"name"`
-	Capabilities struct {
-		ReadLabels    bool `json:"read_labels"`
-		LabelMutation bool `json:"label_mutation"`
-	} `json:"capabilities"`
-}
-
 // assertRepoLabelCapabilities checks the payload the label picker UI is
 // gated on: both label capabilities must be advertised for the repo.
-func assertRepoLabelCapabilities(t *testing.T, srv http.Handler) {
+func assertRepoLabelCapabilities(t *testing.T, srv http.Handler, provider string) {
 	t.Helper()
-	rr := doJSONRequest(t, srv, http.MethodGet, "/api/v1/repos", nil)
-	require.Equal(t, http.StatusOK, rr.Code, "response: %s", rr.Body.String())
-	var body repoCapabilitiesWire
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
-	require.Len(t, body, 1)
-	assert.True(t, body[0].Capabilities.ReadLabels, "read_labels must be advertised")
-	assert.True(t, body[0].Capabilities.LabelMutation, "label_mutation must be advertised")
+	require := require.New(t)
+	rr := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls/"+provider+"/acme/widget/7", nil)
+	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+	var body generated.MergeRequestDetailResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	require.NotNil(body.Repo)
+	assert.True(t, body.Repo.Capabilities.ReadLabels, "read_labels must be advertised")
+	assert.True(t, body.Repo.Capabilities.LabelMutation, "label_mutation must be advertised")
 }
 
 func seedProviderRepo(
@@ -300,7 +293,7 @@ func TestGitLabListRepoLabelsSyncsCatalogFromProvider(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, repoID, _ := setupGitLabLabelStack(t)
-	assertRepoLabelCapabilities(t, srv)
+	assertRepoLabelCapabilities(t, srv, "gitlab")
 
 	rr := doJSONRequest(t, srv, http.MethodGet, "/api/v1/repo/gitlab/acme/widget/labels", nil)
 	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
@@ -669,7 +662,7 @@ func TestGitealikeListRepoLabelsSyncsCatalogFromProvider(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			srv, database, repoID, _ := setupGitealikeLabelStack(t, variant)
-			assertRepoLabelCapabilities(t, srv)
+			assertRepoLabelCapabilities(t, srv, variant.route)
 
 			rr := doJSONRequest(t, srv, http.MethodGet, "/api/v1/repo/"+variant.route+"/acme/widget/labels", nil)
 			require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())

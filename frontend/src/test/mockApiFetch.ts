@@ -213,6 +213,7 @@ const issues = [
 const repos = [
   {
     ID: 1,
+    PlatformRepoID: "R_widgets",
     Owner: "acme",
     Name: "widgets",
     Platform: "github",

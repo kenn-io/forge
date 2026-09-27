@@ -70,8 +70,10 @@ The follow-up addresses additional browser work and waits:
   the same list independently. Both now share an app-owned successful catalog
   and pending reads. The dialog restores choices while refreshing, retains them
   on refresh failure, and preserves an in-flight user choice or clears it if
-  removed. A real-browser regression first loads the global picker, stalls the
-  dialog's refresh, and shows cached choices before releasing the read.
+  removed or replaced by a different provider repository. Creation carries the
+  selected stable repository ID through backend admission. A real-browser
+  regression first loads the global picker, stalls the dialog's refresh, and
+  shows cached choices before releasing the read.
 - **PR/issue details evicted within a normal working session.** Each detail
   cache now retains 100 items instead of ten. The existing revisit regressions
   now visit twenty other items before returning with the fresh read held open.
@@ -111,8 +113,9 @@ appears. Held-response regressions cover the dependencies removed below.
    destination independent of it. An unresolved preferred devbox submits to that
    exact devbox; it never falls back to local. Fresh removal, known maintenance,
    and provider restrictions still block creation, and the backend admits every
-   request. Settings separates discovery from mutation busy state so saved and
-   local choices remain selectable.
+   request. Discovery failures show a status-unavailable hint. Settings
+   separates discovery from mutation busy state so saved and local choices
+   remain selectable.
 3. **Matching cached details allow local comment drafting.** PR and issue
    editors accept drafts while the matching cached detail refreshes. Submission
    still waits for fresh detail and operation permission. A different item's
@@ -260,11 +263,12 @@ currently impose a slow-link profile.
 - Held-response regressions cover catalog reads with credential discovery blocked,
   cached machine choices with discovery pending, exact destination capture,
   editable cached drafts with submission disabled, and one fresh queued-launch
-  admission read. The four launch/event suites pass all 212 tests.
-- Independent review caught duplicate mobile hydration from the event stream's
-  synchronous initial Open notification. Both that request-count regression and
-  readiness behind a held reconnect refresh failed before the correction and
-  pass afterward. The final branch review has no open findings.
+  admission read. The four launch/event suites pass all 215 tests.
+- Mobile Open notifications can arrive synchronously or after mount. Both now
+  wait for initial loading and refresh only pending workspace enrichment;
+  stale reconnects still reload workspace and runtime. The asynchronous case
+  reproduced the phone launch failure in both browsers before the correction.
+  Setup polling reads runtime only once the workspace is ready.
 - The full API test package, fleet packages, focused race checks, Go lint,
   formatting, and nilaway pass. The full server package timed out in
   `TestFederationEventEndpointReplaysFilteredEventsAndSignalsStale`. Twenty
@@ -272,7 +276,7 @@ currently impose a slow-link profile.
   this branch and with all pending Go changes restored to the starting commit
   through an overlay. A single focused run passed. No clean full server run is
   claimed.
-- After the final frontend edit, the full Vitest suite passed 4,294 tests and
+- After the final frontend edit, the full Vitest suite passed 4,302 tests and
   skipped one across 393 passing files and one skipped file. Frontend formatting,
   lint, Svelte/type checks, and Effect diagnostics pass.
 - All 102 full-stack cases in workspace creation/launch, workspace launcher,
@@ -286,3 +290,19 @@ currently impose a slow-link profile.
 - The final full server-package run passes with only the independently reproduced
   federation cleanup hang excluded. The API package and focused capability
   contract test also pass; the excluded test is the remaining verification limit.
+
+## Review follow-up verification
+
+- Repository route-reuse regressions cover cached selection, local and
+  host-qualified creation, branch reuse, manager creation, and devbox creation.
+  The workspace API, workspace integration, and manager Go suites pass.
+- Provider label-capability tests now read the enriched PR response used by the
+  UI. The GitLab and Gitea/Forgejo cases pass normally and with the race detector.
+- The workspace sidebar and workspace view browser suites pass 265 tests, with
+  one skipped, across Chromium and Firefox using normal timeouts. Two Chromium
+  terminal-picker cases failed in an earlier run; both passed three focused
+  repetitions each, a concurrent group, and the final full run with failure traces
+  enabled. The initial failures lacked traces and their cause remains unproven.
+- The real-backend workspace creation and launch suite passes all 20 cases
+  across both browsers after the production changes. Go lint, formatting,
+  nilaway, and frontend checks also pass.

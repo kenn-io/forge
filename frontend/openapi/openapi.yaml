@@ -1579,6 +1579,9 @@ components:
         branch:
           description: Branch for the new worktree; generated when empty
           type: string
+        platform_repo_id:
+          description: Expected stable repository ID from the catalog
+          type: string
         reuse_existing_branch:
           type: boolean
       type: object
@@ -1594,6 +1597,9 @@ components:
           type: string
         branch:
           description: Branch for the new worktree; generated when empty
+          type: string
+        platform_repo_id:
+          description: Expected stable repository ID from the catalog
           type: string
         reuse_existing_branch:
           type: boolean
@@ -1621,6 +1627,8 @@ components:
         owner:
           type: string
         platform_host:
+          type: string
+        platform_repo_id:
           type: string
         provider:
           type: string

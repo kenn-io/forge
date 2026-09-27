@@ -36,6 +36,7 @@ type CreateIssueWorkspaceRequest struct {
 type CreateAdHocWorkspaceRequest struct {
 	Provider            string
 	PlatformHost        string
+	PlatformRepoID      string
 	Owner               string
 	Name                string
 	Branch              *string

@@ -2812,6 +2812,37 @@ describe("PullDetail inline workspace handoff", () => {
     snapshot.resolve({ data: { hosts: [] } });
   });
 
+  it("shows a quiet status hint after directory failure and still creates on the saved devbox", async () => {
+    const snapshot = Promise.withResolvers<unknown>();
+    const apiClient = {
+      GET: vi
+        .fn()
+        .mockImplementation((path: string) =>
+          path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: {} }),
+        ),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
+    };
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "devbox:compute-a",
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(apiClient.GET).toHaveBeenCalledWith("/snapshot", expect.anything()));
+    snapshot.reject(new Error("directory unavailable"));
+    await waitFor(() => expect(create.title).toContain("Preferred devbox status unavailable."));
+    expect(document.getElementById(create.getAttribute("aria-describedby")!)?.textContent).toContain(
+      "Preferred devbox status unavailable.",
+    );
+    expect(create.disabled).toBe(false);
+    await fireEvent.click(create);
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces",
+        expect.objectContaining({ params: { path: { connection_id: "compute-a" } } }),
+      ),
+    );
+  });
+
   function deferredWorkspaceApiClient() {
     let resolvePost!: (value: { data?: { id: string; status: string; created?: boolean } }) => void;
     const postPromise = new Promise<{ data?: { id: string; status: string; created?: boolean } }>((resolve) => {

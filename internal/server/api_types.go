@@ -9,6 +9,7 @@ import (
 )
 
 // RepoCatalogResponse contains stored repository data without provider lookups.
+// Keep it exported: Huma skips unexported fields, including embedded structs.
 type RepoCatalogResponse struct {
 	ID                  int64
 	Platform            string

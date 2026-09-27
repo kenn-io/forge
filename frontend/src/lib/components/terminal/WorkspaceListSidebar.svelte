@@ -1193,6 +1193,7 @@
     return {
       provider,
       platformHost: current.platform_host,
+      platformRepoId: current.repo?.platform_repo_id,
       owner: current.repo_owner,
       name: current.repo_name,
     };

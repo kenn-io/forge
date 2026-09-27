@@ -1433,7 +1433,7 @@
             disabled={staleIssue || workspaceTarget.reason !== ""}
             disabledReason={staleIssue
               ? "Refresh details before creating a workspace."
-              : workspaceTarget.reason || createWorkspaceTitle}
+              : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
             descriptionId={createWorkspaceDescriptionId}
             onCreate={(targetKey) => void createWorkspace(
               targetKey === undefined ? {} : { launchTargetKey: targetKey },
@@ -1506,7 +1506,7 @@
         <span id={createWorkspaceDescriptionId} class="kit-sr-only">
           {staleIssue
             ? "Refresh details before creating a workspace."
-            : workspaceTarget.reason || createWorkspaceTitle}
+            : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
         </span>
       {/if}
       <AdaptiveActionGrid

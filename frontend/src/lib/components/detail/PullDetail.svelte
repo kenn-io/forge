@@ -2836,7 +2836,7 @@
             disabled={stalePR || workspaceTarget.reason !== ""}
             disabledReason={stalePR
               ? "Refresh details before creating a workspace."
-              : workspaceTarget.reason || createWorkspaceTitle}
+              : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
             descriptionId={createWorkspaceDescriptionId}
             onCreate={(targetKey) => createWorkspace(targetKey)}
             quickActions={settings.getQuickActions()}
@@ -3072,7 +3072,7 @@
       <!-- Approve / Merge / Close / Reopen actions -->
       {#if !workspace}
         <span id={createWorkspaceDescriptionId} class="kit-sr-only">
-          {stalePR ? "Refresh details before creating a workspace." : workspaceTarget.reason || createWorkspaceTitle}
+          {stalePR ? "Refresh details before creating a workspace." : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
         </span>
       {/if}
       {#if showActionSurface}

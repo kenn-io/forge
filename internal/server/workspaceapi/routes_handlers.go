@@ -59,6 +59,7 @@ type createAdHocWorkspaceInput struct {
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
 	Body         struct {
+		PlatformRepoID      string  `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
 		Branch              *string `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
 		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
 	}
@@ -811,6 +812,7 @@ func (s *Handler) createAdHocWorkspace(
 	result, err := s.CreateAdHocWorkspaceService(ctx, CreateAdHocWorkspaceRequest{
 		Provider: input.Provider, PlatformHost: input.PlatformHost,
 		Owner: input.Owner, Name: input.Name, Branch: input.Body.Branch,
+		PlatformRepoID:      input.Body.PlatformRepoID,
 		ReuseExistingBranch: input.Body.ReuseExistingBranch,
 	})
 	if err != nil {
@@ -841,6 +843,7 @@ func (s *Handler) CreateAdHocWorkspaceService(
 		Owner: req.Owner, Name: req.Name,
 	}
 	input.Body.Branch = req.Branch
+	input.Body.PlatformRepoID = req.PlatformRepoID
 	input.Body.ReuseExistingBranch = req.ReuseExistingBranch
 	output, err := s.createAdHocWorkspaceRouteCore(ctx, input)
 	if err != nil {
@@ -860,6 +863,9 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 	)
 	if err != nil {
 		return nil, providerRouteLookupError(err)
+	}
+	if input.Body.PlatformRepoID != "" && input.Body.PlatformRepoID != repo.PlatformRepoID {
+		return nil, repositoryRouteFenceProblem(db.ErrRepositoryRouteFenceChanged)
 	}
 
 	branch := strings.TrimSpace(derefString(input.Body.Branch))
@@ -881,6 +887,7 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 		repo.Owner,
 		repo.Name,
 		workspace.CreateAdHocOptions{
+			PlatformRepoID:      repo.PlatformRepoID,
 			BranchName:          branch,
 			ReuseExistingBranch: input.Body.ReuseExistingBranch,
 		},

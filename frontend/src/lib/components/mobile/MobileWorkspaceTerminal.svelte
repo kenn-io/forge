@@ -13,7 +13,7 @@
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import SpaceIcon from "@lucide/svelte/icons/space";
   import SquareIcon from "@lucide/svelte/icons/square";
-  import { Effect, Option, Stream } from "effect";
+  import { Deferred, Effect, Option, Stream } from "effect";
   import { tick, untrack } from "svelte";
   import type { RuntimeSession, TerminalSettings as TerminalSettingsType } from "../../api/types.js";
   import { apiErrorMessage } from "../../api/runtime.js";
@@ -466,9 +466,10 @@
   }
 
   function refreshWorkspaceState() {
-    return Effect.suspend(() =>
-      workspace?.status === "ready" ? readRuntime() : loadWorkspaceAndRuntime(),
-    );
+    return Effect.gen(function* () {
+      if (workspace?.status !== "ready") yield* loadWorkspace();
+      if (workspace?.status === "ready") yield* readRuntime();
+    });
   }
 
   function retryWorkspaceSetup(): void {
@@ -747,6 +748,7 @@
       appRuntime.runCommand(
         Effect.scoped(
           Effect.gen(function* () {
+            const initialLoad = yield* Deferred.make<void>();
             const workflow = yield* WorkspaceRuntimeWorkflow;
             yield* workflow.claimPresenter(activeTarget, presenterID, observeMutation, {
               presentationIsCurrent: () => workspaceId === activeWorkspaceId && hostKey === activeHostKey,
@@ -757,16 +759,18 @@
               ),
             );
             yield* Effect.forkChild(
-              workspaceEventStream((subscriber) => {
-                // A connected subscription reports Open synchronously; the
-                // initial load below already covers that notification.
-                let subscribing = true;
-                const unsubscribe = eventsStore.subscribeWorkspaceEvents((event) => {
-                  if (!subscribing || event.type !== "open") subscriber(event);
-                });
-                subscribing = false;
-                return unsubscribe;
-              }).pipe(Stream.runForEach((event) => {
+              workspaceEventStream(eventsStore.subscribeWorkspaceEvents).pipe(Stream.runForEach((event) => {
+                if (event._tag === "Open") {
+                  // Opening a live stream is not invalidation. Only recover
+                  // enrichment that may have completed before subscribing.
+                  return Deferred.await(initialLoad).pipe(
+                    Effect.andThen(Effect.suspend(() =>
+                      workspace?.enrichment_status === "pending" ? loadWorkspace() : Effect.void,
+                    )),
+                    Effect.forkChild,
+                    Effect.asVoid,
+                  );
+                }
                 if (event._tag === "Status" && (event.workspaceId === undefined || event.workspaceId === activeWorkspaceId)) {
                   return Effect.sync(() => {
                     if (
@@ -781,13 +785,14 @@
                     }
                   }).pipe(Effect.andThen(loadWorkspace()), Effect.forkChild, Effect.asVoid);
                 }
-                return event._tag === "Open" || event._tag === "ReconnectStale"
+                return event._tag === "ReconnectStale"
                   ? loadWorkspaceAndRuntime().pipe(Effect.forkChild, Effect.asVoid)
                   : Effect.void;
               })),
               { startImmediately: true },
             );
             yield* loadWorkspaceAndRuntime();
+            yield* Deferred.succeed(initialLoad, undefined);
             yield* Effect.forever(
               Effect.sleep("5 seconds").pipe(Effect.andThen(refreshWorkspaceState())),
             );

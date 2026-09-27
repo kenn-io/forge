@@ -5,6 +5,7 @@
 export type NewWorkspaceRepoSeed = {
   provider: string;
   platformHost: string;
+  platformRepoId?: string | undefined;
   owner: string;
   name: string;
 };

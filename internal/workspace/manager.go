@@ -117,6 +117,7 @@ type CreateIssueOptions struct {
 // An empty BranchName generates one; a name that already exists locally is
 // reused when requested or automatically suffixed with a short random hash.
 type CreateAdHocOptions struct {
+	PlatformRepoID      string
 	BranchName          string
 	ReuseExistingBranch bool
 }
@@ -885,6 +886,10 @@ func (m *Manager) CreateAdHoc(
 	}
 	if repo == nil {
 		return nil, fmt.Errorf("%w: repository not tracked", ErrWorkspaceNotFound)
+	}
+	if opts.PlatformRepoID != "" && opts.PlatformRepoID != repo.PlatformRepoID {
+		return nil, fmt.Errorf("%w: workspace repository identity changed for route: %s/%s",
+			db.ErrRepositoryRouteFenceChanged, owner, name)
 	}
 
 	id, err := newWorkspaceID()

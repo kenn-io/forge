@@ -461,6 +461,9 @@ stale tabs.
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::recentWorkspaces`).
 - Repeat visits restore host-scoped workspace/runtime presentation before revalidation; cached runtime may reclaim retained sessions but cannot decide queued launches, authorize new attachments, or discard absent peers
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoredSessionKeys`).
+- Event-stream `Open` can arrive after initial loading; it is not runtime invalidation. Only pending workspace enrichment
+  needs a detail refresh after the initial load, while `ReconnectStale` still reloads workspace and runtime
+  (`frontend/src/lib/components/mobile/MobileWorkspaceTerminal.svelte`).
 - Parked workspace hosts stop periodic runtime reads unless a promoted pane remains visible; this must not stop
   application-owned launch reconciliation (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::startRuntimePolling`).
 - A live view's desired set claims its sessions even when a tab is hidden; only unclaimed sessions enter the bounded, release-ordered LRU, and a zero limit disables retention (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionReleased`).

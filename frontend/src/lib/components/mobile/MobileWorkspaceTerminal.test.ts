@@ -123,31 +123,35 @@ describe("MobileWorkspaceTerminal", () => {
     expect(await screen.findByRole("button", { name: "Terminal options" })).toBeTruthy();
   });
 
-  it("loads once for an already-connected subscription and refreshes on a later reconnect", async () => {
-    const detail = Promise.withResolvers<typeof workspace>();
-    const runtimeRead = Promise.withResolvers<typeof runtime>();
-    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
-    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
-      notify = subscriber;
-      subscriber({ type: "open" });
-      return () => {};
-    });
-    mocks.runtimeClient.getWorkspace.mockReturnValue(detail.promise);
-    mocks.runtimeClient.getWorkspaceRuntime.mockReturnValue(runtimeRead.promise);
-    render(MobileWorkspaceTerminal, { props });
-    await waitFor(() => expect(notify).toBeTypeOf("function"));
-    detail.resolve(workspace);
-    runtimeRead.resolve(runtime);
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Terminal options" }).hasAttribute("disabled")).toBe(false),
-    );
-    expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledOnce();
-    expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce();
+  it.each(["synchronous", "asynchronous"])(
+    "loads once when Open arrives %s and refreshes a stale reconnect",
+    async (delivery) => {
+      const detail = Promise.withResolvers<typeof workspace>();
+      const runtimeRead = Promise.withResolvers<typeof runtime>();
+      let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+      events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+        notify = subscriber;
+        if (delivery === "synchronous") subscriber({ type: "open" });
+        else queueMicrotask(() => subscriber({ type: "open" }));
+        return () => {};
+      });
+      mocks.runtimeClient.getWorkspace.mockReturnValue(detail.promise);
+      mocks.runtimeClient.getWorkspaceRuntime.mockReturnValue(runtimeRead.promise);
+      render(MobileWorkspaceTerminal, { props });
+      await waitFor(() => expect(notify).toBeTypeOf("function"));
+      detail.resolve(workspace);
+      runtimeRead.resolve(runtime);
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Terminal options" }).hasAttribute("disabled")).toBe(false),
+      );
+      expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledOnce();
+      expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce();
 
-    notify?.({ type: "open" });
-    await waitFor(() => expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
-  });
+      notify?.({ type: "reconnect.stale", payload: {} });
+      await waitFor(() => expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
+    },
+  );
 
   it("accepts a ready status while reconnect detail refresh is held", async () => {
     const reconnectDetail = Promise.withResolvers<typeof workspace>();
@@ -167,11 +171,48 @@ describe("MobileWorkspaceTerminal", () => {
     render(MobileWorkspaceTerminal, { props });
     await screen.findByText("Setting up workspace…");
     await waitFor(() => expect(notify).toBeTypeOf("function"));
-    notify?.({ type: "open" });
+    notify?.({ type: "reconnect.stale", payload: {} });
     await waitFor(() => expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(2));
     notify?.({ type: "workspace_status", payload: { id: "ws-a", status: "ready" } });
     await waitFor(() => expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce());
     expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce();
+  });
+
+  it("rechecks pending enrichment after initial loading without rereading runtime", async () => {
+    const initial = Promise.withResolvers<typeof workspace>();
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+      queueMicrotask(() => subscriber({ type: "open" }));
+      return () => {};
+    });
+    mocks.runtimeClient.getWorkspace.mockReturnValueOnce(initial.promise).mockResolvedValue(workspace);
+    render(MobileWorkspaceTerminal, { props });
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
+    expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledOnce();
+    initial.resolve({ ...workspace, enrichment_status: "pending" });
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(2));
+    expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce();
+  });
+
+  it("polls only details during setup and discovers runtime immediately when setup becomes ready", async () => {
+    const timeouts = vi.spyOn(globalThis, "setTimeout");
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, status: "creating" });
+    render(MobileWorkspaceTerminal, { props });
+    await screen.findByText("Setting up workspace…");
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
+    await waitFor(() => expect(timeouts.mock.calls.some(([, delay]) => delay === 5000)).toBe(true));
+    const poll = timeouts.mock.calls.find(([, delay]) => delay === 5000)?.[0];
+    if (typeof poll !== "function") throw new Error("missing readiness poll");
+    poll();
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(2));
+    expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce();
+    mocks.runtimeClient.getWorkspace.mockResolvedValue(workspace);
+    await waitFor(() => expect(timeouts.mock.calls.filter(([, delay]) => delay === 5000)).toHaveLength(2));
+    const nextPoll = timeouts.mock.calls.filter(([, delay]) => delay === 5000)[1]?.[0];
+    if (typeof nextPoll !== "function") throw new Error("missing second readiness poll");
+    nextPoll();
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Terminal options" }).hasAttribute("disabled")).toBe(false);
+    timeouts.mockRestore();
   });
 
   it("uses one fresh queued-admission read after ready events while detail refresh is held", async () => {

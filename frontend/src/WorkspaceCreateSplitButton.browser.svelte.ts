@@ -141,6 +141,7 @@ describe("workspace create split button in the New workspace dialog", () => {
             return jsonResponse([
               {
                 ID: 1,
+                PlatformRepoID: "R_widget",
                 Owner: "acme",
                 Name: "widget",
                 Platform: "github",

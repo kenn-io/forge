@@ -54,6 +54,22 @@ func TestCreateAdHocUsesRequestedBranch(t *testing.T) {
 	assert.Contains(filepath.Base(ws.WorktreePath), "work-spike-rate-limits-")
 }
 
+func TestCreateAdHocRejectsChangedRepositoryIdentity(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	seedRepo(t, database, "github.com", "acme", "widget")
+	manager := NewManager(database, t.TempDir())
+	ws, err := manager.CreateAdHoc(t.Context(), "github", "github.com", "acme", "widget",
+		CreateAdHocOptions{PlatformRepoID: "repo-replaced", BranchName: "spike/stale-picker"})
+	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
+	require.Nil(ws)
+
+	ws, err = manager.CreateAdHoc(t.Context(), "github", "github.com", "acme", "widget",
+		CreateAdHocOptions{PlatformRepoID: "repo-acme-widget", BranchName: "spike/stale-picker"})
+	require.NoError(err)
+	require.Equal("spike/stale-picker", ws.GitHeadRef)
+}
+
 func TestCreateAdHocRejectsInvalidBranch(t *testing.T) {
 	d := openTestDB(t)
 	seedRepo(t, d, "github.com", "acme", "widget")

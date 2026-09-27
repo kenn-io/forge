@@ -273,6 +273,7 @@ type createAdHocWorkspaceHostInput struct {
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
 	Body         struct {
+		PlatformRepoID      string  `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
 		Branch              *string `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
 		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
 	}

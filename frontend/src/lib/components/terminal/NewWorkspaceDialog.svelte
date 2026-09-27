@@ -81,6 +81,7 @@
     key: string;
     provider: string;
     platformHost: string;
+    platformRepoId: string;
     owner: string;
     name: string;
     label: string;
@@ -186,6 +187,7 @@
       key: `${provider}/${repo.PlatformHost}/${repo.Owner}/${repo.Name}`,
       provider,
       platformHost: repo.PlatformHost,
+      platformRepoId: repo.PlatformRepoID,
       owner: repo.Owner,
       name: repo.Name,
       label: `${repo.Owner}/${repo.Name}`,
@@ -214,7 +216,8 @@
   function defaultRepoSelection(): string {
     const seededRepoKey = seedKey(seedRepo);
     if (seededRepoKey) {
-      return repos.some((repo) => repo.key === seededRepoKey) ? seededRepoKey : "";
+      return repos.some((repo) => repo.key === seededRepoKey
+        && (!seedRepo?.platformRepoId || repo.platformRepoId === seedRepo.platformRepoId)) ? seededRepoKey : "";
     }
     const lastUsed = getLastUsedNewWorkspaceRepoKey();
     return (lastUsed && repos.some((repo) => repo.key === lastUsed) ? lastUsed : repos[0]?.key) ?? "";
@@ -235,10 +238,12 @@
         yield* Effect.sync(() => {
           if (activeSession !== session) return;
           reposLoading = false;
+          const previous = repos.find((repo) => repo.key === selectedKey);
           repos = loaded.map(repoOption);
-          // Refresh must not replace a choice made while the request was pending.
-          selectedKey = selectedKey
-            ? repos.some((repo) => repo.key === selectedKey) ? selectedKey : ""
+          // A route may now belong to another repository. Require a new choice
+          // instead of silently changing the identity selected from the cache.
+          selectedKey = previous
+            ? repos.some((repo) => repo.key === previous.key && repo.platformRepoId === previous.platformRepoId) ? previous.key : ""
             : defaultRepoSelection();
         });
       }),
@@ -425,7 +430,7 @@
 
   const canSubmit = $derived(
     source === "repository"
-      ? selected !== null && workspaceTargetReason === ""
+      ? !!selected?.platformRepoId && workspaceTargetReason === ""
       : selectedKataReference !== null && selectedDaemonUsable,
   );
 
@@ -495,7 +500,7 @@
       error = workspaceTargetReason;
       return;
     }
-    if (requestedSource === "repository" && !repo) {
+    if (requestedSource === "repository" && !repo?.platformRepoId) {
       error = "Pick a repository.";
       return;
     }
@@ -537,7 +542,7 @@
             repoPath: `${repo.owner}/${repo.name}`,
           };
           const routeParams = providerRouteParams(ref);
-          const body = requested ? { branch: requested } : {};
+          const body = { platform_repo_id: repo.platformRepoId, ...(requested ? { branch: requested } : {}) };
           if (remoteWorkspaceHostKey?.startsWith("devbox:")) {
             return executeGeneratedApiRequest("create devbox workspace", (client, signal) =>
               client.DevboxesService.createDevboxWorkspace(

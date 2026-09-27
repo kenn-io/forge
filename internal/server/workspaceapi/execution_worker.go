@@ -85,7 +85,8 @@ func (s *Handler) createWorkerWorkspace(ctx context.Context, input *struct{ Body
 		}
 		result, err := s.CreateAdHocWorkspaceService(ctx, CreateAdHocWorkspaceRequest{
 			Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost,
-			Owner: request.Repository.Owner, Name: request.Repository.Name,
+			PlatformRepoID: request.Repository.PlatformRepoID,
+			Owner:          request.Repository.Owner, Name: request.Repository.Name,
 			Branch: &request.Branch, ReuseExistingBranch: request.ReuseExistingBranch,
 		})
 		if err != nil {

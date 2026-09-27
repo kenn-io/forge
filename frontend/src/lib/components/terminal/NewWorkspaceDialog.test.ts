@@ -69,6 +69,7 @@ function repoFixture(owner: string, name: string, platformHost = "github.com", p
     Name: name,
     Owner: owner,
     Platform: platform,
+    PlatformRepoID: `${platform}-${owner}-${name}`,
     PlatformHost: platformHost,
   };
 }
@@ -141,7 +142,7 @@ describe("NewWorkspaceDialog", () => {
     ];
     expect(path).toBe("/repo/{provider}/{owner}/{name}/workspaces");
     expect(options.params.path).toEqual({ provider: "github", owner: "acme", name: "widget" });
-    expect(options.body).toEqual({});
+    expect(options.body).toEqual({ platform_repo_id: "github-acme-widget" });
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new");
     expect(onClose).toHaveBeenCalled();
   });
@@ -209,7 +210,7 @@ describe("NewWorkspaceDialog", () => {
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
     const [, options] = mockPost.mock.calls[0] as [string, { body: Record<string, string> }];
-    expect(options.body).toEqual({ branch: "spike/rate-limits" });
+    expect(options.body).toEqual({ branch: "spike/rate-limits", platform_repo_id: "github-acme-widget" });
   });
 
   it("creates against the repo the user picks from the list", async () => {
@@ -279,6 +280,21 @@ describe("NewWorkspaceDialog", () => {
     );
     expect(repoPicker().textContent).not.toContain("acme/widget");
     expect(repoPicker().textContent).not.toContain("acme/gadget");
+  });
+
+  it("does not preselect a replacement for the repository of the current workspace", async () => {
+    await renderDialog({
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: "original-id",
+        owner: "acme",
+        name: "widget",
+      },
+    });
+    await waitFor(() => expect(repoPicker().textContent).not.toContain("Loading repositories"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(repoPicker().textContent).not.toContain("acme/widget");
   });
 
   it("keeps requiring a choice for an unavailable seed after switching sources", async () => {
@@ -399,7 +415,7 @@ describe("NewWorkspaceDialog", () => {
       owner: "acme",
       name: "widget",
     });
-    expect(options.body).toEqual({});
+    expect(options.body).toEqual({ platform_repo_id: "github-acme-widget" });
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/build-node/ws-new");
   });
 
@@ -437,7 +453,7 @@ describe("NewWorkspaceDialog", () => {
     expect(mockPost.mock.calls[0][0]).toBe("/devboxes/{connection_id}/workspaces");
     expect(mockPost.mock.calls[0][1]).toMatchObject({
       params: { path: { connection_id: "compute-a" } },
-      body: { provider: "github", owner: "acme", name: "widget" },
+      body: { provider: "github", owner: "acme", name: "widget", platform_repo_id: "github-acme-widget" },
     });
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/devbox%3Acompute-a/ws-new");
   });
@@ -462,7 +478,13 @@ describe("NewWorkspaceDialog", () => {
         "/devboxes/{connection_id}/workspaces",
         expect.objectContaining({
           params: { path: { connection_id: "compute-a" } },
-          body: { provider: "github", platform_host: "github.com", owner: "acme", name: "widget" },
+          body: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widget",
+            platform_repo_id: "github-acme-widget",
+          },
         }),
       ),
     );
@@ -696,7 +718,7 @@ describe("NewWorkspaceDialog", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
     const [, options] = mockPost.mock.calls[1] as [string, { body: Record<string, string> }];
-    expect(options.body).toEqual({ branch: "spike/thing-2" });
+    expect(options.body).toEqual({ branch: "spike/thing-2", platform_repo_id: "github-acme-widget" });
   });
 
   it("keeps the dialog open and reports the failure when the create fails", async () => {
@@ -818,6 +840,52 @@ describe("NewWorkspaceDialog", () => {
     await fireEvent.keyDown(screen.getByRole("combobox", { name: "Filter repositories" }), { key: "Escape" });
     expect(repoPicker().textContent).toContain("acme/gadget");
     expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("clears a cached selection when the same route belongs to a different repository", async () => {
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await rerender({ open: false });
+    const response = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? response.promise : Promise.resolve({ data: { hosts: [] } }),
+    );
+    await rerender({ open: true });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+
+    response.resolve({ data: [{ ...repoFixture("acme", "widget"), PlatformRepoID: "replacement-id" }] });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(repoPicker().textContent).not.toContain("acme/widget");
+    expect(mockPost).not.toHaveBeenCalled();
+
+    await pickRepo("acme/widget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({ body: { platform_repo_id: "replacement-id" } }),
+      ),
+    );
+  });
+
+  it("submits the cached repository ID while catalog refresh is pending", async () => {
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await rerender({ open: false });
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? new Promise(() => {}) : Promise.resolve({ data: { hosts: [] } }),
+    );
+    await rerender({ open: true });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({ body: { platform_repo_id: "github-acme-widget" } }),
+      ),
+    );
   });
 
   it("interrupts the repository load when the dialog closes", async () => {

@@ -29,7 +29,9 @@ export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () 
   const hostKey = $derived(getTarget().startsWith("devbox:") ? getTarget() : undefined);
   let hosts = $state.raw<HostSummary[] | null>(null);
   let checked = $state(false);
+  let hint = $state("");
   $effect(() => {
+    hint = "";
     if (!hostKey || devboxRepositoryUnavailableReason(getRepo())) return;
     hosts = null;
     checked = false;
@@ -49,7 +51,9 @@ export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () 
         {
           operation: "check workspace machine",
           safeContext: {},
-          onFailure: () => {},
+          onFailure: () => {
+            hint = "Preferred devbox status unavailable. Forge will check it when creating the workspace.";
+          },
         },
       ),
     );
@@ -71,6 +75,9 @@ export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () 
     },
     get reason() {
       return reason;
+    },
+    get hint() {
+      return hint;
     },
   };
 }

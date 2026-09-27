@@ -46,6 +46,7 @@
     type KataWorkspaceIdentity,
   } from "../../stores/kata-workspace-create.svelte.js";
   import { navigate } from "../../stores/router.svelte.js";
+  import { repoIdentityKey } from "../../utils/repo-label.js";
   import {
     getLastUsedNewWorkspaceRepoKey,
     rememberNewWorkspaceRepoKey,
@@ -211,8 +212,8 @@
   // An explicit seed is a promise about which repository the workspace
   // targets. When it cannot be resolved (for example a repository hidden
   // from the UI), require a choice instead of silently diverting to another
-  // repository. Without a seed, prefer the last repo work was started in,
-  // then the first.
+  // repository. Remembered choices must still resolve by stable identity;
+  // use the first repository only when there is no remembered choice.
   function defaultRepoSelection(): string {
     const seededRepoKey = seedKey(seedRepo);
     if (seededRepoKey) {
@@ -220,7 +221,10 @@
         && (!seedRepo?.platformRepoId || repo.platformRepoId === seedRepo.platformRepoId)) ? seededRepoKey : "";
     }
     const lastUsed = getLastUsedNewWorkspaceRepoKey();
-    return (lastUsed && repos.some((repo) => repo.key === lastUsed) ? lastUsed : repos[0]?.key) ?? "";
+    if (lastUsed) {
+      return repos.find((repo) => repo.platformRepoId && repoIdentityKey(repo) === lastUsed)?.key ?? "";
+    }
+    return repos[0]?.key ?? "";
   }
 
   function loadRepositories(session: object): void {
@@ -610,7 +614,7 @@
           if (launchTargetKey) queueWorkspaceLaunch(workspaceId, launchTargetKey, remoteWorkspaceHostKey);
           // The workspace exists either way, so it stays the last-used repo; only
           // the navigation is abandoned when the user moved on.
-          if (requestedSource === "repository" && repo) rememberNewWorkspaceRepoKey(repo.key);
+          if (requestedSource === "repository" && repo) rememberNewWorkspaceRepoKey(repoIdentityKey(repo));
         }),
       ),
       Effect.tap((workspaceId) =>

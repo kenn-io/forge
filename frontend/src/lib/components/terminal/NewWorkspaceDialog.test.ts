@@ -237,6 +237,63 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
   });
 
+  it("restores the last-used repository after a rename and browser reload", async () => {
+    await renderDialog();
+    await pickRepo("acme/gadget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new"));
+    cleanup();
+    await Effect.runPromise(runtimeCapture.current!.disposeEffect);
+    runtimeCapture.current = makeAppRuntime();
+    mockGet.mockResolvedValue({
+      data: [
+        repoFixture("acme", "widget"),
+        { ...repoFixture("acme", "gadget-next"), PlatformRepoID: "github-acme-gadget" },
+      ],
+    });
+
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget-next"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    expect(mockPost).toHaveBeenLastCalledWith(
+      "/repo/{provider}/{owner}/{name}/workspaces",
+      expect.objectContaining({
+        params: { path: { provider: "github", owner: "acme", name: "gadget-next" } },
+        body: { platform_repo_id: "github-acme-gadget" },
+      }),
+    );
+  });
+
+  it("requires a new choice when the last-used repository route is reused after a reload", async () => {
+    await renderDialog();
+    await pickRepo("acme/gadget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new"));
+    cleanup();
+    await Effect.runPromise(runtimeCapture.current!.disposeEffect);
+    runtimeCapture.current = makeAppRuntime();
+    mockGet.mockResolvedValue({
+      data: [repoFixture("acme", "widget"), { ...repoFixture("acme", "gadget"), PlatformRepoID: "replacement-id" }],
+    });
+
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).not.toContain("Loading repositories"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(repoPicker().textContent).not.toContain("acme/gadget");
+    expect(repoPicker().textContent).not.toContain("acme/widget");
+    await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+
+    await pickRepo("acme/gadget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    expect(mockPost).toHaveBeenLastCalledWith(
+      "/repo/{provider}/{owner}/{name}/workspaces",
+      expect.objectContaining({ body: { platform_repo_id: "replacement-id" } }),
+    );
+  });
+
   it("prefers the seeded repo over the last used one", async () => {
     await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
@@ -251,11 +308,16 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
   });
 
-  it("falls back to the first repo when the last used one is no longer tracked", async () => {
-    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/retired");
+  it("requires a new choice for a saved preference without a stable repository ID", async () => {
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/widget");
     await renderDialog();
 
-    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await waitFor(() => expect(repoPicker().textContent).not.toContain("Loading repositories"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(repoPicker().textContent).not.toContain("acme/widget");
+    await pickRepo("acme/widget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
   });
 
   it("preselects the seeded repo", async () => {

@@ -62,6 +62,8 @@ Interactive surfaces must agree on which item is selected.
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
   refreshed options must preserve the current choice or clear it, never silently select another repository
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
+- Remembered new-workspace repositories restore by stable identity; unresolved or route-only saved
+  preferences require a new choice (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::defaultRepoSelection`).
 - Repository catalogs use stored metadata; credential resolution and mutation availability belong to
   action/detail reads, not picker readiness (`internal/server/huma_routes.go::listRepos`).
 - Treat backend latency as normal: gate each action only on the data it requires,

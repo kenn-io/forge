@@ -50,8 +50,9 @@ export function getNewWorkspaceSource(): NewWorkspaceSource {
   return source;
 }
 
-// Repository key (`provider/host/owner/name`) of the last created workspace,
-// or an empty string when nothing was created on this machine yet.
+// Stable repository identity key of the last created workspace, or an empty
+// string when nothing was created on this machine yet. Route-only saved values
+// cannot restore a selection; the dialog requires a new choice.
 export function getLastUsedNewWorkspaceRepoKey(): string {
   try {
     return localStorage.getItem(LAST_REPO_STORAGE_KEY) ?? "";

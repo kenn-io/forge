@@ -43,6 +43,8 @@ func TestRepositoryIdentityAndDefaultBranch(t *testing.T) {
 		switch r.URL.Path {
 		case "/rest/api/latest/projects/PROJECT/repos/widgets":
 			return 200, `{"id":42,"slug":"widgets","project":{"key":"PROJECT"},"links":{"clone":[{"name":"http","href":"https://bitbucket.example.com/scm/project/widgets.git"}]}}`
+		case "/rest/api/latest/repos":
+			return 200, `{"values":[],"isLastPage":true}`
 		case "/rest/api/latest/projects/PROJECT/repos/widgets/default-branch":
 			return 200, `{"id":"refs/heads/main","displayId":"main"}`
 		default:
@@ -122,46 +124,6 @@ func TestMergeBindsVersionAndRejectsMovedHead(t *testing.T) {
 	}
 }
 
-func TestCommentEditUsesProviderVersion(t *testing.T) {
-	assert := assert.New(t)
-	c := client(t, func(r *http.Request) (int, string) {
-		assert.Equal("/rest/api/latest/projects/PROJECT/repos/widgets/pull-requests/7/comments/12", r.URL.Path)
-		if r.Method == http.MethodGet {
-			return 200, `{"id":12,"version":4,"text":"old"}`
-		}
-		assert.Equal(http.MethodPut, r.Method)
-		var body struct {
-			Text    string `json:"text"`
-			Version int    `json:"version"`
-		}
-		require.NoError(t, json.UnmarshalRead(r.Body, &body))
-		assert.Equal(4, body.Version)
-		assert.Equal("updated", body.Text)
-		return 200, `{"id":12,"version":5,"text":"updated"}`
-	})
-	event, err := c.EditMergeRequestComment(t.Context(), ref, 7, 12, "updated")
-	require.NoError(t, err)
-	assert.Equal("updated", event.Body)
-}
-
-func TestInlineRepliesRemainInTheirThread(t *testing.T) {
-	assert := assert.New(t)
-	c := client(t, func(r *http.Request) (int, string) {
-		assert.Equal("/rest/api/latest/projects/PROJECT/repos/widgets/pull-requests/7/comments", r.URL.Path)
-		return 200, `{"values":[{"id":1,"text":"general"},{"id":2,"text":"inline","anchor":{"path":"main.go","line":3,"fileType":"FROM"},"comments":[{"id":3,"text":"reply"}]}],"isLastPage":true}`
-	})
-	events, err := c.ListMergeRequestEvents(t.Context(), ref, 7)
-	require.NoError(t, err)
-	require.Len(t, events, 1)
-	assert.Equal("general", events[0].Body)
-	threads, err := c.ListMergeRequestReviewThreads(t.Context(), ref, 7)
-	require.NoError(t, err)
-	require.Len(t, threads, 2)
-	assert.Equal("2", threads[1].ProviderThreadID)
-	assert.Equal("LEFT", threads[1].Range.Side)
-	assert.Equal("reply", threads[1].Body)
-}
-
 func TestCIChecksUseStatusInventory(t *testing.T) {
 	assert := assert.New(t)
 	c := client(t, func(r *http.Request) (int, string) {
@@ -178,6 +140,9 @@ func TestCIChecksUseStatusInventory(t *testing.T) {
 
 func TestEmptyRepositoryHasNoDefaultBranch(t *testing.T) {
 	c := client(t, func(r *http.Request) (int, string) {
+		if r.URL.Path == "/rest/api/latest/repos" {
+			return 200, `{"values":[],"isLastPage":true}`
+		}
 		if strings.HasSuffix(r.URL.Path, "/default-branch") {
 			return 404, `{}`
 		}

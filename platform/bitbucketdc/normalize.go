@@ -121,28 +121,3 @@ func (p pull) normalize(ref platform.RepoRef) (platform.MergeRequest, error) {
 	}
 	return platform.MergeRequest{Repo: ref, PlatformID: int64(p.ID), PlatformExternalID: strconv.Itoa(p.ID), Number: p.ID, URL: p.Links.webURL(), Title: p.Title, Body: p.Description, State: state, IsDraft: p.Draft, Author: p.Author.User.Name, AuthorDisplayName: p.Author.User.DisplayName, HeadBranch: strings.TrimPrefix(p.From.ID, "refs/heads/"), BaseBranch: strings.TrimPrefix(p.To.ID, "refs/heads/"), HeadSHA: p.From.LatestCommit, BaseSHA: p.To.LatestCommit, HeadRepoCloneURL: p.From.Repository.Links.cloneURL(), HeadRepoCloneURLUnknown: p.From.Repository.Links.cloneURL() == "", CreatedAt: time.UnixMilli(p.Created).UTC(), UpdatedAt: time.UnixMilli(p.Updated).UTC(), LastActivityAt: time.UnixMilli(p.Updated).UTC(), RequestedReviewers: reviewers, ReviewDecision: decision, MergeCommitSHA: p.Properties.MergeCommit.ID}, nil
 }
-
-type anchor struct {
-	Path     string `json:"path"`
-	Line     int    `json:"line"`
-	FileType string `json:"fileType"`
-	FromHash string `json:"fromHash"`
-	ToHash   string `json:"toHash"`
-}
-type comment struct {
-	ID       int64     `json:"id"`
-	Version  int       `json:"version"`
-	Text     string    `json:"text"`
-	Author   user      `json:"author"`
-	Created  int64     `json:"createdDate"`
-	Updated  int64     `json:"updatedDate"`
-	State    string    `json:"state"`
-	Resolved bool      `json:"threadResolved"`
-	Anchor   *anchor   `json:"anchor"`
-	Comments []comment `json:"comments"`
-}
-
-func (c comment) event(ref platform.RepoRef, number int, root int64) platform.MergeRequestEvent {
-	id := strconv.FormatInt(c.ID, 10)
-	return platform.MergeRequestEvent{Repo: ref, PlatformID: c.ID, PlatformExternalID: id, MergeRequestNumber: number, EventType: "comment", Author: c.Author.Name, Body: c.Text, CreatedAt: time.UnixMilli(c.Created).UTC(), ThreadID: strconv.FormatInt(root, 10), DedupeKey: "comment:" + id}
-}

@@ -49,6 +49,8 @@ import type {
   FilesResponse,
   GetPrReviewDraftOnHostPathParameters,
   GetPrReviewDraftPathParameters,
+  GetPrReviewerAccountsOnHostPathParameters,
+  GetPrReviewerAccountsPathParameters,
   GetPullCommitsOnHostPathParameters,
   GetPullCommitsPathParameters,
   GetPullDiffOnHostParams,
@@ -110,6 +112,7 @@ import type {
   ResolveDiscussionPathParameters,
   ResolvePrReviewThreadOnHostPathParameters,
   ResolvePrReviewThreadPathParameters,
+  ReviewerAccounts,
   SetAssigneesRequest,
   SetKanbanStateHostInputBody,
   SetKanbanStateInputBody,
@@ -1115,6 +1118,32 @@ export const unresolvePrReviewThreadOnHost = async (
   );
 };
 
+export const getGetPrReviewerAccountsOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+}: GetPrReviewerAccountsOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/reviewer-accounts`;
+};
+
+/**
+ * @summary List pull request reviewer accounts
+ */
+export const getPrReviewerAccountsOnHost = async (
+  { platformHost, provider, owner, name, number }: GetPrReviewerAccountsOnHostPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ReviewerAccounts> => {
+  return orvalFetch<ReviewerAccounts>(
+    getGetPrReviewerAccountsOnHostUrl({ platformHost, provider, owner, name, number }),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
 export const getSetPrReviewersOnHostUrl = ({
   platformHost,
   provider,
@@ -2029,6 +2058,23 @@ export const unresolvePrReviewThread = async (
   return orvalFetch<void>(getUnresolvePrReviewThreadUrl({ provider, owner, name, number, threadId }), {
     ...options,
     method: "POST",
+  });
+};
+
+export const getGetPrReviewerAccountsUrl = ({ provider, owner, name, number }: GetPrReviewerAccountsPathParameters) => {
+  return `/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/reviewer-accounts`;
+};
+
+/**
+ * @summary List pull request reviewer accounts
+ */
+export const getPrReviewerAccounts = async (
+  { provider, owner, name, number }: GetPrReviewerAccountsPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ReviewerAccounts> => {
+  return orvalFetch<ReviewerAccounts>(getGetPrReviewerAccountsUrl({ provider, owner, name, number }), {
+    ...options,
+    method: "GET",
   });
 };
 

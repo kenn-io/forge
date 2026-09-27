@@ -10,77 +10,6 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func (c *Client) CreateMergeRequestComment(ctx context.Context, ref platform.RepoRef, number int, body string) (platform.MergeRequestEvent, error) {
-	path, err := c.pullPath(ref, number)
-	if err != nil {
-		return platform.MergeRequestEvent{}, err
-	}
-	row, err := request[comment](ctx, c, http.MethodPost, path+"/comments", map[string]any{"text": body})
-	if err != nil {
-		return platform.MergeRequestEvent{}, err
-	}
-	return row.event(ref, number, row.ID), nil
-}
-
-func (c *Client) ReplyToThread(ctx context.Context, ref platform.RepoRef, number int, threadID, body string) (platform.MergeRequestEvent, error) {
-	id, err := strconv.ParseInt(threadID, 10, 64)
-	if err != nil || id <= 0 {
-		return platform.MergeRequestEvent{}, &platform.Error{Code: platform.ErrCodeInvalidArgument, Field: "thread_id"}
-	}
-	path, err := c.pullPath(ref, number)
-	if err != nil {
-		return platform.MergeRequestEvent{}, err
-	}
-	row, err := request[comment](ctx, c, http.MethodPost, path+"/comments", map[string]any{"text": body, "parent": map[string]int64{"id": id}})
-	if err != nil {
-		return platform.MergeRequestEvent{}, err
-	}
-	return row.event(ref, number, id), nil
-}
-
-func (c *Client) EditMergeRequestComment(ctx context.Context, ref platform.RepoRef, number int, id int64, body string) (platform.MergeRequestEvent, error) {
-	path, err := c.pullPath(ref, number)
-	if err != nil {
-		return platform.MergeRequestEvent{}, err
-	}
-	path += "/comments/" + strconv.FormatInt(id, 10)
-	prior, err := request[comment](ctx, c, http.MethodGet, path, nil)
-	if err != nil {
-		return platform.MergeRequestEvent{}, err
-	}
-	row, err := request[comment](ctx, c, http.MethodPut, path, map[string]any{"text": body, "version": prior.Version})
-	if err != nil {
-		return platform.MergeRequestEvent{}, err
-	}
-	return row.event(ref, number, row.ID), nil
-}
-
-func (c *Client) DeleteMergeRequestComment(ctx context.Context, ref platform.RepoRef, number int, id int64) error {
-	path, err := c.pullPath(ref, number)
-	if err != nil {
-		return err
-	}
-	path += "/comments/" + strconv.FormatInt(id, 10)
-	prior, err := request[comment](ctx, c, http.MethodGet, path, nil)
-	if err != nil {
-		return err
-	}
-	_, err = request[struct{}](ctx, c, http.MethodDelete, path+"?version="+strconv.Itoa(prior.Version), nil)
-	return err
-}
-
-func (c *Client) CreateIssueComment(context.Context, platform.RepoRef, int, string) (platform.IssueEvent, error) {
-	return platform.IssueEvent{}, platform.UnsupportedCapability(c.Platform(), c.host, "issues")
-}
-
-func (c *Client) EditIssueComment(context.Context, platform.RepoRef, int, int64, string) (platform.IssueEvent, error) {
-	return platform.IssueEvent{}, platform.UnsupportedCapability(c.Platform(), c.host, "issues")
-}
-
-func (c *Client) DeleteIssueComment(context.Context, platform.RepoRef, int, int64) error {
-	return platform.UnsupportedCapability(c.Platform(), c.host, "issues")
-}
-
 func (c *Client) SetIssueState(context.Context, platform.RepoRef, int, string) (platform.Issue, error) {
 	return platform.Issue{}, platform.UnsupportedCapability(c.Platform(), c.host, "issues")
 }
@@ -169,6 +98,10 @@ func (c *Client) MergeMergeRequest(ctx context.Context, ref platform.RepoRef, nu
 }
 
 func (c *Client) ApproveMergeRequest(ctx context.Context, ref platform.RepoRef, number int, body, expected string) (platform.MergeRequestEvent, error) {
+	if body != "" {
+		return platform.MergeRequestEvent{}, platform.UnsupportedCapability(c.Platform(), c.host, "comments")
+	}
+
 	prior, err := c.getPull(ctx, ref, number)
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
@@ -180,11 +113,7 @@ func (c *Client) ApproveMergeRequest(ctx context.Context, ref platform.RepoRef, 
 	if err != nil {
 		return platform.MergeRequestEvent{}, err
 	}
-	if body != "" {
-		if _, err := c.CreateMergeRequestComment(ctx, ref, number, body); err != nil {
-			return platform.MergeRequestEvent{}, err
-		}
-	}
+
 	row, err := request[participant](ctx, c, http.MethodPost, path+"/approve", nil)
 	if err != nil {
 		return platform.MergeRequestEvent{}, err

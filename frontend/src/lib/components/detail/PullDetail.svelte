@@ -1699,6 +1699,21 @@
     );
   }
 
+  function loadReviewerAccounts() {
+    return executeGeneratedApiRequest("GET pull request reviewer accounts", (client, signal) =>
+      providerUsesHostRoute(routeRef)
+        ? client.PullRequestsService.getPrReviewerAccountsOnHost({ ...providerHostRouteParams(routeRef), number }, { signal })
+        : client.PullRequestsService.getPrReviewerAccounts({ ...providerRouteParams(routeRef), number }, { signal }),
+    ).pipe(
+      retryIdempotentRead,
+      Effect.mapError((failure) => new Error(
+        failure._tag === "ApiProblemError"
+          ? failure.problem.detail ?? failure.problem.title ?? "Could not load reviewer accounts"
+          : "Could not reach Kenn Forge",
+      )),
+    );
+  }
+
   function userAvatarURL(username: string): string {
     if (canonicalProvider(provider) !== "github") return "";
     const login = encodeURIComponent(username.trim());
@@ -2515,8 +2530,10 @@
             <UsersIcon size={12} aria-hidden="true" />
           {/snippet}
         </UserListEditor>
+        {#key `${provider}:${platformHost}:${owner}:${name}:${number}`}
         <UserListEditor
           label="Reviewers"
+          loadAccounts={canonicalProvider(provider) === "bitbucket" && (platformHost ?? "bitbucket.org") === "bitbucket.org" ? loadReviewerAccounts : undefined}
           users={prReviewers}
           canEdit={capabilities.reviewer_mutation}
           disabled={stalePR || reviewerGate.unavailable}
@@ -2530,6 +2547,7 @@
             <UserCheckIcon size={12} aria-hidden="true" />
           {/snippet}
         </UserListEditor>
+        {/key}
         {#if labelPickerOpen}
           <!-- Escape precedence: a non-empty filter claims Escape to clear itself
                (kit SearchInput stops propagation); only an empty-field Escape

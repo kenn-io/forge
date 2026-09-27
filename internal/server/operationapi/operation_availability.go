@@ -118,8 +118,8 @@ var (
 	descSetAssignees       = OperationDescriptor{Name: operationSetAssignees, RequiredCapabilities: []string{itemapi.CapabilityAssigneeMutation}, Bucket: ApiBucketREST}
 	descSetReviewers       = OperationDescriptor{Name: operationSetReviewers, RequiredCapabilities: []string{itemapi.CapabilityReviewerMutation}, Bucket: ApiBucketREST}
 	descCreateIssue        = OperationDescriptor{Name: operationCreateIssue, RequiredCapabilities: []string{itemapi.CapabilityIssueMutation}, Bucket: ApiBucketREST}
-	descCloseIssue         = OperationDescriptor{Name: operationCloseIssue, RequiredCapabilities: []string{itemapi.CapabilityIssueMutation}, Bucket: ApiBucketREST}
-	descReopenIssue        = OperationDescriptor{Name: operationReopenIssue, RequiredCapabilities: []string{itemapi.CapabilityIssueMutation}, Bucket: ApiBucketREST}
+	descCloseIssue         = OperationDescriptor{Name: operationCloseIssue, RequiredCapabilities: []string{itemapi.CapabilityStateMutation}, Bucket: ApiBucketREST}
+	descReopenIssue        = OperationDescriptor{Name: operationReopenIssue, RequiredCapabilities: []string{itemapi.CapabilityStateMutation}, Bucket: ApiBucketREST}
 	descApproveWorkflow    = OperationDescriptor{Name: operationApproveWorkflow, RequiredCapabilities: []string{itemapi.CapabilityWorkflowApproval}, Bucket: ApiBucketREST}
 	DescDispatchWorkflow   = OperationDescriptor{Name: operationDispatchWorkflow, RequiredCapabilities: []string{itemapi.CapabilityReadWorkflows, itemapi.CapabilityWorkflowDispatch}, Bucket: ApiBucketREST}
 	// Content edits (PR/issue title, body, task-list writes) ride the

@@ -20,6 +20,10 @@ type links struct {
 type user struct {
 	UUID        string `json:"uuid"`
 	DisplayName string `json:"display_name"`
+	Nickname    string `json:"nickname"`
+	Links       struct {
+		Avatar link `json:"avatar"`
+	} `json:"links"`
 }
 type content struct {
 	Raw string `json:"raw"`

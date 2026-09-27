@@ -9,13 +9,14 @@
 
 <script lang="ts">
   import { Effect } from "effect";
-  import { onDestroy, tick, type Snippet } from "svelte";
+  import { onDestroy, tick, untrack, type Snippet } from "svelte";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { Chip } from "@kenn-io/kit-ui";
   import UserPicker from "./UserPicker.svelte";
   import { floatingPopoverStyle } from "@kenn-io/kit-ui";
   import type { AppExecution, AppServices } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import type { ReviewerAccounts } from "../../api/generated/models/reviewerAccounts.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
 
   interface Props {
@@ -32,6 +33,7 @@
     /// Returns candidate usernames matching the filter query. Called
     /// with "" when the picker opens and again as the user types, so
     /// candidates beyond the first page stay reachable by searching.
+    loadAccounts?: (() => Effect.Effect<ReviewerAccounts, Error, AppServices>) | undefined;
     loadCandidates: (query: string) => Effect.Effect<string[], Error, AppServices>;
     avatarUrlForUser?: ((username: string) => string) | undefined;
     onchange: (next: string[], callbacks: MutationCallbacks) => void;
@@ -46,6 +48,7 @@
     disabledReason = undefined,
     tooltipNote = undefined,
     loadCandidates,
+    loadAccounts = undefined,
     avatarUrlForUser = undefined,
     onchange,
     icon = undefined,
@@ -53,6 +56,7 @@
 
   const runtime = getAppRuntime();
 
+  let accountDirectory = $state<ReviewerAccounts | null>(null);
   let open = $state(false);
   let candidates = $state<string[]>([]);
   let candidatesQuery = $state("");
@@ -65,9 +69,17 @@
   let popoverStyle = $state("");
 
   const editorId = $derived(label.toLowerCase().replace(/\s+/g, "-"));
+  function labelForUser(id: string): string {
+    if (!loadAccounts) return id;
+    const account = accountDirectory?.accounts.find((account) => account.id === id);
+    if (!account) return "Reviewer";
+    return account.nickname ? `${account.display_name} (@${account.nickname})` : account.display_name;
+  }
+
+  const visibleNames = $derived(users.map(labelForUser).join(", "));
   const chipTitle = $derived.by(() => {
     if (disabled && disabledReason !== undefined) return disabledReason;
-    const base = users.length > 0 ? `${label}: ${users.join(", ")}` : `Add ${label.toLowerCase()}`;
+    const base = users.length > 0 ? `${label}: ${visibleNames}` : `Add ${label.toLowerCase()}`;
     return tooltipNote ? `${base}\n${tooltipNote}` : base;
   });
 
@@ -89,15 +101,44 @@
     openExecution = null;
   }
 
+  $effect(() => {
+    const loader = loadAccounts;
+    // Refresh the account records when a mutation or provider sync changes IDs.
+    users.join("\0");
+    if (!loader) return;
+    return untrack(() => {
+      const execution = runtime.runCommand(loader().pipe(Effect.tap((directory) => Effect.sync(() => {
+        accountDirectory = directory;
+        candidates = directory.accounts.map((account) => account.id);
+        candidatesError = directory.candidate_error || null;
+      }))), {
+        operation: "load reviewer accounts",
+        safeContext: { label },
+        onFailure: (failure) => { candidatesError = failure.message; },
+      });
+      return () => execution.interrupt();
+    });
+  });
+
   function fetchCandidates(query: string): void {
+    if (loadAccounts && accountDirectory && !accountDirectory.candidate_error) {
+      candidatesQuery = query;
+      return;
+    }
     candidateExecution?.interrupt();
     candidatesLoading = true;
-    const program = loadCandidates(query).pipe(
+    const source = loadAccounts
+      ? loadAccounts().pipe(Effect.map((directory) => {
+          accountDirectory = directory;
+          return directory.accounts.map((account) => account.id);
+        }))
+      : loadCandidates(query);
+    const program = source.pipe(
       Effect.flatMap((next) =>
         Effect.sync(() => {
           candidates = next;
           candidatesQuery = query;
-          candidatesError = null;
+          candidatesError = loadAccounts ? accountDirectory?.candidate_error || null : null;
           candidatesLoading = false;
         }),
       ),
@@ -173,7 +214,7 @@
     closeOpenEditor?.();
     closeOpenEditor = closePicker;
     open = true;
-    candidatesError = null;
+    if (!loadAccounts) candidatesError = null;
     openExecution = runtime.runCommand(
       Effect.promise(() => tick()).pipe(
         Effect.andThen(
@@ -269,7 +310,7 @@
       >
         {#if icon}{@render icon()}{/if}
         {#if users.length > 0}
-          <span class="user-list-editor__names">{users.join(", ")}</span>
+          <span class="user-list-editor__names">{visibleNames}</span>
         {:else}
           <PlusIcon size={11} strokeWidth={2.4} aria-hidden="true" />
         {/if}
@@ -283,7 +324,7 @@
         class="user-list-editor__chip"
       >
         {#if icon}{@render icon()}{/if}
-        <span class="user-list-editor__names">{users.join(", ")}</span>
+        <span class="user-list-editor__names">{visibleNames}</span>
       </Chip>
     {/if}
   </span>
@@ -313,7 +354,11 @@
         {pendingUser}
         error={candidatesError}
         {autofocusFilter}
-        {avatarUrlForUser}
+        avatarUrlForUser={loadAccounts
+          ? (id) => accountDirectory?.accounts.find((account) => account.id === id)?.avatar_url ?? ""
+          : avatarUrlForUser}
+        {labelForUser}
+        allowFreeEntry={!loadAccounts}
         onquery={onPickerQuery}
         ontoggle={toggleUser}
         onclear={clearUsers}

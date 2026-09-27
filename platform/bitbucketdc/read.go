@@ -16,7 +16,26 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	if err != nil {
 		return platform.Repository{}, err
 	}
+
 	row, err := request[repository](ctx, c, http.MethodGet, path, nil)
+	if ref.PlatformExternalID != "" && ((err == nil && strconv.FormatInt(row.ID, 10) != ref.PlatformExternalID) || errors.Is(err, platform.ErrNotFound)) {
+		rows, lookupErr := pages[repository](ctx, c, "/rest/api/latest/repos?archived=ALL")
+		if lookupErr != nil {
+			return platform.Repository{}, lookupErr
+		}
+		found := false
+		for _, candidate := range rows {
+			if strconv.FormatInt(candidate.ID, 10) == ref.PlatformExternalID {
+				row = candidate
+				found = true
+				break
+			}
+		}
+		if !found {
+			return platform.Repository{}, platform.ProviderContract(c.Platform(), c.host, "repository identity", errors.New("original repository is no longer accessible"))
+		}
+		err = nil
+	}
 	if err != nil {
 		return platform.Repository{}, err
 	}
@@ -24,8 +43,9 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	if err != nil {
 		return repo, err
 	}
-	if ref.PlatformExternalID != "" && ref.PlatformExternalID != repo.PlatformExternalID {
-		return platform.Repository{}, platform.ProviderContract(c.Platform(), c.host, "repository identity", errors.New("repository route now identifies a different repository"))
+	path, err = c.repoPath(repo.Ref)
+	if err != nil {
+		return platform.Repository{}, err
 	}
 	branch, err := request[branch](ctx, c, http.MethodGet, path+"/default-branch", nil)
 	if err != nil && !errors.Is(err, platform.ErrNotFound) {
@@ -33,7 +53,8 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	}
 	repo.DefaultBranch = branch.DisplayID
 	repo.Ref.DefaultBranch = branch.DisplayID
-	return repo, nil
+	err = c.observeMerge(ctx, &repo)
+	return repo, err
 }
 
 func (c *Client) ListRepositories(ctx context.Context, owner string, opts platform.RepositoryListOptions) ([]platform.Repository, error) {
@@ -60,6 +81,9 @@ func (c *Client) ListRepositories(ctx context.Context, owner string, opts platfo
 	for _, r := range rows {
 		v, err := r.normalize(c.host)
 		if err != nil {
+			return nil, err
+		}
+		if err := c.observeMerge(ctx, &v); err != nil {
 			return nil, err
 		}
 		repos = append(repos, v)
@@ -103,58 +127,8 @@ func (c *Client) ListOpenMergeRequests(ctx context.Context, ref platform.RepoRef
 	return out, nil
 }
 
-func (c *Client) comments(ctx context.Context, ref platform.RepoRef, number int) ([]comment, error) {
-	path, err := c.pullPath(ref, number)
-	if err != nil {
-		return nil, err
-	}
-	return pages[comment](ctx, c, path+"/comments")
-}
-
-func (c *Client) ListMergeRequestEvents(ctx context.Context, ref platform.RepoRef, number int) ([]platform.MergeRequestEvent, error) {
-	rows, err := c.comments(ctx, ref, number)
-	if err != nil {
-		return nil, err
-	}
-	out := []platform.MergeRequestEvent{}
-	var appendComments func(comment, int64)
-	appendComments = func(row comment, root int64) {
-		out = append(out, row.event(ref, number, root))
-		for _, reply := range row.Comments {
-			appendComments(reply, root)
-		}
-	}
-	for _, row := range rows {
-		if row.Anchor == nil {
-			appendComments(row, row.ID)
-		}
-	}
-	return out, nil
-}
-
-func (c *Client) ListMergeRequestReviewThreads(ctx context.Context, ref platform.RepoRef, number int) ([]platform.MergeRequestReviewThread, error) {
-	rows, err := c.comments(ctx, ref, number)
-	if err != nil {
-		return nil, err
-	}
-	out := []platform.MergeRequestReviewThread{}
-	var appendComments func(comment, comment)
-	appendComments = func(row, root comment) {
-		side := "RIGHT"
-		if root.Anchor.FileType == "FROM" {
-			side = "LEFT"
-		}
-		out = append(out, platform.MergeRequestReviewThread{Repo: ref, MergeRequestNumber: number, ProviderThreadID: strconv.FormatInt(root.ID, 10), ProviderCommentID: strconv.FormatInt(row.ID, 10), Body: row.Text, AuthorLogin: row.Author.Name, Range: platform.DiffReviewLineRange{Path: root.Anchor.Path, Line: root.Anchor.Line, Side: side}, CreatedAt: time.UnixMilli(row.Created).UTC(), UpdatedAt: time.UnixMilli(row.Updated).UTC(), Resolved: root.Resolved || root.State == "RESOLVED"})
-		for _, reply := range row.Comments {
-			appendComments(reply, root)
-		}
-	}
-	for _, row := range rows {
-		if row.Anchor != nil {
-			appendComments(row, row)
-		}
-	}
-	return out, nil
+func (c *Client) ListMergeRequestEvents(context.Context, platform.RepoRef, int) ([]platform.MergeRequestEvent, error) {
+	return nil, platform.UnsupportedCapability(c.Platform(), c.host, "comments")
 }
 
 func (c *Client) ListTags(ctx context.Context, ref platform.RepoRef) ([]platform.Tag, error) {

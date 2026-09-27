@@ -584,3 +584,8 @@ behavior.
 - Cloud fetches use source branches; its pull ref is local storage (`internal/workspace/manager.go::fetchWorkspaceMergeRequestHeadRefWithGit`).
 - `bitbucket.org` uses Cloud; other hosts use Data Center's distinct API (`cmd/kenn-forge/provider_startup.go::defaultProviderFactories`).
 - Data Center `/scm/` and SSH ports describe transport, not repository identity; preserve execution URLs (`platform/remote.go::repositoryRemote`).
+
+- Bitbucket Git credential parsing must be provider-scoped; colons are valid in other providers' opaque tokens (`internal/gitclone/clone.go::gitRunnerAuthed`).
+- Cloud reviewer nicknames are non-unique. Display account names but submit stable IDs; do not infer IDs from text (`platform/bitbucket/review.go::ListReviewerAccounts`).
+- Keep Data Center comments and threads disabled until current wire data is verified; the older activity example cannot establish today's response contract (`platform/bitbucketdc/client.go::Client.Capabilities`).
+- Validate Bitbucket diff fetches against the API-observed head; Data Center private PR refs may be missing or stale (`internal/gitclone/bitbucket.go::FetchBitbucketMergeRequestHead`).

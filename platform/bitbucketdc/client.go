@@ -20,6 +20,7 @@ type Client struct {
 	baseURL string
 	http    *http.Client
 	rate    platform.RateObserver
+	source  platform.CredentialSource
 }
 
 func NewClient(host string, source platform.CredentialSource, transport http.RoundTripper, rate platform.RateObserver) (*Client, error) {
@@ -31,7 +32,7 @@ func NewClient(host string, source platform.CredentialSource, transport http.Rou
 		return nil, &platform.Error{Code: platform.ErrCodeInvalidArgument, Field: "platform_host"}
 	}
 	base := "https://" + host
-	return &Client{host: host, baseURL: base, rate: rate, http: &http.Client{Timeout: 30 * time.Second, Transport: platform.AuthTransport{
+	return &Client{host: host, baseURL: base, rate: rate, source: source, http: &http.Client{Timeout: 30 * time.Second, Transport: platform.AuthTransport{
 		Source: source, Base: transport, AllowedOrigin: base, SetHeader: func(r *http.Request, token string) {
 			if user, password, ok := strings.Cut(token, ":"); ok {
 				r.SetBasicAuth(user, password)
@@ -44,7 +45,7 @@ func NewClient(host string, source platform.CredentialSource, transport http.Rou
 func (*Client) Platform() platform.Kind { return platform.KindBitbucket }
 func (c *Client) Host() string          { return c.host }
 func (*Client) Capabilities() platform.Capabilities {
-	return platform.Capabilities{ReadRepositories: true, ReadMergeRequests: true, ReadComments: true, ReadCI: true, CommentMutation: true, StateMutation: true, MergeMutation: true, ReviewMutation: true, ThreadReply: true, ReadReviewThreads: true, SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionComment, platform.ReviewActionApprove}}
+	return platform.Capabilities{ReadRepositories: true, ReadMergeRequests: true, ReadCI: true, StateMutation: true, MergeMutation: true, ReviewMutation: true, SupportedReviewActions: []platform.ReviewAction{platform.ReviewActionApprove}}
 }
 
 func (c *Client) repoPath(ref platform.RepoRef) (string, error) {
@@ -89,7 +90,7 @@ func request[T any](ctx context.Context, c *Client, method, path string, body an
 	}
 	defer resp.Body.Close()
 	if c.rate != nil {
-		c.rate.RecordRequest()
+		c.observeRate(resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var code platform.PlatformErrorCode
@@ -147,4 +148,16 @@ func pages[T any](ctx context.Context, c *Client, path string) ([]T, error) {
 		start = *p.Next
 	}
 	return nil, &platform.Error{Code: platform.ErrCodePageLimit, Provider: c.Platform()}
+}
+
+// A 429 proves exhaustion, but neither product promises a common reset header.
+// The observer's unknown-reset policy supplies the bounded pause. A successful
+// request releases that observation without inventing a remaining quota.
+func (c *Client) observeRate(status int) {
+	c.rate.RecordRequest()
+	if status == http.StatusTooManyRequests {
+		c.rate.UpdateFromRate(platform.Rate{Remaining: 0, Limit: -1})
+	} else if status >= 200 && status < 300 {
+		c.rate.UpdateFromRate(platform.Rate{Remaining: -1, Limit: -1})
+	}
 }

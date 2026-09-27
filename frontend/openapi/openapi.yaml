@@ -8653,6 +8653,43 @@ components:
         - number
         - repo_tracked
       type: object
+    ReviewerAccount:
+      additionalProperties: false
+      properties:
+        avatar_url:
+          type: string
+        display_name:
+          type: string
+        id:
+          type: string
+        nickname:
+          type: string
+      required:
+        - id
+        - display_name
+        - nickname
+        - avatar_url
+      type: object
+    ReviewerAccounts:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ReviewerAccounts.json
+          format: uri
+          readOnly: true
+          type: string
+        accounts:
+          items:
+            $ref: "#/components/schemas/ReviewerAccount"
+          type: array
+        candidate_error:
+          type: string
+      required:
+        - accounts
+        - candidate_error
+      type: object
     RoborevConfiguredRepositoriesResponse:
       additionalProperties: false
       properties:
@@ -19225,6 +19262,52 @@ paths:
       summary: Review pull request diff
       tags:
         - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts:
+    get:
+      operationId: get-pr-reviewer-accounts-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewerAccounts"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List pull request reviewer accounts
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/reviewers:
     put:
       operationId: set-pr-reviewers-on-host
@@ -24075,6 +24158,47 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Review pull request diff
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts:
+    get:
+      operationId: get-pr-reviewer-accounts
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewerAccounts"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List pull request reviewer accounts
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/reviewers:

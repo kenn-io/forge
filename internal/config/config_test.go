@@ -4778,3 +4778,18 @@ outbound_disabled = true
 	require.Len(loaded.Fleet.Members, 1)
 	assert.True(t, loaded.Fleet.Members[0].OutboundDisabled)
 }
+
+func TestBitbucketCloneURLConfiguration(t *testing.T) {
+	for _, tc := range []struct{ name, provider, remote, owner, repo string }{
+		{"data center", "bitbucket", "https://code.example.test:8443/scm/PROJECT/widgets.git", "PROJECT", "widgets"},
+		{"cloud workspace named scm", "bitbucket", "https://bitbucket.org/scm/widgets.git", "scm", "widgets"},
+		{"gitlab group named scm", "gitlab", "https://code.example.test/scm/PROJECT/widgets.git", "scm/PROJECT", "widgets"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := Repo{Platform: tc.provider, Name: tc.remote}
+			require.NoError(t, repo.normalize(""))
+			assert.Equal(t, tc.owner, repo.Owner)
+			assert.Equal(t, tc.repo, repo.Name)
+		})
+	}
+}

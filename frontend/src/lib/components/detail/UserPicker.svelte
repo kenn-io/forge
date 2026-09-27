@@ -6,6 +6,8 @@
 
   interface Props {
     title: string;
+    labelForUser?: ((identity: string) => string) | undefined;
+    allowFreeEntry?: boolean;
     candidates: string[];
     selected: string[];
     loading?: boolean;
@@ -28,6 +30,8 @@
 
   const {
     title,
+    labelForUser = (identity) => identity,
+    allowFreeEntry = true,
     candidates,
     selected,
     loading = false,
@@ -59,13 +63,14 @@
     }
     const needle = query.trim().toLowerCase();
     if (needle === "") return users;
-    return users.filter((name) => name.toLowerCase().includes(needle));
+    return users.filter((name) => labelForUser(name).toLowerCase().includes(needle));
   });
   // The candidate source is synced history, so it cannot know every
   // valid provider username. Typing a name that matches no listed user
   // offers an exact-username entry; the provider rejects names that do
   // not exist.
   const freeEntryUser = $derived.by(() => {
+    if (!allowFreeEntry) return null;
     const trimmed = query.trim();
     if (trimmed === "") return null;
     if (loading) return null;
@@ -160,9 +165,9 @@
             onerror={() => markAvatarFailed(username)}
           />
         {:else}
-          <span class="user-picker__avatar" aria-hidden="true">{username.slice(0, 1).toUpperCase()}</span>
+          <span class="user-picker__avatar" aria-hidden="true">{labelForUser(username).slice(0, 1).toUpperCase()}</span>
         {/if}
-        <span class="user-picker__name">{username}</span>
+        <span class="user-picker__name">{labelForUser(username)}</span>
         <span class="user-picker__status">
           {#if pendingUser === username}
             <span class="user-picker__pending">Saving…</span>

@@ -2,7 +2,10 @@ package bitbucket
 
 import (
 	"context"
+	"net/url"
 	"strconv"
+	"strings"
+	"uuid"
 
 	"go.kenn.io/forge/platform"
 )
@@ -104,6 +107,12 @@ func (c *Client) updateReviewers(ctx context.Context, ref platform.RepoRef, numb
 	if err != nil {
 		return nil, err
 	}
+	// Cloud accepts account UUIDs, never nicknames or display names.
+	for _, id := range users {
+		if _, err := uuid.Parse(id); err != nil {
+			return nil, &platform.Error{Code: platform.ErrCodeInvalidArgument, Field: "reviewers"}
+		}
+	}
 	selected := map[string]bool{}
 	for _, id := range users {
 		selected[id] = true
@@ -135,6 +144,58 @@ func (c *Client) updateReviewers(ctx context.Context, ref platform.RepoRef, numb
 	result := make([]string, 0, len(reviewers))
 	for _, r := range reviewers {
 		result = append(result, r.UUID)
+	}
+	return result, nil
+}
+
+// ListReviewerAccounts uses the documented workspace membership inventory.
+// Existing reviewers are included even if they are outside the workspace.
+func (c *Client) ListReviewerAccounts(ctx context.Context, ref platform.RepoRef, number int) (platform.ReviewerAccounts, error) {
+	target, err := repoURL(ref)
+	if err != nil {
+		return platform.ReviewerAccounts{}, err
+	}
+	p, err := request[pull](ctx, c, "GET", target+"/pullrequests/"+strconv.Itoa(number), nil)
+	if err != nil {
+		return platform.ReviewerAccounts{}, err
+	}
+	result := platform.ReviewerAccounts{Accounts: []platform.ReviewerAccount{}}
+	seen := map[string]bool{}
+	add := func(u user) error {
+		if u.UUID == "" || strings.TrimSpace(u.DisplayName) == "" {
+			return missing("reviewer account identity or display name")
+		}
+		if seen[u.UUID] {
+			return nil
+		}
+		seen[u.UUID] = true
+		result.Accounts = append(result.Accounts, platform.ReviewerAccount{ID: u.UUID, DisplayName: u.DisplayName, Nickname: u.Nickname, AvatarURL: u.Links.Avatar.Href})
+		return nil
+	}
+	for _, u := range p.Reviewers {
+		if err := add(u); err != nil {
+			return platform.ReviewerAccounts{}, err
+		}
+	}
+	type membership struct {
+		User user `json:"user"`
+	}
+	first, err := request[page[membership]](ctx, c, "GET", apiURL+"/workspaces/"+url.PathEscape(ref.Owner)+"/members?pagelen=100", nil)
+	if err != nil {
+		result.CandidateError = "Could not load workspace members. Check workspace access and the read:workspace:bitbucket token scope. Existing reviewers can still be removed."
+		return result, nil //nolint:nilerr // Existing reviewers remain usable when membership lookup fails.
+	}
+	members, err := collect(ctx, c, first)
+	if err != nil {
+		result.CandidateError = "Could not load all workspace members. Retry to choose a new reviewer. Existing reviewers can still be removed."
+		return result, nil //nolint:nilerr // Preserve current reviewer labels and removal after a paging failure.
+	}
+	for _, m := range members {
+		if m.User.UUID != p.Author.UUID {
+			if err := add(m.User); err != nil {
+				return platform.ReviewerAccounts{}, err
+			}
+		}
 	}
 	return result, nil
 }

@@ -65,7 +65,7 @@ func TestDescriptorNetworkedGitNeverFallsBackToAnonymous(t *testing.T) {
 	mgr := New(t.TempDir(), testRouteResolver{})
 
 	_, err := mgr.gitNetworked(
-		WithRequiredCredential(t.Context()), nil, "github.com", "", nil,
+		WithRequiredCredential(t.Context()), nil, "github", "github.com", "", nil,
 		"fetch",
 	)
 
@@ -369,10 +369,10 @@ done
 	source := &mutableTestTokenSource{token: "first-token"}
 	mgr := New(t.TempDir(), HostSources{"github.com": source})
 
-	_, err := mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch")
+	_, err := mgr.gitNetworked(t.Context(), source, "github", "github.com", "", nil, "fetch")
 	require.NoError(err)
 	source.token = "second-token"
-	_, err = mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch")
+	_, err = mgr.gitNetworked(t.Context(), source, "github", "github.com", "", nil, "fetch")
 	require.NoError(err)
 
 	data, err := os.ReadFile(capturePath)
@@ -425,10 +425,10 @@ done
 	}, tokenauth.Options{})
 	mgr := New(t.TempDir(), HostSources{"github.com": source})
 
-	_, err := mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch")
+	_, err := mgr.gitNetworked(t.Context(), source, "github", "github.com", "", nil, "fetch")
 	require.NoError(err)
 	require.NoError(os.WriteFile(tokenPath, []byte("second-token\n"), 0o600))
-	_, err = mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch")
+	_, err = mgr.gitNetworked(t.Context(), source, "github", "github.com", "", nil, "fetch")
 	require.NoError(err)
 
 	data, err := os.ReadFile(capturePath)
@@ -446,10 +446,12 @@ done
 }
 
 func TestBitbucketGitCredentials(t *testing.T) {
-	for _, tc := range []struct{ host, token, want string }{
-		{"bitbucket.org", "access-token", "username=x-token-auth\npassword=access-token\n"},
-		{"bitbucket.org", "user@example.com:api-token", "username=x-bitbucket-api-token-auth\npassword=api-token\n"},
-		{"bitbucket.example.com", "user:api-token", "username=user\npassword=api-token\n"},
+	for _, tc := range []struct{ platform, host, token, want string }{
+		{"bitbucket", "bitbucket.org", "access-token", "username=x-token-auth\npassword=access-token\n"},
+		{"bitbucket", "bitbucket.org", "user@example.com:api-token", "username=x-bitbucket-api-token-auth\npassword=api-token\n"},
+		{"bitbucket", "bitbucket.example.com", "user:api-token", "username=user\npassword=api-token\n"},
+		{"gitlab", "gitlab.example.com", "custom:token", "username=x-access-token\npassword=custom:token\n"},
+		{"github", "github.com", "opaque:token", "username=x-access-token\npassword=opaque:token\n"},
 	} {
 		t.Run(tc.token, func(t *testing.T) {
 			dir := t.TempDir()
@@ -471,7 +473,7 @@ done
 			t.Setenv("KENN_FORGE_TEST_GIT_CAPTURE", capture)
 			source := &mutableTestTokenSource{token: tc.token}
 			mgr := New(t.TempDir(), HostSources{tc.host: source})
-			_, err := mgr.gitNetworked(t.Context(), source, tc.host, "", nil, "fetch")
+			_, err := mgr.gitNetworked(t.Context(), source, tc.platform, tc.host, "", nil, "fetch")
 			require.NoError(t, err)
 			data, err := os.ReadFile(capture)
 			require.NoError(t, err)
@@ -517,7 +519,7 @@ fi
 	source := &mutableTestTokenSource{token: "first-token"}
 	mgr := New(t.TempDir(), HostSources{"github.com": source})
 
-	_, err := mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch", "origin")
+	_, err := mgr.gitNetworked(t.Context(), source, "github", "github.com", "", nil, "fetch", "origin")
 	require.NoError(err)
 
 	data, err := os.ReadFile(capturePath)
@@ -630,7 +632,7 @@ exit 128
 	source := &mutableTestTokenSource{token: "first-token"}
 	mgr := New(t.TempDir(), HostSources{"github.com": source})
 
-	_, err := mgr.gitNetworked(t.Context(), source, "github.com", "", nil, "fetch", "origin")
+	_, err := mgr.gitNetworked(t.Context(), source, "github", "github.com", "", nil, "fetch", "origin")
 	require.Error(err)
 
 	assert.NotContains(err.Error(), "ghp_stderr_secret")

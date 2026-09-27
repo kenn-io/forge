@@ -288,6 +288,8 @@ func registerPullMutationRoutes(api huma.API, pullPath, hostPullPath string, s *
 	register(api, "set-pr-labels-on-host", http.MethodPut, hostPullPath+"/labels", "Set pull request labels", s.setPullLabelsOnHost)
 	register(api, "set-pr-assignees", http.MethodPut, pullPath+"/assignees", "Set pull request assignees", s.setPullAssignees)
 	register(api, "set-pr-assignees-on-host", http.MethodPut, hostPullPath+"/assignees", "Set pull request assignees", s.setPullAssigneesOnHost)
+	register(api, "get-pr-reviewer-accounts", http.MethodGet, pullPath+"/reviewer-accounts", "List pull request reviewer accounts", s.getReviewerAccounts)
+	register(api, "get-pr-reviewer-accounts-on-host", http.MethodGet, hostPullPath+"/reviewer-accounts", "List pull request reviewer accounts", s.getReviewerAccountsOnHost)
 	register(api, "set-pr-reviewers", http.MethodPut, pullPath+"/reviewers", "Set pull request reviewers", s.setPullReviewers)
 	register(api, "set-pr-reviewers-on-host", http.MethodPut, hostPullPath+"/reviewers", "Set pull request reviewers", s.setPullReviewersOnHost)
 	register(api, "approve-pull", http.MethodPost, pullPath+"/approve", "Approve pull request", s.approvePR)

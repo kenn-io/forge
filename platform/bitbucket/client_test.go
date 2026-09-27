@@ -38,6 +38,9 @@ func TestRepositoryIdentityAndAuthentication(t *testing.T) {
 	for _, token := range []string{"bearer-secret", "user@example.com:api-secret"} {
 		t.Run(token, func(t *testing.T) {
 			c := client(t, token, func(r *http.Request) (int, string) {
+				if strings.Contains(r.URL.Path, "/permissions/") {
+					return 403, `{}`
+				}
 				assert.Equal("/2.0/repositories/team/{11111111-1111-4111-8111-111111111111}", r.URL.Path)
 				if strings.Contains(token, ":") {
 					u, p, ok := r.BasicAuth()
@@ -251,7 +254,7 @@ func TestReviewerUpdatesPreserveExistingUsers(t *testing.T) {
 	c := client(t, "secret", func(r *http.Request) (int, string) {
 		assert.Equal("/2.0/repositories/team/{11111111-1111-4111-8111-111111111111}/pullrequests/7", r.URL.Path)
 		if r.Method == http.MethodGet {
-			return 200, `{"reviewers":[{"uuid":"{existing}"}]}`
+			return 200, `{"reviewers":[{"uuid":"{22222222-2222-4222-8222-222222222222}"}]}`
 		}
 		assert.Equal(http.MethodPut, r.Method)
 		var body struct {
@@ -261,13 +264,13 @@ func TestReviewerUpdatesPreserveExistingUsers(t *testing.T) {
 		}
 		require.NoError(t, json.UnmarshalRead(r.Body, &body))
 		require.Len(t, body.Reviewers, 2)
-		assert.Equal("{existing}", body.Reviewers[0].UUID)
-		assert.Equal("{added}", body.Reviewers[1].UUID)
-		return 200, `{"reviewers":[{"uuid":"{existing}"},{"uuid":"{added}"}]}`
+		assert.Equal("{22222222-2222-4222-8222-222222222222}", body.Reviewers[0].UUID)
+		assert.Equal("{33333333-3333-4333-8333-333333333333}", body.Reviewers[1].UUID)
+		return 200, `{"reviewers":[{"uuid":"{22222222-2222-4222-8222-222222222222}"},{"uuid":"{33333333-3333-4333-8333-333333333333}"}]}`
 	})
-	reviewers, err := c.RequestMergeRequestReviewers(t.Context(), ref, 7, []string{"{added}", "{existing}"})
+	reviewers, err := c.RequestMergeRequestReviewers(t.Context(), ref, 7, []string{"{33333333-3333-4333-8333-333333333333}", "{22222222-2222-4222-8222-222222222222}"})
 	require.NoError(t, err)
-	assert.Equal([]string{"{existing}", "{added}"}, reviewers)
+	assert.Equal([]string{"{22222222-2222-4222-8222-222222222222}", "{33333333-3333-4333-8333-333333333333}"}, reviewers)
 }
 
 func TestThreadResolutionUsesRootComment(t *testing.T) {

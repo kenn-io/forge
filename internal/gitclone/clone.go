@@ -1014,7 +1014,7 @@ func (m *Manager) fetch(
 	// Retry inline so a transient blip does not drop the entire sync cycle.
 	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
 		return m.gitNetworked(
-			ctx, m.sourceForRepo(platform, host, owner, name), host, clonePath, nil,
+			ctx, m.sourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
 			"fetch", "--prune", "--no-tags", "origin",
 		)
 	})
@@ -1027,7 +1027,7 @@ func (m *Manager) fetch(
 	// reduces stale-HEAD noise across sync cycles.
 	_, setHeadErr := retryTransient(ctx, "git remote set-head", func() ([]byte, error) {
 		return m.gitNetworked(
-			ctx, m.sourceForRepo(platform, host, owner, name), host, clonePath, nil,
+			ctx, m.sourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
 			"remote", "set-head", "origin", "-a",
 		)
 	})
@@ -1147,7 +1147,7 @@ func (m *Manager) RunGitForRepoRemote(
 			return nil, err
 		}
 	}
-	return m.gitNetworked(ctx, source, host, dir, nil, args...)
+	return m.gitNetworked(ctx, source, platform, host, dir, nil, args...)
 }
 
 // RunGitForNamedRemote runs a networked Git command with credentials selected
@@ -1189,7 +1189,7 @@ func (m *Manager) RunGitForRemote(
 		owner, name = repoPath[:index], repoPath[index+1:]
 	}
 	return m.gitNetworked(
-		ctx, m.sourceForRepo(platform, host, owner, name), host, dir, nil, args...,
+		ctx, m.sourceForRepo(platform, host, owner, name), platform, host, dir, nil, args...,
 	)
 }
 
@@ -1198,7 +1198,7 @@ func (m *Manager) RunGitForRemote(
 func (m *Manager) RunGitForHost(
 	ctx context.Context, host, dir string, args ...string,
 ) ([]byte, error) {
-	return m.gitNetworked(ctx, m.fallbackSource(host), host, dir, nil, args...)
+	return m.gitNetworked(ctx, m.fallbackSource(host), "", host, dir, nil, args...)
 }
 
 func (m *Manager) validateRemoteIdentity(
@@ -1305,7 +1305,7 @@ func (m *Manager) gitCloneBare(
 	// Local-path clones copy the source object directory and can race source
 	// maintenance. Use transport semantics consistently for every remote.
 	return m.gitNetworked(
-		ctx, m.sourceForRepo(platform, host, owner, name), host, "",
+		ctx, m.sourceForRepo(platform, host, owner, name), platform, host, "",
 		func() error {
 			if err := os.RemoveAll(clonePath); err != nil {
 				return fmt.Errorf("cleanup partial clone before auth retry: %w", err)
@@ -1325,7 +1325,7 @@ func (m *Manager) gitCloneBare(
 func (m *Manager) gitNetworked(
 	ctx context.Context,
 	source tokenauth.Source,
-	host, dir string,
+	platform, host, dir string,
 	cleanupBeforeAuthRetry func() error,
 	args ...string,
 ) ([]byte, error) {
@@ -1334,7 +1334,7 @@ func (m *Manager) gitNetworked(
 		return nil, ErrCredentialUnavailable
 	}
 	out, stderr, rejectedToken, err := m.runGitAuthed(
-		ctx, source, host, dir, required, args...,
+		ctx, source, platform, host, dir, required, args...,
 	)
 	if err == nil {
 		return out, nil
@@ -1350,7 +1350,7 @@ func (m *Manager) gitNetworked(
 			}
 		}
 		out, stderr, _, err = m.runGitAuthed(
-			ctx, source, host, dir, required, args...,
+			ctx, source, platform, host, dir, required, args...,
 		)
 		if err == nil {
 			return out, nil
@@ -1368,11 +1368,11 @@ func (m *Manager) gitNetworked(
 func (m *Manager) runGitAuthed(
 	ctx context.Context,
 	source tokenauth.Source,
-	host, dir string,
+	platform, host, dir string,
 	required bool,
 	args ...string,
 ) ([]byte, []byte, string, error) {
-	runner, token, err := m.gitRunnerAuthed(ctx, source, host, required)
+	runner, token, err := m.gitRunnerAuthed(ctx, source, platform, host, required)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -1493,7 +1493,7 @@ func (m *Manager) fallbackSource(host string) tokenauth.Source {
 // gitRunnerAuthed returns a runner with the selected token attached for
 // networked operations. Stop stalled transfers without limiting active clones.
 func (m *Manager) gitRunnerAuthed(
-	ctx context.Context, source tokenauth.Source, host string, required bool,
+	ctx context.Context, source tokenauth.Source, platform, host string, required bool,
 ) (gitcmd.Runner, string, error) {
 	runner := newGitRunner().
 		WithConfig("http.lowSpeedLimit", "1").
@@ -1518,17 +1518,20 @@ func (m *Manager) gitRunnerAuthed(
 	if token != "" {
 		// GitHub's smart HTTP endpoint expects Basic auth credentials.
 		username, password := "x-access-token", token
-		if host == "bitbucket.org" {
+		if platform == string(providerplatform.KindBitbucket) && host == providerplatform.DefaultBitbucketHost {
 			username = "x-token-auth"
 			if _, secret, ok := strings.Cut(token, ":"); ok {
 				username, password = "x-bitbucket-api-token-auth", secret
 				tokenauth.RegisterKnownSecret(secret)
 			}
-		} else if user, secret, ok := strings.Cut(token, ":"); ok {
-			// Explicit username:token credentials are required by Data Center's
-			// Git Basic authentication, and retain the same shape as API auth.
-			username, password = user, secret
-			tokenauth.RegisterKnownSecret(secret)
+		} else if platform == string(providerplatform.KindBitbucket) {
+			user, secret, ok := strings.Cut(token, ":")
+			if ok {
+				// Explicit username:token credentials are required by Data Center's
+				// Git Basic authentication, and retain the same shape as API auth.
+				username, password = user, secret
+				tokenauth.RegisterKnownSecret(secret)
+			}
 		}
 		runner = runner.WithBasicAuth(username, password)
 	}

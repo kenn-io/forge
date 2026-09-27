@@ -11598,6 +11598,18 @@ func (s *Syncer) syncProviderMRDiff(
 		}
 	}
 	mb, err := s.clones.MergeBase(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+	if err != nil && repoPlatform(repo) == platform.KindBitbucket {
+		sourceBranch := normalized.HeadBranch
+		if normalized.HeadRepoCloneURLUnknown || normalized.HeadRepoIdentityStale {
+			sourceBranch = ""
+		}
+		fetchErr := s.clones.FetchBitbucketMergeRequestHead(ctx, host, repo.Owner, repo.Name, number, normalized.HeadRepoCloneURL, sourceBranch, normalized.PlatformHeadSHA)
+		if fetchErr != nil {
+			err = fmt.Errorf("fetch source head: %w", fetchErr)
+		} else {
+			mb, err = s.clones.MergeBase(ctx, string(repoPlatform(repo)), host, repo.Owner, repo.Name, normalized.PlatformBaseSHA, normalized.PlatformHeadSHA)
+		}
+	}
 	if err != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeMergeBaseFailed,

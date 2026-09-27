@@ -1459,7 +1459,7 @@ func (s *Handlers) trackedActivityRepoIDs(
 }
 
 func branchActivityURL(it db.ActivityItem) string {
-	if it.CommitSHA == "" && (it.BeforeSHA == "" || it.AfterSHA == "") {
+	if it.CommitSHA == "" && (it.AfterSHA == "" || (it.BeforeSHA == "" && it.Platform != string(platform.KindBitbucket))) {
 		return ""
 	}
 	kind := platform.Kind(it.Platform)
@@ -1479,6 +1479,16 @@ func branchActivityURL(it db.ActivityItem) string {
 				url.PathEscape(it.BeforeSHA) + "..." + url.PathEscape(it.AfterSHA)
 		}
 		return "https://" + host + "/" + repoPath + "/commit/" + url.PathEscape(it.CommitSHA)
+	case platform.KindBitbucket:
+		sha := it.CommitSHA
+		if sha == "" {
+			sha = it.AfterSHA
+		}
+		if host == platform.DefaultBitbucketHost {
+			return "https://" + host + "/" + repoPath + "/commits/" + url.PathEscape(sha)
+		}
+		return "https://" + host + "/projects/" + url.PathEscape(it.RepoOwner) +
+			"/repos/" + url.PathEscape(it.RepoName) + "/commits/" + url.PathEscape(sha)
 	case platform.KindGitLab:
 		if it.CommitSHA == "" {
 			return "https://" + host + "/" + repoPath + "/-/compare/" +

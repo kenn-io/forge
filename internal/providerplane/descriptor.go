@@ -294,7 +294,7 @@ func (d DiffDescriptor) Validate() error {
 func validateProviderHostPair(kind platform.Kind, host string) error {
 	for _, other := range []platform.Kind{
 		platform.KindGitHub, platform.KindGitLab,
-		platform.KindForgejo, platform.KindGitea,
+		platform.KindForgejo, platform.KindGitea, platform.KindBitbucket,
 	} {
 		if other == kind {
 			continue

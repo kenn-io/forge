@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  buildForgeHref,
   formatRepoBrowserCommitAge,
   formatRepoBrowserCommitDate,
   formatRepoBrowserFileSize,
@@ -54,5 +55,23 @@ describe("repo browser view state", () => {
     expect(formatRepoBrowserCommitAge("2026-05-28T12:00:00Z", now)).toBe("4w");
     expect(formatRepoBrowserCommitAge("2025-06-25T12:00:00Z", now)).toBe("12mo");
     expect(formatRepoBrowserCommitAge("not-a-date", now)).toBe("");
+  });
+});
+
+describe("Bitbucket source links", () => {
+  it.each([
+    [undefined, "https://bitbucket.org/EX/widgets/src/0123456789abcdef/docs/setup%20guide.md"],
+    [
+      "bitbucket.example.com",
+      "https://bitbucket.example.com/projects/EX/repos/widgets/browse/docs/setup%20guide.md?at=0123456789abcdef",
+    ],
+  ])("links the selected revision on %s", (platformHost, expected) => {
+    expect(
+      buildForgeHref(
+        { provider: "bitbucket", platformHost, owner: "EX", name: "widgets", repoPath: "EX/widgets" },
+        { type: "branch", name: "feature/setup", sha: "0123456789abcdef", stale: false },
+        "docs/setup guide.md",
+      ),
+    ).toBe(expected);
   });
 });

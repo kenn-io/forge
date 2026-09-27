@@ -208,16 +208,37 @@ type AssigneeMutator interface {
 
 // ReviewerMutator requests reviews from users on a merge request and
 // removes pending review requests. Both calls return the full updated
-// requested-reviewer username list after the mutation. Requesting an
-// empty username list is a read: it mutates nothing and returns the
+// requested-reviewer identity list after the mutation. Requesting an
+// empty identity list is a read: it mutates nothing and returns the
 // provider's current requested-reviewer set, so callers can diff a
 // desired set against live provider state instead of cached state.
-// All usernames, in both directions, are individual user logins;
-// implementations must exclude team or group reviewer identities so a
+// Identities are individual user logins, except providers implementing
+// ReviewerDirectory, whose identities are stable account IDs.
+// Implementations must exclude team or group reviewer identities so a
 // caller-computed removal diff never targets an unsupported identity.
 type ReviewerMutator interface {
 	RequestMergeRequestReviewers(ctx context.Context, ref RepoRef, number int, usernames []string) ([]string, error)
 	RemoveMergeRequestReviewers(ctx context.Context, ref RepoRef, number int, usernames []string) ([]string, error)
+}
+
+// ReviewerAccount separates the provider's action identity from its display label.
+type ReviewerAccount struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Nickname    string `json:"nickname"`
+	AvatarURL   string `json:"avatar_url"`
+}
+
+// ReviewerAccounts retains current account labels when candidate discovery fails.
+type ReviewerAccounts struct {
+	Accounts       []ReviewerAccount `json:"accounts"`
+	CandidateError string            `json:"candidate_error"`
+}
+
+// ReviewerDirectory supplies selectable accounts and current reviewers for
+// providers whose reviewer identities are not human-readable logins.
+type ReviewerDirectory interface {
+	ListReviewerAccounts(ctx context.Context, ref RepoRef, number int) (ReviewerAccounts, error)
 }
 
 type ReviewMutator interface {

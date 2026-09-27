@@ -475,6 +475,10 @@ func parseRepoRef(raw, configuredPlatform string) (parsedRepoRef, error) {
 	}
 
 	path = cleanPath(path)
+	if refPlatform == string(platformpkg.KindBitbucket) && host != platformpkg.DefaultBitbucketHost &&
+		(strings.HasPrefix(raw, "https://") || strings.HasPrefix(raw, "http://")) {
+		path = strings.TrimPrefix(path, "scm/")
+	}
 	if platformpkg.AllowsNestedOwner(platformpkg.Kind(refPlatform)) {
 		owner, name, err := splitGitLabPath(raw, path)
 		if err != nil {

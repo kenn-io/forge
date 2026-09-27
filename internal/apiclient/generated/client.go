@@ -5972,6 +5972,38 @@ func (o *UnresolvePrReviewThreadOnHostRequestOptions) GetHeader() (map[string]st
 	return nil, nil
 }
 
+// GetPrReviewerAccountsOnHostRequestOptions is the options needed to make a request to GetPrReviewerAccountsOnHost.
+type GetPrReviewerAccountsOnHostRequestOptions struct {
+	PathParams *GetPrReviewerAccountsOnHostPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetPrReviewerAccountsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetPrReviewerAccountsOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetPrReviewerAccountsOnHostRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetPrReviewerAccountsOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // SetPrReviewersOnHostRequestOptions is the options needed to make a request to SetPrReviewersOnHost.
 type SetPrReviewersOnHostRequestOptions struct {
 	PathParams *SetPrReviewersOnHostPath
@@ -9406,6 +9438,38 @@ func (o *UnresolvePrReviewThreadRequestOptions) GetHeader() (map[string]string, 
 	return nil, nil
 }
 
+// GetPrReviewerAccountsRequestOptions is the options needed to make a request to GetPrReviewerAccounts.
+type GetPrReviewerAccountsRequestOptions struct {
+	PathParams *GetPrReviewerAccountsPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetPrReviewerAccountsRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetPrReviewerAccountsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetPrReviewerAccountsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetPrReviewerAccountsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // SetPrReviewersRequestOptions is the options needed to make a request to SetPrReviewers.
 type SetPrReviewersRequestOptions struct {
 	PathParams *SetPrReviewersPath
@@ -12016,6 +12080,7 @@ type ClientInterface interface {
 	ApplyPrReviewSuggestionsOnHostWithResponse(ctx context.Context, options *ApplyPrReviewSuggestionsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApplyPrReviewSuggestionsOnHostResp, error)
 	ResolvePrReviewThreadOnHostWithResponse(ctx context.Context, options *ResolvePrReviewThreadOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolvePrReviewThreadOnHostResp, error)
 	UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, options *UnresolvePrReviewThreadOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UnresolvePrReviewThreadOnHostResp, error)
+	GetPrReviewerAccountsOnHostWithResponse(ctx context.Context, options *GetPrReviewerAccountsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPrReviewerAccountsOnHostResp, error)
 	SetPrReviewersOnHostWithResponse(ctx context.Context, options *SetPrReviewersOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrReviewersOnHostResp, error)
 	GetPullStackOnHostWithResponse(ctx context.Context, options *GetPullStackOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullStackOnHostResp, error)
 	SetKanbanStateOnHostWithResponse(ctx context.Context, options *SetKanbanStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateOnHostResp, error)
@@ -12127,6 +12192,7 @@ type ClientInterface interface {
 	ApplyPrReviewSuggestionsWithResponse(ctx context.Context, options *ApplyPrReviewSuggestionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApplyPrReviewSuggestionsResp, error)
 	ResolvePrReviewThreadWithResponse(ctx context.Context, options *ResolvePrReviewThreadRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolvePrReviewThreadResp, error)
 	UnresolvePrReviewThreadWithResponse(ctx context.Context, options *UnresolvePrReviewThreadRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UnresolvePrReviewThreadResp, error)
+	GetPrReviewerAccountsWithResponse(ctx context.Context, options *GetPrReviewerAccountsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPrReviewerAccountsResp, error)
 	SetPrReviewersWithResponse(ctx context.Context, options *SetPrReviewersRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrReviewersResp, error)
 	GetPullStackWithResponse(ctx context.Context, options *GetPullStackRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullStackResp, error)
 	SetKanbanStateWithResponse(ctx context.Context, options *SetKanbanStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateResp, error)
@@ -22224,6 +22290,62 @@ func (c *Client) UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, 
 	}
 }
 
+// GetPrReviewerAccountsOnHost List pull request reviewer accounts
+func (c *Client) GetPrReviewerAccountsOnHostWithResponse(ctx context.Context, options *GetPrReviewerAccountsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPrReviewerAccountsOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetPrReviewerAccountsOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetPrReviewerAccountsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetPrReviewerAccountsOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPrReviewerAccountsOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // SetPrReviewersOnHost Set pull request reviewers
 func (c *Client) SetPrReviewersOnHostWithResponse(ctx context.Context, options *SetPrReviewersOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrReviewersOnHostResp, error) {
 	var err error
@@ -28354,6 +28476,62 @@ func (c *Client) UnresolvePrReviewThreadWithResponse(ctx context.Context, option
 	}
 	switch resp.StatusCode {
 	case 200:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetPrReviewerAccounts List pull request reviewer accounts
+func (c *Client) GetPrReviewerAccountsWithResponse(ctx context.Context, options *GetPrReviewerAccountsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPrReviewerAccountsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetPrReviewerAccountsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetPrReviewerAccountsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetPrReviewerAccountsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPrReviewerAccountsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -36693,6 +36871,21 @@ func (c *Client) UnresolvePrReviewThreadOnHostRaw(ctx context.Context, httpClien
 	return httpClient.Do(req)
 }
 
+// GetPrReviewerAccountsOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) GetPrReviewerAccountsOnHostRaw(ctx context.Context, httpClient *http.Client, options *GetPrReviewerAccountsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // SetPrReviewersOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) SetPrReviewersOnHostRaw(ctx context.Context, httpClient *http.Client, options *SetPrReviewersOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -38535,6 +38728,21 @@ func (c *Client) UnresolvePrReviewThreadRaw(ctx context.Context, httpClient *htt
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve",
 		Method:     "POST",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetPrReviewerAccountsRaw returns an unread response. The caller must close its body.
+func (c *Client) GetPrReviewerAccountsRaw(ctx context.Context, httpClient *http.Client, options *GetPrReviewerAccountsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts",
+		Method:     "GET",
 		Options:    options,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -43512,6 +43720,22 @@ func NewUnresolvePrReviewThreadOnHostRequest(ctx context.Context, baseURL string
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetPrReviewerAccountsOnHostRequest constructs a typed request for a caller-owned transport.
+func NewGetPrReviewerAccountsOnHostRequest(ctx context.Context, baseURL string, options *GetPrReviewerAccountsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewSetPrReviewersOnHostRequest constructs a typed request for a caller-owned transport.
 func NewSetPrReviewersOnHostRequest(ctx context.Context, baseURL string, options *SetPrReviewersOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -45469,6 +45693,22 @@ func NewUnresolvePrReviewThreadRequest(ctx context.Context, baseURL string, opti
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/review-threads/{thread_id}/unresolve",
 		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetPrReviewerAccountsRequest constructs a typed request for a caller-owned transport.
+func NewGetPrReviewerAccountsRequest(ctx context.Context, baseURL string, options *GetPrReviewerAccountsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/reviewer-accounts",
+		Method:     "GET",
 		Options:    options,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -48644,6 +48884,14 @@ type UnresolvePrReviewThreadOnHostPath struct {
 	ThreadID     string `json:"thread_id"`
 }
 
+type GetPrReviewerAccountsOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+}
+
 type SetPrReviewersOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -49289,6 +49537,13 @@ type UnresolvePrReviewThreadPath struct {
 	Name     string `json:"name"`
 	Number   int64  `json:"number"`
 	ThreadID string `json:"thread_id"`
+}
+
+type GetPrReviewerAccountsPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
 }
 
 type SetPrReviewersPath struct {
@@ -51260,6 +51515,10 @@ type ResolvePrReviewThreadOnHostErrorResponse = ProblemError
 
 type UnresolvePrReviewThreadOnHostErrorResponse = ProblemError
 
+type GetPrReviewerAccountsOnHostResponse = ReviewerAccounts
+
+type GetPrReviewerAccountsOnHostErrorResponse = ProblemError
+
 type SetPrReviewersOnHostResponse = ItemReviewersResponse
 
 type SetPrReviewersOnHostErrorResponse = ProblemError
@@ -51667,6 +51926,10 @@ type ApplyPrReviewSuggestionsErrorResponse = ProblemError
 type ResolvePrReviewThreadErrorResponse = ProblemError
 
 type UnresolvePrReviewThreadErrorResponse = ProblemError
+
+type GetPrReviewerAccountsResponse = ReviewerAccounts
+
+type GetPrReviewerAccountsErrorResponse = ProblemError
 
 type SetPrReviewersResponse = ItemReviewersResponse
 
@@ -53492,6 +53755,14 @@ type UnresolvePrReviewThreadOnHostResp struct {
 	Error        *UnresolvePrReviewThreadOnHostErrorResponse
 }
 
+type GetPrReviewerAccountsOnHostResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetPrReviewerAccountsOnHostErrorResponse
+	JSON200      *GetPrReviewerAccountsOnHostResponse
+}
+
 type SetPrReviewersOnHostResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -54380,6 +54651,14 @@ type UnresolvePrReviewThreadResp struct {
 	Body         []byte
 	StatusCode   int
 	Error        *UnresolvePrReviewThreadErrorResponse
+}
+
+type GetPrReviewerAccountsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetPrReviewerAccountsErrorResponse
+	JSON200      *GetPrReviewerAccountsResponse
 }
 
 type SetPrReviewersResp struct {
@@ -58451,6 +58730,20 @@ type ResolveItemResponse struct {
 	ItemType    string `json:"item_type"`
 	Number      int64  `json:"number"`
 	RepoTracked bool   `json:"repo_tracked"`
+}
+
+type ReviewerAccount struct {
+	AvatarURL   string `json:"avatar_url"`
+	DisplayName string `json:"display_name"`
+	ID          string `json:"id"`
+	Nickname    string `json:"nickname"`
+}
+
+type ReviewerAccounts struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string           `json:"$schema,omitempty"`
+	Accounts       []ReviewerAccount `json:"accounts"`
+	CandidateError string            `json:"candidate_error"`
 }
 
 type RoborevConfiguredRepositoriesResponse struct {

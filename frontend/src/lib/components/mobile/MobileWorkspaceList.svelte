@@ -1,6 +1,7 @@
 <script lang="ts">
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import { copyToClipboard, DiffStats, formatRelativeTime, formatTimestamp, Modal, Spinner, StatusDot, Toggle, type StatusDotStatus } from "@kenn-io/kit-ui";
+  import { buildCanonicalProviderItemURL } from "../../utils/item-reference.js";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { Effect, Schedule, Stream } from "effect";
@@ -252,14 +253,18 @@
 
   function providerItemURL(workspace: WorkspaceListItem): string | null {
     const linked = mobileWorkspaceLinkedItem(workspace);
+    if (linked === null) return null;
     const provider = workspace.repo?.provider.toLowerCase();
-    const repoPath = workspace.repo?.repo_path ?? `${workspace.repo_owner}/${workspace.repo_name}`;
-    if (linked === null || !provider || !workspace.platform_host || !repoPath) return null;
-    const number = linked.number;
-    const encodedPath = repoPath.split("/").map(encodeURIComponent).join("/");
-    const kind = linked.itemType === "issue" ? "issues" : provider === "github" ? "pull" : provider === "gitlab" ? "merge_requests" : "pulls";
-    const separator = provider === "gitlab" ? "/-/" : "/";
-    return `https://${workspace.platform_host}/${encodedPath}${separator}${kind}/${number}`;
+    if (!provider) return null;
+    return buildCanonicalProviderItemURL({
+      provider,
+      platformHost: workspace.platform_host,
+      owner: workspace.repo_owner,
+      name: workspace.repo_name,
+      repoPath: workspace.repo?.repo_path ?? `${workspace.repo_owner}/${workspace.repo_name}`,
+      number: linked.number,
+      itemType: linked.itemType,
+    }) ?? null;
   }
 
   function copyText(value: string, message: string): void {

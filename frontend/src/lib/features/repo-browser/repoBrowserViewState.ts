@@ -1,3 +1,7 @@
+import { providerDefaultHost } from "../../api/provider-routes.js";
+import type { RepoBrowserRef } from "../../api/types.js";
+import type { RepositoryRouteRef } from "../../routes.js";
+
 const markdownExtensions = new Set([".md", ".mdx"]);
 
 export function isRepoBrowserMarkdownPath(path: string | null | undefined): boolean {
@@ -60,4 +64,31 @@ function extension(path: string): string {
 
 function formatDecimal(value: number): string {
   return value >= 10 ? value.toFixed(0) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+export function buildForgeHref(
+  value: RepositoryRouteRef,
+  ref: RepoBrowserRef | null,
+  path: string | null,
+): string | null {
+  if (!ref || !path) return null;
+  const host = value.platformHost ?? providerDefaultHost(value.provider);
+  if (!host) return null;
+  const encodedRepo = value.repoPath.split("/").map(encodeURIComponent).join("/");
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const encodedRef = encodeURIComponent(ref.name || ref.sha);
+  if (value.provider === "gitlab") {
+    return `https://${host}/${encodedRepo}/-/blob/${encodedRef}/${encodedPath}`;
+  }
+  if (value.provider === "bitbucket") {
+    if (host.toLowerCase() === "bitbucket.org") {
+      return `https://${host}/${encodedRepo}/src/${encodeURIComponent(ref.sha)}/${encodedPath}`;
+    }
+    return `https://${host}/projects/${encodeURIComponent(value.owner)}/repos/${encodeURIComponent(value.name)}/browse/${encodedPath}?at=${encodeURIComponent(ref.sha)}`;
+  }
+  if (value.provider === "forgejo" || value.provider === "gitea") {
+    const refKind = ref.type === "tag" ? "tag" : ref.type === "commit" ? "commit" : "branch";
+    return `https://${host}/${encodedRepo}/src/${refKind}/${encodedRef}/${encodedPath}`;
+  }
+  return `https://${host}/${encodedRepo}/blob/${encodedRef}/${encodedPath}`;
 }

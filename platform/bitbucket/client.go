@@ -20,8 +20,9 @@ import (
 const apiURL = "https://api.bitbucket.org/2.0"
 
 type Client struct {
-	http *http.Client
-	rate platform.RateObserver
+	http   *http.Client
+	rate   platform.RateObserver
+	source platform.CredentialSource
 }
 
 func NewClient(host string, source platform.CredentialSource, transport http.RoundTripper, rate platform.RateObserver) (*Client, error) {
@@ -31,7 +32,7 @@ func NewClient(host string, source platform.CredentialSource, transport http.Rou
 	if transport == nil {
 		return nil, &platform.Error{Code: platform.ErrCodeInvalidArgument, Field: "transport"}
 	}
-	c := &Client{rate: rate}
+	c := &Client{rate: rate, source: source}
 	c.http = &http.Client{Timeout: 30 * time.Second, Transport: platform.AuthTransport{
 		Source: source, Base: transport, AllowedOrigin: apiURL,
 		SetHeader: func(req *http.Request, token string) {
@@ -75,7 +76,7 @@ func (c *Client) sdk(ctx context.Context) (*bitbucket.Client, error) {
 	api.HttpClient = &http.Client{Timeout: c.http.Timeout, Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		resp, err := c.http.Transport.RoundTrip(req.Clone(ctx))
 		if resp != nil && c.rate != nil {
-			c.rate.RecordRequest()
+			c.observeRate(resp.StatusCode)
 		}
 		return resp, err
 	})}
@@ -142,7 +143,7 @@ func request[T any](ctx context.Context, c *Client, method, target string, body 
 	}
 	defer resp.Body.Close()
 	if c.rate != nil {
-		c.rate.RecordRequest()
+		c.observeRate(resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return out, classify(&bitbucket.UnexpectedResponseStatusError{Status: resp.Status, StatusCode: resp.StatusCode})
@@ -207,4 +208,16 @@ func issueOptions(ref platform.RepoRef, number int) (*bitbucket.IssuesOptions, e
 
 func missing(field string) error {
 	return platform.ProviderContract(platform.KindBitbucket, platform.DefaultBitbucketHost, field, fmt.Errorf("bitbucket omitted %s", field))
+}
+
+// A 429 proves exhaustion, but neither product promises a common reset header.
+// The observer's unknown-reset policy supplies the bounded pause. A successful
+// request releases that observation without inventing a remaining quota.
+func (c *Client) observeRate(status int) {
+	c.rate.RecordRequest()
+	if status == http.StatusTooManyRequests {
+		c.rate.UpdateFromRate(platform.Rate{Remaining: 0, Limit: -1})
+	} else if status >= 200 && status < 300 {
+		c.rate.UpdateFromRate(platform.Rate{Remaining: -1, Limit: -1})
+	}
 }

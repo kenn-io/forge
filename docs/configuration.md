@@ -160,7 +160,14 @@ Set `KENN_FORGE_BITBUCKET_TOKEN` to `account-email:api-token` for an Atlassian
 API token, or to the token alone for an OAuth or repository access token.
 You can use `token_file` instead of `token_env`. Grant read access to
 repositories and pull requests for monitoring. Add write access for actions
-such as commenting, reviewing, and merging.
+such as commenting, reviewing, and merging. To select reviewers by name, also
+grant `read:workspace:bitbucket`. Forge lists workspace members and submits their
+account IDs. Existing reviewers outside the workspace can still be removed.
+
+Merging in Forge requires an account API token whose repository write permission
+can be checked. OAuth and repository access tokens can read data, but Forge
+does not enable merges with those credentials. Branch restrictions and token
+scopes still apply.
 
 If you use the community `bkt` CLI, Forge can read its environment settings.
 Set `BKT_HOST=https://bitbucket.org` and `BKT_TOKEN`. For bearer tokens, set
@@ -198,11 +205,13 @@ Set `BITBUCKET_DC_CREDENTIAL` to `username:personal-access-token`. Forge uses
 this credential for both the API and Git.
 
 With Data Center, you can discover repositories, follow pull requests, tags,
-and commit statuses, comment and reply, view inline threads, and approve,
-edit, reopen, or merge pull requests. Merges support merge, squash, and rebase.
+and commit statuses, and approve, edit, reopen, or merge pull requests.
+Merging requires a user personal access token with repository write permission.
+Forge offers merge, squash, and rebase when enabled in the repository settings;
+branch restrictions still apply.
 
-Forge does not yet support Data Center issues, workflows, notifications,
-reviewer changes, or publishing review drafts. Your server must serve Bitbucket
+Forge does not yet support Data Center comments or inline threads, issues,
+workflows, notifications, reviewer changes, or publishing review drafts. Your server must serve Bitbucket
 at the hostname root, such as `https://bitbucket.example.com/`. A path such as
 `https://example.com/bitbucket/` is not supported.
 

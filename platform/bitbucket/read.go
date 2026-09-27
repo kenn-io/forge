@@ -21,7 +21,12 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	if err != nil {
 		return platform.Repository{}, err
 	}
-	return r.normalize()
+	repo, err := r.normalize()
+	if err != nil {
+		return repo, err
+	}
+	err = c.observeMerge(ctx, &repo)
+	return repo, err
 }
 
 func (c *Client) ListRepositories(ctx context.Context, owner string, opts platform.RepositoryListOptions) ([]platform.Repository, error) {
@@ -49,6 +54,9 @@ func (c *Client) ListRepositories(ctx context.Context, owner string, opts platfo
 	for _, row := range rows {
 		r, err := row.normalize()
 		if err != nil {
+			return nil, err
+		}
+		if err := c.observeMerge(ctx, &r); err != nil {
 			return nil, err
 		}
 		result = append(result, r)

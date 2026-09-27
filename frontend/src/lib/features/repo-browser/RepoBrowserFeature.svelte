@@ -12,10 +12,10 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { SourceBrowserFileEntry } from "../../utils/source-browser-files.js";
   import type { RepoBrowserCommit, RepoBrowserRef } from "../../api/types.js";
-  import { providerDefaultHost } from "../../api/provider-routes.js";
   import DocMarkdownView from "../../components/docs/DocMarkdownView.svelte";
   import { RefreshIcon, ExternalLinkIcon, SpinnerIcon } from "../../icons";
   import {
+    buildForgeHref,
     formatRepoBrowserCommitAge,
     formatRepoBrowserCommitDate,
     formatRepoBrowserFileSize,
@@ -610,27 +610,6 @@
         onFailure: () => {},
       },
     );
-  }
-
-  function buildForgeHref(
-    value: RepoBrowserFeatureRoute,
-    ref: RepoBrowserRef | null,
-    path: string | null,
-  ): string | null {
-    if (!ref || !path) return null;
-    const host = value.platformHost ?? providerDefaultHost(value.provider);
-    if (!host) return null;
-    const encodedRepo = value.repoPath.split("/").map(encodeURIComponent).join("/");
-    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
-    const encodedRef = encodeURIComponent(ref.name || ref.sha);
-    if (value.provider === "gitlab") {
-      return `https://${host}/${encodedRepo}/-/blob/${encodedRef}/${encodedPath}`;
-    }
-    if (value.provider === "forgejo" || value.provider === "gitea") {
-      const refKind = ref.type === "tag" ? "tag" : ref.type === "commit" ? "commit" : "branch";
-      return `https://${host}/${encodedRepo}/src/${refKind}/${encodedRef}/${encodedPath}`;
-    }
-    return `https://${host}/${encodedRepo}/blob/${encodedRef}/${encodedPath}`;
   }
 
   function applyRouteAnchor(value: RepoBrowserFeatureRoute): void {

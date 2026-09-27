@@ -63,6 +63,10 @@ func TestRepositoryDescriptorRejectsUntrustedFacts(t *testing.T) {
 			value.PlatformHost = "gitlab.com"
 			value.CloneURL = "https://gitlab.com/acme/widget.git"
 		},
+		"bitbucket public host mismatch": func(value *RepositoryDescriptor) {
+			value.PlatformHost = "bitbucket.org"
+			value.CloneURL = "https://bitbucket.org/acme/widget.git"
+		},
 		"protocol mismatch": func(value *RepositoryDescriptor) {
 			value.ProtocolVersion++
 		},

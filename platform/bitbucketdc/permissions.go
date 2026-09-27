@@ -2,41 +2,62 @@ package bitbucketdc
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
+	"time"
 
 	"go.kenn.io/forge/platform"
 )
 
-func (c *Client) observeMerge(ctx context.Context, repo *platform.Repository) error {
-	repo.ViewerCanMerge = new(false)
+// Repository write permissions are shared by all lookups on this client and
+// reused for five minutes. Failed pages are never cached.
+func (c *Client) mergePermissions(ctx context.Context) (map[int64]struct{}, error) {
+	c.permissionMu.Lock()
+	defer c.permissionMu.Unlock()
 	if c.source == nil {
-		return nil
+		return nil, nil
 	}
 	token, err := c.source.Token(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// Project/repository bearer tokens cannot merge. Only the documented
-	// username:personal-access-token credential contract is supported here.
+	fingerprint := sha256.Sum256([]byte(token))
+	if fingerprint != c.permissionCredential {
+		c.writableRepos = nil
+		c.permissionCredential = fingerprint
+	}
+	// Project/repository bearer tokens cannot merge.
 	if !strings.Contains(token, ":") {
-		return nil
+		return nil, nil
+	}
+	if c.writableRepos != nil && time.Now().Before(c.permissionExpires) {
+		return c.writableRepos, nil
 	}
 	rows, err := pages[repository](ctx, c, "/rest/api/latest/repos?permission=REPO_WRITE&archived=ALL")
 	if errors.Is(err, platform.ErrPermissionDenied) || errors.Is(err, platform.ErrNotFound) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
+	writable := make(map[int64]struct{}, len(rows))
 	for _, row := range rows {
-		if strconv.FormatInt(row.ID, 10) == repo.PlatformExternalID {
-			repo.ViewerCanMerge = new(true)
-			break
-		}
+		writable[row.ID] = struct{}{}
 	}
+	c.writableRepos = writable
+	c.permissionExpires = time.Now().Add(5 * time.Minute)
+	return writable, nil
+}
+
+func (c *Client) observeMerge(ctx context.Context, repo *platform.Repository, writable map[int64]struct{}) error {
+	repo.ViewerCanMerge = new(false)
+	if writable == nil {
+		return nil
+	}
+	_, canMerge := writable[repo.PlatformID]
+	repo.ViewerCanMerge = new(canMerge)
 	path, err := c.repoPath(repo.Ref)
 	if err != nil {
 		return err

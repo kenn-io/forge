@@ -586,6 +586,8 @@ behavior.
 - Data Center `/scm/` and SSH ports describe transport, not repository identity; preserve execution URLs (`platform/remote.go::repositoryRemote`).
 
 - Bitbucket Git credential parsing must be provider-scoped; colons are valid in other providers' opaque tokens (`internal/gitclone/clone.go::gitRunnerAuthed`).
+- Cache complete Bitbucket permission inventories for five minutes, scoped to the credential and workspace/server;
+  repository discovery shares one snapshot and matches stable repository IDs (`platform/bitbucket/permissions.go`, `platform/bitbucketdc/permissions.go`).
 - Cloud reviewer nicknames are non-unique. Display account names but submit stable IDs; do not infer IDs from text (`platform/bitbucket/review.go::ListReviewerAccounts`).
 - Keep Data Center comments and threads disabled until current wire data is verified; the older activity example cannot establish today's response contract (`platform/bitbucketdc/client.go::Client.Capabilities`).
 - Data Center approval activity represents participant state, keyed by stable user ID and verified reviewed commit;

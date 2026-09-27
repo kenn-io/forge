@@ -25,7 +25,11 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	if err != nil {
 		return repo, err
 	}
-	err = c.observeMerge(ctx, &repo)
+	grants, err := c.repositoryPermissions(ctx, repo.Ref.Owner)
+	if err != nil {
+		return repo, err
+	}
+	err = c.observeMerge(ctx, &repo, grants)
 	return repo, err
 }
 
@@ -50,13 +54,17 @@ func (c *Client) ListRepositories(ctx context.Context, owner string, opts platfo
 	if opts.Limit > 0 && len(rows) > opts.Limit {
 		rows = rows[:opts.Limit]
 	}
+	grants, err := c.repositoryPermissions(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]platform.Repository, 0, len(rows))
 	for _, row := range rows {
 		r, err := row.normalize()
 		if err != nil {
 			return nil, err
 		}
-		if err := c.observeMerge(ctx, &r); err != nil {
+		if err := c.observeMerge(ctx, &r, grants); err != nil {
 			return nil, err
 		}
 		result = append(result, r)

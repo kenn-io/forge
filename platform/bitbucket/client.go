@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	bitbucket "github.com/ktrysmt/go-bitbucket"
@@ -20,9 +21,12 @@ import (
 const apiURL = "https://api.bitbucket.org/2.0"
 
 type Client struct {
-	http   *http.Client
-	rate   platform.RateObserver
-	source platform.CredentialSource
+	http                 *http.Client
+	rate                 platform.RateObserver
+	source               platform.CredentialSource
+	permissionMu         sync.Mutex
+	permissionCredential [32]byte
+	permissionWorkspaces map[string]permissionSnapshot
 }
 
 func NewClient(host string, source platform.CredentialSource, transport http.RoundTripper, rate platform.RateObserver) (*Client, error) {

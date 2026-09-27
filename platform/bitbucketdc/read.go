@@ -53,7 +53,11 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	}
 	repo.DefaultBranch = branch.DisplayID
 	repo.Ref.DefaultBranch = branch.DisplayID
-	err = c.observeMerge(ctx, &repo)
+	permissions, err := c.mergePermissions(ctx)
+	if err != nil {
+		return repo, err
+	}
+	err = c.observeMerge(ctx, &repo, permissions)
 	return repo, err
 }
 
@@ -77,13 +81,17 @@ func (c *Client) ListRepositories(ctx context.Context, owner string, opts platfo
 	if opts.Limit > 0 && len(rows) > opts.Limit {
 		rows = rows[:opts.Limit]
 	}
+	permissions, err := c.mergePermissions(ctx)
+	if err != nil {
+		return nil, err
+	}
 	repos := make([]platform.Repository, 0, len(rows))
 	for _, r := range rows {
 		v, err := r.normalize(c.host)
 		if err != nil {
 			return nil, err
 		}
-		if err := c.observeMerge(ctx, &v); err != nil {
+		if err := c.observeMerge(ctx, &v, permissions); err != nil {
 			return nil, err
 		}
 		repos = append(repos, v)

@@ -4,23 +4,29 @@ package bitbucketdc
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.kenn.io/forge/platform"
 )
 
 type Client struct {
-	host    string
-	baseURL string
-	http    *http.Client
-	rate    platform.RateObserver
-	source  platform.CredentialSource
+	host                 string
+	baseURL              string
+	http                 *http.Client
+	rate                 platform.RateObserver
+	source               platform.CredentialSource
+	permissionMu         sync.Mutex
+	permissionCredential [sha256.Size]byte
+	permissionExpires    time.Time
+	writableRepos        map[int64]struct{}
 }
 
 func NewClient(host string, source platform.CredentialSource, transport http.RoundTripper, rate platform.RateObserver) (*Client, error) {

@@ -29,6 +29,7 @@ export const ChatStateSchema = Schema.Struct({
   messages: Schema.Array(ChatMessageSchema),
   configOptions: Schema.Array(SessionConfigOptionSchema),
   configuring: Schema.Boolean,
+  historyTruncated: Schema.Boolean,
   permissions: Schema.Array(
     Schema.Struct({
       id: Schema.String,

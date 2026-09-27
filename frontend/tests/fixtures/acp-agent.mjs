@@ -79,6 +79,11 @@ for await (const line of createInterface({ input: process.stdin })) {
     }
     case "session/prompt":
       prompt = request.id;
+      if (request.params.prompt[0]?.text === "exit") {
+        write({ id: prompt, result: { stopReason: "end_turn" } });
+        setTimeout(() => process.exit(7), 10);
+        break;
+      }
       update({
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text: "I am working in the **workspace**.\n\n" },

@@ -1023,8 +1023,8 @@
 <ConfirmDialog
   open={stopSession !== null}
   title={selectedChat ? "Stop chat?" : "Stop terminal?"}
-  message={stopSession ? `Stop terminal "${stopSession.label}"?` : ""}
-  hint="This terminates the process running in this terminal session."
+  message={stopSession ? `Stop ${selectedChat ? "chat" : "terminal"} "${stopSession.label}"?` : ""}
+  hint={selectedChat ? "This terminates the agent process running in this chat session." : "This terminates the process running in this terminal session."}
   confirmLabel={selectedChat ? "Stop chat" : "Stop terminal"}
   pendingLabel="Stopping…"
   busy={stoppingSession !== null}

@@ -14,9 +14,10 @@
   import { makeChatSession } from "./chat-session.js";
   import type { ChatState } from "./chat-types.js";
 
-  let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange }: {
+  let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onExit }: {
     websocketPath: string; label?: string; status?: string; active?: boolean; disabled?: boolean;
     onConnectionChange?: (connected: boolean) => void;
+    onExit?: (code: number) => void;
   } = $props();
   const runtime = getAppRuntime();
   let chatState = $state.raw<ChatState | null>(null);
@@ -29,12 +30,14 @@
   let follow = $state(true);
   let settingsOpen = $state(false);
   let settingPending = $state(false);
+  const textEncoder = new TextEncoder();
+  const draftBytes = $derived(textEncoder.encode(draft).byteLength);
   const primaryOptions = $derived(chatState?.configOptions.filter(option => !option.category || option.category === "model" || option.category === "thought_level") ?? []);
   const otherOptions = $derived(chatState?.configOptions.filter(option => option.category && option.category !== "model" && option.category !== "thought_level") ?? []);
   const optionsDisabled = $derived(!connected || !chatState?.connected || chatState.configuring || settingPending || disabled);
   let resyncPending = false;
   const rows = $derived(chatRows(chatState?.messages ?? []));
-  const canSend = $derived(connected && chatState?.connected && !chatState.busy && !chatState.configuring && !settingPending && !pending && !disabled && draft.trim().length > 0);
+  const canSend = $derived(connected && chatState?.connected && !chatState.busy && !chatState.configuring && !settingPending && !pending && !disabled && draft.trim().length > 0 && draftBytes <= 65536);
 
   $effect(() => {
     const path = websocketPath;
@@ -43,8 +46,10 @@
       const session = makeChatSession({
         path, initialStatus,
         onState: (next) => {
+          const exited = !next.connected && chatState?.connected !== false;
           chatState = next;
           settingPending = false;
+          if (exited) onExit?.(-1);
           if (resyncPending) {
             resyncPending = false;
             if (pending && !next.messages.some((message) => message.submissionId === pending?.id)) {
@@ -122,7 +127,9 @@
       {/each}
     </div>
   {/if}
+  {#if chatState?.historyTruncated}<p class="history-notice" role="status">Earlier chat messages were removed to keep this session responsive.</p>{/if}
   {#if error || chatState?.error}<p class="error" role="alert">{error || chatState?.error}</p>{/if}
+  {#if draftBytes > 65536}<p class="error" role="alert">Message must not exceed 65,536 bytes.</p>{/if}
   <div class="dock">
     <form class="composer" onsubmit={(event) => { event.preventDefault(); send(); }}>
       {#if settingsOpen}
@@ -132,7 +139,7 @@
           <ChatSessionOptions options={otherOptions} disabled={optionsDisabled || !!chatState?.busy} onchange={configure} />
         </div>
       {/if}
-      <textarea aria-label="Message agent" placeholder={`Ask ${label}…`} bind:value={draft} onkeydown={keydown} rows="2" disabled={disabled || !chatState?.connected} maxlength={65536}></textarea>
+      <textarea aria-label="Message agent" placeholder={`Ask ${label}…`} bind:value={draft} onkeydown={keydown} rows="2" disabled={disabled || !chatState?.connected}></textarea>
       <div class="toolbar">
         <div class="chips">
           {#each primaryOptions as option (option.id)}
@@ -162,6 +169,7 @@
   .permission-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
   .permission strong { overflow-wrap: anywhere; }
   .error { color: var(--accent-red); margin: 0; padding: var(--space-4) var(--space-6); overflow-wrap: anywhere; }
+  .history-notice { color: var(--text-secondary); margin: 0; padding: var(--space-4) var(--space-6); overflow-wrap: anywhere; }
   .latest { align-self: center; padding: var(--space-3) var(--space-5); color: var(--text-primary); border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: var(--radius-md); font: inherit; }
   @media (pointer: coarse) {
     .messages, .permissions { padding-inline: var(--space-4); }

@@ -20,6 +20,7 @@ func TestListAgentTargetsIncludesCustomAgentsWithoutCommands(t *testing.T) {
 			{Key: "claude", Label: "Claude", Kind: "shell", Source: "config", Available: true},
 			{Key: "codex", Label: "Codex", Kind: "agent", Source: "config", DisabledReason: "disabled by config"},
 			{Key: "custom", Label: "Custom", Kind: "agent", Source: "config", Available: true},
+			{Key: "chat", Label: "Chat", Kind: "acp", Source: "config", Available: true},
 		}, nil
 	}}
 	s := newMCPTestServer(t, backend)
@@ -36,6 +37,27 @@ func TestListAgentTargetsIncludesCustomAgentsWithoutCommands(t *testing.T) {
 	raw, err := json.Marshal(out)
 	require.NoError(err)
 	assert.NotContains(string(raw), "command")
+}
+
+func TestSendAgentMessageRejectsACP(t *testing.T) {
+	submitted := false
+	backend := &fakeBackend{
+		getWorkspaceRuntimeFn: func(context.Context, string) (WorkspaceRuntime, error) {
+			return WorkspaceRuntime{Sessions: []RuntimeSession{{Key: "chat", Kind: "acp", Status: "running"}}}, nil
+		},
+		submitAgentMessageFn: func(context.Context, AgentMessageRequest) (AgentMessageResult, error) {
+			submitted = true
+			return AgentMessageResult{}, nil
+		},
+	}
+	s := newMCPTestServer(t, backend)
+
+	_, err := s.sendAgentMessage(t.Context(), sendAgentMessageInput{
+		WorkspaceID: "workspace", RuntimeSessionKey: "chat", Message: "hello",
+	})
+
+	require.ErrorContains(t, err, "not a live terminal coding agent")
+	assert.False(t, submitted)
 }
 
 func TestListWorkspaceAgentSessionsMapsLiveProjectionDeterministically(t *testing.T) {

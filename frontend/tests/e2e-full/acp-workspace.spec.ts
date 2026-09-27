@@ -1,9 +1,10 @@
 import { createServer, request as httpRequest } from "node:http";
-import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { devices, expect, request, test } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer } from "./support/e2eServer";
 import { openSettingsPanel } from "./support/settingsPanel";
+
+test.use({ launchOptions: { args: ["--host-resolver-rules=MAP acp.test 127.0.0.1"] } });
 
 test("ACP workspace streams, approves tools, and reconnects on desktop and phone", async ({
   page,
@@ -14,12 +15,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
   test.setTimeout(120_000);
   const server = await startIsolatedWorkspaceE2EServer();
   const api = await request.newContext({ baseURL: server.info.base_url });
-  // A real non-loopback HTTP origin keeps secure-context-only APIs unavailable.
+  // A non-localhost HTTP name is insecure even though Chromium resolves it to loopback.
   const upstream = new URL(server.info.base_url);
-  const host = Object.values(networkInterfaces())
-    .flat()
-    .find((address) => address?.family === "IPv4" && !address.internal)?.address;
-  if (!host) throw new Error("A non-loopback address is required for the plain HTTP chat test");
+  const host = "acp.test";
   let origin = "";
   const sockets = new Set<{ destroy(): void }>();
   const proxy = createServer((incoming, outgoing) => {
@@ -68,7 +66,7 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
   try {
     await new Promise<void>((resolve, reject) => {
       proxy.once("error", reject);
-      proxy.listen(0, host, resolve);
+      proxy.listen(0, "127.0.0.1", resolve);
     });
     const address = proxy.address();
     if (!address || typeof address === "string") throw new Error("Missing proxy address");
@@ -141,6 +139,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(chat.getByText("Permission received. The turn is complete.")).toBeVisible();
     await page.reload();
     await expect(chat.getByText("Permission received. The turn is complete.")).toBeVisible();
+    await chat.getByRole("textbox", { name: "Message agent" }).fill("é".repeat(32769));
+    await expect(chat.getByText("Message must not exceed 65,536 bytes.")).toBeVisible();
+    await expect(chat.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
     // An accepted 64 KiB prompt exceeds 128 KiB once JSON escapes are included.
     await chat.getByRole("textbox", { name: "Message agent" }).fill('"'.repeat(65536));
     await chat.getByRole("button", { name: "Send", exact: true }).click();
@@ -171,9 +172,17 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
       await mobile.screenshot({ path: testInfo.outputPath("acp-phone.png") });
       await mobileChat.getByRole("button", { name: "Allow once" }).tap();
       await expect(mobileChat.getByRole("button", { name: "Stop reply" })).toHaveCount(0);
+      await mobile.getByRole("button", { name: "Chat options" }).tap();
+      await mobile.getByRole("button", { name: "Stop chat Workspace Chat", exact: true }).tap();
+      await expect(mobile.getByText(`Stop chat "Workspace Chat"?`)).toBeVisible();
+      await expect(mobile.getByText("This terminates the agent process running in this chat session.")).toBeVisible();
+      await mobile.getByRole("button", { name: "Cancel" }).tap();
     } finally {
       await phone.close();
     }
+    await chat.getByRole("textbox", { name: "Message agent" }).fill("exit");
+    await chat.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(page.getByRole("tab", { name: /Workspace Chat,/ })).toHaveCount(0);
   } finally {
     for (const socket of sockets) socket.destroy();
     proxy.closeAllConnections();

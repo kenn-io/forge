@@ -10,10 +10,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"go.kenn.io/forge/internal/procutil"
 )
@@ -21,22 +23,25 @@ import (
 // ACP owns a stdio agent on the workspace's execution host. Browser connections
 // subscribe to its state; disconnecting a browser does not stop an accepted turn.
 type ACP struct {
-	turnMu       sync.Mutex
-	cancelling   bool
-	mu           sync.Mutex
-	writeMu      sync.Mutex
-	cmd          *exec.Cmd
-	stdin        io.WriteCloser
-	stdout       io.ReadCloser
-	done         chan struct{}
-	nextID       int
-	pending      map[string]chan acpEnvelope
-	subscribers  map[chan struct{}]struct{}
-	state        ACPState
-	saveConfig   func(map[string]string) error
-	configValues map[string]string
-	sessionID    string
+	turnMu      sync.Mutex
+	cancelling  bool
+	mu          sync.Mutex
+	writeMu     sync.Mutex
+	cmd         *exec.Cmd
+	stdin       io.WriteCloser
+	stdout      io.ReadCloser
+	done        chan struct{}
+	nextID      int
+	pending     map[string]chan acpEnvelope
+	subscribers map[chan struct{}]struct{}
+	state       ACPState
+	saveConfig  func(map[string]string) error
+	sessionID   string
+	exitCode    int
+	promptIndex *int
 }
+
+const maxACPStateBytes = 4 << 20
 
 type ACPMessage struct {
 	SubmissionID string `json:"submissionId,omitempty"`
@@ -72,13 +77,14 @@ type ACPConfigOption struct {
 	Options      []ACPConfigChoice `json:"options"`
 }
 type ACPState struct {
-	ConfigOptions []ACPConfigOption `json:"configOptions"`
-	Configuring   bool              `json:"configuring"`
-	Messages      []ACPMessage      `json:"messages"`
-	Permissions   []ACPPermission   `json:"permissions"`
-	Busy          bool              `json:"busy"`
-	Connected     bool              `json:"connected"`
-	Error         string            `json:"error"`
+	ConfigOptions    []ACPConfigOption `json:"configOptions"`
+	Configuring      bool              `json:"configuring"`
+	Messages         []ACPMessage      `json:"messages"`
+	Permissions      []ACPPermission   `json:"permissions"`
+	HistoryTruncated bool              `json:"historyTruncated"`
+	Busy             bool              `json:"busy"`
+	Connected        bool              `json:"connected"`
+	Error            string            `json:"error"`
 }
 type ACPCommand struct {
 	Type     string `json:"type"`
@@ -120,7 +126,7 @@ func startACPSession(ctx context.Context, info SessionInfo, command []string, cw
 	}
 	// Diagnostics are not protocol messages and must never enter the chat stream.
 	cmd.Stderr = os.Stderr
-	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, done: make(chan struct{}), pending: make(map[string]chan acpEnvelope), subscribers: make(map[chan struct{}]struct{})}
+	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, done: make(chan struct{}), pending: make(map[string]chan acpEnvelope), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
 	if err := cmd.Start(); err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
@@ -200,6 +206,7 @@ func (m *Manager) TestACP(ctx context.Context, command []string) error {
 func (a *ACP) Stop(ctx context.Context) error {
 	_ = a.stdin.Close()
 	err := killSessionProcess(a.cmd.Process)
+	_ = a.stdout.Close()
 	if err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
@@ -286,13 +293,14 @@ func (a *ACP) read() {
 			response <- message
 		}
 	}
-	if err := scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil && !errors.Is(err, os.ErrClosed) {
 		a.fail(err)
 	}
 	_ = a.stdout.Close()
 	_ = killSessionProcess(a.cmd.Process)
-	_ = a.cmd.Wait()
+	exitCode := waitExitCode(a.cmd.Wait())
 	a.mu.Lock()
+	a.exitCode = exitCode
 	a.state.Connected = false
 	a.state.Busy = false
 	a.state.Permissions = nil
@@ -364,12 +372,13 @@ func (a *ACP) receive(message acpEnvelope) {
 				return
 			}
 			last := len(a.state.Messages) - 1
-			if last >= 0 && a.state.Messages[last].Role == "assistant" {
+			if last >= 0 && a.state.Messages[last].Role == "assistant" && (a.promptIndex == nil || last >= *a.promptIndex) {
 				a.state.Messages[last].Text += u.Content.Text
 			} else {
 				a.state.Messages = append(a.state.Messages, ACPMessage{Role: "assistant", Text: u.Content.Text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 			}
 		case "tool_call", "tool_call_update":
+			updated := false
 			for i := range a.state.Messages {
 				item := &a.state.Messages[i]
 				if item.Role == "tool" && item.ToolCallID == u.ToolCallID {
@@ -379,12 +388,15 @@ func (a *ACP) receive(message acpEnvelope) {
 					if u.Status != "" {
 						item.Status = u.Status
 					}
-					a.changedLocked()
-					return
+					updated = true
+					break
 				}
 			}
-			a.state.Messages = append(a.state.Messages, ACPMessage{Role: "tool", Text: u.Title, ToolCallID: u.ToolCallID, Status: u.Status, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+			if !updated {
+				a.state.Messages = append(a.state.Messages, ACPMessage{Role: "tool", Text: u.Title, ToolCallID: u.ToolCallID, Status: u.Status, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+			}
 		}
+		a.trimStateLocked()
 		a.changedLocked()
 	case "session/request_permission":
 		var params struct {
@@ -397,13 +409,25 @@ func (a *ACP) receive(message acpEnvelope) {
 			a.fail(err)
 			return
 		}
+		permission := ACPPermission{ID: string(message.ID), Title: params.ToolCall.Title, Options: params.Options}
 		a.mu.Lock()
 		if a.cancelling {
 			a.mu.Unlock()
 			_ = a.write(acpEnvelope{ID: message.ID, Result: jsontext.Value(`{"outcome":{"outcome":"cancelled"}}`)})
 			return
 		}
-		a.state.Permissions = append(a.state.Permissions, ACPPermission{ID: string(message.ID), Title: params.ToolCall.Title, Options: params.Options})
+		permissionBytes := acpPermissionBytes(permission)
+		if permissionBytes <= maxACPStateBytes {
+			a.trimStateToBytesLocked(maxACPStateBytes - permissionBytes)
+		}
+		if a.retainedStateBytesLocked()+permissionBytes > maxACPStateBytes {
+			a.state.Error = "The agent requested more permission data than this chat can retain."
+			a.changedLocked()
+			a.mu.Unlock()
+			_ = a.write(acpEnvelope{ID: message.ID, Result: jsontext.Value(`{"outcome":{"outcome":"cancelled"}}`)})
+			return
+		}
+		a.state.Permissions = append(a.state.Permissions, permission)
 		a.changedLocked()
 		a.mu.Unlock()
 	default:
@@ -456,7 +480,7 @@ func (a *ACP) Command(command ACPCommand) error {
 			a.mu.Unlock()
 			return errors.New("permission option is no longer pending")
 		}
-		a.state.Permissions = append(a.state.Permissions[:index], a.state.Permissions[index+1:]...)
+		a.state.Permissions = slices.Delete(a.state.Permissions, index, index+1)
 		a.changedLocked()
 		a.mu.Unlock()
 		result, err := json.Marshal(map[string]any{"outcome": map[string]string{"outcome": "selected", "optionId": command.OptionID}})
@@ -494,18 +518,28 @@ func (a *ACP) prompt(text, submissionID string) error {
 	a.state.Busy = true
 	a.cancelling = false
 	a.state.Error = ""
-	a.state.Messages = append(a.state.Messages, ACPMessage{Role: "user", Text: text, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
-	a.changedLocked()
+	a.promptIndex = new(len(a.state.Messages))
 	a.mu.Unlock()
 	id, response, err := a.startCall("session/prompt", map[string]any{"sessionId": a.sessionID, "prompt": []map[string]string{{"type": "text", "text": text}}})
 	if err != nil {
 		a.mu.Lock()
 		a.state.Busy = false
+		a.promptIndex = nil
 		a.state.Error = err.Error()
 		a.changedLocked()
 		a.mu.Unlock()
 		return err
 	}
+	a.mu.Lock()
+	message := ACPMessage{Role: "user", Text: text, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	messageIndex := *a.promptIndex
+	a.promptIndex = nil
+	a.state.Messages = append(a.state.Messages, ACPMessage{})
+	copy(a.state.Messages[messageIndex+1:], a.state.Messages[messageIndex:])
+	a.state.Messages[messageIndex] = message
+	a.trimStateLocked()
+	a.changedLocked()
+	a.mu.Unlock()
 	go func() {
 		_, err := a.awaitCall(context.Background(), id, response)
 		a.mu.Lock()
@@ -517,6 +551,90 @@ func (a *ACP) prompt(text, submissionID string) error {
 		a.changedLocked()
 	}()
 	return nil
+}
+
+// Include wire overhead and escaping so even many tiny tool updates or control
+// characters stay within the retained history budget.
+func acpMessageBytes(message ACPMessage) int {
+	data, _ := json.Marshal(message)
+	return len(data) + 1
+}
+
+func acpPermissionBytes(permission ACPPermission) int {
+	data, _ := json.Marshal(permission)
+	return len(data) + 1
+}
+
+func (a *ACP) retainedStateBytesLocked() int {
+	size := 0
+	for _, message := range a.state.Messages {
+		size += acpMessageBytes(message)
+	}
+	for _, permission := range a.state.Permissions {
+		size += acpPermissionBytes(permission)
+	}
+	return size
+}
+
+func (a *ACP) trimStateLocked() {
+	a.trimStateToBytesLocked(maxACPStateBytes)
+}
+
+func (a *ACP) trimStateToBytesLocked(limit int) {
+	size := a.retainedStateBytesLocked()
+	// Keep the latest accepted prompt so reconnects can acknowledge/deduplicate
+	// it even when the agent produces more output than the history budget.
+	latestUser := -1
+	for i, message := range slices.Backward(a.state.Messages) {
+		if message.Role == "user" {
+			latestUser = i
+			break
+		}
+	}
+	last := len(a.state.Messages) - 1
+	index := -1
+	removedBeforePrompt := 0
+	a.state.Messages = slices.DeleteFunc(a.state.Messages, func(message ACPMessage) bool {
+		index++
+		if size <= limit || index == latestUser || index == last {
+			return false
+		}
+		size -= acpMessageBytes(message)
+		if a.promptIndex != nil && index < *a.promptIndex {
+			removedBeforePrompt++
+		}
+		a.state.HistoryTruncated = true
+		return true
+	})
+	if a.promptIndex != nil {
+		*a.promptIndex -= removedBeforePrompt
+	}
+	for size > limit && len(a.state.Messages) > 0 {
+		last = len(a.state.Messages) - 1
+		message := &a.state.Messages[last]
+		if message.Role == "user" {
+			break
+		}
+		messageBytes := acpMessageBytes(*message)
+		if len(message.Text) > 0 {
+			// Removing this many UTF-8 bytes removes at least as many JSON bytes.
+			// Cap each cut at half the remaining text: JSON escaping can
+			// make the wire overflow larger than the entire raw string.
+			start := min(size-limit, max(len(message.Text)/2, 1))
+			for start < len(message.Text) && !utf8.RuneStart(message.Text[start]) {
+				start++
+			}
+			message.Text = strings.Clone(message.Text[start:])
+			size += acpMessageBytes(*message) - messageBytes
+		} else {
+			size -= messageBytes
+			a.state.Messages = slices.Delete(a.state.Messages, last, last+1)
+			if a.promptIndex != nil {
+				*a.promptIndex = min(*a.promptIndex, len(a.state.Messages))
+			}
+		}
+		a.state.HistoryTruncated = true
+	}
 }
 
 func (m *Manager) ACP(workspaceID, key string) (*ACP, error) {

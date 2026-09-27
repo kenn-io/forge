@@ -2116,10 +2116,13 @@ func (s *session) snapshot() SessionInfo {
 func (s *session) watch() SessionInfo {
 	if s.acp != nil {
 		<-s.acp.done
+		s.acp.mu.Lock()
+		exitCode := s.acp.exitCode
+		s.acp.mu.Unlock()
 		s.mu.Lock()
 		s.info.Status = SessionStatusExited
 		s.info.ExitedAt = new(time.Now().UTC())
-		s.info.ExitCode = new(0)
+		s.info.ExitCode = &exitCode
 		info := s.info
 		s.mu.Unlock()
 		close(s.done)

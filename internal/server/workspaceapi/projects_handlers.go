@@ -1241,10 +1241,9 @@ func (s *Handler) listLaunchTargets(
 	// only initialized when options.WorktreeDir is set; this endpoint
 	// must work either way.
 	snapshot := s.configSnapshot()
-	targets := localruntime.ResolveLaunchTargets(snapshot.Agents, snapshot.TmuxCommand, nil)
-	if targets == nil {
-		targets = []localruntime.LaunchTarget{}
-	}
+	targets := projectWorktreeLaunchTargets(
+		localruntime.ResolveLaunchTargets(snapshot.Agents, snapshot.TmuxCommand, nil),
+	)
 	out := &listLaunchTargetsOutput{}
 	out.Body.LaunchTargets = targets
 	return out, nil
@@ -1267,7 +1266,7 @@ func (s *Handler) getProjectWorktreeRuntime(
 	}
 
 	out := projectWorktreeRuntimeResponse{
-		LaunchTargets: s.runtime.LaunchTargets(),
+		LaunchTargets: projectWorktreeLaunchTargets(s.runtime.LaunchTargets()),
 		Sessions:      sessions,
 	}
 	if shell := projectWorktreeShellSession(s.runtime.ListSessions(scope)); shell != nil {
@@ -1408,6 +1407,15 @@ func (s *Handler) launchProjectWorktreeRuntimeSession(
 			nil,
 		)
 	}
+	for _, target := range s.runtime.LaunchTargets() {
+		if target.Key == targetKey && target.Kind == localruntime.LaunchTargetACP {
+			return nil, httpapi.BadRequest(
+				httpapi.CodeBadRequest,
+				"ACP targets require a workspace chat transport",
+				nil,
+			)
+		}
+	}
 
 	scope := projectWorktreeRuntimeScope(worktree.ID)
 	session, err := s.runtime.Launch(ctx, scope, worktree.Path, targetKey)
@@ -1442,6 +1450,18 @@ func (s *Handler) launchProjectWorktreeRuntimeSession(
 	return &projectWorktreeRuntimeSessionOutput{
 		Body: projectWorktreeRuntimeSessionFromRuntime(session, input.ProjectID, worktree.ID),
 	}, nil
+}
+
+func projectWorktreeLaunchTargets(
+	targets []localruntime.LaunchTarget,
+) []localruntime.LaunchTarget {
+	out := make([]localruntime.LaunchTarget, 0, len(targets))
+	for _, target := range targets {
+		if target.Kind != localruntime.LaunchTargetACP {
+			out = append(out, target)
+		}
+	}
+	return out
 }
 
 // launchProjectWorktreeRuntimeCommandSession handles the command variant of

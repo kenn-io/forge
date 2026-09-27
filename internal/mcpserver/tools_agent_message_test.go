@@ -14,7 +14,9 @@ func TestSendAgentMessageSubmitsToExistingRuntime(t *testing.T) {
 	require := require.New(t)
 	submittedAt := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 	var got AgentMessageRequest
-	backend := &fakeBackend{submitAgentMessageFn: func(
+	backend := &fakeBackend{getWorkspaceRuntimeFn: func(context.Context, string) (WorkspaceRuntime, error) {
+		return WorkspaceRuntime{Sessions: []RuntimeSession{{Key: "runtime-1", Kind: "agent", Status: "running"}}}, nil
+	}, submitAgentMessageFn: func(
 		_ context.Context, request AgentMessageRequest,
 	) (AgentMessageResult, error) {
 		got = request

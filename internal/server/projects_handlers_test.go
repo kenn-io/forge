@@ -214,6 +214,34 @@ func TestProjectWorktreeRuntimeRejectsPlainShellOnSessionsRoute(t *testing.T) {
 	assert.Contains(string(payload), "runtime/shell")
 }
 
+func TestProjectWorktreeRuntimeExcludesACPChatTargets(t *testing.T) {
+	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	for _, path := range []string{
+		"/api/v1/projects/" + projectID + "/launch-targets",
+		"/api/v1/projects/" + projectID + "/worktrees/" + worktreeID + "/runtime",
+	} {
+		resp := httpDo(t, ts, http.MethodGet, path, nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		payload, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.NotContains(t, string(payload), `"key":"chat"`)
+	}
+
+	body := mustMarshal(t, map[string]any{"target_key": "chat"})
+	resp := httpDo(t, ts, http.MethodPost,
+		"/api/v1/projects/"+projectID+"/worktrees/"+worktreeID+"/runtime/sessions", body,
+	)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	payload, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(payload), "ACP targets require a workspace chat transport")
+}
+
 func TestProjectWorktreeRuntimeRejectsMismatchedProject(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -469,6 +497,12 @@ agent_sessions = false
 [[agents]]
 key = "helper"
 label = "Helper"
+command = ["/bin/sh", "-c", "sleep 60"]
+
+[[agents]]
+key = "chat"
+label = "Chat"
+protocol = "acp"
 command = ["/bin/sh", "-c", "sleep 60"]
 `
 	dir := t.TempDir()

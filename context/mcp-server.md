@@ -136,7 +136,8 @@
   runtime awaiting its first hook from a workspace with no agent runtime
   (`internal/mcpserver/tools_agent.go::Server.listWorkspaceAgentSessions`).
 - Follow-up MCP messages address one existing live agent runtime by workspace ID
-  and runtime session key. They reuse the initial prompt's serialized
+  and runtime session key. MCP agent-management tools include terminal coding-agent
+  runtimes only; ACP chats use their workspace chat transport. Follow-ups reuse the initial prompt's serialized
   bracketed-paste and Enter path, then return without launching, persisting, or
   waiting for hook activity
   (`internal/mcpserver/tools_agent.go::Server.sendAgentMessage`,

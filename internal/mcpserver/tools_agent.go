@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 
@@ -102,6 +103,17 @@ func (s *Server) sendAgentMessage(
 ) (sendAgentMessageOutput, error) {
 	workspaceID := strings.TrimSpace(in.WorkspaceID)
 	runtimeSessionKey := strings.TrimSpace(in.RuntimeSessionKey)
+	runtime, err := s.backend.GetWorkspaceRuntime(ctx, workspaceID)
+	if err != nil {
+		return sendAgentMessageOutput{}, err
+	}
+	terminalAgent := slices.ContainsFunc(runtime.Sessions, func(session RuntimeSession) bool {
+		return session.Key == runtimeSessionKey && session.Kind == "agent" &&
+			(session.Status == "starting" || session.Status == "running")
+	})
+	if !terminalAgent {
+		return sendAgentMessageOutput{}, errors.New("runtime session is not a live terminal coding agent")
+	}
 	result, err := s.backend.SubmitAgentMessage(ctx, AgentMessageRequest{
 		WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey, Message: in.Message,
 	})

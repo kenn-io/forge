@@ -38,10 +38,17 @@ Rules:
   (`internal/workspace/localruntime/acp.go::ACP`).
 - ACP selections belong to a configured client on its execution host, across workspaces
   and daemon restarts; restore the model before dependent options and skip choices no
-  longer offered by the agent (`internal/workspace/localruntime/acp_settings.go::Manager.startACP`).
+  longer offered by the agent. Concurrent sessions merge only agent-confirmed changes
+  into the latest saved preferences (`internal/workspace/localruntime/acp_settings.go`).
 - ACP transcripts are daemon-owned and process-local. Daemon shutdown ends these
   sessions; do not imply tmux-style recovery or persist terminal bytes as chat
   (`internal/workspace/localruntime/acp.go::ACP.Detach`).
+- ACP messages and pending permissions share a 4 MiB JSON budget; retain the latest
+  submitted prompt for reconnect deduplication and disclose removed history in chat
+  (`internal/workspace/localruntime/acp.go::ACP.trimStateToBytesLocked`).
+- Project-worktree runtime APIs expose terminal targets only. ACP targets require
+  the workspace chat transport and are neither listed nor launchable
+  through project-worktree runtime routes (`internal/server/workspaceapi/projects_handlers.go`).
 
 - The base workspace tmux session remains durable backend state, but production
   workspace terminal panes are pooled runtime sessions; do not treat the primary

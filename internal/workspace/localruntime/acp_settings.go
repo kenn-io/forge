@@ -46,6 +46,12 @@ func (a *ACP) configure(id, value string) error {
 		return errors.New("wait for the current operation before changing this setting")
 	}
 	a.state.Configuring = true
+	before := make(map[string]string, len(a.state.ConfigOptions))
+	for _, option := range a.state.ConfigOptions {
+		if option.Type == "select" {
+			before[option.ID] = option.CurrentValue
+		}
+	}
 	a.changedLocked()
 	a.mu.Unlock()
 	defer func() { a.mu.Lock(); a.state.Configuring = false; a.changedLocked(); a.mu.Unlock() }()
@@ -55,16 +61,16 @@ func (a *ACP) configure(id, value string) error {
 		return err
 	}
 	a.mu.Lock()
-	values := make(map[string]string)
+	updates := make(map[string]string)
 	for _, option := range a.state.ConfigOptions {
-		if _, remembered := a.configValues[option.ID]; option.Type == "select" && (option.ID == id || remembered || option.Category == "model" || option.Category == "thought_level") {
-			values[option.ID] = option.CurrentValue
+		previous, existed := before[option.ID]
+		if option.Type == "select" && (option.ID == id || !existed || previous != option.CurrentValue) {
+			updates[option.ID] = option.CurrentValue
 		}
 	}
-	a.configValues = values
 	a.mu.Unlock()
 	if a.saveConfig != nil {
-		if err := a.saveConfig(values); err != nil {
+		if err := a.saveConfig(updates); err != nil {
 			return fmt.Errorf("setting applied but could not be remembered: %w", err)
 		}
 	}
@@ -99,36 +105,42 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 		return nil, err
 	}
 	a := s.acp
-	a.configValues = values
-	a.mu.Lock()
-	options := slices.Clone(a.state.ConfigOptions)
-	a.mu.Unlock()
-	// A model change can replace the available effort levels and other options.
-	slices.SortStableFunc(options, func(a, b ACPConfigOption) int {
-		if a.Category == "model" && b.Category != "model" {
-			return -1
-		}
-		if b.Category == "model" && a.Category != "model" {
-			return 1
-		}
-		return 0
-	})
 	restoreCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	for _, saved := range options {
-		value, ok := values[saved.ID]
-		if !ok {
-			continue
-		}
+	remaining := maps.Clone(values)
+	for len(remaining) > 0 {
 		a.mu.Lock()
-		index := slices.IndexFunc(a.state.ConfigOptions, func(option ACPConfigOption) bool { return option.ID == saved.ID })
-		apply := index >= 0 && a.state.ConfigOptions[index].CurrentValue != value && configOffers(a.state.ConfigOptions[index], value)
+		options := slices.Clone(a.state.ConfigOptions)
 		a.mu.Unlock()
-		if apply {
-			if err := a.setConfig(restoreCtx, saved.ID, value); err != nil {
-				_ = a.Stop(context.Background())
-				return nil, fmt.Errorf("restore ACP setting %s: %w", saved.ID, err)
+		// A model change can replace the available effort levels and other options.
+		slices.SortStableFunc(options, func(a, b ACPConfigOption) int {
+			if a.Category == "model" && b.Category != "model" {
+				return -1
 			}
+			if b.Category == "model" && a.Category != "model" {
+				return 1
+			}
+			return 0
+		})
+		considered := false
+		for _, option := range options {
+			value, ok := remaining[option.ID]
+			if !ok || !configOffers(option, value) {
+				continue
+			}
+			delete(remaining, option.ID)
+			considered = true
+			if option.CurrentValue == value {
+				break
+			}
+			if err := a.setConfig(restoreCtx, option.ID, value); err != nil {
+				_ = a.Stop(context.Background())
+				return nil, fmt.Errorf("restore ACP setting %s: %w", option.ID, err)
+			}
+			break
+		}
+		if !considered {
+			break
 		}
 	}
 	a.saveConfig = func(values map[string]string) error { _, err := m.acpConfigValues(info.TargetKey, values); return err }
@@ -158,7 +170,12 @@ func (m *Manager) acpConfigValues(key string, values map[string]string) (map[str
 	if next == nil {
 		next = make(map[string]map[string]string)
 	}
-	next[key] = maps.Clone(values)
+	remembered := maps.Clone(next[key])
+	if remembered == nil {
+		remembered = make(map[string]string)
+	}
+	maps.Copy(remembered, values)
+	next[key] = remembered
 	if m.acpPreferencesPath != "" {
 		data, err := json.Marshal(next)
 		if err != nil {
@@ -172,5 +189,5 @@ func (m *Manager) acpConfigValues(key string, values map[string]string) (map[str
 		}
 	}
 	m.acpPreferences = next
-	return maps.Clone(values), nil
+	return maps.Clone(remembered), nil
 }

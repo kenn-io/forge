@@ -15,6 +15,10 @@ const HeartbeatMessage = `{"type":"heartbeat"}`
 // plus its command envelope on every local and relayed chat connection.
 const ACPCommandReadLimit = 512 << 10
 
+// ACPStateReadLimit allows the bounded retained transcript plus JSON escaping,
+// configuration options, and protocol overhead on relay-facing connections.
+const ACPStateReadLimit = 32 << 20
+
 // WriteHeartbeat acknowledges a terminal liveness probe.
 func WriteHeartbeat(ctx context.Context, conn *websocket.Conn) error {
 	return conn.Write(ctx, websocket.MessageText, []byte(HeartbeatMessage))

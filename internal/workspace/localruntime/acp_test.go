@@ -2,12 +2,17 @@ package localruntime
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +31,14 @@ func TestACPStdioHelper(t *testing.T) {
 	var promptID jsontext.Value
 	model, effort := "fast", "low"
 	configResponse := func(id jsontext.Value) {
+		if os.Getenv("KENN_FORGE_ACP_MODEL_DEPENDENT") == "1" {
+			options := fmt.Sprintf(`[{"id":"model","name":"Model","category":"model","type":"select","currentValue":%q,"options":[{"group":"models","name":"Models","options":[{"value":"fast","name":"Fast"},{"value":"deep","name":"Deep"}]}]}]`, model)
+			if model == "deep" {
+				options = fmt.Sprintf(`[{"id":"model","name":"Model","category":"model","type":"select","currentValue":%q,"options":[{"group":"models","name":"Models","options":[{"value":"fast","name":"Fast"},{"value":"deep","name":"Deep"}]}]},{"id":"effort","name":"Effort","category":"thought_level","type":"select","currentValue":%q,"options":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]}]`, model, effort)
+			}
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"fixture-session","configOptions":%s}}`+"\n", id, options)
+			return
+		}
 		fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"fixture-session","configOptions":[{"id":"effort","name":"Effort","category":"thought_level","type":"select","currentValue":%q,"options":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]},{"id":"model","name":"Model","category":"model","type":"select","currentValue":%q,"options":[{"group":"models","name":"Models","options":[{"value":"fast","name":"Fast"},{"value":"deep","name":"Deep"}]}]}]}}`+"\n", id, effort, model)
 	}
 	for scanner.Scan() {
@@ -60,6 +73,10 @@ func TestACPStdioHelper(t *testing.T) {
 				os.Exit(4)
 			}
 			configResponse(message.ID)
+			if code, err := strconv.Atoi(os.Getenv("KENN_FORGE_ACP_EXIT_AFTER_SESSION")); err == nil {
+				time.Sleep(50 * time.Millisecond)
+				os.Exit(code)
+			}
 		case "session/set_config_option":
 			var params struct {
 				ConfigID string `json:"configId"`
@@ -244,4 +261,195 @@ func TestACPRemembersSettingsPerClientAndHost(t *testing.T) {
 			assert.Equal(t, tc.model, state.ConfigOptions[1].CurrentValue)
 		})
 	}
+}
+
+type testWriteCloser struct{ io.Writer }
+
+func (testWriteCloser) Close() error { return nil }
+
+func TestACPPromptAcknowledgesOnlyAfterWrite(t *testing.T) {
+	failedReader, failedWriter := io.Pipe()
+	require.NoError(t, failedReader.Close())
+	agent := &ACP{
+		stdin: failedWriter, done: make(chan struct{}),
+		pending: make(map[string]chan acpEnvelope), subscribers: make(map[chan struct{}]struct{}),
+		state: ACPState{Connected: true},
+	}
+
+	err := agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"})
+	require.Error(t, err)
+	assert.Empty(t, agent.state.Messages)
+
+	var written bytes.Buffer
+	agent.stdin = testWriteCloser{Writer: &written}
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"}))
+	require.Len(t, agent.state.Messages, 1)
+	assert.Equal(t, "submission", agent.state.Messages[0].SubmissionID)
+	assert.Contains(t, written.String(), `"method":"session/prompt"`)
+	close(agent.done)
+}
+
+func TestACPPromptPrecedesConcurrentOutputAfterHistoryTrim(t *testing.T) {
+	reader, writer := io.Pipe()
+	agent := &ACP{
+		stdin: writer, done: make(chan struct{}),
+		pending: make(map[string]chan acpEnvelope), subscribers: make(map[chan struct{}]struct{}),
+		state: ACPState{Connected: true, Messages: []ACPMessage{{Role: "assistant", Text: strings.Repeat("old", 2<<20)}}},
+	}
+	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close(); close(agent.done) })
+	sent := make(chan error, 1)
+	go func() { sent <- agent.Command(ACPCommand{Type: "prompt", Text: "new question", ID: "new-submission"}) }()
+	// The write has started but cannot complete while only one byte is read.
+	_, err := reader.Read(make([]byte, 1))
+	require.NoError(t, err)
+	agent.receive(acpEnvelope{Method: "session/update", Params: jsontext.Value(`{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"new answer"}}}`)})
+	_, err = bufio.NewReader(reader).ReadString('\n')
+	require.NoError(t, err)
+	require.NoError(t, <-sent)
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	var state ACPState
+	require.NoError(t, json.Unmarshal(data, &state))
+	require.Len(t, state.Messages, 2)
+	assert.Equal(t, "new question", state.Messages[0].Text)
+	assert.Equal(t, "new-submission", state.Messages[0].SubmissionID)
+	assert.Equal(t, "new answer", state.Messages[1].Text)
+}
+
+func TestACPStopClosesStdoutReader(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	t.Cleanup(func() {
+		_ = stdinReader.Close()
+		_ = stdoutWriter.Close()
+	})
+	cmd := exec.CommandContext(t.Context(), executable, "-test.run=^TestACPStdioHelper$")
+	cmd.Env = append(os.Environ(), "KENN_FORGE_ACP_FIXTURE=1")
+	cmd.Stdin = stdinReader
+	require.NoError(t, cmd.Start())
+	agent := &ACP{
+		cmd: cmd, stdin: stdinWriter, stdout: stdoutReader, done: make(chan struct{}),
+		pending: make(map[string]chan acpEnvelope), subscribers: make(map[chan struct{}]struct{}),
+		exitCode: -1,
+	}
+	go agent.read()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, agent.Stop(ctx))
+}
+
+func TestACPReportsNaturalExitCode(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_EXIT_AFTER_SESSION", "7")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	exits := make(chan SessionInfo, 1)
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := NewManager(Options{Targets: targets, OnSessionExit: func(info SessionInfo) { exits <- info }})
+	t.Cleanup(manager.Shutdown)
+	_, err = manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
+	require.NoError(t, err)
+	select {
+	case info := <-exits:
+		require.NotNil(t, info.ExitCode)
+		assert.Equal(t, 7, *info.ExitCode)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "ACP exit was not reported")
+	}
+}
+
+func TestACPBoundsRetainedTranscript(t *testing.T) {
+	for _, text := range []string{"x", "\x00", "語"} {
+		t.Run(fmt.Sprintf("character-%x", text), func(t *testing.T) {
+			agent := &ACP{subscribers: make(map[chan struct{}]struct{}), state: ACPState{Messages: []ACPMessage{{Role: "user", Text: "question", SubmissionID: "accepted"}}}}
+			for range 5 {
+				params, err := json.Marshal(map[string]any{
+					"sessionId": "fixture-session",
+					"update": map[string]any{
+						"sessionUpdate": "agent_message_chunk",
+						"content":       map[string]string{"type": "text", "text": strings.Repeat(text, 1<<20)},
+					},
+				})
+				require.NoError(t, err)
+				agent.receive(acpEnvelope{Method: "session/update", Params: params})
+			}
+			data, err := agent.Snapshot()
+			require.NoError(t, err)
+			// History has a 4 MiB wire budget; the fixed snapshot fields fit in 512 B.
+			require.LessOrEqual(t, len(data), (4<<20)+512)
+			var state ACPState
+			require.NoError(t, json.Unmarshal(data, &state))
+			require.True(t, state.HistoryTruncated)
+			require.Len(t, state.Messages, 2)
+			assert.Equal(t, "accepted", state.Messages[0].SubmissionID)
+			assert.Equal(t, "question", state.Messages[0].Text)
+			assert.True(t, strings.HasSuffix(state.Messages[1].Text, text))
+		})
+	}
+}
+
+func TestACPRestoresOptionsIntroducedBySavedModel(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_MODEL_DEPENDENT", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	preferences := filepath.Join(t.TempDir(), "preferences.json")
+	require.NoError(t, os.WriteFile(preferences, []byte(`{"chat":{"model":"deep","effort":"high"}}`), 0o600))
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := NewManager(Options{Targets: targets, ACPPreferencesPath: preferences})
+	t.Cleanup(manager.Shutdown)
+	info, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "deep", acpOptionValue(t, agent, "model"))
+	assert.Equal(t, "high", acpOptionValue(t, agent, "effort"))
+}
+
+func TestACPConcurrentSessionsMergeRememberedOptions(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: command}}, nil, nil)
+	manager := NewManager(Options{Targets: targets, ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
+	t.Cleanup(manager.Shutdown)
+	firstInfo, err := manager.Launch(t.Context(), "first", t.TempDir(), "chat")
+	require.NoError(t, err)
+	secondInfo, err := manager.Launch(t.Context(), "second", t.TempDir(), "chat")
+	require.NoError(t, err)
+	first, err := manager.ACP("first", firstInfo.Key)
+	require.NoError(t, err)
+	second, err := manager.ACP("second", secondInfo.Key)
+	require.NoError(t, err)
+	require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}))
+	require.NoError(t, second.Command(ACPCommand{Type: "config", ID: "effort", Value: "high"}))
+
+	thirdInfo, err := manager.Launch(t.Context(), "third", t.TempDir(), "chat")
+	require.NoError(t, err)
+	third, err := manager.ACP("third", thirdInfo.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "deep", acpOptionValue(t, third, "model"))
+	assert.Equal(t, "high", acpOptionValue(t, third, "effort"))
+}
+
+func acpOptionValue(t *testing.T, agent *ACP, id string) string {
+	t.Helper()
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	var state ACPState
+	require.NoError(t, json.Unmarshal(data, &state))
+	for _, option := range state.ConfigOptions {
+		if option.ID == id {
+			return option.CurrentValue
+		}
+	}
+	require.FailNow(t, "ACP option was not returned", id)
+	return ""
 }

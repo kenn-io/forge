@@ -67,6 +67,6 @@ export function harnessForAgentKey(key: string): HarnessIconId | null {
 
 /** The glyph for a launch target, or null for shells and unmatched agents. */
 export function launchTargetHarness(target: Pick<LaunchTarget, "kind" | "key">): HarnessIconId | null {
-  if (target.kind !== "agent") return null;
+  if (target.kind !== "agent" && target.kind !== "acp") return null;
   return harnessForAgentKey(target.key);
 }

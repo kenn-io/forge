@@ -45416,6 +45416,13 @@ const (
 	ActivityViewModeThreaded ActivityViewMode = "threaded"
 )
 
+type AgentProtocol string
+
+const (
+	AgentProtocolAcp      AgentProtocol = "acp"
+	AgentProtocolTerminal AgentProtocol = "terminal"
+)
+
 type ArchiveCoverageResponseComments string
 
 const (
@@ -53245,10 +53252,11 @@ type AddRepoInputBody struct {
 }
 
 type Agent struct {
-	Command []string `json:"command,omitempty"`
-	Enabled *bool    `json:"enabled,omitempty"`
-	Key     string   `json:"key"`
-	Label   string   `json:"label"`
+	Command  []string       `json:"command,omitempty"`
+	Enabled  *bool          `json:"enabled,omitempty"`
+	Key      string         `json:"key"`
+	Label    string         `json:"label"`
+	Protocol *AgentProtocol `json:"protocol,omitempty"`
 }
 
 type AgentHookOutput struct {

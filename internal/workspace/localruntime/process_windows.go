@@ -2,7 +2,10 @@
 
 package localruntime
 
-import "os"
+import (
+	"os"
+	"os/exec"
+)
 
 func terminateSessionProcess(process *os.Process) error {
 	return process.Kill()
@@ -11,3 +14,5 @@ func terminateSessionProcess(process *os.Process) error {
 func killSessionProcess(process *os.Process) error {
 	return process.Kill()
 }
+
+func configureACPProcess(cmd *exec.Cmd) {}

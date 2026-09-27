@@ -782,10 +782,11 @@ type Terminal struct {
 }
 
 type Agent struct {
-	Key     string   `toml:"key" json:"key"`
-	Label   string   `toml:"label,omitempty" json:"label"`
-	Command []string `toml:"command,omitempty" json:"command,omitempty" nullable:"false"`
-	Enabled *bool    `toml:"enabled,omitempty" json:"enabled,omitempty"`
+	Protocol string   `toml:"protocol,omitempty" json:"protocol,omitempty" enum:"terminal,acp"`
+	Key      string   `toml:"key" json:"key"`
+	Label    string   `toml:"label,omitempty" json:"label"`
+	Command  []string `toml:"command,omitempty" json:"command,omitempty" nullable:"false"`
+	Enabled  *bool    `toml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 func (a Agent) EnabledOrDefault() bool {
@@ -2199,6 +2200,9 @@ func (c *Config) validateAgents() error {
 		agent := &c.Agents[i]
 		agent.Key = strings.ToLower(strings.TrimSpace(agent.Key))
 		agent.Label = strings.TrimSpace(agent.Label)
+		if agent.Protocol != "" && agent.Protocol != "terminal" && agent.Protocol != "acp" {
+			return fmt.Errorf("config: agents[%d]: protocol must be terminal or acp", i)
+		}
 		if agent.Key == "" {
 			return fmt.Errorf("config: agents[%d]: key is required", i)
 		}

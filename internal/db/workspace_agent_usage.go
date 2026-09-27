@@ -50,7 +50,7 @@ func (d *DB) RecordWorkspaceRuntimeSession(
 		if err := upsertWorkspaceRuntimeSession(ctx, tx, session); err != nil {
 			return err
 		}
-		if session.Kind != "agent" {
+		if session.Kind != "agent" && session.Kind != "acp" {
 			return nil
 		}
 		createdAt := canonicalUTCTime(session.CreatedAt)

@@ -33,6 +33,10 @@ or remote workspace and session operations.
   catalog; numeric REST IDs scope App installation tokens, not workspace identity.
   (`internal/server/workspaceapi/execution_worker.go::Handler.admitWorkerRepository`)
 
+- ACP chat uses the owning host's agent configuration and workspace directory.
+  Its relay carries complete transcript snapshots, which exceed terminal frame limits
+  (`internal/server/fleetapi/fleet_proxy.go::Handler.serveFleetWebSocketProxy`).
+
 ## Ownership And Topology
 
 - Every data directory has one random 128-bit lowercase-hex node ID; hostnames,

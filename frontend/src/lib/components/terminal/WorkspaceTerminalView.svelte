@@ -1794,6 +1794,8 @@
           workspaceHostKey,
         ),
         status: session.status,
+        kind: session.kind,
+        label: session.label,
         cursorWheelInput: session.kind === "agent",
         disabled: actionsBlocked,
       });
@@ -4161,7 +4163,7 @@
     const target = launchTargets.find(
       (candidate) => candidate.key === targetKey,
     );
-    if (!target || target.kind !== "agent" || !target.available) {
+    if (!target || (target.kind !== "agent" && target.kind !== "acp") || !target.available) {
       if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
       const reason =
         target?.disabled_reason ?? "is not available in this workspace";

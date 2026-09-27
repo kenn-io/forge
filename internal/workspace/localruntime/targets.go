@@ -59,6 +59,9 @@ func ResolveLaunchTargets(
 			Source:  "config",
 			Command: slices.Clone(agent.Command),
 		}
+		if agent.Protocol == "acp" {
+			target.Kind = LaunchTargetACP
+		}
 		if agent.EnabledOrDefault() {
 			target.Available = true
 		} else {

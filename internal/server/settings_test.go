@@ -1208,9 +1208,10 @@ func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 		Label:   "Codex with flags",
 		Command: []string{"/opt/codex", "--full-auto", "--search"},
 	}, {
-		Key:     "notes",
-		Label:   "Notes",
-		Command: []string{"/usr/local/bin/notes-agent", "--draft"},
+		Key:      "notes",
+		Protocol: "acp",
+		Label:    "Notes",
+		Command:  []string{"/usr/local/bin/notes-agent", "--draft"},
 	}, {
 		Key:     "claude",
 		Label:   "Claude",
@@ -1232,6 +1233,7 @@ func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 		cfg2.Agents[0].Command,
 	)
 	assert.Equal("notes", cfg2.Agents[1].Key)
+	assert.Equal("acp", cfg2.Agents[1].Protocol)
 	assert.False(cfg2.Agents[2].EnabledOrDefault())
 }
 

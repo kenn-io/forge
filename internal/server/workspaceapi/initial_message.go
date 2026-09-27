@@ -148,7 +148,7 @@ func (s *Handler) SubmitInitialMessageService(
 	liveTarget := ""
 	for _, runtimeSession := range s.runtime.ListSessions(req.WorkspaceID) {
 		if runtimeSession.Key == req.RuntimeSessionKey &&
-			runtimeSession.Kind == localruntime.LaunchTargetAgent &&
+			runtimeSession.Kind.IsAgent() &&
 			(runtimeSession.Status == localruntime.SessionStatusStarting ||
 				runtimeSession.Status == localruntime.SessionStatusRunning) {
 			liveTarget = strings.ToLower(strings.TrimSpace(runtimeSession.TargetKey))
@@ -202,7 +202,7 @@ func (s *Handler) SubmitAgentMessageService(
 	}
 	targetKey := ""
 	for _, session := range s.runtime.ListSessions(workspaceID) {
-		if session.Key == runtimeSessionKey && session.Kind == localruntime.LaunchTargetAgent &&
+		if session.Key == runtimeSessionKey && session.Kind.IsAgent() &&
 			(session.Status == localruntime.SessionStatusStarting ||
 				session.Status == localruntime.SessionStatusRunning) {
 			targetKey = session.TargetKey

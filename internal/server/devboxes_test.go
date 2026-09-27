@@ -144,8 +144,13 @@ func TestDevboxTerminalsBypassDefaultHTTPProxy(t *testing.T) {
 			return
 		}
 		defer conn.CloseNow()
+		conn.SetReadLimit(128 << 10)
 		assert.NoError(conn.Write(r.Context(), websocket.MessageText, []byte(r.URL.RequestURI())))
-		_, _, _ = conn.Read(r.Context())
+		typ, message, err := conn.Read(r.Context())
+		if err == nil {
+			assert.NoError(conn.Write(r.Context(), typ, message))
+			_, _, _ = conn.Read(r.Context())
+		}
 	}))
 	t.Cleanup(worker.Close)
 	directory := t.TempDir()
@@ -167,11 +172,18 @@ func TestDevboxTerminalsBypassDefaultHTTPProxy(t *testing.T) {
 	direct := &http.Transport{}
 	t.Cleanup(direct.CloseIdleConnections)
 	for _, path := range []string{"/workspaces/work-a/terminal", "/workspaces/work-a/runtime/sessions/session-a/terminal"} {
-		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a"+path+"?cols=100", nil, &http.Client{Transport: direct})
+		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a"+path+"?protocol=acp", nil, &http.Client{Transport: direct})
 		require.NoError(err)
 		_, message, err := conn.Read(t.Context())
 		require.NoError(err)
-		assert.Equal("/ws/v1"+path+"?cols=100", string(message))
+		assert.Equal("/ws/v1"+path+"?protocol=acp", string(message))
+		prompt := `{"type":"prompt","id":"submission-1","text":"` + strings.Repeat("x", 40<<10) + `"}`
+		conn.SetReadLimit(128 << 10)
+		require.NoError(conn.Write(t.Context(), websocket.MessageText, []byte(prompt)))
+		typ, message, err := conn.Read(t.Context())
+		require.NoError(err)
+		assert.Equal(websocket.MessageText, typ)
+		assert.JSONEq(prompt, string(message))
 		require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
 	}
 	assert.Zero(proxyRequests.Load(), "worker credentials and terminal traffic must bypass the default proxy")

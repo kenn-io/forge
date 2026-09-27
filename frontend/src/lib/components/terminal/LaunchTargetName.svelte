@@ -33,7 +33,7 @@
     <span class="launch-target-icon" aria-hidden="true">
       {#if target.kind === "plain_shell"}
         <TerminalIcon size={iconSize} strokeWidth="2" />
-      {:else if target.kind === "agent"}
+      {:else if (target.kind === "agent" || target.kind === "acp")}
         <SparklesIcon size={iconSize} strokeWidth="2" />
       {:else}
         <BoxIcon size={iconSize} strokeWidth="2" />

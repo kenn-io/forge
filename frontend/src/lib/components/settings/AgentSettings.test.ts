@@ -44,6 +44,20 @@ describe("AgentSettings", () => {
     mockPersistSettings.mockReset();
   });
 
+  it("preserves ACP configuration when changing the executable", async () => {
+    const agents = [{ key: "chat", label: "Chat", protocol: "acp" as const, command: ["chat-agent"], enabled: true }];
+    mockPersistSettings.mockResolvedValue({ agents });
+    renderAgentSettings({ agents, onUpdate: vi.fn() });
+    await expandAgent("Chat");
+    await fireEvent.input(screen.getByLabelText("Chat binary"), { target: { value: "/opt/chat-agent" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
+    await waitFor(() =>
+      expect(mockPersistSettings).toHaveBeenCalledWith({
+        agents: [{ key: "chat", label: "Chat", protocol: "acp", command: ["/opt/chat-agent"], enabled: true }],
+      }),
+    );
+  });
+
   it("persists built-in agent binary and argument overrides", async () => {
     mockPersistSettings.mockResolvedValue({
       agents: [

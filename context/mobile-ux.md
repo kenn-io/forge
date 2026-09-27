@@ -146,6 +146,10 @@ Avoid by default:
 - Mobile workspace screens may share data, persistence, runtime, and focused-item primitives with desktop, but must not depend on its pane tree, dock, sidebar, or resize hub.
 - Verify phone routing, overflow, filters, touch input, session switching and exit, Fleet failures, item round trips, retained workspace actions, and desktop workspace regressions.
 
+- ACP sessions use their own chat composer and permission controls inside the phone
+  session picker; never overlay terminal input controls on a chat session
+  (`frontend/src/lib/components/mobile/MobileWorkspaceTerminal.svelte`).
+
 ## Verification expectations
 
 For mobile-visible changes, verify behavior with a real phone profile, not only a resized desktop viewport.

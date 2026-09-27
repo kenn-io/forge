@@ -340,6 +340,11 @@ components:
           type: string
         label:
           type: string
+        protocol:
+          enum:
+            - terminal
+            - acp
+          type: string
       required:
         - key
         - label

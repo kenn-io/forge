@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Checkbox, IconButton } from "@kenn-io/kit-ui";
+  import { Checkbox, IconButton, SelectDropdown } from "@kenn-io/kit-ui";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
@@ -27,6 +27,7 @@
   }
 
   interface AgentDraft {
+    protocol: "terminal" | "acp";
     id: string;
     builtin: boolean;
     key: string;
@@ -99,6 +100,7 @@
       label,
       binary,
       args: stringifyArgs(command.slice(1)),
+      protocol: agent?.protocol === "acp" ? "acp" : "terminal",
       enabled: agent?.enabled ?? true,
       expanded: builtin === null && agent === undefined,
     };
@@ -107,6 +109,7 @@
   function normalizeAgents(configured: AgentSettingsType[]): AgentSettingsType[] {
     return configured
       .map((agent) => ({
+        ...(agent.protocol === "acp" ? { protocol: agent.protocol } : {}),
         key: agent.key.trim().toLowerCase(),
         label: agent.label.trim(),
         command: [...(agent.command ?? [])],
@@ -126,7 +129,7 @@
 
   function isDefaultBuiltinAgent(agent: AgentSettingsType): boolean {
     const builtin = builtins.find((candidate) => candidate.key === agent.key);
-    if (!builtin) return false;
+    if (!builtin || agent.protocol === "acp") return false;
     if (!agent.enabled || agent.label !== builtin.label) return false;
     const command = agent.command ?? [];
     return (
@@ -152,7 +155,7 @@
 
       if (draft.builtin && builtin) {
         const isDefault =
-          enabled &&
+          draft.protocol === "terminal" && enabled &&
           label === builtin.label &&
           binary === builtin.binary &&
           args.length === 0;
@@ -160,6 +163,7 @@
       }
 
       agentsToSave.push({
+        ...(draft.protocol === "acp" ? {protocol: draft.protocol} : {}),
         key,
         label,
         command,
@@ -194,6 +198,7 @@
         label: "",
         binary: "",
         args: "",
+        protocol: "terminal",
         enabled: true,
         expanded: true,
       },
@@ -207,6 +212,7 @@
   function resetBuiltin(draft: AgentDraft): void {
     const builtin = builtins.find((candidate) => candidate.key === draft.key);
     if (!builtin) return;
+    draft.protocol = "terminal";
     draft.label = builtin.label;
     draft.binary = builtin.binary;
     draft.args = "";
@@ -380,8 +386,18 @@
               </label>
             {/if}
 
+            <div class="field">
+              <span>Experience</span>
+              <SelectDropdown
+                title={`${agentName(draft)} experience`}
+                value={draft.protocol}
+                options={[{value: "terminal", label: "Terminal"}, {value: "acp", label: "ACP chat"}]}
+                disabled={saving}
+                onchange={(value) => { draft.protocol = value === "acp" ? "acp" : "terminal"; }}
+              />
+            </div>
             <label class="field">
-              <span>Binary</span>
+              <span>{draft.protocol === "acp" ? "ACP executable" : "Binary"}</span>
               <input
                 type="text"
                 bind:value={draft.binary}

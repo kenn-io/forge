@@ -2175,7 +2175,7 @@ func (s *Handler) latestHookReportForWorkspace(
 func (s *Handler) liveAgentSessionKeys(workspaceID string) []string {
 	liveSessionKeys := make([]string, 0)
 	for _, session := range s.runtime.ListSessions(workspaceID) {
-		if session.Kind == localruntime.LaunchTargetAgent &&
+		if session.Kind.IsAgent() &&
 			(session.Status == localruntime.SessionStatusRunning ||
 				session.Status == localruntime.SessionStatusStarting) {
 			liveSessionKeys = append(liveSessionKeys, session.Key)
@@ -2698,7 +2698,7 @@ func workspaceRuntimeTargetIsAgent(runtime *localruntime.Manager, targetKey stri
 	}
 	for _, target := range runtime.LaunchTargets() {
 		if target.Key == targetKey {
-			return target.Kind == localruntime.LaunchTargetAgent && target.Available
+			return target.Kind.IsAgent() && target.Available
 		}
 	}
 	return false

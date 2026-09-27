@@ -56,7 +56,7 @@
   const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
 
   function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
-    return launchTargets.find((target) => target.key === action.agent && target.kind === "agent");
+    return launchTargets.find((target) => target.key === action.agent && (target.kind === "agent" || target.kind === "acp"));
   }
 
   function quickActionDisabledReason(action: QuickAction): string {

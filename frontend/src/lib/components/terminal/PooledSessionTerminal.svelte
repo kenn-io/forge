@@ -3,6 +3,7 @@
   import { tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
+  import ACPWorkspace from "../acp/ACPWorkspace.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import { focusIsSacred } from "./terminal-focus.ts";
   import { createWorkspaceSwitchPaneTimer } from "../../instrumentation/workspaceSwitchTiming.js";
@@ -213,6 +214,9 @@
   tabindex="-1"
   inert={!active || !attached}
 >
+  {#if session.kind === "acp"}
+    <ACPWorkspace websocketPath={session.websocketPath} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} />
+  {:else}
   <TerminalPane
     bind:this={terminalPane}
     websocketPath={session.websocketPath}
@@ -227,6 +231,7 @@
     onExit={(code) => onExit(code)}
     onConnectionChange={(connected) => onConnectionChange(connected)}
   />
+  {/if}
 </div>
 
 <style>

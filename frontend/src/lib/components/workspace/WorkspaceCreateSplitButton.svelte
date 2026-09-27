@@ -66,7 +66,7 @@
   let openExecution: AppExecution<void, never> | null = null;
   const agentTargets = $derived(
     launchTargets
-      .filter((target) => target.kind === "agent" && target.available)
+      .filter((target) => (target.kind === "agent" || target.kind === "acp") && target.available)
       .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "accent" })),
   );
   const blocked = $derived(disabled || busy);
@@ -74,7 +74,7 @@
   const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
 
   function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
-    return launchTargets.find((target) => target.key === action.agent && target.kind === "agent");
+    return launchTargets.find((target) => target.key === action.agent && (target.kind === "agent" || target.kind === "acp"));
   }
 
   function quickActionDisabledReason(action: QuickAction): string {

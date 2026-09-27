@@ -33,6 +33,13 @@ kenn-forge manages three related but different things:
 
 Rules:
 
+- ACP agents run on the workspace's selected execution host, including devboxes and
+  Fleet nodes; browser disconnects leave the process and accepted turn running
+  (`internal/workspace/localruntime/acp.go::ACP`).
+- ACP transcripts are daemon-owned and process-local. Daemon shutdown ends these
+  sessions; do not imply tmux-style recovery or persist terminal bytes as chat
+  (`internal/workspace/localruntime/acp.go::ACP.Detach`).
+
 - The base workspace tmux session remains durable backend state, but production
   workspace terminal panes are pooled runtime sessions; do not treat the primary
   terminal endpoint as a mounted SPA workflow (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).

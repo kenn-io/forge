@@ -21,6 +21,7 @@ export * from "./agentHookOutput.ts";
 export * from "./agentHookResponse.ts";
 export * from "./agentHookSpecificOutput.ts";
 export * from "./agentInitialMessageStatusResponse.ts";
+export * from "./agentProtocol.ts";
 export * from "./applyPrReviewSuggestionsOnHostPathParameters.ts";
 export * from "./applyPrReviewSuggestionsPathParameters.ts";
 export * from "./applyReviewSuggestionHostInputBody.ts";

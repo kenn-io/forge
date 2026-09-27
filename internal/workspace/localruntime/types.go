@@ -4,6 +4,7 @@ type LaunchTargetKind string
 
 const (
 	LaunchTargetAgent      LaunchTargetKind = "agent"
+	LaunchTargetACP        LaunchTargetKind = "acp"
 	LaunchTargetShell      LaunchTargetKind = "shell"
 	LaunchTargetPlainShell LaunchTargetKind = "plain_shell"
 	// LaunchTargetCommand marks sessions launched from a caller-supplied command
@@ -20,3 +21,5 @@ type LaunchTarget struct {
 	Available      bool             `json:"available"`
 	DisabledReason string           `json:"disabled_reason,omitempty"`
 }
+
+func (k LaunchTargetKind) IsAgent() bool { return k == LaunchTargetAgent || k == LaunchTargetACP }

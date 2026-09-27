@@ -177,6 +177,8 @@
     ];
   }
 
+  const selectedChat = $derived(selectedSession?.runtimeSession?.kind === "acp");
+
   function pooledHostKey(session: MobileTerminalSession): SessionHostKey {
     return sessionHostKey(workspaceId, hostKey, session.key, session.generation);
   }
@@ -205,6 +207,8 @@
         ...(hostKey === undefined ? {} : { fleetHostKey: hostKey }),
         websocketPath: session.websocketPath,
         status: session.status,
+        kind: session.runtimeSession?.kind,
+        label: session.label,
         cursorWheelInput: session.cursorWheelInput,
       });
     }
@@ -292,7 +296,7 @@
       return;
     }
     const launchTarget = next.launch_targets.find((candidate) => candidate.key === pending.targetKey);
-    if (!launchTarget || launchTarget.kind !== "agent" || !launchTarget.available) {
+    if (!launchTarget || (launchTarget.kind !== "agent" && launchTarget.kind !== "acp") || !launchTarget.available) {
       if (discardWorkspaceLaunch(workspaceId, hostKey) !== null) {
         showFlash(
           `Agent "${pending.targetKey}" could not launch: ${launchTarget?.disabled_reason ?? "not available"}`,
@@ -750,7 +754,7 @@
     {#if sessions.length > 0}
       <div class="mobile-workspace-terminal__switcher">
         <SelectDropdown
-          title="Terminal session"
+          title={selectedChat ? "Chat session" : "Terminal session"}
           value={selectedSessionKey ?? ""}
           options={sessionOptions}
           onchange={selectSession}
@@ -776,7 +780,7 @@
       {/if}
       <button
         type="button"
-        aria-label="Terminal options"
+        aria-label={selectedChat ? "Chat options" : "Terminal options"}
         aria-haspopup="dialog"
         aria-expanded={terminalOptionsOpen}
         onclick={openTerminalOptions}
@@ -840,6 +844,7 @@
       <div class="mobile-workspace-terminal__viewport" data-terminal-software-keyboard="manual">
         <SessionTerminalSlot hostKey={selectedHostKey} {visible} />
       </div>
+      {#if !selectedChat}
       {#if composerOpen}
         <form class="mobile-workspace-terminal__composer" onsubmit={(event) => {
           event.preventDefault();
@@ -919,6 +924,7 @@
           <ChevronUpIcon size="16" aria-hidden="true" />
         </button>
       {/if}
+      {/if}
     </div>
   {:else}
     <div class="mobile-workspace-terminal__empty">
@@ -937,9 +943,9 @@
 
 {#if terminalOptionsOpen}
   <Modal
-    title="Terminal options"
-    ariaLabel="Terminal options"
-    closeLabel="Close terminal options"
+    title={selectedChat ? "Chat options" : "Terminal options"}
+    ariaLabel={selectedChat ? "Chat options" : "Terminal options"}
+    closeLabel={selectedChat ? "Close chat options" : "Close terminal options"}
     width="min(100%, 38rem)"
     maxWidth="100%"
     onclose={closeTerminalOptions}
@@ -947,7 +953,7 @@
     <div class="mobile-terminal-options-sheet">
       <div class="mobile-terminal-options-sheet__actions">
         <button type="button" disabled={terminalOptionsSaving || launchingTarget !== null || stoppingSession !== null || pendingLaunch !== null} onclick={openLaunchSheet}>
-          <span><PlusIcon size="18" strokeWidth="2" aria-hidden="true" />New terminal</span>
+          <span><PlusIcon size="18" strokeWidth="2" aria-hidden="true" />{selectedChat ? "New session" : "New terminal"}</span>
           <small>Launch a shell or configured agent.</small>
         </button>
       </div>
@@ -956,17 +962,18 @@
         <div class="mobile-terminal-options-sheet__danger">
           <button
             type="button"
-            aria-label={`Stop terminal ${selectedSession.runtimeSession.label}`}
+            aria-label={`Stop ${selectedChat ? "chat" : "terminal"} ${selectedSession.runtimeSession.label}`}
             disabled={terminalOptionsSaving || stoppingSession !== null || launchingTarget !== null}
             onclick={promptStopSelectedSession}
           >
             {#if stoppingSession === selectedSession.runtimeSession.key}<Spinner size={16} />{:else}<SquareIcon size="17" strokeWidth="2" aria-hidden="true" />{/if}
-            Stop terminal…
+            {selectedChat ? "Stop chat…" : "Stop terminal…"}
           </button>
           <small>Terminates the process running in {selectedSession.runtimeSession.label}.</small>
         </div>
       {/if}
 
+      {#if !selectedChat}
       <section class="mobile-terminal-options-sheet__settings" aria-labelledby="mobile-terminal-settings-heading">
         <h3 id="mobile-terminal-settings-heading">Appearance and behavior</h3>
         <TerminalSettings
@@ -984,6 +991,7 @@
           }}
         />
       </section>
+      {/if}
     </div>
   </Modal>
 {/if}
@@ -1014,10 +1022,10 @@
 
 <ConfirmDialog
   open={stopSession !== null}
-  title="Stop terminal?"
+  title={selectedChat ? "Stop chat?" : "Stop terminal?"}
   message={stopSession ? `Stop terminal "${stopSession.label}"?` : ""}
   hint="This terminates the process running in this terminal session."
-  confirmLabel="Stop terminal"
+  confirmLabel={selectedChat ? "Stop chat" : "Stop terminal"}
   pendingLabel="Stopping…"
   busy={stoppingSession !== null}
   tone="danger"

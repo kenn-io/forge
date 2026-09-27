@@ -142,6 +142,7 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 				return
 			}
 			defer conn.Close(websocket.StatusNormalClosure, "done")
+			conn.SetReadLimit(128 << 10)
 			peerExtensions <- w.Header().Get("Sec-WebSocket-Extensions")
 			peerHeaders <- r.Header.Clone()
 
@@ -171,7 +172,7 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	const sessionKey = "client:key one"
 	wsURL := "ws" + strings.TrimPrefix(hub.URL, "http") +
 		"/ws/v1/fleet/hosts/" + testMemberNodeID +
-		"/workspaces/ws_1/runtime/sessions/" + url.PathEscape(sessionKey) + "/terminal"
+		"/workspaces/ws_1/runtime/sessions/" + url.PathEscape(sessionKey) + "/terminal?protocol=acp"
 	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		CompressionMode: websocket.CompressionContextTakeover,
 		HTTPHeader: http.Header{
@@ -189,6 +190,7 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
+	conn.SetReadLimit(128 << 10)
 	require.NotNil(resp)
 
 	clientExtensions := resp.Header.Get("Sec-WebSocket-Extensions")
@@ -239,6 +241,13 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(websocket.MessageText, typ)
 	assert.JSONEq(terminalwebsocket.HeartbeatMessage, string(got))
+	// ACP uses text frames over this same host-selected runtime connection.
+	prompt := `{"type":"prompt","id":"submission-1","text":"` + strings.Repeat("x", 40<<10) + `"}`
+	require.NoError(conn.Write(ctx, websocket.MessageText, []byte(prompt)))
+	typ, got, err = conn.Read(ctx)
+	require.NoError(err)
+	assert.Equal(websocket.MessageText, typ)
+	assert.JSONEq(prompt, string(got))
 }
 
 func TestFleetProxyUsesOnlyDestinationCredentialAndRefusesRedirects(t *testing.T) {

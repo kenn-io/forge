@@ -36,7 +36,7 @@
   const MAX_PROMPT_BYTES = 64 * 1024;
   const promptEncoder = new TextEncoder();
 
-  const agentTargets = $derived(launchTargets.filter((target) => target.kind === "agent"));
+  const agentTargets = $derived(launchTargets.filter((target) => (target.kind === "agent" || target.kind === "acp")));
   const savedActions = $derived(normalizeActions(quickActions ?? []));
   const serializedActions = $derived(serializeDrafts(drafts));
   const hasInvalidDraft = $derived(drafts.some((draft) => !isDraftValid(draft)));

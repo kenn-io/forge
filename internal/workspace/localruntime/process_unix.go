@@ -5,6 +5,7 @@ package localruntime
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"syscall"
 )
 
@@ -29,3 +30,5 @@ func killSessionProcess(process *os.Process) error {
 	}
 	return nil
 }
+
+func configureACPProcess(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }

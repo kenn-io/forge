@@ -65,6 +65,11 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 		return
 	}
 
+	if agent, err := s.runtime.ACP(summary.ID, r.PathValue("session_key")); err == nil {
+		endAttachSpan()
+		serveACP(w, r, agent)
+		return
+	}
 	attachment, err := s.runtime.AttachSessionWithOptions(
 		summary.ID, r.PathValue("session_key"),
 		localruntime.AttachSessionOptions{

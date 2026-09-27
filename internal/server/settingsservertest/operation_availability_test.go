@@ -405,29 +405,37 @@ func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 }
 
 func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-
-	srv, database, rt := newServerWithRateTracker(t)
-	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	// Keep merge available so this fixture isolates rate limiting.
-	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
-
-	resetAt := time.Now().UTC().Add(30 * time.Minute)
-	rt.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
-
-	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
-	require.Equal(http.StatusOK, rr.Code)
-
-	var resp itemapi.RepoResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
-
-	merge := resp.Operations.MergePR
-	assert.False(merge.Available)
-	assert.Equal(operationapi.AvailabilityCodeRateLimited, merge.Code)
-	assert.Contains(merge.UnavailableReason, "rate-limited")
-	assert.NotEmpty(merge.RetryAt)
+	for _, name := range []string{"provider reset", "unknown quota"} {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			srv, database, rt := newServerWithRateTracker(t)
+			repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+			require.NoError(err)
+			// Keep merge available so this fixture isolates rate limiting.
+			require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
+			rate := platform.Rate{Limit: 5000, Remaining: 0, Reset: time.Now().UTC().Add(30 * time.Minute)}
+			if name == "unknown quota" {
+				rate = platform.Rate{Limit: -1, Remaining: 0}
+			}
+			rt.UpdateFromRate(rate)
+			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+			require.Equal(http.StatusOK, rr.Code)
+			var resp itemapi.RepoResponse
+			require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+			merge := resp.Operations.MergePR
+			assert.False(merge.Available)
+			assert.Equal(operationapi.AvailabilityCodeRateLimited, merge.Code)
+			assert.Contains(merge.UnavailableReason, "rate-limited")
+			retryAt, err := time.Parse(time.RFC3339, merge.RetryAt)
+			require.NoError(err)
+			assert.True(retryAt.After(time.Now()))
+			if name == "unknown quota" {
+				assert.Nil(rt.ResetAt(), "local cooldown is not a provider reset")
+				assert.WithinDuration(time.Now().Add(time.Minute), retryAt, 5*time.Second)
+			}
+		})
+	}
 }
 
 func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testing.T) {

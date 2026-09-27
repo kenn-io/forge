@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v7"
+
 	platformpkg "go.kenn.io/forge/platform"
 
 	"go.kenn.io/forge/internal/db"
@@ -41,6 +43,8 @@ type RateTracker struct {
 	resetAt       *time.Time
 	lastRolledAt  time.Time // prevents repeated rolls
 	onWindowReset func()
+	localBackoff  *backoff.ExponentialBackOff
+	localRetryAt  time.Time
 }
 
 // NewPlatformRateTracker creates a tracker for the given provider, host, and API type.
@@ -86,6 +90,9 @@ func (rt *RateTracker) hydrate() {
 	rt.remaining = row.RateRemaining
 	rt.limit = row.RateLimit
 	rt.resetAt = row.RateResetAt
+	if rt.remaining == 0 && rt.limit <= 0 && rt.resetAt == nil {
+		rt.advanceLocalCooldown(time.Now().UTC())
+	}
 }
 
 // Provider returns the provider name this tracker is scoped to.
@@ -193,6 +200,12 @@ func (rt *RateTracker) updateFromRate(
 	rt.remaining = rate.Remaining
 	rt.limit = rate.Limit
 	rt.resetAt = resetPtr
+	if rate.Remaining == 0 && rate.Limit <= 0 && rate.Reset.IsZero() {
+		rt.advanceLocalCooldown(now)
+	} else {
+		rt.localBackoff = nil
+		rt.localRetryAt = time.Time{}
+	}
 	rt.persist()
 	rt.mu.Unlock()
 
@@ -201,12 +214,33 @@ func (rt *RateTracker) updateFromRate(
 	}
 }
 
-// ShouldBackoff returns true and the wait duration if the rate
-// limit is exhausted (remaining==0). If resetAt is nil, defaults
-// to 60s. Returns false if remaining is >0 or unknown (-1).
+// advanceLocalCooldown is called with mu held (or during construction).
+// This is retry policy, not a claim about the provider's quota/reset window.
+func (rt *RateTracker) advanceLocalCooldown(now time.Time) {
+	if rt.localBackoff == nil {
+		rt.localBackoff = backoff.NewExponentialBackOff()
+		rt.localBackoff.InitialInterval = time.Minute
+		rt.localBackoff.Multiplier = 2
+		rt.localBackoff.MaxInterval = 5 * time.Minute
+		rt.localBackoff.RandomizationFactor = 0
+		rt.localBackoff.Reset()
+	}
+	rt.localRetryAt = now.Add(rt.localBackoff.NextBackOff())
+}
+
+// ShouldBackoff returns the remaining provider wait or local cooldown. Unknown
+// quota exhaustion uses a bounded 1/2/4/5-minute cooldown; known quota without a
+// reset retains its existing 60-second retry policy.
 func (rt *RateTracker) ShouldBackoff() (bool, time.Duration) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if !rt.localRetryAt.IsZero() {
+		wait := time.Until(rt.localRetryAt)
+		if wait <= 0 {
+			return false, 0
+		}
+		return true, wait
+	}
 	if rt.remaining != 0 {
 		return false, 0
 	}
@@ -242,6 +276,9 @@ func (rt *RateTracker) ThrottleFactor() int {
 func (rt *RateTracker) IsPaused() bool {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if !rt.localRetryAt.IsZero() {
+		return time.Now().Before(rt.localRetryAt)
+	}
 	if rt.isQuotaStale() {
 		return false
 	}
@@ -293,6 +330,20 @@ func (rt *RateTracker) ResetAt() *time.Time {
 	}
 	t := *rt.resetAt
 	return &t
+}
+
+// RetryAt reports an active local cooldown deadline, otherwise the provider's
+// reset time. ResetAt remains the unmodified provider observation.
+func (rt *RateTracker) RetryAt() *time.Time {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if time.Now().Before(rt.localRetryAt) {
+		return new(rt.localRetryAt)
+	}
+	if rt.resetAt == nil {
+		return nil
+	}
+	return new(*rt.resetAt)
 }
 
 // SetResetAtForTesting overrides the reset time for tests that need to exercise

@@ -52,8 +52,12 @@ active clones and retry only existing idempotent operations
 
 ## Rate-limit gates
 
-These paths are **not** transient retry. They represent provider quota state and
-wait until the reset window.
+These gates wait for provider quota resets or an observed-throttling cooldown.
+They do not retry mutations automatically.
+
+- Unknown-quota exhaustion shares a 1/2/4/5-minute capped cooldown across sync and
+  action availability; successful observations reset it. Keep this local policy
+  separate from provider reset data (`internal/ratelimit/rate.go::RetryAt`).
 
 - [`internal/ratelimit/rate.go`](../internal/ratelimit/rate.go) —
   `RateTracker.ShouldBackoff()` returns `(bool, time.Duration)` for exhausted

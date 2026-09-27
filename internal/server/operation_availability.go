@@ -78,7 +78,7 @@ func (s *Server) MutationRateLimitedReason(
 	ref := operationapi.OperationRepoRef(repo)
 	if wt, ok := s.syncer.WriteRateTrackerForRepo(ref, apiType); ok && wt != nil {
 		if wt.IsPaused() {
-			return operationapi.FormatRateLimit(host, wt.ResetAt())
+			return operationapi.FormatRateLimit(host, wt.RetryAt())
 		}
 		return operationapi.RateLimitAvailability{}
 	}
@@ -98,7 +98,7 @@ func (s *Server) rateLimitedReason(repo db.Repo, bucket operationapi.ApiBucket) 
 	}
 	if rt, ok := s.syncer.RateTrackerForRepo(operationapi.OperationRepoRef(repo), apiType); ok &&
 		rt != nil && rt.IsPaused() {
-		return operationapi.FormatRateLimit(host, rt.ResetAt())
+		return operationapi.FormatRateLimit(host, rt.RetryAt())
 	}
 	return operationapi.RateLimitAvailability{}
 }

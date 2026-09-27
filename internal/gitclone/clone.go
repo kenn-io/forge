@@ -476,7 +476,7 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 	// check a follower with a malformed URL could inherit the
 	// leader's success — or a valid caller could inherit the
 	// leader's validation error.
-	if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
+	if err := validateRemoteURLIdentity(platform, host, owner, name, remoteURL); err != nil {
 		return err
 	}
 	if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
@@ -498,7 +498,7 @@ func (m *Manager) ensureCloneInNamespaceValidated(
 		_, statErr := os.Stat(filepath.Join(clonePath, "HEAD"))
 		m.ensureMu.Unlock()
 		if !active && statErr == nil {
-			if err := m.validateCloneOrigin(ctx, clonePath, host, owner, name); err != nil {
+			if err := m.validateCloneOrigin(ctx, clonePath, platform, host, owner, name); err != nil {
 				return err
 			}
 			return validateEnsureCloneCaller(ctx, validate)
@@ -870,7 +870,7 @@ func (m *Manager) ensureCloneNowInNamespace(
 			ctx, platform, host, owner, name, clonePath, remoteURL,
 		)
 	}
-	if err := m.validateCloneOrigin(ctx, clonePath, host, owner, name); err != nil {
+	if err := m.validateCloneOrigin(ctx, clonePath, platform, host, owner, name); err != nil {
 		return err
 	}
 	m.ensureRefspecs(ctx, clonePath)
@@ -878,11 +878,11 @@ func (m *Manager) ensureCloneNowInNamespace(
 }
 
 func (m *Manager) validateCloneOrigin(
-	ctx context.Context, clonePath, host, owner, name string,
+	ctx context.Context, clonePath, platform, host, owner, name string,
 ) error {
 	// Recheck an existing clone's origin in case its config changed.
 	if out, err := m.git(ctx, clonePath, "config", "--get", "remote.origin.url"); err == nil {
-		return validateRemoteURLIdentity(host, owner, name, strings.TrimSpace(string(out)))
+		return validateRemoteURLIdentity(platform, host, owner, name, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -1098,15 +1098,16 @@ func (m *Manager) MergeBase(
 	return strings.TrimSpace(string(out)), nil
 }
 
-func validateRemoteURLHost(expectedHost, remoteURL string) error {
-	return gitremote.ValidateRemoteHost(expectedHost, remoteURL)
+func validateRemoteURLHost(provider, expectedHost, remoteURL string) error {
+	return providerplatform.ValidateRemoteHost(providerplatform.Kind(provider), expectedHost, remoteURL)
 }
 
-func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) error {
-	return gitremote.ValidateRemoteIdentity(gitremote.Identity{
-		Host:  expectedHost,
-		Owner: owner,
-		Name:  name,
+func validateRemoteURLIdentity(provider, expectedHost, owner, name, remoteURL string) error {
+	return providerplatform.ValidateRemoteIdentity(providerplatform.RepoRef{
+		Platform: providerplatform.Kind(provider),
+		Host:     expectedHost,
+		Owner:    owner,
+		Name:     name,
 	}, remoteURL)
 }
 
@@ -1142,7 +1143,7 @@ func (m *Manager) RunGitForRepoRemote(
 ) ([]byte, error) {
 	source := m.sourceForRepo(platform, host, owner, name)
 	if source != nil {
-		if err := m.validateRemoteIdentity(ctx, dir, remote, host, owner, name); err != nil {
+		if err := m.validateRemoteIdentity(ctx, dir, remote, platform, host, owner, name); err != nil {
 			return nil, err
 		}
 	}
@@ -1173,13 +1174,13 @@ func (m *Manager) RunGitForNamedRemote(
 func (m *Manager) RunGitForRemote(
 	ctx context.Context, platform, host, remoteURL, dir string, args ...string,
 ) ([]byte, error) {
-	if err := validateRemoteURLHost(host, remoteURL); err != nil {
+	if err := validateRemoteURLHost(platform, host, remoteURL); err != nil {
 		return nil, err
 	}
 	if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
 		return nil, err
 	}
-	repoPath := gitremote.RemoteRepoPath(remoteURL)
+	repoPath := providerplatform.RemoteRepoPath(providerplatform.Kind(platform), host, remoteURL)
 	owner, name, ok := strings.Cut(repoPath, "/")
 	if !ok || strings.TrimSpace(owner) == "" || strings.TrimSpace(name) == "" {
 		return nil, errors.New("remote repository owner and name are required")
@@ -1201,7 +1202,7 @@ func (m *Manager) RunGitForHost(
 }
 
 func (m *Manager) validateRemoteIdentity(
-	ctx context.Context, dir, remote, host, owner, name string,
+	ctx context.Context, dir, remote, platform, host, owner, name string,
 ) error {
 	if strings.TrimSpace(dir) == "" {
 		return nil
@@ -1226,7 +1227,7 @@ func (m *Manager) validateRemoteIdentity(
 			continue
 		}
 		for _, url := range urls {
-			if err := validateRemoteURLIdentity(host, owner, name, url); err != nil {
+			if err := validateRemoteURLIdentity(platform, host, owner, name, url); err != nil {
 				return fmt.Errorf("validate %s before authenticated git: %w", key, err)
 			}
 		}
@@ -1255,7 +1256,7 @@ func (m *Manager) namedRemoteRepository(
 	if len(remoteURLs) == 0 {
 		return "", "", fmt.Errorf("read remote.%s.url before authenticated git: no URL configured", remote)
 	}
-	repoPath := gitremote.RemoteRepoPath(remoteURLs[0])
+	repoPath := providerplatform.RemoteRepoPath(providerplatform.Kind(platform), host, remoteURLs[0])
 	index := strings.LastIndex(repoPath, "/")
 	if index <= 0 || index == len(repoPath)-1 {
 		owner, name := strings.TrimSpace(routeOwner), strings.TrimSpace(routeName)
@@ -1266,7 +1267,7 @@ func (m *Manager) namedRemoteRepository(
 			if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
 				return "", "", err
 			}
-			if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
+			if err := validateRemoteURLIdentity(platform, host, owner, name, remoteURL); err != nil {
 				return "", "", fmt.Errorf(
 					"validate %q remote before authenticated git: %w", remote, err,
 				)
@@ -1279,7 +1280,7 @@ func (m *Manager) namedRemoteRepository(
 		if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
 			return "", "", err
 		}
-		if err := validateRemoteURLIdentity(host, owner, name, remoteURL); err != nil {
+		if err := validateRemoteURLIdentity(platform, host, owner, name, remoteURL); err != nil {
 			return "", "", fmt.Errorf(
 				"validate %q remote before authenticated git: %w", remote, err,
 			)
@@ -1516,7 +1517,20 @@ func (m *Manager) gitRunnerAuthed(
 	}
 	if token != "" {
 		// GitHub's smart HTTP endpoint expects Basic auth credentials.
-		runner = runner.WithBasicAuth("x-access-token", token)
+		username, password := "x-access-token", token
+		if host == "bitbucket.org" {
+			username = "x-token-auth"
+			if _, secret, ok := strings.Cut(token, ":"); ok {
+				username, password = "x-bitbucket-api-token-auth", secret
+				tokenauth.RegisterKnownSecret(secret)
+			}
+		} else if user, secret, ok := strings.Cut(token, ":"); ok {
+			// Explicit username:token credentials are required by Data Center's
+			// Git Basic authentication, and retain the same shape as API auth.
+			username, password = user, secret
+			tokenauth.RegisterKnownSecret(secret)
+		}
+		runner = runner.WithBasicAuth(username, password)
 	}
 	return runner, token, nil
 }

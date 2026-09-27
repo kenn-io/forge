@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/platform"
 )
 
 const (
@@ -145,16 +146,17 @@ func ValidateWorkspaceLaunchSpecResponse(
 		spec.GitHeadRef != requestedHead {
 		return errors.New("workspace launch branch does not match the request")
 	}
-	if err := gitremote.ValidateRemoteIdentity(gitremote.Identity{
-		Host:  spec.Repository.PlatformHost,
-		Owner: spec.Repository.Owner,
-		Name:  spec.Repository.Name,
+	if err := platform.ValidateRemoteIdentity(platform.RepoRef{
+		Platform: platform.Kind(spec.Repository.Provider),
+		Host:     spec.Repository.PlatformHost,
+		Owner:    spec.Repository.Owner,
+		Name:     spec.Repository.Name,
 	}, spec.Repository.CloneURL); err != nil {
 		return fmt.Errorf("workspace launch clone URL: %w", err)
 	}
 	if spec.Pull != nil && spec.Pull.HeadRepoKind == "fork" {
-		if err := gitremote.ValidateRemoteHost(
-			spec.Repository.PlatformHost, spec.Pull.HeadRepoCloneURL,
+		if err := platform.ValidateRemoteHost(
+			platform.Kind(spec.Repository.Provider), spec.Repository.PlatformHost, spec.Pull.HeadRepoCloneURL,
 		); err != nil {
 			return fmt.Errorf("workspace launch fork clone URL: %w", err)
 		}
@@ -225,7 +227,7 @@ func validateFederationNetworkRemote(remoteURL string) error {
 func FederationRemoteRepositoryRoute(
 	provider, host, remoteURL string,
 ) (RepositoryRoute, error) {
-	repoPath := gitremote.RemoteRepoPath(remoteURL)
+	repoPath := platform.RemoteRepoPath(platform.Kind(provider), host, remoteURL)
 	lastSlash := strings.LastIndex(repoPath, "/")
 	if lastSlash <= 0 || lastSlash == len(repoPath)-1 {
 		return RepositoryRoute{}, errors.New("federation clone URL must identify a repository owner and name")

@@ -1234,7 +1234,7 @@ func (m *Manager) fetchRepoBrowserTags(
 }
 
 func (m *Manager) validateRepoBrowserRemote(repo RepoBrowserRepoRef, remoteURL string) error {
-	if err := validateRemoteURLIdentity(repo.Host, repo.Owner, repo.Name, remoteURL); err != nil {
+	if err := validateRemoteURLIdentity(repo.Provider, repo.Host, repo.Owner, repo.Name, remoteURL); err != nil {
 		return err
 	}
 	return m.validateRemoteTransport(repo.Provider, repo.Host, remoteURL)

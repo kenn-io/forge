@@ -2502,7 +2502,7 @@ func TestValidateWorktreeBasePathRejectsLocalRemotes(t *testing.T) {
 			)
 
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, "github.com", "acme", "widget", false)
+				t.Context(), localRepo, "github", "github.com", "acme", "widget", false)
 
 			require.Empty(got.Path)
 			require.Error(err)
@@ -2519,7 +2519,7 @@ func TestValidateWorktreeBasePathResolvesCanonicalRemoteByIdentity(t *testing.T)
 	)
 
 	base, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, platformHost, "acme", "widget", false,
+		t.Context(), localRepo, "github", platformHost, "acme", "widget", false,
 	)
 
 	require.NoError(err)
@@ -2541,7 +2541,7 @@ func TestValidateWorktreeBasePathRejectsAmbiguousCanonicalRemotes(t *testing.T) 
 	runWorkspaceTestGit(t, localRepo, "remote", "add", "mirror", canonicalURL)
 
 	base, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, platformHost, "acme", "widget", false,
+		t.Context(), localRepo, "github", platformHost, "acme", "widget", false,
 	)
 
 	require.Empty(base.Path)
@@ -2559,7 +2559,7 @@ func TestValidateWorktreeBasePathRejectsMissingCanonicalRemote(t *testing.T) {
 	runWorkspaceTestGit(t, localRepo, "remote", "remove", "upstream")
 
 	base, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, platformHost, "acme", "widget", false,
+		t.Context(), localRepo, "github", platformHost, "acme", "widget", false,
 	)
 
 	require.Empty(base.Path)
@@ -2588,7 +2588,7 @@ func TestValidateWorktreeBasePathRejectsForeignRemoteWritingBaseNamespace(t *tes
 			)
 
 			base, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, platformHost, "acme", "widget", false,
+				t.Context(), localRepo, "github", platformHost, "acme", "widget", false,
 			)
 
 			require.Empty(base.Path)
@@ -2611,7 +2611,7 @@ func TestValidateWorktreeBasePathAllowsForeignRemoteWithSimilarNamespace(t *test
 	)
 
 	base, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, platformHost, "acme", "widget", false,
+		t.Context(), localRepo, "github", platformHost, "acme", "widget", false,
 	)
 
 	require.NoError(err)
@@ -2630,7 +2630,7 @@ func TestValidateWorktreeBasePathRejectsUnsafeCanonicalRemoteName(t *testing.T) 
 	)
 
 	base, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, platformHost, "acme", "widget", false,
+		t.Context(), localRepo, "github", platformHost, "acme", "widget", false,
 	)
 
 	require.Empty(base.Path)
@@ -2648,7 +2648,7 @@ func TestValidateWorktreeBasePathAllowsUnsafeUnrelatedRemoteName(t *testing.T) {
 	)
 
 	base, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget", false,
+		t.Context(), localRepo, "github", "github.com", "acme", "widget", false,
 	)
 
 	require.NoError(err)
@@ -2695,7 +2695,7 @@ func TestValidateWorktreeBasePathRejectsExecutableLocalConfig(t *testing.T) {
 			runWorkspaceTestGit(t, localRepo, "config", tt.key, tt.value)
 
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, "github.com", "acme", "widget", false)
+				t.Context(), localRepo, "github", "github.com", "acme", "widget", false)
 
 			require.Empty(got.Path)
 			require.Error(err)
@@ -2721,7 +2721,7 @@ func TestValidateWorktreeBasePathAcceptsConfiguredHooksPath(t *testing.T) {
 	require.NoError(os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget", false)
+		t.Context(), localRepo, "github", "github.com", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2762,7 +2762,7 @@ func TestValidateWorktreeBasePathRejectsUnsafeBaseRemoteSchemes(t *testing.T) {
 			)
 
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), localRepo, "github.com", "acme", "widget", false)
+				t.Context(), localRepo, "github", "github.com", "acme", "widget", false)
 
 			require.Empty(got.Path)
 			require.Error(err)
@@ -2791,7 +2791,7 @@ func TestValidateWorktreeBasePathAcceptsLoopbackHTTPOrigin(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "127.0.0.1", "acme", "widget", false)
+		t.Context(), localRepo, "github", "127.0.0.1", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2809,7 +2809,7 @@ func TestValidateWorktreeBasePathAcceptsExplicitlyAllowedHTTPOrigin(t *testing.T
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "gitea.example.test:3000", "acme", "widget", true,
+		t.Context(), localRepo, "github", "gitea.example.test:3000", "acme", "widget", true,
 	)
 
 	require.NoError(err)
@@ -2828,7 +2828,7 @@ func TestValidateWorktreeBasePathAcceptsSCPStyleSSHOrigin(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget", false)
+		t.Context(), localRepo, "github", "github.com", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2865,7 +2865,7 @@ func TestValidateWorktreeBasePathCanonicalizesSymlinkPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ValidateWorktreeBasePath(
-				t.Context(), tt.path, "github.com", "acme", "widget", false)
+				t.Context(), tt.path, "github", "github.com", "acme", "widget", false)
 
 			require.NoError(err)
 			assert.Equal(canonicalLocalRepo, got.Path)
@@ -2884,7 +2884,7 @@ func TestValidateWorktreeBasePathRejectsAdditionalBaseRemoteURLs(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget", false)
+		t.Context(), localRepo, "github", "github.com", "acme", "widget", false)
 
 	require.Empty(got.Path)
 	require.Error(err)
@@ -2907,7 +2907,7 @@ func TestValidateWorktreeBasePathRejectsUnsafeBaseFetchRefspec(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget", false)
+		t.Context(), localRepo, "github", "github.com", "acme", "widget", false)
 
 	require.Empty(got.Path)
 	require.Error(err)
@@ -2930,7 +2930,7 @@ func TestValidateWorktreeBasePathAcceptsSingleBranchBaseFetchRefspec(t *testing.
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget", false)
+		t.Context(), localRepo, "github", "github.com", "acme", "widget", false)
 
 	require.NoError(err)
 	canonicalLocalRepo, err := filepath.EvalSymlinks(localRepo)
@@ -2951,7 +2951,7 @@ func TestValidateWorktreeBasePathRejectsBareRepositories(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), bareRepo, "github.com", "acme", "widget", false)
+		t.Context(), bareRepo, "github", "github.com", "acme", "widget", false)
 
 	require.Empty(got.Path)
 	require.Error(err)
@@ -2970,7 +2970,7 @@ func TestValidateWorktreeBasePathRejectsExecutableWorktreeConfig(t *testing.T) {
 	)
 
 	got, err := ValidateWorktreeBasePath(
-		t.Context(), localRepo, "github.com", "acme", "widget", false)
+		t.Context(), localRepo, "github", "github.com", "acme", "widget", false)
 
 	require.Empty(got.Path)
 	require.Error(err)
@@ -8228,5 +8228,15 @@ func TestSetupFailsBeforeGitWhenSourceItemWasRemovedUpstream(t *testing.T) {
 			require.NotNil(stored)
 			require.Equal("error", stored.Status)
 		})
+	}
+}
+
+func TestBitbucketDataCenterWorktreeBase(t *testing.T) {
+	for _, remote := range []string{"https://code.example.test:8443/scm/PROJECT/repo.git", "ssh://git@code.example.test:7999/PROJECT/repo.git"} {
+		localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "topic")
+		runWorkspaceTestGit(t, localRepo, "remote", "set-url", "origin", remote)
+		base, err := ValidateWorktreeBasePath(t.Context(), localRepo, "bitbucket", "code.example.test:8443", "PROJECT", "repo", false)
+		require.NoError(t, err)
+		require.Equal(t, "origin", base.Remote)
 	}
 }

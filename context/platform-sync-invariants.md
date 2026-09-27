@@ -574,3 +574,13 @@ Run Go tests with `-shuffle=on`. Use the GitLab CE container fixture for
 changes that need real GitLab REST behavior. Use the optional Forgejo/Gitea
 container fixtures when fake transports are too weak to prove gitealike REST
 behavior.
+
+## Bitbucket
+
+- Cloud UUIDs are opaque; PR/issue numbers are repository-scoped (`platform/bitbucket/normalize.go::repository.normalize`).
+- Drain Cloud pages outside the SDK, whose auto-paging ignores later decode errors (`platform/bitbucket/client.go::collect`).
+- Cloud cannot reopen declined PRs; keep combined state/content mutation disabled (`platform/bitbucket/client.go::Client.Capabilities`).
+- Cloud PR embeds omit clone links and abbreviate hashes; resolve canonical URLs and full hashes (`platform/bitbucket/read.go::Client.normalizePull`).
+- Cloud fetches use source branches; its pull ref is local storage (`internal/workspace/manager.go::fetchWorkspaceMergeRequestHeadRefWithGit`).
+- `bitbucket.org` uses Cloud; other hosts use Data Center's distinct API (`cmd/kenn-forge/provider_startup.go::defaultProviderFactories`).
+- Data Center `/scm/` and SSH ports describe transport, not repository identity; preserve execution URLs (`platform/remote.go::repositoryRemote`).

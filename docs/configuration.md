@@ -139,9 +139,59 @@ Public-host defaults are:
 - GitLab `gitlab.com`: no implicit variable, then the GitLab CLI.
 - Forgejo `codeberg.org`: `KENN_FORGE_FORGEJO_TOKEN`, then the Forgejo CLI.
 - Gitea `gitea.com`: `KENN_FORGE_GITEA_TOKEN`, then the Forgejo CLI.
+- Bitbucket Cloud `bitbucket.org`: `KENN_FORGE_BITBUCKET_TOKEN`, then host-scoped `BKT_*` settings.
 
 Grant read access for monitoring. Add write access only for comments, reviews,
 state changes, edits, or merges.
+
+### Bitbucket Cloud
+
+```toml
+[[repos]]
+platform = "bitbucket"
+owner = "example-workspace"
+name = "widgets"
+token_env = "KENN_FORGE_BITBUCKET_TOKEN"
+```
+
+For an Atlassian API token, set the credential value to `account-email:api-token`.
+For an OAuth or repository access token, use the token alone. `token_file` is
+also supported. Grant repository and pull-request read scopes for monitoring,
+and the corresponding write scopes for mutations.
+
+Forge can also use the third-party `bkt` CLI's headless environment settings:
+`BKT_HOST=https://bitbucket.org`, `BKT_TOKEN`, and either `BKT_AUTH_METHOD=bearer`
+or `BKT_USERNAME` with basic auth. Explicit Forge credentials take precedence.
+Saved `bkt` logins and Atlassian `acli` credentials are not imported.
+
+Cloud support includes repository discovery, PRs, issues where enabled,
+comments and replies, inline-thread viewing and resolution, reviewer changes,
+approvals, change requests, merge/squash/rebase, tags, and commit statuses. Workflow controls, notifications,
+labels, review-draft publishing, state/content editing, and historical archive
+collection are not yet integrated.
+
+### Bitbucket Data Center
+
+Use `platform = "bitbucket"` with your server's `platform_host`. Forge selects
+Cloud for `bitbucket.org` and the Data Center API for other hosts. Set `owner`
+to the project key and `name` to the repository slug.
+
+```toml
+[[repos]]
+platform = "bitbucket"
+platform_host = "bitbucket.example.com"
+owner = "PROJECT"
+name = "widgets"
+token_env = "BITBUCKET_DC_CREDENTIAL"
+```
+
+Set the credential to `username:personal-access-token` for both REST and Git.
+Data Center support includes repository discovery, PRs, comments and replies,
+inline-thread viewing, approvals, merge/squash/rebase, PR editing and reopening,
+tags, and commit statuses. Issues, workflows, notifications, reviewer changes,
+and review-draft publishing are not integrated. Servers must expose Bitbucket
+at the host root; application context paths are not currently configurable.
+
 
 ### GitHub credentials by owner
 

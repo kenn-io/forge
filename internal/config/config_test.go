@@ -2853,9 +2853,9 @@ repos = [{ provider = "GitHub", platform_host = "github.com", platform_repo_id =
 			presets: `
 [[repo_presets]]
 name = "Review queue"
-repos = [{ provider = "bitbucket", platform_host = "bitbucket.org", platform_repo_id = 1001, repo_path = "acme/widgets" }]
+repos = [{ provider = "unsupported", platform_host = "forge.example.test", platform_repo_id = 1001, repo_path = "acme/widgets" }]
 `,
-			wantErr: `repo_presets[0].repos[0]: unsupported provider "bitbucket"`,
+			wantErr: `repo_presets[0].repos[0]: unsupported provider "unsupported"`,
 		},
 		{
 			name: "stable repository id is required",

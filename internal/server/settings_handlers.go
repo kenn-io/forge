@@ -700,7 +700,7 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 			provider, targetRef.PlatformHostOrDefault(),
 		)
 		base, err := workspace.ValidateWorktreeBasePath(
-			ctx, worktreeBasePath, targetRef.PlatformHostOrDefault(),
+			ctx, worktreeBasePath, provider, targetRef.PlatformHostOrDefault(),
 			targetRef.Owner, targetRef.Name, allowInsecureHTTP,
 		)
 		if err != nil {

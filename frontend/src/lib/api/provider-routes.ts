@@ -19,6 +19,7 @@ const defaultHosts: Record<string, string> = {
   forgejo: "codeberg.org",
   fj: "codeberg.org",
   gitea: "gitea.com",
+  bitbucket: "bitbucket.org",
 };
 
 export function canonicalProvider(provider: string): string {

@@ -1253,17 +1253,12 @@ func WorkspaceHeadRepo(provider, platformHost, owner, name, cloneURL string) *st
 	// MRHeadRepo means "this PR head must be resolved through fork-safe refs"
 	// in setup. GitHub also fills head.repo.clone_url for same-repo PRs, so
 	// compare clone identities before treating a non-empty URL as fork metadata.
-	headRepo := normalizeCloneRepoIdentity(provider, cloneURL)
+	headRepo := normalizeCloneRepoIdentity(provider, platformHost, cloneURL)
 	if headRepo == "" {
 		unknown := ""
 		return &unknown
 	}
-	baseRepo := strings.ToLower(strings.Join([]string{
-		strings.TrimSpace(provider),
-		normalizePlatformHostIdentity(platformHost),
-		strings.TrimSpace(owner),
-		strings.TrimSpace(name),
-	}, "/"))
+	baseRepo := strings.ToLower(strings.Join([]string{strings.TrimSpace(provider), normalizePlatformHostIdentity(platformHost), strings.TrimSpace(owner), strings.TrimSpace(name)}, "/"))
 	if headRepo == baseRepo {
 		return nil
 	}
@@ -1990,7 +1985,7 @@ func (m *Manager) existingWorkspaceWorktreeProvenance(
 		return workspaceWorktreeProvenance{}, err
 	}
 	base, err := ValidateWorktreeBasePath(
-		ctx, ws.WorktreePath, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		ctx, ws.WorktreePath, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		m.allowsInsecureHTTP(ws.Platform, ws.PlatformHost),
 	)
 	if err != nil {
@@ -2028,7 +2023,7 @@ func (m *Manager) existingWorktreeUsesManagedClone(
 		if pathMatches {
 			for _, candidate := range candidates {
 				if validateBaseRemoteURLs(
-					ctx, commonDir, originRemoteName, candidate.platformHost,
+					ctx, commonDir, originRemoteName, candidate.platform, candidate.platformHost,
 					candidate.owner, candidate.name,
 					m.allowsInsecureHTTP(candidate.platform, candidate.platformHost),
 				) == nil {
@@ -2136,7 +2131,7 @@ func (m *Manager) retargetManagedCloneOrigin(
 		}
 	}
 	if err := validateBaseRemoteURL(
-		remoteURL, originRemoteName, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+		remoteURL, originRemoteName, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		m.allowsInsecureHTTP(ws.Platform, ws.PlatformHost),
 	); err != nil {
 		return fmt.Errorf("validate managed clone origin after rename: %w", err)
@@ -2318,7 +2313,7 @@ func (m *Manager) workspaceSetupGitDir(
 	if ws.MRHeadRepo == nil {
 		if strings.TrimSpace(worktreeBasePath) != "" {
 			base, err := ValidateWorktreeBasePath(
-				ctx, worktreeBasePath, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+				ctx, worktreeBasePath, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 				m.allowsInsecureHTTP(ws.Platform, ws.PlatformHost),
 			)
 			return workspaceGitDir{path: base.Path, remote: base.Remote, localBase: err == nil}, err
@@ -2400,7 +2395,7 @@ func (m *Manager) localWorktreeBaseDir(
 		return WorktreeBase{}, false, nil
 	}
 	base, err := ValidateWorktreeBasePath(
-		ctx, raw, repo.PlatformHost, repo.Owner, repo.Name,
+		ctx, raw, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
 		m.allowsInsecureHTTP(repo.Platform, repo.PlatformHost),
 	)
 	if err != nil {
@@ -2455,7 +2450,7 @@ type WorktreeBase struct {
 // ValidateWorktreeBasePath verifies that path is an existing local Git
 // worktree whose resolved remote matches the tracked repository identity.
 func ValidateWorktreeBasePath(
-	ctx context.Context, path, platformHost, owner, name string,
+	ctx context.Context, path, provider, platformHost, owner, name string,
 	allowInsecureHTTP bool,
 ) (WorktreeBase, error) {
 	abs, err := filepath.Abs(strings.TrimSpace(path))
@@ -2491,13 +2486,13 @@ func ValidateWorktreeBasePath(
 		return WorktreeBase{}, err
 	}
 	remote, err := resolveWorktreeBaseRemote(
-		ctx, abs, platformHost, owner, name, allowInsecureHTTP,
+		ctx, abs, provider, platformHost, owner, name, allowInsecureHTTP,
 	)
 	if err != nil {
 		return WorktreeBase{}, err
 	}
 	if err := validateBaseRemoteURLs(
-		ctx, abs, remote, platformHost, owner, name, allowInsecureHTTP,
+		ctx, abs, remote, provider, platformHost, owner, name, allowInsecureHTTP,
 	); err != nil {
 		return WorktreeBase{}, err
 	}
@@ -2601,7 +2596,7 @@ func localGitConfigKeyMayExecute(key string) bool {
 const originRemoteName = "origin"
 
 func resolveWorktreeBaseRemote(
-	ctx context.Context, dir, platformHost, owner, name string,
+	ctx context.Context, dir, provider, platformHost, owner, name string,
 	allowInsecureHTTP bool,
 ) (string, error) {
 	names, err := gitRemoteNames(ctx, dir)
@@ -2617,7 +2612,7 @@ func resolveWorktreeBaseRemote(
 		}
 		identityMatch := false
 		for _, remoteURL := range remoteURLs {
-			if remoteMatchesRepositoryIdentity(remoteURL, platformHost, owner, name) {
+			if remoteMatchesRepositoryIdentity(remoteURL, provider, platformHost, owner, name) {
 				identityMatch = true
 				break
 			}
@@ -2650,12 +2645,13 @@ func resolveWorktreeBaseRemote(
 }
 
 func remoteMatchesRepositoryIdentity(
-	remoteURL, platformHost, owner, name string,
+	remoteURL, provider, platformHost, owner, name string,
 ) bool {
 	return gitremote.RemoteHost(remoteURL) != "" &&
 		gitremote.RemoteRepoPath(remoteURL) != "" &&
-		gitremote.ValidateRemoteIdentity(gitremote.Identity{
-			Host: platformHost, Owner: owner, Name: name,
+		platform.ValidateRemoteIdentity(platform.RepoRef{
+			Platform: platform.Kind(provider),
+			Host:     platformHost, Owner: owner, Name: name,
 		}, remoteURL) == nil
 }
 
@@ -2665,7 +2661,7 @@ func validGitRemoteName(remote string) bool {
 }
 
 func validateBaseRemoteURLs(
-	ctx context.Context, dir, remote, platformHost, owner, name string,
+	ctx context.Context, dir, remote, provider, platformHost, owner, name string,
 	allowInsecureHTTP bool,
 ) error {
 	remoteURLs, err := gitConfigValues(ctx, dir, "remote."+remote+".url")
@@ -2677,7 +2673,7 @@ func validateBaseRemoteURLs(
 	}
 	for _, remoteURL := range remoteURLs {
 		if err := validateBaseRemoteURL(
-			remoteURL, remote, platformHost, owner, name, allowInsecureHTTP,
+			remoteURL, remote, provider, platformHost, owner, name, allowInsecureHTTP,
 		); err != nil {
 			return err
 		}
@@ -2686,7 +2682,7 @@ func validateBaseRemoteURLs(
 }
 
 func validateBaseRemoteURL(
-	remoteURL, remote, platformHost, owner, name string,
+	remoteURL, remote, provider, platformHost, owner, name string,
 	allowInsecureHTTP bool,
 ) error {
 	if gitremote.RemoteHost(remoteURL) == "" ||
@@ -2705,10 +2701,11 @@ func validateBaseRemoteURL(
 			remoteURLScheme(remoteURL), gitremote.RemoteHost(remoteURL),
 		)
 	}
-	if err := gitremote.ValidateRemoteIdentity(gitremote.Identity{
-		Host:  platformHost,
-		Owner: owner,
-		Name:  name,
+	if err := platform.ValidateRemoteIdentity(platform.RepoRef{
+		Platform: platform.Kind(provider),
+		Host:     platformHost,
+		Owner:    owner,
+		Name:     name,
 	}, remoteURL); err != nil {
 		return fmt.Errorf("%q remote does not match repository: %w", remote, err)
 	}
@@ -5782,6 +5779,20 @@ func fetchWorkspaceMergeRequestHeadRefWithGit(
 		return errors.New("pull-request launch specification is required for head fetch")
 	}
 	targetRef := workspaceMergeRequestHeadRef(ws)
+	if ws.Platform == string(platform.KindBitbucket) {
+		// Bitbucket Cloud exposes source branches, not synthetic pull refs.
+		// Store the fetched branch in our local pull ref for workspace consumers.
+		args := gitArgsWithoutHooks("fetch", "--no-tags", "--recurse-submodules=no")
+		refspec := "+refs/heads/" + launchSpec.Pull.HeadBranch + ":" + targetRef
+		switch launchSpec.Pull.HeadRepoKind {
+		case "same_repo":
+			return runBase(ctx, dir, append(args, remote, refspec)...)
+		case "fork":
+			return runFork(ctx, dir, append(args, launchSpec.Pull.HeadRepoCloneURL, refspec)...)
+		default:
+			return errors.New("pull-request head repository identity is unavailable")
+		}
+	}
 	switch launchSpec.Pull.HeadRepoKind {
 	case "same_repo":
 		return runBase(

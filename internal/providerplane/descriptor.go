@@ -179,8 +179,9 @@ func (d RepositoryDescriptor) Validate() error {
 	if err := validateFederationNetworkRemote(d.CloneURL); err != nil {
 		return fmt.Errorf("repository descriptor clone URL: %w", err)
 	}
-	if err := gitremote.ValidateRemoteIdentity(gitremote.Identity{
-		Host: d.PlatformHost, Owner: d.Owner, Name: d.Name,
+	if err := platform.ValidateRemoteIdentity(platform.RepoRef{
+		Platform: platform.Kind(d.Provider),
+		Host:     d.PlatformHost, Owner: d.Owner, Name: d.Name,
 	}, d.CloneURL); err != nil {
 		return fmt.Errorf("repository descriptor clone URL: %w", err)
 	}

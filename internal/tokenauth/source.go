@@ -296,6 +296,8 @@ func (s *ManagedSource) tokenFromCandidate(
 	candidate Candidate,
 ) (string, bool, error) {
 	switch candidate.Kind {
+	case SourceKindBitbucketEnv:
+		return BitbucketEnvironmentToken(candidate.Host), true, nil
 	case SourceKindEnv:
 		return strings.TrimSpace(os.Getenv(candidate.EnvName)), true, nil
 	case SourceKindFile:

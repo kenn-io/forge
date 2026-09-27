@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -200,7 +201,7 @@ func (m *PRMonitor) detectAssociatedPR(
 		return 0, false, err
 	}
 	if upstream.hasTracking {
-		if prNumber, ok := selectPRByUpstream(ws.Platform, candidates, upstream); ok {
+		if prNumber, ok := selectPRByUpstream(ws.Platform, ws.PlatformHost, candidates, upstream); ok {
 			return prNumber, true, nil
 		}
 	}
@@ -210,7 +211,7 @@ func (m *PRMonitor) detectAssociatedPR(
 		return 0, false, err
 	}
 	if prNumber, ok := selectPRByLocalBranch(
-		ws.Platform, candidates, currentBranch, headSHA, upstream,
+		ws.Platform, ws.PlatformHost, candidates, currentBranch, headSHA, upstream,
 	); ok {
 		return prNumber, true, nil
 	}
@@ -249,7 +250,7 @@ func (m *PRMonitor) listOpenPullCandidates(
 }
 
 func selectPRByUpstream(
-	provider string,
+	provider, platformHost string,
 	candidates []db.MergeRequest,
 	upstream upstreamState,
 ) (int, bool) {
@@ -257,7 +258,7 @@ func selectPRByUpstream(
 		return 0, false
 	}
 
-	remoteRepo := normalizeCloneRepoIdentity(provider, upstream.remoteURL)
+	remoteRepo := normalizeCloneRepoIdentity(provider, platformHost, upstream.remoteURL)
 	if strings.TrimSpace(upstream.remoteURL) != "" && remoteRepo == "" {
 		return 0, false
 	}
@@ -267,7 +268,7 @@ func selectPRByUpstream(
 		if candidate.HeadBranch != upstream.branchName {
 			continue
 		}
-		candidateRepo := normalizeCloneRepoIdentity(provider, candidate.HeadRepoCloneURL)
+		candidateRepo := normalizeCloneRepoIdentity(provider, platformHost, candidate.HeadRepoCloneURL)
 		if remoteRepo != "" {
 			if candidateRepo == "" || candidateRepo != remoteRepo {
 				continue
@@ -282,7 +283,7 @@ func selectPRByUpstream(
 }
 
 func selectPRByLocalBranch(
-	provider string,
+	provider, platformHost string,
 	candidates []db.MergeRequest,
 	currentBranch, currentHeadSHA string,
 	upstream upstreamState,
@@ -297,7 +298,7 @@ func selectPRByLocalBranch(
 		candidate := candidates[i]
 		if candidate.HeadBranch == currentBranch &&
 			strings.EqualFold(candidate.PlatformHeadSHA, currentHeadSHA) &&
-			localBranchCandidateMatchesUpstream(provider, candidate, upstream) {
+			localBranchCandidateMatchesUpstream(provider, platformHost, candidate, upstream) {
 			matches = append(matches, candidate)
 		}
 	}
@@ -308,15 +309,15 @@ func selectPRByLocalBranch(
 }
 
 func localBranchCandidateMatchesUpstream(
-	provider string,
+	provider, platformHost string,
 	candidate db.MergeRequest,
 	upstream upstreamState,
 ) bool {
 	if !upstream.hasTracking {
 		return true
 	}
-	remoteRepo := normalizeCloneRepoIdentity(provider, upstream.remoteURL)
-	candidateRepo := normalizeCloneRepoIdentity(provider, candidate.HeadRepoCloneURL)
+	remoteRepo := normalizeCloneRepoIdentity(provider, platformHost, upstream.remoteURL)
+	candidateRepo := normalizeCloneRepoIdentity(provider, platformHost, candidate.HeadRepoCloneURL)
 	return remoteRepo == "" ||
 		candidateRepo == "" ||
 		candidateRepo == remoteRepo
@@ -404,7 +405,7 @@ func gitOutput(
 	return string(out), nil
 }
 
-func normalizeCloneRepoIdentity(provider, cloneURL string) string {
+func normalizeCloneRepoIdentity(provider, platformHost, cloneURL string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	cloneURL = strings.TrimSpace(cloneURL)
 	if provider == "" || cloneURL == "" {
@@ -418,6 +419,13 @@ func normalizeCloneRepoIdentity(provider, cloneURL string) string {
 		return ""
 	}
 	repoPath := cloneRepoPath(cloneURL)
+	if provider == string(platform.KindBitbucket) && platformHost != platform.DefaultBitbucketHost {
+		if platform.ValidateRemoteHost(platform.KindBitbucket, platformHost, cloneURL) != nil {
+			return ""
+		}
+		host = normalizePlatformHostIdentity(platformHost)
+		repoPath = platform.RemoteRepoPath(platform.KindBitbucket, platformHost, cloneURL)
+	}
 	if repoPath == "" {
 		return ""
 	}

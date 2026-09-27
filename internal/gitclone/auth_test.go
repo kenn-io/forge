@@ -445,6 +445,41 @@ done
 	}, credentials)
 }
 
+func TestBitbucketGitCredentials(t *testing.T) {
+	for _, tc := range []struct{ host, token, want string }{
+		{"bitbucket.org", "access-token", "username=x-token-auth\npassword=access-token\n"},
+		{"bitbucket.org", "user@example.com:api-token", "username=x-bitbucket-api-token-auth\npassword=api-token\n"},
+		{"bitbucket.example.com", "user:api-token", "username=user\npassword=api-token\n"},
+	} {
+		t.Run(tc.token, func(t *testing.T) {
+			dir := t.TempDir()
+			capture := filepath.Join(dir, "credentials")
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "git"), []byte(`#!/bin/sh
+set -eu
+`+gitfake.CredentialHelperRunner+`
+i=0
+while [ "$i" -lt "${GIT_CONFIG_COUNT:-0}" ]; do
+  eval "key=\${GIT_CONFIG_KEY_$i:-}"
+  eval "value=\${GIT_CONFIG_VALUE_$i:-}"
+  if [ "$key" = "credential.helper" ]; then
+    run_credential_helper "$value" get >> "$KENN_FORGE_TEST_GIT_CAPTURE"
+  fi
+  i=$((i + 1))
+done
+`), 0o755))
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("KENN_FORGE_TEST_GIT_CAPTURE", capture)
+			source := &mutableTestTokenSource{token: tc.token}
+			mgr := New(t.TempDir(), HostSources{tc.host: source})
+			_, err := mgr.gitNetworked(t.Context(), source, tc.host, "", nil, "fetch")
+			require.NoError(t, err)
+			data, err := os.ReadFile(capture)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, string(data))
+		})
+	}
+}
+
 func TestGitRetriesAuthFailureAfterInvalidatingTokenSource(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

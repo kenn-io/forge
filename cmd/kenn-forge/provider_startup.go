@@ -17,6 +17,8 @@ import (
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
+	bitbucketclient "go.kenn.io/forge/platform/bitbucket"
+	"go.kenn.io/forge/platform/bitbucketdc"
 	forgejoclient "go.kenn.io/forge/platform/forgejo"
 	giteaclient "go.kenn.io/forge/platform/gitea"
 	gitlabclient "go.kenn.io/forge/platform/gitlab"
@@ -317,6 +319,14 @@ func defaultProviderFactories() map[string]providerFactory {
 			return providerFactoryOutput{
 				githubClient: client,
 			}, nil
+		},
+		string(platform.KindBitbucket): func(_ context.Context, input providerFactoryInput) (providerFactoryOutput, error) {
+			if input.host != platform.DefaultBitbucketHost {
+				client, err := bitbucketdc.NewClient(input.host, input.tokenSource, github.WrapSyncBudgetTransport(http.DefaultTransport, input.budget), input.rateObserver())
+				return providerFactoryOutput{provider: client}, err
+			}
+			client, err := bitbucketclient.NewClient(input.host, input.tokenSource, github.WrapSyncBudgetTransport(http.DefaultTransport, input.budget), input.rateObserver())
+			return providerFactoryOutput{provider: client}, err
 		},
 		string(platform.KindGitLab): func(ctx context.Context, input providerFactoryInput) (providerFactoryOutput, error) {
 			client, err := gitlabclient.NewClient(

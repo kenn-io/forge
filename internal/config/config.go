@@ -546,6 +546,9 @@ func platformForRepoRefHost(host, configuredPlatform string) (string, bool) {
 	if matchHost == platformpkg.DefaultForgejoHost {
 		return string(platformpkg.KindForgejo), true
 	}
+	if matchHost == platformpkg.DefaultBitbucketHost {
+		return string(platformpkg.KindBitbucket), true
+	}
 	if matchHost == platformpkg.DefaultGiteaHost {
 		return string(platformpkg.KindGitea), true
 	}
@@ -2557,6 +2560,9 @@ func (c *Config) TokenForPlatformHost(platform, host, repoTokenEnv string) strin
 	if p == defaultPlatform {
 		return c.gitHubTokenForHost(h)
 	}
+	if p == string(platformpkg.KindBitbucket) {
+		return tokenauth.BitbucketEnvironmentToken(h)
+	}
 	// Non-GitHub hosts end on the same host-scoped CLI fallback their
 	// descriptor chain declares (glab for GitLab, fj for Forgejo and Gitea).
 	return providerCLITokenForHost(p, h)
@@ -2644,6 +2650,10 @@ func (c *Config) ConfiguredCredentialAvailable() bool {
 func descriptorCredentialAvailable(desc tokenauth.Descriptor) bool {
 	for _, candidate := range desc.Candidates {
 		switch candidate.Kind {
+		case tokenauth.SourceKindBitbucketEnv:
+			if tokenauth.BitbucketEnvironmentToken(candidate.Host) != "" {
+				return true
+			}
 		case tokenauth.SourceKindEnv:
 			if os.Getenv(candidate.EnvName) != "" {
 				return true
@@ -3158,6 +3168,9 @@ func (c *Config) TokenSourceForPlatformHost(
 			EnvName: defaultTokenEnv,
 		})
 	}
+	if p == string(platformpkg.KindBitbucket) && h == platformpkg.DefaultBitbucketHost {
+		desc.Candidates = append(desc.Candidates, tokenauth.Candidate{Kind: tokenauth.SourceKindBitbucketEnv, Host: h})
+	}
 	// Every non-GitHub provider ends on its host-scoped CLI credential, so a
 	// user logged in with glab or fj needs no token_env for that host.
 	if kind := cliSourceKindForPlatform(p); kind != "" {
@@ -3189,6 +3202,8 @@ func (c *Config) TokenSourceForPlatformHost(
 
 func defaultTokenEnvForPlatformHost(platform, host string) (string, bool) {
 	switch platform {
+	case string(platformpkg.KindBitbucket):
+		return "KENN_FORGE_BITBUCKET_TOKEN", host == platformpkg.DefaultBitbucketHost
 	case string(platformpkg.KindForgejo):
 		return defaultForgejoTokenEnv, host == platformpkg.DefaultForgejoHost
 	case string(platformpkg.KindGitea):
@@ -3252,6 +3267,9 @@ func appendTokenEnvNamesFromDescriptor(
 	desc tokenauth.Descriptor,
 ) []string {
 	for _, candidate := range desc.Candidates {
+		if candidate.Kind == tokenauth.SourceKindBitbucketEnv {
+			names = appendTokenEnvName(names, "BKT_TOKEN")
+		}
 		if candidate.Kind == tokenauth.SourceKindEnv {
 			names = appendTokenEnvName(names, candidate.EnvName)
 		}

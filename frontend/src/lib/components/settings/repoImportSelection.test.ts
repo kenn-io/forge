@@ -80,7 +80,13 @@ describe("repo import selection helpers", () => {
   });
 
   it("keeps Forgejo and Gitea owner patterns non-nested", () => {
-    expect(repoImportProviders.map((provider) => provider.id)).toEqual(["github", "gitlab", "forgejo", "gitea"]);
+    expect(repoImportProviders.map((provider) => provider.id)).toEqual([
+      "github",
+      "gitlab",
+      "forgejo",
+      "gitea",
+      "bitbucket",
+    ]);
     expect(repoImportProvider("forgejo")).toMatchObject({
       defaultHost: "codeberg.org",
       allowNestedOwner: false,

@@ -5,6 +5,7 @@ const displayLabels: Record<string, string> = {
   gitlab: "GitLab",
   forgejo: "Forgejo",
   gitea: "Gitea",
+  bitbucket: "Bitbucket",
 };
 
 // providerDisplayLabel maps a provider key to its user-facing label.

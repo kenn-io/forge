@@ -39,6 +39,13 @@ export const repoImportProviders: RepoImportProvider[] = [
     allowNestedOwner: false,
     ownerPatternPlaceholder: "owner/pattern",
   },
+  {
+    id: "bitbucket",
+    label: providerDisplayLabel("bitbucket"),
+    defaultHost: "bitbucket.org",
+    allowNestedOwner: false,
+    ownerPatternPlaceholder: "workspace/pattern",
+  },
 ];
 
 export function repoImportProvider(id: string): RepoImportProvider {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -262,4 +263,38 @@ func TestDefaultProviderFactoryUsesGiteaExplicitBaseURL(t *testing.T) {
 	})
 	require.NoError(err)
 	assert.Equal("http://gitea.test/owner/repo.git", repo.CloneURL)
+}
+
+func TestBitbucketFactorySelectsCloudAndDataCenterAPI(t *testing.T) {
+	for _, host := range []string{"bitbucket.org", "bitbucket.example.com"} {
+		t.Run(host, func(t *testing.T) {
+			assert := assert.New(t)
+			original := http.DefaultTransport
+			http.DefaultTransport = platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				var body string
+				if host == "bitbucket.org" {
+					assert.Equal("api.bitbucket.org", r.URL.Host)
+					assert.Equal("/2.0/repositories/PROJECT/widgets", r.URL.Path)
+					body = `{"uuid":"{11111111-1111-4111-8111-111111111111}","full_name":"PROJECT/widgets"}`
+				} else {
+					assert.Equal(host, r.URL.Host)
+					if strings.HasSuffix(r.URL.Path, "/default-branch") {
+						body = `{"displayId":"main"}`
+					} else {
+						assert.Equal("/rest/api/latest/projects/PROJECT/repos/widgets", r.URL.Path)
+						body = `{"id":42,"slug":"widgets","project":{"key":"PROJECT"}}`
+					}
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+			})
+			t.Cleanup(func() { http.DefaultTransport = original })
+			built, err := defaultProviderFactories()["bitbucket"](t.Context(), providerFactoryInput{host: host, tokenSource: mainTestTokenSource(t, "bitbucket", host, "BITBUCKET_FACTORY_TOKEN", "token")})
+			require.NoError(t, err)
+			reader, ok := built.provider.(platform.RepositoryReader)
+			require.True(t, ok)
+			repo, err := reader.GetRepository(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: host, Owner: "PROJECT", Name: "widgets"})
+			require.NoError(t, err)
+			assert.Equal(host, repo.Ref.Host)
+		})
+	}
 }

@@ -17,6 +17,7 @@ type Metadata struct {
 var validKindRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 var builtInMetadata = map[Kind]Metadata{
+	KindBitbucket: {Kind: KindBitbucket, Label: "Bitbucket", DefaultHost: DefaultBitbucketHost},
 	KindGitHub: {
 		Kind:               KindGitHub,
 		Label:              "GitHub",
@@ -58,7 +59,7 @@ func NormalizeKind(raw string) (Kind, error) {
 		return KindForgejo, nil
 	case "tea":
 		return KindGitea, nil
-	case KindGitHub, KindGitLab, KindForgejo, KindGitea:
+	case KindGitHub, KindGitLab, KindForgejo, KindGitea, KindBitbucket:
 		return kind, nil
 	}
 	if !validKindRe.MatchString(string(kind)) {
@@ -105,14 +106,18 @@ func LowercaseRepoNames(kind Kind) bool {
 	return ok && meta.LowercaseRepoNames
 }
 
-// MergeRequestHeadRef returns the remote ref that carries a merge request's
+// MergeRequestHeadRef returns the ref used to store a merge request's
 // head commit on the given platform: GitLab serves
 // refs/merge-requests/<n>/head, while GitHub, Forgejo, and Gitea serve
-// refs/pull/<n>/head. Unknown platforms fall back to the refs/pull form.
+// refs/pull/<n>/head. Bitbucket uses a local ref populated from the source branch.
+// Unknown platforms fall back to the refs/pull form.
 func MergeRequestHeadRef(kind Kind, number int) string {
 	normalized, err := NormalizeKind(string(kind))
 	if err == nil && normalized == KindGitLab {
 		return fmt.Sprintf("refs/merge-requests/%d/head", number)
+	}
+	if err == nil && normalized == KindBitbucket {
+		return fmt.Sprintf("refs/pull-requests/%d/from", number)
 	}
 	return fmt.Sprintf("refs/pull/%d/head", number)
 }

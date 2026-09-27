@@ -9,7 +9,7 @@ import (
 )
 
 func TestValidateRemoteURLHostRejectsMismatchedHTTPSHost(t *testing.T) {
-	err := validateRemoteURLHost("github.com", "https://gitlab.com/acme/widget.git")
+	err := validateRemoteURLHost("github", "github.com", "https://gitlab.com/acme/widget.git")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "gitlab.com")
@@ -17,13 +17,13 @@ func TestValidateRemoteURLHostRejectsMismatchedHTTPSHost(t *testing.T) {
 }
 
 func TestValidateRemoteURLHostAcceptsMatchingHTTPSHost(t *testing.T) {
-	err := validateRemoteURLHost("github.com", "https://github.com/acme/widget.git")
+	err := validateRemoteURLHost("github", "github.com", "https://github.com/acme/widget.git")
 
 	require.NoError(t, err)
 }
 
 func TestValidateRemoteURLIdentityAcceptsSCPStyleRemoteWithoutUser(t *testing.T) {
-	err := validateRemoteURLIdentity(
+	err := validateRemoteURLIdentity("github",
 		"github.com", "acme", "widget",
 		"github.com:acme/widget.git",
 	)
@@ -32,7 +32,7 @@ func TestValidateRemoteURLIdentityAcceptsSCPStyleRemoteWithoutUser(t *testing.T)
 }
 
 func TestValidateRemoteURLIdentityRejectsSCPStyleRemoteHostMismatch(t *testing.T) {
-	err := validateRemoteURLIdentity(
+	err := validateRemoteURLIdentity("github",
 		"github.com", "acme", "widget",
 		"evil.example.com:acme/widget.git",
 	)
@@ -43,7 +43,7 @@ func TestValidateRemoteURLIdentityRejectsSCPStyleRemoteHostMismatch(t *testing.T
 }
 
 func TestValidateRemoteURLIdentityRejectsSchemeOnlyRemoteHostMismatch(t *testing.T) {
-	err := validateRemoteURLIdentity(
+	err := validateRemoteURLIdentity("github",
 		"github.com", "acme", "widget",
 		"ssh:evil.example.com/acme/widget.git",
 	)
@@ -54,19 +54,19 @@ func TestValidateRemoteURLIdentityRejectsSchemeOnlyRemoteHostMismatch(t *testing
 }
 
 func TestValidateRemoteURLHostAcceptsLocalPath(t *testing.T) {
-	err := validateRemoteURLHost("github.com", "/tmp/acme/widget.git")
+	err := validateRemoteURLHost("github", "github.com", "/tmp/acme/widget.git")
 
 	require.NoError(t, err)
 }
 
 func TestValidateRemoteURLHostAcceptsFileURL(t *testing.T) {
-	err := validateRemoteURLHost("github.com", "file:///C:/tmp/acme/widget.git")
+	err := validateRemoteURLHost("github", "github.com", "file:///C:/tmp/acme/widget.git")
 
 	require.NoError(t, err)
 }
 
 func TestValidateRemoteURLIdentityAcceptsFileURL(t *testing.T) {
-	err := validateRemoteURLIdentity(
+	err := validateRemoteURLIdentity("github",
 		"github.com", "acme", "widget",
 		"file:///C:/Users/RUNNER~1/AppData/Local/Temp/Test/remote/widget",
 	)
@@ -75,7 +75,7 @@ func TestValidateRemoteURLIdentityAcceptsFileURL(t *testing.T) {
 }
 
 func TestValidateRemoteURLHostAcceptsWindowsLocalPath(t *testing.T) {
-	err := validateRemoteURLHost("github.com", `C:\tmp\acme\widget.git`)
+	err := validateRemoteURLHost("github", "github.com", `C:\tmp\acme\widget.git`)
 
 	require.NoError(t, err)
 }

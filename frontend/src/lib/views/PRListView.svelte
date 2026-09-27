@@ -57,7 +57,7 @@
      * the workspace pane or one of its promoted sessions. Supplied by the app
      * shell: the controls live in `frontend/`, next to the state they act on.
      */
-    workspacePaneControls?: Snippet<[boolean]> | undefined;
+    workspacePaneControls?: Snippet<[TabbedPanelLeaf]> | undefined;
   }
 
   let {
@@ -366,7 +366,7 @@
      panes would be a control with no subject. -->
 {#snippet workspaceLeafExtras(leaf: TabbedPanelLeaf)}
   {#if leaf.tabs.some((tabKey) => tabKey === "workspace" || isSessionPaneKey(tabKey))}
-    {@render workspacePaneControls?.(leaf.tabs.includes("workspace"))}
+    {@render workspacePaneControls?.(leaf)}
   {/if}
 {/snippet}
 

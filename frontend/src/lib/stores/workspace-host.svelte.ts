@@ -1,3 +1,4 @@
+import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
 import type { Snippet } from "svelte";
 import type { Attachment } from "svelte/attachments";
 import type {
@@ -602,7 +603,7 @@ export interface HostedWorkspaceControls {
    * A promoted session pane still needs a direct route to launch another session,
    * even though it is not the leaf that owns workspace-level destructive actions.
    */
-  paneActions?: Snippet;
+  paneActions?: Snippet<[TabbedPanelLeaf | undefined]>;
   /**
    * Owner-only controls that sit in the workspace pane's tab strip rather than
    * behind the popover. Destructive actions must have one visible owner even when

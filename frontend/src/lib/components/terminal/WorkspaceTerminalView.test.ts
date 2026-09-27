@@ -3917,6 +3917,69 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
+  it.each([undefined, "prs"] as const)("launches into the clicked workflow split on %s", async (paneSurface) => {
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      persistedTwoSessionWorkflowLayout("ws-1:helper", "ws-1:reviewer"),
+    );
+    const sessions = [runningSession, reviewerSession];
+    const launched = { ...runningSession, key: "ws-1:codex", target_key: "codex", label: "Codex" };
+    const pending = deferred<typeof launched>();
+    mocks.getWorkspaceRuntime.mockImplementation(async () => runtimeWithCodexTarget(true, sessions));
+    mocks.launchWorkspaceSession.mockReturnValue(pending.promise);
+    if (paneSurface) claimForPrs();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface } });
+
+    const reviewer = await screen.findByRole("tab", { name: /Reviewer/ });
+    const targetStrip = reviewer.closest<HTMLElement>('[role="tablist"]')!;
+    await fireEvent.click(within(targetStrip).getByRole("button", { name: "Launch" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Run configurations" })).getByRole("button", { name: "Codex" }),
+    );
+    // Focus may move while the server starts the session; placement still belongs to the clicked split.
+    await fireEvent.click(screen.getByRole("tab", { name: /Helper/ }));
+    sessions.push(launched);
+    pending.resolve(launched);
+
+    await waitFor(() => {
+      expect(within(targetStrip).getByRole("tab", { name: /Codex/ }).getAttribute("aria-selected")).toBe("true");
+    });
+    expect(within(targetStrip).getByRole("tab", { name: /Reviewer/ })).toBeTruthy();
+  });
+
+  it.each(["conversation", "workspace"])("launches into the promoted pane beside %s", async (anchor) => {
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    const layout = getPaneLayoutStore("prs");
+    const existingPane = sessionPaneKey("ws-1", undefined, runningSession.key);
+    const leafID = layout.leafIDForTab(anchor)!;
+    layout.promoteTab(existingPane, { kind: "tab", leafID });
+    const sessions = [runningSession, reviewerSession];
+    const launched = { ...runningSession, key: "ws-1:codex", target_key: "codex", label: "Codex" };
+    mocks.getWorkspaceRuntime.mockImplementation(async () => runtimeWithCodexTarget(true, sessions));
+    mocks.launchWorkspaceSession.mockImplementation(async () => {
+      sessions.push(launched);
+      return launched;
+    });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    const controls = render(WorkspacePaneControls, {
+      props: {
+        showStripActions: false,
+        leaf: { type: "leaf", id: leafID, tabs: [anchor, existingPane], activeTabKey: existingPane },
+      },
+    });
+    await fireEvent.click(await within(controls.container).findByRole("button", { name: "Launch session" }));
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Launch a session" })).getByRole("button", { name: "Codex" }),
+    );
+
+    const newPane = sessionPaneKey("ws-1", undefined, "ws-1:codex");
+    await waitFor(() => expect(layout.leafIDForTab(newPane)).toBe(leafID));
+    expect(layout.isTabActive(newPane)).toBe(true);
+    expect(layout.leafIDForTab(existingPane)).toBe(leafID);
+  });
+
   it("launches manually with only workspace display options", async () => {
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
     mocks.launchWorkspaceSession.mockResolvedValue({
@@ -4665,7 +4728,9 @@ describe("WorkspaceTerminalView", () => {
 
     await screen.findByRole("tab", { name: /Helper/ });
     const header = screen.getByRole("button", { name: "Delete", exact: true }).closest(".header-bar")!;
-    expect(within(header as HTMLElement).getByRole("button", { name: "Launch", exact: true })).toBeTruthy();
+    for (const strip of screen.getAllByRole("tablist", { name: "Workflow group tabs" })) {
+      expect(within(strip).getByRole("button", { name: "Launch", exact: true })).toBeTruthy();
+    }
     expect(within(header as HTMLElement).getByRole("button", { name: "Workflow presets" })).toBeTruthy();
     expect(screen.getAllByRole("tablist", { name: "Workflow group tabs" })).toHaveLength(split ? 2 : 1);
     expect(hostedWorkspaceControls()).toBeNull();
@@ -5327,6 +5392,23 @@ describe("WorkspaceTerminalView", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sessionTab.getAttribute("aria-selected")).toBe("true");
     expect(mocks.showFlash).not.toHaveBeenCalled();
+  });
+
+  it("can reopen the launcher in an empty flattened detail pane", async () => {
+    navigate("/issues");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    getPaneLayoutStore("issues").notePaneRender({
+      activeInputTabKey: "workspace",
+      flattened: true,
+      editableTabs: [],
+      onScreenTabs: ["workspace"],
+      soloChromeTabs: [],
+    });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "issues" } });
+    const launcher = await screen.findByRole("dialog", { name: "Launch a session" });
+    await fireEvent.click(within(launcher).getByRole("button", { name: "Close" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Launch session" }));
+    expect(await screen.findByRole("dialog", { name: "Launch a session" })).toBeTruthy();
   });
 
   it("keeps its controls in the title row when the detail surface is flattened", async () => {

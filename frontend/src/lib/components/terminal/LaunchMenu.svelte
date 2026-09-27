@@ -70,7 +70,8 @@
 <div class="launch-menu" bind:this={rootEl}>
   <button
     class="launch-trigger"
-    title="Launch"
+    type="button"
+    title="Launch in this pane"
     aria-label="Launch"
     aria-haspopup="true"
     aria-expanded={open}
@@ -125,11 +126,11 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    height: 22px;
-    padding: 0 7px 0 8px;
-    border: 1px solid var(--border-default);
+    height: 24px;
+    padding: 0 4px;
+    border: 1px solid transparent;
     border-radius: 3px;
-    background: var(--bg-surface);
+    background: transparent;
     color: var(--text-primary);
     font: inherit;
     font-size: var(--font-size-sm);

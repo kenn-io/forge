@@ -109,9 +109,15 @@ export interface AcceptedWorkspaceLaunchReconciliation {
   readonly onExpired: Effect.Effect<void>;
 }
 
+export interface WorkspaceRuntimeLaunchLeaf {
+  readonly surface: "workflow" | "detail";
+  readonly id: string;
+}
+
 export type WorkspaceRuntimeLaunchPlacement =
   | {
       readonly _tag: "Workflow";
+      readonly leaf?: WorkspaceRuntimeLaunchLeaf | undefined;
       readonly onSettled?: ((settlement: WorkspaceRuntimeLaunchSettlement) => void) | undefined;
     }
   | { readonly _tag: "Terminal"; readonly insertIntoTree: boolean }

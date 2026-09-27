@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { TabbedPanelLeaf } from "./lib/components/shared/tabbed-panel-layout.js";
   import { onDestroy, setContext, untrack } from "svelte";
   import { Effect } from "effect";
   import type { Attachment } from "svelte/attachments";
@@ -1636,8 +1637,8 @@
   </section>
 {/snippet}
 
-{#snippet workspacePaneControls(showStripActions: boolean)}
-  <WorkspacePaneControls {showStripActions} />
+{#snippet workspacePaneControls(leaf: TabbedPanelLeaf)}
+  <WorkspacePaneControls showStripActions={leaf.tabs.includes("workspace")} {leaf} />
 {/snippet}
 
 <style>

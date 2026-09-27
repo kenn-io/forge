@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import SlidersHorizontalIcon from "@lucide/svelte/icons/sliders-horizontal";
   import { autoReposition, floatingPopoverStyle } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
@@ -22,11 +23,12 @@
      * the leaf holding the workspace pane itself.
      */
     showStripActions?: boolean;
+    leaf?: TabbedPanelLeaf | undefined;
     controls?: HostedWorkspaceControls | null;
     busy?: boolean;
   }
 
-  const { showStripActions = true, controls: providedControls, busy: providedBusy }: Props = $props();
+  const { showStripActions = true, leaf, controls: providedControls, busy: providedBusy }: Props = $props();
   const runtime = getAppRuntime();
 
   // One button in a pane's tab strip, replacing the three bars that used to stack
@@ -151,7 +153,7 @@
 
 {#if controls}
   <div class="workspace-pane-controls">
-    {@render controls.paneActions?.()}
+    {@render controls.paneActions?.(leaf)}
     {#if showStripActions}
       {@render controls.stripActions?.()}
     {/if}

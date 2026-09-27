@@ -142,6 +142,7 @@
   const MIN_RATIO = 0.12;
   const MAX_RATIO = 0.88;
 
+  let soloActionsWidth = $state(0);
   let splitEl = $state<HTMLDivElement | null>(null);
   let splitSize = $state(0);
   let resizeStartRatio = 0.5;
@@ -621,6 +622,7 @@
       },
     ]}
     aria-label={leafLabel}
+    style:--tabbed-panel-solo-actions-width={soloChrome ? `${soloActionsWidth + 6}px` : undefined}
     onfocusin={onFocusPane ? (event) => handleLeafFocusIn(event, node) : undefined}
   >
     {#if !soloChrome}
@@ -752,7 +754,7 @@
         <!-- The strip's remaining actions with the strip taken away: they float at
              the top right of the body, which is where the pane's own strip ends, so
              the two read as one bar. -->
-        <div class="tabbed-panel-solo-actions" data-testid="tabbed-panel-solo-actions">
+        <div class="tabbed-panel-solo-actions" data-testid="tabbed-panel-solo-actions" bind:clientWidth={soloActionsWidth}>
           {@render tabActions?.(soloTab)}
           {@render leafActions?.(node)}
         </div>

@@ -9,7 +9,7 @@
   import HouseIcon from "@lucide/svelte/icons/house";
   import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag, startTabbedPanelTabDrag, workspaceTabDragScope } from "../shared/tabbed-panel-drag.js";
   import TabbedPanelTree from "../shared/TabbedPanelTree.svelte";
-  import type { TabbedPanelDescriptor } from "../shared/tabbed-panel-layout.js";
+  import type { TabbedPanelDescriptor, TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import type { SplitDirection, WorkflowNode, WorkflowTabKey } from "./terminal-layout";
   import {
     clearActiveTerminalDrag,
@@ -51,6 +51,7 @@
     activeTabKey: WorkflowTabKey;
     inputActive?: boolean;
     renderTab: Snippet<[WorkflowTabKey, boolean]>;
+    leafActions?: Snippet<[TabbedPanelLeaf]>;
     disabled?: boolean;
     onSelectTab?: ((tabKey: WorkflowTabKey) => void) | undefined;
     onFocusPane?: ((tabKey: WorkflowTabKey) => void) | undefined;
@@ -81,6 +82,7 @@
     activeTabKey,
     inputActive = true,
     renderTab: renderWorkflowTab,
+    leafActions,
     disabled = false,
     onSelectTab,
     onFocusPane,
@@ -163,6 +165,7 @@
   {activeTabKey}
   {inputActive}
   {disabled}
+  {leafActions}
   tablistLabel="Workflow group tabs"
   leafLabel="Workflow group"
   dropTargetsLabel="Workflow group drop targets"

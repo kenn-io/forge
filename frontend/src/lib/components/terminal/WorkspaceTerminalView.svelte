@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import {
     quickActionWorkspaceKey,
     quickActionWorkspaces,
@@ -165,6 +166,7 @@
     WorkspaceRuntimeMutationOutcomeUnknown,
     WorkspaceRuntimeWorkflow,
     type WorkspaceRuntimeLaunchPlacement,
+    type WorkspaceRuntimeLaunchLeaf,
     type WorkspaceRuntimeMutationState,
     type WorkspaceRuntimeTarget,
   } from "./workspace-runtime-workflow.js";
@@ -928,7 +930,7 @@
   // `auto` records who opened it: an overlay the view raised over an empty pane is
   // its own to take back once there is something to show, while one the user asked
   // for stays until they dismiss it - they may be picking a second session.
-  let launcherState = $state<{ workspaceKey: string; auto: boolean } | null>(null);
+  let launcherState = $state<{ workspaceKey: string; auto: boolean; leaf?: WorkspaceRuntimeLaunchLeaf } | null>(null);
   const launcherOpen = $derived(launcherState?.workspaceKey === viewWorkspaceKey);
   // Which workspaces the overlay has auto-opened for, so selecting the same item
   // twice does not reopen a launcher the user dismissed, while a different workspace
@@ -936,12 +938,12 @@
   // then back to A must not reopen A's launcher.
   let launcherAutoOpenedFor = $state<string[]>([]);
 
-  function openLauncher(): void {
+  function openLauncher(leaf?: WorkspaceRuntimeLaunchLeaf): void {
     if (!launcherMode) {
       selectWorkspaceTab("home");
       return;
     }
-    launcherState = { workspaceKey: viewWorkspaceKey, auto: false };
+    launcherState = { workspaceKey: viewWorkspaceKey, auto: false, ...(leaf ? { leaf } : {}) };
   }
 
   function explicitLaunchIntentPending(): boolean {
@@ -1332,6 +1334,13 @@
           workflowTabDescriptors.map((tab) => tab.key),
       ),
   );
+  // Only this strip shares the corner with the detail pane's floating controls.
+  const topRightWorkflowLeafID = $derived.by(() => {
+    let node = renderedWorkflowTree;
+    while (node?.type === "split") node = node.direction === "horizontal" ? node.second : node.first;
+    return node?.id;
+  });
+
   function workflowContentKeyFor(tabKey: WorkflowTabKey | null): string | null {
     if (tabKey === null) return soleEmbeddedSessionHostKey;
     const leaf = findWorkflowLeafByTab(renderedWorkflowTree, tabKey);
@@ -2556,13 +2565,20 @@
           });
         }
         if (state.request.placement._tag === "Workflow") {
+          const leaf = state.request.placement.leaf;
           // A successful launch response names the session the server already
           // recorded. Publish it now; the runtime reload only reconciles peers.
           return Effect.sync(() => {
             if (!isCurrentWorkspace(id, hostKey)) return false;
             const session = state.session;
             clearClosedSession(session);
-            applySessionToWorkflow(session.key, upsertRuntimeSession(session));
+            const sessions = upsertRuntimeSession(session);
+            applySessionToWorkflow(session.key, sessions);
+            if (leaf?.surface === "workflow") {
+              appendWorkflowTabToGroup(workflowTabKeyForSession(session.key), leaf.id, sessions);
+            } else if (leaf?.surface === "detail") {
+              surfaceLayout?.promoteTab(sessionPaneKeyFor(session), { kind: "tab", leafID: leaf.id });
+            }
             closeLauncher();
             requestSessionFocus(sessionHostKeyFor(session));
             clearRuntimeMutationPending(state);
@@ -2735,6 +2751,7 @@
   function handleLaunch(
     targetKey: string,
     launchClaim?: WorkspaceLaunchClaim,
+    leaf?: WorkspaceRuntimeLaunchLeaf,
   ): void {
     if (!workspaceId || launchingKey || actionsBlocked) return;
     const id = workspaceId;
@@ -2743,6 +2760,7 @@
     appRuntime.runCommand(
       launchRuntimeSessionProgram(id, hostKey, targetKey, "workflow", {
         _tag: "Workflow",
+        leaf,
         ...(launchClaim === undefined
           ? {}
           : {
@@ -3082,14 +3100,15 @@
   function appendWorkflowTabToGroup(
     sourceTabKey: WorkflowTabKey,
     leafID: string,
+    sessions: RuntimeSession[] = runtimeSessions,
   ): void {
     if (actionsBlocked) return;
     demoteWorkflowTab(sourceTabKey);
     const prepared = normalizeLayoutForSessions(
-      runtimeSessions,
+      sessions,
       layoutWithWorkflowTab(sourceTabKey, terminalLayout),
     );
-    terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
+    terminalLayout = normalizeLayoutForSessions(sessions, {
       ...prepared,
       workflowTree: appendWorkflowTabToLeaf(
         prepared.workflowTree,
@@ -4402,7 +4421,7 @@
             {#snippet headerActions()}
               {#if workspace}
                 <div class="header-end">
-                  <div class="workspace-actions">{@render workspaceControls(!compactHeader)}</div>
+                  <div class="workspace-actions">{@render workspaceControls(launcherMode && renderedWorkflowTree === null)}</div>
                   {#if !hideRightSidebar}
                     <div class="panel-toggle-group">
                       <button
@@ -4544,13 +4563,6 @@
             {/snippet}
             {#if compactHeader}
               <div class="compact-header-actions">
-                {#if launcherMode}
-                  <Button size="sm" surface="soft" tone="neutral" label="Launch session" disabled={actionsBlocked} onclick={openLauncher}>
-                    <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
-                  </Button>
-                {:else}
-                  <LaunchMenu {launchTargets} {launchingKey} disabled={actionsBlocked} hostVisible={interactionVisible} onLaunch={(key) => void handleLaunch(key)} />
-                {/if}
                 <WorkspacePaneControls
                   controls={interactionVisible ? { snippet: headerActions, workspaceKey: viewWorkspaceKey } : null}
                   busy={terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset}
@@ -4626,6 +4638,17 @@
                         };
                       }}
                     >
+                      {#snippet leafActions(leaf)}
+                        <div style:margin-right={leaf.id === topRightWorkflowLeafID ? "var(--tabbed-panel-solo-actions-width, 0px)" : undefined}>
+                          <LaunchMenu
+                            {launchTargets}
+                            {launchingKey}
+                            disabled={actionsBlocked}
+                            {hostVisible}
+                            onLaunch={(key) => handleLaunch(key, undefined, { surface: "workflow", id: leaf.id })}
+                          />
+                        </div>
+                      {/snippet}
                       {#snippet renderTab(tabKey, active)}
                         {#if tabKey === "home"}
                           {#if workspace}
@@ -4830,7 +4853,7 @@
     readonly={actionsBlocked}
     quickActions={workspaceQuickActions}
     onClose={closeLauncher}
-    onLaunch={(key) => void handleLaunch(key)}
+    onLaunch={(key) => handleLaunch(key, undefined, launcherState?.leaf)}
     onQuickAction={(action) => {
       closeLauncher();
       handleQuickAction(action);
@@ -5144,7 +5167,7 @@
          pane, and a second copy of the target list inside a popover inside a tab
          strip is the stacking this mode exists to remove. -->
     {#if showLaunch}
-      <Button size="sm" surface="soft" tone="neutral" label="Launch session" onclick={openLauncher}>
+      <Button size="sm" surface="soft" tone="neutral" label="Launch session" onclick={() => openLauncher()}>
         <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
       </Button>
     {/if}
@@ -5161,18 +5184,20 @@
 
 <!-- Sits in every related pane's tab strip. Launching is non-destructive and useful
      from a promoted session too, so it must not disappear with owner-only actions. -->
-{#snippet workspacePaneActions()}
+{#snippet workspacePaneActions(leaf: TabbedPanelLeaf | undefined)}
   <!-- Ready only. A workspace whose setup failed renders its own actions beside the
        Retry in the error panel, which is where the user is already looking, and one
        still being created cannot launch yet. -->
-  {#if workspaceLive && workspace?.status === "ready"}
+  {#if workspaceLive && workspace?.status === "ready" && (leaf?.activeTabKey !== "workspace" || soleEmbeddedSessionHostKey !== null || renderedWorkflowTree === null)}
     <IconButton
       size="sm"
       tone="neutral"
       disabled={actionsBlocked}
       ariaLabel="Launch session"
       title="Launch session"
-      onclick={openLauncher}
+      onclick={() => openLauncher(leaf === undefined || leaf.activeTabKey === "workspace"
+        ? undefined
+        : { surface: "detail", id: leaf.id })}
     >
       <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
     </IconButton>

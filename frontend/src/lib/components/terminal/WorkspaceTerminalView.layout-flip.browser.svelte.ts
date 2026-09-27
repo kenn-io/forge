@@ -111,9 +111,12 @@ describe("WorkspaceTerminalView layout flip", () => {
       const launch = screen.getByRole("button", { name: "Launch", exact: true });
       const presets = screen.getByRole("button", { name: "Workflow presets", exact: true });
       await expect.element(home).toBeVisible();
-      for (const control of [launch, presets]) {
-        const titleRow = screen.getByRole("button", { name: "Delete", exact: true }).element().getBoundingClientRect();
-        const button = control.element().getBoundingClientRect();
+      for (const [control, anchor] of [
+        [launch, home],
+        [presets, screen.getByRole("button", { name: "Delete", exact: true })],
+      ]) {
+        const titleRow = anchor!.element().getBoundingClientRect();
+        const button = control!.element().getBoundingClientRect();
         expect(Math.abs(button.y + button.height / 2 - titleRow.y - titleRow.height / 2)).toBeLessThan(2);
         expect(button.width).toBeLessThan(50);
       }

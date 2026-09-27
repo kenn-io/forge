@@ -91,7 +91,7 @@ test.describe("embedded workspace launcher", () => {
     });
   });
 
-  test("launches a first session from the overlay and another from the pane header", async ({ page }) => {
+  test("launches a first session from the overlay and another from the pane menu", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -121,14 +121,17 @@ test.describe("embedded workspace launcher", () => {
       await expect(container).toBeVisible();
       await typeMarkerCommand(page, container, workspace.worktree_path, "launcher-marker");
 
-      // The direct pane-header action must reach the same launcher after a session is
+      // The direct pane menu must offer launch targets after a session is
       // already running, without opening the workspace controls popover first.
-      const headerLaunch = page.getByRole("button", { name: "Launch session" });
+      const headerLaunch = page
+        .getByRole("tablist", { name: "Workflow group tabs" })
+        .getByRole("button", { name: "Launch", exact: true });
       await expect(headerLaunch).toBeVisible();
       await headerLaunch.click();
-      await expect(launcher).toBeVisible();
-      await launcher.getByRole("button", { name: "Shell", exact: true }).click();
-      await expect(launcher).toBeHidden();
+      const launchMenu = page.getByRole("dialog", { name: "Run configurations" });
+      await expect(launchMenu).toBeVisible();
+      await launchMenu.getByRole("button", { name: "Shell", exact: true }).click();
+      await expect(launchMenu).toBeHidden();
 
       // The e2e-only endpoint reads SQLite directly, so two persisted shell targets
       // prove the header-opened launch completed across the HTTP/runtime boundary.

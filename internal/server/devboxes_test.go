@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,10 +21,111 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/terminalwebsocket"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 )
+
+func TestDevboxCreationRejectsRepositoryRouteReplacement(t *testing.T) {
+	for _, itemField := range []string{"mr_number", "issue_number"} {
+		t.Run(itemField, func(t *testing.T) {
+			assert, require := assert.New(t), require.New(t)
+			database := dbtest.Open(t)
+			replacement := db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_Replacement",
+				Owner: "example-org", Name: "project",
+			}
+			repoID, err := database.UpsertRepo(t.Context(), replacement)
+			require.NoError(err)
+			if itemField == "mr_number" {
+				seedPRForRepo(t, database, repoID, "github.com", "example-org", "project", 7)
+			} else {
+				seedIssueForRepo(t, database, repoID, "github.com", "example-org", "project", 7, "open", "Update project")
+			}
+			// Keep the replacement's item history and launch metadata, but make
+			// another repository own the route when the request first reads it.
+			original := replacement
+			original.PlatformRepoID = "R_Original"
+			observedAt := time.Now().UTC().Add(time.Minute)
+			_, _, err = database.ReconcileRepositoryObservation(t.Context(), original, observedAt)
+			require.NoError(err)
+
+			var creations atomic.Int32
+			worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal("Bearer worker-test-token", r.Header.Get("Authorization"))
+				switch r.Method + " " + r.URL.Path {
+				case "GET /api/v1/worker":
+					assert.NoError(json.MarshalWrite(w, devbox.WorkerIdentity{}))
+				case "POST /api/v1/worker/workspaces":
+					creations.Add(1)
+					w.WriteHeader(http.StatusAccepted)
+					_, _ = w.Write([]byte(`{"id":"replacement-workspace"}`))
+				default:
+					assert.Fail("unexpected worker request", "%s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(worker.Close)
+			directory := t.TempDir()
+			raw, err := json.Marshal([]any{map[string]any{
+				"id": "compute-a", "profile": devbox.Profile{
+					Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token",
+				},
+			}})
+			require.NoError(err)
+			require.NoError(os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
+			connections, err := devbox.OpenConnections(directory)
+			require.NoError(err)
+			t.Cleanup(connections.Close)
+			controller := &Server{
+				options: ServerOptions{Devboxes: connections}, db: database, now: time.Now, hub: NewEventHub(),
+				repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
+			}
+			mux := http.NewServeMux()
+			controller.registerDevboxAPI(humago.New(mux, huma.DefaultConfig("test", "1")))
+
+			writerQueued := make(chan struct{})
+			t.Cleanup(database.SetBeforeRepositoryReconciliationWriteLockForTest(func() { close(writerQueued) }))
+			database.ReadDB().SetMaxOpenConns(1)
+			readConn, err := database.ReadDB().Conn(t.Context())
+			require.NoError(err)
+			t.Cleanup(func() { _ = readConn.Close() })
+			waitCount := database.ReadDB().Stats().WaitCount
+			requestDone := make(chan *httptest.ResponseRecorder, 1)
+			go func() {
+				// Existing PR/issue callers omit the optional platform_repo_id;
+				// the controller must retain the ID from its first lookup anyway.
+				body := fmt.Sprintf(`{"provider":"github","platform_host":"github.com","owner":"example-org","name":"project",%q:7}`, itemField)
+				request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/devboxes/compute-a/workspaces", strings.NewReader(body))
+				request.Header.Set("Content-Type", "application/json")
+				response := httptest.NewRecorder()
+				mux.ServeHTTP(response, request)
+				requestDone <- response
+			}()
+			// The first lookup holds the repository read lock while waiting for
+			// SQL. Queue the writer so it runs before the next repository lookup.
+			deadline := time.Now().Add(5 * time.Second)
+			for database.ReadDB().Stats().WaitCount == waitCount && time.Now().Before(deadline) {
+				runtime.Gosched()
+			}
+			require.Greater(database.ReadDB().Stats().WaitCount, waitCount, "creation never reached its repository read")
+			writerDone := make(chan error, 1)
+			go func() {
+				_, _, err := database.ReconcileRepositoryObservation(t.Context(), replacement, observedAt.Add(time.Minute))
+				writerDone <- err
+			}()
+			<-writerQueued
+			require.NoError(readConn.Close())
+			require.NoError(<-writerDone)
+			response := <-requestDone
+			assert.Equal(http.StatusNotFound, response.Code, response.Body.String())
+			assert.Zero(creations.Load(), "route replacement must not forward workspace creation to the worker")
+		})
+	}
+}
 
 func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {
 	for _, target := range []string{"plain_shell", "shell", "codex"} {

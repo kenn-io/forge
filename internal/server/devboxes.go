@@ -181,8 +181,9 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *createDevboxW
 			kind, number = db.WorkspaceItemTypeIssue, body.IssueNumber
 		}
 		spec, err := s.ResolveWorkspaceLaunchSpec(ctx, providerplane.WorkspaceLaunchRequest{
-			Repository: providerplane.RepositoryRoute{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name},
-			ItemType:   kind, ItemNumber: number, GitHeadRef: body.Branch,
+			Repository:     providerplane.RepositoryRoute{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name},
+			PlatformRepoID: repo.PlatformRepoID,
+			ItemType:       kind, ItemNumber: number, GitHeadRef: body.Branch,
 		})
 		if err != nil {
 			return nil, err

@@ -7,6 +7,8 @@ on:
   workflow_dispatch:
 
 env:
+  # "|" falls back to the source repo on any proxy error, including HTTP/2 stream resets mid-download.
+  GOPROXY: https://proxy.golang.org|direct
   KENN_FORGE_CI_WORKERS: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '14' || '2' }}
 
 permissions:

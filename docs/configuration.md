@@ -146,6 +146,8 @@ state changes, edits, or merges.
 
 ### Bitbucket Cloud
 
+Add your repository using its workspace name and repository slug:
+
 ```toml
 [[repos]]
 platform = "bitbucket"
@@ -154,27 +156,34 @@ name = "widgets"
 token_env = "KENN_FORGE_BITBUCKET_TOKEN"
 ```
 
-For an Atlassian API token, set the credential value to `account-email:api-token`.
-For an OAuth or repository access token, use the token alone. `token_file` is
-also supported. Grant repository and pull-request read scopes for monitoring,
-and the corresponding write scopes for mutations.
+Set `KENN_FORGE_BITBUCKET_TOKEN` to `account-email:api-token` for an Atlassian
+API token, or to the token alone for an OAuth or repository access token.
+You can use `token_file` instead of `token_env`. Grant read access to
+repositories and pull requests for monitoring. Add write access for actions
+such as commenting, reviewing, and merging.
 
-Forge can also use the third-party `bkt` CLI's headless environment settings:
-`BKT_HOST=https://bitbucket.org`, `BKT_TOKEN`, and either `BKT_AUTH_METHOD=bearer`
-or `BKT_USERNAME` with basic auth. Explicit Forge credentials take precedence.
-Saved `bkt` logins and Atlassian `acli` credentials are not imported.
+If you use the community `bkt` CLI, Forge can read its environment settings.
+Set `BKT_HOST=https://bitbucket.org` and `BKT_TOKEN`. For bearer tokens, set
+`BKT_AUTH_METHOD=bearer`. For basic authentication, set `BKT_USERNAME`.
+Forge uses its own configured credentials first. It does not read saved `bkt`
+logins or Atlassian `acli` credentials.
 
-Cloud support includes repository discovery, PRs, issues where enabled,
-comments and replies, inline-thread viewing and resolution, reviewer changes,
-approvals, change requests, merge/squash/rebase, tags, and commit statuses. Workflow controls, notifications,
-labels, review-draft publishing, state/content editing, and historical archive
-collection are not yet integrated.
+With Cloud, you can:
+
+- Discover repositories and follow pull requests, tags, and commit statuses.
+- Read, create, and comment on issues when the repository has issues enabled.
+- Comment, reply, view and resolve inline threads, and change reviewers.
+- Approve pull requests, request changes, and merge using merge, squash, or rebase.
+
+Forge does not yet support Cloud workflow controls, notifications, labels,
+publishing review drafts, editing pull requests or changing their state outside
+a merge, or collecting historical archives.
 
 ### Bitbucket Data Center
 
-Use `platform = "bitbucket"` with your server's `platform_host`. Forge selects
-Cloud for `bitbucket.org` and the Data Center API for other hosts. Set `owner`
-to the project key and `name` to the repository slug.
+Set `platform_host` to your server's hostname, `owner` to the project key,
+and `name` to the repository slug. Forge uses Cloud for `bitbucket.org` and
+Data Center for other hosts.
 
 ```toml
 [[repos]]
@@ -185,13 +194,17 @@ name = "widgets"
 token_env = "BITBUCKET_DC_CREDENTIAL"
 ```
 
-Set the credential to `username:personal-access-token` for both REST and Git.
-Data Center support includes repository discovery, PRs, comments and replies,
-inline-thread viewing, approvals, merge/squash/rebase, PR editing and reopening,
-tags, and commit statuses. Issues, workflows, notifications, reviewer changes,
-and review-draft publishing are not integrated. Servers must expose Bitbucket
-at the host root; application context paths are not currently configurable.
+Set `BITBUCKET_DC_CREDENTIAL` to `username:personal-access-token`. Forge uses
+this credential for both the API and Git.
 
+With Data Center, you can discover repositories, follow pull requests, tags,
+and commit statuses, comment and reply, view inline threads, and approve,
+edit, reopen, or merge pull requests. Merges support merge, squash, and rebase.
+
+Forge does not yet support Data Center issues, workflows, notifications,
+reviewer changes, or publishing review drafts. Your server must serve Bitbucket
+at the hostname root, such as `https://bitbucket.example.com/`. A path such as
+`https://example.com/bitbucket/` is not supported.
 
 ### GitHub credentials by owner
 

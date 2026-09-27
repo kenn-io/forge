@@ -9,8 +9,26 @@ export const ChatMessageSchema = Schema.Struct({
   status: Schema.optional(Schema.String),
 });
 export type ChatMessage = typeof ChatMessageSchema.Type;
+const ConfigChoiceSchema = Schema.Struct({ value: Schema.String, name: Schema.String });
+export const SessionConfigOptionSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  category: Schema.optional(Schema.String),
+  type: Schema.String,
+  currentValue: Schema.String,
+  options: Schema.Array(
+    Schema.Union([
+      ConfigChoiceSchema,
+      Schema.Struct({ group: Schema.String, name: Schema.String, options: Schema.Array(ConfigChoiceSchema) }),
+    ]),
+  ),
+});
+export type SessionConfigOption = typeof SessionConfigOptionSchema.Type;
 export const ChatStateSchema = Schema.Struct({
   messages: Schema.Array(ChatMessageSchema),
+  configOptions: Schema.Array(SessionConfigOptionSchema),
+  configuring: Schema.Boolean,
   permissions: Schema.Array(
     Schema.Struct({
       id: Schema.String,
@@ -26,4 +44,5 @@ export type ChatState = typeof ChatStateSchema.Type;
 export type ChatCommand =
   | { type: "prompt"; text: string; id: string }
   | { type: "cancel" }
+  | { type: "config"; id: string; value: string }
   | { type: "permission"; id: string; optionId: string };

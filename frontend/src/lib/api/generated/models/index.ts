@@ -831,6 +831,8 @@ export * from "./telemetryEventResponse.ts";
 export * from "./terminal.ts";
 export * from "./terminalClipboardInputBody.ts";
 export * from "./terminalPasteImageOutputBody.ts";
+export * from "./testACPAgentInputBody.ts";
+export * from "./testACPAgentResult.ts";
 export * from "./tmuxSessionInfo.ts";
 export * from "./tmuxWindowInfo.ts";
 export * from "./toolingCLIStatus.ts";

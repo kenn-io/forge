@@ -315,6 +315,13 @@ func cloneFleetHub(in *config.FleetHub) *config.FleetHub {
 
 func (s *Server) registerSettingsAPI(api huma.API) {
 	huma.Register(api, huma.Operation{
+		OperationID: "test-acp-agent",
+		Method:      http.MethodPost,
+		Path:        "/settings/agents/test-acp",
+		Summary:     "Test an ACP executable on this host",
+		Tags:        []string{"Settings"},
+	}, s.testACPAgent)
+	huma.Register(api, huma.Operation{
 		OperationID: "get-fleet-settings",
 		Method:      http.MethodGet,
 		Path:        "/settings/fleet",

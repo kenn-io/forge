@@ -87,6 +87,7 @@ type ServerOptions struct {
 	FederationHTTPClient               *http.Client
 	ProviderWriteGate                  *providerplane.ProviderWriteGate
 	MCPURL                             string
+	AgentMCPURL                        string
 	Clones                             *gitclone.Manager // optional clone manager for diff view
 	WorktreeDir                        string            // base dir for workspace worktrees
 	DisableWorkspaceBackgroundMonitors bool
@@ -222,6 +223,7 @@ type Server struct {
 	// tailnetMCP serves /mcp on this listener for allowlisted Tailscale
 	// Serve users; nil until the MCP companion is initialized.
 	tailnetMCP             atomic.Pointer[http.Handler]
+	agentMCP               atomic.Pointer[http.Handler]
 	buildInfo              BuildInfo
 	now                    func() time.Time
 	handler                http.Handler
@@ -1198,7 +1200,14 @@ func newServer(
 		// workspace terminal state. Tmux-backed sessions still attach via
 		// tmux; the runtime manager only uses this owner for non-tmux starts.
 		runtimePtyOwner := ptyownerruntime.New(ptyOwnerClient, nil)
+		acpPreferencesPath := ""
+		if cfg != nil && cfg.DataDir != "" {
+			acpPreferencesPath = filepath.Join(cfg.DataDir, "acp-preferences.json")
+		}
 		s.runtime = localruntime.NewManager(localruntime.Options{
+			AgentMCPURL:        options.AgentMCPURL,
+			AgentMCPToken:      options.DaemonAccess.Token,
+			ACPPreferencesPath: acpPreferencesPath,
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
 			),
@@ -1653,6 +1662,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.checkHost(w, r) {
+		return
+	}
+	if s.serveAgentMCP(w, r) {
 		return
 	}
 	if s.serveTailnetMCP(w, r) {

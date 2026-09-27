@@ -24,10 +24,24 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await page
       .getByLabel("Workspace Chat arguments")
       .fill(JSON.stringify(path.resolve("tests/fixtures/acp-agent.mjs")));
+    await page.getByLabel("Workspace Chat arguments").fill('-e "process.exit(0)"');
+    await page.getByRole("button", { name: "Test ACP connection" }).click();
+    await expect(page.getByText(/initialize ACP agent: ACP agent disconnected/)).toBeVisible();
+    await page
+      .getByLabel("Workspace Chat arguments")
+      .fill(JSON.stringify(path.resolve("tests/fixtures/acp-agent.mjs")));
+    await page.getByRole("button", { name: "Test ACP connection" }).click();
+    await expect(page.getByText("ACP connection verified on this host.")).toBeVisible();
+    // A command change invalidates the explicit test and is checked again on save.
+    await page
+      .getByLabel("Workspace Chat arguments")
+      .fill(`${JSON.stringify(path.resolve("tests/fixtures/acp-agent.mjs"))} --acp`);
+    const automaticCheck = page.waitForResponse((response) => response.url().endsWith("/settings/agents/test-acp"));
     const save = page.waitForResponse(
       (response) => response.request().method() === "PUT" && response.url().endsWith("/api/v1/settings"),
     );
     await page.getByRole("button", { name: "Save workspace agents" }).click();
+    expect((await automaticCheck).status()).toBe(200);
     expect((await save).status()).toBe(200);
     const created = await api.post("/api/v1/issues/github/acme/widgets/10/workspace", { data: {} });
     expect(created.status()).toBe(202);
@@ -45,6 +59,17 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await page.getByRole("tab", { name: /Workspace Chat,/ }).click();
     const chat = page.getByRole("region", { name: "Workspace Chat chat" });
     await expect(chat).toBeVisible();
+    await chat.getByRole("button", { name: "Model: Fast" }).click();
+    await page.getByRole("menuitemradio", { name: "Deep" }).click();
+    await expect(chat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
+    await chat.getByRole("button", { name: "Effort: Low" }).click();
+    await page.getByRole("menuitemradio", { name: "High" }).click();
+    await expect(chat.getByRole("button", { name: "Effort: High" })).toBeVisible();
+    await chat.getByRole("button", { name: "Agent settings", exact: true }).click();
+    await chat.getByRole("combobox", { name: "Mode: Ask" }).click();
+    await page.getByRole("option", { name: "Plan", exact: true }).click();
+    await expect(chat.getByRole("combobox", { name: "Mode: Plan" })).toBeVisible();
+    await chat.getByRole("button", { name: "Agent settings", exact: true }).click();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Inspect the workspace");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(chat.getByText("I am working in the", { exact: false })).toBeVisible();
@@ -66,6 +91,8 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
         await mobile.getByRole("option", { name: /Workspace Chat/ }).click();
       }
       await expect(mobileChat).toBeVisible();
+      await expect(mobileChat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
+      await expect(mobileChat.getByRole("button", { name: "Effort: High" })).toBeVisible();
       await expect(mobile.getByRole("button", { name: "Open terminal composer" })).toHaveCount(0);
       await mobileChat.getByRole("textbox", { name: "Message agent" }).fill("Review a change from the phone");
       await mobileChat.getByRole("button", { name: "Send", exact: true }).tap();

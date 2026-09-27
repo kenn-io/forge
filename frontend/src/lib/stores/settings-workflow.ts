@@ -8,6 +8,7 @@ import type {
   RepoPreviewResponse as GeneratedRepoPreviewResponse,
   RepoPreviewRow as GeneratedRepoPreviewRow,
   SettingsResponse,
+  TestACPAgentResult,
   UpdateFleetSettingsInputBody,
   UpdateSettingsRequest as GeneratedUpdateSettingsRequest,
 } from "../api/generated/models/index.js";
@@ -123,6 +124,7 @@ export class SettingsWorkflow extends Context.Service<
   SettingsWorkflow,
   {
     readonly readLocal: Effect.Effect<SettingsSnapshot, SettingsReadError>;
+    readonly testACP: (command: string[]) => Effect.Effect<TestACPAgentResult, SettingsReadError>;
     readonly persist: (request: () => UpdateSettingsRequest) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly updateFleet: (request: FleetSettingsUpdate) => Effect.Effect<FleetSettingsSnapshot, SettingsError>;
     readonly createRepoPreset: (preset: RepoPreset) => Effect.Effect<SettingsSnapshot, SettingsError>;
@@ -691,6 +693,8 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
         );
     return {
       readLocal,
+      testACP: (command) =>
+        api.execute("test ACP agent", (signal) => api.client.SettingsService.testAcpAgent({ command }, { signal })),
       persist: (request: () => UpdateSettingsRequest) => submitSettings({ _tag: "Partial", request }),
       updateFleet: (request: FleetSettingsUpdate) =>
         queue

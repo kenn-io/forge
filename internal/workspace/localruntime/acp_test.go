@@ -24,6 +24,10 @@ func TestACPStdioHelper(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	var promptID jsontext.Value
+	model, effort := "fast", "low"
+	configResponse := func(id jsontext.Value) {
+		fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"fixture-session","configOptions":[{"id":"effort","name":"Effort","category":"thought_level","type":"select","currentValue":%q,"options":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]},{"id":"model","name":"Model","category":"model","type":"select","currentValue":%q,"options":[{"group":"models","name":"Models","options":[{"value":"fast","name":"Fast"},{"value":"deep","name":"Deep"}]}]}]}}`+"\n", id, effort, model)
+	}
 	for scanner.Scan() {
 		var message acpEnvelope
 		if json.Unmarshal(scanner.Bytes(), &message) != nil {
@@ -31,23 +35,48 @@ func TestACPStdioHelper(t *testing.T) {
 		}
 		switch message.Method {
 		case "initialize":
+			if os.Getenv("KENN_FORGE_ACP_BAD_VERSION") == "1" {
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":999}}`+"\n", message.ID)
+				continue
+			}
 			var params struct {
 				ProtocolVersion int `json:"protocolVersion"`
 			}
 			if json.Unmarshal(message.Params, &params) != nil || params.ProtocolVersion != 1 {
 				os.Exit(3)
 			}
-			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{}}}`+"\n", message.ID)
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"http":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1")
 		case "session/new":
 			var params struct {
 				CWD        string `json:"cwd"`
 				MCPServers []any  `json:"mcpServers"`
 			}
 			cwd, _ := os.Getwd()
-			if json.Unmarshal(message.Params, &params) != nil || params.CWD != cwd {
+			if json.Unmarshal(message.Params, &params) != nil {
 				os.Exit(4)
 			}
-			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"fixture-session"}}`+"\n", message.ID)
+			resolved, err := filepath.EvalSymlinks(params.CWD)
+			if err != nil || resolved != cwd {
+				os.Exit(4)
+			}
+			configResponse(message.ID)
+		case "session/set_config_option":
+			var params struct {
+				ConfigID string `json:"configId"`
+				Value    string `json:"value"`
+			}
+			if json.Unmarshal(message.Params, &params) != nil {
+				os.Exit(7)
+			}
+			switch params.ConfigID {
+			case "model":
+				model, effort = params.Value, "low"
+			case "effort":
+				effort = params.Value
+			default:
+				os.Exit(8)
+			}
+			configResponse(message.ID)
 		case "session/prompt":
 			var params struct {
 				SessionID string `json:"sessionId"`
@@ -151,4 +180,68 @@ func TestACPWorkspaceConversation(t *testing.T) {
 	require.Eventually(t, func() bool { data, _ := agent.Snapshot(); _ = json.Unmarshal(data, &state); return !state.Busy }, 5*time.Second, 10*time.Millisecond)
 	require.NoError(t, manager.Stop(context.Background(), "workspace", info.Key))
 	assert.Empty(t, manager.ListSessions("workspace"))
+}
+
+func TestACPConnectionProbe(t *testing.T) {
+	manager := NewManager(Options{})
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
+	require.NoError(t, manager.TestACP(t.Context(), command))
+	require.ErrorContains(t, manager.TestACP(t.Context(), nil), "executable is required")
+	require.Error(t, manager.TestACP(t.Context(), []string{filepath.Join(t.TempDir(), "missing-agent")}))
+	withMCP := NewManager(Options{AgentMCPURL: "http://127.0.0.1:12345/agent-mcp", AgentMCPToken: "fixture-token"})
+	t.Setenv("KENN_FORGE_ACP_NO_HTTP", "1")
+	require.ErrorContains(t, withMCP.TestACP(t.Context(), command), "does not accept HTTP MCP servers")
+	t.Setenv("KENN_FORGE_ACP_NO_HTTP", "")
+	require.NoError(t, withMCP.TestACP(t.Context(), command))
+	t.Setenv("KENN_FORGE_ACP_BAD_VERSION", "1")
+	require.ErrorContains(t, manager.TestACP(t.Context(), command), "unsupported ACP protocol version")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, manager.TestACP(ctx, command), context.Canceled)
+}
+
+func TestACPRemembersSettingsPerClientAndHost(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: command}, {Key: "other", Protocol: "acp", Command: command}}, nil, nil)
+	preferences := filepath.Join(t.TempDir(), "preferences.json")
+	first := NewManager(Options{Targets: targets, ACPPreferencesPath: preferences})
+	t.Cleanup(first.Shutdown)
+	cwd := t.TempDir()
+	info, err := first.Launch(t.Context(), "first", cwd, "chat")
+	require.NoError(t, err)
+	agent, err := first.ACP("first", info.Key)
+	require.NoError(t, err)
+	require.NoError(t, agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "config", ID: "effort", Value: "high"}))
+	require.ErrorContains(t, agent.Command(ACPCommand{Type: "config", ID: "model", Value: "unknown"}), "offered by the agent")
+	first.Shutdown()
+	for _, tc := range []struct{ name, path, target, model, effort string }{
+		{"another workspace after restart", preferences, "chat", "deep", "high"},
+		{"another client", preferences, "other", "fast", "low"},
+		{"another host", filepath.Join(t.TempDir(), "preferences.json"), "chat", "fast", "low"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := NewManager(Options{Targets: targets, ACPPreferencesPath: tc.path})
+			t.Cleanup(manager.Shutdown)
+			info, err := manager.Launch(t.Context(), "second", cwd, tc.target)
+			require.NoError(t, err)
+			agent, err := manager.ACP("second", info.Key)
+			require.NoError(t, err)
+			data, err := agent.Snapshot()
+			require.NoError(t, err)
+			var state ACPState
+			require.NoError(t, json.Unmarshal(data, &state))
+			require.Len(t, state.ConfigOptions, 2)
+			assert.Equal(t, tc.effort, state.ConfigOptions[0].CurrentValue)
+			assert.Equal(t, tc.model, state.ConfigOptions[1].CurrentValue)
+		})
+	}
 }

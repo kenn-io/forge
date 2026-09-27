@@ -797,6 +797,7 @@ func run(opts serve.Options) error {
 				)
 			},
 			MCPURL:                          mcpURL,
+			AgentMCPURL:                     "http://" + net.JoinHostPort("localhost", fmt.Sprint(runtimeIdentity.Record.Endpoint().Port())) + path.Join("/", cfg.BasePath, "agent-mcp"),
 			WorktreeDir:                     filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath:             os.Getenv("KENN_FORGE_PTY_MANAGER"),
 			Telemetry:                       telemetryReporter,
@@ -853,15 +854,14 @@ func run(opts serve.Options) error {
 	}()
 
 	srv.SetBuildInfo(buildInfo)
-	if mcpSwitcher != nil {
-		mcpSrv, err = mcpserver.New(mcpserver.Options{
-			Backend: srv.MCPBackend(), Version: version,
-			DiffCacheBytes: cfg.MCPDiffCacheBytes(),
-		})
-		if err != nil {
-			return fmt.Errorf("initialize MCP server: %w", err)
-		}
+	mcpSrv, err = mcpserver.New(mcpserver.Options{
+		Backend: srv.MCPBackend(), Version: version,
+		DiffCacheBytes: cfg.MCPDiffCacheBytes(),
+	})
+	if err != nil {
+		return fmt.Errorf("initialize MCP server: %w", err)
 	}
+	srv.SetAgentMCPHandler(mcpSrv.HTTPHandler())
 	switcher.Swap(srv)
 	if mcpSwitcher != nil {
 		mcpSwitcher.Swap(mcpSrv.HTTPHandler())

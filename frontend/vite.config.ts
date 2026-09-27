@@ -358,6 +358,7 @@ const config = {
       "@lucide/svelte/icons/grip-vertical",
       "@lucide/svelte/icons/maximize",
       "@lucide/svelte/icons/sliders-horizontal",
+      "@lucide/svelte/icons/settings-2",
       "@lucide/svelte/icons/minimize",
       "@lucide/svelte/icons/alarm-clock",
       "@lucide/svelte/icons/alert-triangle",

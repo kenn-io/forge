@@ -10034,6 +10034,31 @@ func (o *UpdateSettingsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// TestAcpAgentRequestOptions is the options needed to make a request to TestAcpAgent.
+type TestAcpAgentRequestOptions struct {
+	Body *TestAcpAgentBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *TestAcpAgentRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *TestAcpAgentRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *TestAcpAgentRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *TestAcpAgentRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // UpdateFleetSettingsRequestOptions is the options needed to make a request to UpdateFleetSettings.
 type UpdateFleetSettingsRequestOptions struct {
 	Body *UpdateFleetSettingsBody
@@ -11750,6 +11775,7 @@ type ClientInterface interface {
 	GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetHostRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetHostRuntimeSessionAttachSpecResp, error)
 	GetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSettingsResp, error)
 	UpdateSettingsWithResponse(ctx context.Context, options *UpdateSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateSettingsResp, error)
+	TestAcpAgentWithResponse(ctx context.Context, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TestAcpAgentResp, error)
 	GetFleetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetFleetSettingsResp, error)
 	UpdateFleetSettingsWithResponse(ctx context.Context, options *UpdateFleetSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetSettingsResp, error)
 	GetLocalSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetLocalSettingsResp, error)
@@ -29387,6 +29413,63 @@ func (c *Client) UpdateSettingsWithResponse(ctx context.Context, options *Update
 	}
 }
 
+// TestAcpAgent Test an ACP executable on this host
+func (c *Client) TestAcpAgentWithResponse(ctx context.Context, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TestAcpAgentResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/settings/agents/test-acp",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/settings/agents/test-acp")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &TestAcpAgentResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(TestAcpAgentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(TestAcpAgentResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "TestAcpAgentResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // GetFleetSettings Get fleet settings
 func (c *Client) GetFleetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetFleetSettingsResp, error) {
 	var err error
@@ -37771,6 +37854,22 @@ func (c *Client) UpdateSettingsRaw(ctx context.Context, httpClient *http.Client,
 	return httpClient.Do(req)
 }
 
+// TestAcpAgentRaw returns an unread response. The caller must close its body.
+func (c *Client) TestAcpAgentRaw(ctx context.Context, httpClient *http.Client, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/settings/agents/test-acp",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // GetFleetSettingsRaw returns an unread response. The caller must close its body.
 func (c *Client) GetFleetSettingsRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -44498,6 +44597,23 @@ func NewUpdateSettingsRequest(ctx context.Context, baseURL string, options *Upda
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewTestAcpAgentRequest constructs a typed request for a caller-owned transport.
+func NewTestAcpAgentRequest(ctx context.Context, baseURL string, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/settings/agents/test-acp",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewGetFleetSettingsRequest constructs a typed request for a caller-owned transport.
 func NewGetFleetSettingsRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -48054,6 +48170,8 @@ type LaunchHostRuntimeSessionBody = LaunchHostRuntimeSessionInputBody
 
 type UpdateSettingsBody = UpdateSettingsRequest
 
+type TestAcpAgentBody = TestACPAgentInputBody
+
 type UpdateFleetSettingsBody = UpdateFleetSettingsInputBody
 
 type CreateRepoPresetBody = RepoPreset
@@ -49943,6 +50061,10 @@ type GetSettingsErrorResponse = ProblemError
 type UpdateSettingsResponse = SettingsResponse
 
 type UpdateSettingsErrorResponse = ProblemError
+
+type TestAcpAgentResponse = TestACPAgentResult
+
+type TestAcpAgentErrorResponse = ProblemError
 
 type GetFleetSettingsResponse = FleetSettingsResponse
 
@@ -52723,6 +52845,14 @@ type UpdateSettingsResp struct {
 	StatusCode   int
 	Error        *UpdateSettingsErrorResponse
 	JSON200      *UpdateSettingsResponse
+}
+
+type TestAcpAgentResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *TestAcpAgentErrorResponse
+	JSON200      *TestAcpAgentResponse
 }
 
 type GetFleetSettingsResp struct {
@@ -56810,6 +56940,19 @@ type TerminalPasteImageOutputBody struct {
 
 	// Path Absolute path to the cached image on the terminal host
 	Path string `json:"path"`
+}
+
+type TestACPAgentInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string  `json:"$schema,omitempty"`
+	Command []string `json:"command"`
+}
+
+type TestACPAgentResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Message string  `json:"message"`
+	Valid   bool    `json:"valid"`
 }
 
 type TmuxSessionInfo struct {

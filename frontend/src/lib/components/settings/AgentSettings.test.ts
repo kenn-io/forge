@@ -3,8 +3,9 @@ import { Effect, Layer } from "effect";
 import type { ComponentProps } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-const { mockPersistSettings } = vi.hoisted(() => ({
+const { mockPersistSettings, mockTestACP } = vi.hoisted(() => ({
   mockPersistSettings: vi.fn(),
+  mockTestACP: vi.fn(),
 }));
 
 vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
@@ -13,6 +14,7 @@ vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
     ...actual,
     SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
       persist: (request) => Effect.promise(() => mockPersistSettings(request())),
+      testACP: (command) => Effect.promise(() => mockTestACP(command)),
     }),
   };
 });
@@ -42,11 +44,13 @@ describe("AgentSettings", () => {
   afterEach(() => {
     cleanup();
     mockPersistSettings.mockReset();
+    mockTestACP.mockReset();
   });
 
   it("preserves ACP configuration when changing the executable", async () => {
     const agents = [{ key: "chat", label: "Chat", protocol: "acp" as const, command: ["chat-agent"], enabled: true }];
     mockPersistSettings.mockResolvedValue({ agents });
+    mockTestACP.mockResolvedValue({ valid: true, message: "ACP connection verified on this host." });
     renderAgentSettings({ agents, onUpdate: vi.fn() });
     await expandAgent("Chat");
     await fireEvent.input(screen.getByLabelText("Chat binary"), { target: { value: "/opt/chat-agent" } });
@@ -56,6 +60,25 @@ describe("AgentSettings", () => {
         agents: [{ key: "chat", label: "Chat", protocol: "acp", command: ["/opt/chat-agent"], enabled: true }],
       }),
     );
+  });
+
+  it("blocks saving a changed ACP command when its automatic test fails", async () => {
+    const agents = [{ key: "chat", label: "Chat", protocol: "acp" as const, command: ["chat-agent"], enabled: true }];
+    mockTestACP.mockResolvedValue({ valid: false, message: "Not an ACP agent" });
+    renderAgentSettings({ agents, onUpdate: vi.fn() });
+    await expandAgent("Chat");
+    await fireEvent.input(screen.getByLabelText("Chat binary"), { target: { value: "wrong-agent" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Not an ACP agent"));
+    expect(mockTestACP).toHaveBeenCalledWith(["wrong-agent"]);
+    expect(mockPersistSettings).not.toHaveBeenCalled();
+    mockTestACP.mockResolvedValue({ valid: true, message: "ACP connection verified on this host." });
+    await fireEvent.input(screen.getByLabelText("Chat binary"), { target: { value: "valid-agent" } });
+    expect(screen.queryByText("Not an ACP agent")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Test ACP connection" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("ACP connection verified"));
+    expect(mockTestACP).toHaveBeenLastCalledWith(["valid-agent"]);
+    expect(mockPersistSettings).not.toHaveBeenCalled();
   });
 
   it("persists built-in agent binary and argument overrides", async () => {

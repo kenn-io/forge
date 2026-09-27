@@ -36,6 +36,9 @@ Rules:
 - ACP agents run on the workspace's selected execution host, including devboxes and
   Fleet nodes; browser disconnects leave the process and accepted turn running
   (`internal/workspace/localruntime/acp.go::ACP`).
+- ACP selections belong to a configured client on its execution host, across workspaces
+  and daemon restarts; restore the model before dependent options and skip choices no
+  longer offered by the agent (`internal/workspace/localruntime/acp_settings.go::Manager.startACP`).
 - ACP transcripts are daemon-owned and process-local. Daemon shutdown ends these
   sessions; do not imply tmux-style recovery or persist terminal bytes as chat
   (`internal/workspace/localruntime/acp.go::ACP.Detach`).

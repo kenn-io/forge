@@ -21,19 +21,21 @@ import (
 // ACP owns a stdio agent on the workspace's execution host. Browser connections
 // subscribe to its state; disconnecting a browser does not stop an accepted turn.
 type ACP struct {
-	turnMu      sync.Mutex
-	cancelling  bool
-	mu          sync.Mutex
-	writeMu     sync.Mutex
-	cmd         *exec.Cmd
-	stdin       io.WriteCloser
-	stdout      io.ReadCloser
-	done        chan struct{}
-	nextID      int
-	pending     map[string]chan acpEnvelope
-	subscribers map[chan struct{}]struct{}
-	state       ACPState
-	sessionID   string
+	turnMu       sync.Mutex
+	cancelling   bool
+	mu           sync.Mutex
+	writeMu      sync.Mutex
+	cmd          *exec.Cmd
+	stdin        io.WriteCloser
+	stdout       io.ReadCloser
+	done         chan struct{}
+	nextID       int
+	pending      map[string]chan acpEnvelope
+	subscribers  map[chan struct{}]struct{}
+	state        ACPState
+	saveConfig   func(map[string]string) error
+	configValues map[string]string
+	sessionID    string
 }
 
 type ACPMessage struct {
@@ -54,18 +56,36 @@ type ACPPermission struct {
 	Title   string                `json:"title"`
 	Options []ACPPermissionOption `json:"options"`
 }
+type ACPConfigChoice struct {
+	Value   string            `json:"value,omitempty"`
+	Name    string            `json:"name"`
+	Group   string            `json:"group,omitempty"`
+	Options []ACPConfigChoice `json:"options,omitempty"`
+}
+type ACPConfigOption struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description,omitempty"`
+	Category     string            `json:"category,omitempty"`
+	Type         string            `json:"type"`
+	CurrentValue string            `json:"currentValue"`
+	Options      []ACPConfigChoice `json:"options"`
+}
 type ACPState struct {
-	Messages    []ACPMessage    `json:"messages"`
-	Permissions []ACPPermission `json:"permissions"`
-	Busy        bool            `json:"busy"`
-	Connected   bool            `json:"connected"`
-	Error       string          `json:"error"`
+	ConfigOptions []ACPConfigOption `json:"configOptions"`
+	Configuring   bool              `json:"configuring"`
+	Messages      []ACPMessage      `json:"messages"`
+	Permissions   []ACPPermission   `json:"permissions"`
+	Busy          bool              `json:"busy"`
+	Connected     bool              `json:"connected"`
+	Error         string            `json:"error"`
 }
 type ACPCommand struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
 	ID       string `json:"id,omitempty"`
 	OptionID string `json:"optionId,omitempty"`
+	Value    string `json:"value,omitempty"`
 }
 type acpEnvelope struct {
 	JSONRPC string         `json:"jsonrpc"`
@@ -80,7 +100,7 @@ type acpError struct {
 	Message string `json:"message"`
 }
 
-func startACPSession(ctx context.Context, info SessionInfo, command []string, cwd string, extraStrip []string) (*session, error) {
+func startACPSession(ctx context.Context, info SessionInfo, command []string, cwd string, extraStrip []string, mcpServers []ACPMCPServer) (*session, error) {
 	executable, err := resolveExecutable(command[0])
 	if err != nil {
 		return nil, err
@@ -109,19 +129,40 @@ func startACPSession(ctx context.Context, info SessionInfo, command []string, cw
 	go a.read()
 	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	_, err = a.call(initCtx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]string{"name": "kenn-forge", "version": "1"}})
+	initialized, err := a.call(initCtx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]string{"name": "kenn-forge", "version": "1"}})
+	if err == nil {
+		var result struct {
+			ProtocolVersion   int `json:"protocolVersion"`
+			AgentCapabilities struct {
+				MCPCapabilities struct {
+					HTTP bool `json:"http"`
+				} `json:"mcpCapabilities"`
+			} `json:"agentCapabilities"`
+		}
+		err = json.Unmarshal(initialized, &result)
+		if err == nil && result.ProtocolVersion != 1 {
+			err = fmt.Errorf("unsupported ACP protocol version %d (expected 1)", result.ProtocolVersion)
+		}
+		if err == nil && len(mcpServers) > 0 && !result.AgentCapabilities.MCPCapabilities.HTTP {
+			err = errors.New("this ACP agent does not accept HTTP MCP servers required by Forge")
+		}
+	}
 	if err == nil {
 		var result jsontext.Value
-		result, err = a.call(initCtx, "session/new", map[string]any{"cwd": cwd, "mcpServers": []any{}})
+		result, err = a.call(initCtx, "session/new", map[string]any{"cwd": cwd, "mcpServers": mcpServers})
 		if err == nil {
 			var created struct {
-				SessionID string `json:"sessionId"`
+				SessionID     string            `json:"sessionId"`
+				ConfigOptions []ACPConfigOption `json:"configOptions"`
 			}
 			err = json.Unmarshal(result, &created)
 			if err == nil && created.SessionID == "" {
 				err = errors.New("ACP agent returned no session ID")
 			}
 			a.sessionID = created.SessionID
+			a.mu.Lock()
+			a.state.ConfigOptions = created.ConfigOptions
+			a.mu.Unlock()
 		}
 	}
 	if err != nil {
@@ -137,6 +178,25 @@ func startACPSession(ctx context.Context, info SessionInfo, command []string, cw
 }
 
 func (a *ACP) Detach() { _ = a.Stop(context.Background()) }
+
+// TestACP checks the same handshake used by workspace launches without retaining
+// a process or creating a workspace. The agent gets an empty temporary directory.
+func (m *Manager) TestACP(ctx context.Context, command []string) error {
+	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
+		return errors.New("ACP executable is required")
+	}
+	cwd, err := os.MkdirTemp("", "forge-acp-test-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(cwd)
+	session, err := startACPSession(ctx, SessionInfo{}, command, cwd, m.currentStripEnvVars(), m.agentMCPServers())
+	if err != nil {
+		return err
+	}
+	return session.acp.Stop(context.Background())
+}
+
 func (a *ACP) Stop(ctx context.Context) error {
 	_ = a.stdin.Close()
 	err := killSessionProcess(a.cmd.Process)
@@ -278,7 +338,8 @@ func (a *ACP) receive(message acpEnvelope) {
 		var params struct {
 			SessionID string `json:"sessionId"`
 			Update    struct {
-				SessionUpdate string `json:"sessionUpdate"`
+				SessionUpdate string            `json:"sessionUpdate"`
+				ConfigOptions []ACPConfigOption `json:"configOptions"`
 				Content       struct {
 					Type string `json:"type"`
 					Text string `json:"text"`
@@ -296,6 +357,8 @@ func (a *ACP) receive(message acpEnvelope) {
 		defer a.mu.Unlock()
 		u := params.Update
 		switch u.SessionUpdate {
+		case "config_option_update":
+			a.state.ConfigOptions = u.ConfigOptions
 		case "agent_message_chunk":
 			if u.Content.Type != "text" {
 				return
@@ -352,6 +415,8 @@ func (a *ACP) receive(message acpEnvelope) {
 
 func (a *ACP) Command(command ACPCommand) error {
 	switch command.Type {
+	case "config":
+		return a.configure(command.ID, command.Value)
 	case "prompt":
 		return a.prompt(command.Text, command.ID)
 	case "cancel":
@@ -422,7 +487,7 @@ func (a *ACP) prompt(text, submissionID string) error {
 			}
 		}
 	}
-	if !a.state.Connected || a.state.Busy {
+	if !a.state.Connected || a.state.Busy || a.state.Configuring {
 		a.mu.Unlock()
 		return errors.New("ACP agent is disconnected or busy")
 	}

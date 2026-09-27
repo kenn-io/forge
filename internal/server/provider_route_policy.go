@@ -361,6 +361,7 @@ var providerRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "search-docs", Owner: NodeLocal},
 	{OperationID: "search-docs-folder", Owner: NodeLocal},
 	{OperationID: "set-active-worktree", Owner: NodeLocal},
+	{OperationID: "test-acp-agent", Owner: NodeLocal},
 	{OperationID: "set-fleet-project-worktree-links", Owner: NodeLocal},
 	{OperationID: "set-fleet-project-worktree-session-backend", Owner: NodeLocal},
 	{OperationID: "set-issue-assignees", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},

@@ -4,17 +4,79 @@ import { createInterface } from "node:readline";
 const write = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
 const update = (value) => write({ method: "session/update", params: { sessionId: "workspace-chat", update: value } });
 let prompt;
+let configOptions = [
+  {
+    id: "model",
+    name: "Model",
+    category: "model",
+    type: "select",
+    currentValue: "fast",
+    options: [
+      {
+        group: "models",
+        name: "Available models",
+        options: [
+          { value: "fast", name: "Fast" },
+          { value: "deep", name: "Deep" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "effort",
+    name: "Effort",
+    category: "thought_level",
+    type: "select",
+    currentValue: "low",
+    options: [
+      { value: "low", name: "Low" },
+      { value: "high", name: "High" },
+    ],
+  },
+  {
+    id: "mode",
+    name: "Mode",
+    category: "mode",
+    type: "select",
+    currentValue: "ask",
+    options: [
+      { value: "ask", name: "Ask" },
+      { value: "plan", name: "Plan" },
+    ],
+  },
+];
 for await (const line of createInterface({ input: process.stdin })) {
   const request = JSON.parse(line);
   switch (request.method) {
     case "initialize":
-      write({ id: request.id, result: { protocolVersion: 1, agentCapabilities: {} } });
+      write({ id: request.id, result: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true } } } });
       break;
     case "session/new":
       if (realpathSync(request.params.cwd) !== realpathSync(process.cwd()))
         throw new Error("Wrong workspace directory");
-      write({ id: request.id, result: { sessionId: "workspace-chat" } });
+      for (const server of request.params.mcpServers) {
+        if (server.name !== "kenn-forge") throw new Error("Unexpected MCP server");
+        const response = await fetch(server.url, {
+          method: "POST",
+          headers: {
+            ...Object.fromEntries(server.headers.map((header) => [header.name, header.value])),
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+        });
+        if (!response.ok || !(await response.text()).includes("kenn_forge_"))
+          throw new Error("Forge MCP tools unavailable");
+      }
+      write({ id: request.id, result: { sessionId: "workspace-chat", configOptions } });
       break;
+    case "session/set_config_option": {
+      const option = configOptions.find((option) => option.id === request.params.configId);
+      option.currentValue = request.params.value;
+      if (option.id === "model") configOptions.find((option) => option.id === "effort").currentValue = "low";
+      write({ id: request.id, result: { configOptions } });
+      break;
+    }
     case "session/prompt":
       prompt = request.id;
       update({

@@ -15,6 +15,8 @@ import type {
   SetActiveWorktreeInputBody,
   SettingsResponse,
   StarredRequest,
+  TestACPAgentInputBody,
+  TestACPAgentResult,
   UnsetStarredParams,
   UpdateFleetSettingsInputBody,
   UpdateRepoPresetInputBody,
@@ -288,6 +290,31 @@ export const updateSettings = async (
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(updateSettingsRequest),
+  });
+};
+
+export const getTestAcpAgentUrl = () => {
+  return `/settings/agents/test-acp`;
+};
+
+/**
+ * @summary Test an ACP executable on this host
+ */
+export const testAcpAgent = async (
+  testACPAgentInputBody: NonReadonly<TestACPAgentInputBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<TestACPAgentResult> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<TestACPAgentResult>(getTestAcpAgentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(testACPAgentInputBody),
   });
 };
 

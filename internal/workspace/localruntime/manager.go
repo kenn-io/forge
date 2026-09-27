@@ -106,6 +106,10 @@ type RestoredRuntimeSession struct {
 }
 
 type Options struct {
+	AgentMCPURL        string
+	AgentMCPToken      string
+	ACPPreferencesPath string
+
 	Targets      []LaunchTarget
 	ShellCommand []string
 	TmuxCommand  []string
@@ -143,6 +147,12 @@ type Options struct {
 }
 
 type Manager struct {
+	agentMCPURL        string
+	agentMCPToken      string
+	acpPreferencesMu   sync.Mutex
+	acpPreferencesPath string
+	acpPreferences     map[string]map[string]string
+
 	mu                sync.Mutex
 	targets           map[string]LaunchTarget
 	targetsList       []LaunchTarget
@@ -288,6 +298,11 @@ func NewManager(options Options) *Manager {
 		targetsList = append(targetsList, cloneTarget(cloned))
 	}
 	return &Manager{
+		agentMCPURL:        options.AgentMCPURL,
+		agentMCPToken:      options.AgentMCPToken,
+		acpPreferencesPath: options.ACPPreferencesPath,
+		acpPreferences:     make(map[string]map[string]string),
+
 		targets:           targets,
 		targetsList:       targetsList,
 		sessions:          make(map[string]*session),
@@ -2068,7 +2083,7 @@ func (m *Manager) startOwnedSession(
 	extraStripVars []string,
 ) (*session, error) {
 	if info.Kind == LaunchTargetACP {
-		return startACPSession(ctx, info, command, cwd, extraStripVars)
+		return m.startACP(ctx, info, command, cwd, extraStripVars)
 	}
 	if info.TmuxSession != "" {
 		return startTmuxAttachSession(info, command, cwd, extraStripVars)

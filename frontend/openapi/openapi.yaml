@@ -9643,6 +9643,42 @@ components:
       required:
         - path
       type: object
+    TestACPAgentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/TestACPAgentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        command:
+          items:
+            type: string
+          minItems: 1
+          type: array
+      required:
+        - command
+      type: object
+    TestACPAgentResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/TestACPAgentResult.json
+          format: uri
+          readOnly: true
+          type: string
+        message:
+          type: string
+        valid:
+          type: boolean
+      required:
+        - valid
+        - message
+      type: object
     TmuxSessionInfo:
       additionalProperties: false
       properties:
@@ -24660,6 +24696,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Update settings
+      tags:
+        - Settings
+  /settings/agents/test-acp:
+    post:
+      operationId: test-acp-agent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestACPAgentInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestACPAgentResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Test an ACP executable on this host
       tags:
         - Settings
   /settings/fleet:

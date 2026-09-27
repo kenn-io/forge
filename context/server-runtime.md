@@ -294,6 +294,9 @@ and the root event stream.
 
 ## Long-Lived Transport Inventory
 
+- Register ownership for every new Huma operation, including host-scoped variants;
+  an omitted declaration breaks the shared route index for all requests
+  (`internal/server/provider_route_policy.go::providerRouteIndex`).
 - Long-lived HTTP and WebSocket contracts derive from the Huma registrations;
   catch-all proxies declare finite streaming variants on their operation, and
   tracing consumes the same inventory (`internal/server/transport_inventory.go::NewTransportInventory`).

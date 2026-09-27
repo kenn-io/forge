@@ -207,6 +207,8 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "get-local-settings", Owner: NodeLocal},
 	{OperationID: "get-markdown-image", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-markdown-image-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "get-pr-reviewer-accounts", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "get-pr-reviewer-accounts-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-pr-review-draft", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-pr-review-draft-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-project", Owner: NodeLocal},

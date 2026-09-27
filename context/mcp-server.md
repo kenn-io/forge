@@ -12,10 +12,10 @@
 - PR contexts preserve cached label names. Exact label filters run in the
   provider-owned list query before pagination, including across hub transport
   (`internal/server/mcp_backend.go::mcpBackend.ListPulls`).
-- ACP launches and connection tests inject Forge through the execution host's authenticated
-  `/agent-mcp` endpoint, independent of the optional companion listener; native harness
-  servers and skills stay agent-owned (`internal/workspace/localruntime/agent_mcp.go::Manager.agentMCPServers`).
-- MCP is an optional daemon-owned secondary listener enabled by
+- ACP launches and connection tests use a dedicated authenticated loopback HTTP listener
+  on the execution host, independent of browser Host/proxy policy and companion settings;
+  native harness servers and skills stay agent-owned (`cmd/kenn-forge/agent_mcp.go::newAgentMCPHTTP`).
+- The companion uses an optional daemon-owned listener enabled by
   `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
   a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).
 - The listener is startup-bound and loopback-only. Discovery publishes

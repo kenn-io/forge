@@ -223,7 +223,6 @@ type Server struct {
 	// tailnetMCP serves /mcp on this listener for allowlisted Tailscale
 	// Serve users; nil until the MCP companion is initialized.
 	tailnetMCP             atomic.Pointer[http.Handler]
-	agentMCP               atomic.Pointer[http.Handler]
 	buildInfo              BuildInfo
 	now                    func() time.Time
 	handler                http.Handler
@@ -1662,9 +1661,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.checkHost(w, r) {
-		return
-	}
-	if s.serveAgentMCP(w, r) {
 		return
 	}
 	if s.serveTailnetMCP(w, r) {

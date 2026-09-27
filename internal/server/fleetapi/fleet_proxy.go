@@ -964,7 +964,7 @@ func (s *Handler) serveFleetWebSocketProxy(
 	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
 
 	if r.URL.Query().Get("protocol") == "acp" {
-		clientConn.SetReadLimit(128 << 10)
+		clientConn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
 		// The peer publishes complete transcripts, not terminal chunks.
 		peerConn.SetReadLimit(-1)
 	}

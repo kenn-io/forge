@@ -74,7 +74,9 @@
   });
   function send() {
     if (!canSend) return;
-    const submission = { id: crypto.randomUUID(), text: draft };
+    // getRandomValues is available on plain HTTP origins as well as HTTPS.
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
+    const submission = { id, text: draft };
     error = "";
     if (connection?.send({type: "prompt", ...submission})) { pending = submission; follow = true; }
   }

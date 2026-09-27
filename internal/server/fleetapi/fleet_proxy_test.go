@@ -142,7 +142,7 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 				return
 			}
 			defer conn.Close(websocket.StatusNormalClosure, "done")
-			conn.SetReadLimit(128 << 10)
+			conn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
 			peerExtensions <- w.Header().Get("Sec-WebSocket-Extensions")
 			peerHeaders <- r.Header.Clone()
 
@@ -190,7 +190,7 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
-	conn.SetReadLimit(128 << 10)
+	conn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
 	require.NotNil(resp)
 
 	clientExtensions := resp.Header.Get("Sec-WebSocket-Extensions")
@@ -242,7 +242,7 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	assert.Equal(websocket.MessageText, typ)
 	assert.JSONEq(terminalwebsocket.HeartbeatMessage, string(got))
 	// ACP uses text frames over this same host-selected runtime connection.
-	prompt := `{"type":"prompt","id":"submission-1","text":"` + strings.Repeat("x", 40<<10) + `"}`
+	prompt := `{"type":"prompt","id":"submission-1","text":"` + strings.Repeat(`\u0000`, 64<<10) + `"}`
 	require.NoError(conn.Write(ctx, websocket.MessageText, []byte(prompt)))
 	typ, got, err = conn.Read(ctx)
 	require.NoError(err)

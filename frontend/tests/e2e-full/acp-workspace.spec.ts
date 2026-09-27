@@ -1,3 +1,5 @@
+import { createServer, request as httpRequest } from "node:http";
+import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { devices, expect, request, test } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer } from "./support/e2eServer";
@@ -12,7 +14,65 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
   test.setTimeout(120_000);
   const server = await startIsolatedWorkspaceE2EServer();
   const api = await request.newContext({ baseURL: server.info.base_url });
+  // A real non-loopback HTTP origin keeps secure-context-only APIs unavailable.
+  const upstream = new URL(server.info.base_url);
+  const host = Object.values(networkInterfaces())
+    .flat()
+    .find((address) => address?.family === "IPv4" && !address.internal)?.address;
+  if (!host) throw new Error("A non-loopback address is required for the plain HTTP chat test");
+  let origin = "";
+  const sockets = new Set<{ destroy(): void }>();
+  const proxy = createServer((incoming, outgoing) => {
+    const headers = { ...incoming.headers, host: upstream.host };
+    if (headers.origin === origin) headers.origin = upstream.origin;
+    const forwarded = httpRequest(
+      new URL(incoming.url ?? "/", upstream),
+      { method: incoming.method, headers },
+      (response) => {
+        outgoing.writeHead(response.statusCode ?? 502, response.headers);
+        response.pipe(outgoing);
+      },
+    );
+    forwarded.on("error", () => {
+      outgoing.writeHead(502);
+      outgoing.end();
+    });
+    incoming.pipe(forwarded);
+  });
+  proxy.on("upgrade", (incoming, client, head) => {
+    const headers = { ...incoming.headers, host: upstream.host };
+    if (headers.origin === origin) headers.origin = upstream.origin;
+    const forwarded = httpRequest(new URL(incoming.url ?? "/", upstream), { headers });
+    sockets.add(client);
+    client.on("close", () => sockets.delete(client));
+    client.on("error", () => forwarded.destroy());
+    forwarded.on("error", () => client.destroy());
+    forwarded.on("upgrade", (response, peer, peerHead) => {
+      sockets.add(peer);
+      peer.on("close", () => sockets.delete(peer));
+      peer.on("error", () => client.destroy());
+      client.on("close", () => peer.destroy());
+      peer.on("close", () => client.destroy());
+      const responseHeaders = response.rawHeaders.reduce<string[]>((lines, value, index) => {
+        if (index % 2 === 0) lines.push(`${value}: ${response.rawHeaders[index + 1]}`);
+        return lines;
+      }, []);
+      client.write(`HTTP/1.1 101 Switching Protocols\r\n${responseHeaders.join("\r\n")}\r\n\r\n`);
+      if (head.length) peer.write(head);
+      if (peerHead.length) client.write(peerHead);
+      client.pipe(peer);
+      peer.pipe(client);
+    });
+    forwarded.end();
+  });
   try {
+    await new Promise<void>((resolve, reject) => {
+      proxy.once("error", reject);
+      proxy.listen(0, host, resolve);
+    });
+    const address = proxy.address();
+    if (!address || typeof address === "string") throw new Error("Missing proxy address");
+    origin = `http://${host}:${address.port}`;
     await page.goto(`${server.info.base_url}/settings`);
     await openSettingsPanel(page, "Workspace agents");
     await page.getByRole("button", { name: "Add custom agent" }).click();
@@ -55,7 +115,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     expect(launched.status(), await launched.text()).toBe(200);
     const session = await launched.json();
     expect(session.kind).toBe("acp");
-    await page.goto(`${server.info.base_url}/terminal/${workspace.id}`);
+    await page.goto(`${origin}/terminal/${workspace.id}`);
+    expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+    expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe("undefined");
     await page.getByRole("tab", { name: /Workspace Chat,/ }).click();
     const chat = page.getByRole("region", { name: "Workspace Chat chat" });
     await expect(chat).toBeVisible();
@@ -79,11 +141,17 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(chat.getByText("Permission received. The turn is complete.")).toBeVisible();
     await page.reload();
     await expect(chat.getByText("Permission received. The turn is complete.")).toBeVisible();
+    // An accepted 64 KiB prompt exceeds 128 KiB once JSON escapes are included.
+    await chat.getByRole("textbox", { name: "Message agent" }).fill('"'.repeat(65536));
+    await chat.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(chat.getByRole("button", { name: "Allow once" })).toBeVisible();
+    await chat.getByRole("button", { name: "Allow once" }).click();
+    await expect(chat.getByRole("button", { name: "Stop reply" })).toHaveCount(0);
 
     const phone = await browser.newContext({ ...devices["iPhone 13"] });
     try {
       const mobile = await phone.newPage();
-      await mobile.goto(`${server.info.base_url}/m/workspaces/local/${workspace.id}`);
+      await mobile.goto(`${origin}/m/workspaces/local/${workspace.id}`);
       // Select the chat session in the phone's single-session workspace view.
       const mobileChat = mobile.getByRole("region", { name: "Workspace Chat chat" });
       if (!(await mobileChat.isVisible())) {
@@ -107,6 +175,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
       await phone.close();
     }
   } finally {
+    for (const socket of sockets) socket.destroy();
+    proxy.closeAllConnections();
+    await new Promise<void>((resolve, reject) => proxy.close((error) => (error ? reject(error) : resolve())));
     await api.dispose();
     await server.stop();
   }

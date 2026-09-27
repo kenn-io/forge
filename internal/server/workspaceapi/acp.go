@@ -17,7 +17,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent *localruntime.ACP) {
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "chat detached")
-	conn.SetReadLimit(128 << 10)
+	conn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	changes, unsubscribe := agent.Subscribe()

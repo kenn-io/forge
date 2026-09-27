@@ -1,6 +1,6 @@
-// Operator highlights are drawn in a layer behind the native input, so they
-// only mean anything if they line up with the input's own glyphs. jsdom has no
-// layout, so alignment is asserted here against real Chromium text metrics.
+// While a query has operators, a layer redraws its text over a transparent
+// native input, so the layer must line up with the input's own glyphs. jsdom
+// has no layout, so alignment is asserted here against real Chromium metrics.
 
 import { describe, expect, it } from "vite-plus/test";
 import { render } from "vitest-browser-svelte";
@@ -38,12 +38,15 @@ async function renderSearch(value: string, block: boolean) {
 }
 
 describe("QuerySearchInput (browser)", () => {
-  it("draws each operator tint under the matching input characters", async () => {
+  it("redraws the query exactly over the input's own glyphs", async () => {
     const value = "fix NOT alice !bob";
     const { container, input, marks } = await renderSearch(value, true);
 
     expect(marks.map((mark) => mark.textContent)).toEqual(["NOT", "!"]);
     const inputLeft = input.getBoundingClientRect().left;
+    const text = container.querySelector<HTMLElement>(".query-field__text")!.getBoundingClientRect();
+    expect(Math.abs(text.left - inputLeft)).toBeLessThanOrEqual(1);
+    expect(Math.abs(text.width - textWidth(input, value))).toBeLessThanOrEqual(1);
     for (const [mark, start] of [
       [marks[0]!, value.indexOf("NOT")],
       [marks[1]!, value.indexOf("!")],
@@ -52,13 +55,31 @@ describe("QuerySearchInput (browser)", () => {
       expect(Math.abs(rect.left - (inputLeft + textWidth(input, value.slice(0, start))))).toBeLessThanOrEqual(1);
       expect(Math.abs(rect.width - textWidth(input, mark.textContent!))).toBeLessThanOrEqual(1);
     }
-    // The input must paint above the tint so its text and caret stay on top.
-    // The layer ignores pointers, so make it hit-testable to probe paint order.
+  });
+
+  it("colors operators while the input hides its text but keeps its caret", async () => {
+    const { container, input, marks } = await renderSearch("fix NOT alice", true);
+    const transparent = "rgba(0, 0, 0, 0)";
+    const inputStyle = getComputedStyle(input);
+    expect(inputStyle.color).toBe(transparent);
+    expect(inputStyle.caretColor).not.toBe(transparent);
+
+    const layerText = container.querySelector<HTMLElement>(".query-field__text")!;
+    expect(getComputedStyle(layerText).color).toBe(inputStyle.caretColor);
+    expect(getComputedStyle(marks[0]!).color).not.toBe(getComputedStyle(layerText).color);
+
+    // The layer ignores pointers, so make it hit-testable to probe paint order:
+    // its glyphs must be drawn above the transparent input.
     const layer = container.querySelector<HTMLElement>(".query-field__layer")!;
     layer.style.pointerEvents = "auto";
-    marks[0]!.style.pointerEvents = "auto";
     const rect = marks[0]!.getBoundingClientRect();
-    expect(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)).toBe(input);
+    expect(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)).toBe(marks[0]);
+  });
+
+  it("leaves queries without operators to the native input", async () => {
+    const { container, input } = await renderSearch("do not merge", true);
+    expect(getComputedStyle(input).color).not.toBe("rgba(0, 0, 0, 0)");
+    expect(container.querySelector<HTMLElement>(".query-field__layer")!.hidden).toBe(true);
   });
 
   it("follows the input's horizontal scroll for long queries", async () => {

@@ -2,10 +2,11 @@
   import { SearchInput } from "@kenn-io/kit-ui";
   import { searchQueryOperators } from "../../utils/search-query.js";
 
-  // Search field for list queries that understand negation. Operators ("!",
-  // uppercase "NOT") get a tinted background drawn in a layer beneath the
-  // transparent native input, so the visible text is always the real input
-  // text and a layout drift can only move the tint, never the characters.
+  // Search field for list queries that understand negation. A native input
+  // cannot color part of its text, so while the query contains an operator
+  // ("!", uppercase "NOT") a layer redraws the whole query over the input with
+  // operators in the accent color, and the input's own text turns transparent
+  // while it keeps the caret, selection, and all interaction.
 
   interface Props {
     value?: string;
@@ -88,7 +89,7 @@
   {block}
   {ariaLabel}
   oninput={(next) => oninput?.(next)}
-  class="query-field"
+  class={hasOperators ? "query-field query-field--operators" : "query-field"}
 />
 <!-- The #if keeps a comment anchor in this component's DOM range, so moving
      the layer into the kit field cannot confuse Svelte's sibling teardown. -->
@@ -104,8 +105,8 @@
     {@attach trackInput}
   >
     <span class="query-field__text" style:transform="translateX({-scrollLeft}px)"
-      >{#each segments as segment (segment.start)}{#if segment.operator}<mark
-            class="query-field__operator">{segment.text}</mark
+      >{#each segments as segment (segment.start)}{#if segment.operator}<span
+            class="query-field__operator">{segment.text}</span
           >{:else}{segment.text}{/if}{/each}</span
     >
   </div>
@@ -116,10 +117,11 @@
     position: relative;
   }
 
-  /* The kit input is transparent. Positioning it after the layer in DOM order
-   * paints its text, caret, and selection above the operator tint. */
-  :global(.query-field .kit-text-input__control) {
-    position: relative;
+  /* The layer draws the visible text; the input keeps a visible caret, and its
+   * selection highlight shows through beneath the layer's glyphs. */
+  :global(.query-field--operators .kit-text-input__control) {
+    color: transparent;
+    caret-color: var(--text-primary);
   }
 
   .query-field__layer {
@@ -140,13 +142,9 @@
     /* Inputs reset text-rendering to auto; the page default would otherwise
      * be inherited here and could kern the layer differently. */
     text-rendering: auto;
-    color: transparent;
   }
 
   .query-field__operator {
-    color: transparent;
-    background: color-mix(in srgb, var(--accent-blue) 24%, transparent);
-    border-radius: var(--radius-sm);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 24%, transparent);
+    color: var(--accent-blue);
   }
 </style>

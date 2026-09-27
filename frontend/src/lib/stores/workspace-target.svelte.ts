@@ -13,11 +13,16 @@ export function devboxRepositoryUnavailableReason(repo: Repository): string {
     : "Devboxes currently support only github.com repositories. Choose this Forge machine or a fleet host.";
 }
 
-export function workspaceTargetUnavailableReason(host: HostSummary, repo: Repository): string {
+export function workspaceTargetUnavailableReason(
+  host: HostSummary,
+  repo: Repository,
+  availabilityFresh: boolean,
+): string {
   if (host.kind === "devbox") {
     const reason = devboxRepositoryUnavailableReason(repo);
     if (reason) return reason;
   }
+  if (!availabilityFresh) return "";
   const availability = host.operationAvailability.workspaceWrite;
   return availability?.available === true
     ? ""
@@ -65,7 +70,7 @@ export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () 
     const unsupported = devboxRepositoryUnavailableReason(repo);
     if (unsupported) return unsupported;
     const host = hosts?.find((candidate) => candidate.configKey === hostKey);
-    if (host) return workspaceTargetUnavailableReason(host, repo);
+    if (host) return workspaceTargetUnavailableReason(host, repo, checked);
     // The create route validates this exact devbox; discovery is not admission.
     return checked ? "Your preferred machine is unavailable. Choose another default in Settings → Workspaces." : "";
   });

@@ -22,8 +22,8 @@ or remote workspace and session operations.
   (`frontend/src/lib/components/layout/ForgeSelector.svelte`)
 - Maintenance blocks workspace creation without hiding existing workspaces or marking the worker
   unreachable. (`internal/fleet/enrich.go::buildHost`)
-- Creation may submit the exact saved devbox ID while directory loading is pending or fails; backend admission checks availability.
-  Known maintenance/provider restrictions still block, and an unavailable default must never silently create locally.
+- Cached machine availability must not block creation while discovery is pending or fails; submit the exact saved devbox ID for backend admission.
+  Fresh maintenance status and provider restrictions still block, and an unavailable default must never silently create locally.
   (`frontend/src/lib/stores/workspace-target.svelte.ts`)
 - Validate saved default destinations on config load and settings writes, but preserve valid
   devbox selections while disconnected. (`internal/config/devbox.go::ValidateDefaultExecutionTarget`)

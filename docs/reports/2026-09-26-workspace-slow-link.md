@@ -276,7 +276,7 @@ currently impose a slow-link profile.
   this branch and with all pending Go changes restored to the starting commit
   through an overlay. A single focused run passed. No clean full server run is
   claimed.
-- After the final frontend edit, the full Vitest suite passed 4,302 tests and
+- After the final frontend edit, the full Vitest suite passed 4,304 tests and
   skipped one across 393 passing files and one skipped file. Frontend formatting,
   lint, Svelte/type checks, and Effect diagnostics pass.
 - All 102 full-stack cases in workspace creation/launch, workspace launcher,
@@ -306,3 +306,9 @@ currently impose a slow-link profile.
 - The real-backend workspace creation and launch suite passes all 20 cases
   across both browsers after the production changes. Go lint, formatting,
   nilaway, and frontend checks also pass.
+- Cached unavailable machines remain selectable and usable during pending or
+  failed discovery; fresh unavailable results and provider restrictions still
+  block creation. Component regressions reproduce the old gates and verify the
+  exact saved destination. The full frontend suite passes with one worker;
+  an earlier parallel run passed its assertions but exited with file-watcher
+  `EMFILE` errors. No assertions or host limits were changed.

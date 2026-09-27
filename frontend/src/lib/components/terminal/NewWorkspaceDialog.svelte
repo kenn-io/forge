@@ -364,7 +364,7 @@
       const reason = devboxRepositoryUnavailableReason(selected);
       if (reason) return reason;
     }
-    if (selectedWorkspaceHost) return workspaceTargetUnavailableReason(selectedWorkspaceHost, selected);
+    if (selectedWorkspaceHost) return workspaceTargetUnavailableReason(selectedWorkspaceHost, selected, workspaceHostsLoaded);
     if (!selectedWorkspaceHostKey) return "";
     return workspaceHostsLoaded
       ? "Your selected machine is unavailable. Choose another machine or reconnect it in Settings → Workspaces."
@@ -378,7 +378,7 @@
     ...(!workspaceHosts.some((host) => host.kind === "self") ? [{ value: "", label: "This Forge machine" }] : []),
     ...workspaceHosts.map((host) => {
       const unavailableReason = selected
-        ? workspaceTargetUnavailableReason(host, selected)
+        ? workspaceTargetUnavailableReason(host, selected, workspaceHostsLoaded)
         : "Pick a repository first.";
       return {
         value: host.kind === "self" ? "" : host.configKey,

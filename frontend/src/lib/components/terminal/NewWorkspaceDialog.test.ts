@@ -537,7 +537,7 @@ describe("NewWorkspaceDialog", () => {
     );
   });
 
-  it("restores known machines across modal remounts while refreshing and blocks a removed choice", async () => {
+  it("restores cached unavailable machines while refreshing and blocks a freshly removed choice", async () => {
     const snapshot = Promise.withResolvers<unknown>();
     let refreshing = false;
     mockGet.mockImplementation((path: string) =>
@@ -558,7 +558,9 @@ describe("NewWorkspaceDialog", () => {
                     configKey: "devbox:compute-a",
                     kind: "devbox",
                     name: "Compute A",
-                    operationAvailability: { workspaceWrite: { available: true } },
+                    operationAvailability: {
+                      workspaceWrite: { available: false, unavailableReason: "Devbox is in maintenance" },
+                    },
                   },
                 ],
               },
@@ -572,6 +574,7 @@ describe("NewWorkspaceDialog", () => {
     await renderDialog();
     await fireEvent.click(await screen.findByRole("combobox", { name: "Workspace machine: Studio (this machine)" }));
     await fireEvent.click(screen.getByRole("option", { name: "Compute A (devbox)" }));
+    await screen.findByRole("combobox", { name: "Workspace machine: Compute A (devbox)" });
     expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
     snapshot.resolve({
       data: {

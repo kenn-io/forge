@@ -15,7 +15,7 @@ import { apiErrorMessage } from "../api/runtime.js";
 
 export interface ExternalContextPull {
   readonly ref: ProviderRouteRef;
-  readonly platformRepoId: string;
+  readonly platformRepoId: number;
   readonly number: number;
   readonly headSha: string;
 }

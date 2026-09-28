@@ -10,7 +10,7 @@ vi.mock("../../app/runtime-context.js", () => ({ getAppRuntime: () => runtimeCap
 
 const props = {
   ref: { provider: "github", owner: "example", name: "project", repoPath: "example/project" },
-  platformRepoId: "123",
+  platformRepoId: 123,
   number: 42,
   headSha: "a".repeat(40),
 };
@@ -138,7 +138,7 @@ describe("external PR context", () => {
     expect(posts[0]?.url).toBe(
       "/api/v1/host/code.example.test/pulls/gitlab/team%2Ftools/project/42/external-context/checks/actions/run",
     );
-    expect(posts[0]?.body).toEqual({ platform_repo_id: "123", head_sha: "a".repeat(40) });
+    expect(posts[0]?.body).toEqual({ platform_repo_id: 123, head_sha: "a".repeat(40) });
     await view.rerender({ ...hostProps, number: 43 });
     expect(await screen.findByText("Another PR")).toBeTruthy();
     expect(posts[0]?.signal?.aborted).toBe(false);

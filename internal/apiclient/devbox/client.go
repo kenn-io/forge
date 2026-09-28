@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
+	"go.kenn.io/forge/internal/apiclient/paramcodec"
 )
 
 // PostAPIV1DevboxesByHostIDConnectRequestOptions is the options needed to make a request to PostAPIV1DevboxesByHostIDConnect.
@@ -20,7 +21,7 @@ type PostAPIV1DevboxesByHostIDConnectRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PostAPIV1DevboxesByHostIDConnectRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +58,7 @@ func (o *EraseDevboxCredentialRequestOptions) GetPathParams() (map[string]any, e
 
 // GetQuery returns the query params as a map.
 func (o *EraseDevboxCredentialRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.

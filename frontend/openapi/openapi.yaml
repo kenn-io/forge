@@ -2773,8 +2773,9 @@ components:
           minLength: 1
           type: string
         platform_repo_id:
-          minLength: 1
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
       required:
         - platform_repo_id
         - head_sha
@@ -17621,8 +17622,9 @@ paths:
           name: platform_repo_id
           required: true
           schema:
-            minLength: 1
-            type: string
+            format: int64
+            minimum: 1
+            type: integer
         - explode: false
           in: query
           name: refresh
@@ -22575,8 +22577,9 @@ paths:
           name: platform_repo_id
           required: true
           schema:
-            minLength: 1
-            type: string
+            format: int64
+            minimum: 1
+            type: integer
         - explode: false
           in: query
           name: refresh

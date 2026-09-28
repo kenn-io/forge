@@ -10,6 +10,6 @@ export interface ExternalContextActionRequest {
    * @maxLength 128
    */
   head_sha: string;
-  /** @minLength 1 */
-  platform_repo_id: string;
+  /** @minimum 1 */
+  platform_repo_id: number;
 }

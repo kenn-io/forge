@@ -13,7 +13,7 @@ for (const [kind, path] of [
     await mockApi(page);
     await page.route(`**/api/v1${path}`, async (route) => {
       const response = api.handle({ method: "GET", url: new URL(route.request().url()), bodyText: "" });
-      const detail = (await response.json()) as { repo: { platform_repo_id: string } };
+      const detail = (await response.json()) as { repo: { platform_repo_id: number } };
       detail.repo.platform_repo_id = repositoryId;
       await route.fulfill({ json: detail });
     });

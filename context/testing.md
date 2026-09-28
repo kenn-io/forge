@@ -372,6 +372,12 @@ ID; those names feed checked-in generated clients, so changing an
 `OperationID` is a generated-client API change even when the HTTP path is
 unchanged.
 
+Generated Go clients encode path and query parameters through
+`paramcodec.Map`, never the generator's `runtime.AsMap`, which routes numbers
+through float64 and sends large IDs in exponent form. Cover new integer
+parameters with real-size values (`internal/apiclient/generated/templates/client-options.tmpl`,
+`internal/apiclient/generated/client_query_test.go`).
+
 Health routes on the separate health Huma API intentionally disable OpenAPI and
 docs output. Terminal and proxy routes registered through `Adapter().Handle`
 must stay hidden or on a docs-disabled API unless they are promoted to public

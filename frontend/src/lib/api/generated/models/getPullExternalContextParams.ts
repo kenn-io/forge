@@ -4,8 +4,8 @@
 
 export type GetPullExternalContextParams = {
   /**
-   * @minLength 1
+   * @minimum 1
    */
-  platform_repo_id: string;
+  platform_repo_id: number;
   refresh?: boolean;
 };

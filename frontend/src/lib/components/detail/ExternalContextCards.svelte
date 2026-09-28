@@ -17,7 +17,7 @@
 
   interface Props {
     ref: ProviderRouteRef;
-    platformRepoId: string;
+    platformRepoId: number;
     number: number;
     headSha: string;
   }

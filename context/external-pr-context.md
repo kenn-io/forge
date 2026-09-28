@@ -47,9 +47,9 @@ body text, and diffs are excluded (`internal/externalcontext/types.go::PullReque
 For the same resolved repository, `pull_request.platform_repo_id` and the archive
 snapshot's `repositories[].provider_id` carry the same `repo.PlatformRepoID` value
 (`internal/server/external_context.go::Server.externalContextPull`, `internal/archive/snapshot.go::Service.snapshot`).
-Match across contracts using provider, host, and this opaque ID. For GitHub it is
-the node ID (`node_id`), not the numeric database ID (`id`)
-(`platform/github/provider.go::GitHubPlatformRepository`).
+Match across contracts using provider, host, and this ID: the provider's
+integer repository ID (GitHub's numeric `id`, never `node_id`), sent as a JSON
+integer (`platform/repository_identity.go::RepositoryIdentity`).
 
 Responses contain `card`, with null meaning not applicable. A card has
 `status` (`neutral`, `pending`, `success`, `warning`, `error`) and `summary`.

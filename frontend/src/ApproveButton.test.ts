@@ -27,7 +27,7 @@ const defaultProps = {
   name: "widget",
   repoPath: "acme/widget",
   number: 1,
-  supportedReviewActions: [] as string[],
+  supportedReviewActions: ["comment", "approve"],
   oncompleted: undefined as (() => void) | undefined,
 };
 
@@ -95,7 +95,7 @@ describe("ApproveButton tooltips", () => {
   });
 
   it("submits a change request with the typed review comment", async () => {
-    renderApproveButton({ supportedReviewActions: ["approve", "request_changes"] });
+    renderApproveButton({ supportedReviewActions: ["comment", "approve", "request_changes"] });
 
     await fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
     const requestChanges = screen.getByRole("button", { name: "Request changes" });

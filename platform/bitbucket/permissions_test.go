@@ -14,7 +14,7 @@ func TestRepositoryMergeObservesPermissionAndDestinationStrategies(t *testing.T)
 		t.Run(permission, func(t *testing.T) {
 			c := client(t, "user@example.com:token", func(r *http.Request) (int, string) {
 				switch r.URL.Path {
-				case "/2.0/repositories/team/{11111111-1111-4111-8111-111111111111}":
+				case "/2.0/repositories/{}/{11111111-1111-4111-8111-111111111111}":
 					return 200, `{"uuid":"{11111111-1111-4111-8111-111111111111}","full_name":"team/widgets","mainbranch":{"name":"main"}}`
 				case "/2.0/user/workspaces/team/permissions/repositories":
 					return 200, `{"values":[{"permission":"admin","repository":{"uuid":"{22222222-2222-4222-8222-222222222222}"}}],"next":"https://api.bitbucket.org/2.0/permission-page-two"}`

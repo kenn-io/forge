@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SearchInput } from "@kenn-io/kit-ui";
+  import { Button, SearchInput } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import EraserIcon from "@lucide/svelte/icons/eraser";
   import XIcon from "@lucide/svelte/icons/x";
@@ -13,6 +13,7 @@
     loading?: boolean;
     pendingUser?: string | null;
     error?: string | null;
+    onretry?: (() => void) | undefined;
     autofocusFilter?: boolean;
     avatarUrlForUser?: ((username: string) => string) | undefined;
     /// The query the current candidates were fetched for. When set,
@@ -37,6 +38,7 @@
     loading = false,
     pendingUser = null,
     error = null,
+    onretry = undefined,
     autofocusFilter = false,
     avatarUrlForUser = undefined,
     candidatesQuery = undefined,
@@ -139,7 +141,12 @@
   </div>
 
   {#if error}
-    <div class="user-picker__error" role="alert">{error}</div>
+    <div class="user-picker__error" role="alert">
+      {error}
+      {#if onretry}
+        <Button size="sm" tone="neutral" surface="outline" disabled={loading} onclick={onretry}>Retry</Button>
+      {/if}
+    </div>
   {/if}
 
   <div class="user-picker__list" role="menu" aria-label="Users">

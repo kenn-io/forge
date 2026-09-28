@@ -306,7 +306,7 @@ async function renderWorkflowDetail() {
 describe("PullDetail provider workflow actions", () => {
   it("keeps review menus usable across compact and phone layouts", async () => {
     const { state, detailProps, wrapper } = await renderWorkflowDetail();
-    state.detail.repo.capabilities.supported_review_actions = ["request_changes"];
+    state.detail.repo.capabilities.supported_review_actions = ["comment", "request_changes"];
     await tick();
     const live = page.getByRole("button", { name: "Review options" });
     await expect.element(live).toBeVisible();

@@ -2,6 +2,7 @@ package bitbucket
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,10 +14,15 @@ import (
 )
 
 func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platform.Repository, error) {
-	target, err := repoURL(ref)
+	owner, name, err := repoParts(ref)
 	if err != nil {
 		return platform.Repository{}, err
 	}
+	if ref.PlatformExternalID != "" {
+		// Bitbucket's empty workspace placeholder resolves a UUID after a move or rename.
+		owner = "{}"
+	}
+	target := apiURL + "/repositories/" + url.PathEscape(owner) + "/" + url.PathEscape(name)
 	r, err := request[repository](ctx, c, http.MethodGet, target, nil)
 	if err != nil {
 		return platform.Repository{}, err
@@ -24,6 +30,9 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	repo, err := r.normalize()
 	if err != nil {
 		return repo, err
+	}
+	if ref.PlatformExternalID != "" && repo.PlatformExternalID != ref.PlatformExternalID {
+		return platform.Repository{}, platform.ProviderContract(c.Platform(), ref.Host, "repository identity", errors.New("repository UUID does not match requested identity"))
 	}
 	grants, err := c.repositoryPermissions(ctx, repo.Ref.Owner)
 	if err != nil {

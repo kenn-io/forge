@@ -84,6 +84,7 @@
   let submittingAction = $state<"approve" | "request_changes" | null>(null);
   let sectionEl = $state<HTMLDivElement | undefined>();
   let commentInput = $state<HTMLTextAreaElement | undefined>();
+  const canComment = $derived(supportedReviewActions.includes("comment"));
   const canRequestChanges = $derived(supportedReviewActions.includes("request_changes"));
 
   // Reset draft state on full provider-aware PR identity change so an
@@ -142,7 +143,7 @@
       stale: disabled,
       requireHeadPin,
       stores: { detail },
-      approveCommentBody: body,
+      approveCommentBody: canComment ? body : "",
       ...(pinAtOpen !== "" && { expectedHeadSha: pinAtOpen }),
       onHeadConflict: (...args) => {
         callbacks.onHandledHeadConflict();
@@ -400,14 +401,16 @@
   {#if expanded}
     <div class="approve-popover" role="dialog" aria-label="Submit pull request review">
       <Card level="default" padding="sm" class="approve-popover-card">
-        <textarea
-          bind:this={commentInput}
-          class="approve-comment"
-          aria-label={requestChangesForm ? "Requested changes" : "Review comment"}
-          placeholder={requestChangesForm ? "Explain the changes you are requesting…" : "Leave an optional comment…"}
-          bind:value={body}
-          rows={3}
-        ></textarea>
+        {#if canComment || requestChangesForm}
+          <textarea
+            bind:this={commentInput}
+            class="approve-comment"
+            aria-label={requestChangesForm ? "Requested changes" : "Review comment"}
+            placeholder={requestChangesForm ? "Explain the changes you are requesting…" : "Leave an optional comment…"}
+            bind:value={body}
+            rows={3}
+          ></textarea>
+        {/if}
         <div class="approve-actions">
         <Button
           class="btn btn--secondary"

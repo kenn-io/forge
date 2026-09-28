@@ -120,9 +120,10 @@
     });
   });
 
-  function fetchCandidates(query: string): void {
-    if (loadAccounts && accountDirectory && !accountDirectory.candidate_error) {
+  function fetchCandidates(query: string, refresh = false): void {
+    if (loadAccounts && accountDirectory && !refresh) {
       candidatesQuery = query;
+      candidatesError = accountDirectory.candidate_error || null;
       return;
     }
     candidateExecution?.interrupt();
@@ -353,6 +354,7 @@
         {candidatesQuery}
         {pendingUser}
         error={candidatesError}
+        onretry={loadAccounts ? () => fetchCandidates(candidatesQuery, true) : undefined}
         {autofocusFilter}
         avatarUrlForUser={loadAccounts
           ? (id) => accountDirectory?.accounts.find((account) => account.id === id)?.avatar_url ?? ""

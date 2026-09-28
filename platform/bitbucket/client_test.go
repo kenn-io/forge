@@ -39,9 +39,10 @@ func TestRepositoryIdentityAndAuthentication(t *testing.T) {
 		t.Run(token, func(t *testing.T) {
 			c := client(t, token, func(r *http.Request) (int, string) {
 				if strings.Contains(r.URL.Path, "/permissions/") {
+					assert.Equal("/2.0/user/workspaces/new-team/permissions/repositories", r.URL.Path)
 					return 403, `{}`
 				}
-				assert.Equal("/2.0/repositories/team/{11111111-1111-4111-8111-111111111111}", r.URL.Path)
+				assert.Equal("/2.0/repositories/{}/{11111111-1111-4111-8111-111111111111}", r.URL.Path)
 				if strings.Contains(token, ":") {
 					u, p, ok := r.BasicAuth()
 					assert.True(ok)
@@ -60,6 +61,28 @@ func TestRepositoryIdentityAndAuthentication(t *testing.T) {
 			assert.Equal("main", r.DefaultBranch)
 		})
 	}
+}
+
+func TestRepositoryLookupWithoutSavedIdentity(t *testing.T) {
+	lookup := ref
+	lookup.PlatformExternalID = ""
+	c := client(t, "secret", func(r *http.Request) (int, string) {
+		assert.Equal(t, "/2.0/repositories/team/widgets", r.URL.Path)
+		return 200, `{"uuid":"{11111111-1111-4111-8111-111111111111}","full_name":"team/widgets"}`
+	})
+	repo, err := c.GetRepository(t.Context(), lookup)
+	require.NoError(t, err)
+	assert.Equal(t, ref.PlatformExternalID, repo.PlatformExternalID)
+}
+
+func TestRepositoryLookupRejectsDifferentIdentity(t *testing.T) {
+	c := client(t, "secret", func(r *http.Request) (int, string) {
+		assert.Equal(t, "/2.0/repositories/{}/{11111111-1111-4111-8111-111111111111}", r.URL.Path)
+		return 200, `{"uuid":"{22222222-2222-4222-8222-222222222222}","full_name":"new-team/renamed"}`
+	})
+	repo, err := c.GetRepository(t.Context(), ref)
+	require.ErrorIs(t, err, platform.ErrProviderContract)
+	assert.Empty(t, repo.PlatformExternalID)
 }
 
 func TestPullPaginationAndNormalization(t *testing.T) {

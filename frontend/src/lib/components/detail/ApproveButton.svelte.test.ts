@@ -39,9 +39,45 @@ describe("ApproveButton", () => {
     cleanup();
     showFlash.mockReset();
   });
+
+  it.each([
+    { provider: "bitbucket", host: "bitbucket.example.com", actions: ["approve"], comment: "" },
+    { provider: "github", host: "github.com", actions: ["comment", "approve"], comment: "Looks good." },
+  ])("submits approval with supported actions $actions", async ({ provider, host, actions, comment }) => {
+    const post = vi.fn().mockResolvedValue({});
+    render(ApproveButton, {
+      props: {
+        owner: "acme",
+        name: "widget",
+        number: 7,
+        provider,
+        platformHost: host,
+        repoPath: "acme/widget",
+        supportedReviewActions: actions,
+      },
+      context: new Map<symbol, unknown>([[STORES_KEY, { detail: detailActions(post) }]]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
+    if (comment) {
+      await fireEvent.input(within(dialog).getByRole("textbox", { name: "Review comment" }), {
+        target: { value: comment },
+      });
+    } else {
+      expect(within(dialog).queryByRole("textbox")).toBeNull();
+    }
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith("/approve", { body: { body: comment } }));
+  });
+
   for (const action of [
     { label: "Approve", supportedReviewActions: [] as string[], error: "approval rejected" },
-    { label: "Request changes", supportedReviewActions: ["request_changes"], error: "change request rejected" },
+    {
+      label: "Request changes",
+      supportedReviewActions: ["comment", "request_changes"],
+      error: "change request rejected",
+    },
   ]) {
     it(`flashes a delayed ${action.label.toLowerCase()} failure after route navigation`, async () => {
       let resolvePost!: (value: { error: { detail: string } }) => void;
@@ -157,7 +193,7 @@ describe("ApproveButton", () => {
         platformHost: "github.com",
         repoPath: "acme/widget",
         expectedHeadSha: "reviewed-sha",
-        supportedReviewActions: ["request_changes"],
+        supportedReviewActions: ["comment", "request_changes"],
         platformRepoId: 7101,
         onheadconflict,
       },

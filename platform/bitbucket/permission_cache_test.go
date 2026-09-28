@@ -30,7 +30,7 @@ func TestPermissionInventoryCachedForWorkspaceAndCredential(t *testing.T) {
 			switch r.URL.Path {
 			case "/2.0/repositories/team":
 				body = `{"values":[{"uuid":"{11111111-1111-4111-8111-111111111111}","full_name":"team/widgets"},{"uuid":"{22222222-2222-4222-8222-222222222222}","full_name":"team/other"}]}`
-			case "/2.0/repositories/team/{11111111-1111-4111-8111-111111111111}":
+			case "/2.0/repositories/{}/{11111111-1111-4111-8111-111111111111}":
 				body = `{"uuid":"{11111111-1111-4111-8111-111111111111}","full_name":"team/widgets"}`
 			case "/2.0/user/workspaces/team/permissions/repositories":
 				permissionCalls++
@@ -90,7 +90,7 @@ func TestIncompletePermissionInventoryIsNotCached(t *testing.T) {
 	broken := true
 	c := client(t, "user@example.test:token", func(r *http.Request) (int, string) {
 		switch r.URL.Path {
-		case "/2.0/repositories/team/{11111111-1111-4111-8111-111111111111}":
+		case "/2.0/repositories/{}/{11111111-1111-4111-8111-111111111111}":
 			return 200, `{"uuid":"{11111111-1111-4111-8111-111111111111}","full_name":"team/widgets"}`
 		case "/2.0/user/workspaces/team/permissions/repositories":
 			calls++

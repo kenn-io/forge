@@ -94,13 +94,30 @@ func ParseRemoteURLWithKnownPlatforms(remote string, known []KnownPlatformHost) 
 	}
 
 	host = strings.ToLower(host)
-	path = strings.TrimSuffix(path, "/")
-	path = strings.TrimSuffix(path, ".git")
-	parts := strings.Split(path, "/")
 	platform, ok := resolvePlatform(host, known)
+	if !ok {
+		// Data Center's SSH authority may use a different port from its API.
+		// Only an explicitly configured Data Center host establishes that match.
+		for _, candidate := range known {
+			kind, err := platformpkg.NormalizeKind(candidate.Platform)
+			if err != nil || kind != platformpkg.KindBitbucket || strings.EqualFold(candidate.Host, platformpkg.DefaultBitbucketHost) {
+				continue
+			}
+			if platformpkg.ValidateRemoteHost(kind, candidate.Host, remote) == nil {
+				host, platform, ok = strings.ToLower(candidate.Host), string(kind), true
+				break
+			}
+		}
+	}
 	if !ok {
 		return nil
 	}
+	if platform == string(platformpkg.KindBitbucket) && host != platformpkg.DefaultBitbucketHost {
+		path = platformpkg.RemoteRepoPath(platformpkg.KindBitbucket, host, remote)
+	}
+	path = strings.TrimSuffix(path, "/")
+	path = strings.TrimSuffix(path, ".git")
+	parts := strings.Split(path, "/")
 	if len(parts) < 2 || (len(parts) > 2 && !platformpkg.AllowsNestedOwner(platformpkg.Kind(platform))) {
 		return nil
 	}

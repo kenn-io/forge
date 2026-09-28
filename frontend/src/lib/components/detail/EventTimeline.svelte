@@ -1829,19 +1829,19 @@
 {#snippet commitAgentIcons(body: string)}
   {#each commitAttribution(body).agents as agent (agent.harness)}
     <span class="commit-agent" title={agent.name}>
-      <HarnessIcon harness={agent.harness} label={agent.name} size={14} />
+      <HarnessIcon harness={agent.harness} label={agent.name} size={12} />
     </span>
   {/each}
 {/snippet}
 
 {#snippet eventAuthorByline(event: PREvent | IssueEvent, compact = false)}
   <span class={["event-author", compact && "compact-event-author", isLifecycleTransitionEvent(event.EventType) && event.Author && "event-author--lifecycle"]}>
+    {#if event.EventType === "commit"}{@render commitAgentIcons(event.Body)}{/if}
     {#if isLifecycleTransitionEvent(event.EventType) && event.Author}
       <span class="event-author-prefix">by</span> {event.Author}
     {:else}
       {eventAttribution(event) || "Unknown"}
     {/if}
-    {#if event.EventType === "commit"}{@render commitAgentIcons(event.Body)}{/if}
   </span>
 {/snippet}
 
@@ -1944,7 +1944,7 @@
                 {#each entry.obsoleteCommits as commit (commit.ID)}
                   <div class="obsolete-commit-row">
                     {#if eventAttribution(commit)}
-                      <span class="event-author">{eventAttribution(commit)} {@render commitAgentIcons(commit.Body)}</span>
+                      <span class="event-author">{@render commitAgentIcons(commit.Body)} {eventAttribution(commit)}</span>
                     {/if}
                     <span class="commit-sha">{shortCommit(commit.Summary)}</span>
                     <span class="commit-title">{commitTitle(commit.Body)}</span>
@@ -2078,7 +2078,7 @@
                   {systemEventLabel(event.EventType)}
                 </span>
                 {#if eventAttribution(event)}
-                  <span class="event-author">{eventAttribution(event)} {@render commitAgentIcons(event.Body)}</span>
+                  <span class="event-author">{@render commitAgentIcons(event.Body)} {eventAttribution(event)}</span>
                 {/if}
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
                 {#if !showCommitDetails}
@@ -2528,7 +2528,7 @@
   .commit-agent {
     display: inline-flex;
     vertical-align: middle;
-    margin-left: var(--space-1);
+    margin-right: var(--space-1);
   }
 
   .commit-body-details {

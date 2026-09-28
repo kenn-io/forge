@@ -33,7 +33,7 @@ icon or branch-name label.
 Use `AgentStatusIndicator` for opt-in agent labels in PR, Issue, and Activity
 rows, aligned on the right to match Workspaces.
 
-Commit attribution icons identify the harness beside the author; their tooltips name only
+Commit attribution icons identify the harness before the author; their tooltips name only
 the harness. Hide recognized attribution lines only in the displayed message, preserving
 the original for copying (`frontend/src/lib/components/detail/EventTimeline.svelte::commitAgentIcons`).
 Use the shared harness catalog for attribution names; avoid a separate inventory based

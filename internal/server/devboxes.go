@@ -412,8 +412,9 @@ func (s *Server) refreshDevboxContext(ctx context.Context, connections *devbox.C
 		return nil
 	}
 	spec, err := s.ResolveWorkspaceLaunchSpec(ctx, providerplane.WorkspaceLaunchRequest{
-		Repository: providerplane.RepositoryRoute{Provider: current.Repo.Provider, PlatformHost: current.PlatformHost, Owner: current.RepoOwner, Name: current.RepoName},
-		ItemType:   current.ItemType, ItemNumber: current.ItemNumber, ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
+		Repository:     providerplane.RepositoryRoute{Provider: current.Repo.Provider, PlatformHost: current.PlatformHost, Owner: current.RepoOwner, Name: current.RepoName},
+		PlatformRepoID: current.Repo.PlatformRepoID,
+		ItemType:       current.ItemType, ItemNumber: current.ItemNumber, ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
 	})
 	if err != nil {
 		return err

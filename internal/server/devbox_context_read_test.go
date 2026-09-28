@@ -54,6 +54,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
 	require.NoError(err)
 	var denyCredential atomic.Bool
+	var routeReused atomic.Bool
 	broker := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !assert.Equal("POST /v1/credentials", r.Method+" "+r.URL.Path) {
 			w.WriteHeader(http.StatusNotFound)
@@ -63,13 +64,22 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 		if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
 			return
 		}
-		assert.Equal("example-org/project", request.Repository)
+		repositoryID := identity.PlatformRepoID
+		if routeReused.Load() {
+			if request.Repository == "example-org/project" {
+				repositoryID = "R_Replacement"
+			} else {
+				assert.Equal("moved-org/project", request.Repository)
+			}
+		} else {
+			assert.Equal("example-org/project", request.Repository)
+		}
 		assert.Equal("git", request.Profile)
 		if denyCredential.Load() {
 			http.Error(w, "repository access denied", http.StatusForbidden)
 			return
 		}
-		assert.NoError(json.MarshalWrite(w, devbox.Credential{Token: "fixture-token", ExpiresAt: time.Now().Add(time.Hour), GitHubUserID: 1234, RepositoryID: identity.PlatformRepoID, DefaultBranch: "main"}))
+		assert.NoError(json.MarshalWrite(w, devbox.Credential{Token: "fixture-token", ExpiresAt: time.Now().Add(time.Hour), GitHubUserID: 1234, RepositoryID: repositoryID, DefaultBranch: "main"}))
 	})}
 	go func() { _ = broker.Serve(listener) }()
 	t.Cleanup(func() { _ = broker.Close() })
@@ -197,4 +207,34 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	assert.Equal(http.StatusConflict, response.Code, response.Body.String())
 	assert.Equal(int64(1), reads.Load())
 	assert.Zero(renewals.Load(), "an unrelated 409 must be returned without renewal")
+
+	// The controller has observed a rename and reuse of the old route, while
+	// the worker still has the original repository's expired context.
+	renamed := db.GitHubRepoIdentity("github.com", "moved-org", "project")
+	renamed.PlatformRepoID = identity.PlatformRepoID
+	observedAt := time.Now().UTC().Add(time.Minute)
+	_, applied, err := controllerDB.ReconcileRepositoryObservation(ctx, renamed, observedAt)
+	require.NoError(err)
+	require.True(applied)
+	require.NoError(controllerDB.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
+		PlatformRepoID: identity.PlatformRepoID, CloneURL: "https://github.com/moved-org/project.git", DefaultBranch: "main",
+	}))
+	replacement := identity
+	replacement.PlatformRepoID = "R_Replacement"
+	entry, applied, err := controllerDB.ReconcileRepositoryObservation(ctx, replacement, observedAt)
+	require.NoError(err)
+	require.True(applied)
+	seedPRForRepo(t, controllerDB, entry.Repository.ID, "github.com", "example-org", "project", 7)
+	routeReused.Store(true)
+	require.NoError(database.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
+	require.NoError(database.PutWorkspaceLaunchSpec(ctx, ws.ID, spec))
+	renewals.Store(0)
+	response = request("/commits")
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(int64(1), renewals.Load())
+	stored, err = database.GetWorkspaceLaunchSpec(ctx, ws.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("R_ExampleProject", stored.Repository.PlatformRepoID)
+	assert.Equal("moved-org", stored.Repository.Owner)
 }

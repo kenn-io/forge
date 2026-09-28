@@ -2737,6 +2737,9 @@ func buildAppState(
 					http.Error(w, "original repository not found", http.StatusNotFound)
 					return
 				}
+				// The fixture still serves this ID at its seeded route, and a
+				// sync pass observing that would undo the rename.
+				fc.ForgetRepository(original.PlatformRepoID)
 				entry, err = database.ObserveRepository(r.Context(), db.RepoIdentity{
 					Platform:       original.Platform,
 					PlatformHost:   original.PlatformHost,

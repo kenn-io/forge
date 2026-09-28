@@ -161,6 +161,9 @@ owner:
 - Retiring or shutting down e2e state must stop its private tmux server before slower
   asynchronous cleanup; interrupted runners otherwise leave test-owned daemons behind
   (`cmd/e2e-server/main.go::run`).
+- The e2e fixture provider serves each ID at its seeded route. A scenario that moves
+  a repository must forget the moved ID, or a background sync observes it back at the
+  old route (`internal/testutil/fixture_client.go::FixtureClient.ForgetRepository`).
 - Clipboard-race tests must emit OSC 52 through the attached tmux client, not print
   an application OSC 52 sequence that tmux blocks, and must assert the socket observed
   OSC 52 before trusting clipboard ordering (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts::typeScheduledTmuxClipboardWrite`).

@@ -56,6 +56,7 @@ type FixtureClient struct {
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
 	mu                        sync.RWMutex
 	servedRoutes              map[int64]string
+	forgottenIDs              map[int64]bool
 	nextID                    int64
 	mergePullRequestError     error
 	mergePullRequestResult    *gh.PullRequestMergeResult
@@ -233,6 +234,9 @@ func (c *FixtureClient) GetRepositoryByID(
 ) (*gh.Repository, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if c.forgottenIDs[id] {
+		return nil, errFixtureNotFound
+	}
 	if route, ok := c.servedRoutes[id]; ok {
 		owner, name, _ := strings.Cut(route, "/")
 		return fixtureRepository(owner, name), nil
@@ -255,6 +259,18 @@ func (c *FixtureClient) GetRepositoryByID(
 		}
 	}
 	return nil, errFixtureNotFound
+}
+
+// ForgetRepository makes lookups by id fail. Fixture routes cannot follow a
+// scenario that moves a repository, so a scenario forgets the moved ID rather
+// than let a sync pass observe it back at its seeded route.
+func (c *FixtureClient) ForgetRepository(id int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.forgottenIDs == nil {
+		c.forgottenIDs = make(map[int64]bool)
+	}
+	c.forgottenIDs[id] = true
 }
 
 func fixtureRepository(owner, repo string) *gh.Repository {

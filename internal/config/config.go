@@ -1022,6 +1022,9 @@ type Config struct {
 	// address, populated by Validate.
 	parsedBindKey      HostKey
 	dataDirWasRelative bool
+	// upgradedRepositoryIDs records that load converted text repository
+	// IDs from an older release, so the file should be saved once.
+	upgradedRepositoryIDs bool
 }
 
 // API configures the HTTP API surface.
@@ -1241,7 +1244,12 @@ func load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 
-	meta, err := toml.Decode(string(data), cfg)
+	text, upgraded, err := upgradeRepositoryIDs(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+	}
+	cfg.upgradedRepositoryIDs = upgraded
+	meta, err := toml.Decode(text, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("parsing config %s: %w", path, err)
 	}

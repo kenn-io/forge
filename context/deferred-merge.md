@@ -47,6 +47,6 @@ supersession, completion events, or pending-state presentation.
 - Successful completion can carry `workspace_cleanup_pending`; cleanup completion
   is reported independently by workspace lifecycle events, so the merge event
   never infers deletion (`internal/server/pullapi/deferred_merge.go::DeferredMergeCompletedPayload`).
-- Frontend callbacks distinguish queue acknowledgement from provider merge
-  completion. A queued outcome closes the modal and refreshes pending state; it
-  never publishes workspace deletion (`frontend/src/lib/stores/detail.svelte.ts::MergePullOutcome`).
+- Queue acknowledgement refreshes deferred pending state; it must never imply
+  provider merge completion or workspace deletion
+  (`frontend/src/lib/stores/detail.svelte.ts::MergePullOutcome`).

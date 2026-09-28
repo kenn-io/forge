@@ -70,6 +70,41 @@ function conflict(detail: string) {
 }
 
 describe("provider action mutations", () => {
+  it("keeps merges scoped to their PR across navigation and ignores duplicate submissions", async () => {
+    const merge = Promise.withResolvers<{ data: { merged: boolean } }>();
+    const post = vi.fn(() => merge.promise);
+    const store = createDetailStore({
+      client: {
+        GET: vi.fn(async (_path: string, options: { params: { path: { number: number } } }) => ({
+          data: { ...detail(), merge_request: { Number: options.params.path.number } },
+        })),
+        POST: post,
+        PUT: vi.fn(),
+        DELETE: vi.fn(),
+      } as unknown as GeneratedClient,
+    });
+    store.loadDetail("octo", "repo", 1, { ...routeRef, sync: false });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    const input = { commit_message: "", commit_title: "Merge pull request", method: "squash" as const };
+    const settled = Promise.withResolvers<void>();
+    store.mergePull(routeRef, 1, input, false, { onSettled: settled.resolve });
+    store.mergePull(routeRef, 1, input, false);
+    expect(store.isPullMerging(routeRef, 1)).toBe(true);
+    expect(store.isPullMerging({ ...routeRef, platformHost: "git.example.com" }, 1)).toBe(false);
+
+    store.loadDetail("octo", "repo", 2, { ...routeRef, sync: false });
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.Number).toBe(2));
+    expect(store.isPullMerging(routeRef, 1)).toBe(true);
+    expect(store.isPullMerging(routeRef, 2)).toBe(false);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+
+    merge.resolve({ data: { merged: true } });
+    await settled.promise;
+    expect(store.isPullMerging(routeRef, 1)).toBe(false);
+    expect(store.getDetail()?.merge_request.Number).toBe(2);
+    expect(post).toHaveBeenCalledOnce();
+  });
+
   it("rejects a captured route that no longer matches the displayed pull request", async () => {
     const post = vi.fn();
     const store = createDetailStore({

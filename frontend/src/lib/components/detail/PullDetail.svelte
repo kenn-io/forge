@@ -137,7 +137,6 @@
 
   const {
     detail: detailStore,
-    pulls,
     activity,
     diff: diffStore,
     detailActivityView,
@@ -989,6 +988,7 @@
   const deferredMergePending = $derived(
     detailStore.getDetail()?.deferred_merge_pending ?? false,
   );
+  const mergePending = $derived(detailStore.isPullMerging(routeRef, number));
   const midStackBlocker = $derived.by(() => {
     const stack = detailStore.getDetail()?.stack;
     if (!stack) return undefined;
@@ -1012,7 +1012,7 @@
     failedGeneration: number = mutationRouteGeneration,
   ): boolean {
     if (
-      failedGeneration !== mutationRouteGeneration
+      componentDestroyed || failedGeneration !== mutationRouteGeneration
       || failedNumber !== number
       || failedRef.provider !== routeRef.provider
       || failedRef.platformHost !== routeRef.platformHost
@@ -1236,7 +1236,7 @@
       repoSettings,
       // Treat a blocked head as stale for gating: the merge modal must
       // not open while the reviewed head is unknown.
-      stale: stalePR || headActionsBlocked || midStackMergeBlocked,
+      stale: stalePR || headActionsBlocked || midStackMergeBlocked || mergePending,
       stores: { detail: detailStore },
       requireHeadPin: capabilities.mutation_head_binding,
       ...(detailHeadSha !== "" && { expectedHeadSha: detailHeadSha }),
@@ -2631,7 +2631,11 @@
         {@const mergeOp = repoOperations?.merge_pr}
         {@const mergeGate = operationGate(mergeOp)}
         {@const mergeOpUnavailable = mergeGate.unavailable}
-        {#if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
+        {#if mergePending}
+          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label="Merging" ariaLabel="Merging">
+            <Spinner size={14} label="Merging" />
+          </Button>
+        {:else if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
             || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
           {@const mergeSettings = repoSettings}
           {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
@@ -3250,28 +3254,6 @@
             : undefined}
           onstateconflict={handleStateConflict}
           onclose={() => { showMergeModal = false; }}
-          onqueued={() => {
-            showMergeModal = false;
-            // Pick up deferred_merge_pending so the merge action renders
-            // as queued until the background worker completes.
-            detailStore.refreshDetailOnly(owner, name, number, {
-              provider,
-              platformHost,
-              platformRepoId,
-              repoPath,
-            });
-          }}
-          onmerged={() => {
-            showMergeModal = false;
-            detailStore.loadDetail(owner, name, number, {
-              provider,
-              platformHost,
-              platformRepoId,
-              repoPath,
-            });
-            pulls.loadPulls();
-            activity.loadActivity();
-          }}
         />
       {/if}
 

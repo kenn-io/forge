@@ -148,8 +148,10 @@ Interactive surfaces must agree on which item is selected.
   Deleting the exact `(hostKey, workspaceId)` named by the active terminal route
   must replace that history entry with the Workspaces list; pushing a redirect lets
   Back rehost the dead workspace (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
-- Merge success closes the modal after the cleanup-admission attempt, not teardown:
-  `deleting`/`deletion_failed` remain workspace states, and only the provider-aware
+- Merge confirmation closes on submission; app-owned pending state keeps the PR and
+  linked workspace visibly merging across navigation, and failures use shared flashes
+  (`frontend/src/lib/stores/detail.svelte.ts::mergePull`).
+- `deleting`/`deletion_failed` remain workspace states, and only the provider-aware
   `workspace_deleted` event tombstones the row and reconciles visible item data
   (`frontend/src/lib/app-stores.svelte.ts::createAppStores`).
 - Pull and issue detail actions route `deleting`/`deletion_failed` workspaces to

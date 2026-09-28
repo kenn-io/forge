@@ -138,7 +138,7 @@
   }: Props = $props();
 
   const runtime = getAppRuntime();
-  const { events: eventsStore } = getStores();
+  const { events: eventsStore, detail } = getStores();
 
   const doneAcknowledgementsStorageKey =
     "kenn-forge:workspace-agent-done-acknowledgements/v1";
@@ -606,6 +606,7 @@
   }
 
   function workspaceStatus(ws: Workspace): StatusDotStatus {
+    if (workspaceMerging(ws)) return "working";
     if (ws.status === "ready") return "idle";
     if (ws.status === "creating" || ws.status === "deleting") return "working";
     if (ws.status === "error" || ws.status === "deletion_failed") return "unclean";
@@ -613,12 +614,25 @@
   }
 
   function workspaceStatusLabel(ws: Workspace): string {
+    if (workspaceMerging(ws)) return "Merging";
     if (ws.status === "ready") return "Workspace ready";
     if (ws.status === "creating") return "Creating workspace";
     if (ws.status === "error") return "Workspace error";
     if (ws.status === "deleting") return "Deleting workspace";
     if (ws.status === "deletion_failed") return "Deletion failed";
     return `Workspace ${ws.status}`;
+  }
+
+  function workspaceMerging(ws: Workspace): boolean {
+    if (!ws.repo) return false;
+    const number = ws.item_type === "pull_request" ? ws.item_number : (ws.associated_pr_number ?? 0);
+    return number > 0 && detail.isPullMerging({
+      provider: ws.repo.provider,
+      platformHost: ws.repo.platform_host,
+      owner: ws.repo.owner,
+      name: ws.repo.name,
+      repoPath: ws.repo.repo_path,
+    }, number);
   }
 
   function workingTitle(ws: Workspace): string {
@@ -1403,7 +1417,9 @@
                     title={`Runs on ${workspaceHostName(ws)}`}
                   >{workspaceHostName(ws)}{ws.fleet_host_key?.startsWith("devbox:") ? " · Devbox" : ""}</span>
                 {/if}
-                {#if ws.status === "deleting" || ws.status === "deletion_failed"}
+                {#if workspaceMerging(ws)}
+                  <span class="workspace-lifecycle-state workspace-lifecycle-state--merging">Merging</span>
+                {:else if ws.status === "deleting" || ws.status === "deletion_failed"}
                   <span
                     class={["workspace-lifecycle-state", `workspace-lifecycle-state--${ws.status}`]}
                     title={ws.error_message ?? workspaceStatusLabel(ws)}
@@ -1971,7 +1987,8 @@
     line-height: 1;
   }
 
-  .workspace-lifecycle-state--deleting {
+  .workspace-lifecycle-state--deleting,
+  .workspace-lifecycle-state--merging {
     color: var(--accent-blue);
   }
 

@@ -1,8 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import WorkspaceListSidebar from "./WorkspaceListSidebarTestHarness.svelte";
+import { createDetailStore } from "../../stores/detail.svelte.js";
+import { makeTestAppRuntime } from "../../testing/effect-layers.js";
+import type { GeneratedClient } from "../../api/generated-api.js";
 import {
   getNewWorkspaceSeedRepo,
   isNewWorkspaceDialogOpen,
@@ -20,10 +24,12 @@ const mockDelete = vi.fn();
 const mockNavigate = vi.fn();
 const subscribeWorkspaceEvents = vi.fn();
 let workspaceEventsSubscriber: ((event: unknown) => void) | undefined;
+let detailStore: Pick<ReturnType<typeof createDetailStore>, "isPullMerging">;
 
 vi.mock("../../context.js", () => ({
   getStores: () => ({
     events: { subscribeWorkspaceEvents },
+    detail: detailStore,
   }),
 }));
 
@@ -219,6 +225,7 @@ function deferred<T>() {
 
 describe("WorkspaceListSidebar", () => {
   beforeEach(() => {
+    detailStore = { isPullMerging: () => false };
     mockGet.mockReset();
     mockPost.mockReset();
     mockDelete.mockReset();
@@ -255,6 +262,58 @@ describe("WorkspaceListSidebar", () => {
 
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/snapshot", expect.anything()));
     expect(screen.getByText("Workspaces")).toBeTruthy();
+  });
+
+  it("shows merging for linked PR workspaces until the merge settles", async () => {
+    const ref = { provider: "github", platformHost: "github.com", owner: "acme", name: "api", repoPath: "acme/api" };
+    const merge = Promise.withResolvers<{ data: { merged: boolean } }>();
+    const runtime = makeTestAppRuntime({
+      GET: vi.fn(async () => ({
+        data: {
+          repo_owner: "acme",
+          repo_name: "api",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "api",
+            repo_path: "acme/api",
+          },
+          merge_request: { Number: 1 },
+          events: [],
+        },
+      })),
+      POST: vi.fn(() => merge.promise),
+      PUT: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as GeneratedClient);
+    const store = createDetailStore({ runtime });
+    detailStore = store;
+    const workspaces = [
+      workspaceFixture({ ...ref, id: "pr-workspace", number: 1, title: "Linked pull request" }),
+      workspaceFixture({ ...ref, id: "adhoc-workspace", number: 0, itemType: "adhoc", associatedPRNumber: 1 }),
+      workspaceFixture({ ...ref, id: "other-host", number: 1, platformHost: "git.example.com" }),
+      workspaceFixture({ ...ref, id: "issue-workspace", number: 1, itemType: "issue" }),
+      workspaceFixture({ ...ref, id: "linked-issue", number: 2, itemType: "issue", associatedPRNumber: 1 }),
+      workspaceFixture({ ...ref, id: "linked-kata", number: 0, itemType: "kata_task", associatedPRNumber: 1 }),
+    ];
+    mockGet.mockResolvedValue({ data: { workspaces } });
+    try {
+      store.loadDetail("acme", "api", 1, { ...ref, sync: false });
+      await waitFor(() => expect(store.isDetailLoading()).toBe(false));
+      render(WorkspaceListSidebar, { props: { selectedId: "pr-workspace" } });
+      await screen.findByText("Linked pull request");
+
+      store.mergePull(ref, 1, { method: "squash", commit_title: "Merge", commit_message: "" }, false);
+      await waitFor(() => expect(screen.getAllByText("Merging")).toHaveLength(4));
+
+      merge.resolve({ data: { merged: true } });
+      await waitFor(() => expect(screen.queryByText("Merging")).toBeNull());
+      expect(screen.getByText("Linked pull request")).toBeTruthy();
+    } finally {
+      cleanup();
+      await Effect.runPromise(runtime.disposeEffect);
+    }
   });
 
   it.each(["remote", "devbox"])("labels %s workspace rows with their execution machine on the hub", async (kind) => {

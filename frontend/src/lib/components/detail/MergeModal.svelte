@@ -53,9 +53,6 @@
     /** Stack context shown when merging a pull request. */
     stackNote?: string | undefined;
     onclose: () => void;
-    onmerged: (cleanupWarning?: string) => void;
-    /** Called when a deferred merge was accepted and now waits on CI. */
-    onqueued: () => void;
     onstateconflict?: ((
       reason: Exclude<ConflictReason, "conflict">,
       context: string | undefined,
@@ -74,7 +71,7 @@
     deferUntilChecksPass = false,
     ciFailed = false,
     alreadyQueued = false, workspaceId, stackNote,
-    onclose, onmerged, onqueued, onstateconflict,
+    onclose, onstateconflict,
   }: Props = $props();
 
   // Offer to queue a deferred merge only when none is queued yet.
@@ -133,10 +130,6 @@
   let commitMessage = $state(initialCommitMessage());
   let deleteWorkspaceAfterMerge = $state(true);
 
-  let activeMergeSubmission = $state<"deferred" | "immediate" | null>(null);
-  let error = $state<string | null>(null);
-  const merging = $derived(activeMergeSubmission !== null);
-
   function mergeParams(): MergeParams {
     return {
       commit_title: commitTitle,
@@ -147,7 +140,7 @@
     };
   }
 
-  function handleMergeProblem(problem: ProblemBody): boolean {
+  function handleMergeProblem(problem: ProblemBody): void {
     const reason = isProblem(problem) ? problemConflictReason(problem) : undefined;
     if (reason && reason !== "conflict") {
       onstateconflict?.(
@@ -158,41 +151,18 @@
         number,
         routeGenerationAtOpen,
       );
-      onclose();
-      return true;
     }
-    const message = problem.detail ?? problem.title ?? "failed to merge pull request";
-    if (reason === "conflict") {
-      error = message;
-      return true;
-    }
-    return false;
   }
 
   function submitMerge(deferred: boolean): void {
     if (headPinMissing) return;
-    activeMergeSubmission = deferred ? "deferred" : "immediate";
-    error = null;
-    let problemHandled = false;
     const params = mergeParams();
+    const target = `${repoPath} #${number}`;
     detail.mergePull({ provider, platformHost, owner, name, repoPath }, number, params, deferred, {
-      onProblem: (problem) => {
-        problemHandled = handleMergeProblem(problem);
-      },
-      onFailure: (message) => {
-        if (!problemHandled) showFlash(message, { tone: "danger" });
-      },
-      onSuccess: (outcome) => {
-        if (outcome._tag === "Queued") {
-          onqueued();
-          return;
-        }
-        onmerged(outcome.cleanupWarning);
-      },
-      onSettled: () => {
-        activeMergeSubmission = null;
-      },
+      onProblem: handleMergeProblem,
+      onFailure: (message) => showFlash(`${target}: ${message}`, { tone: "danger" }),
     });
+    onclose();
   }
 
   function handleMerge(): void {
@@ -215,15 +185,10 @@
   }
 
   function primaryButtonLabel(): string {
-    if (activeMergeSubmission === "deferred") return "Merge scheduled...";
-    if (activeMergeSubmission === "immediate" && !offerDeferredMerge) return "Merging...";
     if (offerDeferredMerge) return "Merge after CI is complete";
     return ciFailed ? "Merge Anyway" : methodLabel();
   }
 
-  function mergeAnywayButtonLabel(): string {
-    return activeMergeSubmission === "immediate" ? "Merging..." : "Merge Anyway";
-  }
 </script>
 
 <Modal
@@ -292,9 +257,6 @@
         />
       {/if}
 
-      {#if error}
-        <p class="merge-error">{error}</p>
-      {/if}
       {#if ciFailed}
         <div class="ci-defer-note" role="alert">
           CI has failed. Merging now will include changes with failing checks.
@@ -324,7 +286,6 @@
     <Button
       class="btn btn--secondary"
       onclick={onclose}
-      disabled={merging}
       tone="neutral"
       surface="outline"
     >
@@ -333,7 +294,7 @@
     <Button
       class="btn btn--primary btn--green"
       onclick={handleMerge}
-      disabled={merging || headPinMissing}
+      disabled={headPinMissing}
       tone="success"
       surface="solid"
     >
@@ -343,11 +304,11 @@
       <Button
         class="btn btn--merge-anyway"
         onclick={handleMergeAnyway}
-        disabled={merging || headPinMissing}
+        disabled={headPinMissing}
         tone="success"
         surface="soft"
       >
-        {mergeAnywayButtonLabel()}
+        Merge Anyway
       </Button>
     {/if}
   {/snippet}
@@ -453,16 +414,6 @@
     );
     border-color: var(--accent-blue);
     color: var(--accent-blue);
-  }
-
-  .merge-error {
-    font-size: var(--font-size-sm);
-    color: var(--accent-red);
-    padding: 8px 10px;
-    background: color-mix(
-      in srgb, var(--accent-red) 8%, transparent
-    );
-    border-radius: var(--radius-sm);
   }
 
 </style>

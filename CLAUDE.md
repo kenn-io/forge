@@ -35,6 +35,7 @@ only routes to them.
 | Provider identity, sync, import, routes, or settings | `context/platform-sync-invariants.md` |
 | GitHub-specific sync or notifications | `context/github-sync-invariants.md`, `context/notifications-in-activity.md` |
 | Config fields that persist to TOML | `context/config-persistence.md` |
+| External PR context commands, cards, or actions | `context/external-pr-context.md` |
 | Database schema migrations or the SQLite connection layer | `context/db-migrations.md` |
 | Deferred merge behavior | `context/deferred-merge.md` |
 | Daemon startup, discovery, host/origin validation, or SSE replay | `context/server-runtime.md` |

@@ -28,6 +28,7 @@ import { createDetailActivityViewStore } from "./stores/detail-activity-view.sve
 import { createCollapsedReposStore } from "./stores/collapsedRepos.svelte.js";
 import { createSettingsStore } from "./stores/settings.svelte.js";
 import { createWorkflowActionsStore } from "./stores/workflow-actions.svelte.js";
+import { ExternalContextWorkflow } from "./stores/external-context-workflow.svelte.js";
 import { createWorkspaceItemSearchStore } from "./stores/workspace-item-search.svelte.js";
 import { beginTerminalSettingsHydration } from "./stores/terminal-settings-persistence.js";
 import { beginWorkspaceSettingsHydration } from "./stores/workspace-settings-persistence.js";
@@ -176,6 +177,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   function handleConfigChanged(event: { valid: boolean }) {
     if (!event.valid) return Effect.void;
     return Effect.gen(function* () {
+      yield* (yield* ExternalContextWorkflow).invalidate;
       const terminalHydration = yield* Effect.sync(() => beginTerminalSettingsHydration(settingsStore));
       const workspaceHydration = yield* Effect.sync(() => beginWorkspaceSettingsHydration(settingsStore));
       const roborevHydration = yield* Effect.sync(() => beginRoborevSettingsHydration(settingsStore));

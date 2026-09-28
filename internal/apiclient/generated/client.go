@@ -5042,6 +5042,72 @@ func (o *ResolveDiscussionOnHostRequestOptions) GetHeader() (map[string]string, 
 	return nil, nil
 }
 
+// GetPullExternalContextOnHostRequestOptions is the options needed to make a request to GetPullExternalContextOnHost.
+type GetPullExternalContextOnHostRequestOptions struct {
+	PathParams *GetPullExternalContextOnHostPath
+	Query      *GetPullExternalContextOnHostQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetPullExternalContextOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetPullExternalContextOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetPullExternalContextOnHostRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetPullExternalContextOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// RunPullExternalContextActionOnHostRequestOptions is the options needed to make a request to RunPullExternalContextActionOnHost.
+type RunPullExternalContextActionOnHostRequestOptions struct {
+	PathParams *RunPullExternalContextActionOnHostPath
+	Body       *RunPullExternalContextActionOnHostBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RunPullExternalContextActionOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RunPullExternalContextActionOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RunPullExternalContextActionOnHostRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *RunPullExternalContextActionOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // GetPullFilePreviewOnHostRequestOptions is the options needed to make a request to GetPullFilePreviewOnHost.
 type GetPullFilePreviewOnHostRequestOptions struct {
 	PathParams *GetPullFilePreviewOnHostPath
@@ -8410,6 +8476,72 @@ func (o *ResolveDiscussionRequestOptions) GetHeader() (map[string]string, error)
 	return nil, nil
 }
 
+// GetPullExternalContextRequestOptions is the options needed to make a request to GetPullExternalContext.
+type GetPullExternalContextRequestOptions struct {
+	PathParams *GetPullExternalContextPath
+	Query      *GetPullExternalContextQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetPullExternalContextRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetPullExternalContextRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetPullExternalContextRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetPullExternalContextRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// RunPullExternalContextActionRequestOptions is the options needed to make a request to RunPullExternalContextAction.
+type RunPullExternalContextActionRequestOptions struct {
+	PathParams *RunPullExternalContextActionPath
+	Body       *RunPullExternalContextActionBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RunPullExternalContextActionRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := runtime.AsMap[any](o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RunPullExternalContextActionRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RunPullExternalContextActionRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *RunPullExternalContextActionRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // GetPullFilePreviewRequestOptions is the options needed to make a request to GetPullFilePreview.
 type GetPullFilePreviewRequestOptions struct {
 	PathParams *GetPullFilePreviewPath
@@ -11473,6 +11605,7 @@ type ClientInterface interface {
 	SearchDocsWithResponse(ctx context.Context, options *SearchDocsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SearchDocsResp, error)
 	StreamEventsWithResponse(ctx context.Context, options *StreamEventsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StreamEventsResp, error)
 	StreamEventsStreamWithResponse(ctx context.Context, options *StreamEventsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StreamEventsResp, error)
+	ListExternalContextSourcesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListExternalContextSourcesResp, error)
 	IssueFederationBrowserLoginTicketWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*IssueFederationBrowserLoginTicketResp, error)
 	BeginFederationEnrollmentWithResponse(ctx context.Context, options *BeginFederationEnrollmentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BeginFederationEnrollmentResp, error)
 	AbortFederationEnrollmentWithResponse(ctx context.Context, options *AbortFederationEnrollmentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AbortFederationEnrollmentResp, error)
@@ -11583,6 +11716,8 @@ type ClientInterface interface {
 	GetPullDiffOnHostWithResponse(ctx context.Context, options *GetPullDiffOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullDiffOnHostResp, error)
 	ReplyToDiscussionOnHostWithResponse(ctx context.Context, options *ReplyToDiscussionOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReplyToDiscussionOnHostResp, error)
 	ResolveDiscussionOnHostWithResponse(ctx context.Context, options *ResolveDiscussionOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveDiscussionOnHostResp, error)
+	GetPullExternalContextOnHostWithResponse(ctx context.Context, options *GetPullExternalContextOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullExternalContextOnHostResp, error)
+	RunPullExternalContextActionOnHostWithResponse(ctx context.Context, options *RunPullExternalContextActionOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RunPullExternalContextActionOnHostResp, error)
 	GetPullFilePreviewOnHostWithResponse(ctx context.Context, options *GetPullFilePreviewOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullFilePreviewOnHostResp, error)
 	GetPullFilesOnHostWithResponse(ctx context.Context, options *GetPullFilesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullFilesOnHostResp, error)
 	SetPrGithubStateOnHostWithResponse(ctx context.Context, options *SetPrGithubStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrGithubStateOnHostResp, error)
@@ -11692,6 +11827,8 @@ type ClientInterface interface {
 	GetPullDiffWithResponse(ctx context.Context, options *GetPullDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullDiffResp, error)
 	ReplyToDiscussionWithResponse(ctx context.Context, options *ReplyToDiscussionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReplyToDiscussionResp, error)
 	ResolveDiscussionWithResponse(ctx context.Context, options *ResolveDiscussionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveDiscussionResp, error)
+	GetPullExternalContextWithResponse(ctx context.Context, options *GetPullExternalContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullExternalContextResp, error)
+	RunPullExternalContextActionWithResponse(ctx context.Context, options *RunPullExternalContextActionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RunPullExternalContextActionResp, error)
 	GetPullFilePreviewWithResponse(ctx context.Context, options *GetPullFilePreviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullFilePreviewResp, error)
 	GetPullFilesWithResponse(ctx context.Context, options *GetPullFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullFilesResp, error)
 	SetPrGithubStateWithResponse(ctx context.Context, options *SetPrGithubStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrGithubStateResp, error)
@@ -15203,6 +15340,61 @@ func (c *Client) StreamEventsWithResponse(ctx context.Context, options *StreamEv
 	}
 	switch resp.StatusCode {
 	case 200:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ListExternalContextSources List external context sources
+func (c *Client) ListExternalContextSourcesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListExternalContextSourcesResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/external-context/sources",
+		Method:     "GET",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/external-context/sources")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListExternalContextSourcesResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListExternalContextSourcesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListExternalContextSourcesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListExternalContextSourcesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -20161,6 +20353,124 @@ func (c *Client) ResolveDiscussionOnHostWithResponse(ctx context.Context, option
 	}
 	switch resp.StatusCode {
 	case 200:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetPullExternalContextOnHost Get external pull request context
+func (c *Client) GetPullExternalContextOnHostWithResponse(ctx context.Context, options *GetPullExternalContextOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullExternalContextOnHostResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetPullExternalContextOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetPullExternalContextOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetPullExternalContextOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullExternalContextOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// RunPullExternalContextActionOnHost Run external pull request context action
+func (c *Client) RunPullExternalContextActionOnHostWithResponse(ctx context.Context, options *RunPullExternalContextActionOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RunPullExternalContextActionOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RunPullExternalContextActionOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RunPullExternalContextActionOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(RunPullExternalContextActionOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RunPullExternalContextActionOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -26180,6 +26490,124 @@ func (c *Client) ResolveDiscussionWithResponse(ctx context.Context, options *Res
 	}
 	switch resp.StatusCode {
 	case 200:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetPullExternalContext Get external pull request context
+func (c *Client) GetPullExternalContextWithResponse(ctx context.Context, options *GetPullExternalContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullExternalContextResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetPullExternalContextResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetPullExternalContextErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetPullExternalContextResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullExternalContextResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// RunPullExternalContextAction Run external pull request context action
+func (c *Client) RunPullExternalContextActionWithResponse(ctx context.Context, options *RunPullExternalContextActionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RunPullExternalContextActionResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RunPullExternalContextActionResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RunPullExternalContextActionErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(RunPullExternalContextActionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RunPullExternalContextActionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -33284,6 +33712,20 @@ func (c *Client) StreamEventsRaw(ctx context.Context, httpClient *http.Client, o
 	return httpClient.Do(req)
 }
 
+// ListExternalContextSourcesRaw returns an unread response. The caller must close its body.
+func (c *Client) ListExternalContextSourcesRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/external-context/sources",
+		Method:     "GET",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // IssueFederationBrowserLoginTicketRaw returns an unread response. The caller must close its body.
 func (c *Client) IssueFederationBrowserLoginTicketRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -34984,6 +35426,42 @@ func (c *Client) ResolveDiscussionOnHostRaw(ctx context.Context, httpClient *htt
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetPullExternalContextOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) GetPullExternalContextOnHostRaw(ctx context.Context, httpClient *http.Client, options *GetPullExternalContextOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// RunPullExternalContextActionOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) RunPullExternalContextActionOnHostRaw(ctx context.Context, httpClient *http.Client, options *RunPullExternalContextActionOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -36798,6 +37276,42 @@ func (c *Client) ResolveDiscussionRaw(ctx context.Context, httpClient *http.Clie
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetPullExternalContextRaw returns an unread response. The caller must close its body.
+func (c *Client) GetPullExternalContextRaw(ctx context.Context, httpClient *http.Client, options *GetPullExternalContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// RunPullExternalContextActionRaw returns an unread response. The caller must close its body.
+func (c *Client) RunPullExternalContextActionRaw(ctx context.Context, httpClient *http.Client, options *RunPullExternalContextActionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -39735,6 +40249,21 @@ func NewStreamEventsRequest(ctx context.Context, baseURL string, options *Stream
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewListExternalContextSourcesRequest constructs a typed request for a caller-owned transport.
+func NewListExternalContextSourcesRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/external-context/sources",
+		Method:     "GET",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewIssueFederationBrowserLoginTicketRequest constructs a typed request for a caller-owned transport.
 func NewIssueFederationBrowserLoginTicketRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -41548,6 +42077,44 @@ func NewResolveDiscussionOnHostRequest(ctx context.Context, baseURL string, opti
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetPullExternalContextOnHostRequest constructs a typed request for a caller-owned transport.
+func NewGetPullExternalContextOnHostRequest(ctx context.Context, baseURL string, options *GetPullExternalContextOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewRunPullExternalContextActionOnHostRequest constructs a typed request for a caller-owned transport.
+func NewRunPullExternalContextActionOnHostRequest(ctx context.Context, baseURL string, options *RunPullExternalContextActionOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -43471,6 +44038,44 @@ func NewResolveDiscussionRequest(ctx context.Context, baseURL string, options *R
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/discussions/{discussion_id}/resolve",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetPullExternalContextRequest constructs a typed request for a caller-owned transport.
+func NewGetPullExternalContextRequest(ctx context.Context, baseURL string, options *GetPullExternalContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewRunPullExternalContextActionRequest constructs a typed request for a caller-owned transport.
+func NewRunPullExternalContextActionRequest(ctx context.Context, baseURL string, options *RunPullExternalContextActionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -45582,6 +46187,16 @@ const (
 	AttributionStatusUnverified      AttributionStatus = "unverified"
 )
 
+type ExternalContextCardStatus string
+
+const (
+	ExternalContextCardStatusError   ExternalContextCardStatus = "error"
+	ExternalContextCardStatusNeutral ExternalContextCardStatus = "neutral"
+	ExternalContextCardStatusPending ExternalContextCardStatus = "pending"
+	ExternalContextCardStatusSuccess ExternalContextCardStatus = "success"
+	ExternalContextCardStatusWarning ExternalContextCardStatus = "warning"
+)
+
 type HostSummaryFederationRole string
 
 const (
@@ -46709,6 +47324,25 @@ type ResolveDiscussionOnHostPath struct {
 	DiscussionID string `json:"discussion_id"`
 }
 
+type GetPullExternalContextOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+	SourceID     string `json:"source_id"`
+}
+
+type RunPullExternalContextActionOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+	SourceID     string `json:"source_id"`
+	ActionID     string `json:"action_id"`
+}
+
 type GetPullFilePreviewOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -47360,6 +47994,23 @@ type ResolveDiscussionPath struct {
 	DiscussionID string `json:"discussion_id"`
 }
 
+type GetPullExternalContextPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
+	SourceID string `json:"source_id"`
+}
+
+type RunPullExternalContextActionPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
+	SourceID string `json:"source_id"`
+	ActionID string `json:"action_id"`
+}
+
 type GetPullFilePreviewPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
@@ -47919,6 +48570,8 @@ type ReplyToDiscussionOnHostBody = ReplyToDiscussionHostInputBody
 
 type ResolveDiscussionOnHostBody = ResolveDiscussionHostInputBody
 
+type RunPullExternalContextActionOnHostBody = ExternalContextActionRequest
+
 type SetPrGithubStateOnHostBody = GithubStateHostInputBody
 
 type CreatePullRequestKataLinkOnHostBody = KataCreateLinkRequest
@@ -48006,6 +48659,8 @@ type EditPrCommentBody = EditCommentInputBody
 type ReplyToDiscussionBody = ReplyToDiscussionInputBody
 
 type ResolveDiscussionBody = ResolveDiscussionInputBody
+
+type RunPullExternalContextActionBody = ExternalContextActionRequest
 
 type SetPrGithubStateBody = GithubStateInputBody
 
@@ -48405,6 +49060,11 @@ type GetPullDiffOnHostQuery struct {
 	To *string `json:"to,omitempty"`
 }
 
+type GetPullExternalContextOnHostQuery struct {
+	PlatformRepoID string `json:"platform_repo_id"`
+	Refresh        *bool  `json:"refresh,omitempty"`
+}
+
 type GetPullFilePreviewOnHostQuery struct {
 	// Path Changed file path to preview
 	Path *string `json:"path,omitempty"`
@@ -48573,6 +49233,11 @@ type GetPullDiffQuery struct {
 
 	// To End SHA for range diff (inclusive)
 	To *string `json:"to,omitempty"`
+}
+
+type GetPullExternalContextQuery struct {
+	PlatformRepoID string `json:"platform_repo_id"`
+	Refresh        *bool  `json:"refresh,omitempty"`
 }
 
 type GetPullFilePreviewQuery struct {
@@ -49001,6 +49666,10 @@ type SearchDocsErrorResponse = ProblemError
 
 type StreamEventsErrorResponse = ProblemError
 
+type ListExternalContextSourcesResponse = ExternalContextSourcesResponse
+
+type ListExternalContextSourcesErrorResponse = ProblemError
+
 type IssueFederationBrowserLoginTicketResponse = BrowserLoginTicketBody
 
 type IssueFederationBrowserLoginTicketErrorResponse = ProblemError
@@ -49322,6 +49991,14 @@ type ReplyToDiscussionOnHostResponse = MergeRequestEventResponse
 type ReplyToDiscussionOnHostErrorResponse = ProblemError
 
 type ResolveDiscussionOnHostErrorResponse = ProblemError
+
+type GetPullExternalContextOnHostResponse = ExternalContextResult
+
+type GetPullExternalContextOnHostErrorResponse = ProblemError
+
+type RunPullExternalContextActionOnHostResponse = ExternalContextResult
+
+type RunPullExternalContextActionOnHostErrorResponse = ProblemError
 
 type GetPullFilePreviewOnHostResponse = FilePreviewResponse
 
@@ -49722,6 +50399,14 @@ type ReplyToDiscussionResponse = MergeRequestEventResponse
 type ReplyToDiscussionErrorResponse = ProblemError
 
 type ResolveDiscussionErrorResponse = ProblemError
+
+type GetPullExternalContextResponse = ExternalContextResult
+
+type GetPullExternalContextErrorResponse = ProblemError
+
+type RunPullExternalContextActionResponse = ExternalContextResult
+
+type RunPullExternalContextActionErrorResponse = ProblemError
 
 type GetPullFilePreviewResponse = FilePreviewResponse
 
@@ -50605,6 +51290,14 @@ type StreamEventsResp struct {
 	Stream200    *runtime.Stream[[]byte]
 }
 
+type ListExternalContextSourcesResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *ListExternalContextSourcesErrorResponse
+	JSON200      *ListExternalContextSourcesResponse
+}
+
 type IssueFederationBrowserLoginTicketResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -51372,6 +52065,22 @@ type ResolveDiscussionOnHostResp struct {
 	Body         []byte
 	StatusCode   int
 	Error        *ResolveDiscussionOnHostErrorResponse
+}
+
+type GetPullExternalContextOnHostResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetPullExternalContextOnHostErrorResponse
+	JSON200      *GetPullExternalContextOnHostResponse
+}
+
+type RunPullExternalContextActionOnHostResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *RunPullExternalContextActionOnHostErrorResponse
+	JSON200      *RunPullExternalContextActionOnHostResponse
 }
 
 type GetPullFilePreviewOnHostResp struct {
@@ -52246,6 +52955,22 @@ type ResolveDiscussionResp struct {
 	Body         []byte
 	StatusCode   int
 	Error        *ResolveDiscussionErrorResponse
+}
+
+type GetPullExternalContextResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetPullExternalContextErrorResponse
+	JSON200      *GetPullExternalContextResponse
+}
+
+type RunPullExternalContextActionResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *RunPullExternalContextActionErrorResponse
+	JSON200      *RunPullExternalContextActionResponse
 }
 
 type GetPullFilePreviewResp struct {
@@ -54154,6 +54879,45 @@ type ErrorDetail struct {
 
 	// Value The value at the given location
 	Value any `json:"value"`
+}
+
+type ExternalContextAction struct {
+	DisabledReason *string `json:"disabled_reason,omitempty"`
+	ID             string  `json:"id"`
+	Label          string  `json:"label"`
+}
+
+type ExternalContextActionRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string `json:"$schema,omitempty"`
+	HeadSha        string  `json:"head_sha"`
+	PlatformRepoID string  `json:"platform_repo_id"`
+}
+
+type ExternalContextCard struct {
+	Actions             []ExternalContextAction   `json:"actions,omitempty"`
+	Markdown            *string                   `json:"markdown,omitempty"`
+	RefreshAfterSeconds *int64                    `json:"refresh_after_seconds,omitempty"`
+	ResultHeadSha       *string                   `json:"result_head_sha,omitempty"`
+	Status              ExternalContextCardStatus `json:"status"`
+	Summary             string                    `json:"summary"`
+}
+
+type ExternalContextResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string              `json:"$schema,omitempty"`
+	Card   *ExternalContextCard `json:"card,omitempty"`
+}
+
+type ExternalContextSourceInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type ExternalContextSourcesResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string                     `json:"$schema,omitempty"`
+	Sources []ExternalContextSourceInfo `json:"sources"`
 }
 
 type FeatureCapabilities struct {

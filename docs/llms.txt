@@ -25,6 +25,7 @@ raw markdown at /docs/<page>.md, and the docs index at /docs/index.md.
 - [Integrations](https://forge.kenn.io/docs/integrations.md): Roborev reviews, Kata tasks, and Docs folder setup
 - [Settings](https://forge.kenn.io/docs/settings.md): In-app settings for repositories, tokens, and modes
 - [Configuration](https://forge.kenn.io/docs/configuration.md): Config file reference and startup options
+- [External PR context](https://forge.kenn.io/docs/external-pr-context.md): Private PR cards and actions from configured CLI integrations
 - [Faster GitHub updates](https://forge.kenn.io/docs/activity-relay.md): Connect Forge to a shared relay, run the service, configure webhooks, and check a real update
 - [Commands](https://forge.kenn.io/docs/commands.md): CLI command reference for the kenn-forge binary
 - [Devboxes](https://forge.kenn.io/docs/devboxes.md): Run agent workspaces in Linux accounts over Tailscale, with organization-scoped GitHub App access

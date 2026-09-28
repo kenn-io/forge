@@ -898,7 +898,15 @@ describe("PullDetail provider workflow actions", () => {
     const detail = pullDetail();
     enableWorkflowActions(detail);
     const api = workflowClient(detail);
-    api.GET.mockRejectedValueOnce(new Error("Unavailable"));
+    const get = api.GET.getMockImplementation()!;
+    let catalogFailed = false;
+    api.GET.mockImplementation(async (path, options) => {
+      if (path.endsWith("/workflows") && !catalogFailed) {
+        catalogFailed = true;
+        throw new Error("Unavailable");
+      }
+      return get(path, options);
+    });
     renderPullDetail(detail, api.repoSettings, api.client, {
       actionsModeVisible: true,
       runtimeClient: api.client,

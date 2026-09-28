@@ -106,3 +106,11 @@ platform = "gitea"
 platform_host = "gitea.internal.example"
 owner = "team"
 name = "ops"
+
+# Optional private PR cards. Install an adapter implementing the external-context
+# JSON contract, then configure it here (this section is not editable in Settings).
+# [[external_context]]
+# id = "performance"
+# name = "Performance"
+# command = ["/opt/forge-integrations/performance-context"]
+# timeout = "10s"

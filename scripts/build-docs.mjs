@@ -14,6 +14,7 @@ const publishedFiles = new Set([
   "commands.md",
   "configuration.md",
   "devboxes.md",
+  "external-pr-context.md",
   "federated-fleet.md",
   "index.md",
   "integrations.md",

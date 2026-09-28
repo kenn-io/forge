@@ -31,6 +31,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/docs"
+	"go.kenn.io/forge/internal/externalcontext"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
@@ -247,6 +248,7 @@ type Server struct {
 	kataAPI                *kata.Handler
 	repoBrowserAPI         *repobrowserapi.Handler
 	pullAPI                *pullapi.Handler
+	externalContext        *externalcontext.Runner
 	issueAPI               *issueapi.Handler
 	workflowAPI            *workflowapi.Handler
 	pullLifecycle          pullLifecycle
@@ -459,6 +461,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// later workspace shutdown would end.
 	if first && s.workspaceAPI != nil {
 		s.workspaceAPI.CancelAgentHandoffs()
+	}
+	if first && s.externalContext != nil {
+		s.externalContext.Close()
 	}
 	var httpErr error
 	httpDrained := httpSrv == nil
@@ -920,6 +925,11 @@ func newServer(
 		workspaceDependentsDone: make(chan struct{}),
 	}
 	s.browserLoginTickets = browserlogin.NewTicketStore(func() time.Time { return s.now() })
+	var contextSources []config.ExternalContextSource
+	if cfg != nil {
+		contextSources = cfg.ExternalContext
+	}
+	s.externalContext = externalcontext.New(contextSources)
 	s.browserSessions = browserlogin.NewSessionStore(func() time.Time { return s.now() })
 	s.providerWriteGate = options.ProviderWriteGate
 	if s.providerWriteGate == nil {

@@ -946,6 +946,14 @@ type MCP struct {
 	DiffCacheMB int  `toml:"diff_cache_mb,omitempty" json:"diff_cache_mb,omitempty"`
 }
 
+// ExternalContextSource is configured through TOML, never through settings writes.
+type ExternalContextSource struct {
+	ID      string   `toml:"id"`
+	Name    string   `toml:"name"`
+	Command []string `toml:"command"`
+	Timeout string   `toml:"timeout,omitempty"`
+}
+
 type Config struct {
 	AirplaneMode                bool   `toml:"airplane_mode"`
 	SyncInterval                string `toml:"sync_interval"`
@@ -990,6 +998,7 @@ type Config struct {
 	Modes             ModeVisibility           `toml:"modes"`
 	Agents            []Agent                  `toml:"agents"`
 	QuickActions      []QuickAction            `toml:"quick_actions"`
+	ExternalContext   []ExternalContextSource  `toml:"external_context"`
 	DocFolders        []DocFolder              `toml:"doc_folders"`
 	Roborev           Roborev                  `toml:"roborev"`
 	Tmux              Tmux                     `toml:"tmux"`
@@ -1730,6 +1739,9 @@ func (c *Config) validate() error {
 	if err := c.validateQuickActions(); err != nil {
 		return err
 	}
+	if err := c.validateExternalContext(); err != nil {
+		return err
+	}
 
 	if len(c.Tmux.Command) > 0 &&
 		strings.TrimSpace(c.Tmux.Command[0]) == "" {
@@ -1741,6 +1753,33 @@ func (c *Config) validate() error {
 		return errors.New("config: invalid shell.command: first element must be non-empty")
 	}
 
+	return nil
+}
+
+func (c *Config) validateExternalContext() error {
+	seen := make(map[string]bool, len(c.ExternalContext))
+	for i := range c.ExternalContext {
+		source := &c.ExternalContext[i]
+		if len(source.ID) > 128 || source.ID == "." || source.ID == ".." || !docFolderIDPattern.MatchString(source.ID) {
+			return fmt.Errorf("config: external_context[%d]: id must be a URL-safe identifier of at most 128 bytes", i)
+		}
+		if seen[source.ID] {
+			return fmt.Errorf("config: external_context: duplicate id %q", source.ID)
+		}
+		seen[source.ID] = true
+		if strings.TrimSpace(source.Name) == "" || len(source.Name) > 256 {
+			return fmt.Errorf("config: external_context[%d]: name is required and must be at most 256 bytes", i)
+		}
+		if len(source.Command) == 0 || !filepath.IsAbs(source.Command[0]) {
+			return fmt.Errorf("config: external_context[%d]: command requires an absolute executable path", i)
+		}
+		if source.Timeout == "" {
+			source.Timeout = "10s"
+		}
+		if timeout, err := time.ParseDuration(source.Timeout); err != nil || timeout <= 0 {
+			return fmt.Errorf("config: external_context[%d]: timeout must be a positive duration", i)
+		}
+	}
 	return nil
 }
 
@@ -3567,6 +3606,7 @@ type configFile struct {
 	Modes                       ModeVisibility           `toml:"modes,omitempty"`
 	Agents                      []Agent                  `toml:"agents,omitempty"`
 	QuickActions                []QuickAction            `toml:"quick_actions,omitempty"`
+	ExternalContext             []ExternalContextSource  `toml:"external_context,omitempty"`
 	DocFolders                  []DocFolder              `toml:"doc_folders,omitempty"`
 	Roborev                     Roborev                  `toml:"roborev,omitempty"`
 	PullRequests                PullRequests             `toml:"pull_requests,omitempty"`
@@ -3614,6 +3654,7 @@ func (c *Config) Save(path string) error {
 		Modes:                       cfg.Modes,
 		Agents:                      cfg.Agents,
 		QuickActions:                cfg.QuickActions,
+		ExternalContext:             cfg.ExternalContext,
 		DocFolders:                  cfg.DocFolders,
 		Roborev:                     cfg.Roborev,
 		PullRequests:                cfg.PullRequests,
@@ -3702,6 +3743,10 @@ func (c *Config) copyForSave() Config {
 	cfg.DocFolders = slices.Clone(c.DocFolders)
 	cfg.Agents = slices.Clone(c.Agents)
 	cfg.QuickActions = slices.Clone(c.QuickActions)
+	cfg.ExternalContext = slices.Clone(c.ExternalContext)
+	for i := range cfg.ExternalContext {
+		cfg.ExternalContext[i].Command = slices.Clone(c.ExternalContext[i].Command)
+	}
 	cfg.API.TailscaleServe.AllowedUsers = slices.Clone(c.API.TailscaleServe.AllowedUsers)
 	if c.Fleet.Hub != nil {
 		hub := *c.Fleet.Hub

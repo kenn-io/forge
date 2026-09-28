@@ -2738,6 +2738,113 @@ components:
         value:
           description: The value at the given location
       type: object
+    ExternalContextAction:
+      additionalProperties: false
+      properties:
+        disabled_reason:
+          type: string
+        id:
+          type: string
+        label:
+          type: string
+      required:
+        - id
+        - label
+      type: object
+    ExternalContextActionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ExternalContextActionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        head_sha:
+          maxLength: 128
+          minLength: 1
+          type: string
+        platform_repo_id:
+          minLength: 1
+          type: string
+      required:
+        - platform_repo_id
+        - head_sha
+      type: object
+    ExternalContextCard:
+      additionalProperties: false
+      properties:
+        actions:
+          items:
+            $ref: "#/components/schemas/ExternalContextAction"
+          type: array
+        markdown:
+          type: string
+        refresh_after_seconds:
+          format: int64
+          type: integer
+        result_head_sha:
+          type: string
+        status:
+          enum:
+            - neutral
+            - pending
+            - success
+            - warning
+            - error
+          type: string
+        summary:
+          type: string
+      required:
+        - status
+        - summary
+      type:
+        - object
+        - "null"
+    ExternalContextResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ExternalContextResult.json
+          format: uri
+          readOnly: true
+          type: string
+        card:
+          $ref: "#/components/schemas/ExternalContextCard"
+      required:
+        - card
+      type: object
+    ExternalContextSourceInfo:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - name
+      type: object
+    ExternalContextSourcesResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ExternalContextSourcesResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        sources:
+          items:
+            $ref: "#/components/schemas/ExternalContextSourceInfo"
+          type: array
+      required:
+        - sources
+      type: object
     FeatureCapabilities:
       additionalProperties: false
       properties:
@@ -13366,6 +13473,25 @@ paths:
       summary: Stream server events
       tags:
         - System
+  /external-context/sources:
+    get:
+      operationId: list-external-context-sources
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalContextSourcesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List external context sources
+      tags:
+        - External Context
   /federation/browser-login-tickets:
     post:
       operationId: issue-federation-browser-login-ticket
@@ -17397,6 +17523,139 @@ paths:
       summary: Resolve pull request discussion
       tags:
         - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}:
+    get:
+      operationId: get-pull-external-context-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - in: path
+          name: source_id
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: platform_repo_id
+          required: true
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: refresh
+          schema:
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalContextResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get external pull request context
+      tags:
+        - External Context
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}:
+    post:
+      operationId: run-pull-external-context-action-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - in: path
+          name: source_id
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: action_id
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExternalContextActionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalContextResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Run external pull request context action
+      tags:
+        - External Context
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/file-preview:
     get:
       operationId: get-pull-file-preview-on-host
@@ -22223,6 +22482,129 @@ paths:
       summary: Resolve pull request discussion
       tags:
         - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}:
+    get:
+      operationId: get-pull-external-context
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - in: path
+          name: source_id
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: platform_repo_id
+          required: true
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: refresh
+          schema:
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalContextResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get external pull request context
+      tags:
+        - External Context
+  /pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}/actions/{action_id}:
+    post:
+      operationId: run-pull-external-context-action
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - in: path
+          name: source_id
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: action_id
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExternalContextActionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalContextResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Run external pull request context action
+      tags:
+        - External Context
   /pulls/{provider}/{owner}/{name}/{number}/file-preview:
     get:
       operationId: get-pull-file-preview

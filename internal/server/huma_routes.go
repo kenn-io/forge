@@ -296,6 +296,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:          []string{"Activity"},
 	}, s.markNotificationsUndone)
 	s.pullAPI.Register(api)
+	s.registerExternalContextAPI(api)
 	s.issueAPI.Register(api)
 	s.registerProviderRepoAPI(api)
 	s.workflowAPI.Register(api)

@@ -45,6 +45,7 @@
   import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import CollapsibleDescription from "./CollapsibleDescription.svelte";
+  import ExternalContextCards from "./ExternalContextCards.svelte";
   import DetailActivityViewMenu from "./DetailActivityViewMenu.svelte";
   import DetailRefreshButton from "./DetailRefreshButton.svelte";
   import CommentBox from "./CommentBox.svelte";
@@ -3273,6 +3274,10 @@
             activity.loadActivity();
           }}
         />
+      {/if}
+
+      {#if detail.repo?.platform_repo_id}
+        <ExternalContextCards ref={routeRef} platformRepoId={detail.repo.platform_repo_id} {number} headSha={detail.platform_head_sha} />
       {/if}
 
       <!-- PR body -->

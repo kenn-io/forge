@@ -30,6 +30,11 @@ type ProviderRouteRule struct {
 // This table is intentionally exhaustive. A newly registered operation must
 // make an explicit ownership decision before the coverage gate passes.
 var providerRouteDeclarations = []ProviderRouteRule{
+	{OperationID: "list-external-context-sources", Owner: NodeLocal},
+	{OperationID: "get-pull-external-context", Owner: NodeLocal},
+	{OperationID: "get-pull-external-context-on-host", Owner: NodeLocal},
+	{OperationID: "run-pull-external-context-action", Owner: NodeLocal},
+	{OperationID: "run-pull-external-context-action-on-host", Owner: NodeLocal},
 	{OperationID: "watch-devbox-diff", Owner: NodeLocal},
 	{OperationID: "store-devbox-paste-image", Owner: NodeLocal},
 	{OperationID: "stop-devbox-session", Owner: NodeLocal},

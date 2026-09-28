@@ -26,6 +26,7 @@ nav = [
   {"Federated fleet" = "federated-fleet.md"},
   {"Faster GitHub updates" = "activity-relay.md"},
   {"Integrations" = "integrations.md"},
+  {"External PR context" = "external-pr-context.md"},
   {"Settings" = "settings.md"},
   {"Configuration" = "configuration.md"},
   {"Commands" = "commands.md"},

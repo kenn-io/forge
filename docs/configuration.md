@@ -7,6 +7,9 @@ optional modes.
 Use Settings for routine changes. Edit TOML for provider hosts and advanced
 options. Restart Forge after changing startup settings.
 
+Configure private PR cards and action buttons with TOML-only
+[`external_context` sources](external-pr-context.md).
+
 ## Repositories
 
 ### Faster GitHub updates

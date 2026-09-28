@@ -532,6 +532,9 @@ func (s *Server) applyConfigChange(ctx context.Context) configChangedEvent {
 	tmuxGraphicsChanged := s.cfg.TerminalGraphicsEnabled() !=
 		newCfg.TerminalGraphicsEnabled()
 	*s.cfg = cloneReloadedConfig(newCfg)
+	if s.externalContext != nil {
+		s.externalContext.Update(s.cfg.ExternalContext)
+	}
 	nativeStacksPrevious := s.swapGitHubNativeStackPreferenceLocked(
 		newCfg.PullRequests.PreferGitHubNativeStacks,
 	)
@@ -783,6 +786,10 @@ func cloneReloadedConfig(in *config.Config) config.Config {
 	}
 	out.Modes = cloneModeVisibility(in.Modes)
 	out.Agents = cloneConfigAgents(in.Agents)
+	out.ExternalContext = slices.Clone(in.ExternalContext)
+	for i := range out.ExternalContext {
+		out.ExternalContext[i].Command = slices.Clone(in.ExternalContext[i].Command)
+	}
 	out.DocFolders = slices.Clone(in.DocFolders)
 	out.Tmux.Command = slices.Clone(in.Tmux.Command)
 	if in.Tmux.AgentSessions != nil {

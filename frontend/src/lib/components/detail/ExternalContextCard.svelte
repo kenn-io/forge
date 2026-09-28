@@ -65,7 +65,7 @@
   }
 </script>
 
-{#if state.card || state.error || state.loading}
+{#if state.card || state.error}
   <Card level="inset" padding="sm">
     <section class="external-context" aria-label={source.name}>
       <div class="context-header">
@@ -106,8 +106,6 @@
             {/each}
           </div>
         {/if}
-      {:else if state.loading}
-        <p>Loading…</p>
       {/if}
       {#if state.error}<p class="context-error" role="alert">{state.error}</p>{/if}
     </section>

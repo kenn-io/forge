@@ -59,6 +59,10 @@ Optional fields are `markdown`, `result_head_sha`, `actions`, and
 nullable card in generated schemas and clients
 (`internal/externalcontext/types.go::ExternalContextCard.TransformSchema`).
 
+Pending reads without a card must stay out of the PR layout; a source returning
+null must never flash a loading card. Keep existing cards visible during refresh
+(`frontend/src/lib/components/detail/ExternalContextCard.svelte`).
+
 `summary` and `markdown` are display text; nothing parses them for list ranking or filtering.
 
 Summaries allow 4096 bytes, Markdown 512 KiB, and up to 32 actions. Action IDs

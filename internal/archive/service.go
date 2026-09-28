@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -167,8 +168,9 @@ func (s *Service) SetMaintenanceInterval(interval time.Duration) {
 func (s *Service) SetWake(wake func()) { s.wake = wake }
 
 // workerRepositories returns the configured repositories the worker should
-// schedule, resolving them only when the configuration changed since the
-// cached resolution or an earlier pass left a ref unresolved.
+// schedule, resolving them only when the configured repositories or their
+// provider IDs changed since the cached resolution or an earlier pass left a
+// ref unresolved.
 func (s *Service) workerRepositories(ctx context.Context) ([]resolvedRepository, error) {
 	if s.configured == nil {
 		return nil, errors.New("run eligible archives: configured repository source is required")
@@ -177,9 +179,14 @@ func (s *Service) workerRepositories(ctx context.Context) ([]resolvedRepository,
 	if err != nil {
 		return nil, fmt.Errorf("list configured archive repositories: %w", err)
 	}
+	// The key carries each ref's provider repository ID, so a different
+	// repository taking over a configured route invalidates the cache. A ref
+	// without an ID is resolved every pass rather than trusted by route.
 	refKeys := make([]string, 0, len(refs))
+	cacheable := true
 	for _, ref := range refs {
-		refKeys = append(refKeys, archiveRepoIdentityKey(ref))
+		refKeys = append(refKeys, archiveRepoIdentityKey(ref)+"\x00"+strconv.FormatInt(ref.PlatformID, 10))
+		cacheable = cacheable && ref.PlatformID > 0
 	}
 	s.reposMu.Lock()
 	cached := s.repos
@@ -194,7 +201,7 @@ func (s *Service) workerRepositories(ctx context.Context) ([]resolvedRepository,
 	if err != nil {
 		return nil, err
 	}
-	if len(resolved) == len(refs) {
+	if cacheable && len(resolved) == len(refs) {
 		s.reposMu.Lock()
 		s.repos = &resolvedRepositoryCache{refKeys: refKeys, resolved: resolved}
 		s.reposMu.Unlock()

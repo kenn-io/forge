@@ -114,6 +114,43 @@ func TestWorkerRepositoriesCacheFollowsConfigurationAndRetriesUnresolvedRefs(t *
 	assert.Equal(second.Name, resolved[0].Ref.Name)
 }
 
+func TestWorkerRepositoriesCacheFollowsRepositoryTakingOverRoute(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	original := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	originalID := archiveServiceSeedRepo(t, database, original)
+	provider := newArchiveServiceProvider(original.Platform, original.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	source := &archiveMutableSource{refs: []platform.RepoRef{original}}
+	service, err := NewService(database, registry, &archiveTestAdmission{}, source, nil, fixedClock{value: now})
+	require.NoError(err)
+
+	resolved, err := service.workerRepositories(t.Context())
+	require.NoError(err)
+	require.Len(resolved, 1)
+	require.Equal(originalID, resolved[0].ID)
+
+	// The original repository is renamed and a different repository takes
+	// its old route; sync reports the new provider ID for the same route.
+	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
+		Platform: string(original.Platform), PlatformHost: original.Host,
+		PlatformRepoID: original.PlatformID, Owner: original.Owner, Name: "repo-old",
+	})
+	require.NoError(err)
+	replacement := original
+	replacement.PlatformID = original.PlatformID + 1
+	replacementID := archiveServiceSeedRepo(t, database, replacement)
+	source.refs = []platform.RepoRef{replacement}
+
+	resolved, err = service.workerRepositories(t.Context())
+	require.NoError(err)
+	require.Len(resolved, 1)
+	require.Equal(replacementID, resolved[0].ID,
+		"the route's new repository must not be archived under the old repository's row")
+}
+
 func TestRunPassReportsAdmissionDenialAsIdle(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

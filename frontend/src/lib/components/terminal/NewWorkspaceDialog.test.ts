@@ -340,6 +340,36 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
   });
 
+  it("preselects a renamed seeded repo and creates using its current route", async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        { ...repoFixture("acme", "gadget"), PlatformRepoID: "replacement-id" },
+        { ...repoFixture("team", "gadget-next"), PlatformRepoID: "github-acme-gadget" },
+      ],
+    });
+    await renderDialog({
+      seedRepo: {
+        provider: "gh",
+        platformHost: "github.com",
+        platformRepoId: "github-acme-gadget",
+        owner: "acme",
+        name: "gadget",
+      },
+    });
+
+    await waitFor(() => expect(repoPicker().textContent).toContain("team/gadget-next"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "team", name: "gadget-next" } },
+          body: { platform_repo_id: "github-acme-gadget" },
+        }),
+      ),
+    );
+  });
+
   it("requires an explicit choice when the seeded repo is not offered", async () => {
     // A seed that no longer resolves (for example a repository hidden from
     // the UI) must not silently divert the workspace to another repository,

@@ -195,11 +195,6 @@
     };
   }
 
-  function seedKey(seed: NewWorkspaceRepoSeed | null): string {
-    if (!seed) return "";
-    return `${canonicalProvider(seed.provider)}/${seed.platformHost}/${seed.owner}/${seed.name}`;
-  }
-
   function normalizeCreatedWorkspace(value: unknown): CreatedWorkspacePayload {
     if (typeof value !== "object" || value === null) return {};
     const record = value as Record<string, unknown>;
@@ -215,11 +210,10 @@
   // repository. Remembered choices must still resolve by stable identity;
   // use the first repository only when there is no remembered choice.
   function defaultRepoSelection(): string {
-    const seededRepoKey = seedKey(seedRepo);
-    if (seededRepoKey) {
-      if (!seedRepo?.platformRepoId) return "";
-      return repos.some((repo) => repo.key === seededRepoKey
-        && repo.platformRepoId === seedRepo.platformRepoId) ? seededRepoKey : "";
+    if (seedRepo) {
+      if (!seedRepo.platformRepoId) return "";
+      const seededIdentity = repoIdentityKey({ ...seedRepo, provider: canonicalProvider(seedRepo.provider) });
+      return repos.find((repo) => repo.platformRepoId && repoIdentityKey(repo) === seededIdentity)?.key ?? "";
     }
     const lastUsed = getLastUsedNewWorkspaceRepoKey();
     if (lastUsed) {

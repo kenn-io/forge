@@ -2594,6 +2594,54 @@ describe("PullDetail approvals", () => {
     },
   );
 
+  it("keeps a delayed merge conflict when a list refresh drops the route repository ID", async () => {
+    const current = pullDetail();
+    current.repo.capabilities.merge_mutation = true;
+    const merge = Promise.withResolvers<unknown>();
+    const refreshedDetail = Promise.withResolvers<{ data: PullDetail }>();
+    let reloading = false;
+    const repoSettings = {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    };
+    detailRuntime = makeTestAppRuntime({
+      GET: vi.fn(async (path: string) =>
+        path.startsWith("/pulls/") ? (reloading ? refreshedDetail.promise : { data: current }) : { data: repoSettings },
+      ),
+      POST: vi.fn(() => merge.promise),
+    });
+    const store = createDetailStore({ runtime: detailRuntime });
+    const { rerender } = renderPullDetail(current, repoSettings, undefined, {
+      store,
+      detailProps: { autoSync: false, platformRepoId: current.repo.platform_repo_id },
+    });
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+    await fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Merge Pull Request" })).getByRole("button", {
+        name: "Squash and merge",
+      }),
+    );
+    await screen.findByText("Merging");
+
+    reloading = true;
+    await rerender({ platformRepoId: undefined });
+    await waitFor(() => expect(store.getDetail()).toBeNull());
+    refreshedDetail.resolve({ data: current });
+    await waitFor(() => expect(store.getDetail()?.repo.platform_repo_id).toBe(current.repo.platform_repo_id));
+    merge.resolve({
+      error: {
+        code: "conflict",
+        type: "about:blank",
+        status: 409,
+        detail: "pull request closed",
+        details: { reason: "not_open" },
+      },
+    });
+    expect(await screen.findByText(/this pull request is no longer open/i)).toBeTruthy();
+  });
+
   it.each(["open", "submitted"])(
     "clears %s merge state when refreshed detail identifies a replacement repository",
     async (phase) => {

@@ -746,9 +746,10 @@
     const current = $state.snapshot(itemIdentity);
     const currentPlatformRepoId = mutationRef.platformRepoId;
     if (lastResetIdentity !== null && identityEquals(lastResetIdentity, current)
-      && (lastResetPlatformRepoId === undefined || lastResetPlatformRepoId === currentPlatformRepoId)) {
-      // First detail hydration completes the route identity; it does not replace it.
-      lastResetPlatformRepoId = currentPlatformRepoId;
+      && (currentPlatformRepoId === undefined || lastResetPlatformRepoId === undefined
+        || lastResetPlatformRepoId === currentPlatformRepoId)) {
+      // Detail hydration and reload gaps do not replace a verified repository.
+      lastResetPlatformRepoId = currentPlatformRepoId ?? lastResetPlatformRepoId;
       return;
     }
     lastResetIdentity = current;

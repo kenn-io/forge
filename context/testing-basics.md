@@ -70,6 +70,8 @@ fixtures, or changing shell-script coverage.
 - Isolation must strip inherited Git variables, use scratch global and system
   configuration, and keep the fixture outside every checkout; a working
   directory or `git -C` alone does not isolate Git.
+- ACP fixtures must explicitly select private tmux or disable tmux discovery;
+  a nil command discovers the live default server (`internal/workspace/localruntime/acp_test.go::newACPTestManager`).
 - Private tmux tests retain markers on gate, read, validation, or identity errors;
   one deadline covers gate closure and startup draining, and cleanup never addresses
   the default server. (`internal/testutil/testtmux/owner.go::Owner`)

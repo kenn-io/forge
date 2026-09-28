@@ -47,6 +47,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/federationtest"
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 	"go.kenn.io/kit/atomicfile"
@@ -73,6 +74,13 @@ const (
 )
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "acp-owner" {
+		if err := localruntime.RunACPOwner(context.Background(), os.Args[2]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	port := flag.Int("port", 0, "port to listen on (0 selects a random free port)")
 	roborev := flag.String(
 		"roborev", defaultRoborevEndpoint,

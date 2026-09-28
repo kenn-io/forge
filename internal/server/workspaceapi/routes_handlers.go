@@ -2506,6 +2506,7 @@ func (s *Handler) GetWorkspaceRuntimeService(
 	if err != nil {
 		return WorkspaceRuntimeResult{}, err
 	}
+	s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	sessions, err := s.workspaceRuntimeSessions(ctx, summary.ID)
 	if err != nil {
 		return WorkspaceRuntimeResult{}, httpapi.Internal("list runtime sessions: " + err.Error())
@@ -2797,6 +2798,9 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 		ctx, summary.ID, input.SessionKey,
 	); err != nil {
 		if errors.Is(err, localruntime.ErrSessionNotFound) {
+			if stopErr := s.runtime.StopDormantACP(ctx, summary.ID, input.SessionKey); stopErr != nil {
+				return nil, httpapi.Internal("stop ACP owner: " + stopErr.Error())
+			}
 			stopped, stopErr := s.workspaces.StopStoredRuntimeSessionByKey(
 				ctx, summary.ID, input.SessionKey,
 			)

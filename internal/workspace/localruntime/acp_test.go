@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,6 +30,10 @@ import (
 func TestACPStdioHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_FIXTURE") != "1" {
 		return
+	}
+	fixtureDir := os.Getenv("KENN_FORGE_ACP_CONTINUE_DIR")
+	if fixtureDir != "" {
+		_ = os.WriteFile(filepath.Join(fixtureDir, "pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	var promptID jsontext.Value
@@ -66,7 +72,25 @@ func TestACPStdioHelper(t *testing.T) {
 				os.Exit(3)
 			}
 			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"http":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1")
-		case "session/new":
+		case "session/new", "session/load":
+			if fixtureDir != "" {
+				file, err := os.OpenFile(filepath.Join(fixtureDir, "sessions"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+				if err != nil {
+					os.Exit(9)
+				}
+				_, _ = fmt.Fprintln(file, message.Method)
+				_ = file.Close()
+			}
+			if message.Method == "session/load" {
+				var params struct {
+					SessionID string `json:"sessionId"`
+				}
+				if json.Unmarshal(message.Params, &params) != nil || params.SessionID != "fixture-session" {
+					os.Exit(10)
+				}
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"remember"}}}}`)
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"restored answer"}}}}`)
+			}
 			var params struct {
 				CWD        string `json:"cwd"`
 				MCPServers []any  `json:"mcpServers"`
@@ -78,6 +102,10 @@ func TestACPStdioHelper(t *testing.T) {
 			resolved, err := filepath.EvalSymlinks(params.CWD)
 			if err != nil || resolved != cwd {
 				os.Exit(4)
+			}
+			if fixtureDir != "" {
+				data, _ := json.Marshal(params.MCPServers)
+				_ = os.WriteFile(filepath.Join(fixtureDir, "mcp.json"), data, 0o600)
 			}
 			configResponse(message.ID)
 			if code, err := strconv.Atoi(os.Getenv("KENN_FORGE_ACP_EXIT_AFTER_SESSION")); err == nil {
@@ -115,6 +143,19 @@ func TestACPStdioHelper(t *testing.T) {
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello "}}}}`)
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"workspace"}}}}`)
 			if params.Prompt[0].Text == "permission" {
+				if fixtureDir != "" {
+					go func() {
+						ticker := time.NewTicker(10 * time.Millisecond)
+						defer ticker.Stop()
+						for range ticker.C {
+							if _, err := os.Stat(filepath.Join(fixtureDir, "continue")); err == nil {
+								break
+							}
+						}
+						fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"output while detached"}}}}`)
+						_ = os.WriteFile(filepath.Join(fixtureDir, "continued"), nil, 0o600)
+					}()
+				}
 				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call","toolCallId":"edit","title":"Edit file","status":"pending","content":[{"type":"diff","path":"/tmp/example.txt","oldText":"before","newText":"after"}]}}}`)
 				fmt.Println(`{"jsonrpc":"2.0","id":"approval","method":"session/request_permission","params":{"sessionId":"fixture-session","toolCall":{"toolCallId":"edit","title":"Edit file"},"options":[{"optionId":"allow","name":"Allow once","kind":"allow_once"},{"optionId":"deny","name":"Reject","kind":"reject_once"}]}}`)
 			} else if params.Prompt[0].Text != "wait" {
@@ -145,8 +186,7 @@ func TestACPWorkspaceConversation(t *testing.T) {
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
-	manager := NewManager(Options{Targets: targets})
-	t.Cleanup(manager.Shutdown)
+	manager := newACPTestManager(t, Options{Targets: targets})
 	cwd, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
@@ -237,8 +277,7 @@ func TestACPRemembersSettingsPerClientAndHost(t *testing.T) {
 	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
 	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: command}, {Key: "other", Protocol: "acp", Command: command}}, nil, nil)
 	preferences := filepath.Join(t.TempDir(), "preferences.json")
-	first := NewManager(Options{Targets: targets, ACPPreferencesPath: preferences})
-	t.Cleanup(first.Shutdown)
+	first := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: preferences})
 	cwd := t.TempDir()
 	info, err := first.Launch(t.Context(), "first", cwd, "chat")
 	require.NoError(t, err)
@@ -254,8 +293,7 @@ func TestACPRemembersSettingsPerClientAndHost(t *testing.T) {
 		{"another host", filepath.Join(t.TempDir(), "preferences.json"), "chat", "fast", "low"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			manager := NewManager(Options{Targets: targets, ACPPreferencesPath: tc.path})
-			t.Cleanup(manager.Shutdown)
+			manager := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: tc.path})
 			info, err := manager.Launch(t.Context(), "second", cwd, tc.target)
 			require.NoError(t, err)
 			agent, err := manager.ACP("second", info.Key)
@@ -364,8 +402,7 @@ func TestACPReportsNaturalExitCode(t *testing.T) {
 	require.NoError(t, err)
 	exits := make(chan SessionInfo, 1)
 	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
-	manager := NewManager(Options{Targets: targets, OnSessionExit: func(info SessionInfo) { exits <- info }})
-	t.Cleanup(manager.Shutdown)
+	manager := newACPTestManager(t, Options{Targets: targets, OnSessionExit: func(info SessionInfo) { exits <- info }})
 	_, err = manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
 	require.NoError(t, err)
 	select {
@@ -408,8 +445,7 @@ func TestACPRestoresOptionsIntroducedBySavedModel(t *testing.T) {
 	preferences := filepath.Join(t.TempDir(), "preferences.json")
 	require.NoError(t, os.WriteFile(preferences, []byte(`{"chat":{"model":"deep","effort":"high"}}`), 0o600))
 	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
-	manager := NewManager(Options{Targets: targets, ACPPreferencesPath: preferences})
-	t.Cleanup(manager.Shutdown)
+	manager := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: preferences})
 	info, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
 	require.NoError(t, err)
 	agent, err := manager.ACP("workspace", info.Key)
@@ -425,8 +461,7 @@ func TestACPConcurrentSessionsMergeRememberedOptions(t *testing.T) {
 	require.NoError(t, err)
 	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
 	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: command}}, nil, nil)
-	manager := NewManager(Options{Targets: targets, ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
-	t.Cleanup(manager.Shutdown)
+	manager := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
 	firstInfo, err := manager.Launch(t.Context(), "first", t.TempDir(), "chat")
 	require.NoError(t, err)
 	secondInfo, err := manager.Launch(t.Context(), "second", t.TempDir(), "chat")
@@ -435,8 +470,11 @@ func TestACPConcurrentSessionsMergeRememberedOptions(t *testing.T) {
 	require.NoError(t, err)
 	second, err := manager.ACP("second", secondInfo.Key)
 	require.NoError(t, err)
-	require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}))
-	require.NoError(t, second.Command(ACPCommand{Type: "config", ID: "effort", Value: "high"}))
+	configured := make(chan error, 2)
+	go func() { configured <- first.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}) }()
+	go func() { configured <- second.Command(ACPCommand{Type: "config", ID: "effort", Value: "high"}) }()
+	require.NoError(t, <-configured)
+	require.NoError(t, <-configured)
 
 	thirdInfo, err := manager.Launch(t.Context(), "third", t.TempDir(), "chat")
 	require.NoError(t, err)
@@ -446,7 +484,7 @@ func TestACPConcurrentSessionsMergeRememberedOptions(t *testing.T) {
 	assert.Equal(t, "high", acpOptionValue(t, third, "effort"))
 }
 
-func acpOptionValue(t *testing.T, agent *ACP, id string) string {
+func acpOptionValue(t *testing.T, agent ACPChat, id string) string {
 	t.Helper()
 	data, err := agent.Snapshot()
 	require.NoError(t, err)
@@ -459,4 +497,62 @@ func acpOptionValue(t *testing.T, agent *ACP, id string) string {
 	}
 	require.FailNow(t, "ACP option was not returned", id)
 	return ""
+}
+
+func TestACPOwnerHelper(t *testing.T) {
+	if os.Getenv("KENN_FORGE_ACP_OWNER_FIXTURE") != "1" {
+		return
+	}
+	err := RunACPOwner(context.Background(), os.Args[len(os.Args)-1])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+func newACPTestManager(t *testing.T, options Options) *Manager {
+	t.Helper()
+	t.Setenv("KENN_FORGE_ACP_OWNER_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	if options.ACPSessionsDir == "" {
+		options.ACPSessionsDir = filepath.Join(t.TempDir(), "acp")
+	}
+	options.ACPOwnerCommand = []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}
+	// A nil tmux command in ResolveLaunchTargets discovers the live default
+	// server. ACP tests must select a private server explicitly or use ptyowner.
+	options.Targets = slices.Clone(options.Targets)
+	for i := range options.Targets {
+		if options.Targets[i].Kind == LaunchTargetShell && len(options.TmuxCommand) == 0 {
+			options.Targets[i].Available = false
+		}
+	}
+	if options.PtyOwnerRuntime == nil {
+		options = withTestPtyOwnerRuntime(t, options)
+	}
+	manager := NewManager(options)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		paths, err := filepath.Glob(filepath.Join(options.ACPSessionsDir, "*", "config.json"))
+		require.NoError(t, err)
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			require.NoError(t, err)
+			var cfg acpOwnerConfig
+			require.NoError(t, json.Unmarshal(data, &cfg))
+			err = manager.Stop(ctx, cfg.Info.WorkspaceID, cfg.Info.Key)
+			if errors.Is(err, ErrSessionNotFound) {
+				err = manager.StopDormantACP(ctx, cfg.Info.WorkspaceID, cfg.Info.Key)
+			}
+			assert.NoError(t, err)
+			if len(options.TmuxCommand) > 0 {
+				assert.NoError(t, manager.killTmuxSession(ctx, tmuxSessionName(cfg.Info.WorkspaceID, cfg.Info.Key)))
+			}
+			assert.NoError(t, options.PtyOwnerRuntime.Stop(ctx, cfg.Info.Key))
+		}
+		manager.Shutdown()
+	})
+	return manager
 }

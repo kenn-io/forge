@@ -19,8 +19,19 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 )
 
-// ACP owns a stdio agent on the workspace's execution host. Browser connections
-// subscribe to its state; disconnecting a browser does not stop an accepted turn.
+// ACPChat is the daemon attachment to an execution-host-owned conversation.
+type ACPChat interface {
+	Snapshot() ([]byte, error)
+	Subscribe() (<-chan struct{}, func())
+	Command(ACPCommand) error
+	Prompt(string) error
+	Stop(context.Context) error
+	Detach()
+	Done() <-chan struct{}
+	ExitCode() int
+}
+
+// ACP owns the SDK connection inside the durable ACP owner process.
 type ACP struct {
 	turnMu         sync.Mutex
 	cancelling     bool
@@ -39,6 +50,8 @@ type ACP struct {
 	sessionID      string
 	exitCode       int
 	promptIndex    *int
+	recordPath     string
+	revision       uint64
 }
 
 const maxACPStateBytes = 4 << 20
@@ -94,7 +107,7 @@ type ACPCommand struct {
 	Value    string `json:"value,omitempty"`
 }
 
-func startACPSession(ctx context.Context, info SessionInfo, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer) (*session, error) {
+func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
 	executable, err := resolveExecutable(command[0])
 	if err != nil {
 		return nil, err
@@ -135,15 +148,27 @@ func startACPSession(ctx context.Context, info SessionInfo, command []string, cw
 		err = errors.New("this ACP agent does not accept HTTP MCP servers required by Forge")
 	}
 	if err == nil {
-		var created acpsdk.NewSessionResponse
-		created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
-		if err == nil && created.SessionId == "" {
-			err = errors.New("ACP agent returned no session ID")
+		if saved == nil {
+			var created acpsdk.NewSessionResponse
+			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
+			if err == nil && created.SessionId == "" {
+				err = errors.New("ACP agent returned no session ID")
+			}
+			a.sessionID = string(created.SessionId)
+			a.mu.Lock()
+			a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
+			a.mu.Unlock()
+		} else {
+			a.sessionID = saved.SessionID
+			var loaded acpsdk.LoadSessionResponse
+			loaded, err = a.client.LoadSession(initCtx, acpsdk.LoadSessionRequest{Cwd: cwd, McpServers: mcpServers, SessionId: acpsdk.SessionId(saved.SessionID)})
+			if err == nil {
+				a.mu.Lock()
+				a.state.ConfigOptions = acpConfigOptions(loaded.ConfigOptions)
+				a.restoreSubmissionIDsLocked(saved.State.Messages)
+				a.mu.Unlock()
+			}
 		}
-		a.sessionID = string(created.SessionId)
-		a.mu.Lock()
-		a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
-		a.mu.Unlock()
 	}
 	if err != nil {
 		if initCtx.Err() != nil {
@@ -156,11 +181,11 @@ func startACPSession(ctx context.Context, info SessionInfo, command []string, cw
 	a.state.Connected = true
 	a.changedLocked()
 	a.mu.Unlock()
-	info.Status = SessionStatusRunning
-	return &session{info: info, acp: a, lifecycle: a, done: make(chan struct{})}, nil
+	return a, nil
 }
 
-func (a *ACP) Detach() { _ = a.Stop(context.Background()) }
+func (a *ACP) Done() <-chan struct{} { return a.done }
+func (a *ACP) ExitCode() int         { a.mu.Lock(); defer a.mu.Unlock(); return a.exitCode }
 
 // TestACP checks the same handshake used by workspace launches without retaining
 // a process or creating a workspace. The agent gets an empty temporary directory.
@@ -173,11 +198,11 @@ func (m *Manager) TestACP(ctx context.Context, command []string) error {
 		return err
 	}
 	defer os.RemoveAll(cwd)
-	session, err := startACPSession(ctx, SessionInfo{}, command, cwd, m.currentStripEnvVars(), m.agentMCPServers())
+	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), m.agentMCPServers(), nil)
 	if err != nil {
 		return err
 	}
-	return session.acp.Stop(context.Background())
+	return agent.Stop(context.Background())
 }
 
 func (a *ACP) Stop(ctx context.Context) error {
@@ -231,6 +256,7 @@ func (a *ACP) wait() {
 }
 
 func (a *ACP) changedLocked() {
+	a.revision++
 	for ch := range a.subscribers {
 		select {
 		case ch <- struct{}{}:
@@ -367,6 +393,7 @@ func (a *ACP) prompt(text, submissionID string) error {
 	copy(a.state.Messages[messageIndex+1:], a.state.Messages[messageIndex:])
 	a.state.Messages[messageIndex] = message
 	a.trimStateLocked()
+	persistErr := a.persistLocked()
 	a.changedLocked()
 	a.mu.Unlock()
 	go func() {
@@ -379,7 +406,7 @@ func (a *ACP) prompt(text, submissionID string) error {
 		}
 		a.changedLocked()
 	}()
-	return nil
+	return persistErr
 }
 
 // Include wire overhead and escaping so even many tiny tool updates or control
@@ -466,7 +493,7 @@ func (a *ACP) trimStateToBytesLocked(limit int) {
 	}
 }
 
-func (m *Manager) ACP(workspaceID, key string) (*ACP, error) {
+func (m *Manager) ACP(workspaceID, key string) (ACPChat, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.sessions[key]

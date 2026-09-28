@@ -65,6 +65,7 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 		return
 	}
 
+	s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	if agent, err := s.runtime.ACP(summary.ID, r.PathValue("session_key")); err == nil {
 		endAttachSpan()
 		serveACP(w, r, agent)

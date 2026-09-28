@@ -15,6 +15,9 @@
 - ACP launches and connection tests use a dedicated authenticated loopback HTTP listener
   on the execution host, independent of browser Host/proxy policy and companion settings;
   native harness servers and skills stay agent-owned (`cmd/kenn-forge/agent_mcp.go::newAgentMCPHTTP`).
+- Durable ACP owners retain their injected MCP address across daemon restarts;
+  reattachment updates the daemon URL and credential behind that address
+  (`internal/workspace/localruntime/acp_mcp_proxy.go::acpMCPProxy.Bind`).
 - The companion uses an optional daemon-owned listener enabled by
   `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
   a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).

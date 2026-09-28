@@ -110,6 +110,8 @@ type Options struct {
 	AgentMCPURL        string
 	AgentMCPToken      string
 	ACPPreferencesPath string
+	ACPSessionsDir     string
+	ACPOwnerCommand    []string
 
 	Targets      []LaunchTarget
 	ShellCommand []string
@@ -152,6 +154,8 @@ type Manager struct {
 	agentMCPToken      string
 	acpPreferencesMu   sync.Mutex
 	acpPreferencesPath string
+	acpSessionsDir     string
+	acpOwnerCommand    []string
 	acpPreferences     map[string]map[string]string
 
 	mu                sync.Mutex
@@ -212,7 +216,7 @@ var (
 )
 
 type session struct {
-	acp *ACP
+	acp ACPChat
 	mu  sync.Mutex
 	// inputMu serializes terminal input so an initial-message handoff owns
 	// the PTY from its paste through its Enter keystroke.
@@ -302,6 +306,8 @@ func NewManager(options Options) *Manager {
 		agentMCPURL:        options.AgentMCPURL,
 		agentMCPToken:      options.AgentMCPToken,
 		acpPreferencesPath: options.ACPPreferencesPath,
+		acpSessionsDir:     options.ACPSessionsDir,
+		acpOwnerCommand:    slices.Clone(options.ACPOwnerCommand),
 		acpPreferences:     make(map[string]map[string]string),
 
 		targets:           targets,
@@ -614,20 +620,17 @@ func (m *Manager) restoreRuntimeSession(
 		)
 		return nil
 	}
-	if restored.Kind == LaunchTargetACP {
-		return ErrSessionNotFound
-	}
-	if tmuxSession != "" {
+	if restored.Kind != LaunchTargetACP && tmuxSession != "" {
 		if err := m.requireTmuxSession(ctx, tmuxSession); err != nil {
 			return err
 		}
 	}
-	if tmuxSession == "" && m.ptyOwnerRuntime == nil {
+	if restored.Kind != LaunchTargetACP && tmuxSession == "" && m.ptyOwnerRuntime == nil {
 		return fmt.Errorf(
 			"%w: %q: pty owner runtime unavailable",
 			ErrSessionUnavailable, key,
 		)
-	} else if tmuxSession == "" && !m.ptyOwnerRuntime.HasState(key) {
+	} else if restored.Kind != LaunchTargetACP && tmuxSession == "" && !m.ptyOwnerRuntime.HasState(key) {
 		return fmt.Errorf(
 			"%w: %q: pty owner state missing",
 			ErrSessionUnavailable, key,
@@ -696,7 +699,9 @@ func (m *Manager) restoreRuntimeSession(
 		TmuxSession: tmuxSession,
 	}
 	var started *session
-	if tmuxSession == "" {
+	if info.Kind == LaunchTargetACP {
+		started, err = m.restoreACP(ctx, info, restored.CWD)
+	} else if tmuxSession == "" {
 		started, err = attachPtyOwnerSession(ctx, m.ptyOwnerRuntime, info)
 	} else {
 		command, commandErr := m.restoredRuntimeCommand(restored)
@@ -716,7 +721,9 @@ func (m *Manager) restoreRuntimeSession(
 		}
 		return err
 	}
-	started.tmuxSession = tmuxSession
+	if info.Kind != LaunchTargetACP {
+		started.tmuxSession = tmuxSession
+	}
 
 	m.mu.Lock()
 	if m.closed {
@@ -1123,6 +1130,11 @@ func (m *Manager) stopSession(ctx context.Context, s *session) error {
 		return nil
 	}
 	s.markStopRequested()
+	if s.acp != nil {
+		if err := s.stop(ctx); err != nil {
+			return err
+		}
+	}
 	if s.tmuxSession != "" {
 		if err := m.killTmuxSession(ctx, s.tmuxSession); err != nil {
 			_ = s.stop(ctx)
@@ -1130,6 +1142,9 @@ func (m *Manager) stopSession(ctx context.Context, s *session) error {
 				"kill tmux session %q: %w", s.tmuxSession, err,
 			)
 		}
+	}
+	if s.acp != nil {
+		return nil
 	}
 	return s.stop(ctx)
 }
@@ -1784,7 +1799,7 @@ func (m *Manager) Shutdown() {
 	m.mu.Unlock()
 
 	for _, s := range sessions {
-		if m.detachForRestart {
+		if m.detachForRestart || s.acp != nil {
 			s.markRecoverableDetach()
 		}
 		s.detach()
@@ -1877,6 +1892,9 @@ func (m *Manager) launchCommand(
 		cwd = optionalCWD[0]
 	}
 	command := slices.Clone(target.Command)
+	if target.Kind == LaunchTargetACP {
+		return m.acpLaunchCommand(ctx, target, workspaceID, sessionKey, cwd)
+	}
 	if target.Kind == LaunchTargetPlainShell {
 		if len(command) == 0 {
 			command = slices.Clone(m.shellCommand)
@@ -2089,7 +2107,7 @@ func (m *Manager) startOwnedSession(
 	extraStripVars []string,
 ) (*session, error) {
 	if info.Kind == LaunchTargetACP {
-		return m.startACP(ctx, info, command, cwd, extraStripVars)
+		return m.startACPOwner(ctx, info, command, cwd, extraStripVars)
 	}
 	if info.TmuxSession != "" {
 		return startTmuxAttachSession(info, command, cwd, extraStripVars)
@@ -2121,10 +2139,8 @@ func (s *session) snapshot() SessionInfo {
 
 func (s *session) watch() SessionInfo {
 	if s.acp != nil {
-		<-s.acp.done
-		s.acp.mu.Lock()
-		exitCode := s.acp.exitCode
-		s.acp.mu.Unlock()
+		<-s.acp.Done()
+		exitCode := s.acp.ExitCode()
 		s.mu.Lock()
 		s.info.Status = SessionStatusExited
 		s.info.ExitedAt = new(time.Now().UTC())

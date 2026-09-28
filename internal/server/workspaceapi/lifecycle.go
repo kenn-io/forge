@@ -164,7 +164,7 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 		h.runtimeRecoveryMu.Lock()
 		pending := stored[:0]
 		for _, session := range stored {
-			if h.runtimeRecoveryPending[session.SessionKey] {
+			if h.runtimeRecoveryPending[session.SessionKey] && session.Kind != string(localruntime.LaunchTargetACP) {
 				pending = append(pending, session)
 			}
 		}
@@ -206,6 +206,12 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 	}
 	h.restoreWorkspaceTerminals(ctx, retainedWorkspaces, pendingOnly)
 	for _, session := range stored {
+		// ACP owners keep running without daemon attachments. Restore only when
+		// this workspace is opened, and retain its row until then.
+		if session.Kind == string(localruntime.LaunchTargetACP) {
+			h.setRuntimeRecoveryPending(session.SessionKey, true)
+			continue
+		}
 		summary, err := h.workspaces.GetSummary(ctx, session.WorkspaceID)
 		if err != nil {
 			return err

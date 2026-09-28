@@ -44,9 +44,10 @@ Rules:
   and daemon restarts; restore the model before dependent options and skip choices no
   longer offered by the agent. Concurrent sessions merge only agent-confirmed changes
   into the latest saved preferences (`internal/workspace/localruntime/acp_settings.go`).
-- ACP transcripts are daemon-owned and process-local. Daemon shutdown ends these
-  sessions; do not imply tmux-style recovery or persist terminal bytes as chat
-  (`internal/workspace/localruntime/acp.go::ACP.Detach`).
+- ACP owners and their SDK connections survive daemon shutdown under tmux/ptyowner;
+  retain active turns, permissions, and chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
+- Reattach ACP only when its workspace opens, never at daemon startup; load the saved
+  ACP session only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
 - ACP messages and pending permissions share a 4 MiB JSON budget; retain the latest
   submitted prompt for reconnect deduplication and disclose removed history in chat
   (`internal/workspace/localruntime/acp.go::ACP.trimStateToBytesLocked`).

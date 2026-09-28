@@ -19,15 +19,12 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 	case u.ConfigOptionUpdate != nil:
 		a.state.ConfigOptions = acpConfigOptions(u.ConfigOptionUpdate.ConfigOptions)
 	case u.AgentMessageChunk != nil:
-		content := u.AgentMessageChunk.Content.Text
-		if content == nil {
-			return nil
+		if content := u.AgentMessageChunk.Content.Text; content != nil {
+			a.appendTextLocked("assistant", content.Text)
 		}
-		last := len(a.state.Messages) - 1
-		if last >= 0 && a.state.Messages[last].Role == "assistant" && (a.promptIndex == nil || last >= *a.promptIndex) {
-			a.state.Messages[last].Text += content.Text
-		} else {
-			a.state.Messages = append(a.state.Messages, ACPMessage{Role: "assistant", Text: content.Text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	case u.UserMessageChunk != nil:
+		if content := u.UserMessageChunk.Content.Text; content != nil {
+			a.appendTextLocked("user", content.Text)
 		}
 	case u.ToolCall != nil:
 		a.updateToolLocked(string(u.ToolCall.ToolCallId), u.ToolCall.Title, string(u.ToolCall.Status))
@@ -44,6 +41,15 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 	a.trimStateLocked()
 	a.changedLocked()
 	return nil
+}
+
+func (a *ACP) appendTextLocked(role, text string) {
+	last := len(a.state.Messages) - 1
+	if last >= 0 && a.state.Messages[last].Role == role && (a.promptIndex == nil || last >= *a.promptIndex) {
+		a.state.Messages[last].Text += text
+	} else {
+		a.state.Messages = append(a.state.Messages, ACPMessage{Role: role, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	}
 }
 
 func (a *ACP) updateToolLocked(id, title, status string) {

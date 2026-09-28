@@ -12,6 +12,7 @@ import (
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
+	"github.com/gofrs/flock"
 
 	"go.kenn.io/kit/atomicfile"
 )
@@ -93,16 +94,15 @@ func (a *ACP) setConfig(ctx context.Context, id, value string) error {
 	return nil
 }
 
-func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string) (*session, error) {
+func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string, saved *acpSavedSession) (*ACP, error) {
 	values, err := m.acpConfigValues(info.TargetKey, nil)
 	if err != nil {
 		return nil, err
 	}
-	s, err := startACPSession(ctx, info, command, cwd, strip, m.agentMCPServers())
+	a, err := startACPSession(ctx, command, cwd, strip, m.agentMCPServers(), saved)
 	if err != nil {
 		return nil, err
 	}
-	a := s.acp
 	restoreCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	remaining := maps.Clone(values)
@@ -142,7 +142,15 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 		}
 	}
 	a.saveConfig = func(values map[string]string) error { _, err := m.acpConfigValues(info.TargetKey, values); return err }
-	return s, nil
+	a.mu.Lock()
+	a.recordPath = m.acpSessionPath(info.Key)
+	err = a.persistLocked()
+	a.mu.Unlock()
+	if err != nil {
+		_ = a.Stop(context.Background())
+		return nil, err
+	}
+	return a, nil
 }
 
 // Preferences belong to the execution host and configured client, not a browser
@@ -151,6 +159,14 @@ func (m *Manager) acpConfigValues(key string, values map[string]string) (map[str
 	m.acpPreferencesMu.Lock()
 	defer m.acpPreferencesMu.Unlock()
 	if m.acpPreferencesPath != "" {
+		if err := os.MkdirAll(filepath.Dir(m.acpPreferencesPath), 0o700); err != nil {
+			return nil, err
+		}
+		lock := flock.New(m.acpPreferencesPath + ".lock")
+		if err := lock.Lock(); err != nil {
+			return nil, err
+		}
+		defer lock.Close()
 		data, err := os.ReadFile(m.acpPreferencesPath)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err

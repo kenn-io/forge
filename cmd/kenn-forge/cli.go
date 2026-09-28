@@ -77,6 +77,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		}),
 		newMCPCommand(opts.Stdout, loadMCPQuickstart),
 		newPtyOwnerCommand(),
+		newACPOwnerCommand(),
 		serve.NewCommand(opts.RunServer),
 	)
 	return root

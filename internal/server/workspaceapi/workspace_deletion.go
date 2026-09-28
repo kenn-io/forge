@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 const (
@@ -145,6 +146,17 @@ func (s *Handler) runWorkspaceDeletion(
 			}
 			if s.runtime == nil {
 				return nil
+			}
+			stored, err := s.workspaces.RuntimeSessionsForWorkspace(stopCtx, id)
+			if err != nil {
+				return err
+			}
+			for _, item := range stored {
+				if item.Kind == string(localruntime.LaunchTargetACP) {
+					if err := s.runtime.StopDormantACP(stopCtx, id, item.SessionKey); err != nil {
+						return err
+					}
+				}
 			}
 			sessions := s.runtime.ListSessions(id)
 			s.runtime.StopWorkspace(stopCtx, id)

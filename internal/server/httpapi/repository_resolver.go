@@ -37,6 +37,18 @@ func (r *RepositoryResolver) LookupRoute(
 	return r.Lookup(ctx, provider, platformHost, owner+"/"+name)
 }
 
+// LookupSelection resolves a cached repository choice by stable ID while rejecting
+// a different active repository at its old route. A zero ID retains route lookup.
+func (r *RepositoryResolver) LookupSelection(
+	ctx context.Context, provider, platformHost, owner, name string, platformRepoID int64,
+) (*db.ActiveRepo, error) {
+	owner, name = strings.Trim(owner, "/ "), strings.Trim(name, "/ ")
+	if owner == "" || name == "" {
+		return nil, ErrRepoPathRequired
+	}
+	return r.lookup(ctx, provider, platformHost, owner+"/"+name, platformRepoID)
+}
+
 // RequireRouteCapability combines canonical route lookup with the shared
 // provider-capability fallback policy.
 func (r *RepositoryResolver) RequireRouteCapability(
@@ -170,6 +182,12 @@ func (r *RepositoryResolver) Lookup(
 	ctx context.Context,
 	provider, platformHost, repoPath string,
 ) (*db.ActiveRepo, error) {
+	return r.lookup(ctx, provider, platformHost, repoPath, 0)
+}
+
+func (r *RepositoryResolver) lookup(
+	ctx context.Context, provider, platformHost, repoPath string, platformRepoID int64,
+) (*db.ActiveRepo, error) {
 	if r == nil || r.db == nil {
 		return nil, ErrRepositoryStoreUnavailable
 	}
@@ -191,13 +209,24 @@ func (r *RepositoryResolver) Lookup(
 	if repoPath == "" {
 		return nil, ErrRepoPathRequired
 	}
-	repo, err := r.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:     provider,
-		PlatformHost: platformHost,
-		RepoPath:     repoPath,
-	})
+	identity := db.RepoIdentity{
+		Platform: provider, PlatformHost: platformHost, RepoPath: repoPath,
+	}
+	repo, err := r.db.GetRepoByIdentity(ctx, identity)
 	if err != nil {
 		return nil, fmt.Errorf("lookup repo: %w", err)
+	}
+	if platformRepoID != 0 {
+		identity.PlatformRepoID = platformRepoID
+		if repo != nil && repo.Identity() != identity.ProviderIdentity() {
+			return nil, ErrRepoNotFound
+		}
+		if repo == nil {
+			repo, err = r.db.GetActiveRepoByProviderID(ctx, identity.ProviderIdentity())
+			if err != nil {
+				return nil, fmt.Errorf("lookup repo: %w", err)
+			}
+		}
 	}
 	if repo == nil {
 		return nil, ErrRepoNotFound

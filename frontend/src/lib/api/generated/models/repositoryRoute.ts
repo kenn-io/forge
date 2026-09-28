@@ -3,8 +3,6 @@
  */
 
 export interface RepositoryRoute {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
   name: string;
   owner: string;
   platform_host: string;

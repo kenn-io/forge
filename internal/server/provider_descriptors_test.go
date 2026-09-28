@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
@@ -46,6 +47,103 @@ func (r descriptorCloneRoutes) SourceForRepo(
 		return r.source
 	}
 	return nil
+}
+
+func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
+	assert, require := assert.New(t), require.New(t)
+	hubDB := dbtest.Open(t)
+	seedPR(t, hubDB, "acme", "widget", 42)
+	renamed, _, err := hubDB.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+		Owner: "acme", Name: "widgets",
+	}, time.Now().UTC().Add(time.Minute))
+	require.NoError(err)
+	require.NoError(hubDB.UpdateRepoProviderMetadata(t.Context(), renamed.Repository.ID, db.RepoProviderMetadata{
+		PlatformRepoID: "repo-acme-widget", CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
+	}))
+	hubCredentials, err := federationauth.Open(filepath.Join(t.TempDir(), "hub-credentials.json"))
+	require.NoError(err)
+	token, err := hubCredentials.MintInbound(proxyTestNodeID, federationauth.SpokeToHubScopes())
+	require.NoError(err)
+	hubServer := New(hubDB, nil, nil, "/", nil, ServerOptions{
+		FederationSpokeID: proxyTestHubID, FederationCredentials: hubCredentials,
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, hubServer) })
+	hub := httptest.NewTLSServer(hubServer)
+	t.Cleanup(hub.Close)
+	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "spoke-credentials.json"))
+	require.NoError(err)
+	require.NoError(credentials.StoreOutbound(proxyTestHubID, token, federationauth.SpokeToHubScopes()))
+	nodeDB := dbtest.Open(t)
+	node := New(nodeDB, nil, nil, "/", &config.Config{
+		Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleSpoke, Hub: &config.FleetHub{NodeID: proxyTestHubID, BaseURL: hub.URL}},
+		Tmux:  config.Tmux{Command: []string{"kenn-forge-no-such-tmux"}},
+	}, ServerOptions{
+		FederationSpokeID: proxyTestNodeID, FederationSpokeActive: true,
+		FederationCredentials: credentials, FederationHTTPClient: hub.Client(),
+		WorktreeDir: filepath.Join(t.TempDir(), "worktrees"), PtyOwnerInProcess: true,
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { gracefulShutdown(t, node) })
+
+	response := testutil.DoJSON(t, node, http.MethodPost, "/api/v1/fleet/hosts/self/repo/gh/acme/widget/workspaces", map[string]any{
+		"branch": "work/cached-rename", "platform_repo_id": "repo-acme-widget",
+	})
+	require.Equal(http.StatusAccepted, response.Code, response.Body.String())
+	var created workspaceapi.WorkspaceResponse
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &created))
+	stored, err := nodeDB.GetWorkspace(t.Context(), created.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	identity, err := nodeDB.GetRepoByID(t.Context(), stored.RepoID)
+	require.NoError(err)
+	require.NotNil(identity)
+	assert.Equal("repo-acme-widget", identity.PlatformRepoID)
+	assert.Equal("widgets", stored.RepoName)
+	assert.Equal("https://github.com/acme/widgets.git", identity.CloneURL)
+
+	// A new owner at the cached route must not redirect that same selection.
+	_, _, err = hubDB.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement",
+		Owner: "acme", Name: "widget",
+	}, time.Now().UTC().Add(2*time.Minute))
+	require.NoError(err)
+	response = testutil.DoJSON(t, node, http.MethodPost, "/api/v1/fleet/hosts/self/repo/gh/acme/widget/workspaces", map[string]any{
+		"branch": "work/cached-rename", "platform_repo_id": "repo-acme-widget",
+	})
+	assert.Equal(http.StatusNotFound, response.Code, response.Body.String())
+}
+
+func TestRepositorySelectionRejectsDifferentHubIdentity(t *testing.T) {
+	assert, require := assert.New(t), require.New(t)
+	descriptor, err := providerplane.BuildRepositoryDescriptor(providerplane.RepositorySnapshot{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "replacement",
+		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+		SnapshotRevision: 1, ObservedAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+	raw, err := json.Marshal(descriptor)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	source := &hubProviderSource{db: database, client: providerPlaneClientFunc(func(
+		_ context.Context, _ federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		body, err := io.ReadAll(request.Body)
+		require.NoError(err)
+		assert.JSONEq(`{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget","platform_repo_id":"original"}`, string(body))
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(raw))}, nil
+	})}
+	_, err = source.ResolveRepositoryRoute(t.Context(), providerplane.RepositoryRoute{
+		Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+	}, "original")
+	require.Error(err)
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	require.True(ok)
+	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
+	repositories, err := database.ListRepos(t.Context())
+	require.NoError(err)
+	assert.Empty(repositories, "reject the mismatched identity before observing it locally")
 }
 
 func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {

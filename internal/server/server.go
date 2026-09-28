@@ -1233,7 +1233,7 @@ func newServer(
 	var providerWorkspaceAutomation workspaceapi.ProviderWorkspaceAutomation
 	var mergeRequestWorktreeSource workspaceapi.MergeRequestWorktreeSource
 	var resolveRepository func(
-		context.Context, providerplane.RepositoryRoute,
+		context.Context, providerplane.RepositoryRoute, string,
 	) (*db.Repo, error)
 	if s.providerSource != nil {
 		providerWorkspaceAutomation = s.providerSource

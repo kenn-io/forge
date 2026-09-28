@@ -99,6 +99,9 @@ embedder protocol for arbitrary host state.
 - Repository selections and loaded PR/issue details carry the provider's stable ID through local, fleet,
   and devbox creation; validate it before workspace reuse or creation so a reused route cannot redirect the choice
   (`internal/server/workspaceapi/routes_handlers.go::createIssueWorkspaceRouteCore`).
+- Ad-hoc and devbox repository choices use their stable ID after a rename; creation rejects a different active repository
+  at the supplied route and rejects unknown or inactive repository IDs. Route-only callers keep current-route semantics
+  (`internal/db/repository_catalog.go::DB.GetRepositoryProviderSnapshot`).
 - `POST /repo/{provider}/{owner}/{name}/workspaces`: create or reuse an ad-hoc
   workspace for new work with no source item. Its branch is its identity: the
   item key is `adhoc:<branch>` and `item_number` stays 0, so item-key fallbacks

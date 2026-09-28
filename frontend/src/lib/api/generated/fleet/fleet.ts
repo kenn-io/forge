@@ -136,7 +136,7 @@ import type {
   RenameFleetWorkspaceRuntimeSessionDefaultOne,
   RenameFleetWorkspaceRuntimeSessionPathParameters,
   RepositoryDescriptor,
-  RepositoryRoute,
+  RepositoryDescriptorRequest,
   RetryFleetWorkspaceDefaultOne,
   RetryFleetWorkspacePathParameters,
   RevealFleetWorkspaceDefaultOne,
@@ -484,7 +484,7 @@ export const getFederationGetRepositoryDescriptorUrl = () => {
  * @summary Resolve a repository descriptor for a Forge spoke
  */
 export const federationGetRepositoryDescriptor = async (
-  repositoryRoute: NonReadonly<RepositoryRoute>,
+  repositoryDescriptorRequest: NonReadonly<RepositoryDescriptorRequest>,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<RepositoryDescriptor> => {
   const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
@@ -497,7 +497,7 @@ export const federationGetRepositoryDescriptor = async (
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(repositoryRoute),
+    body: JSON.stringify(repositoryDescriptorRequest),
   });
 };
 

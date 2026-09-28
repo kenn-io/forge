@@ -706,6 +706,7 @@ export * from "./repoPreviewRow.ts";
 export * from "./repoRefResponse.ts";
 export * from "./repoResponse.ts";
 export * from "./repositoryDescriptor.ts";
+export * from "./repositoryDescriptorRequest.ts";
 export * from "./repositoryIdentity.ts";
 export * from "./repositoryRoute.ts";
 export * from "./repoSummaryAuthorResponse.ts";

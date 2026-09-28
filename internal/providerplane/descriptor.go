@@ -41,6 +41,12 @@ type RepositoryRoute struct {
 	Name         string `json:"name"`
 }
 
+// RepositoryDescriptorRequest may bind a cached route to a selected repository.
+type RepositoryDescriptorRequest struct {
+	RepositoryRoute
+	PlatformRepoID string `json:"platform_repo_id,omitempty"`
+}
+
 // CanonicalRepositoryRoute normalizes route spellings accepted by public API
 // paths into the exact form carried on the federation wire.
 func CanonicalRepositoryRoute(route RepositoryRoute) (RepositoryRoute, error) {

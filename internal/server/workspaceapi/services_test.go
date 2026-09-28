@@ -97,7 +97,7 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 		}),
 		Workspaces: manager,
 		ResolveRepository: func(
-			ctx context.Context, route providerplane.RepositoryRoute,
+			ctx context.Context, route providerplane.RepositoryRoute, _ string,
 		) (*db.Repo, error) {
 			resolved = true
 			assert.Equal(providerplane.RepositoryRoute{

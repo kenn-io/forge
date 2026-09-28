@@ -154,15 +154,12 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *createDevboxW
 		return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 	}
 	body := input.Body
-	repo, err := s.repoResolver.LookupRoute(ctx, body.Provider, body.PlatformHost, body.Owner, body.Name)
+	repo, err := s.repoResolver.LookupSelection(ctx, body.Provider, body.PlatformHost, body.Owner, body.Name, body.PlatformRepoID)
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 	if repo == nil {
 		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound, "add the repository to Forge before creating a remote workspace", nil)
-	}
-	if body.PlatformRepoID != "" && body.PlatformRepoID != repo.PlatformRepoID {
-		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound, "repository identity changed during workspace creation", nil)
 	}
 	if body.MRNumber == 0 && body.IssueNumber == 0 && strings.TrimSpace(body.Branch) == "" {
 		var entropy [8]byte

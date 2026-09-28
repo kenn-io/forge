@@ -25,9 +25,67 @@ import (
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/terminalwebsocket"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
+
+func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
+	assert, require := assert.New(t), require.New(t)
+	database := dbtest.Open(t)
+	seedPR(t, database, "acme", "widget", 7)
+	entry, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widgets",
+	}, time.Now().UTC().Add(time.Minute))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderMetadata(t.Context(), entry.Repository.ID, db.RepoProviderMetadata{
+		PlatformRepoID: "repo-acme-widget", CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
+	}))
+	seedIssueForRepo(t, database, entry.Repository.ID, "github.com", "acme", "widgets", 7, "open", "Update project")
+	var creations atomic.Int32
+	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/worker":
+			assert.NoError(json.MarshalWrite(w, devbox.WorkerIdentity{}))
+		case "POST /api/v1/worker/workspaces":
+			var request workspaceapi.WorkerCreateRequest
+			if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
+				return
+			}
+			assert.Equal("repo-acme-widget", request.Repository.PlatformRepoID)
+			assert.Equal("widgets", request.Repository.Name)
+			assert.Equal("https://github.com/acme/widgets.git", request.Repository.CloneURL)
+			creations.Add(1)
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"original-workspace"}`))
+		default:
+			assert.Fail("unexpected worker request", "%s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(worker.Close)
+	directory := t.TempDir()
+	raw, err := json.Marshal([]any{map[string]any{
+		"id": "compute-a", "profile": devbox.Profile{Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token"},
+	}})
+	require.NoError(err)
+	require.NoError(os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
+	connections, err := devbox.OpenConnections(directory)
+	require.NoError(err)
+	t.Cleanup(connections.Close)
+	controller := New(database, nil, nil, "/", nil, ServerOptions{Devboxes: connections, DisableWorkspaceBackgroundMonitors: true})
+	t.Cleanup(func() { gracefulShutdown(t, controller) })
+	for _, itemField := range []string{"branch", "mr_number", "issue_number"} {
+		body := map[string]any{"provider": "github", "platform_host": "github.com", "owner": "acme", "name": "widget", "platform_repo_id": "repo-acme-widget", itemField: 7}
+		if itemField == "branch" {
+			body[itemField] = "work/cached-rename"
+		}
+		response := testutil.DoJSON(t, controller, http.MethodPost, "/api/v1/devboxes/compute-a/workspaces", body)
+		assert.Equal(http.StatusOK, response.Code, "%s: %s", itemField, response.Body.String())
+	}
+	assert.Equal(int32(3), creations.Load())
+}
 
 func TestDevboxCreationRejectsRepositoryRouteReplacement(t *testing.T) {
 	for _, itemField := range []string{"mr_number", "issue_number"} {

@@ -209,6 +209,12 @@ func workspaceProviderName(local workspace.Workspace) string {
 func (s *hubProviderSource) GetRepositoryDescriptor(
 	ctx context.Context, route providerplane.RepositoryRoute,
 ) (providerplane.RepositoryDescriptor, error) {
+	return s.getRepositoryDescriptor(ctx, route, "")
+}
+
+func (s *hubProviderSource) getRepositoryDescriptor(
+	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID string,
+) (providerplane.RepositoryDescriptor, error) {
 	route, err := providerplane.CanonicalRepositoryRoute(route)
 	if err != nil {
 		return providerplane.RepositoryDescriptor{}, httpapi.BadRequest(
@@ -216,14 +222,20 @@ func (s *hubProviderSource) GetRepositoryDescriptor(
 		)
 	}
 	var descriptor providerplane.RepositoryDescriptor
-	httpRequest, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: new(generated.RepositoryRoute{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name})})
+	httpRequest, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name, PlatformRepoID: optionalProviderQuery(platformRepoID)}})
 	if err != nil {
 		return providerplane.RepositoryDescriptor{}, err
 	}
 	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &descriptor); err != nil {
 		return providerplane.RepositoryDescriptor{}, err
 	}
-	if err := descriptor.ValidateRoute(route); err != nil {
+	if platformRepoID == "" {
+		err = descriptor.ValidateRoute(route)
+	} else if err = descriptor.Validate(); err == nil && (descriptor.Provider != route.Provider ||
+		descriptor.PlatformHost != route.PlatformHost || descriptor.PlatformRepoID != platformRepoID) {
+		err = errors.New("repository descriptor does not match selected repository")
+	}
+	if err != nil {
 		return providerplane.RepositoryDescriptor{}, invalidHubDescriptor(err)
 	}
 	if err := s.observeRepositoryDescriptor(ctx, descriptor); err != nil {
@@ -233,9 +245,9 @@ func (s *hubProviderSource) GetRepositoryDescriptor(
 }
 
 func (s *hubProviderSource) ResolveRepositoryRoute(
-	ctx context.Context, route providerplane.RepositoryRoute,
+	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID string,
 ) (*db.Repo, error) {
-	descriptor, err := s.GetRepositoryDescriptor(ctx, route)
+	descriptor, err := s.getRepositoryDescriptor(ctx, route, strings.TrimSpace(platformRepoID))
 	if err != nil {
 		return nil, err
 	}

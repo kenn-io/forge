@@ -8374,6 +8374,32 @@ components:
         - observed_at
         - stale
       type: object
+    RepositoryDescriptorRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepositoryDescriptorRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          type: string
+        owner:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - owner
+        - name
+      type: object
     RepositoryIdentity:
       additionalProperties: false
       properties:
@@ -8396,13 +8422,6 @@ components:
     RepositoryRoute:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/RepositoryRoute.json
-          format: uri
-          readOnly: true
-          type: string
         name:
           type: string
         owner:
@@ -13941,7 +13960,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RepositoryRoute"
+              $ref: "#/components/schemas/RepositoryDescriptorRequest"
         required: true
       responses:
         "200":

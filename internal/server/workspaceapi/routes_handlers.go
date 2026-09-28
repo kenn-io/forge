@@ -835,14 +835,6 @@ func (s *Handler) CreateAdHocWorkspaceService(
 			"item_type", db.WorkspaceItemTypeAdHoc,
 			"duration_ms", time.Since(started).Milliseconds(), "success", err == nil)
 	}()
-	if s.resolveRepository != nil {
-		if _, err := s.resolveRepository(ctx, providerplane.RepositoryRoute{
-			Provider: req.Provider, PlatformHost: req.PlatformHost,
-			Owner: req.Owner, Name: req.Name,
-		}); err != nil {
-			return WorkspaceResult{}, err
-		}
-	}
 	input := &createAdHocWorkspaceInput{
 		Provider: req.Provider, PlatformHost: req.PlatformHost,
 		Owner: req.Owner, Name: req.Name,
@@ -863,14 +855,23 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 	if s.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
+	var repo *db.Repo
+	var err error
+	if s.resolveRepository != nil {
+		repo, err = s.resolveRepository(ctx, providerplane.RepositoryRoute{
+			Provider: input.Provider, PlatformHost: input.PlatformHost,
+			Owner: input.Owner, Name: input.Name,
+		}, input.Body.PlatformRepoID)
+		if err != nil {
+			return nil, err
+		}
+	} else if strings.TrimSpace(input.Body.PlatformRepoID) != "" {
+		repo, err = s.resolver.LookupSelection(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Body.PlatformRepoID)
+	} else {
+		repo, err = s.lookupRepoByProviderRoute(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name)
+	}
 	if err != nil {
 		return nil, providerRouteLookupError(err)
-	}
-	if input.Body.PlatformRepoID != "" && input.Body.PlatformRepoID != repo.PlatformRepoID {
-		return nil, repositoryRouteFenceProblem(db.ErrRepositoryRouteFenceChanged)
 	}
 
 	branch := strings.TrimSpace(derefString(input.Body.Branch))

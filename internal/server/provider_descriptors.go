@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ import (
 )
 
 type federationRepositoryDescriptorInput struct {
-	Body providerplane.RepositoryRoute
+	Body providerplane.RepositoryDescriptorRequest
 }
 
 type federationRepositoryDescriptorOutput = httpapi.BodyOutput[providerplane.RepositoryDescriptor]
@@ -56,17 +57,20 @@ func (s *Server) federationRepositoryDescriptor(
 		)
 	}
 	observedAt := s.now().UTC()
-	snapshot, err := s.db.ResolveActiveRepositoryRoute(ctx, descriptorDBIdentity(input.Body))
-	if err != nil {
-		return nil, httpapi.Internal("resolve repository descriptor failed")
-	}
-	if snapshot == nil {
+	repo, err := s.repoResolver.LookupSelection(
+		ctx, input.Body.Provider, input.Body.PlatformHost,
+		input.Body.Owner, input.Body.Name, input.Body.PlatformRepoID,
+	)
+	if errors.Is(err, httpapi.ErrRepoNotFound) {
 		return nil, httpapi.NotFound(
 			httpapi.CodeRepoNotFound, "repository not found", nil,
 		)
 	}
+	if err != nil {
+		return nil, httpapi.Internal("resolve repository descriptor failed")
+	}
 	descriptor, err := providerplane.BuildRepositoryDescriptor(
-		repositoryDescriptorSnapshot(snapshot.Repository, observedAt),
+		repositoryDescriptorSnapshot(repo.Repo, observedAt),
 	)
 	if err != nil {
 		return nil, httpapi.Internal("build repository descriptor failed")

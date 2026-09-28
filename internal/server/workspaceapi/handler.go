@@ -100,7 +100,7 @@ type Deps struct {
 	RefreshProjectInventory func(context.Context, string) error
 	LookupRepo              func(context.Context, string, string, string, string) (*db.ActiveRepo, error)
 	ResolveRepository       func(
-		context.Context, providerplane.RepositoryRoute,
+		context.Context, providerplane.RepositoryRoute, int64,
 	) (*db.Repo, error)
 	EnqueueDetailSync func(
 		string, []any, func(context.Context) error, func(context.Context),
@@ -137,7 +137,7 @@ type Handler struct {
 	refreshWorktreeStats           func(context.Context, string, string) error
 	refreshProjectInventory        func(context.Context, string) error
 	lookupRepo                     func(context.Context, string, string, string, string) (*db.ActiveRepo, error)
-	resolveRepository              func(context.Context, providerplane.RepositoryRoute) (*db.Repo, error)
+	resolveRepository              func(context.Context, providerplane.RepositoryRoute, int64) (*db.Repo, error)
 	enqueueDetailSync              func(string, []any, func(context.Context) error, func(context.Context)) bool
 	providerWriteGate              providerplane.WriteAdmitter
 	launchSpecResolver             providerplane.WorkspaceLaunchSpecResolver

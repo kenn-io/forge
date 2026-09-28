@@ -48602,7 +48602,7 @@ type FederationFilterUnassignedActivitySubjectsBody = FederationUnassignedActivi
 
 type FederationGetDiffDescriptorBody = FederationDiffDescriptorRequest
 
-type FederationGetRepositoryDescriptorBody = RepositoryRoute
+type FederationGetRepositoryDescriptorBody = RepositoryDescriptorRequest
 
 type FederationUpdateProviderSettingsBody = ProviderSettingsUpdate
 
@@ -57217,6 +57217,16 @@ type RepositoryDescriptor struct {
 	Stale           bool      `json:"stale"`
 }
 
+type RepositoryDescriptorRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string `json:"$schema,omitempty"`
+	Name           string  `json:"name"`
+	Owner          string  `json:"owner"`
+	PlatformHost   string  `json:"platform_host"`
+	PlatformRepoID *string `json:"platform_repo_id,omitempty"`
+	Provider       string  `json:"provider"`
+}
+
 type RepositoryIdentity struct {
 	Name           *string `json:"name,omitempty"`
 	Owner          *string `json:"owner,omitempty"`
@@ -57226,12 +57236,10 @@ type RepositoryIdentity struct {
 }
 
 type RepositoryRoute struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	Name         string  `json:"name"`
-	Owner        string  `json:"owner"`
-	PlatformHost string  `json:"platform_host"`
-	Provider     string  `json:"provider"`
+	Name         string `json:"name"`
+	Owner        string `json:"owner"`
+	PlatformHost string `json:"platform_host"`
+	Provider     string `json:"provider"`
 }
 
 type RequestChangesPRHostInputBody struct {

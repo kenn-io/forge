@@ -779,7 +779,9 @@ describe("WorkspaceTerminalView hostVisible", () => {
           return hostVisible;
         },
       },
-      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore }]]),
+      context: new Map([
+        [STORES_KEY, { events: eventsStore, settings: settingsStore, detail: { isPullMerging: () => false } }],
+      ]),
     });
 
     try {

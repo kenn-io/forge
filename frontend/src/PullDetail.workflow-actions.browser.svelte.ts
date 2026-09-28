@@ -255,6 +255,7 @@ async function renderWorkflowDetail() {
     markPullReady: vi.fn(),
     approvePullWorkflows: vi.fn(),
     mergePull: vi.fn(),
+    isPullMerging: () => false,
     editComment: vi.fn(),
     savePRBodyInBackground: vi.fn(),
     setLocalPRBody: vi.fn(),

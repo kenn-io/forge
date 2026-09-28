@@ -318,17 +318,24 @@ test.describe("head-pinned merge and approve", () => {
     );
   });
 
-  test("generic merge conflict keeps the modal open and shows the provider message", async ({ page }) => {
-    await page.route(MERGE_PATH, async (route: Route) => {
-      await route.fulfill(conflictProblem("conflict", "pull request is not mergeable"));
-    });
+  test("pending merge closes the modal and reports a later failure outside it", async ({ page }) => {
+    const mergeRequest = Promise.withResolvers<Route>();
+    await page.route(MERGE_PATH, (route) => mergeRequest.resolve(route));
 
     await gotoPull42(page);
-    await openMergeModalAndConfirm(page);
-
+    await page.locator(".btn--merge").first().click();
     const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
-    await expect(modal).toBeVisible();
-    await expect(modal.locator(".merge-error")).toHaveText("pull request is not mergeable");
+    await modal.getByRole("button", { name: "Squash and merge" }).click();
+    const request = await mergeRequest.promise;
+
+    await expect(modal).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Merging", exact: true }).filter({ visible: true })).toBeDisabled();
+
+    await request.fulfill(conflictProblem("conflict", "pull request is not mergeable"));
+    await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText(
+      "acme/widgets #42: pull request is not mergeable",
+    );
+    await expect(page.locator(".btn--merge").first()).toBeEnabled();
     await expect(page.getByText(STALE_PROMPT)).toHaveCount(0);
   });
 });

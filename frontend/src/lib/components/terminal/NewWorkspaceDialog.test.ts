@@ -303,7 +303,13 @@ describe("NewWorkspaceDialog", () => {
     cleanup();
 
     await renderDialog({
-      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget" },
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: "github-acme-widget",
+        owner: "acme",
+        name: "widget",
+      },
     });
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
   });
@@ -322,7 +328,13 @@ describe("NewWorkspaceDialog", () => {
 
   it("preselects the seeded repo", async () => {
     await renderDialog({
-      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "gadget" },
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: "github-acme-gadget",
+        owner: "acme",
+        name: "gadget",
+      },
     });
 
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
@@ -332,9 +344,15 @@ describe("NewWorkspaceDialog", () => {
     // A seed that no longer resolves (for example a repository hidden from
     // the UI) must not silently divert the workspace to another repository,
     // even when a last-used repo is remembered.
-    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/gadget");
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github|github.com|id|github-acme-gadget");
     await renderDialog({
-      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "concealed" },
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: "github-acme-concealed",
+        owner: "acme",
+        name: "concealed",
+      },
     });
 
     await waitFor(() =>
@@ -359,13 +377,52 @@ describe("NewWorkspaceDialog", () => {
     expect(repoPicker().textContent).not.toContain("acme/widget");
   });
 
+  it.each(["", "github|github.com|id|github-acme-gadget"])(
+    "requires a choice for an inactive workspace seed without a repository ID (saved: %s)",
+    async (lastUsed) => {
+      if (lastUsed) localStorage.setItem("kenn-forge:workspace:new_repo", lastUsed);
+      mockGet.mockResolvedValue({
+        data: [{ ...repoFixture("acme", "widget"), PlatformRepoID: "replacement-id" }, repoFixture("acme", "gadget")],
+      });
+      // An inactive repository's workspace keeps its route in the sidebar,
+      // but its snapshot no longer includes the repository's stable ID.
+      await renderDialog({
+        seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget" },
+      });
+
+      await waitFor(() => expect(repoPicker().textContent).not.toContain("Loading repositories"));
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+      expect(repoPicker().textContent).not.toContain("acme/widget");
+      expect(repoPicker().textContent).not.toContain("acme/gadget");
+      await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
+      expect(mockPost).not.toHaveBeenCalled();
+
+      await pickRepo("acme/widget");
+      await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+      await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget" } },
+          body: { platform_repo_id: "replacement-id" },
+        }),
+      );
+    },
+  );
+
   it("keeps requiring a choice for an unavailable seed after switching sources", async () => {
     // The seed promise holds across source switches: leaving for Kata and
     // returning to the repository source must not divert to the last-used
     // or first repository when the seed is still unavailable.
-    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/gadget");
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github|github.com|id|github-acme-gadget");
     await renderDialog({
-      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "concealed" },
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: "github-acme-concealed",
+        owner: "acme",
+        name: "concealed",
+      },
     });
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),

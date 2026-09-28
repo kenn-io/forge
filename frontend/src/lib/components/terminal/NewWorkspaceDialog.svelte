@@ -217,8 +217,9 @@
   function defaultRepoSelection(): string {
     const seededRepoKey = seedKey(seedRepo);
     if (seededRepoKey) {
+      if (!seedRepo?.platformRepoId) return "";
       return repos.some((repo) => repo.key === seededRepoKey
-        && (!seedRepo?.platformRepoId || repo.platformRepoId === seedRepo.platformRepoId)) ? seededRepoKey : "";
+        && repo.platformRepoId === seedRepo.platformRepoId) ? seededRepoKey : "";
     }
     const lastUsed = getLastUsedNewWorkspaceRepoKey();
     if (lastUsed) {

@@ -64,14 +64,24 @@ func startClient(ctx context.Context, executable string, options []string, cwd s
 		release()
 	}
 	c := &client{input: input, output: jsontext.NewDecoder(output)}
-	if err := c.call("initialize", map[string]any{
-		"clientInfo":   map[string]string{"name": "kenn-forge-hooks", "version": "1"},
-		"capabilities": map[string]bool{"experimentalApi": true},
-	}, nil); err != nil {
+	if err := c.initialize(); err != nil {
 		closeClient()
 		return nil, nil, err
 	}
 	return c, closeClient, nil
+}
+
+func (c *client) initialize() error {
+	if err := c.call("initialize", map[string]any{
+		"clientInfo":   map[string]string{"name": "kenn-forge-hooks", "version": "1"},
+		"capabilities": map[string]bool{"experimentalApi": true},
+	}, nil); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(c.input, "{\"method\":\"initialized\",\"params\":{}}\n"); err != nil {
+		return fmt.Errorf("codex initialized: %w", err)
+	}
+	return nil
 }
 
 func (c *client) call(method string, params, result any) error {

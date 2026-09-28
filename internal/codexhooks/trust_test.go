@@ -2,9 +2,11 @@ package codexhooks
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/BurntSushi/toml"
@@ -16,6 +18,23 @@ import (
 
 func TestMain(m *testing.M) {
 	os.Exit(gitsafe.RunIsolatedMain(m))
+}
+
+func TestClientHandshake(t *testing.T) {
+	var sent bytes.Buffer
+	c := &client{
+		input: &sent,
+		output: jsontext.NewDecoder(strings.NewReader(
+			"{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{}}\n")),
+	}
+	require.NoError(t, c.initialize())
+	require.NoError(t, c.call("config/read", map[string]bool{"includeLayers": true}, nil))
+
+	// The acknowledgment is a notification between initialization and the
+	// first request, with no request ID or response of its own.
+	messages := strings.Split(strings.TrimSpace(sent.String()), "\n")
+	require.Len(t, messages, 3)
+	assert.JSONEq(t, `{"method":"initialized","params":{}}`, messages[1])
 }
 
 func TestConfigOptions(t *testing.T) {
@@ -118,7 +137,11 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 	}
 	var config bytes.Buffer
 	config.WriteString("# Preserve user comments.\n")
-	require.NoError(toml.NewEncoder(&config).Encode(map[string]any{"projects": projects}))
+	// Keep unrelated plugin marketplace downloads out of the CLI fixture.
+	require.NoError(toml.NewEncoder(&config).Encode(map[string]any{
+		"projects": projects,
+		"features": map[string]bool{"plugins": false},
+	}))
 	configPath := filepath.Join(codexHome, "config.toml")
 	require.NoError(os.WriteFile(configPath, config.Bytes(), 0o600))
 	c, closeClient, err := startClient(t.Context(), codex, nil, worktrees["approved"])

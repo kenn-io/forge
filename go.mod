@@ -25,6 +25,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.20.0
+	github.com/ktrysmt/go-bitbucket v0.10.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/posthog/posthog-go v1.25.3
 	github.com/rhysd/actionlint v1.7.12
@@ -152,7 +153,6 @@ require (
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
-	github.com/ktrysmt/go-bitbucket v0.10.0
 	github.com/leodido/go-urn v1.5.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/magiconair/properties v1.8.10 // indirect

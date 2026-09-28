@@ -519,7 +519,8 @@ func (b mcpBackend) CreatePullWorkspace(
 	item = itemAtResolvedRoute(item, resolved.repo)
 	result, err := b.server.workspaceAPI.CreatePullWorkspace(ctx, workspaceapi.CreatePullWorkspaceRequest{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
-		Owner: item.Owner, Name: item.Name, Number: item.Number,
+		PlatformRepoID: resolved.repo.PlatformRepoID,
+		Owner:          item.Owner, Name: item.Name, Number: item.Number,
 		SuppressAutoAssign: suppressAutoAssign,
 	})
 	if err != nil {
@@ -538,7 +539,8 @@ func (b mcpBackend) CreateIssueWorkspace(
 	item = itemAtResolvedRoute(item, resolved.repo)
 	result, err := b.server.workspaceAPI.CreateIssueWorkspaceService(ctx, workspaceapi.CreateIssueWorkspaceRequest{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
-		Owner: item.Owner, Name: item.Name, Number: item.Number,
+		PlatformRepoID: resolved.repo.PlatformRepoID,
+		Owner:          item.Owner, Name: item.Name, Number: item.Number,
 		SuppressAutoAssign: suppressAutoAssign,
 	})
 	if err != nil {
@@ -561,7 +563,8 @@ func (b mcpBackend) CreateAdHocWorkspace(
 	}
 	result, err := b.server.workspaceAPI.CreateAdHocWorkspaceService(ctx, workspaceapi.CreateAdHocWorkspaceRequest{
 		Provider: repo.Provider, PlatformHost: repo.PlatformHost,
-		Owner: repo.Owner, Name: repo.Name, Branch: branchPtr,
+		PlatformRepoID: resolved.repo.PlatformRepoID,
+		Owner:          repo.Owner, Name: repo.Name, Branch: branchPtr,
 	})
 	if err != nil {
 		return mcpserver.Workspace{}, mcpBackendMutationError(err)

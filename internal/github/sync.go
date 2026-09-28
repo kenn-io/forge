@@ -549,8 +549,8 @@ type RepoRef struct {
 }
 
 // PartialSyncError reports a repo sync cycle whose index scan completed but
-// failed to refresh one or more items in the listed scopes. It is recorded in
-// repo and global sync health like any other sync failure, but consumers that
+// failed to refresh one or more items in the listed scopes. Budget-only waits
+// preserve completed repo health; other failures update it. Consumers that
 // depend only on an unaffected scope (stack detection over merge requests,
 // workspace refresh flows) should proceed instead of treating the repository
 // as failed wholesale.
@@ -1027,43 +1027,73 @@ const (
 	failIssues                       // issue sync path failed
 )
 
-func preservePartialSyncFailure(scope failScope, failed bool, cause error) error {
-	if !failed {
+func preservePartialSyncFailure(scope failScope, cause, priorFailures error) error {
+	if priorFailures == nil {
 		return cause
 	}
 	return &PartialSyncError{
 		MergeRequests: scope&failMR != 0,
 		Issues:        scope&failIssues != 0,
-		Cause:         cause,
+		// Disabled is an expected feature state, not a new failure. Keep it
+		// first so feature classification still sees it before item errors.
+		Cause: errors.Join(cause, priorFailures),
 	}
 }
 
-// retainSyncBudgetCause keeps the first local-ceiling error seen while item
-// failures are aggregated. Other item errors intentionally retain the existing
-// generic partial-failure message, but the budget sentinel must survive so the
-// run status can classify local-ceiling exhaustion without parsing text.
-func retainSyncBudgetCause(current, candidate error) error {
-	if errors.Is(current, platform.ErrSyncBudgetExhausted) {
-		return current
-	}
-	if errors.Is(candidate, platform.ErrSyncBudgetExhausted) {
+// mixedSyncError retains both a local ceiling refusal and an independent
+// failure. The ceiling alone is a scheduling wait; the mixed result is not.
+type mixedSyncError struct {
+	cause error
+}
+
+func (e *mixedSyncError) Error() string { return e.cause.Error() }
+func (e *mixedSyncError) Unwrap() error { return e.cause }
+
+func syncBudgetWait(err error) bool {
+	_, mixed := errors.AsType[*mixedSyncError](err)
+	return errors.Is(err, platform.ErrSyncBudgetExhausted) && !mixed
+}
+
+// retainSyncFailureCause keeps the first failure of each kind, so aggregation
+// preserves real failures and the original ceiling window without accumulating
+// an error for every item in a repository.
+func retainSyncFailureCause(current, candidate error) error {
+	if current == nil {
 		return candidate
 	}
-	return current
-}
-
-func partialItemFailureError(message string, budgetCause error) error {
-	if budgetCause == nil {
-		return errors.New(message)
+	if candidate == nil {
+		return current
 	}
-	return fmt.Errorf("%s: %w", message, budgetCause)
+	if _, mixed := errors.AsType[*mixedSyncError](current); mixed {
+		return current
+	}
+	if _, mixed := errors.AsType[*mixedSyncError](candidate); mixed {
+		return errors.Join(current, candidate)
+	}
+	if syncBudgetWait(current) == syncBudgetWait(candidate) {
+		return current
+	}
+	return &mixedSyncError{cause: errors.Join(current, candidate)}
 }
 
-func joinPartialFailureCause(budgetCause, cause error) error {
-	if budgetCause == nil {
+// Hard returns retain every cause, including feature-disabled and bookkeeping
+// errors whose types control retry behavior and partial-failure consumers.
+func joinPartialFailureCause(current, cause error) error {
+	if current == nil {
 		return cause
 	}
-	return errors.Join(budgetCause, cause)
+	joined := errors.Join(current, cause)
+	if syncBudgetWait(current) != syncBudgetWait(cause) {
+		return &mixedSyncError{cause: joined}
+	}
+	return joined
+}
+
+func partialItemFailureError(message string, cause error) error {
+	if cause == nil {
+		return errors.New(message)
+	}
+	return fmt.Errorf("%s: %w", message, cause)
 }
 
 func partialSyncFailureScope(err error) failScope {
@@ -5368,10 +5398,15 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		if syncErr == nil {
 			syncErr = markErr
 		} else {
-			syncErr = errors.Join(syncErr, markErr)
+			syncErr = joinPartialFailureCause(syncErr, markErr)
 		}
 	}
 
+	// A refused cycle has not completed a new health observation. Keep the
+	// previous completed result, including a real failure, until work resumes.
+	if syncBudgetWait(syncErr) {
+		return syncErr
+	}
 	syncErrStr := ""
 	if syncErr != nil {
 		syncErrStr = syncErr.Error()
@@ -5392,6 +5427,9 @@ func (s *Syncer) recordAbortedRepoSync(
 	repoID int64,
 	syncErr error,
 ) {
+	if syncBudgetWait(syncErr) {
+		return
+	}
 	now := time.Now().UTC()
 	if err := s.db.UpdateRepoSyncStarted(ctx, repoID, now); err != nil {
 		slog.Warn("record aborted sync start failed",
@@ -6246,7 +6284,6 @@ func (s *Syncer) indexSyncRepo(
 						if err := s.doSyncRepoGraphQL(
 							ctx, repo, repoID, result, cloneFetchOK,
 						); err != nil {
-							partialCause = retainSyncBudgetCause(partialCause, err)
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureMergeRequests, err,
 							) {
@@ -6254,6 +6291,9 @@ func (s *Syncer) indexSyncRepo(
 								failedScope |= partialSyncFailureScope(err) & failMR
 							} else {
 								failedScope |= failMR
+							}
+							if failedScope&failMR != 0 {
+								partialCause = retainSyncFailureCause(partialCause, err)
 							}
 						}
 						graphQLDone = true
@@ -6265,7 +6305,6 @@ func (s *Syncer) indexSyncRepo(
 				if err := s.syncMergeRequestsFromList(
 					ctx, mrReader, repo, repoID, openMRs, cloneFetchOK,
 				); err != nil {
-					partialCause = retainSyncBudgetCause(partialCause, err)
 					if s.recordRepositoryFeatureDisabled(
 						repo, platform.RepositoryFeatureMergeRequests, err,
 					) {
@@ -6277,6 +6316,9 @@ func (s *Syncer) indexSyncRepo(
 							"err", err,
 						)
 						failedScope |= failMR
+					}
+					if failedScope&failMR != 0 {
+						partialCause = retainSyncFailureCause(partialCause, err)
 					}
 				}
 			}
@@ -6320,7 +6362,7 @@ func (s *Syncer) indexSyncRepo(
 			if failedScope != 0 {
 				s.markRepoFailed(repo, failedScope)
 			}
-			return errors.Join(
+			return joinPartialFailureCause(
 				partialCause,
 				fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err),
 			)
@@ -6352,7 +6394,7 @@ func (s *Syncer) indexSyncRepo(
 			} else if errors.Is(issueListErr, platform.ErrSyncBudgetExhausted) {
 				failedScope |= failIssues
 				budgetRefusedScope |= failIssues
-				partialCause = issueListErr
+				partialCause = retainSyncFailureCause(partialCause, issueListErr)
 			} else if s.recordRepositoryFeatureDisabled(
 				repo, platform.RepositoryFeatureIssues, issueListErr,
 			) {
@@ -6363,12 +6405,7 @@ func (s *Syncer) indexSyncRepo(
 					"err", issueListErr,
 				)
 				failedScope |= failIssues
-				budgetCause := retainSyncBudgetCause(partialCause, issueListErr)
-				if errors.Is(budgetCause, platform.ErrSyncBudgetExhausted) {
-					partialCause = budgetCause
-				} else {
-					partialCause = issueListErr
-				}
+				partialCause = retainSyncFailureCause(partialCause, issueListErr)
 			}
 		} else {
 			graphQLIssuesDone := false
@@ -6394,7 +6431,6 @@ func (s *Syncer) indexSyncRepo(
 						if err := s.doSyncRepoGraphQLIssues(
 							ctx, repo, repoID, issueResult,
 						); err != nil {
-							partialCause = retainSyncBudgetCause(partialCause, err)
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureIssues, err,
 							) {
@@ -6402,6 +6438,9 @@ func (s *Syncer) indexSyncRepo(
 								failedScope |= partialSyncFailureScope(err) & failIssues
 							} else {
 								failedScope |= failIssues
+							}
+							if failedScope&failIssues != 0 {
+								partialCause = retainSyncFailureCause(partialCause, err)
 							}
 						}
 						graphQLIssuesDone = true
@@ -6414,7 +6453,6 @@ func (s *Syncer) indexSyncRepo(
 					if err := s.syncIssuesFromList(
 						ctx, gitHubClient, repo, repoID, ghIssues, forceIssues,
 					); err != nil {
-						partialCause = retainSyncBudgetCause(partialCause, err)
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureIssues, err,
 						) {
@@ -6427,12 +6465,14 @@ func (s *Syncer) indexSyncRepo(
 							)
 							failedScope |= failIssues
 						}
+						if failedScope&failIssues != 0 {
+							partialCause = retainSyncFailureCause(partialCause, err)
+						}
 					}
 				} else {
 					if err := s.syncPlatformIssuesFromList(
 						ctx, issueReader, repo, repoID, openIssues, forceIssues,
 					); err != nil {
-						partialCause = retainSyncBudgetCause(partialCause, err)
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureIssues, err,
 						) {
@@ -6444,6 +6484,9 @@ func (s *Syncer) indexSyncRepo(
 								"err", err,
 							)
 							failedScope |= failIssues
+						}
+						if failedScope&failIssues != 0 {
+							partialCause = retainSyncFailureCause(partialCause, err)
 						}
 					}
 				}
@@ -6511,16 +6554,16 @@ func (s *Syncer) syncMergeRequestsFromList(
 	}
 
 	var hadItemFailure bool
-	var budgetCause error
+	var failureCause error
 	progress := newMergeRequestSyncProgressLogger(repo, "provider", len(mrs))
 	for i, mr := range mrs {
 		if err := s.indexUpsertMergeRequest(ctx, repo, repoID, mr, cloneFetchOK); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 				return preservePartialSyncFailure(
-					failMR, hadItemFailure, joinPartialFailureCause(budgetCause, err),
+					failMR, err, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("index upsert MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", mr.Number,
@@ -6537,7 +6580,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 	if err != nil {
 		s.markRepoFailed(repo, failMR)
 		return joinPartialFailureCause(
-			budgetCause, fmt.Errorf("get previously open MRs: %w", err),
+			failureCause, fmt.Errorf("get previously open MRs: %w", err),
 		)
 	}
 	for _, number := range closedNumbers {
@@ -6546,10 +6589,10 @@ func (s *Syncer) syncMergeRequestsFromList(
 		); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 				return preservePartialSyncFailure(
-					failMR, hadItemFailure, joinPartialFailureCause(budgetCause, err),
+					failMR, err, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("update closed MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -6563,7 +6606,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 
 	if hadItemFailure {
 		return partialItemFailureError(
-			"one or more merge request sync items failed", budgetCause,
+			"one or more merge request sync items failed", failureCause,
 		)
 	}
 	progress.done()
@@ -7495,7 +7538,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 	cloneFetchOK bool,
 ) error {
 	var failedScope failScope
-	var budgetCause error
+	var failureCause error
 	stillOpen := make(map[int]bool, len(result.PullRequests))
 	progress := newMergeRequestSyncProgressLogger(repo, "graphql", len(result.PullRequests))
 
@@ -7509,10 +7552,10 @@ func (s *Syncer) doSyncRepoGraphQL(
 		); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 				return preservePartialSyncFailure(
-					failMR, failedScope&failMR != 0, joinPartialFailureCause(budgetCause, err),
+					failMR, err, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("GraphQL sync MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -7529,7 +7572,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 	)
 	if err != nil {
 		return joinPartialFailureCause(
-			budgetCause, fmt.Errorf("get previously open MRs: %w", err),
+			failureCause, fmt.Errorf("get previously open MRs: %w", err),
 		)
 	}
 	for _, number := range closedNumbers {
@@ -7538,10 +7581,10 @@ func (s *Syncer) doSyncRepoGraphQL(
 		); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 				return preservePartialSyncFailure(
-					failMR, failedScope&failMR != 0, joinPartialFailureCause(budgetCause, err),
+					failMR, err, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("update closed MR failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -7554,7 +7597,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 	s.reconcileMergedActorEvents(ctx, repo, repoID)
 
 	if failedScope != 0 {
-		return partialItemFailureError("GraphQL sync had partial failures", budgetCause)
+		return partialItemFailureError("GraphQL sync had partial failures", failureCause)
 	}
 	progress.done()
 	return nil
@@ -7568,7 +7611,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 	result *RepoBulkResult,
 ) error {
 	var failedScope failScope
-	var budgetCause error
+	var failureCause error
 	stillOpen := make(map[int]bool, len(result.Issues))
 	progress := newIssueSyncProgressLogger(repo, "graphql", len(result.Issues))
 
@@ -7584,11 +7627,10 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 				repo, platform.RepositoryFeatureIssues, err,
 			); disabledErr != nil {
 				return preservePartialSyncFailure(
-					failIssues, failedScope&failIssues != 0,
-					joinPartialFailureCause(budgetCause, disabledErr),
+					failIssues, disabledErr, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("GraphQL sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -7605,7 +7647,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 	)
 	if err != nil {
 		return joinPartialFailureCause(
-			budgetCause, fmt.Errorf("get previously open issues: %w", err),
+			failureCause, fmt.Errorf("get previously open issues: %w", err),
 		)
 	}
 	for _, number := range closedNumbers {
@@ -7616,11 +7658,10 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 				repo, platform.RepositoryFeatureIssues, err,
 			); disabledErr != nil {
 				return preservePartialSyncFailure(
-					failIssues, failedScope&failIssues != 0,
-					joinPartialFailureCause(budgetCause, disabledErr),
+					failIssues, disabledErr, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -7631,7 +7672,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 	}
 
 	if failedScope != 0 {
-		return partialItemFailureError("GraphQL issue sync had partial failures", budgetCause)
+		return partialItemFailureError("GraphQL issue sync had partial failures", failureCause)
 	}
 	progress.done()
 	return nil
@@ -9787,7 +9828,7 @@ func (s *Syncer) syncIssuesFromList(
 	}
 
 	var hadItemFailure bool
-	var budgetCause error
+	var failureCause error
 	progress := newIssueSyncProgressLogger(repo, "rest", len(ghIssues))
 	for i, ghIssue := range ghIssues {
 		if err := s.syncOpenIssue(ctx, client, repo, repoID, ghIssue, forceRefresh); err != nil {
@@ -9795,10 +9836,10 @@ func (s *Syncer) syncIssuesFromList(
 				repo, platform.RepositoryFeatureIssues, err,
 			); disabledErr != nil {
 				return preservePartialSyncFailure(
-					failIssues, hadItemFailure, joinPartialFailureCause(budgetCause, disabledErr),
+					failIssues, disabledErr, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", ghIssue.GetNumber(),
@@ -9814,7 +9855,7 @@ func (s *Syncer) syncIssuesFromList(
 	)
 	if err != nil {
 		return joinPartialFailureCause(
-			budgetCause, fmt.Errorf("get previously open issues: %w", err),
+			failureCause, fmt.Errorf("get previously open issues: %w", err),
 		)
 	}
 	for _, number := range closedNumbers {
@@ -9825,10 +9866,10 @@ func (s *Syncer) syncIssuesFromList(
 				repo, platform.RepositoryFeatureIssues, err,
 			); disabledErr != nil {
 				return preservePartialSyncFailure(
-					failIssues, hadItemFailure, joinPartialFailureCause(budgetCause, disabledErr),
+					failIssues, disabledErr, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -9839,7 +9880,7 @@ func (s *Syncer) syncIssuesFromList(
 	}
 
 	if hadItemFailure {
-		return partialItemFailureError("one or more issue sync items failed", budgetCause)
+		return partialItemFailureError("one or more issue sync items failed", failureCause)
 	}
 	progress.done()
 	return nil
@@ -9859,16 +9900,16 @@ func (s *Syncer) syncPlatformIssuesFromList(
 	}
 
 	var hadItemFailure bool
-	var budgetCause error
+	var failureCause error
 	progress := newIssueSyncProgressLogger(repo, "provider", len(issues))
 	for i, issue := range issues {
 		if err := s.syncOpenPlatformIssue(ctx, reader, repo, repoID, issue, forceRefresh); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 				return preservePartialSyncFailure(
-					failIssues, hadItemFailure, joinPartialFailureCause(budgetCause, err),
+					failIssues, err, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("sync issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", issue.Number,
@@ -9884,7 +9925,7 @@ func (s *Syncer) syncPlatformIssuesFromList(
 	)
 	if err != nil {
 		return joinPartialFailureCause(
-			budgetCause, fmt.Errorf("get previously open issues: %w", err),
+			failureCause, fmt.Errorf("get previously open issues: %w", err),
 		)
 	}
 	for _, number := range closedNumbers {
@@ -9893,10 +9934,10 @@ func (s *Syncer) syncPlatformIssuesFromList(
 		); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 				return preservePartialSyncFailure(
-					failIssues, hadItemFailure, joinPartialFailureCause(budgetCause, err),
+					failIssues, err, failureCause,
 				)
 			}
-			budgetCause = retainSyncBudgetCause(budgetCause, err)
+			failureCause = retainSyncFailureCause(failureCause, err)
 			slog.Error("update closed issue failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
@@ -9907,7 +9948,7 @@ func (s *Syncer) syncPlatformIssuesFromList(
 	}
 
 	if hadItemFailure {
-		return partialItemFailureError("one or more issue sync items failed", budgetCause)
+		return partialItemFailureError("one or more issue sync items failed", failureCause)
 	}
 	progress.done()
 	return nil

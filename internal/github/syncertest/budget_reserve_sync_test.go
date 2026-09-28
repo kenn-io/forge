@@ -138,3 +138,97 @@ func TestEssentialReserveKeepsDiscoveryAliveAfterOptionalExhaustion(t *testing.T
 		assert.Equal("newly opened MR", *title)
 	})
 }
+
+func TestBudgetWaitPreservesCompletedRepositoryHealth(t *testing.T) {
+	t.Parallel()
+
+	for _, scope := range []string{"merge requests", "issues"} {
+		for _, priorError := range []string{"", "previous provider failure"} {
+			t.Run(scope+"/"+priorError, func(t *testing.T) {
+				t.Parallel()
+				assert := assert.New(t)
+				require := require.New(t)
+				ctx := t.Context()
+				d := openTestDB(t)
+				budget := ghclient.NewSyncBudget(200)
+				var pause atomic.Bool
+				var listCalls atomic.Int64
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					switch r.URL.EscapedPath() {
+					case "/api/v4/projects/group%2Fproject", "/api/v4/projects/42":
+						if pause.Load() && scope != "issues" {
+							budget.Spend(budget.Remaining())
+						}
+						_, _ = w.Write([]byte(`{"id":42,"path":"project","path_with_namespace":"group/project","default_branch":"main"}`))
+					case "/api/v4/projects/42/merge_requests":
+						if pause.Load() && scope == "issues" {
+							budget.Spend(budget.Remaining())
+						}
+						listCalls.Add(1)
+						_, _ = w.Write([]byte(`[]`))
+					case "/api/v4/projects/42/issues":
+						listCalls.Add(1)
+						_, _ = w.Write([]byte(`[]`))
+					default:
+						_, _ = w.Write([]byte(`[]`))
+					}
+				}))
+				t.Cleanup(server.Close)
+				client, err := gitlab.NewClient(
+					"gitlab.example.com", staticGitLabToken("token"),
+					gitlab.WithBaseURLForTesting(server.URL+"/api/v4"),
+					gitlab.WithoutRetriesForTesting(),
+					gitlab.WithTransport(ghclient.WrapSyncBudgetTransport(http.DefaultTransport, budget)),
+				)
+				require.NoError(err)
+				registry, err := ghclient.NewProviderRegistry(nil, client)
+				require.NoError(err)
+				bucket := ghclient.RateBucketKey("gitlab", "gitlab.example.com", "host")
+				syncer := ghclient.NewSyncerWithRegistry(
+					registry, d, nil, []ghclient.RepoRef{{
+						Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
+						Owner: "group", Name: "project", RepoPath: "group/project",
+					}}, time.Minute, nil, map[string]*ghclient.SyncBudget{bucket: budget},
+				)
+				t.Cleanup(syncer.Stop)
+				syncer.RunOnce(ctx)
+				repos, err := d.ListRepos(ctx)
+				require.NoError(err)
+				require.Len(repos, 1)
+				require.Empty(repos[0].LastSyncError)
+				completedAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+				require.NoError(d.UpdateRepoSyncCompleted(ctx, repos[0].ID, completedAt, priorError))
+
+				beforeCalls := listCalls.Load()
+				pause.Store(true)
+				syncer.RunOnce(ctx)
+
+				repos, err = d.ListRepos(ctx)
+				require.NoError(err)
+				require.Len(repos, 1)
+				assert.Equal(priorError, repos[0].LastSyncError)
+				assert.Equal(&completedAt, repos[0].LastSyncCompletedAt)
+				status := syncer.Status()
+				assert.Equal(ghclient.SyncErrorCodeLocalCeilingExhausted, status.LastErrorCode)
+				assert.Equal(bucket, status.LastErrorCeilingKey)
+				assert.Equal(budget.ResetAt().Format(time.RFC3339), status.LastErrorCeilingResetAt)
+				expectedCalls := beforeCalls
+				if scope == "issues" {
+					expectedCalls++
+				}
+				assert.Equal(expectedCalls, listCalls.Load(), "refused lists must not reach the provider")
+
+				pause.Store(false)
+				budget.Reset()
+				syncer.RunOnce(ctx)
+				repos, err = d.ListRepos(ctx)
+				require.NoError(err)
+				require.Len(repos, 1)
+				assert.Empty(repos[0].LastSyncError)
+				require.NotNil(repos[0].LastSyncCompletedAt)
+				assert.True(repos[0].LastSyncCompletedAt.After(completedAt))
+			})
+		}
+	}
+}

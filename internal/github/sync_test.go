@@ -16335,6 +16335,111 @@ func TestSyncerBudgetCauseSurvivesLaterIssueListFailure(t *testing.T) {
 
 	assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode,
 		"a later non-budget failure must not mask the earlier local-ceiling cause")
+	stored, err := database.GetRepoByID(ctx, repoID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Contains(stored.LastSyncError, "issue list unavailable")
+}
+
+func TestSyncerBudgetWaitWithItemFailures(t *testing.T) {
+	t.Parallel()
+
+	disabledMRs := platform.RepositoryFeatureDisabled(
+		platform.KindGitHub, "github.com", platform.RepositoryFeatureMergeRequests,
+		errors.New("pull requests disabled"),
+	)
+	for _, tc := range []struct {
+		name         string
+		itemErrors   []error
+		issueError   error
+		wantError    string
+		wantCooldown bool
+	}{
+		{name: "budget only", itemErrors: []error{platform.ErrSyncBudgetExhausted}},
+		{
+			name:       "disabled merge requests before issue list refusal",
+			itemErrors: []error{disabledMRs}, issueError: platform.ErrSyncBudgetExhausted,
+			wantCooldown: true,
+		},
+		{
+			name:         "budget refusal before merge requests disabled",
+			itemErrors:   []error{platform.ErrSyncBudgetExhausted, disabledMRs},
+			wantCooldown: true,
+		},
+		{
+			name:       "provider failure before merge requests disabled",
+			itemErrors: []error{platform.ErrPermissionDenied, disabledMRs},
+			issueError: platform.ErrSyncBudgetExhausted,
+			wantError:  "permission_denied", wantCooldown: true,
+		},
+		{
+			name:       "provider failure before budget refusal",
+			itemErrors: []error{errors.New("item unavailable"), platform.ErrSyncBudgetExhausted},
+			wantError:  "item unavailable",
+		},
+		{
+			name:       "provider failure after budget refusal",
+			itemErrors: []error{platform.ErrSyncBudgetExhausted, errors.New("item unavailable")},
+			wantError:  "item unavailable",
+		},
+		{
+			name:       "item failure before issue list refusal",
+			itemErrors: []error{errors.New("item unavailable")},
+			issueError: platform.ErrSyncBudgetExhausted,
+			wantError:  "item unavailable",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
+			require.NoError(err)
+			completedAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+			require.NoError(database.UpdateRepoSyncCompleted(ctx, repoID, completedAt, "previous failure"))
+			for i := range tc.itemErrors {
+				normalized, err := NormalizePR(repoID, buildOpenPR(i+1, completedAt))
+				require.NoError(err)
+				_, err = database.UpsertMergeRequest(ctx, normalized)
+				require.NoError(err)
+			}
+			client := &partialFailureMock{}
+			var lookups atomic.Int64
+			client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+				call := lookups.Add(1) - 1
+				return nil, tc.itemErrors[call%int64(len(tc.itemErrors))]
+			}
+			client.listOpenIssuesErr = tc.issueError
+			syncer := NewSyncer(
+				map[string]Client{"github.com": client}, database, nil,
+				[]RepoRef{repo}, time.Minute, nil, nil,
+			)
+			t.Cleanup(syncer.Stop)
+			syncer.RunOnce(ctx)
+			require.Equal(int64(len(tc.itemErrors)), lookups.Load())
+
+			stored, err := database.GetRepoByID(ctx, repoID)
+			require.NoError(err)
+			require.NotNil(stored)
+			assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode)
+			if tc.wantError == "" {
+				assert.Equal("previous failure", stored.LastSyncError)
+				assert.Equal(&completedAt, stored.LastSyncCompletedAt)
+			} else {
+				assert.Contains(stored.LastSyncError, tc.wantError)
+				require.NotNil(stored.LastSyncCompletedAt)
+				assert.True(stored.LastSyncCompletedAt.After(completedAt))
+			}
+			if tc.wantCooldown {
+				before := lookups.Load()
+				syncer.RunOnce(ctx)
+				assert.Equal(before, lookups.Load(), "disabled scope must retain its cooldown")
+			}
+		})
+	}
 }
 
 // TestSyncerBudgetRefusedIssueListSkipsETagEviction verifies the same

@@ -670,6 +670,9 @@ response never overwrites an App installation pool
 - Local-ceiling failures retain the code, credential key, and refusal-window reset through
   item, hard-return, and parallel-run aggregation; UI details require both the key and reset
   to match the live row (`internal/github/sync.go::SyncStatus`, `internal/github/budget_transport.go::syncBudgetExhaustedError`).
+- Normal sync budget waits preserve the last completed repository health and timestamp,
+  including earlier failures; mixed cycles must retain the real failure alongside the
+  ceiling cause (`internal/github/sync.go::Syncer.syncRepo`).
 - List discovery (open PR/issue lists, repo identity resolve) spends the local
   ceiling's essential reserve; optional spend (details, fast-sync, archive
   attempts without a registry reservation)

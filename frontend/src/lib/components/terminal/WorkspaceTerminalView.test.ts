@@ -3947,7 +3947,12 @@ describe("WorkspaceTerminalView", () => {
     expect(within(targetStrip).getByRole("tab", { name: /Reviewer/ })).toBeTruthy();
   });
 
-  it.each(["conversation", "workspace"])("launches into the promoted pane beside %s", async (anchor) => {
+  it.each([
+    ["agent", "conversation"],
+    ["agent", "workspace"],
+    ["quick action", "conversation"],
+    ["quick action", "workspace"],
+  ])("launches %s into the promoted pane beside %s", async (launchKind, anchor) => {
     claimForPrs();
     noteWorkspacePaneRendered("prs");
     const layout = getPaneLayoutStore("prs");
@@ -3961,6 +3966,28 @@ describe("WorkspaceTerminalView", () => {
       sessions.push(launched);
       return launched;
     });
+    if (launchKind === "quick action") {
+      mocks.quickActions = [{ label: "Review", agent: "codex", prompt: "Review this change" }];
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: Request | URL | string, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(String(input), init);
+          if (
+            request.method === "POST" &&
+            new URL(request.url).pathname === "/api/v1/workspaces/ws-1/runtime/agent-handoffs"
+          ) {
+            expect(await request.json()).toEqual({ target_key: "codex", message: "Review this change" });
+            sessions.push(launched);
+            return Response.json({
+              session: launched,
+              initial_message: { state: "delivered", target_key: "codex", message_bytes: 18 },
+            });
+          }
+          return originalFetch(input, init);
+        }),
+      );
+    }
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
     await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
     const controls = render(WorkspacePaneControls, {
@@ -3971,7 +3998,9 @@ describe("WorkspaceTerminalView", () => {
     });
     await fireEvent.click(await within(controls.container).findByRole("button", { name: "Launch session" }));
     await fireEvent.click(
-      within(screen.getByRole("dialog", { name: "Launch a session" })).getByRole("button", { name: "Codex" }),
+      within(screen.getByRole("dialog", { name: "Launch a session" })).getByRole("button", {
+        name: launchKind === "quick action" ? "Review" : "Codex",
+      }),
     );
 
     const newPane = sessionPaneKey("ws-1", undefined, "ws-1:codex");

@@ -2814,6 +2814,8 @@
       applySessionToWorkflow(session.key, sessions);
       if (leaf?.surface === "workflow") {
         appendWorkflowTabToGroup(workflowTabKeyForSession(session.key), leaf.id, sessions);
+      } else if (leaf?.surface === "detail") {
+        surfaceLayout?.promoteTab(sessionPaneKeyFor(session), { kind: "tab", leafID: leaf.id });
       }
       requestSessionFocus(sessionHostKeyFor(session));
       requestRuntime({ force: true });
@@ -4869,8 +4871,9 @@
     onClose={closeLauncher}
     onLaunch={(key) => handleLaunch(key, undefined, launcherState?.leaf)}
     onQuickAction={(action) => {
+      const leaf = launcherState?.leaf;
       closeLauncher();
-      handleQuickAction(action);
+      handleQuickAction(action, leaf);
     }}
     onOpenSession={(sessionKey) => {
       closeLauncher();

@@ -122,6 +122,8 @@ body {
    iOS zooms the page when a focused field renders below 16px. */
 :root {
   --font-size-touch-field: 1rem;
+  --font-size-phone-prose: 0.875rem;
+  --mobile-chrome-hit-target: 2.5rem;
 }
 
 @media (hover: none) and (pointer: coarse) {

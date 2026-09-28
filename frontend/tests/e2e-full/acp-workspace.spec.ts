@@ -168,7 +168,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
       await expect(mobileChat.getByRole("button", { name: "Allow once" })).toBeVisible();
       expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       const send = await mobileChat.getByRole("button", { name: "Send", exact: true }).boundingBox();
-      expect(send?.height).toBeGreaterThanOrEqual(44);
+      expect(send?.height).toBe(40);
+      await expect(mobileChat.getByRole("textbox", { name: "Message agent" })).toHaveCSS("font-size", "16px");
+      await expect(mobileChat.locator(".message-body").last()).toHaveCSS("font-size", "14px");
       await mobile.screenshot({ path: testInfo.outputPath("acp-phone.png") });
       await mobileChat.getByRole("button", { name: "Allow once" }).tap();
       await expect(mobileChat.getByRole("button", { name: "Stop reply" })).toHaveCount(0);

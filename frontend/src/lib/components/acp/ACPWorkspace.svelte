@@ -399,8 +399,12 @@
   }
 
   @media (pointer: coarse) {
-    .acp-workspace :global(.tb-chip), .round, .permission-actions :global(button) { min-width: 44px; min-height: 44px; }
-    textarea { font-size: max(16px, var(--font-size-md)); }
+    .acp-workspace :global(.tb-chip), .round, .permission-actions :global(button) { min-width: var(--mobile-chrome-hit-target); min-height: var(--mobile-chrome-hit-target); }
+    .messages { gap: var(--space-4); padding-block: var(--space-4); font-size: var(--font-size-phone-prose); }
+    .messages :global(.markdown) { font-size: inherit; }
+    .permissions { font-size: var(--font-size-sm); }
+    textarea { min-height: var(--mobile-chrome-hit-target); padding-block: var(--space-3); font-size: var(--font-size-touch-field); }
+    .toolbar { padding-block: var(--space-2); }
     .dock { padding: var(--space-2) var(--space-4) max(var(--space-4), env(safe-area-inset-bottom)); }
   }
 </style>

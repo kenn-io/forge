@@ -211,6 +211,10 @@ workspace sessions.
 
 ## Server Shutdown Ordering
 
+- Let spare-worktree registration finish within its own bounded context; canceling
+  Git mid-write can corrupt metadata used by every worktree in the repository
+  (`internal/workspace/hot_worktree.go::Manager.prepareHotWorktree`).
+
 Workspace and Fleet own independent idempotent, context-bounded lifecycles;
 Fleet starts after Workspace and shuts down its workers before Workspace stops
 (`internal/server/fleetapi/handler.go::Handler.Shutdown`). Root closes

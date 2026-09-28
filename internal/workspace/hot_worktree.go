@@ -183,7 +183,10 @@ func (m *Manager) prepareHotWorktree(ctx context.Context, commonDir, workspacePa
 				}
 				// Git writes the lock reason during registration, before this
 				// process can be interrupted while recording our own marker.
-				if err := runGitWithoutHooks(ctx, commonDir, "worktree", "add", "--lock", "--reason", hotWorktreeMarkerFile, "--detach", "--no-checkout", hot, startRef); err != nil {
+				// Finish registration before shutdown can interrupt shared Git metadata writes.
+				registrationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceCleanupTimeout)
+				defer cancel()
+				if err := runGitWithoutHooks(registrationCtx, commonDir, "worktree", "add", "--lock", "--reason", hotWorktreeMarkerFile, "--detach", "--no-checkout", hot, startRef); err != nil {
 					return err
 				}
 				var err error

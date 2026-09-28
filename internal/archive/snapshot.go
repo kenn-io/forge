@@ -181,7 +181,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 	for _, link := range links {
 		pull := &result.PullRequests[pullPositions[link.MergeRequestID]]
 		issueID, ok := issueIDs[link.IssueID]
-		if !ok || !link.Resolved {
+		if !ok {
 			if !slices.Contains(pull.Gaps, "unresolved_issue_reference") {
 				pull.Gaps = append(pull.Gaps, "unresolved_issue_reference")
 			}

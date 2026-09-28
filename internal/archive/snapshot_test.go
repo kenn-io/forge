@@ -156,6 +156,15 @@ func TestSnapshotRetainsStableIdentityAndOneReadView(t *testing.T) {
 				"a reference keeps the repository that held its route when observed, even after the route is reused")
 			require.Len(fourth.PullRequests, 1)
 			assert.NotContains(fourth.PullRequests[0].Gaps, "unresolved_issue_reference")
+			bothService := newArchiveTestService(t, database, registry, []platform.RepoRef{ref, replacement}, nil, now)
+			both, err := bothService.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+			require.NoError(err)
+			assert.Equal(first.Relations, both.Relations,
+				"the route's new repository never gains the old repository's references")
+			require.Len(both.PullRequests, 2)
+			for _, pull := range both.PullRequests {
+				assert.NotContains(pull.Gaps, "unresolved_issue_reference")
+			}
 			require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issueID, EventType: "cross_referenced", DedupeKey: "reference-1", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"after","source_number":1,"source_url":"https://provider.test/owner/after/pull/1"}`}}))
 			refreshed, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
 			require.NoError(err)

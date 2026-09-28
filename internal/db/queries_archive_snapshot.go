@@ -37,7 +37,6 @@ type ArchiveSnapshotReference struct {
 	IssueID, MergeRequestID int64
 	URL, EventKey           string
 	ObservedAt              time.Time
-	Resolved                bool
 }
 
 func LoadArchiveSnapshotRepository(ctx context.Context, tx *sql.Tx, identity RepoIdentity) (*Repo, error) {
@@ -56,23 +55,16 @@ func LoadArchiveSnapshotRepository(ctx context.Context, tx *sql.Tx, identity Rep
 }
 
 // A reference records the repository that held its source route when it was
-// observed, so renames keep it linked. A reference that names a pull's current
-// route but was recorded for another repository (route reuse) is a candidate
-// that never resolves.
+// observed, and links only to that repository's pull. Routes never decide the
+// link, so renames keep it and a later occupant of the route never gains it.
 const archiveSnapshotLinks = `link_candidates AS (
- SELECT f.*, p.id AS merge_request_id,
- f.source_repo_id IS NOT NULL AND f.source_repo_id = p.repo_id AS resolved
+ SELECT f.*, p.id AS merge_request_id
  FROM forge_issue_pr_references f
- JOIN pulls p ON p.number = f.source_number
- JOIN forge_repos pull_repo ON pull_repo.id = p.repo_id
- WHERE f.source_repo_id = p.repo_id
-    OR (pull_repo.platform = f.source_provider
-        AND pull_repo.platform_host = f.source_platform_host
-        AND pull_repo.repo_path_key = lower(f.source_owner || '/' || f.source_repo))
+ JOIN pulls p ON p.repo_id = f.source_repo_id AND p.number = f.source_number
 ), links AS (
  SELECT * FROM (
  SELECT *, ROW_NUMBER() OVER (PARTITION BY issue_id,merge_request_id,observed_event_key
- ORDER BY resolved DESC,observed_at DESC,source_url) AS reference_rank
+ ORDER BY observed_at DESC,source_url) AS reference_rank
  FROM link_candidates
  ) WHERE reference_rank=1
 )`
@@ -177,7 +169,7 @@ func LoadArchiveSnapshotReferences(ctx context.Context, tx *sql.Tx, mrIDs []int6
 		return nil, err
 	}
 	rows, err := tx.QueryContext(ctx, `WITH pulls AS (SELECT id,repo_id,number FROM forge_merge_requests WHERE id IN (SELECT value FROM json_each(?))), `+archiveSnapshotLinks+`
- SELECT issue_id,merge_request_id,source_url,observed_event_key,observed_at,resolved FROM links ORDER BY merge_request_id,issue_id`, string(ids))
+ SELECT issue_id,merge_request_id,source_url,observed_event_key,observed_at FROM links ORDER BY merge_request_id,issue_id`, string(ids))
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot references: %w", err)
 	}
@@ -185,7 +177,7 @@ func LoadArchiveSnapshotReferences(ctx context.Context, tx *sql.Tx, mrIDs []int6
 	result := []ArchiveSnapshotReference{}
 	for rows.Next() {
 		var row ArchiveSnapshotReference
-		if err := rows.Scan(&row.IssueID, &row.MergeRequestID, &row.URL, &row.EventKey, &row.ObservedAt, &row.Resolved); err != nil {
+		if err := rows.Scan(&row.IssueID, &row.MergeRequestID, &row.URL, &row.EventKey, &row.ObservedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

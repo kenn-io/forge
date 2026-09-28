@@ -262,8 +262,9 @@ registry helpers return typed errors for missing providers or capabilities.
   tracked source repository or local PR row.
   (`internal/db/migrations/000052_issue_pr_references.up.sql:1`)
 - An edge also records the tracked repository holding its source route when
-  observed, so renames keep it linked and a later occupant of the route never
-  inherits it (`internal/db/queries.go::upsertIssueEventsTx`,
+  observed, and links to pulls only through that repository ID, never by route,
+  so renames keep it linked and a later occupant of the route never inherits it
+  (`internal/db/queries.go::upsertIssueEventsTx`,
   `internal/db/queries_archive_snapshot.go::archiveSnapshotLinks`).
 - Ingest provider-native issue-event payloads and backfill stored events. GitHub
   uses cross-reference timeline events, GitLab uses related merge requests, and

@@ -401,63 +401,67 @@
 
         {#if draft.expanded}
           <div
-            class={["agent-fields", !draft.builtin && "agent-fields--custom"]}
+            class="agent-fields"
             transition:slide={{ duration: 120 }}
           >
-            {#if !draft.builtin}
-              <label class="field">
-                <span>Key</span>
-                <input
-                  type="text"
-                  bind:value={draft.key}
-                  aria-label="Custom agent key"
-                  disabled={saving}
-                  placeholder="review"
-                />
-              </label>
-              <label class="field">
-                <span>Label</span>
-                <input
-                  type="text"
-                  bind:value={draft.label}
-                  aria-label="Custom agent label"
-                  disabled={saving}
-                  placeholder="Review Agent"
-                />
-              </label>
-            {/if}
+            <div class="agent-field-group">
+              {#if !draft.builtin}
+                <label class="field">
+                  <span>Key</span>
+                  <input
+                    type="text"
+                    bind:value={draft.key}
+                    aria-label="Custom agent key"
+                    disabled={saving}
+                    placeholder="review"
+                  />
+                </label>
+                <label class="field">
+                  <span>Label</span>
+                  <input
+                    type="text"
+                    bind:value={draft.label}
+                    aria-label="Custom agent label"
+                    disabled={saving}
+                    placeholder="Review Agent"
+                  />
+                </label>
+              {/if}
 
-            <div class="field">
-              <span>Experience</span>
-              <SelectDropdown
-                title={`${agentName(draft)} experience`}
-                value={draft.protocol}
-                options={[{value: "terminal", label: "Terminal"}, {value: "acp", label: "ACP chat"}]}
-                disabled={saving}
-                onchange={(value) => { draft.protocol = value === "acp" ? "acp" : "terminal"; }}
-              />
+              <div class="field">
+                <span>Experience</span>
+                <SelectDropdown
+                  title={`${agentName(draft)} experience`}
+                  value={draft.protocol}
+                  options={[{value: "terminal", label: "Terminal"}, {value: "acp", label: "ACP chat"}]}
+                  disabled={saving}
+                  onchange={(value) => { draft.protocol = value === "acp" ? "acp" : "terminal"; }}
+                />
+              </div>
             </div>
-            <label class="field">
-              <span>{draft.protocol === "acp" ? "ACP executable" : "Binary"}</span>
-              <input
-                type="text"
-                bind:value={draft.binary}
-                aria-label={`${agentName(draft)} binary`}
-                disabled={saving || !draft.enabled}
-                placeholder={draft.key || "agent"}
-              />
-            </label>
+            <div class="agent-field-group">
+              <label class="field">
+                <span>{draft.protocol === "acp" ? "ACP executable" : "Binary"}</span>
+                <input
+                  type="text"
+                  bind:value={draft.binary}
+                  aria-label={`${agentName(draft)} binary`}
+                  disabled={saving || !draft.enabled}
+                  placeholder={draft.key || "agent"}
+                />
+              </label>
 
-            <label class="field field--args">
-              <span>Arguments</span>
-              <input
-                type="text"
-                bind:value={draft.args}
-                aria-label={`${agentName(draft)} arguments`}
-                disabled={saving || !draft.enabled}
-                placeholder="--flag value"
-              />
-            </label>
+              <label class="field field--args">
+                <span>Arguments</span>
+                <input
+                  type="text"
+                  bind:value={draft.args}
+                  aria-label={`${agentName(draft)} arguments`}
+                  disabled={saving || !draft.enabled}
+                  placeholder="--flag value"
+                />
+              </label>
+            </div>
             {#if draft.protocol === "acp"}
               <div class="acp-check">
                 <Button disabled={saving || testing || !draft.binary.trim()} onclick={() => testAgent(draft)}>
@@ -500,10 +504,9 @@
 </div>
 
 <style>
-  .acp-check { grid-column: 1 / -1; }
   .acp-check p { margin: var(--space-3) 0 0; color: var(--text-secondary); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
   .acp-check p.check-failed { color: var(--accent-red); }
-  @media (pointer: coarse) { .acp-check :global(button) { min-height: 44px; } }
+  @media (pointer: coarse) { .acp-check :global(button) { min-height: var(--mobile-chrome-hit-target); } }
   .agent-settings {
     display: flex;
     flex-direction: column;
@@ -545,16 +548,20 @@
   }
 
   .agent-fields {
-    display: grid;
-    grid-template-columns: minmax(120px, 1fr) minmax(150px, 1.2fr);
-    gap: 8px;
-    align-items: end;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
   }
 
-  .agent-fields--custom {
-    grid-template-columns:
-      minmax(88px, 0.8fr) minmax(72px, 0.7fr) minmax(96px, 0.9fr)
-      minmax(96px, 1fr) minmax(128px, 1.2fr);
+  .agent-field-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+    gap: var(--space-4);
+    align-items: start;
+  }
+
+  .field :global(.kit-select-dropdown) {
+    min-width: 0;
   }
 
   .field {
@@ -647,11 +654,4 @@
     cursor: not-allowed;
   }
 
-  @media (max-width: 900px) {
-    .agent-fields,
-    .agent-fields--custom {
-      grid-template-columns: 1fr;
-      align-items: stretch;
-    }
-  }
 </style>

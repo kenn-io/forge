@@ -78,10 +78,22 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await page.getByLabel("Custom agent label").fill("Workspace Chat");
     await page.getByRole("combobox", { name: "Workspace Chat experience: Terminal" }).click();
     await page.getByRole("option", { name: "ACP chat" }).click();
+    await page.getByLabel("Workspace Chat binary").fill("/usr/local/bin/acp-agent");
+    await page.getByLabel("Workspace Chat arguments").fill("--mode review");
+    for (const width of [1280, 1024, 600]) {
+      await page.setViewportSize({ width, height: 900 });
+      const fields = page.locator(".agent-row--custom .field");
+      for (const field of await fields.all()) {
+        const box = await field.boundingBox();
+        const control = await field.locator("input, [role=combobox]").boundingBox();
+        if (!box || !control) throw new Error("Agent field is not visible");
+        expect(control.x).toBeGreaterThanOrEqual(box.x);
+        expect(control.x + control.width).toBeLessThanOrEqual(box.x + box.width + 1);
+      }
+      await page.screenshot({ path: testInfo.outputPath(`agent-settings-${width}.png`), fullPage: true });
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
     await page.getByLabel("Workspace Chat binary").fill(process.execPath);
-    await page
-      .getByLabel("Workspace Chat arguments")
-      .fill(JSON.stringify(path.resolve("tests/fixtures/acp-agent.mjs")));
     await page.getByLabel("Workspace Chat arguments").fill('-e "process.exit(0)"');
     await page.getByRole("button", { name: "Test ACP connection" }).click();
     await expect(page.getByText(/initialize ACP agent: ACP agent disconnected/)).toBeVisible();

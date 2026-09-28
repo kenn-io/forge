@@ -9,6 +9,9 @@
 - The connected node supplies its own sources regardless of workspace host;
   spokes obtain PR metadata from the hub's synced copy. These routes have no
   federation peer scope (`internal/server/provider_route_policy.go::providerRouteDeclarations`).
+- Requests carry no viewer identity; the node's adapter credentials determine card output
+  (`internal/externalcontext/runner.go::Runner.invoke`). Every user who can open that PR
+  on that node can see the card. Configure private adapters only where all such users are authorized to see their output.
 - Actions compare stable repository identity and the displayed SHA against
   the last synced PR, not a live provider read. Send that SHA unchanged; the
   adapter must pin commit-specific work or reject it (`internal/server/external_context.go::Server.externalContextPull`).
@@ -41,6 +44,13 @@ versions. The PR object contains `provider`, `platform_host`,
 `closed`), `head_sha`, and `base_sha`. All metadata is last-synced; comments,
 body text, and diffs are excluded (`internal/externalcontext/types.go::PullRequest`).
 
+For the same resolved repository, `pull_request.platform_repo_id` and the archive
+snapshot's `repositories[].provider_id` carry the same `repo.PlatformRepoID` value
+(`internal/server/external_context.go::Server.externalContextPull`, `internal/archive/snapshot.go::Service.snapshot`).
+Match across contracts using provider, host, and this opaque ID. For GitHub it is
+the node ID (`node_id`), not the numeric database ID (`id`)
+(`platform/github/provider.go::GitHubPlatformRepository`).
+
 Responses contain `card`, with null meaning not applicable. A card has
 `status` (`neutral`, `pending`, `success`, `warning`, `error`) and `summary`.
 Optional fields are `markdown`, `result_head_sha`, `actions`, and
@@ -48,6 +58,8 @@ Optional fields are `markdown`, `result_head_sha`, `actions`, and
 `disabled_reason`. Action responses use the same envelope. Preserve the
 nullable card in generated schemas and clients
 (`internal/externalcontext/types.go::ExternalContextCard.TransformSchema`).
+
+`summary` and `markdown` are display text; nothing parses them for list ranking or filtering.
 
 Summaries allow 4096 bytes, Markdown 512 KiB, and up to 32 actions. Action IDs
 must be unique and nonblank (128 bytes maximum); labels allow 256 bytes and

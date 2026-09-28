@@ -2803,9 +2803,21 @@
       : [],
   );
 
-  function handleQuickAction(action: QuickAction): void {
+  function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
     if (!workspaceId || actionsBlocked) return;
-    runWorkspaceQuickAction(appRuntime, workspaceId, action, workspaceHostKey);
+    const id = workspaceId;
+    const hostKey = workspaceHostKey;
+    runWorkspaceQuickAction(appRuntime, id, action, hostKey, (session) => {
+      if (!isCurrentWorkspace(id, hostKey)) return;
+      clearClosedSession(session);
+      const sessions = upsertRuntimeSession(session);
+      applySessionToWorkflow(session.key, sessions);
+      if (leaf?.surface === "workflow") {
+        appendWorkflowTabToGroup(workflowTabKeyForSession(session.key), leaf.id, sessions);
+      }
+      requestSessionFocus(sessionHostKeyFor(session));
+      requestRuntime({ force: true });
+    });
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(
@@ -4645,6 +4657,8 @@
                             {launchingKey}
                             disabled={actionsBlocked}
                             {hostVisible}
+                            quickActions={workspaceQuickActions}
+                            onQuickAction={(action) => handleQuickAction(action, { surface: "workflow", id: leaf.id })}
                             onLaunch={(key) => handleLaunch(key, undefined, { surface: "workflow", id: leaf.id })}
                           />
                         </div>
@@ -5177,6 +5191,8 @@
       {launchingKey}
       disabled={actionsBlocked}
       hostVisible={interactionVisible}
+      quickActions={workspaceQuickActions}
+      onQuickAction={handleQuickAction}
       onLaunch={(key) => void handleLaunch(key)}
     />
   {/if}

@@ -4737,6 +4737,52 @@ describe("WorkspaceTerminalView", () => {
   });
 
   describe("launcher overlay", () => {
+    it.each([false, true])("launches a quick action into a new selected tab (split: %s)", async (split) => {
+      if (split) {
+        localStorage.setItem(
+          "kenn-forge-workspace-terminal-layout:ws-1",
+          persistedSplitWorkflowLayout(runningSession.key),
+        );
+      }
+      const handoffBodies: unknown[] = [];
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: Request | URL | string, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(String(input), init);
+          if (request.url.includes("/workspaces/ws-1/runtime/agent-handoffs")) {
+            handoffBodies.push(await request.json());
+            mocks.getWorkspaceRuntime.mockResolvedValue({
+              ...runtimeWithStaleSession(),
+              sessions: [runningSession, duplicateAgentSession],
+            });
+            return Response.json({
+              session: duplicateAgentSession,
+              initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+            });
+          }
+          return originalFetch(input, init);
+        }),
+      );
+      mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await screen.findByRole("tab", { name: /Helper/ });
+      const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
+      await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+      await fireEvent.click(
+        within(screen.getByRole("dialog", { name: "Quick actions" })).getByRole("button", { name: "Review" }),
+      );
+      await waitFor(() => expect(handoffBodies).toEqual([{ target_key: "helper", message: "Review this change" }]));
+      await waitFor(() =>
+        expect(
+          within(strip)
+            .getByRole("tab", { name: /Helper 2/ })
+            .getAttribute("aria-selected"),
+        ).toBe("true"),
+      );
+      expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
+    });
+
     it("runs a configured quick action from the launcher and closes it", async () => {
       const handoffBodies: unknown[] = [];
       const originalFetch = globalThis.fetch;

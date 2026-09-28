@@ -988,7 +988,10 @@
   const deferredMergePending = $derived(
     detailStore.getDetail()?.deferred_merge_pending ?? false,
   );
-  const mergePending = $derived(detailStore.isPullMerging(routeRef, number));
+  const mergePending = $derived(!stalePR && detailStore.isPullMerging({
+    ...routeRef,
+    platformRepoId: detailStore.getDetail()?.repo.platform_repo_id,
+  }, number));
   const midStackBlocker = $derived.by(() => {
     const stack = detailStore.getDetail()?.stack;
     if (!stack) return undefined;
@@ -3234,6 +3237,7 @@
           {number}
           {provider}
           {platformHost}
+          platformRepoId={d.repo.platform_repo_id}
           {repoPath}
           prTitle={p.Title}
           prBody={p.Body}

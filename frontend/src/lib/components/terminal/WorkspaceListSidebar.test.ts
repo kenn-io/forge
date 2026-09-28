@@ -59,6 +59,7 @@ interface WorkspaceFixtureOptions {
   id: string;
   provider: string;
   platformHost: string;
+  platformRepoId?: string;
   owner: string;
   name: string;
   number: number;
@@ -99,6 +100,7 @@ function workspaceFixture({
   id,
   provider,
   platformHost,
+  platformRepoId,
   owner,
   name,
   number,
@@ -133,6 +135,7 @@ function workspaceFixture({
     repo: {
       provider,
       platform_host: platformHost,
+      platform_repo_id: platformRepoId,
       owner,
       name,
       repo_path: `${owner}/${name}`,
@@ -265,7 +268,14 @@ describe("WorkspaceListSidebar", () => {
   });
 
   it("shows merging for linked PR workspaces until the merge settles", async () => {
-    const ref = { provider: "github", platformHost: "github.com", owner: "acme", name: "api", repoPath: "acme/api" };
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      platformRepoId: "repo-id",
+      owner: "acme",
+      name: "api",
+      repoPath: "acme/api",
+    };
     const merge = Promise.withResolvers<{ data: { merged: boolean } }>();
     const runtime = makeTestAppRuntime({
       GET: vi.fn(async () => ({
@@ -275,6 +285,7 @@ describe("WorkspaceListSidebar", () => {
           repo: {
             provider: "github",
             platform_host: "github.com",
+            platform_repo_id: "repo-id",
             owner: "acme",
             name: "api",
             repo_path: "acme/api",
@@ -290,7 +301,21 @@ describe("WorkspaceListSidebar", () => {
     const store = createDetailStore({ runtime });
     detailStore = store;
     const workspaces = [
-      workspaceFixture({ ...ref, id: "pr-workspace", number: 1, title: "Linked pull request" }),
+      workspaceFixture({ ...ref, id: "pr-workspace", name: "renamed-api", number: 1, title: "Linked pull request" }),
+      workspaceFixture({
+        ...ref,
+        id: "replacement-repo",
+        platformRepoId: "replacement-id",
+        number: 1,
+        title: "Replacement repository",
+      }),
+      workspaceFixture({
+        ...ref,
+        id: "unverified-repo",
+        platformRepoId: undefined,
+        number: 1,
+        title: "Unverified repository",
+      }),
       workspaceFixture({ ...ref, id: "adhoc-workspace", number: 0, itemType: "adhoc", associatedPRNumber: 1 }),
       workspaceFixture({ ...ref, id: "other-host", number: 1, platformHost: "git.example.com" }),
       workspaceFixture({ ...ref, id: "issue-workspace", number: 1, itemType: "issue" }),
@@ -306,6 +331,9 @@ describe("WorkspaceListSidebar", () => {
 
       store.mergePull(ref, 1, { method: "squash", commit_title: "Merge", commit_message: "" }, false);
       await waitFor(() => expect(screen.getAllByText("Merging")).toHaveLength(4));
+      expect(within(screen.getByText("Linked pull request").closest(".ws-row")!).getByText("Merging")).toBeTruthy();
+      expect(within(screen.getByText("Replacement repository").closest(".ws-row")!).queryByText("Merging")).toBeNull();
+      expect(within(screen.getByText("Unverified repository").closest(".ws-row")!).queryByText("Merging")).toBeNull();
 
       merge.resolve({ data: { merged: true } });
       await waitFor(() => expect(screen.queryByText("Merging")).toBeNull());

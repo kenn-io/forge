@@ -629,6 +629,7 @@
     return number > 0 && detail.isPullMerging({
       provider: ws.repo.provider,
       platformHost: ws.repo.platform_host,
+      platformRepoId: ws.repo.platform_repo_id,
       owner: ws.repo.owner,
       name: ws.repo.name,
       repoPath: ws.repo.repo_path,

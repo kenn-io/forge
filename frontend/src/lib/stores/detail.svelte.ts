@@ -835,12 +835,20 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
-  function mergeKey(ref: ProviderRouteRef, number: number): string {
-    return providerItemKey({ ...ref, number, platformHost: ref.platformHost ?? "" });
+  function mergeKey(ref: ProviderRouteRef, number: number): string | undefined {
+    const platformRepoId = ref.platformRepoId?.trim();
+    if (!platformRepoId) return undefined;
+    return JSON.stringify([
+      canonicalProvider(ref.provider),
+      resolvedPlatformHost(ref.provider, ref.platformHost),
+      platformRepoId,
+      number,
+    ]);
   }
 
   function isPullMerging(ref: ProviderRouteRef, number: number): boolean {
-    return mergingPulls.has(mergeKey(ref, number));
+    const key = mergeKey(ref, number);
+    return key !== undefined && mergingPulls.has(key);
   }
 
   function mergePull(
@@ -851,6 +859,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
     callbacks: MergePullCallbacks = {},
   ): void {
     const key = mergeKey(ref, number);
+    if (key === undefined) {
+      invokeMutationFailure(callbacks.onFailure, "Refresh the pull request to verify its repository before merging.");
+      callbacks.onSettled?.();
+      return;
+    }
     if (mergingPulls.has(key)) return;
     mergingPulls.add(key);
     let workspaceCleanupWarning: string | undefined;

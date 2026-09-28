@@ -469,7 +469,7 @@ function matchesRouteIdentity(
 function pullDetailResponse(pr: (typeof pulls)[number]) {
   return {
     merge_request: pr,
-    repo: pr.repo,
+    repo: { ...pr.repo, platform_repo_id: "widgets-repo-id" },
     repo_owner: pr.repo_owner,
     repo_name: pr.repo_name,
     platform_host: pr.platform_host,

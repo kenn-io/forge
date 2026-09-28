@@ -25,6 +25,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoPath: string;
     prTitle: string;
     prBody: string;
@@ -64,7 +65,7 @@
   }
 
   const {
-    owner, name, number, provider, platformHost, repoPath, prTitle, prBody,
+    owner, name, number, provider, platformHost, platformRepoId, repoPath, prTitle, prBody,
     prAuthor, prAuthorDisplayName,
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
@@ -147,7 +148,7 @@
         reason,
         isProblem(problem) ? problemConflictContext(problem) : undefined,
         pinnedHeadShaAtOpen,
-        { provider, platformHost, owner, name, repoPath },
+        { provider, platformHost, platformRepoId, owner, name, repoPath },
         number,
         routeGenerationAtOpen,
       );
@@ -158,7 +159,7 @@
     if (headPinMissing) return;
     const params = mergeParams();
     const target = `${repoPath} #${number}`;
-    detail.mergePull({ provider, platformHost, owner, name, repoPath }, number, params, deferred, {
+    detail.mergePull({ provider, platformHost, platformRepoId, owner, name, repoPath }, number, params, deferred, {
       onProblem: handleMergeProblem,
       onFailure: (message) => showFlash(`${target}: ${message}`, { tone: "danger" }),
     });

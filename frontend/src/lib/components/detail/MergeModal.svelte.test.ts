@@ -22,6 +22,7 @@ const baseProps = {
   number: 1,
   provider: "github",
   platformHost: "github.com",
+  platformRepoId: "repo-id",
   repoPath: "octo/repo",
   prTitle: "Add feature",
   prBody: "Body",
@@ -92,11 +93,12 @@ describe("MergeModal acknowledged merge commands", () => {
     await fireEvent.click(screen.getByText("Squash and merge", { selector: ".kit-modal-footer button" }));
   }
 
-  it("echoes the reviewed head in the generated merge body", async () => {
+  it("submits the stable repository identity and reviewed head", async () => {
     renderModal({ expectedHeadSha: "abc123" });
 
     await confirmMerge();
 
+    expect(mockMergePull.mock.calls[0]?.[0]).toMatchObject({ platformRepoId: "repo-id" });
     expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({
       expected_head_sha: "abc123",
       method: "squash",
@@ -187,6 +189,7 @@ describe("MergeModal acknowledged merge commands", () => {
         {
           provider: "github",
           platformHost: "github.com",
+          platformRepoId: "repo-id",
           owner: "octo",
           name: "repo",
           repoPath: "octo/repo",

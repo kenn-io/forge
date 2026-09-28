@@ -13,7 +13,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       !github.event.release.prerelease
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-linux-4cpu
     outputs:
       release-sha: ${{ steps.release.outputs.sha }}
       release-tag: ${{ steps.release.outputs.tag }}
@@ -23,6 +23,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: main
+
+      - name: Set up GitHub CLI
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: gh@2.101.0
 
       - name: Verify released source
         id: release
@@ -49,7 +54,7 @@ jobs:
 
   build:
     needs: validate-release
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-linux-4cpu
     outputs:
       deployment-id: ${{ steps.deploy.outputs.id }}
     steps:
@@ -76,7 +81,7 @@ jobs:
 
   promote:
     needs: [validate-release, build]
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-linux-4cpu
     permissions:
       actions: write
       contents: read
@@ -86,6 +91,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.validate-release.outputs.release-sha }}
+
+      - name: Set up GitHub CLI
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: gh@2.101.0
 
       - name: Verify the release is still latest
         env:

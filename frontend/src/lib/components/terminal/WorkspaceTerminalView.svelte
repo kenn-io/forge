@@ -379,6 +379,7 @@
   );
 
   let workspace = $state<Workspace | null>(null);
+  let workspaceReadinessGeneration = 0;
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let appliedRuntimeState:
     | {
@@ -2281,6 +2282,7 @@
     // workspace's data with stale content (causing a perceived flash
     // back to the previous workspace).
     return Effect.gen(function* () {
+      const readinessGeneration = workspaceReadinessGeneration;
       recordWorkspaceSwitchPhase("workspace-request-start", id, hostKey);
       const data = hostKey
         ? yield* executeOpaqueGeneratedApiRequest<unknown>("load fleet workspace", (generatedClient, signal) =>
@@ -2290,11 +2292,14 @@
             generatedClient.WorkspacesService.getWorkspace({ id }, { signal }),
           );
       const nextWorkspace = yield* decodeWorkspaceDetail(data, hostKey);
-      yield* Effect.sync(() => {
+      return yield* Effect.sync(() => {
         recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, {
           status: 200,
         });
-        if (!isCurrentWorkspace(id, hostKey)) return;
+        if (!isCurrentWorkspace(id, hostKey)) return null;
+        // A pre-readiness snapshot must not restart setup after the ready event.
+        if (nextWorkspace.status === "creating" && workspaceLive && workspace?.status === "ready" &&
+          readinessGeneration !== workspaceReadinessGeneration) return workspace;
         workspace = nextWorkspace;
         syncSidebarTabForWorkspace(nextWorkspace);
         loadError = null;
@@ -2310,8 +2315,8 @@
         } else {
           stopRuntimePolling();
         }
+        return nextWorkspace;
       });
-      return nextWorkspace;
     }).pipe(
       Effect.catch((failure) =>
         Effect.sync(() => {
@@ -3945,6 +3950,7 @@
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     workspacePresentationGeneration += 1;
+    workspaceReadinessGeneration += 1;
     runtimeSnapshotAuthoritative = false;
     restoredSessionKeys = null;
     if (
@@ -4093,6 +4099,7 @@
                     isCurrentWorkspace(id, hostKey) && workspaceLive && workspace?.status === "creating" &&
                     !actionsBlocked && !isWorkspaceIdDeleted(id)
                   ) {
+                    workspaceReadinessGeneration += 1;
                     workspace = { ...workspace, status: "ready" };
                     stopPolling();
                     startRuntimePolling();

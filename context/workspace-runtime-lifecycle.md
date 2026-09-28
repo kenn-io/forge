@@ -394,6 +394,9 @@ stale tabs.
   backend view of live launched sessions.
 - Queued launch admission must read runtime after workspace readiness; that same fresh response may supply the reconciliation baseline, but presentation caches may not
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::executeMutation`).
+- Once a local ready event advances setup, older `creating` details must not hide the terminal or stall queued launch;
+  fresh setup reads and authoritative error/deletion responses still apply
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::fetchWorkspaceProgram`).
 - Manual stop settlement must bound every awaited stage and publish confirmed local absence before any
   best-effort refresh; no stalled transport, authority read, or presenter may retain the pending control
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::makeWorkspaceRuntimeWorkflow`).

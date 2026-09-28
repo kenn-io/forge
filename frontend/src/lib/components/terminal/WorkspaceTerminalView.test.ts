@@ -3591,6 +3591,56 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["creating", "deleting"])("handles delayed %s details after retry reaches ready", async (status) => {
+    const events = installEventSourceRecorder();
+    const oldDetail = deferred<Response>();
+    const freshDetail = deferred<Response>();
+    const admission = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
+    capturePollingIntervals([]);
+    let details = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const path = new URL(url, "http://localhost").pathname;
+        if (path.endsWith("/workspaces/ws-1/retry")) return Response.json({ ...workspaceResponse, status: "creating" });
+        if (path.endsWith("/workspaces/ws-1")) {
+          details += 1;
+          if (details === 1) return Response.json({ ...workspaceResponse, status: "error" });
+          return details === 2 ? oldDetail.promise : freshDetail.promise;
+        }
+        return Response.json({ workspaces: [] });
+      }),
+    );
+    queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockReturnValue(admission.promise);
+    mocks.launchWorkspaceSession.mockReturnValue(new Promise(() => {}));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(details).toBe(2));
+    expect(await screen.findByText("Setting up workspace...")).toBeTruthy();
+    latestWorkspaceEventListeners(events).workspace_status?.(
+      new MessageEvent("workspace_status", {
+        data: JSON.stringify({ id: "ws-1", status: "ready" }),
+      }),
+    );
+    await waitFor(() => expect(details).toBe(3));
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledOnce());
+    freshDetail.resolve(Response.json({ ...workspaceResponse, git_head_ref: "feature/fresh-response" }));
+    await screen.findAllByText("feature/fresh-response");
+    oldDetail.resolve(Response.json({ ...workspaceResponse, status }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (status === "deleting") {
+      await screen.findByText("Deleting workspace...");
+      expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+      return;
+    }
+    admission.resolve(runtimeWithCodexTarget());
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledOnce());
+    expect(screen.queryByText("Setting up workspace...")).toBeNull();
+    expect(screen.getAllByText("feature/fresh-response").length).toBeGreaterThan(0);
+  });
+
   it("retries failed queued admission through the next fresh runtime poll", async () => {
     const polls: Array<{ callback: () => void; delay: number | undefined }> = [];
     capturePollingIntervals(polls);

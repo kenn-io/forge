@@ -178,6 +178,38 @@ describe("MobileWorkspaceTerminal", () => {
     expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce();
   });
 
+  it("launches without another setup poll when older details arrive after readiness", async () => {
+    const reconnectDetail = Promise.withResolvers<typeof workspace>();
+    const admission = Promise.withResolvers<typeof runtime>();
+    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: typeof notify) => {
+      notify = subscriber;
+      return () => {};
+    });
+    mocks.runtimeClient.getWorkspace
+      .mockResolvedValueOnce({ ...workspace, status: "creating" })
+      .mockReturnValueOnce(reconnectDetail.promise)
+      .mockResolvedValue({ ...workspace, git_head_ref: "feature/fresh-response" });
+    mocks.runtimeClient.getWorkspaceRuntime.mockReturnValueOnce(admission.promise).mockResolvedValue(runtime);
+    mocks.runtimeClient.launchWorkspaceRuntimeSession.mockReturnValue(new Promise(() => {}));
+    queueWorkspaceLaunch("ws-a", "helper", undefined);
+    render(MobileWorkspaceTerminal, { props });
+    await screen.findByText("Setting up workspace…");
+    await waitFor(() => expect(notify).toBeTypeOf("function"));
+    notify?.({ type: "reconnect.stale", payload: {} });
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(2));
+    notify?.({ type: "workspace_status", payload: { id: "ws-a", status: "ready" } });
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(3));
+    await screen.findByText(/feature\/fresh-response/);
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
+    reconnectDetail.resolve({ ...workspace, status: "creating" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    admission.resolve(runtime);
+    await waitFor(() => expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce());
+    expect(screen.queryByText("Setting up workspace…")).toBeNull();
+    expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(3);
+  });
+
   it("rechecks pending enrichment after initial loading without rereading runtime", async () => {
     const initial = Promise.withResolvers<typeof workspace>();
     events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {

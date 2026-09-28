@@ -102,6 +102,7 @@
   let queuedLaunchRead: symbol | undefined;
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
+  let workspaceReadinessGeneration = 0;
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let selectedSessionKey = $state<string | null>(null);
   let provisionalBaseSelection = false;
@@ -359,9 +360,13 @@
     const id = workspaceId;
     const activeHostKey = hostKey;
     return Effect.gen(function* () {
+      const readinessGeneration = workspaceReadinessGeneration;
       const detail = yield* loadMobileWorkspaceDetail(id, activeHostKey);
       yield* Effect.sync(() => {
         if (workspaceId !== id || hostKey !== activeHostKey) return;
+        // Keep accepted readiness when an earlier setup snapshot arrives late.
+        if (detail.status === "creating" && workspace?.id === id && workspace.fleet_host_key === activeHostKey &&
+          workspace.status === "ready" && readinessGeneration !== workspaceReadinessGeneration) return;
         applyWorkspace(detail);
         loadError = null;
       });
@@ -727,6 +732,7 @@
       workspaceId: activeWorkspaceId,
       ...(activeHostKey === undefined ? {} : { hostKey: activeHostKey }),
     };
+    workspaceReadinessGeneration += 1;
     workspace = null;
     runtime = null;
     selectedSessionKey = loadMobileWorkspaceSession(activeWorkspaceId, activeHostKey);
@@ -778,6 +784,7 @@
                       workspace?.id === activeWorkspaceId && workspace.status === "creating" &&
                       !isWorkspaceDeletionPending(activeWorkspaceId, activeHostKey) && !isWorkspaceIdDeleted(activeWorkspaceId)
                     ) {
+                      workspaceReadinessGeneration += 1;
                       applyWorkspace({ ...workspace, status: "ready" });
                       if (pendingWorkspaceLaunch(activeWorkspaceId, activeHostKey)?.phase !== "queued") {
                         requestRuntimeRefresh();

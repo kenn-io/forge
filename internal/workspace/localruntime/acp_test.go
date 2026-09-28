@@ -108,10 +108,6 @@ func TestACPStdioHelper(t *testing.T) {
 				_ = os.WriteFile(filepath.Join(fixtureDir, "mcp.json"), data, 0o600)
 			}
 			configResponse(message.ID)
-			if code, err := strconv.Atoi(os.Getenv("KENN_FORGE_ACP_EXIT_AFTER_SESSION")); err == nil {
-				time.Sleep(50 * time.Millisecond)
-				os.Exit(code)
-			}
 		case "session/set_config_option":
 			var params struct {
 				ConfigID string `json:"configId"`
@@ -138,6 +134,9 @@ func TestACPStdioHelper(t *testing.T) {
 			}
 			if json.Unmarshal(message.Params, &params) != nil || params.SessionID != "fixture-session" || len(params.Prompt) != 1 {
 				os.Exit(5)
+			}
+			if code, err := strconv.Atoi(os.Getenv("KENN_FORGE_ACP_EXIT_ON_PROMPT")); err == nil {
+				os.Exit(code)
 			}
 			promptID = message.ID
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello "}}}}`)
@@ -397,14 +396,19 @@ func TestACPStopClosesStdoutReader(t *testing.T) {
 func TestACPReportsNaturalExitCode(t *testing.T) {
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
-	t.Setenv("KENN_FORGE_ACP_EXIT_AFTER_SESSION", "7")
+	t.Setenv("KENN_FORGE_ACP_EXIT_ON_PROMPT", "7")
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	exits := make(chan SessionInfo, 1)
 	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
 	manager := newACPTestManager(t, Options{Targets: targets, OnSessionExit: func(info SessionInfo) { exits <- info }})
-	_, err = manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
+	info, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
 	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	// Exit only after attachment, so this checks exit reporting rather than
+	// racing the owner startup against a fixture timer.
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "exit"}))
 	select {
 	case info := <-exits:
 		require.NotNil(t, info.ExitCode)

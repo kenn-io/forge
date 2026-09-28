@@ -83,13 +83,13 @@ const archiveSnapshotScope = `WITH scoped_repos AS (SELECT value AS id FROM json
  ), ` + archiveSnapshotLinks + `,
  issues AS (
  SELECT i.id FROM forge_issues i JOIN scoped_repos r ON r.id=i.repo_id
- WHERE ((i.created_at>=? AND i.created_at<?) OR i.id IN (SELECT issue_id FROM links))
+ WHERE ((CASE WHEN ? THEN i.state='open' ELSE i.created_at>=? AND i.created_at<? END) OR i.id IN (SELECT issue_id FROM links))
  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=i.repo_id AND a.item_type='issue' AND a.item_number=i.number AND a.lifecycle_state='removed_upstream')
  )`
 
 // MeasureArchiveSnapshot bounds records and projected text without loading bodies
 // into Go. Include all variable text, including checks, labels and review metadata.
-func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, start, end time.Time) (ArchiveReportMeasurement, error) {
+func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, start, end time.Time, openIssuesOnly bool) (ArchiveReportMeasurement, error) {
 	ids, err := json.Marshal(repoIDs)
 	if err != nil {
 		return ArchiveReportMeasurement{}, err
@@ -110,14 +110,14 @@ func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, st
  FROM forge_mr_events e JOIN pulls p ON p.id=e.merge_request_id WHERE e.event_type IN ('review','review_comment')
  UNION ALL
  SELECT length(CAST(json_array(source_url,observed_event_key) AS BLOB)) FROM links
- ) SELECT count(*),COALESCE(sum(bytes),0) FROM texts`, string(ids), start.UTC(), end.UTC()).Scan(&result.Records, &result.TextBytes)
+ ) SELECT count(*),COALESCE(sum(bytes),0) FROM texts`, string(ids), openIssuesOnly, start.UTC(), end.UTC()).Scan(&result.Records, &result.TextBytes)
 	if err != nil {
 		return result, fmt.Errorf("measure archive snapshot: %w", err)
 	}
 	return result, nil
 }
 
-func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, start, end time.Time) ([]ArchiveSnapshotItem, error) {
+func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, start, end time.Time, openIssuesOnly bool) ([]ArchiveSnapshotItem, error) {
 	ids, err := json.Marshal(repoIDs)
 	if err != nil {
 		return nil, err
@@ -132,7 +132,7 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
  (SELECT json_group_array(l.name) FROM forge_issue_labels il JOIN forge_labels l ON l.id=il.label_id WHERE il.issue_id=i.id),
  0,'','','','',0,0,0,NULL,'','','',''
  FROM forge_issues i JOIN issues selected ON selected.id=i.id
- ORDER BY 2,3,4`, string(ids), start.UTC(), end.UTC())
+ ORDER BY 2,3,4`, string(ids), openIssuesOnly, start.UTC(), end.UTC())
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot items: %w", err)
 	}

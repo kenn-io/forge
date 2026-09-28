@@ -64,6 +64,78 @@ func TestSnapshotReadsConfiguredCachedWork(t *testing.T) {
 	assert.Equal(now, result.ObservedAt)
 }
 
+func TestSnapshotOpenIssueScope(t *testing.T) {
+	for _, kind := range []platform.Kind{platform.KindGitHub, platform.KindGitLab, platform.KindForgejo, platform.KindGitea} {
+		t.Run(string(kind), func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			database := dbtest.Open(t)
+			now := archiveTestTime()
+			ref := archiveServiceRef(kind, "provider.test", "project")
+			repoID := archiveServiceSeedRepo(t, database, ref)
+			provider := newArchiveServiceProvider(kind, ref.Host)
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(err)
+			service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+			_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, Number: 1, Title: "Open fix", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-90 * 24 * time.Hour), UpdatedAt: now})
+			require.NoError(err)
+			for _, item := range []struct {
+				number  int
+				state   string
+				created time.Time
+			}{{2, "open", now.Add(-90 * 24 * time.Hour)}, {3, "closed", now.Add(-time.Minute)}, {4, "closed", now.Add(-90 * 24 * time.Hour)}} {
+				id, err := database.UpsertIssue(t.Context(), &db.Issue{RepoID: repoID, PlatformID: int64(item.number), Number: item.number, Title: "Cached issue", State: item.state, CreatedAt: item.created, UpdatedAt: now})
+				require.NoError(err)
+				if item.number == 4 {
+					require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: id, EventType: "cross_referenced", DedupeKey: "reference-1", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"project","source_number":1,"source_url":"https://provider.test/owner/project/pull/1"}`}}))
+				}
+			}
+			options := SnapshotOptions{Start: now.Add(-time.Hour), End: now, Repositories: []platform.RepoRef{ref}}
+			window, err := service.Snapshot(t.Context(), options)
+			require.NoError(err)
+			require.Len(window.Issues, 2)
+			assert.Equal([]int{3, 4}, []int{window.Issues[0].Number, window.Issues[1].Number})
+			options.IssueScope = "open"
+			open, err := service.Snapshot(t.Context(), options)
+			require.NoError(err)
+			assert.Equal("open", open.IssueScope)
+			require.Len(open.Issues, 2)
+			assert.Equal([]int{2, 4}, []int{open.Issues[0].Number, open.Issues[1].Number})
+			require.Len(open.Relations, 1)
+			assert.Equal(open.Issues[1].ID, open.Relations[0].TargetID)
+			assert.Empty(provider.calls)
+			options.IssueScope = "unsupported"
+			_, err = service.Snapshot(t.Context(), options)
+			require.Error(err)
+		})
+	}
+}
+
+func TestSnapshotOpenIssueScopeKeepsExportLimit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "provider.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+ WITH RECURSIVE sequence(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM sequence WHERE n<10001)
+ INSERT INTO forge_issues(repo_id,platform_id,number,title,state,created_at,updated_at,last_activity_at)
+ SELECT ?, n, n, 'Old open issue', 'open', ?, ?, ? FROM sequence`, repoID, now.Add(-30*24*time.Hour), now, now)
+	require.NoError(err)
+	options := SnapshotOptions{Start: now.Add(-time.Hour), End: now}
+	window, err := service.Snapshot(t.Context(), options)
+	require.NoError(err)
+	assert.Empty(window.Issues)
+	options.IssueScope = "open"
+	result, err := service.Snapshot(t.Context(), options)
+	require.ErrorIs(err, snapshot.ErrTooLarge)
+	assert.Empty(result.Issues, "oversized exports fail instead of silently dropping issues")
+}
+
 func TestSnapshotDistinguishesUnknownHeadRepository(t *testing.T) {
 	for _, test := range []struct {
 		name, head string

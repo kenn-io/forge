@@ -22,6 +22,7 @@ import (
 type SnapshotOptions struct {
 	Start, End   time.Time
 	Repositories []platform.RepoRef
+	IssueScope   string
 }
 
 var ErrSnapshotScope = errors.New("snapshot repositories must belong to the configured cached inventory")
@@ -34,7 +35,10 @@ func (s *Service) Snapshot(ctx context.Context, opts SnapshotOptions) (snapshot.
 
 func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCoverage func() error) (snapshot.ArchiveSnapshot, error) {
 	start, end := opts.Start, opts.End
-	result := snapshot.ArchiveSnapshot{ExportSchema: snapshot.Schema, ObservedAt: s.now().UTC(), Start: start.UTC(), End: end.UTC(), Repositories: []snapshot.SnapshotRepository{}, PullRequests: []snapshot.SnapshotPullRequest{}, Issues: []snapshot.SnapshotItem{}, Relations: []snapshot.SnapshotRelation{}}
+	result := snapshot.ArchiveSnapshot{ExportSchema: snapshot.Schema, ObservedAt: s.now().UTC(), Start: start.UTC(), End: end.UTC(), IssueScope: opts.IssueScope, Repositories: []snapshot.SnapshotRepository{}, PullRequests: []snapshot.SnapshotPullRequest{}, Issues: []snapshot.SnapshotItem{}, Relations: []snapshot.SnapshotRelation{}}
+	if opts.IssueScope != "" && opts.IssueScope != "open" {
+		return result, errors.New("unsupported snapshot issue scope")
+	}
 	if start.IsZero() || end.IsZero() || !start.Before(end) {
 		return result, errors.New("snapshot start must precede end")
 	}
@@ -111,14 +115,14 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			return result, err
 		}
 	}
-	measurement, err := db.MeasureArchiveSnapshot(ctx, tx, repoIDs, start, end)
+	measurement, err := db.MeasureArchiveSnapshot(ctx, tx, repoIDs, start, end, opts.IssueScope == "open")
 	if err != nil {
 		return result, err
 	}
 	if measurement.Records > snapshot.MaxRecords || measurement.TextBytes > snapshot.MaxBytes {
 		return snapshot.ArchiveSnapshot{}, snapshot.ErrTooLarge
 	}
-	items, err := db.LoadArchiveSnapshotItems(ctx, tx, repoIDs, start, end)
+	items, err := db.LoadArchiveSnapshotItems(ctx, tx, repoIDs, start, end, opts.IssueScope == "open")
 	if err != nil {
 		return result, err
 	}

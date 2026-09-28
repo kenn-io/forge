@@ -12646,8 +12646,9 @@ func (c *Client) GetArchiveSnapshotWithResponse(ctx context.Context, options *Ge
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":   {Style: "form", Explode: &[]bool{false}[0]},
-		"start": {Style: "form", Explode: &[]bool{false}[0]},
+		"end":         {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":       {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -32968,8 +32969,9 @@ func (c *Client) GetArchiveReportRaw(ctx context.Context, httpClient *http.Clien
 func (c *Client) GetArchiveSnapshotRaw(ctx context.Context, httpClient *http.Client, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":   {Style: "form", Explode: &[]bool{false}[0]},
-		"start": {Style: "form", Explode: &[]bool{false}[0]},
+		"end":         {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":       {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -39477,8 +39479,9 @@ func NewGetArchiveSnapshotRequest(ctx context.Context, baseURL string, options *
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":   {Style: "form", Explode: &[]bool{false}[0]},
-		"start": {Style: "form", Explode: &[]bool{false}[0]},
+		"end":         {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":       {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -46267,6 +46270,13 @@ const (
 	ArchiveReportCoverageResponseStatusWaitingForBudget ArchiveReportCoverageResponseStatus = "waiting_for_budget"
 )
 
+// ArchiveSnapshotIssueScope When open, includes all cached open issues and linked closed context regardless of creation time.
+type ArchiveSnapshotIssueScope string
+
+const (
+	ArchiveSnapshotIssueScopeOpen ArchiveSnapshotIssueScope = "open"
+)
+
 type ArchiveStatusResponseCollectionMode string
 
 const (
@@ -46575,6 +46585,13 @@ type ListActivityThreadEventsQueryItemType string
 const (
 	ListActivityThreadEventsQueryItemTypeIssue ListActivityThreadEventsQueryItemType = "issue"
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
+)
+
+// GetArchiveSnapshotQueryIssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
+type GetArchiveSnapshotQueryIssueScope string
+
+const (
+	GetArchiveSnapshotQueryIssueScopeOpen GetArchiveSnapshotQueryIssueScope = "open"
 )
 
 // GetDevboxFilePreviewQueryBase Diff base: head, pushed, or merge-target
@@ -48936,13 +48953,16 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
+	// IssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
+	IssueScope *GetArchiveSnapshotQueryIssueScope `json:"issue_scope,omitempty"`
+
 	// Repo Optional configured repository subset. Repeat repo=provider|platform_host/repo_path to split large exports. Limits: 10,000 items/reviews/references and 32 MiB projected text or response; no items are dropped.
 	Repo []string `json:"repo,omitempty"`
 
-	// Start Inclusive UTC RFC3339 issue-creation boundary.
+	// Start Inclusive UTC RFC3339 issue-creation boundary; not applied when issue_scope=open.
 	Start string `json:"start"`
 
-	// End Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit.
+	// End Exclusive UTC RFC3339 issue-creation boundary; not applied when issue_scope=open. Open pull requests have no age limit.
 	End string `json:"end"`
 }
 
@@ -54305,15 +54325,18 @@ type ArchiveRepositoryRef struct {
 
 type ArchiveSnapshot struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string               `json:"$schema,omitempty"`
-	End          time.Time             `json:"end"`
-	Issues       []SnapshotItem        `json:"issues"`
-	ObservedAt   time.Time             `json:"observed_at"`
-	PullRequests []SnapshotPullRequest `json:"pull_requests"`
-	Relations    []SnapshotRelation    `json:"relations"`
-	Repositories []SnapshotRepository  `json:"repositories"`
-	Schema1      string                `json:"schema"`
-	Start        time.Time             `json:"start"`
+	Schema *string   `json:"$schema,omitempty"`
+	End    time.Time `json:"end"`
+
+	// IssueScope When open, includes all cached open issues and linked closed context regardless of creation time.
+	IssueScope   *ArchiveSnapshotIssueScope `json:"issue_scope,omitempty"`
+	Issues       []SnapshotItem             `json:"issues"`
+	ObservedAt   time.Time                  `json:"observed_at"`
+	PullRequests []SnapshotPullRequest      `json:"pull_requests"`
+	Relations    []SnapshotRelation         `json:"relations"`
+	Repositories []SnapshotRepository       `json:"repositories"`
+	Schema1      string                     `json:"schema"`
+	Start        time.Time                  `json:"start"`
 }
 
 type ArchiveStatusResponse struct {

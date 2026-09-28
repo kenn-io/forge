@@ -964,6 +964,38 @@ describe("NewWorkspaceDialog", () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 
+  it("preserves a cached repository choice through a rename during refresh", async () => {
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await rerender({ open: false });
+    const response = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? response.promise : Promise.resolve({ data: { hosts: [] } }),
+    );
+    await rerender({ open: true });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await pickRepo("acme/gadget");
+
+    response.resolve({
+      data: [
+        repoFixture("acme", "widget"),
+        { ...repoFixture("acme", "gadget"), PlatformRepoID: "replacement-id" },
+        { ...repoFixture("moved", "gadget-next"), PlatformRepoID: "github-acme-gadget" },
+      ],
+    });
+    await waitFor(() => expect(repoPicker().textContent).toContain("moved/gadget-next"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost).toHaveBeenCalledWith(
+      "/repo/{provider}/{owner}/{name}/workspaces",
+      expect.objectContaining({
+        params: { path: { provider: "github", owner: "moved", name: "gadget-next" } },
+        body: { platform_repo_id: "github-acme-gadget" },
+      }),
+    );
+  });
+
   it("clears a cached selection when the same route belongs to a different repository", async () => {
     const { rerender } = await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));

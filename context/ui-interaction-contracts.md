@@ -63,7 +63,7 @@ Interactive surfaces must agree on which item is selected.
   before revalidation, preserving same-ID entries on other hosts
   (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::removeWorkspaceListEntry`).
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
-  refreshed options must preserve the current choice or clear it, never silently select another repository
+  refreshed options preserve the selected stable identity across renames or clear it, never select another repository
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
 - Remembered new-workspace repositories restore by stable identity; unresolved or route-only saved
   preferences require a new choice (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::defaultRepoSelection`).

@@ -245,10 +245,10 @@
           reposLoading = false;
           const previous = repos.find((repo) => repo.key === selectedKey);
           repos = loaded.map(repoOption);
-          // A route may now belong to another repository. Require a new choice
-          // instead of silently changing the identity selected from the cache.
+          // Follow the selected identity across renames. A replacement at its
+          // old route must never become the selection.
           selectedKey = previous
-            ? repos.some((repo) => repo.key === previous.key && repo.platformRepoId === previous.platformRepoId) ? previous.key : ""
+            ? repos.find((repo) => repo.platformRepoId && repoIdentityKey(repo) === repoIdentityKey(previous))?.key ?? ""
             : defaultRepoSelection();
         });
       }),

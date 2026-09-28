@@ -107,8 +107,8 @@ test("PR filters stack attributes and allow multiple kanban statuses", async ({ 
     await filterPanel.locator(".kit-filter-dropdown__section-title, .kit-filter-dropdown__item").allTextContents()
   )
     .map((text) => text.trim())
-    .filter((text) => ["Status", "Has workspace", "Visibility"].includes(text));
-  expect(workspaceGrouping).toEqual(["Status", "Has workspace", "Visibility"]);
+    .filter((text) => ["Status", "Has workspace", "View"].includes(text));
+  expect(workspaceGrouping).toEqual(["Status", "Has workspace", "View"]);
 
   await filterPanel.getByRole("button", { name: "Has workspace" }).click();
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);

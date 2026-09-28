@@ -56711,6 +56711,9 @@ type StackPlacementResponse struct {
 
 	// Size Number of visible pull requests in the stack
 	Size int64 `json:"size"`
+
+	// StackID Stable local stack identity
+	StackID int64 `json:"stack_id"`
 }
 
 type StackResponse struct {

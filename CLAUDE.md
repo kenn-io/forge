@@ -46,7 +46,7 @@ only routes to them.
 | Test lanes, provider tests, API contracts, or HTTP tests | `context/testing.md` |
 | Repository-controlled session bootstrap or dependency installation | `context/agent-bootstrap.md` |
 | User documentation, screenshots, or the Zensical site | `context/docs-authoring.md` |
-| Pushing, opening a pull request, or changing PR metadata, comments, or review threads | `context/pull-request-workflow.md` |
+| CI runner policy, pushing, opening a pull request, or changing PR metadata, comments, or review threads | `context/pull-request-workflow.md` |
 | Frontend visual design or component conventions | `context/ui-design-system.md` |
 | Frontend Effect workflows, services, layers, errors, or async ownership | `context/frontend-effect.md` |
 | Frontend interaction, route state, persistence, or input semantics | `context/ui-interaction-contracts.md` |

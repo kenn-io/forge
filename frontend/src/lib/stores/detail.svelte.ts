@@ -836,8 +836,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function mergeKey(ref: ProviderRouteRef, number: number): string | undefined {
-    const platformRepoId = ref.platformRepoId?.trim();
-    if (!platformRepoId) return undefined;
+    const platformRepoId = ref.platformRepoId;
+    if (!platformRepoId || platformRepoId <= 0) return undefined;
     return JSON.stringify([
       canonicalProvider(ref.provider),
       resolvedPlatformHost(ref.provider, ref.platformHost),

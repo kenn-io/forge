@@ -110,7 +110,7 @@ describe("MobileWorkspaceList", () => {
     const ref = {
       provider: "github",
       platformHost: "github.com",
-      platformRepoId: "widgets-id",
+      platformRepoId: 7101,
       owner: "acme",
       name: "renamed-widgets",
       repoPath: "acme/renamed-widgets",
@@ -124,7 +124,7 @@ describe("MobileWorkspaceList", () => {
             ...fixture.repo,
             name: "renamed-widgets",
             repo_path: "acme/renamed-widgets",
-            platform_repo_id: "widgets-id",
+            platform_repo_id: 7101,
           },
           merge_request: { Number: 42 },
           events: [],
@@ -134,7 +134,7 @@ describe("MobileWorkspaceList", () => {
     });
     const store = createDetailStore({ runtime });
     detailStore = store;
-    const linked = { ...fixture, repo: { ...fixture.repo, platform_repo_id: "widgets-id" } };
+    const linked = { ...fixture, repo: { ...fixture.repo, platform_repo_id: 7101 } };
     mockGet.mockResolvedValue({
       data: {
         hosts: [],
@@ -152,7 +152,7 @@ describe("MobileWorkspaceList", () => {
             ...linked,
             id: "ws-replacement",
             mr_title: "Replacement repository",
-            repo: { ...linked.repo, platform_repo_id: "replacement-id" },
+            repo: { ...linked.repo, platform_repo_id: 7999 },
           },
           { ...fixture, id: "ws-unverified", mr_title: "Unverified repository" },
         ],

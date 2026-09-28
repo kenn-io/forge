@@ -2553,11 +2553,11 @@ describe("PullDetail approvals", () => {
       if (navigation === "unmount") {
         unmount();
       } else if (navigation.startsWith("repository replacement")) {
-        detail.repo.platform_repo_id = "replacement-id";
-        await rerender({ platformRepoId: "replacement-id" });
+        detail.repo.platform_repo_id = 7999;
+        await rerender({ platformRepoId: 7999 });
         if (navigation === "repository replacement cycle") {
-          detail.repo.platform_repo_id = "widget-repo-id";
-          await rerender({ platformRepoId: "widget-repo-id" });
+          detail.repo.platform_repo_id = 7101;
+          await rerender({ platformRepoId: 7101 });
         }
       } else {
         await rerender({
@@ -2679,14 +2679,14 @@ describe("PullDetail approvals", () => {
         await screen.findByText("Merging");
       }
 
-      current = { ...current, repo: { ...current.repo, platform_repo_id: "replacement-id" } };
+      current = { ...current, repo: { ...current.repo, platform_repo_id: 7999 } };
       store.loadDetail("acme", "widget", 1, {
         provider: "github",
         platformHost: "github.com",
         repoPath: "acme/widget",
         sync: false,
       });
-      await waitFor(() => expect(store.getDetail()?.repo.platform_repo_id).toBe("replacement-id"));
+      await waitFor(() => expect(store.getDetail()?.repo.platform_repo_id).toBe(7999));
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull());
       if (phase === "submitted") {
         merge.resolve({

@@ -59,7 +59,7 @@ interface WorkspaceFixtureOptions {
   id: string;
   provider: string;
   platformHost: string;
-  platformRepoId?: string;
+  platformRepoId?: number;
   owner: string;
   name: string;
   number: number;
@@ -271,7 +271,7 @@ describe("WorkspaceListSidebar", () => {
     const ref = {
       provider: "github",
       platformHost: "github.com",
-      platformRepoId: "repo-id",
+      platformRepoId: 7001,
       owner: "acme",
       name: "api",
       repoPath: "acme/api",
@@ -285,7 +285,7 @@ describe("WorkspaceListSidebar", () => {
           repo: {
             provider: "github",
             platform_host: "github.com",
-            platform_repo_id: "repo-id",
+            platform_repo_id: 7001,
             owner: "acme",
             name: "api",
             repo_path: "acme/api",
@@ -305,7 +305,7 @@ describe("WorkspaceListSidebar", () => {
       workspaceFixture({
         ...ref,
         id: "replacement-repo",
-        platformRepoId: "replacement-id",
+        platformRepoId: 7999,
         number: 1,
         title: "Replacement repository",
       }),

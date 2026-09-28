@@ -25,7 +25,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoPath: string;
     prTitle: string;
     prBody: string;

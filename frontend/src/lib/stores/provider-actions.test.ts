@@ -25,7 +25,7 @@ afterEach(async () => {
 const routeRef = {
   provider: "github",
   platformHost: "github.com",
-  platformRepoId: "repo-id",
+  platformRepoId: 7001,
   owner: "octo",
   name: "repo",
   repoPath: "octo/repo",
@@ -38,7 +38,7 @@ function detail() {
     repo: {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "repo-id",
+      platform_repo_id: 7001,
       owner: "octo",
       name: "repo",
       repo_path: "octo/repo",
@@ -98,7 +98,7 @@ describe("provider action mutations", () => {
     store.mergePull(renamed, 1, input, false);
     expect(store.isPullMerging(routeRef, 1)).toBe(true);
     expect(store.isPullMerging(renamed, 1)).toBe(true);
-    expect(store.isPullMerging({ ...routeRef, platformRepoId: "replacement-id" }, 1)).toBe(false);
+    expect(store.isPullMerging({ ...routeRef, platformRepoId: 7999 }, 1)).toBe(false);
     expect(store.isPullMerging({ ...routeRef, platformRepoId: undefined }, 1)).toBe(false);
     expect(store.isPullMerging({ ...routeRef, platformHost: "git.example.com" }, 1)).toBe(false);
 

@@ -741,7 +741,7 @@
   // would discard an in-flight create's success and re-enable the button
   // for a duplicate request.
   let lastResetIdentity: WorkspaceItemIdentity | null = null;
-  let lastResetPlatformRepoId: string | undefined;
+  let lastResetPlatformRepoId: number | undefined;
   $effect(() => {
     // Reset for another provider/host/item or a replacement repository at the same route.
     const current = $state.snapshot(itemIdentity);

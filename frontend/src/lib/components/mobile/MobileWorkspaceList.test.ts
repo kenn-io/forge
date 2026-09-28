@@ -1,5 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { createDetailStore } from "../../stores/detail.svelte.js";
+import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 import { isNewWorkspaceDialogOpen, resetNewWorkspaceDialogState } from "../../stores/new-workspace.svelte.js";
 import * as workspaceHost from "../../stores/workspace-host.svelte.js";
@@ -9,6 +12,9 @@ const mockGet = vi.fn();
 const mockPost = vi.fn();
 const mockDelete = vi.fn();
 let workspaceEventListener: EventListener | null = null;
+let detailStore: Pick<ReturnType<typeof createDetailStore>, "isPullMerging">;
+
+vi.mock("../../context.js", () => ({ getStores: () => ({ detail: detailStore }) }));
 
 vi.mock("../../app/runtime.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../app/runtime.js")>();
@@ -63,6 +69,7 @@ describe("MobileWorkspaceList", () => {
     mockPost.mockReset();
     mockDelete.mockReset();
     workspaceEventListener = null;
+    detailStore = { isPullMerging: () => false };
     localStorage.clear();
     resetModalStack();
     resetNewWorkspaceDialogState();
@@ -96,6 +103,92 @@ describe("MobileWorkspaceList", () => {
     });
     await fireEvent.click(screen.getByRole("button", { name: "Open workspace Build mobile workspaces" }));
     expect(onOpen).toHaveBeenCalledWith("ws-1", undefined);
+  });
+
+  it("shows a pending merge only on workspaces linked to the verified repository", async () => {
+    const merge = Promise.withResolvers<{ data: { merged: boolean } }>();
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      platformRepoId: "widgets-id",
+      owner: "acme",
+      name: "renamed-widgets",
+      repoPath: "acme/renamed-widgets",
+    };
+    const runtime = makeTestAppRuntime({
+      GET: vi.fn(async () => ({
+        data: {
+          repo_owner: "acme",
+          repo_name: "renamed-widgets",
+          repo: {
+            ...fixture.repo,
+            name: "renamed-widgets",
+            repo_path: "acme/renamed-widgets",
+            platform_repo_id: "widgets-id",
+          },
+          merge_request: { Number: 42 },
+          events: [],
+        },
+      })),
+      POST: vi.fn(() => merge.promise),
+    });
+    const store = createDetailStore({ runtime });
+    detailStore = store;
+    const linked = { ...fixture, repo: { ...fixture.repo, platform_repo_id: "widgets-id" } };
+    mockGet.mockResolvedValue({
+      data: {
+        hosts: [],
+        workspaces: [
+          linked,
+          {
+            ...linked,
+            id: "ws-associated",
+            item_type: "adhoc",
+            item_number: 0,
+            associated_pr_number: 42,
+            mr_title: "Associated pull request",
+          },
+          {
+            ...linked,
+            id: "ws-replacement",
+            mr_title: "Replacement repository",
+            repo: { ...linked.repo, platform_repo_id: "replacement-id" },
+          },
+          { ...fixture, id: "ws-unverified", mr_title: "Unverified repository" },
+        ],
+      },
+    });
+    const onOpen = vi.fn();
+    try {
+      store.loadDetail("acme", "renamed-widgets", 42, { ...ref, sync: false });
+      await waitFor(() => expect(store.isDetailLoading()).toBe(false));
+      render(MobileWorkspaceList, { props: { onOpen, onOpenItem: vi.fn() } });
+      await screen.findByText("Build mobile workspaces");
+      store.mergePull(ref, 42, { method: "squash", commit_title: "Merge", commit_message: "" }, false);
+
+      const row = await screen.findByRole("button", { name: "Open workspace Build mobile workspaces, merging" });
+      expect(within(row).getByText("Merging")).toBeTruthy();
+      expect(
+        within(screen.getByRole("button", { name: /Open workspace Associated pull request, merging/ })).getByText(
+          "Merging",
+        ),
+      ).toBeTruthy();
+      expect(
+        within(screen.getByRole("button", { name: "Open workspace Replacement repository" })).queryByText("Merging"),
+      ).toBeNull();
+      expect(
+        within(screen.getByRole("button", { name: "Open workspace Unverified repository" })).queryByText("Merging"),
+      ).toBeNull();
+      await fireEvent.click(row);
+      expect(onOpen).toHaveBeenCalledWith("ws-1", undefined);
+
+      merge.resolve({ data: { merged: true } });
+      await waitFor(() => expect(screen.queryByText("Merging")).toBeNull());
+      expect(screen.getByRole("button", { name: "Open workspace Build mobile workspaces" })).toBeTruthy();
+    } finally {
+      cleanup();
+      await Effect.runPromise(runtime.disposeEffect);
+    }
   });
 
   it.each([undefined, "peer-a", "devbox:compute-a"])("offers Reveal only for supported hosts (%s)", async (hostKey) => {

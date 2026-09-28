@@ -20,6 +20,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
+    platformRepoId?: string | undefined;
     repoPath: string;
     size?: "sm" | "md";
     disabled?: boolean;
@@ -50,6 +51,7 @@
     number,
     provider,
     platformHost,
+    platformRepoId,
     repoPath,
     size = "md",
     disabled = false,
@@ -91,6 +93,7 @@
   $effect(() => {
     void provider;
     void platformHost;
+    void platformRepoId;
     void repoPath;
     void owner;
     void name;
@@ -129,7 +132,7 @@
         State: "open", IsDraft: false, MergeableState: "",
         platform_head_sha: pinAtOpen,
       },
-      ref: { provider, platformHost, owner, name, repoPath },
+      ref: { provider, platformHost, platformRepoId, owner, name, repoPath },
       number,
       viewerCan: {
         approve: true, merge: false, markReady: false,
@@ -199,8 +202,9 @@
     submitting = true;
     submittingAction = "request_changes";
     let handledHeadConflict = false;
+    const ref = { provider, platformHost, platformRepoId, owner, name, repoPath };
     detail.requestPullChanges(
-      { provider, platformHost, owner, name, repoPath },
+      ref,
       number,
       {
         body: body.trim(),
@@ -215,7 +219,7 @@
               reason,
               isProblem(problem) ? problemConflictContext(problem) : undefined,
               pinAtOpen,
-              { provider, platformHost, owner, name, repoPath },
+              ref,
               number,
             );
           }

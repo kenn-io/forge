@@ -16,6 +16,7 @@
   import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
   import type { HostSummary as GeneratedHostSummary } from "../../api/generated/models/index.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { getStores } from "../../context.js";
   import { eventSourceStream } from "../../browser/event-source.js";
   import { openNewWorkspaceDialog } from "../../stores/new-workspace.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
@@ -62,6 +63,7 @@
 
   let { onOpen, onOpenItem }: Props = $props();
   const appRuntime = getAppRuntime();
+  const { detail } = getStores();
   const refreshOwner = $props.id();
   const loadTimeout = "10 seconds";
 
@@ -175,6 +177,7 @@
   }
 
   function status(workspace: WorkspaceListItem): StatusDotStatus {
+    if (workspaceMerging(workspace)) return "working";
     if (workspace.agent_state === "working" || workspace.tmux_working || workspace.status === "creating") {
       return "working";
     }
@@ -185,6 +188,7 @@
   }
 
   function statusLabel(workspace: WorkspaceListItem): string {
+    if (workspaceMerging(workspace)) return "Merging";
     if (workspace.agent_state === "approval") return "Agent waiting for approval";
     if (workspace.agent_state === "input") return "Agent waiting for input";
     if (workspace.agent_state === "working" || workspace.tmux_working) return "Workspace active";
@@ -192,6 +196,19 @@
     if (workspace.status === "creating") return "Creating workspace";
     if (workspace.status === "error") return "Workspace error";
     return `Workspace ${workspace.status}`;
+  }
+
+  function workspaceMerging(workspace: WorkspaceListItem): boolean {
+    if (!workspace.repo) return false;
+    const number = workspace.item_type === "pull_request" ? workspace.item_number : (workspace.associated_pr_number ?? 0);
+    return number > 0 && detail.isPullMerging({
+      provider: workspace.repo.provider,
+      platformHost: workspace.repo.platform_host,
+      platformRepoId: workspace.repo.platform_repo_id,
+      owner: workspace.repo.owner,
+      name: workspace.repo.name,
+      repoPath: workspace.repo.repo_path,
+    }, number);
   }
 
   function agentStatePresentation(workspace: WorkspaceListItem): {
@@ -515,19 +532,23 @@
 
 {#snippet workspaceRow(workspace: WorkspaceListItem, showRepository: boolean)}
   {@const label = itemLabel(workspace)}
+  {@const merging = workspaceMerging(workspace)}
   {@const agentState = agentStatePresentation(workspace)}
   {@const sortTimestamp = workspaceListSortTimestamp(workspace, sortMode)}
   <article class="mobile-workspace-row">
     <button
       class="mobile-workspace-row__main"
       type="button"
-      aria-label={`Open workspace ${mobileWorkspaceDisplayName(workspace)}${agentState ? `, agent ${agentState.announcement}` : ""}`}
+      aria-label={`Open workspace ${mobileWorkspaceDisplayName(workspace)}${merging ? ", merging" : ""}${agentState ? `, agent ${agentState.announcement}` : ""}`}
       disabled={!workspaceOperationAvailable(workspace, "workspaceRead") || !workspaceOperationAvailable(workspace, "terminalAttach")}
       onclick={() => openWorkspace(workspace)}
     >
       <span class="mobile-workspace-row__title">
         <StatusDot status={status(workspace)} label={statusLabel(workspace)} size={7} animated />
         <strong>{mobileWorkspaceDisplayName(workspace)}</strong>
+        {#if merging}
+          <span class="mobile-workspace-row__merge-state" aria-hidden="true">Merging</span>
+        {/if}
         {#if agentState}
           <span
             class={["mobile-workspace-row__agent-state", `mobile-workspace-row__agent-state--${agentState.tone}`]}
@@ -681,7 +702,8 @@
   .mobile-workspace-row__main { min-width: 0; min-height: 5.5rem; display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; padding: 0.75rem 0.25rem 0.75rem 0.875rem; text-align: left; }
   .mobile-workspace-row__title { min-width: 0; display: flex; align-items: center; gap: 0.5rem; }
   .mobile-workspace-row__title strong { min-width: 0; flex: 1; overflow: hidden; color: var(--text-primary); font-size: var(--font-size-md); font-weight: 650; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
-  .mobile-workspace-row__agent-state { flex-shrink: 0; padding: 0.1875rem 0.375rem; border: thin solid currentColor; border-radius: 999px; background: var(--bg-inset); font-size: var(--font-size-xs); font-weight: 700; line-height: 1; }
+  .mobile-workspace-row__agent-state, .mobile-workspace-row__merge-state { flex-shrink: 0; padding: 0.1875rem 0.375rem; border: thin solid currentColor; border-radius: 999px; background: var(--bg-inset); font-size: var(--font-size-xs); font-weight: 700; line-height: 1; }
+  .mobile-workspace-row__merge-state { color: var(--accent-blue); }
   .mobile-workspace-row__agent-state--working, .mobile-workspace-row__agent-state--done { color: var(--accent-green); }
   .mobile-workspace-row__agent-state--approval { color: var(--accent-amber); }
   .mobile-workspace-row__agent-state--input { color: var(--accent-purple); }

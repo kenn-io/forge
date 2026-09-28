@@ -27,6 +27,7 @@
     Button,
     Card,
     CommentCard,
+    HarnessIcon,
     IconButton,
     Modal,
     Timeline,
@@ -46,6 +47,7 @@
     buildItemReferenceLink,
     type ItemReferenceDataAttributes,
   } from "../../utils/item-reference.js";
+  import { commitAttribution } from "./commit-attribution.js";
   import CommentEditor from "./CommentEditor.svelte";
   import DiffReviewThreadSnippet from "../diff/DiffReviewThreadSnippet.svelte";
   import ReviewSuggestionBlock from "./ReviewSuggestionBlock.svelte";
@@ -829,7 +831,7 @@
   }
 
   function commitDetailsBody(body: string): string {
-    return body.trim();
+    return commitAttribution(body).message;
   }
 
   function systemEventLabel(eventType: string): string {
@@ -1824,6 +1826,14 @@
 	{/if}
 {/snippet}
 
+{#snippet commitAgentIcons(body: string)}
+  {#each commitAttribution(body).agents as agent (agent.harness)}
+    <span class="commit-agent" title={agent.name}>
+      <HarnessIcon harness={agent.harness} label={agent.name} size={14} />
+    </span>
+  {/each}
+{/snippet}
+
 {#snippet eventAuthorByline(event: PREvent | IssueEvent, compact = false)}
   <span class={["event-author", compact && "compact-event-author", isLifecycleTransitionEvent(event.EventType) && event.Author && "event-author--lifecycle"]}>
     {#if isLifecycleTransitionEvent(event.EventType) && event.Author}
@@ -1831,6 +1841,7 @@
     {:else}
       {eventAttribution(event) || "Unknown"}
     {/if}
+    {#if event.EventType === "commit"}{@render commitAgentIcons(event.Body)}{/if}
   </span>
 {/snippet}
 
@@ -1933,7 +1944,7 @@
                 {#each entry.obsoleteCommits as commit (commit.ID)}
                   <div class="obsolete-commit-row">
                     {#if eventAttribution(commit)}
-                      <span class="event-author">{eventAttribution(commit)}</span>
+                      <span class="event-author">{eventAttribution(commit)} {@render commitAgentIcons(commit.Body)}</span>
                     {/if}
                     <span class="commit-sha">{shortCommit(commit.Summary)}</span>
                     <span class="commit-title">{commitTitle(commit.Body)}</span>
@@ -2067,7 +2078,7 @@
                   {systemEventLabel(event.EventType)}
                 </span>
                 {#if eventAttribution(event)}
-                  <span class="event-author">{eventAttribution(event)}</span>
+                  <span class="event-author">{eventAttribution(event)} {@render commitAgentIcons(event.Body)}</span>
                 {/if}
                 <span class="commit-sha">{shortCommit(event.Summary)}</span>
                 {#if !showCommitDetails}
@@ -2512,6 +2523,12 @@
   .commit-title {
     flex: 1;
     color: var(--text-primary);
+  }
+
+  .commit-agent {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-left: var(--space-1);
   }
 
   .commit-body-details {

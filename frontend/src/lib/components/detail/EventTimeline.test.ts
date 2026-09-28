@@ -1961,6 +1961,55 @@ describe("EventTimeline", () => {
     expect(document.querySelector(".event-card--commit .event-time")?.textContent).toBe("4h ago");
   });
 
+  it.each([false, true])("replaces agent attribution with icons beside the author (markdown=%s)", async (markdown) => {
+    const body =
+      "fix: preserve selection\n\nKeep the selection.\n\nGenerated with Codex\nCo-authored-by: Codex <noreply@openai.com>\nCo-authored-by: Alex Morgan <alex@example.com>";
+    renderTimeline({
+      props: { events: [makeEvent({ EventType: "commit", Author: "alex", Summary: "abcdef1234567890", Body: body })] },
+      context: new Map([
+        [
+          STORES_KEY,
+          {
+            settings: {
+              getDetailSettings: () => ({
+                initial_timeline_entry_limit: 50,
+                collapse_single_line_breaks: false,
+                render_commit_messages_as_markdown: markdown,
+              }),
+            },
+          },
+        ],
+      ]),
+    });
+    const icon = screen.getByRole("img", { name: "Codex" });
+    expect(icon.closest(".event-author")?.textContent).toContain("alex");
+    expect(icon.parentElement?.title).toBe("Codex");
+    await waitFor(() => {
+      const details = document.querySelector(".commit-body-details");
+      expect(details?.textContent).toContain("Keep the selection.");
+      expect(details?.textContent).toContain("Co-authored-by: Alex Morgan");
+      expect(details?.textContent).not.toContain("Generated with Codex");
+      expect(details?.textContent).not.toContain("Co-authored-by: Codex");
+    });
+  });
+
+  it.each(["compact", "normal"] as const)(
+    "keeps agent icons visible with collapsed commit messages in %s mode",
+    (mode) => {
+      renderTimeline({
+        props: {
+          events: [
+            makeEvent({ EventType: "commit", Body: "fix: preserve selection\n\nGenerated with Pi", Author: "alex" }),
+          ],
+          activityViewMode: mode,
+          showCommitDetails: false,
+        },
+      });
+      expect(screen.getByRole("img", { name: "Pi" }).closest(".event-author")?.textContent).toContain("alex");
+      expect(document.querySelector(".commit-body-details")).toBeNull();
+    },
+  );
+
   it("renders commit bodies as markdown when the detail setting is on", async () => {
     renderTimeline({
       props: {

@@ -10791,6 +10791,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        for_creation:
+          type: boolean
         git_head_ref:
           type: string
         issue_branch_slug:

@@ -58099,6 +58099,7 @@ type WorkspaceLaunchRepository struct {
 type WorkspaceLaunchRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema          *string         `json:"$schema,omitempty"`
+	ForCreation     *bool           `json:"for_creation,omitempty"`
 	GitHeadRef      *string         `json:"git_head_ref,omitempty"`
 	IssueBranchSlug *bool           `json:"issue_branch_slug,omitempty"`
 	ItemKey         *string         `json:"item_key,omitempty"`

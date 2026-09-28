@@ -43,7 +43,7 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 		PlatformRepoID: "repo-acme-widget", CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
 	}))
 	seedIssueForRepo(t, database, entry.Repository.ID, "github.com", "acme", "widgets", 7, "open", "Update project")
-	var creations atomic.Int32
+	var creations, contextRefreshes atomic.Int32
 	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/v1/worker":
@@ -59,6 +59,20 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 			creations.Add(1)
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"id":"original-workspace"}`))
+		case "GET /api/v1/workspaces/original-workspace":
+			_, _ = w.Write([]byte(`{"id":"original-workspace","repo":{"provider":"github","platform_repo_id":"repo-acme-widget"},"platform_host":"github.com","repo_owner":"acme","repo_name":"widget","item_type":"pull_request","item_number":7,"item_key":"7","git_head_ref":"feature"}`))
+		case "PUT /api/v1/worker/workspaces/original-workspace/context":
+			var spec db.WorkspaceLaunchSpec
+			if !assert.NoError(json.UnmarshalRead(r.Body, &spec)) {
+				return
+			}
+			assert.Equal("repo-acme-widget", spec.Repository.PlatformRepoID)
+			assert.Equal("widgets", spec.Repository.Name)
+			contextRefreshes.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case "POST /api/v1/workspaces/original-workspace/runtime/sessions":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"key":"agent-session"}`))
 		default:
 			assert.Fail("unexpected worker request", "%s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -85,6 +99,15 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 		assert.Equal(http.StatusOK, response.Code, "%s: %s", itemField, response.Body.String())
 	}
 	assert.Equal(int32(3), creations.Load())
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement", Owner: "acme", Name: "widget",
+	}, time.Now().UTC().Add(2*time.Minute))
+	require.NoError(err)
+	response := testutil.DoJSON(t, controller, http.MethodPost, "/api/v1/devboxes/compute-a/workspaces/original-workspace/runtime/sessions", map[string]any{
+		"target_key": "codex", "display_region": "workflow",
+	})
+	assert.Equal(http.StatusCreated, response.Code, response.Body.String())
+	assert.Equal(int32(1), contextRefreshes.Load(), "existing workspace context must follow its ID even after route reuse")
 }
 
 func TestDevboxCreationRejectsRepositoryRouteReplacement(t *testing.T) {

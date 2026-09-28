@@ -1,0 +1,130 @@
+package server
+
+import (
+	"encoding/json/v2"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+)
+
+func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{"local", "spoke"} {
+		t.Run(target, func(t *testing.T) {
+			t.Parallel()
+			assert, require := assert.New(t), require.New(t)
+			database := dbtest.Open(t)
+			seedPR(t, database, "acme", "widget", 42)
+			seedIssue(t, database, "acme", "widget", 42, "open")
+			seedPR(t, database, "acme", "widget", 43)
+			seedIssue(t, database, "acme", "widget", 43, "open")
+			renamed, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+				Owner: "acme", Name: "widgets",
+			}, time.Now().UTC().Add(time.Minute))
+			require.NoError(err)
+			require.NoError(database.UpdateRepoProviderMetadata(t.Context(), renamed.Repository.ID, db.RepoProviderMetadata{
+				PlatformRepoID: "repo-acme-widget", CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
+			}))
+			credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "hub-credentials.json"))
+			require.NoError(err)
+			hub := New(database, nil, nil, "/", &config.Config{
+				Tmux: config.Tmux{Command: []string{"kenn-forge-no-such-tmux"}},
+			}, ServerOptions{
+				FederationSpokeID: proxyTestHubID, FederationCredentials: credentials,
+				WorktreeDir: filepath.Join(t.TempDir(), "worktrees"), PtyOwnerInProcess: true,
+				DisableWorkspaceBackgroundMonitors: true,
+			})
+			t.Cleanup(func() { gracefulShutdown(t, hub) })
+			server, workspaceDB, prefix := hub, database, "/api/v1"
+			if target == "spoke" {
+				remote := httptest.NewTLSServer(hub)
+				t.Cleanup(remote.Close)
+				token, err := credentials.MintInbound(proxyTestNodeID, federationauth.SpokeToHubScopes())
+				require.NoError(err)
+				nodeCredentials, err := federationauth.Open(filepath.Join(t.TempDir(), "spoke-credentials.json"))
+				require.NoError(err)
+				require.NoError(nodeCredentials.StoreOutbound(proxyTestHubID, token, federationauth.SpokeToHubScopes()))
+				workspaceDB = dbtest.Open(t)
+				server = New(workspaceDB, nil, nil, "/", &config.Config{
+					Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleSpoke, Hub: &config.FleetHub{NodeID: proxyTestHubID, BaseURL: remote.URL}},
+					Tmux:  config.Tmux{Command: []string{"kenn-forge-no-such-tmux"}},
+				}, ServerOptions{
+					FederationSpokeID: proxyTestNodeID, FederationSpokeActive: true,
+					FederationCredentials: nodeCredentials, FederationHTTPClient: remote.Client(),
+					WorktreeDir: filepath.Join(t.TempDir(), "worktrees"), PtyOwnerInProcess: true,
+					DisableWorkspaceBackgroundMonitors: true,
+				})
+				t.Cleanup(func() { gracefulShutdown(t, server) })
+				// Only launch admission needs credentials. The workspace manager has
+				// no clone manager, so background setup cannot run external Git.
+				server.providerSource.clones = gitclone.New(t.TempDir(), descriptorCloneRoutes{
+					source: testTokenSource("spoke-git-token"),
+				})
+				prefix += "/fleet/hosts/self"
+			}
+			requests := []struct {
+				path string
+				body map[string]any
+			}{
+				{path: "/workspaces", body: map[string]any{
+					"provider": "github", "platform_host": "github.com", "owner": "acme", "name": "widget",
+					"mr_number": 42, "platform_repo_id": "repo-acme-widget", "suppress_auto_assign": true,
+				}},
+				{path: "/issues/gh/acme/widget/42/workspace", body: map[string]any{
+					"platform_repo_id": "repo-acme-widget", "suppress_auto_assign": true,
+				}},
+			}
+			for _, request := range requests {
+				response := testutil.DoJSON(t, server, http.MethodPost, prefix+request.path, request.body)
+				require.Equal(http.StatusAccepted, response.Code, response.Body.String())
+				var created workspaceapi.WorkspaceResponse
+				require.NoError(json.Unmarshal(response.Body.Bytes(), &created))
+				spec, err := workspaceDB.GetWorkspaceLaunchSpec(t.Context(), created.ID)
+				require.NoError(err)
+				require.NotNil(spec)
+				assert.Equal("repo-acme-widget", spec.Repository.PlatformRepoID)
+				assert.Equal("widgets", spec.Repository.Name)
+			}
+
+			_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement",
+				Owner: "acme", Name: "widget",
+			}, time.Now().UTC().Add(2*time.Minute))
+			require.NoError(err)
+			requests[0].body["mr_number"] = 43
+			requests[1].path = "/issues/gh/acme/widget/43/workspace"
+			for _, request := range requests {
+				response := testutil.DoJSON(t, server, http.MethodPost, prefix+request.path, request.body)
+				assert.Equal(http.StatusNotFound, response.Code, response.Body.String())
+			}
+			workspaces, err := workspaceDB.ListWorkspaces(t.Context())
+			require.NoError(err)
+			assert.Len(workspaces, 2, "rejected selections must not persist another workspace")
+			if target == "spoke" {
+				// Spoke preparation uses this same read-only endpoint for an
+				// existing workspace, whose stable identity survives route reuse.
+				spec, err := server.providerSource.ResolveWorkspaceLaunchSpec(t.Context(), providerplane.WorkspaceLaunchRequest{
+					Repository:     providerplane.RepositoryRoute{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget"},
+					PlatformRepoID: "repo-acme-widget", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+				})
+				require.NoError(err)
+				assert.Equal("repo-acme-widget", spec.Repository.PlatformRepoID)
+				assert.Equal("widgets", spec.Repository.Name)
+			}
+		})
+	}
+}

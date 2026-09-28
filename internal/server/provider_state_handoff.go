@@ -139,7 +139,14 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 	}
 	request.Repository = route
 	var repo *db.ActiveRepo
-	if platformRepoID := request.PlatformRepoID; platformRepoID != 0 {
+	if request.ForCreation {
+		repo, err = s.repoResolver.LookupSelection(
+			ctx, route.Provider, route.PlatformHost, route.Owner, route.Name, request.PlatformRepoID,
+		)
+		if err != nil {
+			return db.WorkspaceLaunchSpec{}, httpapi.ProviderRouteLookupError(err)
+		}
+	} else if platformRepoID := request.PlatformRepoID; platformRepoID != 0 {
 		entry, lookupErr := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
 			Provider: route.Provider, PlatformHost: route.PlatformHost,
 			PlatformRepoID: platformRepoID,

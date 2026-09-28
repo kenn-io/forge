@@ -307,6 +307,7 @@ func launchRequest(
 		ItemType: itemType, ItemNumber: itemNumber,
 		ItemKey: strconv.Itoa(itemNumber), GitHeadRef: strings.TrimSpace(gitHeadRef),
 		IssueBranchSlug: issueBranchSlug,
+		ForCreation:     true,
 	}
 }
 

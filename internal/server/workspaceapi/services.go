@@ -130,6 +130,7 @@ func (s *Handler) resolveWorkspaceLaunchSpec(
 		providerplane.WorkspaceLaunchRequest{
 			Repository: route, ItemType: itemType, ItemNumber: itemNumber,
 			PlatformRepoID: platformRepoID,
+			ForCreation:    true,
 			GitHeadRef:     gitHeadRef, IssueBranchSlug: issueBranchSlug,
 		},
 	)

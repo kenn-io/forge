@@ -180,6 +180,7 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *createDevboxW
 		spec, err := s.ResolveWorkspaceLaunchSpec(ctx, providerplane.WorkspaceLaunchRequest{
 			Repository:     providerplane.RepositoryRoute{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name},
 			PlatformRepoID: repo.PlatformRepoID,
+			ForCreation:    true,
 			ItemType:       kind, ItemNumber: number, GitHeadRef: body.Branch,
 		})
 		if err != nil {

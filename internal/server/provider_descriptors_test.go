@@ -183,6 +183,11 @@ func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {
 		}, nil, nil,
 	))
 	server.now = func() time.Time { return renameTime.Add(time.Minute) }
+	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement",
+		Owner: "acme", Name: "widget",
+	}, renameTime.Add(time.Minute))
+	require.NoError(err)
 
 	refreshed, err := server.RefreshWorkspaceLaunchSpec(t.Context(), current)
 	require.NoError(err)

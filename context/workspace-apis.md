@@ -99,7 +99,7 @@ embedder protocol for arbitrary host state.
 - Repository selections and loaded PR/issue details carry the provider's stable ID through local, fleet,
   and devbox creation; validate it before workspace reuse or creation so a reused route cannot redirect the choice
   (`internal/server/workspaceapi/routes_handlers.go::createIssueWorkspaceRouteCore`).
-- Ad-hoc and devbox repository choices use their stable ID after a rename; creation rejects a different active repository
+- Repository choices use their stable ID after a rename; creation rejects a different active repository
   at the supplied route and rejects unknown or inactive repository IDs. Route-only callers keep current-route semantics
   (`internal/db/repository_catalog.go::DB.GetRepositoryProviderSnapshot`).
 - `POST /repo/{provider}/{owner}/{name}/workspaces`: create or reuse an ad-hoc
@@ -452,7 +452,9 @@ commits use the per-MR snapshot lock
 (`internal/workspace/manager.go::Manager.RefreshWorkspaceHeadRepoSnapshot`,
 `internal/db/queries.go::UpdateWorkspaceMRHeadRepoForSnapshot`).
 Launch-spec refresh preserves the workspace's stable repository and branch
-identity while renewing hub-owned head and visibility facts. A changed
+identity while renewing hub-owned head and visibility facts, even when another
+repository occupies its old route. Creation admission must not constrain existing
+workspace refresh or spoke preparation. A changed
 repository identity conflicts; an expired lease followed by a hub
 outage is retryable, while removed or inaccessible PRs fail closed before generated
 context can expose a branch or push target

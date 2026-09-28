@@ -81,6 +81,9 @@ type WorkspaceLaunchRequest struct {
 	ItemKey         string          `json:"item_key,omitempty"`
 	GitHeadRef      string          `json:"git_head_ref,omitempty"`
 	IssueBranchSlug bool            `json:"issue_branch_slug,omitempty"`
+	// ForCreation checks the selected route before creating or reusing a workspace.
+	// Existing workspace refreshes follow their durable repository identity instead.
+	ForCreation bool `json:"for_creation,omitempty"`
 }
 
 // WorkspaceLaunchSpecResolver is the single authority used to resolve initial

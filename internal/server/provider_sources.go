@@ -730,6 +730,7 @@ func providerLaunchRequestBody(request providerplane.WorkspaceLaunchRequest) *ge
 		Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber),
 		ItemKey: optionalProviderQuery(request.ItemKey), GitHeadRef: optionalProviderQuery(request.GitHeadRef),
 		PlatformRepoID: optionalProviderQuery(request.PlatformRepoID), IssueBranchSlug: optionalProviderQuery(request.IssueBranchSlug),
+		ForCreation: optionalProviderQuery(request.ForCreation),
 	}
 }
 

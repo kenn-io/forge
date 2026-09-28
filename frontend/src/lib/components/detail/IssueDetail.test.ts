@@ -115,6 +115,7 @@ function issueDetail(): IssueDetail {
       capabilities,
       provider: "github",
       platform_host: "github.com",
+      platform_repo_id: "widget-repo-id",
       owner: "acme",
       name: "widget",
       repo_path: "acme/widget",
@@ -674,7 +675,10 @@ describe("IssueDetail inline workspace handoff", () => {
       await waitFor(() =>
         expect(apiClient.POST).toHaveBeenCalledWith(
           "/devboxes/{connection_id}/workspaces",
-          expect.objectContaining({ params: { path: { connection_id: "compute-a" } } }),
+          expect.objectContaining({
+            params: { path: { connection_id: "compute-a" } },
+            body: expect.objectContaining({ platform_repo_id: "widget-repo-id" }),
+          }),
         ),
       );
     }
@@ -742,25 +746,37 @@ describe("IssueDetail inline workspace handoff", () => {
     };
   }
 
-  it("creates an issue workspace through the app runtime", async () => {
+  it.each([
+    ["github.com", "/issues/{provider}/{owner}/{name}/{number}/workspace"],
+    ["github.example.com", "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace"],
+  ])("creates an issue workspace through the app runtime on %s", async (platformHost, path) => {
     const controller = createTestController("split");
     const { apiClient: runtimeClient, resolvePost } = deferredWorkspaceApiClient();
     const contextClient = {
       GET: vi.fn(),
       POST: vi.fn(async () => ({ error: { title: "legacy client used" } })),
     };
+    const detail = issueDetail();
+    detail.platform_host = platformHost;
+    Object.assign(detail.repo, { Host: platformHost, PlatformHost: platformHost, platform_host: platformHost });
     renderIssueDetail(
-      issueDetail(),
+      detail,
       undefined,
       {
         inlineWorkspace: controller,
         runtimeClient: runtimeClient as unknown as GeneratedClient,
+        detailProps: { platformHost },
       },
       contextClient,
     );
 
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
-    await waitFor(() => expect(runtimeClient.POST).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(runtimeClient.POST).toHaveBeenCalledWith(
+        path,
+        expect.objectContaining({ body: expect.objectContaining({ platform_repo_id: "widget-repo-id" }) }),
+      ),
+    );
     resolvePost({ data: { id: "ws-runtime", status: "provisioning" } });
 
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());

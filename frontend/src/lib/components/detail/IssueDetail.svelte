@@ -840,6 +840,7 @@
       repoPath: requestIdentity.repoPath,
     };
     const requestBody = {
+      ...(detail.repo.platform_repo_id ? { platform_repo_id: detail.repo.platform_repo_id } : {}),
       ...(options.gitHeadRef ? { git_head_ref: options.gitHeadRef.trim() } : {}),
       ...(options.reuseExistingBranch ? { reuse_existing_branch: true } : {}),
       ...(options.reuseExistingDirectory ? { reuse_existing_directory: true } : {}),
@@ -858,6 +859,7 @@
             {
               provider: requestIdentity.provider,
               platform_host: requestIdentity.platformHost ?? "github.com",
+              ...(detail.repo.platform_repo_id ? { platform_repo_id: detail.repo.platform_repo_id } : {}),
               owner: requestIdentity.owner,
               name: requestIdentity.name,
               issue_number: requestIdentity.number,

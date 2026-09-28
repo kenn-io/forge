@@ -1781,6 +1781,8 @@ components:
           type: string
         git_head_ref:
           type: string
+        platform_repo_id:
+          type: string
         reuse_existing_branch:
           type: boolean
         reuse_existing_directory:
@@ -1799,6 +1801,8 @@ components:
           readOnly: true
           type: string
         git_head_ref:
+          type: string
+        platform_repo_id:
           type: string
         reuse_existing_branch:
           type: boolean
@@ -1825,6 +1829,8 @@ components:
         owner:
           type: string
         platform_host:
+          type: string
+        platform_repo_id:
           type: string
         provider:
           type: string

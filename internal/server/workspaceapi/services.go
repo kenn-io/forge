@@ -15,6 +15,7 @@ import (
 type CreatePullWorkspaceRequest struct {
 	Provider           string
 	PlatformHost       string
+	PlatformRepoID     string
 	Owner              string
 	Name               string
 	Number             int
@@ -24,6 +25,7 @@ type CreatePullWorkspaceRequest struct {
 type CreateIssueWorkspaceRequest struct {
 	Provider               string
 	PlatformHost           string
+	PlatformRepoID         string
 	Owner                  string
 	Name                   string
 	Number                 int
@@ -113,6 +115,7 @@ type AgentMessageResult struct {
 func (s *Handler) resolveWorkspaceLaunchSpec(
 	ctx context.Context,
 	route providerplane.RepositoryRoute,
+	platformRepoID string,
 	itemType string,
 	itemNumber int,
 	gitHeadRef string,
@@ -125,7 +128,8 @@ func (s *Handler) resolveWorkspaceLaunchSpec(
 		ctx,
 		providerplane.WorkspaceLaunchRequest{
 			Repository: route, ItemType: itemType, ItemNumber: itemNumber,
-			GitHeadRef: gitHeadRef, IssueBranchSlug: issueBranchSlug,
+			PlatformRepoID: platformRepoID,
+			GitHeadRef:     gitHeadRef, IssueBranchSlug: issueBranchSlug,
 		},
 	)
 }

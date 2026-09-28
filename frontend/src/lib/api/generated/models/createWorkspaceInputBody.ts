@@ -9,6 +9,7 @@ export interface CreateWorkspaceInputBody {
   name: string;
   owner: string;
   platform_host: string;
+  platform_repo_id?: string;
   provider: string;
   suppress_auto_assign?: boolean;
 }

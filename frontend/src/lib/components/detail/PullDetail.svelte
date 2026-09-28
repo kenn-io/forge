@@ -1782,6 +1782,7 @@
     const requestBody = {
       provider: requestIdentity.provider,
       platform_host: detail.platform_host,
+      ...(detail.repo.platform_repo_id ? { platform_repo_id: detail.repo.platform_repo_id } : {}),
       owner: detail.repo_owner,
       name: detail.repo_name,
       mr_number: detail.merge_request.Number,

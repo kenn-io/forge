@@ -260,6 +260,7 @@ type createIssueWorkspaceHostInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	Body         struct {
+		PlatformRepoID         string  `json:"platform_repo_id,omitempty"`
 		GitHeadRef             *string `json:"git_head_ref,omitempty"`
 		ReuseExistingBranch    bool    `json:"reuse_existing_branch,omitempty"`
 		ReuseExistingDirectory bool    `json:"reuse_existing_directory,omitempty"`

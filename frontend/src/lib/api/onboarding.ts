@@ -10,6 +10,7 @@ export const createPullRequestWorkspace = Effect.fn("Onboarding.createPullReques
   const body = {
     provider: pull.repo.provider,
     platform_host: pull.repo.platform_host,
+    ...(pull.repo.platform_repo_id ? { platform_repo_id: pull.repo.platform_repo_id } : {}),
     owner: pull.repo.owner,
     name: pull.repo.name,
     mr_number: pull.Number,

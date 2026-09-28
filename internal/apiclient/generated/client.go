@@ -54643,6 +54643,7 @@ type CreateIssueWorkspaceHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                 *string `json:"$schema,omitempty"`
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
+	PlatformRepoID         *string `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
 	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
@@ -54652,6 +54653,7 @@ type CreateIssueWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                 *string `json:"$schema,omitempty"`
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
+	PlatformRepoID         *string `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
 	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
@@ -54664,6 +54666,7 @@ type CreateWorkspaceInputBody struct {
 	Name               string  `json:"name"`
 	Owner              string  `json:"owner"`
 	PlatformHost       string  `json:"platform_host"`
+	PlatformRepoID     *string `json:"platform_repo_id,omitempty"`
 	Provider           string  `json:"provider"`
 	SuppressAutoAssign *bool   `json:"suppress_auto_assign,omitempty"`
 }

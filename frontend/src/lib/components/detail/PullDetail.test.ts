@@ -2897,6 +2897,7 @@ describe("PullDetail inline workspace handoff", () => {
             body: {
               provider: "github",
               platform_host: "github.com",
+              platform_repo_id: "widget-repo-id",
               owner: "acme",
               name: "widget",
               mr_number: 1,
@@ -2935,7 +2936,12 @@ describe("PullDetail inline workspace handoff", () => {
     });
 
     await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
-    await waitFor(() => expect(runtimeClient.POST).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(runtimeClient.POST).toHaveBeenCalledWith(
+        "/workspaces",
+        expect.objectContaining({ body: expect.objectContaining({ platform_repo_id: "widget-repo-id" }) }),
+      ),
+    );
     resolvePost({ data: { id: "ws-runtime", status: "provisioning" } });
 
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());

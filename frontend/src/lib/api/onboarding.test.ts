@@ -18,6 +18,7 @@ describe("onboarding API", () => {
       repo: {
         provider: "github",
         platform_host: "ghe.example.com",
+        platform_repo_id: "repo-original",
         owner: "acme",
         name: "forge",
         repo_path: "acme/forge",
@@ -31,6 +32,7 @@ describe("onboarding API", () => {
       assert.deepStrictEqual(receivedBody, {
         provider: "github",
         platform_host: "ghe.example.com",
+        platform_repo_id: "repo-original",
         owner: "acme",
         name: "forge",
         mr_number: 42,

@@ -5,10 +5,14 @@
   import { setAppRuntime } from "../../app/runtime-context.js";
   import MobileWorkspaceList from "./MobileWorkspaceList.svelte";
 
-  const props: ComponentProps<typeof MobileWorkspaceList> = $props();
+  const { showList = true, ...props }: ComponentProps<typeof MobileWorkspaceList> & {
+    showList?: boolean;
+  } = $props();
   const runtime = makeAppRuntime();
   setAppRuntime(runtime);
   onDestroy(() => Effect.runFork(runtime.disposeEffect));
 </script>
 
-<MobileWorkspaceList {...props} />
+{#if showList}
+  <MobileWorkspaceList {...props} />
+{/if}

@@ -23,6 +23,21 @@ export class WorkspaceListWorkflow extends Context.Service<WorkspaceListWorkflow
   "kenn-forge/WorkspaceListWorkflow",
 ) {}
 
+export const removeWorkspaceListEntry = Effect.fn("WorkspaceListWorkflow.remove")(function* (
+  workspaceId: string,
+  hostKey?: string,
+) {
+  const workflow = yield* WorkspaceListWorkflow;
+  if (workflow.snapshot) {
+    workflow.snapshot = {
+      ...workflow.snapshot,
+      workspaces: workflow.snapshot.workspaces.filter(
+        (workspace) => workspace.id !== workspaceId || workspace.fleet_host_key !== hostKey,
+      ),
+    };
+  }
+});
+
 export const makeWorkspaceListWorkflow = Effect.sync(() => {
   const owners = new Map<string, () => void>();
   let pending = false;

@@ -436,6 +436,48 @@ describe("MobileWorkspaceList", () => {
     notifyWorkspaceDeleted.mockRestore();
   });
 
+  it("keeps a confirmed deletion out of the remounted list while preserving the same ID on another host", async () => {
+    const remote = { ...fixture, mr_title: "Remote workspace", fleet_host_key: "peer-a" };
+    mockGet.mockResolvedValue({
+      data: {
+        hosts: [
+          {
+            configKey: "peer-a",
+            diagnostics: [],
+            id: "peer-a",
+            kind: "remote",
+            name: "Peer A",
+            operationAvailability: { workspaceWrite: { available: true } },
+            platform: "linux",
+            preferredTransport: "http",
+            reachable: true,
+            tmuxSessions: [],
+          },
+        ],
+        workspaces: [fixture, remote],
+      },
+    });
+    mockDelete.mockResolvedValue({ response: { ok: true, status: 204 } });
+    const view = render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Remote workspace");
+    mockGet.mockReturnValue(new Promise(() => {}));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace actions for Remote workspace" }));
+    const actions = await screen.findByRole("dialog", { name: "Workspace actions" });
+    await fireEvent.click(within(actions).getByRole("button", { name: "Delete workspace…" }));
+    const confirmation = await screen.findByRole("dialog", { name: "Delete workspace?" });
+    await fireEvent.click(within(confirmation).getByRole("button", { name: "Delete workspace" }));
+    await waitFor(() => expect(screen.queryByText("Remote workspace")).toBeNull());
+    expect(screen.getByText("Build mobile workspaces")).toBeTruthy();
+
+    await view.rerender({ showList: false });
+    mockGet.mockClear();
+    await view.rerender({ showList: true });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/snapshot", expect.anything()));
+    expect(await screen.findByText("Build mobile workspaces")).toBeTruthy();
+    expect(screen.queryByText("Remote workspace")).toBeNull();
+  });
+
   it("requires separate confirmation before forcing a dirty workspace deletion", async () => {
     mockDelete
       .mockResolvedValueOnce({

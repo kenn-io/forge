@@ -58,6 +58,7 @@
   import {
     WorkspaceListWorkflow,
     makeWorkspaceRefreshHub,
+    removeWorkspaceListEntry,
     workspaceListLifecycle,
     type WorkspaceListSnapshot,
   } from "./workspace-list-workflow.js";
@@ -1106,8 +1107,12 @@
         ).pipe(Effect.asVoid);
     runtime.runCommand(
       command.pipe(
+        Effect.tap(() => removeWorkspaceListEntry(ws.id, hostKey)),
         Effect.tap(() =>
           Effect.sync(() => {
+            workspaces = workspaces.filter(
+              (candidate) => candidate.id !== ws.id || candidate.fleet_host_key !== hostKey,
+            );
             // Report the deletion regardless of selection so a hosting shell's
             // inline claim cannot briefly reclaim a workspace this list destroyed.
             onWorkspaceDeleted?.(

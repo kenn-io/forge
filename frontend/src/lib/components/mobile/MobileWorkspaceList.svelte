@@ -26,6 +26,7 @@
   import {
     WorkspaceListWorkflow,
     makeWorkspaceRefreshHub,
+    removeWorkspaceListEntry,
     workspaceListLifecycle,
     type WorkspaceListSnapshot,
   } from "../terminal/workspace-list-workflow.js";
@@ -348,6 +349,7 @@
         ).pipe(Effect.asVoid);
     appRuntime.runCommand(
       command.pipe(
+        Effect.tap(() => removeWorkspaceListEntry(workspace.id, hostKey)),
         Effect.tap(() =>
           Effect.sync(() => {
             notifyWorkspaceDeleted(workspace.id, hostKey, {

@@ -2883,6 +2883,38 @@ describe("WorkspaceListSidebar", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
   });
 
+  it("keeps a confirmed deletion out of the remounted list while preserving the same ID on another host", async () => {
+    const local = workspaceFixture({
+      id: "ws-shared-id",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      number: 42,
+      title: "Local workspace",
+    });
+    const remote = { ...local, mr_title: "Remote workspace", fleet_host_key: "peer-a" };
+    mockGet.mockResolvedValue({ data: { workspaces: [local, remote] } });
+    mockDelete.mockResolvedValue({ response: { ok: true, status: 204 } });
+    const view = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await screen.findByText("Local workspace");
+    mockGet.mockReturnValue(new Promise(() => {}));
+
+    await fireEvent.contextMenu(screen.getByText("Local workspace").closest(".ws-row")!);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
+    const confirmation = await screen.findByRole("dialog", { name: "Delete workspace?" });
+    await fireEvent.click(within(confirmation).getByRole("button", { name: "Delete workspace" }));
+    await waitFor(() => expect(screen.queryByText("Local workspace")).toBeNull());
+    expect(screen.getByText("Remote workspace")).toBeTruthy();
+
+    await view.rerender({ showSidebar: false });
+    mockGet.mockClear();
+    await view.rerender({ showSidebar: true });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/snapshot", expect.anything()));
+    expect(await screen.findByText("Remote workspace")).toBeTruthy();
+    expect(screen.queryByText("Local workspace")).toBeNull();
+  });
+
   it("keeps a workspace when context menu deletion is cancelled in-app", async () => {
     vi.stubGlobal(
       "confirm",

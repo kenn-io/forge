@@ -1,0 +1,2 @@
+-- One-way normalization of preview names. Migration 59 already expects the
+-- spoke/hub schema, so retain the corrected tables and admission triggers.

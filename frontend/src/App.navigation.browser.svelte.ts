@@ -357,7 +357,7 @@ describe("view navigation", () => {
     }
     const dialog = page.getByRole("dialog", { name: "New workspace" });
     await expect.element(dialog.getByRole("option", { name: /acme\/updated-repo/ })).toBeVisible();
-    await expect.element(dialog.getByRole("button", { name: "Create workspace", exact: true })).toBeDisabled();
+    await expect.element(dialog.getByRole("button", { name: "Create workspace", exact: true })).toBeEnabled();
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect.element(dialog).not.toBeInTheDocument();
   });

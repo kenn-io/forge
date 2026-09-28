@@ -95,7 +95,7 @@ describe("WorkspaceTerminalView layout flip", () => {
     // main subtree cannot mount without a settings store on STORES_KEY.
     const settingsStore = {
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
-      getQuickActions: () => [],
+      getQuickActions: () => [{ label: "Review", agent: "codex", prompt: "Review this change" }],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       getWorkspaceSettings: () => ({ auto_assign_on_create: false, default_sidebar_view: "diff" as const }),
     };
@@ -109,10 +109,12 @@ describe("WorkspaceTerminalView layout flip", () => {
     try {
       const home = screen.getByRole("tab", { name: "Home", exact: true });
       const launch = screen.getByRole("button", { name: "Launch", exact: true });
+      const quickActions = screen.getByRole("button", { name: "Quick actions", exact: true });
       const presets = screen.getByRole("button", { name: "Workflow presets", exact: true });
       await expect.element(home).toBeVisible();
       for (const [control, anchor] of [
         [launch, home],
+        [quickActions, home],
         [presets, screen.getByRole("button", { name: "Delete", exact: true })],
       ]) {
         const titleRow = anchor!.element().getBoundingClientRect();
@@ -129,6 +131,10 @@ describe("WorkspaceTerminalView layout flip", () => {
       ).toBe(true);
       await launch.click();
       await expect.element(screen.getByText("Run configurations", { exact: true })).toBeVisible();
+      expect(quickActions.element().getBoundingClientRect().width).toBe(24);
+      await quickActions.click();
+      await expect.element(screen.getByRole("dialog", { name: "Quick actions" })).toBeVisible();
+      await expect.element(screen.getByRole("dialog", { name: "Run configurations" })).not.toBeInTheDocument();
 
       const before = await vi.waitFor(() => {
         const el = document.querySelector(".workspace-stage");
@@ -143,6 +149,7 @@ describe("WorkspaceTerminalView layout flip", () => {
 
       await page.viewport(480, 640);
       const launchRect = launch.element().getBoundingClientRect();
+      expect(quickActions.element().getBoundingClientRect().right).toBeLessThanOrEqual(480);
       expect(launchRect.right).toBeLessThanOrEqual(480);
       expect(
         launch

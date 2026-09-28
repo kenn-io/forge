@@ -2805,9 +2805,23 @@
       : [],
   );
 
-  function handleQuickAction(action: QuickAction): void {
+  function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
     if (!workspaceId || actionsBlocked) return;
-    runWorkspaceQuickAction(appRuntime, workspaceId, action, workspaceHostKey);
+    const id = workspaceId;
+    const hostKey = workspaceHostKey;
+    runWorkspaceQuickAction(appRuntime, id, action, hostKey, (session) => {
+      if (!isCurrentWorkspace(id, hostKey)) return;
+      clearClosedSession(session);
+      const sessions = upsertRuntimeSession(session);
+      applySessionToWorkflow(session.key, sessions);
+      if (leaf?.surface === "workflow") {
+        appendWorkflowTabToGroup(workflowTabKeyForSession(session.key), leaf.id, sessions);
+      } else if (leaf?.surface === "detail") {
+        surfaceLayout?.promoteTab(sessionPaneKeyFor(session), { kind: "tab", leafID: leaf.id });
+      }
+      requestSessionFocus(sessionHostKeyFor(session));
+      requestRuntime({ force: true });
+    });
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(
@@ -4647,6 +4661,8 @@
                             {launchingKey}
                             disabled={actionsBlocked}
                             {hostVisible}
+                            quickActions={workspaceQuickActions}
+                            onQuickAction={(action) => handleQuickAction(action, { surface: "workflow", id: leaf.id })}
                             onLaunch={(key) => handleLaunch(key, undefined, { surface: "workflow", id: leaf.id })}
                           />
                         </div>
@@ -4857,8 +4873,9 @@
     onClose={closeLauncher}
     onLaunch={(key) => handleLaunch(key, undefined, launcherState?.leaf)}
     onQuickAction={(action) => {
+      const leaf = launcherState?.leaf;
       closeLauncher();
-      handleQuickAction(action);
+      handleQuickAction(action, leaf);
     }}
     onOpenSession={(sessionKey) => {
       closeLauncher();
@@ -5179,6 +5196,8 @@
       {launchingKey}
       disabled={actionsBlocked}
       hostVisible={interactionVisible}
+      quickActions={workspaceQuickActions}
+      onQuickAction={handleQuickAction}
       onLaunch={(key) => void handleLaunch(key)}
     />
   {/if}

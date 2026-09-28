@@ -4625,7 +4625,9 @@ base_url = "https://hub.example"
 	})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
-	assert.True(srv.cfg.Workspaces.AutoAssignOnCreate)
+	var settings settingsResponse
+	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+	assert.True(settings.Workspaces.AutoAssignOnCreate)
 	persisted, err := config.Load(configPath)
 	require.NoError(err)
 	assert.True(persisted.Workspaces.AutoAssignOnCreate)

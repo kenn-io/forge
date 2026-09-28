@@ -1,10 +1,49 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import LaunchMenu from "./LaunchMenu.svelte";
 
 describe("LaunchMenu", () => {
   afterEach(() => cleanup());
+
+  it("offers sorted quick actions beside Launch and disables unavailable agents", async () => {
+    const onQuickAction = vi.fn();
+    const { rerender } = render(LaunchMenu, {
+      props: {
+        launchTargets: [
+          { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true },
+          { key: "claude", label: "Claude", kind: "agent", source: "builtin", available: false },
+        ],
+        quickActions: [
+          { label: "Review", agent: "codex", prompt: "Review this change" },
+          { label: "audit", agent: "claude", prompt: "Audit this change" },
+          { label: "Missing", agent: "missing", prompt: "Check this change" },
+        ],
+        onQuickAction,
+      },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Launch", exact: true }));
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions", exact: true }));
+    expect(screen.queryByRole("dialog", { name: "Run configurations" })).toBeNull();
+    const menu = screen.getByRole("dialog", { name: "Quick actions" });
+    expect(
+      within(menu)
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(["audit", "Missing", "Review"]);
+    expect((within(menu).getByRole("button", { name: "audit" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(menu).getByRole("button", { name: "Missing" }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(within(menu).getByRole("button", { name: "Review" }));
+    expect(onQuickAction).toHaveBeenCalledExactlyOnceWith({
+      label: "Review",
+      agent: "codex",
+      prompt: "Review this change",
+    });
+    expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions", exact: true }));
+    await rerender({ hostVisible: false });
+    expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
+  });
 
   it("hides disabled configured targets but keeps unavailable detected targets visible", async () => {
     const onLaunch = vi.fn();
@@ -48,6 +87,8 @@ describe("LaunchMenu", () => {
     });
 
     await fireEvent.click(screen.getByRole("button", { name: "Launch" }));
+
+    expect(screen.queryByRole("button", { name: "Quick actions" })).toBeNull();
 
     const codexOption = screen.getByRole("button", { name: /Codex/ });
     expect(codexOption.textContent?.trim()).toBe("Codex");

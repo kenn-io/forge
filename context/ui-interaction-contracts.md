@@ -127,6 +127,8 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaceKey`).
 - Every quick-action list is ordered by action title, ignoring case, not by settings order
   (`frontend/src/lib/stores/workspace-quick-actions.ts::sortQuickActionsByLabel`).
+- Workspace quick actions use one lightning icon beside Play, without a visible label
+  or chevron, to preserve tab-strip space (`frontend/src/lib/components/terminal/LaunchMenu.svelte`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and

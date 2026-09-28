@@ -30,6 +30,7 @@ const WAIT = 10_000;
 const toolsRepo = {
   provider: "github",
   platform_host: "github.com",
+  platform_repo_id: "tools-repo-id",
   repo_path: "acme/tools",
   owner: "acme",
   name: "tools",

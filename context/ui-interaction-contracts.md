@@ -214,6 +214,10 @@ Examples of transient state that should usually reset on identity change:
 - merge/close/reopen dialogs
 - approve/review forms
 
+Learning a repository ID during initial detail hydration must preserve navigation
+state; replacing a known repository ID must reset transient actions
+(`frontend/src/lib/components/detail/PullDetail.svelte::lastResetPlatformRepoId`).
+
 ## Persistence Scope
 
 Persisted controls must state their scope clearly.

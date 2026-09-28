@@ -350,7 +350,10 @@ create a local process, PTY, or durable transport session
 - Local-runtime reconnects restore browser-generated cursor-key, mouse, focus,
   and paste DEC modes from session-wide PTY state, not bounded screen replay
   (`internal/workspace/localruntime/manager.go::session.subscribe`).
-- Initial agent handoff requires observed bracketed-paste mode, then sends the
+- Pass initial prompts to directly configured Claude commands as CLI arguments; its
+  trust dialog already uses raw input, so a synthetic Enter can select exit.
+  (`internal/workspace/localruntime/manager.go::Manager.LaunchWithInitialMessage`).
+- Terminal prompt delivery requires observed bracketed-paste mode, then sends the
   opening frame, prompt, and closing frame in one terminal write and, after a
   short fixed settle delay, Enter as a separate write. Agent TUIs treat bytes
   in the same chunk as the paste-end marker as part of the paste, so an Enter

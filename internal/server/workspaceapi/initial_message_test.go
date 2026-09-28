@@ -311,6 +311,7 @@ type initialMessagePTYOwner struct {
 	mu                 sync.Mutex
 	pty                *initialMessagePTY
 	ptys               map[string]*initialMessagePTY
+	command            []string
 	emitBracketedPaste bool
 }
 
@@ -339,7 +340,7 @@ func (o *initialMessagePTYOwner) Start(
 	_ context.Context,
 	session string,
 	_ string,
-	_ []string,
+	command []string,
 	_ []string,
 	_ map[string]string,
 ) (ptyownerruntime.PTY, error) {
@@ -347,6 +348,7 @@ func (o *initialMessagePTYOwner) Start(
 		output: make(chan []byte, 8), done: make(chan struct{}),
 	}
 	o.mu.Lock()
+	o.command = command
 	o.pty = pty
 	o.ptys[session] = pty
 	emitBracketedPaste := o.emitBracketedPaste

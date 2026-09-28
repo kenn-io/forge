@@ -99,7 +99,7 @@
   prompt only in daemon memory. Same-daemon retries must match the live runtime
   target and prompt; daemon restart permits a fresh attempt
   (`internal/server/workspaceapi/initial_message.go::initialMessageAttempt`).
-- Initial input requires an exact live agent runtime and matching target, LF or
+- Terminal initial input requires an exact live agent runtime and matching target, LF or
   printable Unicode, and tracked bracketed paste for multiline text. Hook
   observation is not a submission precondition. If safe paste mode is not
   observed yet, release the no-write reservation and retry only that typed
@@ -118,7 +118,8 @@
   (`internal/server/workspaceapi/routes_handlers.go::Handler.CreatePullWorkspace`,
   `internal/server/workspaceapi/routes_handlers.go::Handler.CreateIssueWorkspaceService`).
 - MCP can create or reuse a pull-request, issue, or ad-hoc workspace and launch
-  one new agent runtime with one initial message. It submits that message before
+  one new agent runtime with one initial message. It passes that message at launch
+  for native CLI delivery when supported, then confirms submission before
   waiting for the runtime's matching hook session. Its readiness wait and
   input-not-ready retry loop are the shared handoff package's, the same code the
   workspace agent-handoff endpoint uses; only the transport calls and error

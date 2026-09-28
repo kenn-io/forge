@@ -593,9 +593,9 @@ func (b mcpBackend) CreateAdHocWorkspace(
 }
 
 func (b mcpBackend) LaunchWorkspaceRuntime(
-	ctx context.Context, workspaceID, targetKey string,
+	ctx context.Context, workspaceID, targetKey, initialMessage string,
 ) (mcpserver.RuntimeSession, error) {
-	session, err := b.server.workspaceAPI.LaunchWorkspaceRuntimeService(ctx, workspaceID, targetKey)
+	session, err := b.server.workspaceAPI.LaunchWorkspaceRuntimeService(ctx, workspaceID, targetKey, initialMessage)
 	if err != nil {
 		return mcpserver.RuntimeSession{}, mcpBackendMutationError(err)
 	}

@@ -28,7 +28,7 @@ type LocalBackend interface {
 	CreatePullWorkspace(context.Context, ItemIdentity, bool) (Workspace, error)
 	CreateIssueWorkspace(context.Context, ItemIdentity, bool) (Workspace, error)
 	CreateAdHocWorkspace(context.Context, RepositoryIdentity, string) (Workspace, error)
-	LaunchWorkspaceRuntime(context.Context, string, string) (RuntimeSession, error)
+	LaunchWorkspaceRuntime(context.Context, string, string, string) (RuntimeSession, error)
 	GetWorkspaceRuntime(context.Context, string) (WorkspaceRuntime, error)
 	SubmitAgentMessage(context.Context, AgentMessageRequest) (AgentMessageResult, error)
 	SubmitInitialMessage(context.Context, InitialMessageRequest) (InitialMessageStatus, error)

@@ -400,7 +400,7 @@ func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
 	})
 
 	session, err := handler.LaunchWorkspaceRuntimeService(
-		ctx, workspaceID, string(localruntime.LaunchTargetPlainShell),
+		ctx, workspaceID, string(localruntime.LaunchTargetPlainShell), "",
 	)
 
 	require.NoError(err)

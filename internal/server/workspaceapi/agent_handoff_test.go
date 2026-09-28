@@ -134,6 +134,32 @@ func TestAgentHandoffWaitsForReadyThenLaunchesAndDeliversPrompt(t *testing.T) {
 	assert.Equal(body.Session.Key, sessions[0].Key)
 }
 
+func TestClaudeHandoffProvidesPromptAtLaunchWithoutTypingIntoStartupDialogs(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := newAgentHandoffFixture(t, "ready")
+	fixture.handler.runtime.UpdateTargets([]localruntime.LaunchTarget{{
+		Key: "reviewer", Kind: localruntime.LaunchTargetAgent, Available: true,
+		Command: []string{"claude", "--model", "model-a"},
+	}})
+	fixture.owner.setEmitBracketedPaste(false)
+	const message = "--review this PR\nDon't run $(commands)."
+	result, err := fixture.handler.LaunchWorkspaceAgentHandoffService(t.Context(), WorkspaceAgentHandoffRequest{
+		WorkspaceID: "ws-runtime-token", TargetKey: "reviewer", Message: message,
+	})
+	require.NoError(err)
+	assert.Equal([]string{"claude", "--model", "model-a", "--", message}, fixture.owner.command)
+	assert.Empty(fixture.owner.pty.written())
+	assert.Equal(initialMessageDelivered, result.InitialMessage.State)
+	repeated, err := fixture.handler.SubmitInitialMessageService(t.Context(), InitialMessageRequest{
+		WorkspaceID: "ws-runtime-token", RuntimeSessionKey: result.Session.Key,
+		TargetKey: "reviewer", Message: message,
+	})
+	require.NoError(err)
+	assert.Equal(result.InitialMessage, repeated)
+	assert.Empty(fixture.owner.pty.written())
+}
+
 func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

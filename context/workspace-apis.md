@@ -486,8 +486,9 @@ offers the same actions for an existing local or devbox workspace, but not for a
 fleet peer, which has no handoff route
 (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceQuickActions`).
 The endpoint waits for the workspace to
-become ready, launches the agent in the workflow region, and delivers the prompt
-through the initial-message path, retrying only the typed input-mode-not-ready
+become ready and launches the agent in the workflow region. Native Claude prompt
+arguments are recorded as delivered so retries never type them a second time;
+other agents use the terminal initial-message path, retrying only the typed input-mode-not-ready
 signal. The readiness wait, the retry-while-input-not-ready loop, and the
 cancellation-aware poll live in one shared package that the MCP spawn tool also
 drives; add handoff pacing or retry rules there, not in either caller

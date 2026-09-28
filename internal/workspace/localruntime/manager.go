@@ -74,6 +74,9 @@ type SessionInfo struct {
 	ExitedAt      *time.Time       `json:"exited_at,omitempty"`
 	ExitCode      *int             `json:"exit_code,omitempty"`
 	TmuxSession   string           `json:"-"`
+	// InitialMessageProvided means the opening prompt was passed as a CLI
+	// argument. The caller must not also type it into the terminal.
+	InitialMessageProvided bool `json:"-"`
 	// tmuxLaunchID identifies the concrete tmux backend generation created for
 	// this launch. It is empty when the manager reattached to a pre-existing
 	// backend instead of creating one.
@@ -368,16 +371,25 @@ func (m *Manager) Launch(
 	cwd string,
 	targetKey string,
 ) (SessionInfo, error) {
-	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "")
+	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", "")
+}
+
+// LaunchWithInitialMessage uses Claude's native prompt argument so startup
+// dialogs cannot consume the prompt or its submit keystroke. Other targets
+// still need their prompt delivered through SubmitInitialMessage.
+func (m *Manager) LaunchWithInitialMessage(
+	ctx context.Context, workspaceID, cwd, targetKey, message string,
+) (SessionInfo, error) {
+	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", message)
 }
 
 // Resume launches the saved conversation under its original runtime key.
 // It never submits an opening prompt or falls back to a new conversation.
 func (m *Manager) Resume(ctx context.Context, restored RestoredRuntimeSession, agent, sessionID string) (SessionInfo, error) {
-	return m.launch(ctx, restored.WorkspaceID, restored.CWD, restored.TargetKey, &restored, agent, sessionID)
+	return m.launch(ctx, restored.WorkspaceID, restored.CWD, restored.TargetKey, &restored, agent, sessionID, "")
 }
 
-func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string, restored *RestoredRuntimeSession, agent, sessionID string) (SessionInfo, error) {
+func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string, restored *RestoredRuntimeSession, agent, sessionID, initialMessage string) (SessionInfo, error) {
 	slog.Debug(
 		"runtime launch requested",
 		"workspace_id", workspaceID,
@@ -421,6 +433,11 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		if err != nil {
 			return SessionInfo{}, err
 		}
+	}
+	initialMessageProvided := initialMessage != "" && target.Kind == LaunchTargetAgent &&
+		strings.TrimSuffix(filepath.Base(target.Command[0]), ".exe") == "claude"
+	if initialMessageProvided {
+		target.Command = append(target.Command, "--", initialMessage)
 	}
 
 	if err := m.ensureOpen(); err != nil {
@@ -484,16 +501,17 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 	)
 
 	started, err := m.startOwnedSession(ctx, SessionInfo{
-		Key:          key,
-		WorkspaceID:  workspaceID,
-		TargetKey:    targetKey,
-		Label:        label,
-		Kind:         target.Kind,
-		Status:       SessionStatusStarting,
-		CreatedAt:    time.Now().UTC(),
-		TmuxSession:  launch.TmuxSession,
-		tmuxLaunchID: launch.TmuxLaunchID,
-		Reused:       launch.TmuxSession != "" && !launch.TmuxCreated,
+		InitialMessageProvided: initialMessageProvided,
+		Key:                    key,
+		WorkspaceID:            workspaceID,
+		TargetKey:              targetKey,
+		Label:                  label,
+		Kind:                   target.Kind,
+		Status:                 SessionStatusStarting,
+		CreatedAt:              time.Now().UTC(),
+		TmuxSession:            launch.TmuxSession,
+		tmuxLaunchID:           launch.TmuxLaunchID,
+		Reused:                 launch.TmuxSession != "" && !launch.TmuxCreated,
 	}, launch.Command, cwd, m.currentStripEnvVars())
 	if err != nil {
 		if launch.TmuxCreated {

@@ -26,7 +26,7 @@ type fakeBackend struct {
 	createPullWorkspaceFn        func(context.Context, ItemIdentity, bool) (Workspace, error)
 	createIssueWorkspaceFn       func(context.Context, ItemIdentity, bool) (Workspace, error)
 	createAdHocWorkspaceFn       func(context.Context, RepositoryIdentity, string) (Workspace, error)
-	launchWorkspaceRuntimeFn     func(context.Context, string, string) (RuntimeSession, error)
+	launchWorkspaceRuntimeFn     func(context.Context, string, string, string) (RuntimeSession, error)
 	getWorkspaceRuntimeFn        func(context.Context, string) (WorkspaceRuntime, error)
 	submitAgentMessageFn         func(context.Context, AgentMessageRequest) (AgentMessageResult, error)
 	submitInitialMessageFn       func(context.Context, InitialMessageRequest) (InitialMessageStatus, error)
@@ -154,9 +154,9 @@ func (b *fakeBackend) CreateAdHocWorkspace(ctx context.Context, repo RepositoryI
 	return Workspace{}, nil
 }
 
-func (b *fakeBackend) LaunchWorkspaceRuntime(ctx context.Context, workspaceID, targetKey string) (RuntimeSession, error) {
+func (b *fakeBackend) LaunchWorkspaceRuntime(ctx context.Context, workspaceID, targetKey, initialMessage string) (RuntimeSession, error) {
 	if b.launchWorkspaceRuntimeFn != nil {
-		return b.launchWorkspaceRuntimeFn(ctx, workspaceID, targetKey)
+		return b.launchWorkspaceRuntimeFn(ctx, workspaceID, targetKey, initialMessage)
 	}
 	return RuntimeSession{}, nil
 }

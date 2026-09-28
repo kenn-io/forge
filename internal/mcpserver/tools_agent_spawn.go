@@ -236,7 +236,7 @@ func (s *Server) prepareAgentHandoff(
 	}
 	out.Stage = "workspace_ready"
 
-	runtime, err := s.backend.LaunchWorkspaceRuntime(ctx, workspace.ID, in.AgentTarget)
+	runtime, err := s.backend.LaunchWorkspaceRuntime(ctx, workspace.ID, in.AgentTarget, in.InitialMessage)
 	if err != nil {
 		return workspace, RuntimeSession{}, handoffFailure(
 			ctx, err, *out, "workspace_ready", "runtime_launched",

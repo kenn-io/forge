@@ -1,4 +1,4 @@
-import type { HarnessIconId } from "@kenn-io/kit-ui";
+import { HARNESS_ICONS, type HarnessIconId } from "@kenn-io/kit-ui";
 
 interface CommitAgent {
   harness: HarnessIconId;
@@ -10,16 +10,35 @@ interface CommitAttribution {
   agents: CommitAgent[];
 }
 
-const AGENTS: readonly (CommitAgent & { pattern: RegExp })[] = [
-  { harness: "openai", name: "Codex", pattern: /^(?:OpenAI )?Codex(?: \([^\r\n()]+\))?$/i },
-  {
-    harness: "claude",
-    name: "Claude Code",
-    pattern: /^Claude(?: Code| (?:Opus|Sonnet|Haiku|Fable) [\d.]+)?(?: \([^\r\n()]+\))?$/i,
-  },
-  { harness: "pi", name: "Pi", pattern: /^Pi(?: \([^\r\n()]+\))?$/i },
-  { harness: "grok", name: "Grok", pattern: /^Grok(?: \([^\r\n()]+\))?$/i },
-];
+function withoutModelSuffix(name: string): string {
+  return name.replace(/ \([^()\r\n]+\)$/, "");
+}
+
+function nameKey(name: string): string {
+  return name.toLowerCase().replace(/[\s._-]+/g, "");
+}
+
+const AGENTS = new Map<string, CommitAgent>(
+  HARNESS_ICONS.flatMap((icon) => {
+    const primaryName = withoutModelSuffix(icon.agents[0] ?? icon.label);
+    return [
+      ...[icon.id, icon.label].map((name) => [nameKey(name), { harness: icon.id, name: primaryName }] as const),
+      ...icon.agents.map((name) => {
+        const productName = withoutModelSuffix(name);
+        return [nameKey(productName), { harness: icon.id, name: productName }] as const;
+      }),
+    ];
+  }),
+);
+
+function agentForAttribution(name: string): CommitAgent | undefined {
+  const product = withoutModelSuffix(name.replace(/^\[([^\]]+)\]\(https?:\/\/[^\s)]+\)(.*)$/, "$1$2"));
+  // These commit signatures name the vendor or model rather than the catalog product.
+  const knownSignature = product
+    .replace(/^OpenAI Codex$/i, "Codex")
+    .replace(/^Claude (?:Opus|Sonnet|Haiku|Fable) [\d.]+$/i, "Claude");
+  return AGENTS.get(nameKey(knownSignature));
+}
 
 /** Extract only named agent attribution; the original message stays with the event. */
 export function commitAttribution(body: string): CommitAttribution {
@@ -42,13 +61,11 @@ export function commitAttribution(body: string): CommitAttribution {
         .trim()
         .replace(/^<sup>(.*)<\/sup>$/i, "$1")
         .replace(/^\u{1f916}\s*/u, "");
-      const generated = text.match(/^Generated with (.+)$/i);
+      const generated = text.match(/^Generated (?:with|by) (.+)$/i);
       const coauthor = text.match(/^Co-authored-by:\s*(.+?)\s+<[^<>\s]+>$/i);
-      let name = generated?.[1] ?? coauthor?.[1];
+      const name = generated?.[1] ?? coauthor?.[1];
       if (!name) return true;
-      if (generated) name = name.replace(/^\[([^\]]+)\]\(https?:\/\/[^\s)]+\)$/, "$1");
-      const agentName = name;
-      const agent = AGENTS.find((candidate) => candidate.pattern.test(agentName));
+      const agent = agentForAttribution(name);
       if (!agent) return true;
       if (!agents.some((existing) => existing.harness === agent.harness)) {
         agents.push({ harness: agent.harness, name: agent.name });

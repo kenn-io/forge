@@ -36,6 +36,8 @@ rows, aligned on the right to match Workspaces.
 Commit attribution icons identify the harness beside the author; their tooltips name only
 the harness. Hide recognized attribution lines only in the displayed message, preserving
 the original for copying (`frontend/src/lib/components/detail/EventTimeline.svelte::commitAgentIcons`).
+Use the shared harness catalog for attribution names; avoid a separate inventory based
+only on locally observed agents (`frontend/src/lib/components/detail/commit-attribution.ts::agentForAttribution`).
 
 ## Sources of truth
 

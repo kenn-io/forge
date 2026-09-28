@@ -564,6 +564,11 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 - User-level install and uninstall target all kit profiles by default or one
   profile with `--agent`; kit preserves unrelated handlers and never enables
   agent consent or auto-approval (`cmd/kenn-forge/agent_hook.go::installAgentHooks`).
+- Reuse Codex approvals only for identical hook hashes in sibling Git worktrees;
+  preserve disabled hooks and existing per-worktree decisions
+  (`internal/codexhooks/trust.go::ReuseApprovals`).
+- Named Codex profiles retain native hook review because the app-server API
+  cannot select or edit profile configuration (`internal/codexhooks/trust.go::configOptions`).
 - Matching live runtime/worktree reports prioritize approval, input, working, done, then idle.
   Agent status row activation preserves completion, its hook timestamp, and sort position. Outside that sort, activation acknowledges a versioned completion for the browser-tab session, while a new timestamp resurfaces (`internal/agentactivity/store.go::statePriority`, `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`).
 - Hook installs require absolute data roots; kit preserves config symlinks, while

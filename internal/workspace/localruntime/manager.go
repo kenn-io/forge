@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/codexhooks"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
@@ -433,6 +434,11 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 	defer releaseLabel()
 	if restored != nil && restored.Label != "" {
 		label = restored.Label
+	}
+	if target.Kind == LaunchTargetAgent {
+		if err := codexhooks.ReuseApprovals(ctx, target.Command, cwd); err != nil {
+			slog.Warn("reuse Codex hook approvals", "workspace_id", workspaceID, "err", err)
+		}
 	}
 
 	launch, err := m.launchCommand(ctx, target, workspaceID, key, cwd)

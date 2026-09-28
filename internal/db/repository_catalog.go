@@ -511,11 +511,12 @@ func (d *DB) CompleteGitHubRepositoryConversion(
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
 		var pending bool
+		var host string
 		if err := tx.QueryRowContext(ctx, `
-			SELECT github_node_id <> '' FROM forge_repos
+			SELECT github_node_id <> '', platform_host FROM forge_repos
 			WHERE id = ? AND platform = 'github'`,
 			repoID,
-		).Scan(&pending); err != nil {
+		).Scan(&pending, &host); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
@@ -524,7 +525,25 @@ func (d *DB) CompleteGitHubRepositoryConversion(
 		if !pending {
 			return nil
 		}
-		if _, err := tx.ExecContext(ctx, `
+		targetID := repoID
+		if platformRepoID > 0 {
+			// GitHub issued more than one node ID format for a repository,
+			// so two stored rows can resolve to the same integer ID.
+			err := tx.QueryRowContext(ctx, `
+				SELECT id FROM forge_repos
+				WHERE platform = 'github' AND platform_host = ?
+				  AND platform_repo_id = ? AND id <> ?`,
+				host, platformRepoID, repoID,
+			).Scan(&targetID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("load repository holding github repository id: %w", err)
+			}
+		}
+		if targetID != repoID {
+			if err := mergeDuplicateRepositoryTx(ctx, tx, repoID, targetID); err != nil {
+				return err
+			}
+		} else if _, err := tx.ExecContext(ctx, `
 			UPDATE forge_repos SET platform_repo_id = ?, github_node_id = ''
 			WHERE id = ?`, platformRepoID, repoID,
 		); err != nil {
@@ -541,15 +560,86 @@ func (d *DB) CompleteGitHubRepositoryConversion(
 				SET spec_json = json_set(spec_json, '`+path+`', ?)
 				WHERE json_extract(spec_json, '`+path+`') = 0
 				  AND workspace_id IN (
-					SELECT id FROM forge_workspaces WHERE repo_id = ?
+					SELECT id FROM forge_workspaces WHERE repo_id IN (?, ?)
 				  )`,
-				platformRepoID, repoID,
+				platformRepoID, repoID, targetID,
 			); err != nil {
 				return fmt.Errorf("record github repository id in launch specifications: %w", err)
 			}
 		}
 		return nil
 	})
+}
+
+// repositoryOwnedColumns lists every column that stores a forge_repos id.
+// Merging a duplicate repository moves rows through all of them.
+var repositoryOwnedColumns = []struct{ table, column string }{
+	{"forge_archive_dataset_progress", "repo_id"},
+	{"forge_archive_items", "repo_id"},
+	{"forge_archive_repo_scans", "repo_id"},
+	{"forge_archive_repos", "repo_id"},
+	{"forge_branch_commits", "repo_id"},
+	{"forge_branch_force_pushes", "repo_id"},
+	{"forge_branch_tips", "repo_id"},
+	{"forge_hidden_repos", "repo_id"},
+	{"forge_issue_pr_references", "source_repo_id"},
+	{"forge_issues", "repo_id"},
+	{"forge_item_workflow_state", "repo_id"},
+	{"forge_labels", "repo_id"},
+	{"forge_merge_requests", "repo_id"},
+	{"forge_notification_items", "repo_id"},
+	{"forge_projects", "repo_id"},
+	{"forge_repo_overviews", "repo_id"},
+	{"forge_stacks", "repo_id"},
+	{"forge_starred_items", "repo_id"},
+	{"forge_workspaces", "repo_id"},
+	{"github_native_stacks", "repo_id"},
+	{"kata_issue_links", "repo_id"},
+}
+
+// mergeDuplicateRepositoryTx moves the duplicate row's history onto the row
+// that already holds the repository's integer ID, then deletes the
+// duplicate. Where both rows hold the same item, the target's copy wins and
+// the duplicate's copy is removed with its row. A workspace that cannot move
+// keeps the duplicate as an inactive row without a node ID, so it no longer
+// blocks its host.
+func mergeDuplicateRepositoryTx(
+	ctx context.Context, tx *sql.Tx, duplicateID, targetID int64,
+) error {
+	for _, owned := range repositoryOwnedColumns {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE OR IGNORE `+owned.table+` SET `+owned.column+` = ? WHERE `+owned.column+` = ?`,
+			targetID, duplicateID,
+		); err != nil {
+			return fmt.Errorf("merge duplicate repository %s: %w", owned.table, err)
+		}
+	}
+	var workspaces int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM forge_workspaces WHERE repo_id = ?`, duplicateID,
+	).Scan(&workspaces); err != nil {
+		return fmt.Errorf("count duplicate repository workspaces: %w", err)
+	}
+	if workspaces > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE forge_repos SET github_node_id = '', lifecycle_state = 'inactive'
+			WHERE id = ?`, duplicateID,
+		); err != nil {
+			return fmt.Errorf("retire duplicate repository: %w", err)
+		}
+		return nil
+	}
+	for _, owned := range repositoryOwnedColumns {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM `+owned.table+` WHERE `+owned.column+` = ?`, duplicateID,
+		); err != nil {
+			return fmt.Errorf("remove duplicate repository %s: %w", owned.table, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM forge_repos WHERE id = ?`, duplicateID); err != nil {
+		return fmt.Errorf("remove duplicate repository: %w", err)
+	}
+	return nil
 }
 
 // RepositoryRouteHasOtherRepository reports whether a repository other than

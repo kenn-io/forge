@@ -798,3 +798,96 @@ func TestCompleteGitHubRepositoryConversionUnresolvableNode(t *testing.T) {
 
 	require.ErrorContains(d.CompleteGitHubRepositoryConversion(ctx, pendingID, -1), "negative")
 }
+
+func TestCompleteGitHubRepositoryConversionMergesDuplicateNodeIDs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	// GitHub's legacy and current node ID formats name the same repository.
+	keptID := insertPendingGitHubRepository(t, d, "MDEwOlJlcG9zaXRvcnkxMDAx", "org-a", "project-a")
+	duplicateID := insertPendingGitHubRepository(t, d, "R_kgDNA-k", "org-a", "project-a")
+	insertTestIssueWithOptions(t, d, testIssue(keptID, 1))
+	insertTestIssueWithOptions(t, d, testIssue(keptID, 2))
+	insertTestIssueWithOptions(t, d, testIssue(duplicateID, 2))
+	insertTestIssueWithOptions(t, d, testIssue(duplicateID, 3))
+	insertLaunchSpecForTest(t, d, "ws-duplicate", duplicateID, `{
+		"repository":{"provider":"github","platform_host":"github.com","platform_repo_id":0},
+		"pull":{"base_repo_id":0}}`)
+
+	require.NoError(d.CompleteGitHubRepositoryConversion(ctx, keptID, 1001))
+	require.NoError(d.CompleteGitHubRepositoryConversion(ctx, duplicateID, 1001))
+
+	pending, err := d.ListPendingGitHubRepositories(ctx)
+	require.NoError(err)
+	assert.Empty(pending, "the duplicate no longer blocks its host")
+	duplicate, err := d.GetRepoByID(ctx, duplicateID)
+	require.NoError(err)
+	assert.Nil(duplicate, "the duplicate row is merged away")
+
+	rows, err := d.ReadDB().QueryContext(ctx,
+		`SELECT number FROM forge_issues WHERE repo_id = ? ORDER BY number`, keptID)
+	require.NoError(err)
+	defer rows.Close()
+	var numbers []int
+	for rows.Next() {
+		var number int
+		require.NoError(rows.Scan(&number))
+		numbers = append(numbers, number)
+	}
+	require.NoError(rows.Err())
+	assert.Equal([]int{1, 2, 3}, numbers, "history from both rows lands on one repository")
+
+	var workspaceRepoID int64
+	var specRepoID any
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT w.repo_id, json_extract(s.spec_json, '$.repository.platform_repo_id')
+		FROM forge_workspaces w JOIN forge_workspace_launch_specs s ON s.workspace_id = w.id
+		WHERE w.id = 'ws-duplicate'`,
+	).Scan(&workspaceRepoID, &specRepoID))
+	assert.Equal(keptID, workspaceRepoID)
+	assert.EqualValues(1001, specRepoID)
+}
+
+func TestCompleteGitHubRepositoryConversionRetiresDuplicateWithConflictingWorkspace(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	keptID := insertPendingGitHubRepository(t, d, "MDEwOlJlcG9zaXRvcnkxMDAx", "org-a", "project-a")
+	duplicateID := insertPendingGitHubRepository(t, d, "R_kgDNA-k", "org-a", "project-a")
+	insertLaunchSpecForTest(t, d, "ws-kept", keptID, `{}`)
+	insertLaunchSpecForTest(t, d, "ws-duplicate", duplicateID, `{}`)
+
+	require.NoError(d.CompleteGitHubRepositoryConversion(ctx, keptID, 1001))
+	require.NoError(d.CompleteGitHubRepositoryConversion(ctx, duplicateID, 1001))
+
+	pending, err := d.ListPendingGitHubRepositories(ctx)
+	require.NoError(err)
+	assert.Empty(pending)
+	duplicate, err := d.GetRepoByID(ctx, duplicateID)
+	require.NoError(err)
+	require.NotNil(duplicate, "a workspace that cannot move keeps its repository row")
+	assert.Zero(duplicate.PlatformRepoID)
+}
+
+func TestRepositoryOwnedColumnsCoverEveryRepositoryReference(t *testing.T) {
+	d := openTestDB(t)
+	rows, err := d.ReadDB().QueryContext(t.Context(), `
+		SELECT m.name, f."from"
+		FROM sqlite_master m, pragma_foreign_key_list(m.name) f
+		WHERE m.type = 'table' AND f."table" = 'forge_repos'`)
+	require.NoError(t, err)
+	defer rows.Close()
+	listed := map[string]bool{}
+	for _, owned := range repositoryOwnedColumns {
+		listed[owned.table+"."+owned.column] = true
+	}
+	for rows.Next() {
+		var table, column string
+		require.NoError(t, rows.Scan(&table, &column))
+		assert.True(t, listed[table+"."+column],
+			"%s.%s references forge_repos; add it to repositoryOwnedColumns", table, column)
+	}
+	require.NoError(t, rows.Err())
+}

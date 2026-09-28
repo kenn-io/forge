@@ -34,6 +34,13 @@ identity. Owner, name, and `repo_path` are the repository's current route.
   catalog refuses GitHub observations for that host, so history cannot split
   across two rows (`internal/github/repository_id_conversion.go`,
   `internal/db/repository_catalog.go::ErrGitHubRepositoryConversionPending`).
+  Two node IDs can name one repository; a second row resolving to an ID already
+  held merges into that row, whose copy wins item conflicts. Every column holding
+  a `forge_repos` id must be in `repositoryOwnedColumns`
+  (`internal/db/repository_catalog.go::mergeDuplicateRepositoryTx`).
+- Keep provider calls route-based where the provider API is; the integer ID
+  confirms which repository answered and keys local state. Do not rewrite
+  owner/name reads into ID reads (maintainer decision).
 - Saved repository-filter presets resolve by stable identity and use `repo_path` only for display; reject unverified members and never fall back to a new occupant of the stored route (`internal/config/config.go::RepoPresetRepository`, `frontend/src/lib/stores/repo-presets.ts`).
 - `platform` is the provider kind named in the canonical provider list in
   `CLAUDE.md`.

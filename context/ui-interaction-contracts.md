@@ -306,6 +306,9 @@ Persisted controls must state their scope clearly.
   provider-stable repository and PR. Keep its availability separate from current
   detail completeness used by CI; clear it on selection change or explicit clear
   (`frontend/src/lib/stores/detail.svelte.ts::applyDetailAvailability`).
+- Refreshing unchanged discussion must preserve highlighted markdown and open disclosures;
+  recreated presentation callbacks must not invalidate the rich rendering
+  (`frontend/src/lib/components/shared/MarkdownHtml.svelte::renderedHtml`).
 - Activity filters remain URL-backed and session-scoped. Missing filter params on a
   partial Activity URL inherit the last validated route before store hydration, while
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).

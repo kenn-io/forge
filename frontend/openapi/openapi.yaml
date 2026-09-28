@@ -6730,10 +6730,14 @@ components:
           type: integer
         item_type:
           type: string
+        platform_repo_id:
+          minLength: 1
+          type: string
         repository:
           $ref: "#/components/schemas/RepositoryRoute"
       required:
         - repository
+        - platform_repo_id
         - item_type
         - item_number
       type: object

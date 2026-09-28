@@ -56586,10 +56586,11 @@ type ProviderStateWorkflowPayload struct {
 
 type ProviderWorkspaceItemRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema     *string         `json:"$schema,omitempty"`
-	ItemNumber int64           `json:"item_number"`
-	ItemType   string          `json:"item_type"`
-	Repository RepositoryRoute `json:"repository"`
+	Schema         *string         `json:"$schema,omitempty"`
+	ItemNumber     int64           `json:"item_number"`
+	ItemType       string          `json:"item_type"`
+	PlatformRepoID string          `json:"platform_repo_id"`
+	Repository     RepositoryRoute `json:"repository"`
 }
 
 type PublishChange struct {

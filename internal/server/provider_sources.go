@@ -361,7 +361,7 @@ func (s *hubProviderSource) AutoAssignWorkspaceItem(
 	ctx context.Context, request workspaceapi.ProviderWorkspaceItemRequest,
 ) error {
 	var response struct{}
-	httpRequest, err := generated.NewFederationAutoAssignWorkspaceItemRequest(ctx, "/api/v1", &generated.FederationAutoAssignWorkspaceItemRequestOptions{Body: &generated.FederationAutoAssignWorkspaceItemBody{Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber)}})
+	httpRequest, err := generated.NewFederationAutoAssignWorkspaceItemRequest(ctx, "/api/v1", &generated.FederationAutoAssignWorkspaceItemRequestOptions{Body: &generated.FederationAutoAssignWorkspaceItemBody{Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, PlatformRepoID: request.PlatformRepoID, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber)}})
 	if err != nil {
 		return err
 	}

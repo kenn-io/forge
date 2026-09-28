@@ -295,6 +295,31 @@ func TestHubWorkspaceRefreshUsesProviderMutationBoundary(t *testing.T) {
 	assert.Equal(t, "/api/v1/federation/provider/workspace-launch-spec/refresh", gotPath)
 }
 
+func TestHubWorkspaceAutoAssignmentPreservesRepositoryIdentity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(federationauth.ScopeProviderWrite, scope)
+		assert.Equal(http.MethodPost, request.Method)
+		assert.Equal("/api/v1/federation/provider/workspace-auto-assign", request.URL.Path)
+		body, err := io.ReadAll(request.Body)
+		require.NoError(err)
+		assert.JSONEq(`{"repository":{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget"},"platform_repo_id":"repo-acme-widget","item_type":"pull_request","item_number":7}`, string(body))
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(`{}`))}, nil
+	})}
+
+	err := source.AutoAssignWorkspaceItem(t.Context(), workspaceapi.ProviderWorkspaceItemRequest{
+		Repository: providerplane.RepositoryRoute{
+			Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+		},
+		PlatformRepoID: "repo-acme-widget", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+	})
+
+	require.NoError(err)
+}
+
 func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

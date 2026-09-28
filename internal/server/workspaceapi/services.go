@@ -46,9 +46,10 @@ type CreateAdHocWorkspaceRequest struct {
 }
 
 type ProviderWorkspaceItemRequest struct {
-	Repository providerplane.RepositoryRoute `json:"repository"`
-	ItemType   string                        `json:"item_type"`
-	ItemNumber int                           `json:"item_number"`
+	Repository     providerplane.RepositoryRoute `json:"repository"`
+	PlatformRepoID string                        `json:"platform_repo_id" minLength:"1"`
+	ItemType       string                        `json:"item_type"`
+	ItemNumber     int                           `json:"item_number"`
 }
 
 type ProviderWorkspaceAutomation interface {

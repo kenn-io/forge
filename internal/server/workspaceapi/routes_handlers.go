@@ -296,7 +296,8 @@ func (s *Handler) createPullWorkspaceRouteCore(
 			Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 			Owner: spec.Repository.Owner, Name: spec.Repository.Name,
 		},
-		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: input.Body.MRNumber,
+		PlatformRepoID: spec.Repository.PlatformRepoID,
+		ItemType:       db.WorkspaceItemTypePullRequest, ItemNumber: input.Body.MRNumber,
 	}, input.Body.SuppressAutoAssign)
 
 	s.runWorkspaceSetup(ws)
@@ -773,7 +774,8 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 			Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 			Owner: spec.Repository.Owner, Name: spec.Repository.Name,
 		},
-		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: input.Number,
+		PlatformRepoID: spec.Repository.PlatformRepoID,
+		ItemType:       db.WorkspaceItemTypeIssue, ItemNumber: input.Number,
 	}, input.Body.SuppressAutoAssign)
 
 	s.runWorkspaceSetup(ws)

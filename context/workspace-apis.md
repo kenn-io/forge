@@ -536,6 +536,9 @@ Workspace create endpoints may return 202 with a pre-existing workspace
   workspace is persisted; run it independently of creation/setup under handler
   shutdown ownership. Preserve assignees and never roll back on upstream failure
   (`internal/server/workspaceapi/auto_assign.go::Handler.runWorkspaceAutoAssignment`).
+- Background assignment must retain the launch repository's stable ID locally and
+  through federation; a reused route must never change the assignment target
+  (`internal/server/workspaceapi/auto_assign.go::Handler.AutoAssignProviderWorkspaceItem`).
 - Inspect warm clones locally for branch conflicts; setup owns the fresh fetch
   before checkout. Cold admission still creates the clone so its existing branches
   participate in conflict handling (`internal/workspace/manager.go::Manager.branchInspectionDir`).

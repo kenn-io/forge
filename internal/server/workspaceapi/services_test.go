@@ -400,6 +400,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 			go func() { created <- test.create(handler) }()
 			select {
 			case request := <-automation.requests:
+				assert.Equal("repo-acme-widget", request.PlatformRepoID)
 				assert.Equal(test.itemType, request.ItemType)
 				assert.Equal(test.number, request.ItemNumber)
 			case <-time.After(5 * time.Second):

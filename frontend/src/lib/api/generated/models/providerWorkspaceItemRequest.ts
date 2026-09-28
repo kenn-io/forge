@@ -8,5 +8,7 @@ export interface ProviderWorkspaceItemRequest {
   readonly $schema?: string;
   item_number: number;
   item_type: string;
+  /** @minLength 1 */
+  platform_repo_id: string;
   repository: RepositoryRoute;
 }

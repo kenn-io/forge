@@ -28,6 +28,7 @@ type autoAssignProvider struct {
 	issue          platform.Issue
 	pullAssigned   []string
 	issueAssigned  []string
+	assignedRepo   platform.RepoRef
 	listPullCalls  int
 	getPullCalls   int
 	listIssueCalls int
@@ -78,15 +79,17 @@ func (p *autoAssignProvider) ListIssueEvents(context.Context, platform.RepoRef, 
 }
 
 func (p *autoAssignProvider) SetMergeRequestAssignees(
-	_ context.Context, _ platform.RepoRef, _ int, usernames []string,
+	_ context.Context, ref platform.RepoRef, _ int, usernames []string,
 ) ([]string, error) {
+	p.assignedRepo = ref
 	p.pullAssigned = slices.Clone(usernames)
 	return slices.Clone(usernames), nil
 }
 
 func (p *autoAssignProvider) SetIssueAssignees(
-	_ context.Context, _ platform.RepoRef, _ int, usernames []string,
+	_ context.Context, ref platform.RepoRef, _ int, usernames []string,
 ) ([]string, error) {
+	p.assignedRepo = ref
 	p.issueAssigned = slices.Clone(usernames)
 	return slices.Clone(usernames), nil
 }
@@ -192,7 +195,8 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 				Provider: string(platform.KindGitLab), PlatformHost: "git.example.test",
 				Owner: "acme", Name: "widget",
 			},
-			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+			PlatformRepoID: "repo-acme-widget",
+			ItemType:       db.WorkspaceItemTypePullRequest, ItemNumber: 7,
 		},
 	))
 	assert.Equal([]string{"reviewer", "maintainer"}, provider.pullAssigned)
@@ -217,6 +221,104 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 	require.ErrorContains(err, "not visible")
 	assert.Empty(provider.pullAssigned)
 	assert.Empty(provider.issueAssigned)
+}
+
+func TestAutoAssignmentPreservesRepositoryIdentityAfterRouteReuse(t *testing.T) {
+	t.Parallel()
+	for _, itemType := range []string{db.WorkspaceItemTypePullRequest, db.WorkspaceItemTypeIssue} {
+		for _, renamed := range []bool{false, true} {
+			name := itemType + "/inactive"
+			if renamed {
+				name = itemType + "/renamed"
+			}
+			t.Run(name, func(t *testing.T) {
+				assert := assert.New(t)
+				require := require.New(t)
+				database := dbtest.Open(t)
+				now := time.Now().UTC()
+				original := db.RepoIdentity{
+					Platform: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: "101",
+					Owner: "acme", Name: "widget",
+				}
+				entry, _, err := database.ReconcileRepositoryObservation(t.Context(), original, now.Add(-2*time.Minute))
+				require.NoError(err)
+				require.NotNil(entry)
+				originalID := entry.Repository.ID
+				request := ProviderWorkspaceItemRequest{
+					Repository:     providerplane.RepositoryRoute{Provider: "gitlab", PlatformHost: "git.example.test", Owner: "acme", Name: "widget"},
+					PlatformRepoID: "101", ItemType: itemType, ItemNumber: 7,
+				}
+				if renamed {
+					original.Name = "renamed"
+					_, _, err = database.ReconcileRepositoryObservation(t.Context(), original, now.Add(-time.Minute))
+					require.NoError(err)
+				}
+				replacement, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+					Platform: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: "202", Owner: "acme", Name: "widget",
+				}, now)
+				require.NoError(err)
+				require.NotNil(replacement)
+				for _, repoID := range []int64{originalID, replacement.Repository.ID} {
+					if itemType == db.WorkspaceItemTypeIssue {
+						itemID, insertErr := database.UpsertIssue(t.Context(), &db.Issue{
+							RepoID: repoID, PlatformID: 7, Number: 7, Title: "Fix widget", State: "open", Author: "author",
+							CreatedAt: now, UpdatedAt: now, LastActivityAt: now, Assignees: []string{"reviewer"},
+						})
+						require.NoError(insertErr)
+						err = database.UpdateIssueAssignees(t.Context(), repoID, itemID, []string{"reviewer"})
+					} else {
+						itemID, insertErr := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+							RepoID: repoID, PlatformID: 7, Number: 7, Title: "Improve widget", State: "open", Author: "author",
+							HeadBranch: "feature", BaseBranch: "main", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+							Assignees: []string{"reviewer"},
+						})
+						require.NoError(insertErr)
+						err = database.UpdateMergeRequestAssignees(t.Context(), repoID, itemID, []string{"reviewer"})
+					}
+					require.NoError(err)
+				}
+				provider := &autoAssignProvider{
+					pull: platform.MergeRequest{Assignees: []string{"reviewer"}}, issue: platform.Issue{Assignees: []string{"reviewer"}},
+				}
+				registry, err := platform.NewRegistry(provider)
+				require.NoError(err)
+				syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
+				t.Cleanup(syncer.Stop)
+				handler := New(Deps{
+					DB: database, Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}), Syncer: syncer,
+				})
+
+				err = handler.AutoAssignProviderWorkspaceItem(t.Context(), request)
+
+				if renamed {
+					require.NoError(err)
+					assert.Equal("101", provider.assignedRepo.PlatformExternalID)
+					assert.Equal("acme/renamed", provider.assignedRepo.RepoPath)
+				} else {
+					require.Error(err)
+					assert.Empty(provider.pullAssigned)
+					assert.Empty(provider.issueAssigned)
+				}
+				for _, repoID := range []int64{originalID, replacement.Repository.ID} {
+					expected := []string{"reviewer"}
+					if renamed && repoID == originalID {
+						expected = []string{"reviewer", "maintainer"}
+					}
+					if itemType == db.WorkspaceItemTypeIssue {
+						item, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 7)
+						require.NoError(err)
+						require.NotNil(item)
+						assert.Equal(expected, item.Assignees)
+					} else {
+						item, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+						require.NoError(err)
+						require.NotNil(item)
+						assert.Equal(expected, item.Assignees)
+					}
+				}
+			})
+		}
+	}
 }
 
 func TestSpokePreparationBlocksWorkspaceAutoAssignBeforeProviderAccess(t *testing.T) {

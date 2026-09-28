@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/runtimelock"
-	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
 // This foreign ACP peer accepts a session only after using the injected Forge
@@ -33,7 +32,14 @@ func TestACPAgentMCPHelper(t *testing.T) {
 			ID     int    `json:"id"`
 			Method string `json:"method"`
 			Params struct {
-				MCPServers []localruntime.ACPMCPServer `json:"mcpServers"`
+				MCPServers []struct {
+					Name    string `json:"name"`
+					URL     string `json:"url"`
+					Headers []struct {
+						Name  string `json:"name"`
+						Value string `json:"value"`
+					} `json:"headers"`
+				} `json:"mcpServers"`
 			} `json:"params"`
 		}
 		require.NoError(t, json.Unmarshal(scanner.Bytes(), &request))

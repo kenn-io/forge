@@ -1,9 +1,7 @@
 package localruntime
 
 import (
-	"bufio"
 	"context"
-	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -11,11 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	acpsdk "github.com/coder/acp-go-sdk"
 
 	"go.kenn.io/forge/internal/procutil"
 )
@@ -23,22 +22,23 @@ import (
 // ACP owns a stdio agent on the workspace's execution host. Browser connections
 // subscribe to its state; disconnecting a browser does not stop an accepted turn.
 type ACP struct {
-	turnMu      sync.Mutex
-	cancelling  bool
-	mu          sync.Mutex
-	writeMu     sync.Mutex
-	cmd         *exec.Cmd
-	stdin       io.WriteCloser
-	stdout      io.ReadCloser
-	done        chan struct{}
-	nextID      int
-	pending     map[string]chan acpEnvelope
-	subscribers map[chan struct{}]struct{}
-	state       ACPState
-	saveConfig  func(map[string]string) error
-	sessionID   string
-	exitCode    int
-	promptIndex *int
+	turnMu         sync.Mutex
+	cancelling     bool
+	mu             sync.Mutex
+	cmd            *exec.Cmd
+	stdin          io.WriteCloser
+	stdout         io.ReadCloser
+	done           chan struct{}
+	client         *acpsdk.ClientSideConnection
+	promptWritten  chan error
+	nextPermission int
+	permissions    map[string]chan acpsdk.RequestPermissionOutcome
+	subscribers    map[chan struct{}]struct{}
+	state          ACPState
+	saveConfig     func(map[string]string) error
+	sessionID      string
+	exitCode       int
+	promptIndex    *int
 }
 
 const maxACPStateBytes = 4 << 20
@@ -93,20 +93,8 @@ type ACPCommand struct {
 	OptionID string `json:"optionId,omitempty"`
 	Value    string `json:"value,omitempty"`
 }
-type acpEnvelope struct {
-	JSONRPC string         `json:"jsonrpc"`
-	ID      jsontext.Value `json:"id,omitempty"`
-	Method  string         `json:"method,omitempty"`
-	Params  jsontext.Value `json:"params,omitempty"`
-	Result  jsontext.Value `json:"result,omitempty"`
-	Error   *acpError      `json:"error,omitempty"`
-}
-type acpError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
 
-func startACPSession(ctx context.Context, info SessionInfo, command []string, cwd string, extraStrip []string, mcpServers []ACPMCPServer) (*session, error) {
+func startACPSession(ctx context.Context, info SessionInfo, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer) (*session, error) {
 	executable, err := resolveExecutable(command[0])
 	if err != nil {
 		return nil, err
@@ -126,52 +114,41 @@ func startACPSession(ctx context.Context, info SessionInfo, command []string, cw
 	}
 	// Diagnostics are not protocol messages and must never enter the chat stream.
 	cmd.Stderr = os.Stderr
-	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, done: make(chan struct{}), pending: make(map[string]chan acpEnvelope), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
+	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
 	if err := cmd.Start(); err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
 		return nil, err
 	}
-	go a.read()
+	a.client = acpsdk.NewClientSideConnection(a, a, stdout)
+	go a.wait()
 	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	initialized, err := a.call(initCtx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]string{"name": "kenn-forge", "version": "1"}})
-	if err == nil {
-		var result struct {
-			ProtocolVersion   int `json:"protocolVersion"`
-			AgentCapabilities struct {
-				MCPCapabilities struct {
-					HTTP bool `json:"http"`
-				} `json:"mcpCapabilities"`
-			} `json:"agentCapabilities"`
-		}
-		err = json.Unmarshal(initialized, &result)
-		if err == nil && result.ProtocolVersion != 1 {
-			err = fmt.Errorf("unsupported ACP protocol version %d (expected 1)", result.ProtocolVersion)
-		}
-		if err == nil && len(mcpServers) > 0 && !result.AgentCapabilities.MCPCapabilities.HTTP {
-			err = errors.New("this ACP agent does not accept HTTP MCP servers required by Forge")
-		}
+	initialized, err := a.client.Initialize(initCtx, acpsdk.InitializeRequest{
+		ProtocolVersion: acpsdk.ProtocolVersionNumber,
+		ClientInfo:      &acpsdk.Implementation{Name: "kenn-forge", Version: "1"},
+	})
+	if err == nil && initialized.ProtocolVersion != acpsdk.ProtocolVersionNumber {
+		err = fmt.Errorf("unsupported ACP protocol version %d (expected %d)", initialized.ProtocolVersion, acpsdk.ProtocolVersionNumber)
+	}
+	if err == nil && len(mcpServers) > 0 && !initialized.AgentCapabilities.McpCapabilities.Http {
+		err = errors.New("this ACP agent does not accept HTTP MCP servers required by Forge")
 	}
 	if err == nil {
-		var result jsontext.Value
-		result, err = a.call(initCtx, "session/new", map[string]any{"cwd": cwd, "mcpServers": mcpServers})
-		if err == nil {
-			var created struct {
-				SessionID     string            `json:"sessionId"`
-				ConfigOptions []ACPConfigOption `json:"configOptions"`
-			}
-			err = json.Unmarshal(result, &created)
-			if err == nil && created.SessionID == "" {
-				err = errors.New("ACP agent returned no session ID")
-			}
-			a.sessionID = created.SessionID
-			a.mu.Lock()
-			a.state.ConfigOptions = created.ConfigOptions
-			a.mu.Unlock()
+		var created acpsdk.NewSessionResponse
+		created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
+		if err == nil && created.SessionId == "" {
+			err = errors.New("ACP agent returned no session ID")
 		}
+		a.sessionID = string(created.SessionId)
+		a.mu.Lock()
+		a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
+		a.mu.Unlock()
 	}
 	if err != nil {
+		if initCtx.Err() != nil {
+			err = initCtx.Err()
+		}
 		_ = a.Stop(context.Background())
 		return nil, fmt.Errorf("initialize ACP agent: %w", err)
 	}
@@ -218,84 +195,28 @@ func (a *ACP) Stop(ctx context.Context) error {
 	}
 }
 
-func (a *ACP) write(message acpEnvelope) error {
-	message.JSONRPC = "2.0"
-	data, err := json.Marshal(message)
-	if err != nil {
-		return err
+// Write observes the SDK's outgoing prompt write so reconnect acknowledgements
+// are recorded only after the executable received the request. The SDK owns
+// framing, IDs, dispatch, and all inbound protocol decoding.
+func (a *ACP) Write(data []byte) (int, error) {
+	n, err := a.stdin.Write(data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
 	}
-	a.writeMu.Lock()
-	defer a.writeMu.Unlock()
-	_, err = a.stdin.Write(append(data, '\n'))
-	return err
-}
-
-func (a *ACP) startCall(method string, params any) (string, <-chan acpEnvelope, error) {
-	data, err := json.Marshal(params)
-	if err != nil {
-		return "", nil, err
-	}
-	a.mu.Lock()
-	a.nextID++
-	id := strconv.Itoa(a.nextID)
-	response := make(chan acpEnvelope, 1)
-	a.pending[id] = response
-	a.mu.Unlock()
-	if err := a.write(acpEnvelope{ID: jsontext.Value(id), Method: method, Params: data}); err != nil {
+	var request acpsdk.ClientRequest
+	if json.Unmarshal(data, &request) == nil && request.Method == acpsdk.AgentMethodSessionPrompt {
 		a.mu.Lock()
-		delete(a.pending, id)
+		if a.promptWritten != nil {
+			a.promptWritten <- err
+			a.promptWritten = nil
+		}
 		a.mu.Unlock()
-		return "", nil, err
 	}
-	return id, response, nil
+	return n, err
 }
 
-func (a *ACP) awaitCall(ctx context.Context, id string, response <-chan acpEnvelope) (jsontext.Value, error) {
-	defer func() { a.mu.Lock(); delete(a.pending, id); a.mu.Unlock() }()
-	select {
-	case result := <-response:
-		if result.Error != nil {
-			return nil, errors.New(result.Error.Message)
-		}
-		return result.Result, nil
-	case <-a.done:
-		return nil, errors.New("ACP agent disconnected")
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-func (a *ACP) call(ctx context.Context, method string, params any) (jsontext.Value, error) {
-	id, response, err := a.startCall(method, params)
-	if err != nil {
-		return nil, err
-	}
-	return a.awaitCall(ctx, id, response)
-}
-
-func (a *ACP) read() {
-	scanner := bufio.NewScanner(a.stdout)
-	scanner.Buffer(make([]byte, 64<<10), 8<<20)
-	for scanner.Scan() {
-		var message acpEnvelope
-		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
-			a.fail(fmt.Errorf("invalid ACP response: %w", err))
-			break
-		}
-		if message.Method != "" {
-			a.receive(message)
-			continue
-		}
-		a.mu.Lock()
-		response := a.pending[string(message.ID)]
-		a.mu.Unlock()
-		if response != nil {
-			response <- message
-		}
-	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, os.ErrClosed) {
-		a.fail(err)
-	}
+func (a *ACP) wait() {
+	<-a.client.Done()
 	_ = a.stdout.Close()
 	_ = killSessionProcess(a.cmd.Process)
 	exitCode := waitExitCode(a.cmd.Wait())
@@ -307,13 +228,6 @@ func (a *ACP) read() {
 	a.changedLocked()
 	a.mu.Unlock()
 	close(a.done)
-}
-
-func (a *ACP) fail(err error) {
-	a.mu.Lock()
-	a.state.Error = err.Error()
-	a.changedLocked()
-	a.mu.Unlock()
 }
 
 func (a *ACP) changedLocked() {
@@ -340,103 +254,6 @@ func (a *ACP) Subscribe() (<-chan struct{}, func()) {
 	return ch, func() { a.mu.Lock(); delete(a.subscribers, ch); a.mu.Unlock() }
 }
 
-func (a *ACP) receive(message acpEnvelope) {
-	switch message.Method {
-	case "session/update":
-		var params struct {
-			SessionID string `json:"sessionId"`
-			Update    struct {
-				SessionUpdate string            `json:"sessionUpdate"`
-				ConfigOptions []ACPConfigOption `json:"configOptions"`
-				Content       struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"content"`
-				ToolCallID string `json:"toolCallId"`
-				Title      string `json:"title"`
-				Status     string `json:"status"`
-			} `json:"update"`
-		}
-		if err := json.Unmarshal(message.Params, &params); err != nil {
-			a.fail(err)
-			return
-		}
-		a.mu.Lock()
-		defer a.mu.Unlock()
-		u := params.Update
-		switch u.SessionUpdate {
-		case "config_option_update":
-			a.state.ConfigOptions = u.ConfigOptions
-		case "agent_message_chunk":
-			if u.Content.Type != "text" {
-				return
-			}
-			last := len(a.state.Messages) - 1
-			if last >= 0 && a.state.Messages[last].Role == "assistant" && (a.promptIndex == nil || last >= *a.promptIndex) {
-				a.state.Messages[last].Text += u.Content.Text
-			} else {
-				a.state.Messages = append(a.state.Messages, ACPMessage{Role: "assistant", Text: u.Content.Text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
-			}
-		case "tool_call", "tool_call_update":
-			updated := false
-			for i := range a.state.Messages {
-				item := &a.state.Messages[i]
-				if item.Role == "tool" && item.ToolCallID == u.ToolCallID {
-					if u.Title != "" {
-						item.Text = u.Title
-					}
-					if u.Status != "" {
-						item.Status = u.Status
-					}
-					updated = true
-					break
-				}
-			}
-			if !updated {
-				a.state.Messages = append(a.state.Messages, ACPMessage{Role: "tool", Text: u.Title, ToolCallID: u.ToolCallID, Status: u.Status, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
-			}
-		}
-		a.trimStateLocked()
-		a.changedLocked()
-	case "session/request_permission":
-		var params struct {
-			ToolCall struct {
-				Title string `json:"title"`
-			} `json:"toolCall"`
-			Options []ACPPermissionOption `json:"options"`
-		}
-		if err := json.Unmarshal(message.Params, &params); err != nil {
-			a.fail(err)
-			return
-		}
-		permission := ACPPermission{ID: string(message.ID), Title: params.ToolCall.Title, Options: params.Options}
-		a.mu.Lock()
-		if a.cancelling {
-			a.mu.Unlock()
-			_ = a.write(acpEnvelope{ID: message.ID, Result: jsontext.Value(`{"outcome":{"outcome":"cancelled"}}`)})
-			return
-		}
-		permissionBytes := acpPermissionBytes(permission)
-		if permissionBytes <= maxACPStateBytes {
-			a.trimStateToBytesLocked(maxACPStateBytes - permissionBytes)
-		}
-		if a.retainedStateBytesLocked()+permissionBytes > maxACPStateBytes {
-			a.state.Error = "The agent requested more permission data than this chat can retain."
-			a.changedLocked()
-			a.mu.Unlock()
-			_ = a.write(acpEnvelope{ID: message.ID, Result: jsontext.Value(`{"outcome":{"outcome":"cancelled"}}`)})
-			return
-		}
-		a.state.Permissions = append(a.state.Permissions, permission)
-		a.changedLocked()
-		a.mu.Unlock()
-	default:
-		if len(message.ID) > 0 {
-			_ = a.write(acpEnvelope{ID: message.ID, Error: &acpError{Code: -32601, Message: "Client method not supported"}})
-		}
-	}
-}
-
 func (a *ACP) Command(command ACPCommand) error {
 	switch command.Type {
 	case "config":
@@ -448,22 +265,14 @@ func (a *ACP) Command(command ACPCommand) error {
 		defer a.turnMu.Unlock()
 		a.mu.Lock()
 		a.cancelling = true
-		a.mu.Unlock()
-		params, err := json.Marshal(map[string]string{"sessionId": a.sessionID})
-		if err != nil {
-			return err
+		for id, response := range a.permissions {
+			response <- acpsdk.NewRequestPermissionOutcomeCancelled()
+			delete(a.permissions, id)
 		}
-		a.mu.Lock()
-		permissions := a.state.Permissions
 		a.state.Permissions = nil
 		a.changedLocked()
 		a.mu.Unlock()
-		for _, permission := range permissions {
-			if err := a.write(acpEnvelope{ID: jsontext.Value(permission.ID), Result: jsontext.Value(`{"outcome":{"outcome":"cancelled"}}`)}); err != nil {
-				return err
-			}
-		}
-		return a.write(acpEnvelope{Method: "session/cancel", Params: params})
+		return a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
 	case "permission":
 		a.mu.Lock()
 		index := -1
@@ -480,14 +289,13 @@ func (a *ACP) Command(command ACPCommand) error {
 			a.mu.Unlock()
 			return errors.New("permission option is no longer pending")
 		}
+		response := a.permissions[command.ID]
+		delete(a.permissions, command.ID)
 		a.state.Permissions = slices.Delete(a.state.Permissions, index, index+1)
+		response <- acpsdk.NewRequestPermissionOutcomeSelected(acpsdk.PermissionOptionId(command.OptionID))
 		a.changedLocked()
 		a.mu.Unlock()
-		result, err := json.Marshal(map[string]any{"outcome": map[string]string{"outcome": "selected", "optionId": command.OptionID}})
-		if err != nil {
-			return err
-		}
-		return a.write(acpEnvelope{ID: jsontext.Value(command.ID), Result: result})
+		return nil
 	default:
 		return errors.New("unknown ACP command")
 	}
@@ -519,12 +327,33 @@ func (a *ACP) prompt(text, submissionID string) error {
 	a.cancelling = false
 	a.state.Error = ""
 	a.promptIndex = new(len(a.state.Messages))
+	written := make(chan error, 1)
+	a.promptWritten = written
 	a.mu.Unlock()
-	id, response, err := a.startCall("session/prompt", map[string]any{"sessionId": a.sessionID, "prompt": []map[string]string{{"type": "text", "text": text}}})
+	completed := make(chan error, 1)
+	go func() {
+		_, err := a.client.Prompt(context.Background(), acpsdk.PromptRequest{
+			SessionId: acpsdk.SessionId(a.sessionID), Prompt: []acpsdk.ContentBlock{acpsdk.TextBlock(text)},
+		})
+		completed <- err
+	}()
+	var err error
+	select {
+	case err = <-written:
+	case err = <-completed:
+		// A disconnected SDK can reject a request without attempting a write.
+		select {
+		case writeErr := <-written:
+			completed <- err
+			err = writeErr
+		default:
+		}
+	}
 	if err != nil {
 		a.mu.Lock()
 		a.state.Busy = false
 		a.promptIndex = nil
+		a.promptWritten = nil
 		a.state.Error = err.Error()
 		a.changedLocked()
 		a.mu.Unlock()
@@ -541,7 +370,7 @@ func (a *ACP) prompt(text, submissionID string) error {
 	a.changedLocked()
 	a.mu.Unlock()
 	go func() {
-		_, err := a.awaitCall(context.Background(), id, response)
+		err := <-completed
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		a.state.Busy = false

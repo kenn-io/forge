@@ -1,19 +1,13 @@
 package localruntime
 
-type ACPMCPHeader struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-type ACPMCPServer struct {
-	Type    string         `json:"type"`
-	Name    string         `json:"name"`
-	URL     string         `json:"url"`
-	Headers []ACPMCPHeader `json:"headers"`
-}
+import acpsdk "github.com/coder/acp-go-sdk"
 
-func (m *Manager) agentMCPServers() []ACPMCPServer {
+func (m *Manager) agentMCPServers() []acpsdk.McpServer {
 	if m.agentMCPURL == "" {
-		return nil
+		return []acpsdk.McpServer{}
 	}
-	return []ACPMCPServer{{Type: "http", Name: "kenn-forge", URL: m.agentMCPURL, Headers: []ACPMCPHeader{{Name: "Authorization", Value: "Bearer " + m.agentMCPToken}}}}
+	return []acpsdk.McpServer{{Http: &acpsdk.McpServerHttpInline{
+		Name: "kenn-forge", Url: m.agentMCPURL,
+		Headers: []acpsdk.HttpHeader{{Name: "Authorization", Value: "Bearer " + m.agentMCPToken}},
+	}}}
 }

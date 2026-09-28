@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	acpsdk "github.com/coder/acp-go-sdk"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -42,7 +44,12 @@ func TestACPStdioHelper(t *testing.T) {
 		fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"fixture-session","configOptions":[{"id":"effort","name":"Effort","category":"thought_level","type":"select","currentValue":%q,"options":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]},{"id":"model","name":"Model","category":"model","type":"select","currentValue":%q,"options":[{"group":"models","name":"Models","options":[{"value":"fast","name":"Fast"},{"value":"deep","name":"Deep"}]}]}]}}`+"\n", id, effort, model)
 	}
 	for scanner.Scan() {
-		var message acpEnvelope
+		var message struct {
+			ID     jsontext.Value `json:"id"`
+			Method string         `json:"method"`
+			Params jsontext.Value `json:"params"`
+			Result jsontext.Value `json:"result"`
+		}
 		if json.Unmarshal(scanner.Bytes(), &message) != nil {
 			os.Exit(2)
 		}
@@ -65,7 +72,7 @@ func TestACPStdioHelper(t *testing.T) {
 				MCPServers []any  `json:"mcpServers"`
 			}
 			cwd, _ := os.Getwd()
-			if json.Unmarshal(message.Params, &params) != nil {
+			if json.Unmarshal(message.Params, &params) != nil || params.MCPServers == nil {
 				os.Exit(4)
 			}
 			resolved, err := filepath.EvalSymlinks(params.CWD)
@@ -108,7 +115,7 @@ func TestACPStdioHelper(t *testing.T) {
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello "}}}}`)
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"workspace"}}}}`)
 			if params.Prompt[0].Text == "permission" {
-				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call","toolCallId":"edit","title":"Edit file","status":"pending"}}}`)
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call","toolCallId":"edit","title":"Edit file","status":"pending","content":[{"type":"diff","path":"/tmp/example.txt","oldText":"before","newText":"after"}]}}}`)
 				fmt.Println(`{"jsonrpc":"2.0","id":"approval","method":"session/request_permission","params":{"sessionId":"fixture-session","toolCall":{"toolCallId":"edit","title":"Edit file"},"options":[{"optionId":"allow","name":"Allow once","kind":"allow_once"},{"optionId":"deny","name":"Reject","kind":"reject_once"}]}}`)
 			} else if params.Prompt[0].Text != "wait" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
@@ -125,7 +132,7 @@ func TestACPStdioHelper(t *testing.T) {
 			if json.Unmarshal(message.Result, &result) != nil || string(message.ID) != `"approval"` || result.Outcome.Outcome != "selected" || result.Outcome.OptionID != "allow" {
 				os.Exit(6)
 			}
-			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call_update","toolCallId":"edit","status":"completed"}}}`)
+			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call_update","toolCallId":"edit","status":"completed","content":[{"type":"content","content":{"type":"text","text":"Updated file"}}]}}}`)
 			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
 		}
 	}
@@ -156,7 +163,7 @@ func TestACPWorkspaceConversation(t *testing.T) {
 	var state ACPState
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
-	for len(state.Permissions) == 0 {
+	for len(state.Permissions) == 0 || len(state.Messages) < 3 {
 		select {
 		case <-changes:
 			data, err := agent.Snapshot()
@@ -170,8 +177,8 @@ func TestACPWorkspaceConversation(t *testing.T) {
 	assert.Equal(t, "submission-1", state.Messages[0].SubmissionID)
 	assert.Equal(t, "Hello workspace", state.Messages[1].Text)
 	assert.Equal(t, "pending", state.Messages[2].Status)
-	require.Error(t, agent.Command(ACPCommand{Type: "permission", ID: `"approval"`, OptionID: "unknown"}))
-	require.NoError(t, agent.Command(ACPCommand{Type: "permission", ID: `"approval"`, OptionID: "allow"}))
+	require.Error(t, agent.Command(ACPCommand{Type: "permission", ID: state.Permissions[0].ID, OptionID: "unknown"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "permission", ID: state.Permissions[0].ID, OptionID: "allow"}))
 	require.Eventually(t, func() bool {
 		data, err := agent.Snapshot()
 		if err != nil {
@@ -185,6 +192,7 @@ func TestACPWorkspaceConversation(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(duplicateSnapshot, &state))
 	assert.Len(t, state.Messages, 3, "reconnecting must not submit a second turn")
+	assert.Empty(t, state.Error)
 	// A new browser sees the entire transcript without starting another process.
 	another, release := agent.Subscribe()
 	defer release()
@@ -272,10 +280,13 @@ func TestACPPromptAcknowledgesOnlyAfterWrite(t *testing.T) {
 	require.NoError(t, failedReader.Close())
 	agent := &ACP{
 		stdin: failedWriter, done: make(chan struct{}),
-		pending: make(map[string]chan acpEnvelope), subscribers: make(map[chan struct{}]struct{}),
-		state: ACPState{Connected: true},
+		subscribers: make(map[chan struct{}]struct{}),
+		state:       ACPState{Connected: true},
 	}
 
+	peerReader, peerWriter := io.Pipe()
+	t.Cleanup(func() { _ = peerWriter.Close(); _ = peerReader.Close() })
+	agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
 	err := agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"})
 	require.Error(t, err)
 	assert.Empty(t, agent.state.Messages)
@@ -293,16 +304,19 @@ func TestACPPromptPrecedesConcurrentOutputAfterHistoryTrim(t *testing.T) {
 	reader, writer := io.Pipe()
 	agent := &ACP{
 		stdin: writer, done: make(chan struct{}),
-		pending: make(map[string]chan acpEnvelope), subscribers: make(map[chan struct{}]struct{}),
-		state: ACPState{Connected: true, Messages: []ACPMessage{{Role: "assistant", Text: strings.Repeat("old", 2<<20)}}},
+		subscribers: make(map[chan struct{}]struct{}),
+		state:       ACPState{Connected: true, Messages: []ACPMessage{{Role: "assistant", Text: strings.Repeat("old", 2<<20)}}},
 	}
 	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close(); close(agent.done) })
+	peerReader, peerWriter := io.Pipe()
+	t.Cleanup(func() { _ = peerWriter.Close(); _ = peerReader.Close() })
+	agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
 	sent := make(chan error, 1)
 	go func() { sent <- agent.Command(ACPCommand{Type: "prompt", Text: "new question", ID: "new-submission"}) }()
 	// The write has started but cannot complete while only one byte is read.
 	_, err := reader.Read(make([]byte, 1))
 	require.NoError(t, err)
-	agent.receive(acpEnvelope{Method: "session/update", Params: jsontext.Value(`{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"new answer"}}}`)})
+	require.NoError(t, agent.SessionUpdate(t.Context(), acpsdk.SessionNotification{Update: acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{Content: acpsdk.TextBlock("new answer")}}}))
 	_, err = bufio.NewReader(reader).ReadString('\n')
 	require.NoError(t, err)
 	require.NoError(t, <-sent)
@@ -331,10 +345,11 @@ func TestACPStopClosesStdoutReader(t *testing.T) {
 	require.NoError(t, cmd.Start())
 	agent := &ACP{
 		cmd: cmd, stdin: stdinWriter, stdout: stdoutReader, done: make(chan struct{}),
-		pending: make(map[string]chan acpEnvelope), subscribers: make(map[chan struct{}]struct{}),
-		exitCode: -1,
+		subscribers: make(map[chan struct{}]struct{}),
+		exitCode:    -1,
 	}
-	go agent.read()
+	agent.client = acpsdk.NewClientSideConnection(agent, agent, stdoutReader)
+	go agent.wait()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -367,15 +382,7 @@ func TestACPBoundsRetainedTranscript(t *testing.T) {
 		t.Run(fmt.Sprintf("character-%x", text), func(t *testing.T) {
 			agent := &ACP{subscribers: make(map[chan struct{}]struct{}), state: ACPState{Messages: []ACPMessage{{Role: "user", Text: "question", SubmissionID: "accepted"}}}}
 			for range 5 {
-				params, err := json.Marshal(map[string]any{
-					"sessionId": "fixture-session",
-					"update": map[string]any{
-						"sessionUpdate": "agent_message_chunk",
-						"content":       map[string]string{"type": "text", "text": strings.Repeat(text, 1<<20)},
-					},
-				})
-				require.NoError(t, err)
-				agent.receive(acpEnvelope{Method: "session/update", Params: params})
+				require.NoError(t, agent.SessionUpdate(t.Context(), acpsdk.SessionNotification{Update: acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{Content: acpsdk.TextBlock(strings.Repeat(text, 1<<20))}}}))
 			}
 			data, err := agent.Snapshot()
 			require.NoError(t, err)

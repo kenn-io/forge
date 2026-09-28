@@ -11,6 +11,8 @@ import (
 	"slices"
 	"time"
 
+	acpsdk "github.com/coder/acp-go-sdk"
+
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -78,18 +80,14 @@ func (a *ACP) configure(id, value string) error {
 }
 
 func (a *ACP) setConfig(ctx context.Context, id, value string) error {
-	data, err := a.call(ctx, "session/set_config_option", map[string]string{"sessionId": a.sessionID, "configId": id, "value": value})
+	result, err := a.client.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{SessionId: acpsdk.SessionId(a.sessionID), ConfigId: acpsdk.SessionConfigId(id), Value: acpsdk.SessionConfigValueId(value)},
+	})
 	if err != nil {
 		return err
 	}
-	var result struct {
-		ConfigOptions []ACPConfigOption `json:"configOptions"`
-	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return err
-	}
 	a.mu.Lock()
-	a.state.ConfigOptions = result.ConfigOptions
+	a.state.ConfigOptions = acpConfigOptions(result.ConfigOptions)
 	a.changedLocked()
 	a.mu.Unlock()
 	return nil
@@ -190,4 +188,39 @@ func (m *Manager) acpConfigValues(key string, values map[string]string) (map[str
 	}
 	m.acpPreferences = next
 	return maps.Clone(remembered), nil
+}
+
+// Project agent-owned settings into the browser's select controls. ACP union
+// decoding belongs to the SDK; these are Forge view models.
+func acpConfigOptions(options []acpsdk.SessionConfigOption) []ACPConfigOption {
+	result := make([]ACPConfigOption, 0, len(options))
+	for _, option := range options {
+		selectOption := option.Select
+		if selectOption == nil {
+			continue
+		}
+		view := ACPConfigOption{ID: string(selectOption.Id), Name: selectOption.Name, Type: "select", CurrentValue: string(selectOption.CurrentValue)}
+		if selectOption.Category != nil {
+			view.Category = string(*selectOption.Category)
+		}
+		if selectOption.Description != nil {
+			view.Description = *selectOption.Description
+		}
+		if selectOption.Options.Ungrouped != nil {
+			for _, choice := range *selectOption.Options.Ungrouped {
+				view.Options = append(view.Options, ACPConfigChoice{Value: string(choice.Value), Name: choice.Name})
+			}
+		}
+		if selectOption.Options.Grouped != nil {
+			for _, group := range *selectOption.Options.Grouped {
+				choices := make([]ACPConfigChoice, 0, len(group.Options))
+				for _, choice := range group.Options {
+					choices = append(choices, ACPConfigChoice{Value: string(choice.Value), Name: choice.Name})
+				}
+				view.Options = append(view.Options, ACPConfigChoice{Group: string(group.Group), Name: group.Name, Options: choices})
+			}
+		}
+		result = append(result, view)
+	}
+	return result
 }

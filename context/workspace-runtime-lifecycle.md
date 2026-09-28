@@ -33,6 +33,10 @@ kenn-forge manages three related but different things:
 
 Rules:
 
+- Use the Go ACP SDK for protocol framing, dispatch, and wire types; Forge owns
+  process lifecycle and chat state, not a second protocol decoder
+  (`internal/workspace/localruntime/acp.go::startACPSession`).
+
 - ACP agents run on the workspace's selected execution host, including devboxes and
   Fleet nodes; browser disconnects leave the process and accepted turn running
   (`internal/workspace/localruntime/acp.go::ACP`).

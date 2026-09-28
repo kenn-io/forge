@@ -96,7 +96,7 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await page.getByLabel("Workspace Chat binary").fill(process.execPath);
     await page.getByLabel("Workspace Chat arguments").fill('-e "process.exit(0)"');
     await page.getByRole("button", { name: "Test ACP connection" }).click();
-    await expect(page.getByText(/initialize ACP agent: ACP agent disconnected/)).toBeVisible();
+    await expect(page.getByText(/initialize ACP agent:/)).toBeVisible();
     await page
       .getByLabel("Workspace Chat arguments")
       .fill(JSON.stringify(path.resolve("tests/fixtures/acp-agent.mjs")));

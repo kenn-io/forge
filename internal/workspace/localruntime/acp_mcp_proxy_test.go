@@ -24,6 +24,7 @@ func TestACPMCPRebindsAfterDaemonRestart(t *testing.T) {
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	firstUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.Header.Get("Origin"), "proxy origin must not reach the daemon guard")
 		if r.URL.Path != "/agent-mcp" || r.Header.Get("Authorization") != "Bearer first-token" {
 			http.Error(w, "wrong binding", http.StatusUnauthorized)
 			return
@@ -51,6 +52,7 @@ func TestACPMCPRebindsAfterDaemonRestart(t *testing.T) {
 	assert.NotEqual(t, firstUpstream.URL+"/agent-mcp", servers[0].URL)
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, servers[0].URL, strings.NewReader(`{"jsonrpc":"2.0","method":"tools/list","id":1}`))
 	require.NoError(t, err)
+	request.Header.Set("Origin", request.URL.Scheme+"://"+request.URL.Host)
 	for _, header := range servers[0].Headers {
 		request.Header.Set(header.Name, header.Value)
 	}
@@ -63,6 +65,7 @@ func TestACPMCPRebindsAfterDaemonRestart(t *testing.T) {
 	first.Shutdown()
 	firstUpstream.Close()
 	secondUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.Header.Get("Origin"), "proxy origin must not reach the rebound daemon guard")
 		if r.URL.Path != "/agent-mcp" || r.Header.Get("Authorization") != "Bearer second-token" {
 			http.Error(w, "stale binding", http.StatusUnauthorized)
 			return

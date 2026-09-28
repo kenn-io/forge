@@ -58,6 +58,8 @@ func newACPMCPProxy(binding ACPMCPBinding) (*acpMCPProxy, error) {
 			request.Out.URL.Path = upstream.Path
 			request.Out.Host = upstream.Host
 			request.Out.Header.Set("Authorization", "Bearer "+binding.Token)
+			// The authenticated proxy hop has a different loopback origin.
+			request.Out.Header.Del("Origin")
 		}}
 		proxy.ServeHTTP(w, r)
 	})}

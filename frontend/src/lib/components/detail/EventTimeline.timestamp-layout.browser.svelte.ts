@@ -97,6 +97,38 @@ describe("EventTimeline timestamp layout", () => {
     wrapper.remove();
   });
 
+  it("keeps a lifecycle event on one row in a narrow pane", async () => {
+    runtime = makeAppRuntime();
+    const wrapper = document.createElement("div");
+    wrapper.style.width = "300px";
+    document.body.appendChild(wrapper);
+
+    const closedEvent = {
+      ...forcePushEvent,
+      ID: 9,
+      EventType: "closed",
+      Author: "a-very-long-automation-account-name",
+      Summary: "",
+      MetadataJSON: "",
+      DedupeKey: "closed-9",
+    } as PREvent;
+    await render(EventTimelineTestHarness, {
+      target: wrapper,
+      props: { runtime, timelineProps: { events: [closedEvent] } },
+    });
+
+    const card = wrapper.querySelector<HTMLElement>(".event--lifecycle");
+    const parts = [".kit-card__eyebrow", ".kit-card__title", ".kit-card__meta"].map((selector) =>
+      card?.querySelector<HTMLElement>(selector)?.getBoundingClientRect(),
+    );
+    expect(parts.every(Boolean)).toBe(true);
+    const middles = parts.map((rect) => rect!.top + rect!.height / 2);
+    expect(Math.max(...middles) - Math.min(...middles)).toBeLessThanOrEqual(3);
+    expect(card!.scrollWidth).toBeLessThanOrEqual(card!.clientWidth);
+
+    wrapper.remove();
+  });
+
   it("packs consecutive one-line commits into tight rows", async () => {
     runtime = makeAppRuntime();
     const wrapper = document.createElement("div");

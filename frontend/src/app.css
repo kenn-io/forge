@@ -8,6 +8,12 @@
 /* Mermaid viewer chrome plus the --mermaid- and --viewer-scrim tokens (opt-in kit module). */
 @import "@kenn-io/kit-ui/mermaid.css";
 
+/* kit's themes.css tints scrollbars under every named theme; Forge's scroll
+   panes keep browser-native scrollbars (tests/e2e/viewport-fit.spec.ts). */
+:root[data-kit-theme] {
+  scrollbar-color: auto;
+}
+
 /* Reset */
 *,
 *::before,

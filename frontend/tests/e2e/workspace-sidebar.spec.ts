@@ -3556,7 +3556,7 @@ test.describe("workspace launch home", () => {
       const activeHeaderStyles = getComputedStyle(activeHeader);
       return {
         activeHeaderBoxShadow: activeHeaderStyles.boxShadow,
-        activeLeftBorderUsesAccent: activeLeafStyles.borderLeftColor === "rgb(37, 99, 235)",
+        activeLeftBorderUsesAccent: activeLeafStyles.borderLeftColor === "rgb(0, 97, 213)",
         activeLeafBorderTopWidth: activeLeafStyles.borderTopWidth,
         firstLeafBorderRight: firstLeafStyles.borderRightWidth,
         firstLeafToSplitLeft: Math.round(firstLeafRect.left - splitRect.left),
@@ -3576,7 +3576,7 @@ test.describe("workspace launch home", () => {
       };
     });
     expect(splitMetrics).toEqual({
-      activeHeaderBoxShadow: "rgb(37, 99, 235) 0px 2px 0px 0px inset",
+      activeHeaderBoxShadow: "rgb(0, 97, 213) 0px 2px 0px 0px inset",
       activeLeafBorderTopWidth: "0px",
       activeLeftBorderUsesAccent: false,
       firstLeafBorderRight: "0px",
@@ -3639,7 +3639,7 @@ test.describe("workspace launch home", () => {
     expect(afterSwitch).toMatchObject([
       {
         active: true,
-        headerBoxShadow: "rgb(37, 99, 235) 0px 2px 0px 0px inset",
+        headerBoxShadow: "rgb(0, 97, 213) 0px 2px 0px 0px inset",
         label: "Shell",
       },
       {

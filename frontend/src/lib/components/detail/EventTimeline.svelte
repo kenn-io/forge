@@ -2059,6 +2059,7 @@
           {#if isLifecycleTransitionEvent(event.EventType)}
             <CommentCard
               class="event-card--compact event--lifecycle"
+              layout="inline"
               typeLabel={systemEventLabel(event.EventType)}
               tone={eventTimelineTone(event.EventType)}
               author={event.Author ? `by ${event.Author}` : undefined}

@@ -59,7 +59,7 @@ interface WorkspaceFixtureOptions {
   id: string;
   provider: string;
   platformHost: string;
-  platformRepoId?: string;
+  platformRepoId?: number;
   owner: string;
   name: string;
   number: number;
@@ -271,7 +271,7 @@ describe("WorkspaceListSidebar", () => {
     const ref = {
       provider: "github",
       platformHost: "github.com",
-      platformRepoId: "repo-id",
+      platformRepoId: 7001,
       owner: "acme",
       name: "api",
       repoPath: "acme/api",
@@ -285,7 +285,7 @@ describe("WorkspaceListSidebar", () => {
           repo: {
             provider: "github",
             platform_host: "github.com",
-            platform_repo_id: "repo-id",
+            platform_repo_id: 7001,
             owner: "acme",
             name: "api",
             repo_path: "acme/api",
@@ -305,7 +305,7 @@ describe("WorkspaceListSidebar", () => {
       workspaceFixture({
         ...ref,
         id: "replacement-repo",
-        platformRepoId: "replacement-id",
+        platformRepoId: 7999,
         number: 1,
         title: "Replacement repository",
       }),
@@ -342,6 +342,39 @@ describe("WorkspaceListSidebar", () => {
       cleanup();
       await Effect.runPromise(runtime.disposeEffect);
     }
+  });
+
+  it.each([false, true])("restores a cached list before a remount refresh completes (empty: %s)", async (empty) => {
+    const initial = empty ? [] : sortFixtures();
+    mockGet.mockResolvedValue({ data: { workspaces: initial } });
+    const onWorkspaceListStateChange = vi.fn();
+    const view = render(WorkspaceListSidebar, {
+      props: { selectedId: "", onWorkspaceListStateChange },
+    });
+    await waitFor(() =>
+      expect(onWorkspaceListStateChange).toHaveBeenLastCalledWith({
+        status: "loaded",
+        total: initial.length,
+      }),
+    );
+    await view.rerender({ showSidebar: false });
+
+    const refresh = deferred<{ data: { workspaces: ReturnType<typeof sortFixtures> } }>();
+    mockGet.mockReturnValue(refresh.promise);
+    mockGet.mockClear();
+    onWorkspaceListStateChange.mockClear();
+    await view.rerender({ showSidebar: true });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/snapshot", expect.anything()));
+    await waitFor(() =>
+      expect(onWorkspaceListStateChange).toHaveBeenLastCalledWith({
+        status: "loaded",
+        total: initial.length,
+      }),
+    );
+    expect(rowTitles(view.container)).toHaveLength(initial.length);
+
+    refresh.resolve({ data: { workspaces: [sortFixtures()[0]!] } });
+    await waitFor(() => expect(rowTitles(view.container)).toEqual(["Newest created"]));
   });
 
   it.each(["remote", "devbox"])("labels %s workspace rows with their execution machine on the hub", async (kind) => {
@@ -2848,6 +2881,38 @@ describe("WorkspaceListSidebar", () => {
       });
     });
     expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
+  });
+
+  it("keeps a confirmed deletion out of the remounted list while preserving the same ID on another host", async () => {
+    const local = workspaceFixture({
+      id: "ws-shared-id",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      number: 42,
+      title: "Local workspace",
+    });
+    const remote = { ...local, mr_title: "Remote workspace", fleet_host_key: "peer-a" };
+    mockGet.mockResolvedValue({ data: { workspaces: [local, remote] } });
+    mockDelete.mockResolvedValue({ response: { ok: true, status: 204 } });
+    const view = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await screen.findByText("Local workspace");
+    mockGet.mockReturnValue(new Promise(() => {}));
+
+    await fireEvent.contextMenu(screen.getByText("Local workspace").closest(".ws-row")!);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
+    const confirmation = await screen.findByRole("dialog", { name: "Delete workspace?" });
+    await fireEvent.click(within(confirmation).getByRole("button", { name: "Delete workspace" }));
+    await waitFor(() => expect(screen.queryByText("Local workspace")).toBeNull());
+    expect(screen.getByText("Remote workspace")).toBeTruthy();
+
+    await view.rerender({ showSidebar: false });
+    mockGet.mockClear();
+    await view.rerender({ showSidebar: true });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/snapshot", expect.anything()));
+    expect(await screen.findByText("Remote workspace")).toBeTruthy();
+    expect(screen.queryByText("Local workspace")).toBeNull();
   });
 
   it("keeps a workspace when context menu deletion is cancelled in-app", async () => {

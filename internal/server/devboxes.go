@@ -17,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -129,6 +130,7 @@ type createDevboxWorkspaceInput struct {
 	Body         struct {
 		Provider            string `json:"provider"`
 		PlatformHost        string `json:"platform_host"`
+		PlatformRepoID      int64  `json:"platform_repo_id,omitempty"`
 		Owner               string `json:"owner"`
 		Name                string `json:"name"`
 		MRNumber            int    `json:"mr_number,omitempty"`
@@ -152,7 +154,7 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *createDevboxW
 		return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 	}
 	body := input.Body
-	repo, err := s.repoResolver.LookupRoute(ctx, body.Provider, body.PlatformHost, body.Owner, body.Name)
+	repo, err := s.repoResolver.LookupSelection(ctx, body.Provider, body.PlatformHost, body.Owner, body.Name, body.PlatformRepoID)
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
@@ -176,8 +178,10 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *createDevboxW
 			kind, number = db.WorkspaceItemTypeIssue, body.IssueNumber
 		}
 		spec, err := s.ResolveWorkspaceLaunchSpec(ctx, providerplane.WorkspaceLaunchRequest{
-			Repository: providerplane.RepositoryRoute{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name},
-			ItemType:   kind, ItemNumber: number, GitHeadRef: body.Branch,
+			Repository:     providerplane.RepositoryRoute{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name},
+			PlatformRepoID: repo.PlatformRepoID,
+			ForCreation:    true,
+			ItemType:       kind, ItemNumber: number, GitHeadRef: body.Branch,
 		})
 		if err != nil {
 			return nil, err
@@ -228,6 +232,8 @@ type devboxProxyRoute struct{ method, path, operation string }
 var devboxProxyRoutes = []devboxProxyRoute{
 	{"GET", "/workspaces", "list-devbox-workspaces"},
 	{"GET", "/workspaces/{id}", "get-devbox-workspace"},
+	{"GET", "/workspaces/{id}/view-state", "get-devbox-workspace-view-state"},
+	{"PUT", "/workspaces/{id}/view-state", "update-devbox-workspace-view-state"},
 	{"GET", "/workspaces/{id}/agent-sessions", "list-devbox-agent-sessions"},
 	{"GET", "/workspaces/{id}/commits", "get-devbox-commits"},
 	{"GET", "/workspaces/{id}/diff", "get-devbox-diff"},
@@ -252,7 +258,7 @@ var devboxProxyRoutes = []devboxProxyRoute{
 func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
 	op := &huma.Operation{OperationID: route.operation, Method: route.method, Path: "/devboxes/{connection_id}" + route.path, Tags: []string{"Devboxes"}, Summary: "Forward an execution operation to its owning devbox"}
 	if item := api.OpenAPI().Paths[route.path]; item != nil {
-		source := map[string]*huma.Operation{"GET": item.Get, "POST": item.Post, "DELETE": item.Delete, "PATCH": item.Patch}[route.method]
+		source := map[string]*huma.Operation{"GET": item.Get, "POST": item.Post, "PUT": item.Put, "DELETE": item.Delete, "PATCH": item.Patch}[route.method]
 		if source != nil {
 			op.Parameters = slices.Clone(source.Parameters)
 			op.RequestBody, op.Responses, op.Metadata = source.RequestBody, source.Responses, source.Metadata
@@ -406,8 +412,9 @@ func (s *Server) refreshDevboxContext(ctx context.Context, connections *devbox.C
 		return nil
 	}
 	spec, err := s.ResolveWorkspaceLaunchSpec(ctx, providerplane.WorkspaceLaunchRequest{
-		Repository: providerplane.RepositoryRoute{Provider: current.Repo.Provider, PlatformHost: current.PlatformHost, Owner: current.RepoOwner, Name: current.RepoName},
-		ItemType:   current.ItemType, ItemNumber: current.ItemNumber, ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
+		Repository:     providerplane.RepositoryRoute{Provider: current.Repo.Provider, PlatformHost: current.PlatformHost, Owner: current.RepoOwner, Name: current.RepoName},
+		PlatformRepoID: current.Repo.PlatformRepoID,
+		ItemType:       current.ItemType, ItemNumber: current.ItemNumber, ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
 	})
 	if err != nil {
 		return err

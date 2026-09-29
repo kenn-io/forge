@@ -11,10 +11,8 @@ export interface RepositoryDescriptor {
   observed_at: string;
   owner: string;
   platform_host: string;
-  platform_repo_id: string;
+  platform_repo_id: number;
   protocol_version: number;
   provider: string;
-  /** @minimum 0 */
-  snapshot_revision: number;
   stale: boolean;
 }

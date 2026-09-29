@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
@@ -132,6 +134,51 @@ func TestAgentHandoffWaitsForReadyThenLaunchesAndDeliversPrompt(t *testing.T) {
 	sessions := fixture.handler.runtime.ListSessions("ws-runtime-token")
 	require.Len(sessions, 1)
 	assert.Equal(body.Session.Key, sessions[0].Key)
+}
+
+func TestClaudeHandoffProvidesPromptAtLaunchWithoutTypingIntoStartupDialogs(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := newAgentHandoffFixture(t, "ready")
+	fixture.handler.runtime.UpdateTargets([]localruntime.LaunchTarget{{
+		Key: "reviewer", Kind: localruntime.LaunchTargetAgent, Available: true,
+		Command: []string{"claude", "--model", "model-a"},
+	}})
+	fixture.owner.setEmitBracketedPaste(false)
+	const message = "--review this PR\nDon't run $(commands)."
+	result, err := fixture.handler.LaunchWorkspaceAgentHandoffService(t.Context(), WorkspaceAgentHandoffRequest{
+		WorkspaceID: "ws-runtime-token", TargetKey: "reviewer", Message: message,
+	})
+	require.NoError(err)
+	assert.Equal([]string{"claude", "--model", "model-a", "--", message}, fixture.owner.command)
+	assert.Empty(fixture.owner.pty.written())
+	assert.Equal(initialMessageDelivered, result.InitialMessage.State)
+	repeated, err := fixture.handler.SubmitInitialMessageService(t.Context(), InitialMessageRequest{
+		WorkspaceID: "ws-runtime-token", RuntimeSessionKey: result.Session.Key,
+		TargetKey: "reviewer", Message: message,
+	})
+	require.NoError(err)
+	assert.Equal(result.InitialMessage, repeated)
+	assert.Empty(fixture.owner.pty.written())
+}
+
+func TestAgentHandoffReportsOversizedCommandAsBadRequest(t *testing.T) {
+	require := require.New(t)
+	fixture := newAgentHandoffFixture(t, "ready")
+	// The Windows launch boundary returns this typed error before starting a process.
+	fixture.owner.startErr = fmt.Errorf("start pty owner: %w", ptyowner.ErrCommandLineTooLong)
+	response := fixture.post(t, map[string]string{
+		"target_key": "codex", "message": "review this PR",
+	})
+	require.Equal(http.StatusBadRequest, response.Code, response.Body.String())
+	var problem struct {
+		Code   string `json:"code"`
+		Detail string `json:"detail"`
+	}
+	require.NoError(json.NewDecoder(response.Body).Decode(&problem))
+	require.Equal("badRequest", problem.Code)
+	require.Contains(problem.Detail, "shorten the prompt or launch arguments")
+	require.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
 }
 
 func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {

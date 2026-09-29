@@ -194,7 +194,7 @@ function issueDetail(): IssueDetail {
       provider: "github",
       platform_host: "github.com",
       repo_path: "acme/widget",
-      platform_repo_id: "widget-repo-id",
+      platform_repo_id: 1001,
     },
     events: [],
     detail_loaded: true,
@@ -225,77 +225,75 @@ describe("createIssuesStore", () => {
     await loadIssueDetail(store, "acme", "widget", 7, {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: "replacement-repo-id",
+      platformRepoId: 1002,
       sync: false,
     });
     expect(store.getIssueDetail()).toBeNull();
   });
 
-  it.each(["replacement-repo-id", undefined])(
-    "does not restore an issue snapshot for repository %s",
-    async (platformRepoId) => {
-      const failedRead = Promise.withResolvers<{ error: { code: "forbidden"; detail: string } }>();
-      const original = issueDetail();
-      original.repo.platform_repo_id = "widget-repo-id";
-      const get = vi.fn().mockResolvedValueOnce({ data: original }).mockReturnValueOnce(failedRead.promise);
-      const store = createIssuesStore({ client: mockClient({ GET: get }) });
-      const options = {
-        provider: "github",
-        repoPath: "acme/widget",
-        platformRepoId: "widget-repo-id",
-        sync: false,
-      } as const;
-      await loadIssueDetail(store, "acme", "widget", 7, options);
-      store.clearIssueDetail();
-      store.loadIssueDetail("acme", "widget", 7, { ...options, platformRepoId });
-      expect(store.getIssueDetail()).toBeNull();
-      failedRead.resolve({ error: { code: "forbidden", detail: "Cannot refresh" } });
-      await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
-      expect(store.getIssueDetail()).toBeNull();
-    },
-  );
+  it.each([1002, undefined])("does not restore an issue snapshot for repository %s", async (platformRepoId) => {
+    const failedRead = Promise.withResolvers<{ error: { code: "forbidden"; detail: string } }>();
+    const original = issueDetail();
+    original.repo.platform_repo_id = 1001;
+    const get = vi.fn().mockResolvedValueOnce({ data: original }).mockReturnValueOnce(failedRead.promise);
+    const store = createIssuesStore({ client: mockClient({ GET: get }) });
+    const options = {
+      provider: "github",
+      repoPath: "acme/widget",
+      platformRepoId: 1001,
+      sync: false,
+    } as const;
+    await loadIssueDetail(store, "acme", "widget", 7, options);
+    store.clearIssueDetail();
+    store.loadIssueDetail("acme", "widget", 7, { ...options, platformRepoId });
+    expect(store.getIssueDetail()).toBeNull();
+    failedRead.resolve({ error: { code: "forbidden", detail: "Cannot refresh" } });
+    await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
+    expect(store.getIssueDetail()).toBeNull();
+  });
 
   it("does not join an old repository read when the selected repository changes", async () => {
     const oldRead = Promise.withResolvers<{ data: IssueDetail }>();
     const original = issueDetail();
-    original.repo.platform_repo_id = "widget-repo-id";
-    const replacement = { ...original, repo: { ...original.repo, platform_repo_id: "replacement-repo-id" } };
+    original.repo.platform_repo_id = 1001;
+    const replacement = { ...original, repo: { ...original.repo, platform_repo_id: 1002 } };
     const get = vi.fn().mockReturnValueOnce(oldRead.promise).mockResolvedValue({ data: replacement });
     const store = createIssuesStore({ client: mockClient({ GET: get }) });
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
       sync: false,
     } as const;
     store.loadIssueDetail("acme", "widget", 7, options);
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
-    store.loadIssueDetail("acme", "widget", 7, { ...options, platformRepoId: "replacement-repo-id" });
+    store.loadIssueDetail("acme", "widget", 7, { ...options, platformRepoId: 1002 });
     oldRead.resolve({ data: original });
     await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
-    expect(store.getIssueDetail()?.repo.platform_repo_id).toBe("replacement-repo-id");
+    expect(store.getIssueDetail()?.repo.platform_repo_id).toBe(1002);
   });
 
-  it("restores a recently viewed issue before its fresh read and retains its original workspace tick", async () => {
+  it("restores an issue after twenty other visits before its fresh read and retains its original workspace tick", async () => {
     const freshRead = Promise.withResolvers<{ data: IssueDetail }>();
     const initial = issueDetail();
-    const other = { ...issueDetail(), issue: { ...initial.issue, Number: 8 } };
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({ data: initial })
-      .mockResolvedValueOnce({ data: other })
-      .mockReturnValueOnce(freshRead.promise);
+    const get = vi.fn().mockResolvedValueOnce({ data: initial });
+    for (let number = 8; number < 28; number++) {
+      get.mockResolvedValueOnce({ data: { ...initial, issue: { ...initial.issue, Number: number } } });
+    }
+    get.mockReturnValueOnce(freshRead.promise);
     const store = createIssuesStore({ client: mockClient({ GET: get }) });
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
       sync: false,
     } as const;
     await loadIssueDetail(store, "acme", "widget", 7, options);
     const originalTick = store.getIssueDetailEnvelopeTick();
     store.clearIssueDetail();
-    await loadIssueDetail(store, "acme", "widget", 8, options);
+    for (let number = 8; number < 28; number++) {
+      await loadIssueDetail(store, "acme", "widget", number, options);
+    }
 
     store.loadIssueDetail("acme", "widget", 7, options);
 
@@ -328,7 +326,7 @@ describe("createIssuesStore", () => {
       owner: "acme",
       name: "widget",
       repoPath: "acme/widget",
-      platformRepoId: "widget-repo-id",
+      platformRepoId: 1001,
     };
     await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
     store.setLocalIssueBody("github", "github.com", "acme", "widget", 7, "local edit");
@@ -869,7 +867,7 @@ describe("createIssuesStore", () => {
       const initial = issueDetail();
       const refreshed = issueDetail();
       refreshed.issue.Body = "provider body";
-      if (repository === "replacement") refreshed.repo.platform_repo_id = "replacement-repo-id";
+      if (repository === "replacement") refreshed.repo.platform_repo_id = 1002;
       const saving = Promise.withResolvers<{ error: { detail: string } }>();
       const patch = vi.fn(() => saving.promise);
       const get = vi.fn().mockResolvedValueOnce({ data: initial }).mockResolvedValue({ data: refreshed });

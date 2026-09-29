@@ -62,7 +62,7 @@
     orderingEvents?: Array<PREvent | IssueEvent> | undefined;
     provider?: string | undefined;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoOwner?: string;
     repoName?: string;
     repoPath?: string | undefined;
@@ -2059,6 +2059,7 @@
           {#if isLifecycleTransitionEvent(event.EventType)}
             <CommentCard
               class="event-card--compact event--lifecycle"
+              layout="inline"
               typeLabel={systemEventLabel(event.EventType)}
               tone={eventTimelineTone(event.EventType)}
               author={event.Author ? `by ${event.Author}` : undefined}
@@ -2096,6 +2097,7 @@
             {@const sourceLink = crossReferenceLink(metadata, sourceUrl)}
             <CommentCard
               class="event-card--compact"
+              layout="inline"
               typeLabel="Referenced"
               tone={eventTimelineTone(event.EventType)}
               author={event.Author || undefined}
@@ -2118,6 +2120,7 @@
           {:else}
             <CommentCard
               class="event-card--compact"
+              layout="inline"
               typeLabel={event.EventType === "comment_deleted" || event.EventType === "assigned" || event.EventType === "unassigned"
                 ? undefined
                 : systemEventLabel(event.EventType)}
@@ -2294,8 +2297,18 @@
     gap: var(--focus-detail-space-sm, 0.62rem);
   }
 
-  :global(.event-card--compact) {
-    --kit-card-padding-block: var(--focus-detail-space-xs, 7px);
+
+  /* System events (commits, base changes, lifecycle, references) are one
+     quiet line beside their rail dot; only conversation gets a card. */
+  .event-timeline :global(.kit-card.event-card--compact) {
+    --kit-card-bg: transparent;
+    --kit-card-border: transparent;
+    padding-block: var(--space-3);
+  }
+
+  /* Consecutive one-line events pack tighter than conversation cards. */
+  .event-timeline :global(.kit-timeline-item.event--compact) {
+    --kit-timeline-gap: var(--space-2);
   }
 
   .event-header {
@@ -2445,9 +2458,9 @@
 
   .event-type {
     font-size: var(--font-size-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-weight: var(--font-weight-semibold);
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.04em);
   }
 
   .event-author {
@@ -2531,9 +2544,18 @@
     margin-right: var(--space-1);
   }
 
-  .commit-body-details {
-    margin-top: var(--focus-detail-space-xs, 7px);
+  .event-body.commit-body-details {
+    margin-top: var(--space-2);
     padding-right: var(--focus-detail-space-sm, 10px);
+    padding-bottom: 0;
+  }
+
+  .commit-body-details > :global(:first-child) {
+    margin-top: 0;
+  }
+
+  .commit-body-details > :global(:last-child) {
+    margin-bottom: 0;
   }
 
   .obsolete-group-row {
@@ -2771,7 +2793,7 @@
   .event-body {
     font-size: var(--font-size-sm);
     color: var(--text-primary);
-    padding: 0 calc(var(--focus-detail-hit-target, 26px) + var(--focus-detail-space-sm, 8px)) var(--focus-detail-space-sm, 8px) var(--focus-detail-space-sm, 10px);
+    padding: 0 calc(var(--focus-detail-hit-target, 26px) + var(--focus-detail-space-sm, 8px)) var(--focus-detail-space-sm, 8px) 0;
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.6;

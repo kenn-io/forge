@@ -20,7 +20,7 @@ require (
 	github.com/go-git/go-git/v6 v6.0.0-alpha.5
 	github.com/gofrs/flock v0.13.1
 	github.com/golang-migrate/migrate/v4 v4.20.1
-	github.com/google/go-github/v91 v91.0.0
+	github.com/google/go-github/v92 v92.0.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
@@ -38,7 +38,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.44.0
 	github.com/yuin/goldmark/v2 v2.1.5
-	gitlab.com/gitlab-org/api/client-go/v2 v2.64.0
+	gitlab.com/gitlab-org/api/client-go/v3 v3.13.0
 	go.kenn.io/kata v0.18.0
 	go.kenn.io/kit v0.26.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0

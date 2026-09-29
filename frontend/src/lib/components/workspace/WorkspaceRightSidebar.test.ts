@@ -6,6 +6,7 @@ import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { createAppStores } from "../../app-stores.svelte.js";
 import { createMockApiFetch } from "../../../test/mockApiFetch.js";
+import type { IssueDetail, PullDetail } from "../../api/types.js";
 import type { StoreInstances } from "../../types.js";
 import WorkspaceRightSidebarTestHarness from "./WorkspaceRightSidebarTestHarness.svelte";
 import type { WorkspaceDiffGitState } from "./workspace-diff-default.js";
@@ -201,6 +202,108 @@ describe("WorkspaceRightSidebar", () => {
     await screen.findByRole("heading", { name: "Add browser regression coverage" });
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
   });
+
+  it.each([
+    ["pr", "pulls", "merge_request", 42],
+    ["issue", "issues", "issue", 7],
+  ] as const)(
+    "shows only the selected %s while workspace detail reads are pending",
+    async (activeTab, resource, itemField, number) => {
+      const api = createMockApiFetch();
+      const pathA = `/api/v1/${resource}/github/acme/widgets/${number}`;
+      const pathB = `/api/v1/${resource}/github/acme/widgets/${number + 1}`;
+      const fixture = (await (await api.fetch(pathA)).json()) as {
+        repo: PullDetail["repo"];
+        merge_request?: PullDetail["merge_request"];
+        issue?: IssueDetail["issue"];
+      };
+      const item = fixture[itemField];
+      const repo = { ...fixture.repo, platform_repo_id: 1001 };
+      const snapshots = new Map([
+        [pathA, { ...fixture, repo, [itemField]: { ...item, Number: number, Title: "Workspace A detail" } }],
+        [pathB, { ...fixture, repo, [itemField]: { ...item, Number: number + 1, Title: "Workspace B detail" } }],
+      ]);
+      let pendingRead: ReturnType<typeof Promise.withResolvers<void>> | null = null;
+      let heldPath = "";
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const request =
+          input instanceof Request ? input : new Request(new URL(String(input), window.location.href), init);
+        const path = new URL(request.url).pathname;
+        const snapshot = snapshots.get(path.replace(/\/sync(?:\/async)?$/, ""));
+        if (!snapshot) return api.fetch(input, init);
+        if (request.method === "GET" && pendingRead) {
+          heldPath = path;
+          await pendingRead.promise;
+        }
+        return Response.json(snapshots.get(path) ?? snapshot);
+      });
+      const { stores } = createAppStores({ runtime });
+      const sidebarProps = {
+        activeTab,
+        workspaceID: "ws-a",
+        worktreePath: "/tmp/worktrees/ws-a",
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: 1001,
+        repoOwner: "acme",
+        repoName: "widgets",
+        repoPath: "acme/widgets",
+        ownerItemType: activeTab === "pr" ? ("pull_request" as const) : ("issue" as const),
+        ownerItemNumber: number,
+        associatedPRNumber: activeTab === "pr" ? number : null,
+        branch: "feature/widgets",
+        roborevBaseUrl: "/api/roborev",
+      };
+      const otherSidebarProps = {
+        ...sidebarProps,
+        workspaceID: "ws-b",
+        worktreePath: "/tmp/worktrees/ws-b",
+        ownerItemNumber: number + 1,
+        associatedPRNumber: activeTab === "pr" ? number + 1 : null,
+      };
+      const view = render(WorkspaceRightSidebarTestHarness, {
+        props: { runtime, sidebarProps },
+        context: new Map([[STORES_KEY, stores]]),
+      });
+      try {
+        await screen.findByRole("heading", { name: "Workspace A detail" });
+        pendingRead = Promise.withResolvers<void>();
+        await view.rerender({ runtime, sidebarProps: otherSidebarProps });
+        await waitFor(() => expect(heldPath).toBe(pathB));
+        expect(screen.queryByRole("heading", { name: "Workspace A detail" })).toBeNull();
+        expect(screen.getByText(/^Loading/)).toBeTruthy();
+        pendingRead.resolve();
+        pendingRead = null;
+        await screen.findByRole("heading", { name: "Workspace B detail" });
+
+        pendingRead = Promise.withResolvers<void>();
+        await view.rerender({ runtime, sidebarProps });
+        await waitFor(() => expect(heldPath).toBe(pathA));
+        expect(screen.getByRole("heading", { name: "Workspace A detail" })).toBeTruthy();
+        expect(screen.queryByRole("heading", { name: "Workspace B detail" })).toBeNull();
+        expect(screen.queryByTitle("Star")).toBeNull();
+        snapshots.set(pathA, {
+          ...fixture,
+          repo,
+          [itemField]: { ...item, Number: number, Title: "Workspace A refreshed" },
+        });
+        pendingRead.resolve();
+        pendingRead = null;
+        await screen.findByRole("heading", { name: "Workspace A refreshed" });
+        expect(screen.getByTitle("Star")).toBeTruthy();
+
+        pendingRead = Promise.withResolvers<void>();
+        await view.rerender({ runtime, sidebarProps: otherSidebarProps });
+        await waitFor(() => expect(heldPath).toBe(pathB));
+        expect(screen.getByRole("heading", { name: "Workspace B detail" })).toBeTruthy();
+        expect(screen.queryByRole("heading", { name: "Workspace A refreshed" })).toBeNull();
+        expect(screen.queryByTitle("Star")).toBeNull();
+      } finally {
+        pendingRead?.resolve();
+      }
+      await screen.findByTitle("Star");
+    },
+  );
 
   it.each(["pull_request", "issue", "kata_task", "adhoc"] as const)(
     "shows Forge-owned Kata links for a %s workspace",

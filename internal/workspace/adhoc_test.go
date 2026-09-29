@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,6 +52,22 @@ func TestCreateAdHocUsesRequestedBranch(t *testing.T) {
 	assert.Equal("spike/rate-limits", ws.GitHeadRef)
 	assert.Equal("adhoc:spike/rate-limits", ws.ItemKey)
 	assert.Contains(filepath.Base(ws.WorktreePath), "work-spike-rate-limits-")
+}
+
+func TestCreateAdHocRejectsChangedRepositoryIdentity(t *testing.T) {
+	require := require.New(t)
+	database := openTestDB(t)
+	seedRepo(t, database, "github.com", "acme", "widget")
+	manager := NewManager(database, t.TempDir())
+	ws, err := manager.CreateAdHoc(t.Context(), "github", "github.com", "acme", "widget",
+		CreateAdHocOptions{PlatformRepoID: 2002, BranchName: "spike/stale-picker"})
+	require.ErrorIs(err, db.ErrRepositoryIdentityChanged)
+	require.Nil(ws)
+
+	ws, err = manager.CreateAdHoc(t.Context(), "github", "github.com", "acme", "widget",
+		CreateAdHocOptions{PlatformRepoID: testRepoID("acme", "widget"), BranchName: "spike/stale-picker"})
+	require.NoError(err)
+	require.Equal("spike/stale-picker", ws.GitHeadRef)
 }
 
 func TestCreateAdHocRejectsInvalidBranch(t *testing.T) {
@@ -537,69 +552,24 @@ func TestSetupFailsClosedWhenRouteReplacedMidSetup(t *testing.T) {
 	require.NoError(err)
 
 	mgr.beforeSetupRouteRevalidation = func() {
-		_, _, replaceErr := d.ReconcileRepositoryObservation(
+		_, replaceErr := d.ObserveRepository(
 			t.Context(), db.RepoIdentity{
 				Platform:       "github",
 				PlatformHost:   platformHost,
-				PlatformRepoID: "repo-acme-widget-replacement",
+				PlatformRepoID: 1012,
 				Owner:          "acme",
 				Name:           "widget",
-			}, time.Now().UTC(),
+			},
 		)
 		require.NoError(replaceErr)
 	}
 
 	err = mgr.Setup(t.Context(), ws)
-	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
+	require.ErrorIs(err, db.ErrRepositoryIdentityChanged)
 	stored, getErr := d.GetWorkspace(t.Context(), ws.ID)
 	require.NoError(getErr)
 	require.NotNil(stored)
 	assert.Equal("error", stored.Status)
-}
-
-func TestSetupFailsClosedWhenRepositoryRenamedAndRouteReplacedMidSetup(t *testing.T) {
-	require := require.New(t)
-
-	d := openTestDB(t)
-	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
-		t, "feature/other",
-	)
-	seedRepo(t, d, platformHost, "acme", "widget")
-
-	tmuxScript, _ := writeRecorderScript(t)
-	mgr := NewManager(d, t.TempDir())
-	mgr.SetTmuxCommand([]string{tmuxScript})
-	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
-
-	ws, err := mgr.CreateAdHoc(
-		t.Context(), "github", platformHost, "acme", "widget",
-		CreateAdHocOptions{BranchName: "spike/renamed-and-replaced"},
-	)
-	require.NoError(err)
-
-	mgr.beforeSetupRouteRevalidation = func() {
-		_, _, renameErr := d.ReconcileRepositoryObservation(
-			t.Context(), db.RepoIdentity{
-				Platform: "github", PlatformHost: platformHost,
-				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "renamed",
-			}, time.Now().UTC(),
-		)
-		require.NoError(renameErr)
-		_, _, replaceErr := d.ReconcileRepositoryObservation(
-			t.Context(), db.RepoIdentity{
-				Platform: "github", PlatformHost: platformHost,
-				PlatformRepoID: "repo-acme-widget-replacement", Owner: "acme", Name: "widget",
-			}, time.Now().UTC().Add(time.Second),
-		)
-		require.NoError(replaceErr)
-	}
-
-	err = mgr.Setup(t.Context(), ws)
-	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
-	stored, getErr := d.GetWorkspace(t.Context(), ws.ID)
-	require.NoError(getErr)
-	require.NotNil(stored)
-	require.Equal("error", stored.Status)
 }
 
 func TestSetupUsesCurrentRepositoryAfterRouteReuse(t *testing.T) {
@@ -609,22 +579,21 @@ func TestSetupUsesCurrentRepositoryAfterRouteReuse(t *testing.T) {
 	localRepo, _, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
 		t, "feature/other",
 	)
-	observedAt := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
-	_, _, err := d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+	_, err := d.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   platformHost,
-		PlatformRepoID: "repo-original",
+		PlatformRepoID: 1020,
 		Owner:          "acme",
 		Name:           "widget",
-	}, observedAt)
+	})
 	require.NoError(err)
-	current, _, err := d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
+	current, err := d.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   platformHost,
-		PlatformRepoID: "repo-current",
+		PlatformRepoID: 1013,
 		Owner:          "acme",
 		Name:           "widget",
-	}, observedAt.Add(time.Hour))
+	})
 	require.NoError(err)
 	require.NotNil(current)
 

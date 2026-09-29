@@ -135,14 +135,14 @@ describe("repo labels", () => {
   });
 
   it("uses stable repository ids across renames and route reuse", () => {
-    const original = { ...repos[0]!, platformRepoId: "repo-widgets" };
+    const original = { ...repos[0]!, platformRepoId: 1019 };
     const renamed = {
       ...original,
       owner: "platform",
       name: "widgets-next",
       repoPath: "platform/widgets-next",
     };
-    const replacement = { ...repos[0]!, platformRepoId: "repo-replacement" };
+    const replacement = { ...repos[0]!, platformRepoId: 1012 };
 
     expect(repoIdentityKey(original)).toBe(repoIdentityKey(renamed));
     expect(repoIdentityKey(original)).not.toBe(repoIdentityKey(replacement));

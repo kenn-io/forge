@@ -21,7 +21,7 @@ export interface RepoResponse {
   Owner: string;
   Platform: string;
   PlatformHost: string;
-  PlatformRepoID: string;
+  PlatformRepoID: number;
   ViewerCanMerge: boolean;
   capabilities: ProviderCapabilitiesResponse;
   operations: RepoOperations;

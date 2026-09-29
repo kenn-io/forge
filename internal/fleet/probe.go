@@ -33,15 +33,11 @@ const probeCommandTimeout = 5 * time.Second
 // operations disabled in the snapshot.
 func Probe(ctx context.Context, tmuxCmd []string) Capabilities {
 	tmuxCmd = tmuxCommandOrDefault(tmuxCmd)
+	tmuxVersion, tmuxAvailable := probeTmux(ctx, tmuxCmd)
 	deps := DependencyCapabilities{
 		Git:  commandSucceeds(ctx, "git", "--version"),
 		Gh:   commandSucceeds(ctx, "gh", "--version"),
-		Tmux: tmuxCommandSucceeds(ctx, tmuxCmd),
-	}
-
-	var tmuxVersion string
-	if deps.Tmux {
-		tmuxVersion = tmuxVersionString(ctx, tmuxCmd)
+		Tmux: tmuxAvailable,
 	}
 
 	return Capabilities{
@@ -99,26 +95,12 @@ func tmuxCommandOrDefault(tmuxCmd []string) []string {
 	return tmuxCmd
 }
 
-// tmuxCommandSucceeds reports whether the configured tmux command runs and
-// exits 0 for `-V`. tmuxCmd must be non-empty (see tmuxCommandOrDefault).
-// tmux probes run with the sanitized tmux client environment like every
-// other Forge-issued tmux invocation.
-func tmuxCommandSucceeds(ctx context.Context, tmuxCmd []string) bool {
+// probeTmux reads availability and version in one invocation, using the same
+// sanitized environment as other Forge-issued tmux commands.
+func probeTmux(ctx context.Context, tmuxCmd []string) (string, bool) {
 	if _, err := exec.LookPath(tmuxCmd[0]); err != nil {
-		return false
+		return "", false
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, probeCommandTimeout)
-	defer cancel()
-	args := append(slices.Clone(tmuxCmd[1:]), "-V")
-	cmd := procutil.CommandContext(probeCtx, tmuxCmd[0], args...)
-	cmd.Env = localruntime.TmuxClientEnvironment(os.Environ(), nil)
-	return procutil.Run(probeCtx, cmd, "fleet capability probe") == nil
-}
-
-// tmuxVersionString returns the version token from the configured tmux
-// command's `-V` output (e.g. "3.4"), or "" if it cannot be determined.
-// tmuxCmd must be non-empty (see tmuxCommandOrDefault).
-func tmuxVersionString(ctx context.Context, tmuxCmd []string) string {
 	args := append(slices.Clone(tmuxCmd[1:]), "-V")
 	probeCtx, cancel := context.WithTimeout(ctx, probeCommandTimeout)
 	defer cancel()
@@ -126,11 +108,11 @@ func tmuxVersionString(ctx context.Context, tmuxCmd []string) string {
 	cmd.Env = localruntime.TmuxClientEnvironment(os.Environ(), nil)
 	out, err := procutil.Output(probeCtx, cmd, "fleet capability probe")
 	if err != nil {
-		return ""
+		return "", false
 	}
 	fields := strings.Fields(string(out)) // e.g. ["tmux", "3.4"]
 	if len(fields) < 2 {
-		return ""
+		return "", true
 	}
-	return fields[1]
+	return fields[1], true
 }

@@ -58,11 +58,11 @@ describe("workspace host startup gating (browser)", () => {
           bodyText: "",
         })
         .json();
-      replacement.repo.platform_repo_id = "R_replacement";
+      replacement.repo.platform_repo_id = 1103;
       (replacement.merge_request ?? replacement.issue).Title = "Replacement repository detail";
       const pinnedWorkspace = {
         ...workspace,
-        repo: { ...workspace.repo, platform_repo_id: "R_original" },
+        repo: { ...workspace.repo, platform_repo_id: 1104 },
         item_type: itemType,
         item_number: number,
       };

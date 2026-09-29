@@ -19,9 +19,10 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoPath: string;
     disabled?: boolean;
+    editorDisabled?: boolean;
     /** Shown under the editor when the box is disabled for a reason
      * the user can act on (e.g. missing write credential). */
     disabledReason?: string | undefined;
@@ -36,6 +37,7 @@
     platformRepoId,
     repoPath,
     disabled = false,
+    editorDisabled = disabled,
     disabledReason = undefined,
   }: Props = $props();
 
@@ -82,7 +84,7 @@
         itemType="pull"
         itemNumber={number}
         value={body}
-        disabled={isPostingCurrent || disabled}
+        disabled={isPostingCurrent || editorDisabled}
         oninput={(nextBody) => {
           setCommentDraft(currentDraftKey, nextBody);
         }}
@@ -122,7 +124,7 @@
   }
 
   .comment-editor-shell :global(.comment-editor-input) {
-    min-height: 112px;
+    min-height: 80px;
     max-height: 75dvh;
     padding-bottom: calc(var(--focus-detail-hit-target, 39.5px) + var(--focus-detail-space-sm, 7.5px));
   }

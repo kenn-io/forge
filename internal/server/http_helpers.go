@@ -5,8 +5,9 @@ import (
 	"encoding/json/v2"
 	"net/http"
 
-	"go.kenn.io/forge/internal/server/httpapi"
 	gitcmd "go.kenn.io/kit/git/cmd"
+
+	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 func gitDiscoveryOutput(

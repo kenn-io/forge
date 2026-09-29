@@ -22,16 +22,16 @@ or remote workspace and session operations.
   (`frontend/src/lib/components/layout/ForgeSelector.svelte`)
 - Maintenance blocks workspace creation without hiding existing workspaces or marking the worker
   unreachable. (`internal/fleet/enrich.go::buildHost`)
-- Every creation entry point must check the chosen devbox's workspace availability and github.com
-  repository support; an unavailable default must never silently create locally.
+- Cached machine availability must not block creation while discovery is pending or fails; submit the exact saved devbox ID for backend admission.
+  Fresh maintenance status and provider restrictions still block, and an unavailable default must never silently create locally.
   (`frontend/src/lib/stores/workspace-target.svelte.ts`)
 - Validate saved default destinations on config load and settings writes, but preserve valid
   devbox selections while disconnected. (`internal/config/devbox.go::ValidateDefaultExecutionTarget`)
 - Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
   belong only on the direct tailnet connection. (`internal/server/devboxes.go::registerDevboxTerminalAPI`)
-- Devbox repository admission and launch context use GitHub node IDs, matching the controller's
-  catalog; numeric REST IDs scope App installation tokens, not workspace identity.
-  (`internal/server/workspaceapi/execution_worker.go::Handler.admitWorkerRepository`)
+- Devbox repository admission and launch context use GitHub's integer repository ID, the same
+  ID that scopes App installation tokens
+  (`internal/server/workspaceapi/execution_worker.go::Handler.admitWorkerRepository`).
 
 - ACP chat uses the owning host's agent configuration and workspace directory.
   Its relay carries complete transcript snapshots, which exceed terminal frame limits
@@ -337,7 +337,7 @@ change-driven and idle-cheap:
   (`internal/db/queries_workspace_launch_specs.go::DB.CreateWorkspaceWithLaunchSpec`,
   `internal/workspace/launch_spec.go::Manager.lifecycleSummary`).
 - Launch-spec refresh follows stable provider identity across renames and
-  commits the verified route with the specification; reused routes stay fenced
+  commits the verified route with the specification
   (`internal/db/queries_workspace_launch_specs.go::DB.PutRefreshedWorkspaceLaunchSpec`).
 - Source visibility is a strict 15-minute hub lease for setup and
   provider-backed Git work. Once it expires, those operations must refresh it;

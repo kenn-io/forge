@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
@@ -32,8 +33,8 @@ func seedIssueOnHost(
 	state, title string,
 ) int64 {
 	t.Helper()
-	repoID, err := database.UpsertRepo(
-		t.Context(), db.GitHubRepoIdentity(host, owner, name),
+	repoID, err := reposeed.Seed(
+		t.Context(), database, db.GitHubRepoIdentity(host, owner, name),
 	)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)

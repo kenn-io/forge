@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/forgejo"
@@ -97,7 +98,7 @@ func TestGiteaLikeProviderMergeMetricsReachArchiveReport(t *testing.T) {
 				Platform: tt.kind, Host: tt.host, Owner: "group", Name: "project",
 				RepoPath: "group/project",
 			}
-			repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(ref))
+			repoID, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(ref))
 			require.NoError(err)
 			mergeRequest, err := client.GetMergeRequest(ctx, ref, 8)
 			require.NoError(err)

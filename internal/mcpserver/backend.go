@@ -28,7 +28,7 @@ type LocalBackend interface {
 	CreatePullWorkspace(context.Context, ItemIdentity, bool) (Workspace, error)
 	CreateIssueWorkspace(context.Context, ItemIdentity, bool) (Workspace, error)
 	CreateAdHocWorkspace(context.Context, RepositoryIdentity, string) (Workspace, error)
-	LaunchWorkspaceRuntime(context.Context, string, string) (RuntimeSession, error)
+	LaunchWorkspaceRuntime(context.Context, string, string, string) (RuntimeSession, error)
 	GetWorkspaceRuntime(context.Context, string) (WorkspaceRuntime, error)
 	SubmitAgentMessage(context.Context, AgentMessageRequest) (AgentMessageResult, error)
 	SubmitInitialMessage(context.Context, InitialMessageRequest) (InitialMessageStatus, error)
@@ -56,7 +56,7 @@ func NewFederatedBackend(provider ProviderBackend, local LocalBackend) Backend {
 type RepositoryIdentity struct {
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	RepoPath       string `json:"repo_path"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
@@ -169,7 +169,7 @@ type ItemIdentity struct {
 	Type           string `json:"type"`
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 	Number         int    `json:"number"`

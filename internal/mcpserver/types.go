@@ -12,7 +12,7 @@ import (
 type repoFilterInput struct {
 	Provider       string `json:"provider,omitempty" jsonschema:"provider kind, such as github or gitlab"`
 	PlatformHost   string `json:"platform_host,omitempty" jsonschema:"provider host; defaults to the provider public host"`
-	PlatformRepoID string `json:"platform_repo_id,omitempty" jsonschema:"stable provider-verified repository id from kenn_forge_list_repos"`
+	PlatformRepoID int64  `json:"platform_repo_id,omitempty" jsonschema:"provider's integer repository ID from kenn_forge_list_repos"`
 	RepoPath       string `json:"repo_path,omitempty" jsonschema:"full repository path from kenn_forge_list_repos; preferred for nested namespaces"`
 	Owner          string `json:"owner,omitempty" jsonschema:"repository owner or namespace"`
 	Name           string `json:"name,omitempty" jsonschema:"repository name"`
@@ -21,17 +21,17 @@ type repoFilterInput struct {
 func (r repoFilterInput) repositoryIdentity() (RepositoryIdentity, error) {
 	provider := strings.TrimSpace(r.Provider)
 	host := strings.TrimSpace(r.PlatformHost)
-	platformRepoID := strings.TrimSpace(r.PlatformRepoID)
+	platformRepoID := r.PlatformRepoID
 	repoPath := strings.Trim(strings.TrimSpace(r.RepoPath), "/")
 	owner := strings.Trim(strings.TrimSpace(r.Owner), "/")
 	name := strings.Trim(strings.TrimSpace(r.Name), "/")
-	if provider == "" && host == "" && platformRepoID == "" && repoPath == "" && owner == "" && name == "" {
+	if provider == "" && host == "" && platformRepoID == 0 && repoPath == "" && owner == "" && name == "" {
 		return RepositoryIdentity{}, nil
 	}
 	if provider == "" {
 		return RepositoryIdentity{}, errors.New("repo provider is required")
 	}
-	if platformRepoID == "" {
+	if platformRepoID <= 0 {
 		return RepositoryIdentity{}, errors.New("repo platform_repo_id is required")
 	}
 	kind, err := platform.NormalizeKind(provider)
@@ -71,7 +71,7 @@ type itemRef struct {
 	Type           string `json:"type"`
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 	RepoPath       string `json:"repo_path"`

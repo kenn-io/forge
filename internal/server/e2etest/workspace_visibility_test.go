@@ -9,6 +9,8 @@ import (
 	"go.kenn.io/forge/internal/apiclient"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestWorkspaceAPIHidesRemovedAssociatedPullRequestE2E(t *testing.T) {
@@ -17,8 +19,8 @@ func TestWorkspaceAPIHidesRemovedAssociatedPullRequestE2E(t *testing.T) {
 	ts, database := bootFleetServer(t, nil)
 
 	repoIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	repoIdentity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(ctx, repoIdentity)
+	repoIdentity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoID, err := reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -79,13 +81,12 @@ func TestWorkspaceAPIRetainsProviderMetadataAcrossReusedRouteE2E(t *testing.T) {
 	ts, database := bootFleetServer(t, nil)
 	now := time.Now().UTC().Truncate(time.Second)
 
-	original, accepted, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+	original, err := database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-original", Owner: "acme", Name: "widget",
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 		RepoPath: "acme/widget",
-	}, now)
+	})
 	require.NoError(err)
-	require.True(accepted)
 	require.NotNil(original)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: original.Repository.ID, PlatformID: 4200, Number: 42,
@@ -111,20 +112,18 @@ func TestWorkspaceAPIRetainsProviderMetadataAcrossReusedRouteE2E(t *testing.T) {
 		WorktreePath: t.TempDir(), Status: "ready",
 	}))
 
-	_, accepted, err = database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+	_, err = database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-original", Owner: "acme", Name: "renamed-widget",
+		PlatformRepoID: 1001, Owner: "acme", Name: "renamed-widget",
 		RepoPath: "acme/renamed-widget",
-	}, now.Add(time.Minute))
+	})
 	require.NoError(err)
-	require.True(accepted)
-	_, accepted, err = database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+	_, err = database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-replacement", Owner: "acme", Name: "widget",
+		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
 		RepoPath: "acme/widget",
-	}, now.Add(2*time.Minute))
+	})
 	require.NoError(err)
-	require.True(accepted)
 
 	pullSummary, err := database.GetWorkspaceSummary(ctx, "ws-pull")
 	require.NoError(err)

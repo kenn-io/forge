@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 type hubProviderSource struct {
@@ -123,35 +124,23 @@ func (s *hubProviderSource) observeWorkspaceLaunchSpec(
 	if s.db == nil {
 		return httpapi.Internal("repository catalog is unavailable")
 	}
-	entry, accepted, err := s.db.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+	entry, err := s.db.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 		PlatformRepoID: spec.Repository.PlatformRepoID,
 		Owner:          spec.Repository.Owner, Name: spec.Repository.Name,
 		RepoPath: spec.Repository.Owner + "/" + spec.Repository.Name,
-	}, spec.IssuedAt)
+	})
 	if err != nil {
 		return invalidHubDescriptor(err)
 	}
-	if !accepted {
-		return invalidHubDescriptor(
-			errors.New("workspace launch repository observation is older than the local route"),
-		)
-	}
-	applied, err := s.db.UpdateRepoProviderObservation(
-		ctx, entry.Repository.ID, spec.IssuedAt,
+	if err := s.db.UpdateRepoProviderObservation(
+		ctx, entry.Repository.ID,
 		db.RepoProviderMetadata{
-			PlatformRepoID: spec.Repository.PlatformRepoID,
-			CloneURL:       spec.Repository.CloneURL,
-			DefaultBranch:  spec.Repository.DefaultBranch,
+			CloneURL:      spec.Repository.CloneURL,
+			DefaultBranch: spec.Repository.DefaultBranch,
 		}, nil, nil,
-	)
-	if err != nil {
+	); err != nil {
 		return invalidHubDescriptor(err)
-	}
-	if !applied {
-		return invalidHubDescriptor(
-			errors.New("workspace launch repository observation lost its freshness fence"),
-		)
 	}
 	return nil
 }
@@ -221,6 +210,12 @@ func workspaceProviderName(local workspace.Workspace) string {
 func (s *hubProviderSource) GetRepositoryDescriptor(
 	ctx context.Context, route providerplane.RepositoryRoute,
 ) (providerplane.RepositoryDescriptor, error) {
+	return s.getRepositoryDescriptor(ctx, route, 0)
+}
+
+func (s *hubProviderSource) getRepositoryDescriptor(
+	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID int64,
+) (providerplane.RepositoryDescriptor, error) {
 	route, err := providerplane.CanonicalRepositoryRoute(route)
 	if err != nil {
 		return providerplane.RepositoryDescriptor{}, httpapi.BadRequest(
@@ -228,14 +223,21 @@ func (s *hubProviderSource) GetRepositoryDescriptor(
 		)
 	}
 	var descriptor providerplane.RepositoryDescriptor
-	httpRequest, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: new(generated.RepositoryRoute{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name})})
+	httpRequest, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name, PlatformRepoID: optionalProviderQuery(platformRepoID)}})
 	if err != nil {
 		return providerplane.RepositoryDescriptor{}, err
 	}
 	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &descriptor); err != nil {
 		return providerplane.RepositoryDescriptor{}, err
 	}
-	if err := descriptor.ValidateRoute(route); err != nil {
+	if platformRepoID == 0 {
+		err = descriptor.ValidateRoute(route)
+	} else if err = descriptor.Validate(); err == nil && descriptor.Identity() != (platform.RepositoryIdentity{
+		Provider: route.Provider, PlatformHost: route.PlatformHost, PlatformRepoID: platformRepoID,
+	}).Canonical() {
+		err = errors.New("repository descriptor does not match selected repository")
+	}
+	if err != nil {
 		return providerplane.RepositoryDescriptor{}, invalidHubDescriptor(err)
 	}
 	if err := s.observeRepositoryDescriptor(ctx, descriptor); err != nil {
@@ -245,15 +247,13 @@ func (s *hubProviderSource) GetRepositoryDescriptor(
 }
 
 func (s *hubProviderSource) ResolveRepositoryRoute(
-	ctx context.Context, route providerplane.RepositoryRoute,
+	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID int64,
 ) (*db.Repo, error) {
-	descriptor, err := s.GetRepositoryDescriptor(ctx, route)
+	descriptor, err := s.getRepositoryDescriptor(ctx, route, platformRepoID)
 	if err != nil {
 		return nil, err
 	}
-	entry, err := s.db.GetRepositoryByProviderID(
-		ctx, descriptor.Provider, descriptor.PlatformHost, descriptor.PlatformRepoID,
-	)
+	entry, err := s.db.GetRepositoryByProviderID(ctx, descriptor.Identity())
 	if err != nil {
 		return nil, httpapi.Internal("read reconciled repository identity failed")
 	}
@@ -313,58 +313,25 @@ func observeRepositoryDescriptor(
 	if database == nil {
 		return httpapi.Internal("repository catalog is unavailable")
 	}
-	entry, accepted, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+	entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: descriptor.Provider, PlatformHost: descriptor.PlatformHost,
 		PlatformRepoID: descriptor.PlatformRepoID,
 		Owner:          descriptor.Owner, Name: descriptor.Name,
 		RepoPath: descriptor.Owner + "/" + descriptor.Name,
-	}, descriptor.ObservedAt)
+	})
 	if err != nil {
 		return invalidHubDescriptor(err)
 	}
-	if !accepted {
-		if repositoryDescriptorMatchesEntry(descriptor, entry) {
-			return nil
-		}
-		return invalidHubDescriptor(
-			errors.New("hub repository descriptor is older than the local route observation"),
-		)
-	}
-	applied, err := database.UpdateRepoProviderObservation(
-		ctx, entry.Repository.ID, descriptor.ObservedAt,
+	if err := database.UpdateRepoProviderObservation(
+		ctx, entry.Repository.ID,
 		db.RepoProviderMetadata{
-			PlatformRepoID: descriptor.PlatformRepoID,
-			CloneURL:       descriptor.CloneURL,
-			DefaultBranch:  descriptor.DefaultBranch,
+			CloneURL:      descriptor.CloneURL,
+			DefaultBranch: descriptor.DefaultBranch,
 		}, nil, nil,
-	)
-	if err != nil {
+	); err != nil {
 		return invalidHubDescriptor(err)
-	}
-	if !applied {
-		current, lookupErr := database.GetRepositoryByProviderID(
-			ctx, descriptor.Provider, descriptor.PlatformHost, descriptor.PlatformRepoID,
-		)
-		if lookupErr == nil && repositoryDescriptorMatchesEntry(descriptor, current) {
-			return nil
-		}
-		return invalidHubDescriptor(
-			errors.New("hub repository descriptor lost its observation fence"),
-		)
 	}
 	return nil
-}
-
-func repositoryDescriptorMatchesEntry(
-	descriptor providerplane.RepositoryDescriptor,
-	entry *db.RepositoryCatalogEntry,
-) bool {
-	return entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive &&
-		entry.Repository.Platform == descriptor.Provider &&
-		entry.Repository.PlatformHost == descriptor.PlatformHost &&
-		entry.Repository.PlatformRepoID == descriptor.PlatformRepoID &&
-		entry.Repository.Owner == descriptor.Owner &&
-		entry.Repository.Name == descriptor.Name
 }
 
 func invalidHubDescriptor(error) error {
@@ -408,7 +375,7 @@ func (s *hubProviderSource) AutoAssignWorkspaceItem(
 	ctx context.Context, request workspaceapi.ProviderWorkspaceItemRequest,
 ) error {
 	var response struct{}
-	httpRequest, err := generated.NewFederationAutoAssignWorkspaceItemRequest(ctx, "/api/v1", &generated.FederationAutoAssignWorkspaceItemRequestOptions{Body: &generated.FederationAutoAssignWorkspaceItemBody{Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber)}})
+	httpRequest, err := generated.NewFederationAutoAssignWorkspaceItemRequest(ctx, "/api/v1", &generated.FederationAutoAssignWorkspaceItemRequestOptions{Body: &generated.FederationAutoAssignWorkspaceItemBody{Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, PlatformRepoID: request.PlatformRepoID, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber)}})
 	if err != nil {
 		return err
 	}
@@ -765,6 +732,7 @@ func providerLaunchRequestBody(request providerplane.WorkspaceLaunchRequest) *ge
 		Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber),
 		ItemKey: optionalProviderQuery(request.ItemKey), GitHeadRef: optionalProviderQuery(request.GitHeadRef),
 		PlatformRepoID: optionalProviderQuery(request.PlatformRepoID), IssueBranchSlug: optionalProviderQuery(request.IssueBranchSlug),
+		ForCreation: optionalProviderQuery(request.ForCreation),
 	}
 }
 

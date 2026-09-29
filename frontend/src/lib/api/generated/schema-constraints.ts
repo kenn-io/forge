@@ -22,6 +22,9 @@ export const schemaConstraints = {
   DiffDescriptor: {
     snapshot_revision: { minimum: 0 },
   },
+  ExternalContextActionRequest: {
+    platform_repo_id: { minimum: 1 },
+  },
   FederationDiffDescriptorRequest: {
     pull_number: { minimum: 1 },
   },
@@ -31,11 +34,11 @@ export const schemaConstraints = {
   NeutralSnapshot: {
     generation: { minimum: 0 },
   },
+  ProviderWorkspaceItemRequest: {
+    platform_repo_id: { minimum: 1 },
+  },
   RawSnapshot: {
     generation: { minimum: 0 },
-  },
-  RepositoryDescriptor: {
-    snapshot_revision: { minimum: 0 },
   },
   Snapshot: {
     generation: { minimum: 0 },
@@ -45,6 +48,9 @@ export const schemaConstraints = {
   },
   SyncSettingsUpdate: {
     budget_per_hour: { minimum: 50, maximum: 15000 },
+  },
+  Terminal: {
+    retained_sessions: { minimum: 0, maximum: 100 },
   },
   WorkerIdentity: {
     uid: { minimum: 0 },

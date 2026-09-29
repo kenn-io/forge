@@ -144,7 +144,7 @@ func TestSpawnToolFailurePreservesPartialHandoffEvidenceThroughClientSession(t *
 	assert := assert.New(t)
 	require := require.New(t)
 	backend := successfulSpawnBackend("ws-1", "runtime-1", "coding-1")
-	backend.launchWorkspaceRuntimeFn = func(context.Context, string, string) (RuntimeSession, error) {
+	backend.launchWorkspaceRuntimeFn = func(context.Context, string, string, string) (RuntimeSession, error) {
 		return RuntimeSession{}, &Error{
 			Kind: "unavailable", Code: "runtimeLaunchFailed",
 			Message: "agent runtime failed to launch", Retryable: true,
@@ -160,7 +160,7 @@ func TestSpawnToolFailurePreservesPartialHandoffEvidenceThroughClientSession(t *
 					"type": "item",
 					"item": map[string]any{
 						"type": "pr", "provider": "github", "platform_host": "github.com",
-						"platform_repo_id": "repo-acme-widget",
+						"platform_repo_id": 1001,
 						"owner":            "acme", "name": "widget", "number": 42,
 					},
 				},

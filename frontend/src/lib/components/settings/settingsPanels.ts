@@ -55,17 +55,9 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     label: "Workspaces",
     title: "Workspaces",
     group: "Workspace",
-    description: "Workspace creation and list indicators",
+    description: "Workspace behavior, list indicators, and terminal settings",
     keywords:
-      "workspace create pull request issue assign self assignee ownership agent status working approval input done lists activity",
-  },
-  {
-    id: "settings-terminal",
-    label: "Terminal",
-    title: "Workspace terminal",
-    group: "Workspace",
-    description: "Workspace terminal appearance and behavior",
-    keywords: "workspace terminal font cursor scrollback ligatures",
+      "workspace create pull request issue assign self assignee ownership agent status working approval input done lists activity terminal font cursor scrollback ligatures retained sessions retention tmux graphics",
   },
   {
     id: "settings-kata-projects",

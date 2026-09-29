@@ -45,7 +45,7 @@ Rules:
 - Queued-ack deferral matches linked rows by `repo_id` across renames; route owner/name matching is restricted to null-ID legacy rows (`internal/db/queries_notifications.go::DB.DeferQueuedNotificationAcksForRepos`).
 - `platform` is required. Blank provider/platform values are errors, not implicit GitHub defaults.
 - Show notifications only for current monitored repo set from config/syncer repo refs.
-- Capture the monitored-repository scope as stable internal IDs under the repository-reconciliation fence, then apply it inside Activity and actor-candidate SQL before ordering and limits; mutable routes or handler-side filtering can hide valid rows (`internal/server/huma_routes.go::Server.trackedActivityRepoIDsUnderRepositoryReconciliationRead`).
+- Capture the monitored-repository scope as stable internal IDs, then apply it inside Activity and actor-candidate SQL before ordering and limits; mutable routes or handler-side filtering can hide valid rows (`internal/server/huma_routes.go::Server.trackedActivityRepoIDs`).
 - Historical notifications for removed repos may stay in SQLite but must not appear in `unread`, `active`, `read`, `done`, or `all` unless future explicit `include_unmonitored` contract exists.
 - `repo_id` is enrichment/optimization, not visibility authority.
 - Sync watermarks are keyed by full repository identity `(platform, platform_host, repo_owner, repo_name)`, never by host alone.
@@ -119,12 +119,11 @@ Rules:
 - The sync engine intentionally requires BOTH `ReadNotifications` and `NotificationMutation` to select a provider: listing and read-ack propagation are treated as one feature today. A future read-only provider (list without upstream mark-read) would split this — select listing on `ReadNotifications` and propagation on `NotificationMutation` separately. Until such a provider exists the coupling keeps the path simple.
 - Propagation workers must revalidate queued generation before calling provider.
 - Stale queued work must not mark newer provider activity read.
-- Advanced-activity refreshes resolve legacy unlinked rows to the active route and
-  commit under its fence; rejection reopens the acknowledgement and provider-unread
-  activity clears local completion (`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`).
-- Queued acknowledgements outlive route renames, including changes during
-  propagation: linked rows stay queued on fence rejection, and the next pass
-  resolves current owner/name by `repo_id` (`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`,
+- Advanced-activity refreshes resolve unlinked rows to the active route's
+  repository; provider-unread activity clears local completion
+  (`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`).
+- Read acknowledgements address the thread by its global ID, so they outlive
+  route renames; the next pass resolves current owner/name by `repo_id` (`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`,
   `internal/db/queries_notifications.go::DB.ListQueuedNotificationAcks`). Linked rows
   without a current route remain queued for future reactivation but are excluded before
   the bounded propagation batch limit so they cannot starve routable acknowledgements.
@@ -156,11 +155,9 @@ Rules:
 - Notification sync should process each configured provider host independently; one provider-host failure must not block others.
 - Notification sync failures should update notification sync status so UI can surface them.
 - Every notification listing that can write a repository's rows must first provider-verify its
-  stable repository ID and persist metadata/settings only while that observation remains current;
-  an occupied route is not identity proof. Rejected observations and fenced settings commits retry
-  before listing; a repository whose fence moves during listing keeps its watermark for the next
-  pass. A 304 probe writes nothing and skips verification
-  (`internal/github/notifications_sync.go::Syncer.prepareNotificationRepoAttempt`).
+  stable repository ID and persist its metadata/settings; an occupied route is not identity proof.
+  A 304 probe writes nothing and skips verification
+  (`internal/github/notifications_sync.go::Syncer.prepareNotificationRepo`).
 - Quota admission precedes identity verification against its read identity and any distinct
   write-permission overlay; a shared identity is checked once (`internal/github/notifications_sync.go::Syncer.ensureNotificationIdentityBudget`).
 - Top-level manual sync also triggers notification sync.

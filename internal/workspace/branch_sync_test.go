@@ -374,47 +374,6 @@ exec "$real" "$@"
 	assert.Equal(Divergence{}, div)
 }
 
-func seedAmbiguousBranchSyncRoute(t *testing.T, d *db.DB) {
-	t.Helper()
-	now := time.Now().UTC()
-	_, _, err := d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-old",
-		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-	}, now)
-	require.NoError(t, err)
-	_, _, err = d.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
-		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-	}, now.Add(time.Hour))
-	require.NoError(t, err)
-}
-
-func TestPushWorktreeBranchRejectsAmbiguousRoute(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	seedAmbiguousBranchSyncRoute(t, d)
-	mgr := NewManager(d, t.TempDir())
-
-	err := mgr.PushWorktreeBranch(
-		t.Context(), "", "github", "github.com", "acme", "widget", t.TempDir(),
-	)
-	require.ErrorContains(err, "historical occupants",
-		"push must fail closed on a route with contested history")
-}
-
-func TestPullWorktreeBranchRejectsAmbiguousRoute(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-	seedAmbiguousBranchSyncRoute(t, d)
-	mgr := NewManager(d, t.TempDir())
-
-	err := mgr.PullWorktreeBranch(
-		t.Context(), "", "github", "github.com", "acme", "widget", t.TempDir(),
-	)
-	require.ErrorContains(err, "historical occupants",
-		"pull must fail closed on a route with contested history")
-}
-
 func TestLaunchSpecBranchSyncRefreshesExpiredLeaseBeforeGit(t *testing.T) {
 	require := require.New(t)
 	database := openTestDB(t)
@@ -450,15 +409,14 @@ func TestLaunchSpecBranchSyncUsesRefreshedRepositoryRoute(t *testing.T) {
 	work := gitfixture.DivergenceWorktree(t)
 	database := openTestDB(t)
 	original := launchSpecForTest()
-	_, accepted, err := database.ReconcileRepositoryObservation(
+	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
 			PlatformRepoID: original.Repository.PlatformRepoID,
 			Owner:          original.Repository.Owner, Name: original.Repository.Name,
-		}, original.IssuedAt,
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 	workspace := &db.Workspace{
 		ID: "ws-renamed-branch-sync", Platform: original.Repository.Provider,
 		PlatformHost: original.Repository.PlatformHost,
@@ -477,15 +435,14 @@ func TestLaunchSpecBranchSyncUsesRefreshedRepositoryRoute(t *testing.T) {
 	renamed.Repository.CloneURL = "https://github.com/acme-renamed/widget-renamed.git"
 	renamed.IssuedAt = original.SourceVisibleUntil
 	renamed.SourceVisibleUntil = renamed.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
-	_, accepted, err = database.ReconcileRepositoryObservation(
+	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: renamed.Repository.Provider, PlatformHost: renamed.Repository.PlatformHost,
 			PlatformRepoID: renamed.Repository.PlatformRepoID,
 			Owner:          renamed.Repository.Owner, Name: renamed.Repository.Name,
-		}, renamed.IssuedAt,
+		},
 	)
 	require.NoError(err)
-	require.True(accepted)
 	manager := NewManager(database, t.TempDir())
 	manager.SetNow(func() time.Time { return renamed.IssuedAt })
 	manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: renamed})
@@ -496,7 +453,6 @@ func TestLaunchSpecBranchSyncUsesRefreshedRepositoryRoute(t *testing.T) {
 	)
 
 	require.ErrorIs(err, ErrWorktreeInSync)
-	assert.NotContains(err.Error(), "historical occupants")
 	persisted, readErr := database.GetWorkspace(t.Context(), workspace.ID)
 	require.NoError(readErr)
 	require.NotNil(persisted)

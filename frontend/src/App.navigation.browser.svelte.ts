@@ -219,6 +219,80 @@ describe("view navigation", () => {
     expect(window.location.search).toContain("selected=pr%3A");
   });
 
+  it("shows cached Activity and Workspaces across Settings while navigation refreshes are held open", async () => {
+    const workspace = {
+      id: "ws-cached",
+      repo: repoRef("acme", "widgets"),
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets",
+      item_type: "pull_request",
+      item_number: 42,
+      source_item_visible: true,
+      git_head_ref: "feature/cached-navigation",
+      worktree_path: "/tmp/ws-cached",
+      status: "ready",
+      created_at: "2026-03-30T14:00:00Z",
+      tmux_activity_source: "unknown",
+      tmux_last_output_at: null,
+      tmux_working: false,
+      mr_title: "Cached workspace",
+    };
+    let holdRefreshes = false;
+    const releases: Array<() => void> = [];
+    const heldPaths = new Set<string>();
+    const routes: MockRouteOverride = (req) => {
+      const path = req.url.pathname;
+      if (req.method !== "GET" || (path !== "/api/v1/snapshot" && path !== "/api/v1/activity")) return null;
+      const body =
+        path === "/api/v1/snapshot"
+          ? {
+              hosts: [],
+              workspaces: [{ ...workspace, mr_title: holdRefreshes ? "Updated workspace" : "Cached workspace" }],
+            }
+          : { capped: false, items: [activityEvent()] };
+      if (!holdRefreshes) return jsonResponse(body);
+      heldPaths.add(path);
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            releases.push(() => {
+              controller.enqueue(new TextEncoder().encode(JSON.stringify(body)));
+              controller.close();
+            });
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    };
+    mounted = await mountBrowserApp("/", { overrides: [routes, ...overrides()] });
+    const activityRow = page.getByText("Add browser regression coverage", { exact: true });
+    await expect.element(activityRow).toBeVisible();
+    await page.elementLocator(viewTab("Workspaces")).click();
+    await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
+
+    holdRefreshes = true;
+    try {
+      await page.elementLocator(viewTab("Activity")).click();
+      await vi.waitFor(() => expect(heldPaths.has("/api/v1/activity")).toBe(true));
+      await expect.element(activityRow).toBeVisible();
+      await page.elementLocator(viewTab("Workspaces")).click();
+      await vi.waitFor(() => expect(heldPaths.has("/api/v1/snapshot")).toBe(true));
+      await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
+
+      await page.getByTitle("Settings").click();
+      await vi.waitFor(() => expect(window.location.pathname).toBe("/settings"), WAIT);
+      await page.elementLocator(viewTab("Workspaces")).click();
+      await vi.waitFor(() => expect(window.location.pathname).toBe("/workspaces"), WAIT);
+      await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
+      expect(page.getByText("Loading workspaces...", { exact: true }).query()).toBeNull();
+    } finally {
+      holdRefreshes = false;
+      releases.forEach((release) => release());
+    }
+    await expect.element(page.getByText("Updated workspace", { exact: true })).toBeVisible();
+  });
+
   it("returning to Activity from the settings gear restores the selected item", async () => {
     mounted = await mountBrowserApp("/", { overrides: overrides() });
     await vi.waitFor(() => expect(document.querySelector(".activity-table .activity-row")).not.toBeNull(), WAIT);
@@ -233,6 +307,59 @@ describe("view navigation", () => {
     await page.elementLocator(viewTab("Activity")).click();
     await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).not.toBeNull(), WAIT);
     expect(window.location.search).toContain("selected=pr%3A");
+  });
+
+  it("opens a new workspace from the global repository cache while its refresh is stalled", async () => {
+    let holdRefresh = false;
+    let held = false;
+    let release = () => {};
+    const routes: MockRouteOverride = (req) => {
+      if (req.method !== "GET" || req.url.pathname !== "/api/v1/repos") return null;
+      const body = [
+        {
+          ID: 9,
+          Platform: "github",
+          PlatformHost: "github.com",
+          PlatformRepoID: 9,
+          Owner: "acme",
+          Name: holdRefresh ? "updated-repo" : "cached-only",
+        },
+      ];
+      if (!holdRefresh) return jsonResponse(body);
+      held = true;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            release = () => {
+              controller.enqueue(new TextEncoder().encode(JSON.stringify(body)));
+              controller.close();
+            };
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    };
+    mounted = await mountBrowserApp("/workspaces", { overrides: [routes, ...overrides()] });
+    await page.getByRole("button", { name: /Select repository:/ }).click();
+    await expect.element(page.getByText("cached-only", { exact: true })).toBeVisible();
+    pressKey("Escape");
+
+    holdRefresh = true;
+    try {
+      await page.getByRole("button", { name: "New workspace", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "New workspace" });
+      await vi.waitFor(() => expect(held).toBe(true));
+      await expect.element(dialog.getByRole("button", { name: "Filter repositories: acme/cached-only" })).toBeVisible();
+      await dialog.getByRole("button", { name: "Filter repositories: acme/cached-only" }).click();
+      await expect.element(dialog.getByRole("option", { name: /acme\/cached-only/ })).toBeVisible();
+    } finally {
+      release();
+    }
+    const dialog = page.getByRole("dialog", { name: "New workspace" });
+    await expect.element(dialog.getByRole("option", { name: /acme\/updated-repo/ })).toBeVisible();
+    await expect.element(dialog.getByRole("button", { name: "Create workspace", exact: true })).toBeEnabled();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect.element(dialog).not.toBeInTheDocument();
   });
 
   it.each(

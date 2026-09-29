@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -125,7 +126,7 @@ func TestProviderStateHandoffInventoryUsesStableIdentityAndSemanticPayload(t *te
 	require.Len(records, 2)
 	assert.Equal(ProviderStateReviewDraft, records[0].Kind)
 	assert.Equal(ProviderStateWorkflowState, records[1].Kind)
-	assert.Contains(records[0].SourceKey, providerStateRepositoryForTest().PlatformRepoID)
+	assert.Contains(records[0].SourceKey, strconv.FormatInt(providerStateRepositoryForTest().PlatformRepoID, 10))
 	assert.NotEmpty(records[0].ContentDigest)
 	assert.Equal(review.Body, records[0].ReviewDraft.Body)
 	assert.Equal(workflow.Status, records[1].WorkflowState.Status)
@@ -163,7 +164,6 @@ func TestProviderStateHandoffDigestUsesStableRepositoryIdentity(t *testing.T) {
 	routed := original
 	routed.Repository.Provider = " GITHUB "
 	routed.Repository.PlatformHost = " GITHUB.COM "
-	routed.Repository.PlatformRepoID = " " + original.Repository.PlatformRepoID + " "
 	routed.Repository.Owner = "renamed-owner"
 	routed.Repository.Name = "renamed-repository"
 

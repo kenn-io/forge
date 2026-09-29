@@ -26,7 +26,7 @@ export type WorkflowRun = WorkflowRunResponse;
 export type WorkflowRunJob = WorkflowRunJobResponse;
 export type WorkflowActionsError = ApiProblemError | TransientTransportError;
 
-export type WorkflowRepositoryRef = ProviderRouteRef & { readonly platformRepoId: string };
+export type WorkflowRepositoryRef = ProviderRouteRef & { readonly platformRepoId: number };
 
 export interface WorkflowDispatchInput {
   readonly ref: WorkflowRepositoryRef;

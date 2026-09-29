@@ -350,42 +350,6 @@ func upsertNotificationsTx(ctx context.Context, tx *sql.Tx, notifications []Noti
 	return nil
 }
 
-func (d *DB) UpsertNotificationsIfRouteFence(
-	ctx context.Context,
-	notifications []Notification,
-	identity RepoIdentity,
-	fence RepositoryRouteFence,
-) (bool, error) {
-	identity = canonicalRepoIdentity(identity)
-	release, err := d.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer release()
-
-	committed := false
-	err = d.Tx(ctx, func(tx *sql.Tx) error {
-		matches, err := repositoryRouteFenceMatchesTx(
-			ctx, tx, identity, fence,
-		)
-		if err != nil {
-			return err
-		}
-		if !matches {
-			return nil
-		}
-		if err := upsertNotificationsTx(ctx, tx, notifications); err != nil {
-			return err
-		}
-		committed = true
-		return nil
-	})
-	if err != nil {
-		return false, fmt.Errorf("conditionally upsert notifications: %w", err)
-	}
-	return committed, nil
-}
-
 // LatestOpenPRNotificationActivity returns the newest notification timestamp
 // linked to each open merge request. Notification timestamps only indicate
 // that provider detail may be stale; callers must not persist them as
@@ -397,15 +361,15 @@ func (d *DB) LatestOpenPRNotificationActivity(
 	rows, err := d.roQueryContext(ctx, `
 		SELECT mr.id, MAX(n.source_updated_at)
 		FROM forge_notification_items n
-		LEFT JOIN forge_repo_routes rr
+		LEFT JOIN forge_repos rr
 		  ON n.repo_id IS NULL
 		 AND rr.platform = n.platform
 		 AND rr.platform_host = n.platform_host
 		 AND rr.owner_key = lower(n.repo_owner)
 		 AND rr.name_key = lower(n.repo_name)
-		 AND rr.is_current = 1
+		 AND rr.lifecycle_state = 'active'
 		JOIN forge_merge_requests mr
-		  ON mr.repo_id = COALESCE(n.repo_id, rr.repo_id)
+		  ON mr.repo_id = COALESCE(n.repo_id, rr.id)
 		 AND mr.number = n.item_number
 		WHERE n.item_type = 'pr'
 		  AND n.source_updated_at >= ?
@@ -456,12 +420,10 @@ func (d *DB) FilterNotificationIDs(ctx context.Context, ids []int64, repos []Not
 func lookupNotificationRepoIDTx(ctx context.Context, tx *sql.Tx, platform, host, owner, name string) (int64, bool, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx, `
-		SELECT rr.repo_id
-		FROM forge_repo_routes rr
-		JOIN forge_repos r ON r.id = rr.repo_id
-		WHERE rr.platform = ? AND rr.platform_host = ?
-		  AND rr.owner_key = ? AND rr.name_key = ?
-		  AND rr.is_current = 1
+		SELECT r.id
+		FROM forge_repos r
+		WHERE r.platform = ? AND r.platform_host = ?
+		  AND r.owner_key = ? AND r.name_key = ?
 		  AND r.lifecycle_state = 'active'`,
 		platform, host, owner, name,
 	).Scan(&id)
@@ -496,14 +458,12 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 			seen[key] = struct{}{}
 			repoClauses = append(repoClauses, `EXISTS (
 				SELECT 1
-				FROM forge_repo_routes rr
-				JOIN forge_repos r ON r.id = rr.repo_id
+				FROM forge_repos rr
 				WHERE rr.platform = ? AND rr.platform_host = ?
 				  AND rr.owner_key = ? AND rr.name_key = ?
-				  AND rr.is_current = 1
-				  AND r.lifecycle_state = 'active'
+				  AND rr.lifecycle_state = 'active'
 				  AND (
-				      n.repo_id = rr.repo_id
+				      n.repo_id = rr.id
 				      OR (n.repo_id IS NULL
 				          AND n.platform = rr.platform
 				          AND n.platform_host = rr.platform_host
@@ -521,12 +481,10 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 	} else {
 		clauses = append(clauses, `EXISTS (
 			SELECT 1
-			FROM forge_repo_routes rr
-			JOIN forge_repos r ON r.id = rr.repo_id
-			WHERE rr.is_current = 1
-			  AND r.lifecycle_state = 'active'
+			FROM forge_repos rr
+			WHERE rr.lifecycle_state = 'active'
 			  AND (
-			      n.repo_id = rr.repo_id
+			      n.repo_id = rr.id
 			      OR (n.repo_id IS NULL
 			          AND n.platform = rr.platform
 			          AND n.platform_host = rr.platform_host
@@ -554,9 +512,9 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 	if opts.RepoOwner != "" {
 		clauses = append(clauses, `(
 			(n.repo_id IS NOT NULL AND EXISTS (
-				SELECT 1 FROM forge_repo_routes rr
-				WHERE rr.repo_id = n.repo_id
-				  AND rr.is_current = 1
+				SELECT 1 FROM forge_repos rr
+				WHERE rr.id = n.repo_id
+				  AND rr.lifecycle_state = 'active'
 				  AND rr.owner_key = ?))
 			OR (n.repo_id IS NULL AND n.repo_owner = ?)
 		)`)
@@ -566,9 +524,9 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 	if opts.RepoName != "" {
 		clauses = append(clauses, `(
 			(n.repo_id IS NOT NULL AND EXISTS (
-				SELECT 1 FROM forge_repo_routes rr
-				WHERE rr.repo_id = n.repo_id
-				  AND rr.is_current = 1
+				SELECT 1 FROM forge_repos rr
+				WHERE rr.id = n.repo_id
+				  AND rr.lifecycle_state = 'active'
 				  AND rr.name_key = ?))
 			OR (n.repo_id IS NULL AND n.repo_name = ?)
 		)`)
@@ -884,67 +842,6 @@ func (d *DB) UpdateNotificationSyncWatermark(ctx context.Context, platform, host
 	return nil
 }
 
-func (d *DB) UpdateNotificationSyncWatermarkIfRouteFence(
-	ctx context.Context,
-	platform, host, owner, name string,
-	fence RepositoryRouteFence,
-	syncedAt time.Time,
-	lastFullSyncedAt *time.Time,
-) (bool, error) {
-	var err error
-	platform, host, err = canonicalizeNotificationPlatformHost(platform, host)
-	if err != nil {
-		return false, err
-	}
-	owner, name, err = canonicalizeNotificationRepo(owner, name)
-	if err != nil {
-		return false, err
-	}
-	syncedAt = canonicalUTCTime(syncedAt)
-	lastFullValue := nullableNotificationTime(lastFullSyncedAt)
-	identity := canonicalRepoIdentity(RepoIdentity{
-		Platform: platform, PlatformHost: host, Owner: owner, Name: name,
-	})
-	release, err := d.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer release()
-
-	committed := false
-	err = d.Tx(ctx, func(tx *sql.Tx) error {
-		matches, err := repositoryRouteFenceMatchesTx(
-			ctx, tx, identity, fence,
-		)
-		if err != nil {
-			return err
-		}
-		if !matches {
-			return nil
-		}
-		_, err = tx.ExecContext(ctx, `
-		INSERT INTO forge_notification_sync_watermarks (
-			platform, platform_host, repo_owner, repo_name,
-			last_successful_sync_at, last_full_sync_at
-		)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(platform, platform_host, repo_owner, repo_name) DO UPDATE SET
-			last_successful_sync_at = excluded.last_successful_sync_at,
-			last_full_sync_at = excluded.last_full_sync_at`,
-			platform, host, owner, name, syncedAt, lastFullValue,
-		)
-		if err != nil {
-			return err
-		}
-		committed = true
-		return nil
-	})
-	if err != nil {
-		return false, fmt.Errorf("conditionally update notification sync watermark: %w", err)
-	}
-	return committed, nil
-}
-
 func (d *DB) MarkNotificationsAcknowledged(ctx context.Context, platform, host string, notificationIDs []string, acknowledgedAt time.Time) error {
 	if len(notificationIDs) == 0 {
 		return nil
@@ -996,11 +893,11 @@ func (d *DB) ListQueuedNotificationAcks(ctx context.Context, platform, host stri
 		      n.repo_id IS NULL
 		      OR EXISTS (
 		          SELECT 1
-		          FROM forge_repo_routes route
-		          WHERE route.repo_id = n.repo_id
+		          FROM forge_repos route
+		          WHERE route.id = n.repo_id
 		            AND route.platform = n.platform
 		            AND route.platform_host = n.platform_host
-		            AND route.is_current = 1
+		            AND route.lifecycle_state = 'active'
 		      )
 		  )
 		ORDER BY n.source_ack_queued_at ASC, n.id ASC LIMIT ?`, notificationSelectColumns), platform, host, canonicalUTCTime(now), limit)

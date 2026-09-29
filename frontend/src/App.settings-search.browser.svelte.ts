@@ -26,10 +26,20 @@ describe("settings sidebar search", () => {
     mounted = null;
   });
 
+  it("opens workspace behavior and terminal controls together", async () => {
+    await page.viewport(1280, 900);
+    mounted = await mountBrowserApp("/settings?section=settings-workspaces");
+
+    await expect.element(page.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Assign new workspace items to me" })).toBeVisible();
+    await expect.element(page.getByLabelText("Monospace font family")).toBeVisible();
+    await expect.element(page.getByLabelText("Retained terminal sessions")).toBeVisible();
+  });
+
   it("filters categories by keywords, shows an empty notice, and restores on clear", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/settings");
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(13), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(12), WAIT);
 
     const search = document.querySelector<HTMLInputElement>(".kit-settings__sidebar-header input[type='search']");
     expect(search).not.toBeNull();
@@ -43,7 +53,8 @@ describe("settings sidebar search", () => {
     // "ligatures" is a search-only keyword: it appears in no label, group,
     // or summary, so a hit proves keyword matching.
     await setQuery("ligatures");
-    await vi.waitFor(() => expect(navLabels()).toEqual(["Terminal"]), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toEqual(["Workspaces"]), WAIT);
+    await expect.element(page.getByLabelText("Monospace font family")).toBeVisible();
     // The Workspace group heading survives for its remaining item.
     expect(
       Array.from(document.querySelectorAll(".kit-settings__group-title")).map((el) => el.textContent?.trim()),
@@ -54,41 +65,41 @@ describe("settings sidebar search", () => {
     expect(document.querySelector(".settings-page")?.textContent).toContain("No matching settings");
 
     await setQuery("");
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(13), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(12), WAIT);
     expect(document.querySelector(".settings-page")?.textContent).not.toContain("No matching settings");
   });
 
   it("keeps the selected category while it is filtered out and restores it on clear", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/settings");
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(13), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(12), WAIT);
 
-    const terminalButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".kit-settings__nav-item")).find(
-      (btn) => btn.textContent?.includes("Terminal"),
+    const workspacesButton = Array.from(document.querySelectorAll<HTMLButtonElement>(".kit-settings__nav-item")).find(
+      (btn) => btn.textContent?.includes("Workspaces"),
     );
-    terminalButton!.click();
+    workspacesButton!.click();
     await vi.waitFor(() => {
-      expect(document.querySelector(".kit-settings__nav-item--active")?.textContent).toContain("Terminal");
+      expect(document.querySelector(".kit-settings__nav-item--active")?.textContent).toContain("Workspaces");
     }, WAIT);
 
     const search = document.querySelector<HTMLInputElement>(".kit-settings__sidebar-header input[type='search']")!;
     search.value = "fleet";
     search.dispatchEvent(new Event("input", { bubbles: true }));
-    // Terminal is filtered out; kit's display falls back to the first
+    // Workspaces is filtered out; kit's display falls back to the first
     // visible category without committing it to the bound selection.
     await vi.waitFor(() => expect(navLabels()).toEqual(["Fleet federation"]), WAIT);
 
     search.value = "";
     search.dispatchEvent(new Event("input", { bubbles: true }));
     await vi.waitFor(() => {
-      expect(document.querySelector(".kit-settings__nav-item--active")?.textContent).toContain("Terminal");
+      expect(document.querySelector(".kit-settings__nav-item--active")?.textContent).toContain("Workspaces");
     }, WAIT);
   });
 
   it("'Back to app' routes to an in-app view rather than browser history", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/settings");
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(13), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(12), WAIT);
 
     // The fix's contract is that this control must not fall back to
     // window.history.back(): on a direct or bookmarked /settings entry the
@@ -137,7 +148,7 @@ describe("settings sidebar search", () => {
       ],
     });
 
-    await vi.waitFor(() => expect(navLabels()).toHaveLength(13), WAIT);
+    await vi.waitFor(() => expect(navLabels()).toHaveLength(12), WAIT);
     expect(navLabels()).toContain("Kata mappings");
     expect(mounted.api.requests.filter((req) => req.url.pathname.includes("/kata/daemons"))).toHaveLength(1);
     await vi.waitFor(

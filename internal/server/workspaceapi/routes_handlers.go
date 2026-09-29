@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
@@ -29,6 +30,7 @@ type createWorkspaceInput struct {
 	Body struct {
 		Provider           string `json:"provider"`
 		PlatformHost       string `json:"platform_host"`
+		PlatformRepoID     int64  `json:"platform_repo_id,omitempty"`
 		Owner              string `json:"owner"`
 		Name               string `json:"name"`
 		MRNumber           int    `json:"mr_number"`
@@ -43,6 +45,7 @@ type createIssueWorkspaceInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	Body         struct {
+		PlatformRepoID         int64   `json:"platform_repo_id,omitempty"`
 		GitHeadRef             *string `json:"git_head_ref,omitempty"`
 		ReuseExistingBranch    bool    `json:"reuse_existing_branch,omitempty"`
 		ReuseExistingDirectory bool    `json:"reuse_existing_directory,omitempty"`
@@ -59,6 +62,7 @@ type createAdHocWorkspaceInput struct {
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
 	Body         struct {
+		PlatformRepoID      int64   `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
 		Branch              *string `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
 		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
 	}
@@ -211,7 +215,8 @@ func (s *Handler) createWorkspace(
 ) (*createWorkspaceOutput, error) {
 	result, err := s.CreatePullWorkspace(ctx, CreatePullWorkspaceRequest{
 		Provider: input.Body.Provider, PlatformHost: input.Body.PlatformHost,
-		Owner: input.Body.Owner, Name: input.Body.Name, Number: input.Body.MRNumber,
+		PlatformRepoID: input.Body.PlatformRepoID,
+		Owner:          input.Body.Owner, Name: input.Body.Name, Number: input.Body.MRNumber,
 		SuppressAutoAssign: input.Body.SuppressAutoAssign,
 	})
 	if err != nil {
@@ -232,6 +237,7 @@ func (s *Handler) CreatePullWorkspace(
 	input := &createWorkspaceInput{}
 	input.Body.Provider = req.Provider
 	input.Body.PlatformHost = req.PlatformHost
+	input.Body.PlatformRepoID = req.PlatformRepoID
 	input.Body.Owner = req.Owner
 	input.Body.Name = req.Name
 	input.Body.MRNumber = req.Number
@@ -259,7 +265,7 @@ func (s *Handler) createPullWorkspaceRouteCore(
 			Provider: provider, PlatformHost: input.Body.PlatformHost,
 			Owner: input.Body.Owner, Name: input.Body.Name,
 		},
-		db.WorkspaceItemTypePullRequest, input.Body.MRNumber, "", false,
+		input.Body.PlatformRepoID, db.WorkspaceItemTypePullRequest, input.Body.MRNumber, "", false,
 	)
 	if err != nil {
 		return nil, workspaceLaunchSpecProblem(err)
@@ -291,7 +297,8 @@ func (s *Handler) createPullWorkspaceRouteCore(
 			Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 			Owner: spec.Repository.Owner, Name: spec.Repository.Name,
 		},
-		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: input.Body.MRNumber,
+		PlatformRepoID: spec.Repository.PlatformRepoID,
+		ItemType:       db.WorkspaceItemTypePullRequest, ItemNumber: input.Body.MRNumber,
 	}, input.Body.SuppressAutoAssign)
 
 	s.runWorkspaceSetup(ws)
@@ -564,7 +571,8 @@ func (s *Handler) createIssueWorkspace(
 ) (*createWorkspaceOutput, error) {
 	result, err := s.CreateIssueWorkspaceService(ctx, CreateIssueWorkspaceRequest{
 		Provider: input.Provider, PlatformHost: input.PlatformHost,
-		Owner: input.Owner, Name: input.Name, Number: input.Number,
+		PlatformRepoID: input.Body.PlatformRepoID,
+		Owner:          input.Owner, Name: input.Name, Number: input.Number,
 		GitHeadRef:             input.Body.GitHeadRef,
 		ReuseExistingBranch:    input.Body.ReuseExistingBranch,
 		ReuseExistingDirectory: input.Body.ReuseExistingDirectory,
@@ -589,6 +597,7 @@ func (s *Handler) CreateIssueWorkspaceService(
 		Provider: req.Provider, PlatformHost: req.PlatformHost,
 		Owner: req.Owner, Name: req.Name, Number: req.Number,
 	}
+	input.Body.PlatformRepoID = req.PlatformRepoID
 	input.Body.GitHeadRef = req.GitHeadRef
 	input.Body.ReuseExistingBranch = req.ReuseExistingBranch
 	input.Body.ReuseExistingDirectory = req.ReuseExistingDirectory
@@ -617,26 +626,30 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 		return nil, httpapi.Validation("path.provider", err.Error())
 	}
 
-	existing, err := s.workspaces.GetByIssueForProvider(
-		ctx,
-		provider, input.PlatformHost, input.Owner, input.Name,
-		input.Number,
-	)
-	if err != nil {
-		return nil, httpapi.Internal("lookup existing issue workspace: " + err.Error())
-	}
-	if existing != nil {
-		summary, getErr := s.workspaces.GetSummary(ctx, existing.ID)
-		if getErr != nil {
-			return nil, httpapi.Internal("get workspace summary: " + getErr.Error())
+	// ID-bearing requests resolve the launch specification before reuse so a
+	// replacement repository at the same route cannot supply the workspace.
+	if input.Body.PlatformRepoID == 0 {
+		existing, err := s.workspaces.GetByIssueForProvider(
+			ctx,
+			provider, input.PlatformHost, input.Owner, input.Name,
+			input.Number,
+		)
+		if err != nil {
+			return nil, httpapi.Internal("lookup existing issue workspace: " + err.Error())
 		}
-		if summary == nil {
-			return nil, httpapi.Internal("workspace summary missing for existing workspace")
+		if existing != nil {
+			summary, getErr := s.workspaces.GetSummary(ctx, existing.ID)
+			if getErr != nil {
+				return nil, httpapi.Internal("get workspace summary: " + getErr.Error())
+			}
+			if summary == nil {
+				return nil, httpapi.Internal("workspace summary missing for existing workspace")
+			}
+			return &createWorkspaceOutput{
+				Status: http.StatusAccepted,
+				Body:   s.toWorkspaceResponse(ctx, summary),
+			}, nil
 		}
-		return &createWorkspaceOutput{
-			Status: http.StatusAccepted,
-			Body:   s.toWorkspaceResponse(ctx, summary),
-		}, nil
 	}
 	spec, err := s.resolveWorkspaceLaunchSpec(
 		ctx,
@@ -644,14 +657,14 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 			Provider: provider, PlatformHost: input.PlatformHost,
 			Owner: input.Owner, Name: input.Name,
 		},
-		db.WorkspaceItemTypeIssue, input.Number,
+		input.Body.PlatformRepoID, db.WorkspaceItemTypeIssue, input.Number,
 		strings.TrimSpace(derefString(input.Body.GitHeadRef)),
 		s.configSnapshot().IssueBranchSlug,
 	)
 	if err != nil {
 		return nil, workspaceLaunchSpecProblem(err)
 	}
-	existing, err = s.workspaces.GetByLaunchSpecIdentity(ctx, spec)
+	existing, err := s.workspaces.GetByLaunchSpecIdentity(ctx, spec)
 	if err != nil {
 		return nil, httpapi.Internal("lookup existing issue workspace identity: " + err.Error())
 	}
@@ -742,14 +755,7 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 			return nil, httpapi.Validation("body.git_head_ref", msg)
 		}
 		if strings.Contains(msg, "UNIQUE constraint") {
-			existing, getErr := s.workspaces.GetByIssueForProvider(
-				ctx,
-				spec.Repository.Provider,
-				spec.Repository.PlatformHost,
-				spec.Repository.Owner,
-				spec.Repository.Name,
-				input.Number,
-			)
+			existing, getErr := s.workspaces.GetByLaunchSpecIdentity(ctx, spec)
 			if getErr == nil && existing != nil {
 				summary, summaryErr := s.workspaces.GetSummary(ctx, existing.ID)
 				if summaryErr == nil && summary != nil {
@@ -769,7 +775,8 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 			Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
 			Owner: spec.Repository.Owner, Name: spec.Repository.Name,
 		},
-		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: input.Number,
+		PlatformRepoID: spec.Repository.PlatformRepoID,
+		ItemType:       db.WorkspaceItemTypeIssue, ItemNumber: input.Number,
 	}, input.Body.SuppressAutoAssign)
 
 	s.runWorkspaceSetup(ws)
@@ -811,6 +818,7 @@ func (s *Handler) createAdHocWorkspace(
 	result, err := s.CreateAdHocWorkspaceService(ctx, CreateAdHocWorkspaceRequest{
 		Provider: input.Provider, PlatformHost: input.PlatformHost,
 		Owner: input.Owner, Name: input.Name, Branch: input.Body.Branch,
+		PlatformRepoID:      input.Body.PlatformRepoID,
 		ReuseExistingBranch: input.Body.ReuseExistingBranch,
 	})
 	if err != nil {
@@ -828,19 +836,12 @@ func (s *Handler) CreateAdHocWorkspaceService(
 			"item_type", db.WorkspaceItemTypeAdHoc,
 			"duration_ms", time.Since(started).Milliseconds(), "success", err == nil)
 	}()
-	if s.resolveRepository != nil {
-		if _, err := s.resolveRepository(ctx, providerplane.RepositoryRoute{
-			Provider: req.Provider, PlatformHost: req.PlatformHost,
-			Owner: req.Owner, Name: req.Name,
-		}); err != nil {
-			return WorkspaceResult{}, err
-		}
-	}
 	input := &createAdHocWorkspaceInput{
 		Provider: req.Provider, PlatformHost: req.PlatformHost,
 		Owner: req.Owner, Name: req.Name,
 	}
 	input.Body.Branch = req.Branch
+	input.Body.PlatformRepoID = req.PlatformRepoID
 	input.Body.ReuseExistingBranch = req.ReuseExistingBranch
 	output, err := s.createAdHocWorkspaceRouteCore(ctx, input)
 	if err != nil {
@@ -855,11 +856,32 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 	if s.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
 	}
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
-	if err != nil {
-		return nil, providerRouteLookupError(err)
+	var repo *db.Repo
+	var err error
+	if s.resolveRepository != nil {
+		repo, err = s.resolveRepository(ctx, providerplane.RepositoryRoute{
+			Provider: input.Provider, PlatformHost: input.PlatformHost,
+			Owner: input.Owner, Name: input.Name,
+		}, input.Body.PlatformRepoID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var active *db.ActiveRepo
+		if input.Body.PlatformRepoID != 0 {
+			active, err = s.resolver.LookupSelection(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Body.PlatformRepoID)
+		} else {
+			active, err = s.lookupRepoByProviderRoute(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name)
+		}
+		if err != nil {
+			return nil, providerRouteLookupError(err)
+		}
+		if active != nil {
+			repo = active.Row()
+		}
+	}
+	if repo == nil {
+		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound, "repo not found", nil)
 	}
 
 	branch := strings.TrimSpace(derefString(input.Body.Branch))
@@ -881,6 +903,7 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 		repo.Owner,
 		repo.Name,
 		workspace.CreateAdHocOptions{
+			PlatformRepoID:      repo.PlatformRepoID,
 			BranchName:          branch,
 			ReuseExistingBranch: input.Body.ReuseExistingBranch,
 		},
@@ -945,7 +968,7 @@ func (s *Handler) adHocWorkspaceForBranch(
 // fence-guarded write layer reports this before any row is persisted for the
 // replacement repository.
 func repositoryRouteFenceProblem(err error) error {
-	if errors.Is(err, db.ErrRepositoryRouteFenceChanged) {
+	if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 		return httpapi.NotFound(httpapi.CodeRepoNotFound,
 			"repository identity changed during workspace creation", nil)
 	}
@@ -1125,8 +1148,8 @@ func (s *Handler) refreshWorkspace(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	kind := repoProviderKind(*repo)
-	host := repoProviderHost(*repo)
+	kind := repoProviderKind(repo.Repo)
+	host := repoProviderHost(repo.Repo)
 
 	switch summary.ItemType {
 	case db.WorkspaceItemTypeIssue:
@@ -2065,6 +2088,7 @@ func (s *Handler) probeWorkspaceEnrichment(
 	resp := toWorkspaceResponse(summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
+		summary.RepoPlatformID,
 	)
 	if s.workspaces == nil ||
 		summary.Status != "ready" {
@@ -2113,6 +2137,7 @@ func (s *Handler) workspaceResponseWithTmuxEnrichment(
 	resp := toWorkspaceResponse(summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
+		summary.RepoPlatformID,
 	)
 	if s.workspaces == nil || summary.Status != "ready" {
 		return workspaceEnrichmentProbeResult{response: resp, kind: workspaceEnrichmentTmux}
@@ -2610,7 +2635,7 @@ func (s *Handler) launchWorkspaceRuntimeSession(
 	input *launchWorkspaceRuntimeSessionInput,
 ) (*workspaceRuntimeSessionOutput, error) {
 	session, err := s.launchWorkspaceRuntimeService(
-		ctx, input.ID, input.Body.TargetKey, input.Body.DisplayRegion,
+		ctx, input.ID, input.Body.TargetKey, input.Body.DisplayRegion, "",
 	)
 	if err != nil {
 		return nil, err
@@ -2619,9 +2644,16 @@ func (s *Handler) launchWorkspaceRuntimeSession(
 }
 
 func (s *Handler) LaunchWorkspaceRuntimeService(
-	ctx context.Context, workspaceID, targetKey string,
+	ctx context.Context, workspaceID, targetKey, initialMessage string,
 ) (localruntime.SessionInfo, error) {
-	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "")
+	if initialMessage != "" {
+		message, _, err := normalizeInitialAgentMessage(initialMessage)
+		if err != nil {
+			return localruntime.SessionInfo{}, httpapi.Validation("message", err.Error())
+		}
+		initialMessage = message
+	}
+	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "", initialMessage)
 }
 
 func (s *Handler) PreferredWorkspaceAgentTargetService(
@@ -2631,7 +2663,7 @@ func (s *Handler) PreferredWorkspaceAgentTargetService(
 }
 
 func (s *Handler) launchWorkspaceRuntimeService(
-	ctx context.Context, workspaceID, targetKey, displayRegion string,
+	ctx context.Context, workspaceID, targetKey, displayRegion, initialMessage string,
 ) (session localruntime.SessionInfo, err error) {
 	started := time.Now()
 	defer func() {
@@ -2664,7 +2696,7 @@ func (s *Handler) launchWorkspaceRuntimeService(
 			return localruntime.SessionInfo{}, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}
-	session, err = s.runtime.Launch(ctx, summary.ID, summary.WorktreePath, targetKey)
+	session, err = s.runtime.LaunchWithInitialMessage(ctx, summary.ID, summary.WorktreePath, targetKey, initialMessage)
 	if err != nil {
 		return localruntime.SessionInfo{}, workspaceRuntimeLaunchError(err)
 	}
@@ -2683,6 +2715,12 @@ func (s *Handler) launchWorkspaceRuntimeService(
 	}
 	s.invalidateWorkspaceEnrichment(summary.ID)
 	s.forgetRecordedRuntimeSessionIfExited(ctx, session)
+	if session.InitialMessageProvided {
+		s.reserveInitialMessageAttempt(summary.ID, session.Key, initialMessageAttempt{
+			TargetKey: targetKey, Message: initialMessage,
+		})
+		s.finishInitialMessageAttempt(summary.ID, session.Key, initialMessageDelivered)
+	}
 	return session, nil
 }
 
@@ -3009,7 +3047,7 @@ func (s *Handler) getReadyRuntimeWorkspace(
 
 func workspaceRuntimeLaunchError(err error) error {
 	msg := err.Error()
-	if errors.Is(err, tokenauth.ErrMissingToken) {
+	if errors.Is(err, tokenauth.ErrMissingToken) || errors.Is(err, ptyowner.ErrCommandLineTooLong) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, msg, nil)
 	}
 	if strings.Contains(msg, "target not found") {

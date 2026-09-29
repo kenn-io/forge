@@ -40,7 +40,7 @@ export function setWorkspaceRepoCatalog(workspaces: readonly WorkspaceListItem[]
       value,
       provider: identity.repo.provider,
       platform_host: identity.repo.platform_host,
-      platform_repo_id: identity.repo.platform_repo_id ?? "",
+      platform_repo_id: identity.repo.platform_repo_id ?? 0,
       repo_path: identity.repo.repo_path,
     };
     const existing = next.findIndex((candidate) => candidate.value === value);

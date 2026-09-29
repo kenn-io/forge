@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
+	"go.kenn.io/forge/internal/apiclient/paramcodec"
 )
 
 // ListReposRequestOptions is the options needed to make a request to ListRepos.
@@ -23,7 +24,7 @@ func (o *ListReposRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *ListReposRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.

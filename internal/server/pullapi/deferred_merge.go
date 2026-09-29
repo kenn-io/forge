@@ -125,7 +125,7 @@ func (s *Handler) enqueueDeferredMerge(
 	if err != nil {
 		return deferMergePRBody{}, err
 	}
-	if err := s.requireSyncerCapability(*repo, capabilityMergeMutation); err != nil {
+	if err := s.requireSyncerCapability(repo.Repo, capabilityMergeMutation); err != nil {
 		return deferMergePRBody{}, err
 	}
 	mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
@@ -145,7 +145,7 @@ func (s *Handler) enqueueDeferredMerge(
 	if err := s.requireMidStackMergeAllowed(ctx, repo.ID, number); err != nil {
 		return deferMergePRBody{}, err
 	}
-	expectedHeadSHA, err := s.preflightMergePR(repo, mr, number, body)
+	expectedHeadSHA, err := s.preflightMergePR(repo.Row(), mr, number, body)
 	if err != nil {
 		return deferMergePRBody{}, err
 	}
@@ -173,7 +173,7 @@ func (s *Handler) enqueueDeferredMerge(
 		)
 	}
 	if len(pendingKeys) == 0 && aggregateState != "pending" {
-		refreshed, refreshedKeys, err := s.refreshPendingDeferredMergeCheckKeys(ctx, *repo, number, queuedTarget)
+		refreshed, refreshedKeys, err := s.refreshPendingDeferredMergeCheckKeys(ctx, repo.Repo, number, queuedTarget)
 		if err != nil {
 			return deferMergePRBody{}, err
 		}
@@ -194,7 +194,7 @@ func (s *Handler) enqueueDeferredMerge(
 			map[string]any{"reason": "no_pending_checks"},
 		)
 	}
-	key := deferredMergeKey(*repo, number)
+	key := deferredMergeKey(repo.Repo, number)
 	var releaseDeferred func()
 	if s.providerWriteGate != nil {
 		releaseDeferred, err = s.providerWriteGate.BeginDeferredMerge(ctx)
@@ -222,7 +222,7 @@ func (s *Handler) enqueueDeferredMerge(
 	}
 	started := s.runBackground(func(bgCtx context.Context) {
 		defer s.clearDeferredMergeInFlight(key, handle)
-		s.runDeferredMerge(bgCtx, *repo, number, body, pendingKeys, queuedTarget, pollInterval, maxWait, handle)
+		s.runDeferredMerge(bgCtx, repo.Repo, number, body, pendingKeys, queuedTarget, pollInterval, maxWait, handle)
 	})
 	if !started {
 		s.clearDeferredMergeInFlight(key, handle)
@@ -401,15 +401,15 @@ func (s *Handler) refreshPendingDeferredMergeCheckKeys(
 
 func mergeRequestRepoRef(repo db.Repo) ghclient.RepoRef {
 	return ghclient.RepoRef{
-		Platform:           repoProviderKind(repo),
-		Owner:              repo.Owner,
-		Name:               repo.Name,
-		PlatformHost:       repoProviderHost(repo),
-		RepoPath:           repo.RepoPath,
-		PlatformExternalID: repo.PlatformRepoID,
-		WebURL:             repo.WebURL,
-		CloneURL:           repo.CloneURL,
-		DefaultBranch:      repo.DefaultBranch,
+		Platform:       repoProviderKind(repo),
+		Owner:          repo.Owner,
+		Name:           repo.Name,
+		PlatformHost:   repoProviderHost(repo),
+		RepoPath:       repo.RepoPath,
+		PlatformRepoID: repo.PlatformRepoID,
+		WebURL:         repo.WebURL,
+		CloneURL:       repo.CloneURL,
+		DefaultBranch:  repo.DefaultBranch,
 	}
 }
 

@@ -2,8 +2,17 @@
    breakpoints rationale) come from kit-ui; app.css only defines
    kenn-forge-specific tokens on top. */
 @import "@kenn-io/kit-ui/theme.css";
+/* The quiet identity (system type, AA muted text, sentence-case labels);
+   index.html and initTheme select it with data-kit-theme="quiet". */
+@import "@kenn-io/kit-ui/themes.css";
 /* Mermaid viewer chrome plus the --mermaid- and --viewer-scrim tokens (opt-in kit module). */
 @import "@kenn-io/kit-ui/mermaid.css";
+
+/* kit's themes.css tints scrollbars under every named theme; Forge's scroll
+   panes keep browser-native scrollbars (tests/e2e/viewport-fit.spec.ts). */
+:root[data-kit-theme] {
+  scrollbar-color: auto;
+}
 
 /* Reset */
 *,

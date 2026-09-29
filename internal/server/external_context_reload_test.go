@@ -61,7 +61,7 @@ func TestExternalContextUsesHubSyncedPull(t *testing.T) {
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
 			Body: io.NopCloser(strings.NewReader(`{
-				"repo":{"provider":"github","platform_host":"github.com","platform_repo_id":"repo-acme-widget","repo_path":"acme/widget","owner":"acme","name":"widget"},
+				"repo":{"provider":"github","platform_host":"github.com","platform_repo_id":7001,"repo_path":"acme/widget","owner":"acme","name":"widget"},
 				"merge_request":{"Number":42,"URL":"https://github.com/acme/widget/pull/42","State":"merged"},
 				"platform_host":"github.com","platform_head_sha":"hub-synced-head","platform_base_sha":"hub-synced-base"
 			}`)),
@@ -69,14 +69,14 @@ func TestExternalContextUsesHubSyncedPull(t *testing.T) {
 		}, nil
 	})}
 	input := repoNumberInput{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget", Number: 42}
-	pull, err := srv.externalContextPull(t.Context(), input, "repo-acme-widget")
+	pull, err := srv.externalContextPull(t.Context(), input, 7001)
 	require.NoError(err)
 	assert.Equal(externalcontext.PullRequest{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget", RepoPath: "acme/widget",
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 7001, RepoPath: "acme/widget",
 		Number: 42, URL: "https://github.com/acme/widget/pull/42", State: "merged", HeadSHA: "hub-synced-head", BaseSHA: "hub-synced-base",
 	}, pull)
 
-	_, err = srv.externalContextPull(t.Context(), input, "reassigned-repository")
+	_, err = srv.externalContextPull(t.Context(), input, 7002)
 	var problem *httpapi.ProblemError
 	require.ErrorAs(err, &problem)
 	assert.Equal(http.StatusConflict, problem.Status)

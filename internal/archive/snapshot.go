@@ -22,6 +22,7 @@ import (
 type SnapshotOptions struct {
 	Start, End   time.Time
 	Repositories []platform.RepoRef
+	IssueScope   string
 }
 
 var ErrSnapshotScope = errors.New("snapshot repositories must belong to the configured cached inventory")
@@ -34,7 +35,10 @@ func (s *Service) Snapshot(ctx context.Context, opts SnapshotOptions) (snapshot.
 
 func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCoverage func() error) (snapshot.ArchiveSnapshot, error) {
 	start, end := opts.Start, opts.End
-	result := snapshot.ArchiveSnapshot{ExportSchema: snapshot.Schema, ObservedAt: s.now().UTC(), Start: start.UTC(), End: end.UTC(), Repositories: []snapshot.SnapshotRepository{}, PullRequests: []snapshot.SnapshotPullRequest{}, Issues: []snapshot.SnapshotItem{}, Relations: []snapshot.SnapshotRelation{}}
+	result := snapshot.ArchiveSnapshot{ExportSchema: snapshot.Schema, ObservedAt: s.now().UTC(), Start: start.UTC(), End: end.UTC(), IssueScope: opts.IssueScope, Repositories: []snapshot.SnapshotRepository{}, PullRequests: []snapshot.SnapshotPullRequest{}, Issues: []snapshot.SnapshotItem{}, Relations: []snapshot.SnapshotRelation{}}
+	if opts.IssueScope != "" && opts.IssueScope != "open" {
+		return result, errors.New("unsupported snapshot issue scope")
+	}
 	if start.IsZero() || end.IsZero() || !start.Before(end) {
 		return result, errors.New("snapshot start must precede end")
 	}
@@ -80,7 +84,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			if len(selected) > 0 {
 				continue
 			}
-			result.Repositories = append(result.Repositories, snapshot.SnapshotRepository{ID: "unresolved:" + string(ref.Platform) + ":" + ref.Host + ":" + ref.RepoPath, Provider: string(ref.Platform), Host: ref.Host, ProviderID: ref.PlatformExternalID, Path: ref.RepoPath, SyncError: "Configured repository has no active cached identity"})
+			result.Repositories = append(result.Repositories, snapshot.SnapshotRepository{ID: "unresolved:" + string(ref.Platform) + ":" + ref.Host + ":" + ref.RepoPath, Provider: string(ref.Platform), Host: ref.Host, ProviderID: ref.PlatformID, Path: ref.RepoPath, SyncError: "Configured repository has no active cached identity"})
 			continue
 		}
 		if len(selected) > 0 {
@@ -111,14 +115,14 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			return result, err
 		}
 	}
-	measurement, err := db.MeasureArchiveSnapshot(ctx, tx, repoIDs, start, end)
+	measurement, err := db.MeasureArchiveSnapshot(ctx, tx, repoIDs, start, end, opts.IssueScope == "open")
 	if err != nil {
 		return result, err
 	}
 	if measurement.Records > snapshot.MaxRecords || measurement.TextBytes > snapshot.MaxBytes {
 		return snapshot.ArchiveSnapshot{}, snapshot.ErrTooLarge
 	}
-	items, err := db.LoadArchiveSnapshotItems(ctx, tx, repoIDs, start, end)
+	items, err := db.LoadArchiveSnapshotItems(ctx, tx, repoIDs, start, end, opts.IssueScope == "open")
 	if err != nil {
 		return result, err
 	}
@@ -181,7 +185,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 	for _, link := range links {
 		pull := &result.PullRequests[pullPositions[link.MergeRequestID]]
 		issueID, ok := issueIDs[link.IssueID]
-		if !ok || !link.Resolved {
+		if !ok {
 			if !slices.Contains(pull.Gaps, "unresolved_issue_reference") {
 				pull.Gaps = append(pull.Gaps, "unresolved_issue_reference")
 			}
@@ -203,7 +207,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 }
 
 func snapshotRepositoryID(repo db.Repo) string {
-	return strings.Join([]string{url.QueryEscape(repo.Platform), url.QueryEscape(repo.PlatformHost), url.QueryEscape(repo.PlatformRepoID)}, ":")
+	return strings.Join([]string{url.QueryEscape(repo.Platform), url.QueryEscape(repo.PlatformHost), strconv.FormatInt(repo.PlatformRepoID, 10)}, ":")
 }
 
 func snapshotText(value string, limit int) (string, bool) {

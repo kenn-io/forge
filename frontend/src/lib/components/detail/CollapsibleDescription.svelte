@@ -78,11 +78,11 @@
   }
 
   .detail-description__title {
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
+    color: var(--text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-label, 0.05em);
+    text-transform: var(--label-transform, uppercase);
   }
 
   .detail-description__actions {
@@ -115,6 +115,14 @@
   .detail-description:hover :global(.kit-copy-btn.body-copy),
   .detail-description :global(.kit-copy-btn.body-copy--copied) {
     opacity: 1;
+  }
+
+  /* The description is the item's lead text, not a quoted block: it sits
+     on the page surface without a well. Card's public custom properties
+     carry the change. */
+  .detail-description__card-wrap :global(.kit-card.detail-description-card) {
+    --kit-card-bg: transparent;
+    --kit-card-border: transparent;
   }
 
   :global(.detail-description-card) {

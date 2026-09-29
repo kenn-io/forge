@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { cleanup, render } from "vitest-browser-svelte";
 import "./app.css";
@@ -61,6 +61,10 @@ describe("workspace create split button control height", () => {
 
 describe("workspace create split button in the New workspace dialog", () => {
   const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    localStorage.removeItem("kenn-forge:workspace:new_repo");
+  });
 
   afterEach(async () => {
     cleanup();
@@ -141,6 +145,7 @@ describe("workspace create split button in the New workspace dialog", () => {
             return jsonResponse([
               {
                 ID: 1,
+                PlatformRepoID: 1001,
                 Owner: "acme",
                 Name: "widget",
                 Platform: "github",

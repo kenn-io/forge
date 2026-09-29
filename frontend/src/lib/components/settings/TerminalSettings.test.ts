@@ -100,10 +100,24 @@ describe("TerminalSettings", () => {
     vi.stubGlobal("fetch", fetch);
   });
 
-  it("persists zero retained sessions without falling back to the default", async () => {
+  it("keeps an invalid retention limit local until corrected", async () => {
+    render(TerminalSettings, {
+      props: { terminal: { ...mockTerminalStore.defaultTerminal }, onUpdate: vi.fn() },
+    });
+    const input = screen.getByLabelText(/^Retained terminal sessions/);
+    await fireEvent.input(input, { target: { value: "101" } });
+    expect(screen.getByRole("alert").textContent).toContain("0 to 100");
+    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
+    await fireEvent.input(input, { target: { value: "50" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it.each([0, 50])("persists %i retained sessions without falling back to the default", async (retainedSessions) => {
     const updated = {
       ...mockTerminalStore.defaultTerminal,
-      retained_sessions: 0,
+      retained_sessions: retainedSessions,
     };
     mockUpdateSettings.mockResolvedValue({ terminal: updated });
     const onUpdate = vi.fn();
@@ -117,9 +131,9 @@ describe("TerminalSettings", () => {
 
     const retentionInput = screen.getByLabelText(/^Retained terminal sessions/) as HTMLInputElement;
     expect(retentionInput.min).toBe("0");
-    expect(retentionInput.max).toBe("20");
+    expect(retentionInput.max).toBe("100");
     await fireEvent.input(retentionInput, {
-      target: { value: "0" },
+      target: { value: String(retainedSessions) },
     });
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

@@ -58,7 +58,9 @@
   import {
     WorkspaceListWorkflow,
     makeWorkspaceRefreshHub,
+    removeWorkspaceListEntry,
     workspaceListLifecycle,
+    type WorkspaceListSnapshot,
   } from "./workspace-list-workflow.js";
   import { workspaceEventStream } from "./workspace-event-stream.js";
   import {
@@ -451,6 +453,7 @@
       peerCatalogStatus = "loading";
     }).pipe(
       Effect.andThen(Effect.gen(function* () {
+        const workflow = yield* WorkspaceListWorkflow;
         const data = yield* loadFleetSnapshot().pipe(
           Effect.timeout(`${workspaceListLoadTimeoutMs} millis`),
         );
@@ -464,22 +467,27 @@
           data.aggregateIncomplete ?? false,
         );
         yield* Effect.sync(() => {
-          reconcileDoneAcknowledgements(nextWorkspaces);
-          workspaces = nextWorkspaces;
-          fleetHosts = nextHosts;
-          fleetPeerErrors = Object.fromEntries(
-            fleetHosts
-              .filter((host) => host.kind !== "self" && host.error)
-              .map((host) => [host.configKey, host.error ?? "Host unavailable"]),
-          );
-          fleetError = null;
-          workspaceListStatus = "loaded";
-          localCatalogStatus = "loaded";
-          fleetCatalogStatus = aggregateComplete ? "loaded" : "failed";
-          peerCatalogStatus = aggregateComplete ? "loaded" : "failed";
+          workflow.snapshot = { workspaces: nextWorkspaces, hosts: nextHosts, aggregateComplete };
+          applySnapshot(workflow.snapshot);
         });
       })),
     );
+  }
+
+  function applySnapshot(snapshot: WorkspaceListSnapshot): void {
+    reconcileDoneAcknowledgements(snapshot.workspaces);
+    workspaces = snapshot.workspaces;
+    fleetHosts = snapshot.hosts;
+    fleetPeerErrors = Object.fromEntries(
+      fleetHosts
+        .filter((host) => host.kind !== "self" && host.error)
+        .map((host) => [host.configKey, host.error ?? "Host unavailable"]),
+    );
+    fleetError = null;
+    workspaceListStatus = "loaded";
+    localCatalogStatus = "loaded";
+    fleetCatalogStatus = snapshot.aggregateComplete ? "loaded" : "failed";
+    peerCatalogStatus = snapshot.aggregateComplete ? "loaded" : "failed";
   }
 
   function toggleGroup(key: string): void {
@@ -1099,8 +1107,12 @@
         ).pipe(Effect.asVoid);
     runtime.runCommand(
       command.pipe(
+        Effect.tap(() => removeWorkspaceListEntry(ws.id, hostKey)),
         Effect.tap(() =>
           Effect.sync(() => {
+            workspaces = workspaces.filter(
+              (candidate) => candidate.id !== ws.id || candidate.fleet_host_key !== hostKey,
+            );
             // Report the deletion regardless of selection so a hosting shell's
             // inline claim cannot briefly reclaim a workspace this list destroyed.
             onWorkspaceDeleted?.(
@@ -1186,6 +1198,7 @@
     return {
       provider,
       platformHost: current.platform_host,
+      platformRepoId: current.repo?.platform_repo_id,
       owner: current.repo_owner,
       name: current.repo_name,
     };
@@ -1232,6 +1245,7 @@
       Effect.scoped(
         Effect.gen(function* () {
           const workflow = yield* WorkspaceListWorkflow;
+          if (workflow.snapshot) applySnapshot(workflow.snapshot);
           requestApplicationWorkspaceRefresh = workflow.request;
           yield* workflow.claim(workspaceRefreshOwner, refreshWorkspaces.request);
           yield* workspaceListLifecycle({
@@ -1796,8 +1810,8 @@
   .sidebar-header-label {
     font-size: var(--font-size-xs);
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.08em);
+    text-transform: var(--label-transform, uppercase);
     color: var(--text-muted);
   }
 
@@ -1855,8 +1869,8 @@
   .fleet-status-title {
     font-size: var(--font-size-2xs);
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.08em);
+    text-transform: var(--label-transform, uppercase);
     color: var(--text-muted);
   }
 
@@ -2280,8 +2294,8 @@
     font-size: 0.9em;
     font-weight: 600;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.04em);
   }
 
   .kit-filter-dropdown__divider {

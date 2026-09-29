@@ -294,23 +294,28 @@
               }}
             />
           {:else if meta.id === "settings-workspaces"}
-            <WorkspaceSettings
-              onUpdate={(workspaces) => {
-                settings = { ...settings!, workspaces };
-                settingsStore.setWorkspaceSettings(workspaces);
-              }}
-              onRoborevUpdate={(roborev) => {
-                settings = { ...settings!, roborev };
-                settingsStore.setRoborevSettings(roborev);
-              }}
-            />
-          {:else if meta.id === "settings-terminal"}
-            <TerminalSettings
-              terminal={loaded.terminal}
-              onUpdate={(terminal) => {
-                settings = { ...settings!, terminal };
-              }}
-            />
+            <section class="workspace-settings-group" aria-labelledby="workspace-behavior-title">
+              <h3 id="workspace-behavior-title">Workspace behavior</h3>
+              <WorkspaceSettings
+                onUpdate={(workspaces) => {
+                  settings = { ...settings!, workspaces };
+                  settingsStore.setWorkspaceSettings(workspaces);
+                }}
+                onRoborevUpdate={(roborev) => {
+                  settings = { ...settings!, roborev };
+                  settingsStore.setRoborevSettings(roborev);
+                }}
+              />
+            </section>
+            <section class="workspace-settings-group" aria-labelledby="workspace-terminal-title">
+              <h3 id="workspace-terminal-title">Terminal</h3>
+              <TerminalSettings
+                terminal={loaded.terminal}
+                onUpdate={(terminal) => {
+                  settings = { ...settings!, terminal };
+                }}
+              />
+            </section>
           {:else if meta.id === "settings-kata-projects"}
             <KataProjectMappingsSettings
               mappings={loaded.kata_projects}
@@ -373,6 +378,19 @@
 </div>
 
 <style>
+  .workspace-settings-group + .workspace-settings-group {
+    margin-top: var(--space-6);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--border-muted);
+  }
+
+  .workspace-settings-group > h3 {
+    margin: 0 0 var(--space-4);
+    color: var(--text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+
   .sync-description { color: var(--text-secondary); font-size: var(--font-size-sm); max-width: 65ch; }
 
   .settings-page {

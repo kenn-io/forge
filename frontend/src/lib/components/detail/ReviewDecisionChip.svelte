@@ -39,7 +39,8 @@
   }
 
   function reviewLabel(reviewDecision: string, approverCount: number): string {
-    const baseLabel = reviewDecision.replace(/_/g, " ");
+    const words = reviewDecision.replace(/_/g, " ").toLowerCase();
+    const baseLabel = words.charAt(0).toUpperCase() + words.slice(1);
     if (reviewDecision === "APPROVED" && approverCount > 1) {
       return `${baseLabel} (${approverCount})`;
     }

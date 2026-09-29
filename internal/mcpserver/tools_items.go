@@ -13,7 +13,7 @@ type itemRefInput struct {
 	Type           string `json:"type" jsonschema:"item type: pr or issue"`
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host,omitempty"`
-	PlatformRepoID string `json:"platform_repo_id" jsonschema:"stable provider-verified repository id"`
+	PlatformRepoID int64  `json:"platform_repo_id" jsonschema:"provider's integer repository ID from kenn_forge_list_repos"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 	Number         int    `json:"number"`
@@ -246,7 +246,7 @@ func validateItemRef(ref itemRefInput) error {
 	if ref.Provider == "" {
 		return errors.New("item.provider is required")
 	}
-	if ref.PlatformRepoID == "" {
+	if ref.PlatformRepoID <= 0 {
 		return errors.New("item.platform_repo_id is required")
 	}
 	if ref.Owner == "" {

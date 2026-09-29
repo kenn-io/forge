@@ -274,8 +274,8 @@
   }
   .popover-header {
     font-size: var(--font-size-2xs);
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.8px);
     color: var(--text-muted);
     margin-bottom: 10px;
   }

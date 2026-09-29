@@ -26,6 +26,8 @@ var authorizedRoutes = []authorizedRoute{
 	{method: http.MethodGet, path: "/api/v1/workspaces", scope: ScopeWorkspaceRead},
 	{method: http.MethodPost, path: "/api/v1/workspaces", scope: ScopeWorkspaceWrite},
 	{method: http.MethodGet, path: "/api/v1/workspaces/{id}", scope: ScopeWorkspaceRead},
+	{method: http.MethodGet, path: "/api/v1/workspaces/{id}/view-state", scope: ScopeWorkspaceRead},
+	{method: http.MethodPut, path: "/api/v1/workspaces/{id}/view-state", scope: ScopeWorkspaceWrite},
 	{method: http.MethodDelete, path: "/api/v1/workspaces/{id}", scope: ScopeWorkspaceWrite},
 	{method: http.MethodPost, path: "/api/v1/workspaces/{id}/retry", scope: ScopeWorkspaceWrite},
 	{method: http.MethodPost, path: "/api/v1/workspaces/{id}/refresh", scope: ScopeWorkspaceWrite},

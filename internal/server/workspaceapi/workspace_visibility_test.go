@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestWorkspaceMergeTargetBranchRejectsRemovedPullRequest(t *testing.T) {
@@ -15,8 +16,7 @@ func TestWorkspaceMergeTargetBranchRejectsRemovedPullRequest(t *testing.T) {
 	ctx := t.Context()
 	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
 	repoIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	repoIdentity.PlatformRepoID = "repo-acme-widget"
-	repoID, err := database.UpsertRepo(ctx, repoIdentity)
+	repoID, err := reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, PlatformID: 7, Number: 7,

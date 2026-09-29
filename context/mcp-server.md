@@ -51,14 +51,12 @@
   workflow state use the hub; clone, workspace, runtime, and
   agent-session tools stay local, and hub outages remain typed
   (`internal/mcpserver/backend.go::NewFederatedBackend`).
-- Every MCP repository and item reference carries provider-verified
-  `platform_repo_id`. Resolve the mutable route and reject it unless the stable
-  ID still matches; never fall back to route-only identity
-  (`internal/mcpserver/types.go::repoFilterInput.repositoryIdentity`,
-  `internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
-- Provider reads resolve and recheck stable routes at the hub. Local
-  route reads recheck the captured generation, and workspace writes carry that
-  fence in context (`internal/server/mcp_backend.go::mcpBackend.confirmProviderRepositoryRoute`).
+- Every MCP repository and item reference carries provider-verified `platform_repo_id`;
+  local tools resolve it to the active repository's current route, including after renames
+  (`internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
+- Hub-backed workspace tools verify that the repository descriptor still matches the supplied
+  stable ID; route-only fallback must not redirect an existing selection
+  (`internal/server/mcp_backend.go::mcpBackend.resolveProviderRepository`).
 - Target MCP `2026-07-28`; do not advertise deprecated logging or catalog
   change notifications for the static surface (`internal/mcpserver/server.go::New`).
 - Use only canonical `kenn-forge` command/resource/prompt names and
@@ -99,7 +97,7 @@
   prompt only in daemon memory. Same-daemon retries must match the live runtime
   target and prompt; daemon restart permits a fresh attempt
   (`internal/server/workspaceapi/initial_message.go::initialMessageAttempt`).
-- Initial input requires an exact live agent runtime and matching target, LF or
+- Terminal initial input requires an exact live agent runtime and matching target, LF or
   printable Unicode, and tracked bracketed paste for multiline text. Hook
   observation is not a submission precondition. If safe paste mode is not
   observed yet, release the no-write reservation and retry only that typed
@@ -118,7 +116,8 @@
   (`internal/server/workspaceapi/routes_handlers.go::Handler.CreatePullWorkspace`,
   `internal/server/workspaceapi/routes_handlers.go::Handler.CreateIssueWorkspaceService`).
 - MCP can create or reuse a pull-request, issue, or ad-hoc workspace and launch
-  one new agent runtime with one initial message. It submits that message before
+  one new agent runtime with one initial message. It passes that message at launch
+  for native CLI delivery when supported, then confirms submission before
   waiting for the runtime's matching hook session. Its readiness wait and
   input-not-ready retry loop are the shared handoff package's, the same code the
   workspace agent-handoff endpoint uses; only the transport calls and error

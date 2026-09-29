@@ -192,8 +192,8 @@
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.06em);
+    text-transform: var(--label-transform, uppercase);
   }
 
   .diff-scope-picker__reset {

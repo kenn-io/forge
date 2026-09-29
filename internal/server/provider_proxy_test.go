@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
 )
@@ -258,7 +259,7 @@ func TestHubWorkflowMutationTransportFailureIsAmbiguous(t *testing.T) {
 	_, err := server.MCPBackend().SetWorkflowState(
 		t.Context(), mcpserver.ItemIdentity{
 			Type: "pr", Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget", Number: 42,
+			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget", Number: 42,
 		},
 		mcpserver.WorkflowUpdate{Status: "reviewing", ExpectedStatus: "new"},
 	)
@@ -292,6 +293,31 @@ func TestHubWorkspaceRefreshUsesProviderMutationBoundary(t *testing.T) {
 
 	assert.Equal(t, federationauth.ScopeProviderWrite, gotScope)
 	assert.Equal(t, "/api/v1/federation/provider/workspace-launch-spec/refresh", gotPath)
+}
+
+func TestHubWorkspaceAutoAssignmentPreservesRepositoryIdentity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	source := &hubProviderSource{client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(federationauth.ScopeProviderWrite, scope)
+		assert.Equal(http.MethodPost, request.Method)
+		assert.Equal("/api/v1/federation/provider/workspace-auto-assign", request.URL.Path)
+		body, err := io.ReadAll(request.Body)
+		require.NoError(err)
+		assert.JSONEq(`{"repository":{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget"},"platform_repo_id":1001,"item_type":"pull_request","item_number":7}`, string(body))
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(`{}`))}, nil
+	})}
+
+	err := source.AutoAssignWorkspaceItem(t.Context(), workspaceapi.ProviderWorkspaceItemRequest{
+		Repository: providerplane.RepositoryRoute{
+			Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+		},
+		PlatformRepoID: 1001, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+	})
+
+	require.NoError(err)
 }
 
 func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
@@ -395,8 +421,8 @@ func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
 	subjects := make([]providerplane.ItemIdentity, subjectCount)
 	for i := range subjects {
 		subjects[i] = providerplane.ItemIdentity{
-			Repository: providerplane.RepositoryIdentity{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+			Repository: platform.RepositoryIdentity{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 			},
 			ItemType: "pr", ItemNumber: i + 1,
 		}
@@ -474,8 +500,8 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	))
 
 	spoke, spokeDatabase := setupTestServer(t)
-	spokeRepoID, err := spokeDatabase.UpsertRepo(
-		t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	spokeRepoID, err := reposeed.Seed(
+		t.Context(), spokeDatabase, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
 	require.NoError(err)
 	spoke.providerSource = &hubProviderSource{client: providerPlaneClientFunc(func(
@@ -510,14 +536,14 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 				{
 					Repo: activityRepoRefResponse{
 						Provider: "github", PlatformHost: "github.com",
-						PlatformRepoID: "repo-acme-widget",
+						PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 					},
 					ItemType: "issue", ItemNumber: 7,
 				},
 				{
 					Repo: activityRepoRefResponse{
 						Provider: "github", PlatformHost: "github.com",
-						PlatformRepoID: "repo-acme-widget",
+						PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 					},
 					ItemType: "issue", ItemNumber: 8,
 				},

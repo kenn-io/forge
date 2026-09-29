@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/federationtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -97,15 +98,14 @@ func (p *countingSyntheticProvider) Seed(t *testing.T, database *db.DB) int64 {
 	identity := verifiedRepoIdentity(db.GitHubRepoIdentity(
 		"github.com", "acme", "widget",
 	))
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
-	require.NoError(t, database.UpdateRepoProviderMetadata(
+	require.NoError(t, database.UpdateRepoProviderObservation(
 		t.Context(), repoID, db.RepoProviderMetadata{
-			PlatformRepoID: identity.PlatformRepoID,
-			WebURL:         "https://github.com/acme/widget",
-			CloneURL:       "https://github.com/acme/widget.git",
-			DefaultBranch:  "main",
-		},
+			WebURL:        "https://github.com/acme/widget",
+			CloneURL:      "https://github.com/acme/widget.git",
+			DefaultBranch: "main",
+		}, nil, nil,
 	))
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, pull := range []db.MergeRequest{
@@ -299,7 +299,7 @@ func newFederatedDaemonServer(
 			nil, daemon.Database, nil, []ghclient.RepoRef{{
 				Platform: platform.KindGitHub, PlatformHost: "github.com",
 				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-				PlatformExternalID: verifiedRepoIdentity(db.GitHubRepoIdentity(
+				PlatformRepoID: verifiedRepoIdentity(db.GitHubRepoIdentity(
 					"github.com", "acme", "widget",
 				)).PlatformRepoID,
 			}}, time.Minute, nil, nil,
@@ -330,15 +330,14 @@ func seedFederatedNodeRepository(t *testing.T, database *db.DB) {
 	identity := verifiedRepoIdentity(db.GitHubRepoIdentity(
 		"github.com", "acme", "widget",
 	))
-	repoID, err := database.UpsertRepo(t.Context(), identity)
+	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
-	require.NoError(t, database.UpdateRepoProviderMetadata(
+	require.NoError(t, database.UpdateRepoProviderObservation(
 		t.Context(), repoID, db.RepoProviderMetadata{
-			PlatformRepoID: identity.PlatformRepoID,
-			WebURL:         "https://github.com/acme/widget",
-			CloneURL:       "https://github.com/acme/widget.git",
-			DefaultBranch:  "main",
-		},
+			WebURL:        "https://github.com/acme/widget",
+			CloneURL:      "https://github.com/acme/widget.git",
+			DefaultBranch: "main",
+		}, nil, nil,
 	))
 }
 

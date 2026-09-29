@@ -541,9 +541,10 @@ func archiveReportCounts(counts report.Counts) archiveReportCountsResponse {
 }
 
 type archiveSnapshotInput struct {
+	IssueScope   string   `query:"issue_scope" enum:"open" doc:"Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window."`
 	Repositories []string `query:"repo,explode" doc:"Optional configured repository subset. Repeat repo=provider|platform_host/repo_path to split large exports. Limits: 10,000 items/reviews/references and 32 MiB projected text or response; no items are dropped."`
-	Start        string   `query:"start" required:"true" doc:"Inclusive UTC RFC3339 issue-creation boundary."`
-	End          string   `query:"end" required:"true" doc:"Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit."`
+	Start        string   `query:"start" required:"true" doc:"Inclusive UTC RFC3339 issue-creation boundary; not applied when issue_scope=open."`
+	End          string   `query:"end" required:"true" doc:"Exclusive UTC RFC3339 issue-creation boundary; not applied when issue_scope=open. Open pull requests have no age limit."`
 }
 
 type archiveSnapshotOutput = httpapi.BodyOutput[snapshot.ArchiveSnapshot]
@@ -567,7 +568,7 @@ func (s *Server) getArchiveSnapshot(ctx context.Context, input *archiveSnapshotI
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.archive.Snapshot(ctx, archive.SnapshotOptions{Start: start, End: end, Repositories: refs})
+	result, err := s.archive.Snapshot(ctx, archive.SnapshotOptions{Start: start, End: end, Repositories: refs, IssueScope: input.IssueScope})
 	if errors.Is(err, archive.ErrSnapshotScope) {
 		return nil, httpapi.Validation("query.repo", err.Error())
 	}

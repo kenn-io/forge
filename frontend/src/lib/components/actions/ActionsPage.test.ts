@@ -61,6 +61,8 @@ const capabilities = {
 
 const available = { available: true };
 
+const repoIds: Record<string, number> = { alpha: 1003, beta: 1004, legacy: 1020, "filtered-out": 1021 };
+
 function repoSummary(name: string, supported = true) {
   return {
     owner: "acme",
@@ -73,7 +75,7 @@ function repoSummary(name: string, supported = true) {
       owner: "acme",
       name,
       repo_path: `acme/${name}`,
-      platform_repo_id: `${name}-repo-id`,
+      platform_repo_id: repoIds[name] ?? 0,
       capabilities: supported
         ? capabilities
         : {
@@ -273,9 +275,9 @@ describe("ActionsPage", () => {
     await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
     const refInput = screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement;
     await fireEvent.input(refInput, { target: { value: "feature/draft" } });
-    const payload = { provider: "github", platform_host: "github.com", platform_repo_id: "alpha-repo-id" };
+    const payload = { provider: "github", platform_host: "github.com", platform_repo_id: 1003 };
     for (const identity of [
-      { ...payload, platform_repo_id: "beta-repo-id" },
+      { ...payload, platform_repo_id: 1004 },
       { ...payload, platform_host: "github.example.com" },
       payload,
     ]) {
@@ -286,7 +288,7 @@ describe("ActionsPage", () => {
       platformHost: "github.com",
       owner: "acme",
       name: "alpha",
-      platformRepoId: "alpha-repo-id",
+      platformRepoId: 1003,
     };
     await waitFor(() => expect(store.getRuns(ref)[0]?.status).toBe("completed"));
     expect(reads).toBe(2);
@@ -351,7 +353,7 @@ describe("ActionsPage", () => {
       platformHost: "github.com",
       owner: "acme",
       name: "beta",
-      platformRepoId: "beta-repo-id",
+      platformRepoId: 1004,
     };
     store.loadCatalog(betaRef);
     await waitFor(() => expect(store.getCatalog(betaRef)).not.toBeNull());
@@ -361,7 +363,7 @@ describe("ActionsPage", () => {
     );
 
     expect(document.querySelector<HTMLInputElement>('input[aria-label="Git ref"]')?.value).toBe("trunk");
-    expect(store.getSnapshot(betaRef)?.ref.platformRepoId).toBe("beta-repo-id");
+    expect(store.getSnapshot(betaRef)?.ref.platformRepoId).toBe(1004);
   });
 
   it("retries an initial catalog failure in place", async () => {
@@ -588,7 +590,7 @@ describe("ActionsPage", () => {
       platformHost: "github.com",
       owner: "acme",
       name: "alpha",
-      platformRepoId: "alpha-repo-id",
+      platformRepoId: 1003,
     };
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await fireEvent.click(await screen.findByRole("button", { name: /Run 7 alpha deploy/ }));

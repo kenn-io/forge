@@ -15,6 +15,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/gitlab"
@@ -337,15 +338,15 @@ func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
 	require.NoError(err)
 	registry, err := ghclient.NewProviderRegistry(nil, client)
 	require.NoError(err)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform: "gitlab", PlatformHost: "gitlab.example.com",
-		PlatformRepoID: "42", Owner: "group", Name: "project",
+		PlatformRepoID: 42, Owner: "group", Name: "project",
 		RepoPath: "group/project",
 	})
 	require.NoError(err)
 	repo := ghclient.RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
-		PlatformRepoID: 42, PlatformExternalID: "42", RepoID: repoID,
+		PlatformRepoID: 42, RepoID: repoID,
 		Owner: "group", Name: "project", RepoPath: "group/project",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -357,8 +358,8 @@ func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
 		ghclient.WithArchiveSyncBudget(ctx),
 		platform.RepoRef{
 			Platform: platform.KindGitLab, Host: "gitlab.example.com",
-			PlatformID: 42, PlatformExternalID: "42",
-			Owner: "group", Name: "project", RepoPath: "group/project",
+			PlatformID: 42,
+			Owner:      "group", Name: "project", RepoPath: "group/project",
 		},
 		db.ArchiveItemTypeIssue, 7,
 	)

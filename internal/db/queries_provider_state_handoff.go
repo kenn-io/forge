@@ -21,7 +21,7 @@ const (
 type ProviderStateRepository struct {
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 }
@@ -87,9 +87,11 @@ func (repository ProviderStateRepository) validate() error {
 	}{
 		{name: "provider", value: repository.Provider},
 		{name: "platform_host", value: repository.PlatformHost},
-		{name: "platform_repo_id", value: repository.PlatformRepoID},
 		{name: "owner", value: repository.Owner},
 		{name: "name", value: repository.Name},
+	}
+	if repository.PlatformRepoID <= 0 {
+		return errors.New("provider state repository platform_repo_id is required")
 	}
 	for _, field := range fields {
 		if strings.TrimSpace(field.value) == "" {
@@ -169,14 +171,14 @@ func providerStateCanonicalDigest(value any) (string, error) {
 func providerStateRepositoryKey(repository ProviderStateRepository) string {
 	return strings.ToLower(strings.TrimSpace(repository.Provider)) + "\x00" +
 		strings.ToLower(strings.TrimSpace(repository.PlatformHost)) + "\x00" +
-		strings.TrimSpace(repository.PlatformRepoID)
+		strconv.FormatInt(repository.PlatformRepoID, 10)
 }
 
 func canonicalProviderStateDigestRepository(repository ProviderStateRepository) ProviderStateRepository {
 	return ProviderStateRepository{
 		Provider:       strings.ToLower(strings.TrimSpace(repository.Provider)),
 		PlatformHost:   strings.ToLower(strings.TrimSpace(repository.PlatformHost)),
-		PlatformRepoID: strings.TrimSpace(repository.PlatformRepoID),
+		PlatformRepoID: repository.PlatformRepoID,
 	}
 }
 
@@ -217,7 +219,7 @@ func (payload ProviderStateWorkflowPayload) Record() (ProviderStateRecord, error
 }
 
 func providerStateRepositoryFromRow(
-	provider, host, platformRepoID, owner, name string,
+	provider, host string, platformRepoID int64, owner, name string,
 ) ProviderStateRepository {
 	return ProviderStateRepository{
 		Provider: provider, PlatformHost: host, PlatformRepoID: platformRepoID,
@@ -249,7 +251,7 @@ func (d *DB) listReviewDraftStateForHandoff(
 		FROM forge_mr_review_drafts draft
 		JOIN forge_merge_requests mr ON mr.id = draft.merge_request_id
 		JOIN forge_repos r ON r.id = mr.repo_id
-		WHERE trim(r.platform_repo_id) <> ''
+		WHERE r.platform_repo_id > 0
 		ORDER BY r.platform, r.platform_host, r.platform_repo_id, mr.number`)
 	if err != nil {
 		return nil, fmt.Errorf("list review drafts for provider state handoff: %w", err)
@@ -258,7 +260,8 @@ func (d *DB) listReviewDraftStateForHandoff(
 	var records []ProviderStateRecord
 	for rows.Next() {
 		var draftID int64
-		var provider, host, repoID, owner, name string
+		var provider, host, owner, name string
+		var repoID int64
 		var payload ProviderStateReviewDraftPayload
 		if err := rows.Scan(
 			&draftID, &provider, &host, &repoID, &owner, &name,
@@ -301,7 +304,7 @@ func (d *DB) listWorkflowStateForHandoff(
 		       state.updated_reason
 		FROM forge_item_workflow_state state
 		JOIN forge_repos r ON r.id = state.repo_id
-		WHERE trim(r.platform_repo_id) <> ''
+		WHERE r.platform_repo_id > 0
 		  AND (state.status <> 'new' OR trim(state.updated_source) <> ''
 		       OR trim(state.updated_actor) <> '' OR trim(state.updated_reason) <> '')
 		ORDER BY r.platform, r.platform_host, r.platform_repo_id,
@@ -312,7 +315,8 @@ func (d *DB) listWorkflowStateForHandoff(
 	defer rows.Close()
 	var records []ProviderStateRecord
 	for rows.Next() {
-		var provider, host, repoID, owner, name string
+		var provider, host, owner, name string
+		var repoID int64
 		var payload ProviderStateWorkflowPayload
 		if err := rows.Scan(
 			&provider, &host, &repoID, &owner, &name,
@@ -355,7 +359,7 @@ func lookupProviderStateRepoTx(
 		  AND lifecycle_state = 'active'`,
 		strings.ToLower(strings.TrimSpace(repository.Provider)),
 		strings.ToLower(strings.TrimSpace(repository.PlatformHost)),
-		strings.TrimSpace(repository.PlatformRepoID),
+		repository.PlatformRepoID,
 	).Scan(&repoID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, errors.New("provider state repository is not present on the hub")

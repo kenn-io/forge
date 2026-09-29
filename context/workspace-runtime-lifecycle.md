@@ -371,7 +371,13 @@ create a local process, PTY, or durable transport session
 - Local-runtime reconnects restore browser-generated cursor-key, mouse, focus,
   and paste DEC modes from session-wide PTY state, not bounded screen replay
   (`internal/workspace/localruntime/manager.go::session.subscribe`).
-- Initial agent handoff requires observed bracketed-paste mode, then sends the
+- Pass initial prompts to directly configured Claude commands as CLI arguments; its
+  trust dialog already uses raw input, so a synthetic Enter can select exit.
+  (`internal/workspace/localruntime/manager.go::Manager.LaunchWithInitialMessage`).
+- Reject oversized Windows launch commands before starting the agent or PTY helper;
+  count quoted UTF-16 arguments, including helper JSON, rather than prompt bytes
+  (`internal/ptyowner/client.go::Client.Ensure`).
+- Terminal prompt delivery requires observed bracketed-paste mode, then sends the
   opening frame, prompt, and closing frame in one terminal write and, after a
   short fixed settle delay, Enter as a separate write. Agent TUIs treat bytes
   in the same chunk as the paste-end marker as part of the paste, so an Enter
@@ -413,10 +419,15 @@ stale tabs.
 
 - Runtime lists returned by `/workspaces/{id}/runtime` are the authoritative
   backend view of live launched sessions.
+- Queued launch admission must read runtime after workspace readiness; that same fresh response may supply the reconciliation baseline, but presentation caches may not
+  (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::executeMutation`).
+- Once a local ready event advances setup, older `creating` details must not hide the terminal or stall queued launch;
+  fresh setup reads and authoritative error/deletion responses still apply
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::fetchWorkspaceProgram`).
 - Manual stop settlement must bound every awaited stage and publish confirmed local absence before any
   best-effort refresh; no stalled transport, authority read, or presenter may retain the pending control
   (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::makeWorkspaceRuntimeWorkflow`).
-- Publish confirmed workflow sessions before best-effort reloads, but keep those additions provisional: only a successful
+- Publish confirmed workflow and terminal sessions before best-effort reloads, but keep those additions provisional: only a successful
   runtime read may tombstone absent peers. Reject only definite failures; reconciliation decides uncertain launches
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::presentRuntimeMutation`).
 - Workspace terminals use xterm.js exclusively; there is no renderer setting
@@ -472,12 +483,28 @@ stale tabs.
   container pixels do not trigger resize observation (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 - Keyboard and pointer interactions inside workspace rows must not trigger
   unintended navigation when the user is targeting a nested control.
-- Persisted "last active tab" state must be scoped per workspace.
+- Selected tabs persist on the workspace's execution host and restore across browsers; browser storage is only a cache.
+  Restoration and automatic focus must not overwrite a saved choice; promoted agent focus counts as selection
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::loadWorkspaceTabProgram`).
+- A detail pane's fallback agent must not replace an explicit Home choice when returning to Workspaces;
+  only user selection changes that choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoreWorkspaceTabSelection`).
+- Promoted terminal-region sessions remember `terminal` without changing detail-pane placement; open its top dock
+  on entering Workspaces. Resolve saved session keys against the browser's current region
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoreWorkspaceTabSelection`).
+- Order selection requests per workspace and execution host; a delayed peer must not block another workspace
+  (`frontend/src/lib/components/terminal/workspace-view-state.ts::workspaceRequests`).
 
 ## Released Terminal Retention
 
+- Workspace presentation and terminal retention have separate limits; a retained socket alone cannot restore an evicted workspace view. Size detail and workspace caches independently of connected terminal retention
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::recentWorkspaces`).
 - Repeat visits restore host-scoped workspace/runtime presentation before revalidation; cached runtime may reclaim retained sessions but cannot decide queued launches, authorize new attachments, or discard absent peers
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoredSessionKeys`).
+- Event-stream `Open` can arrive after initial loading; it is not runtime invalidation. Only pending workspace enrichment
+  needs a detail refresh after the initial load, while `ReconnectStale` still reloads workspace and runtime
+  (`frontend/src/lib/components/mobile/MobileWorkspaceTerminal.svelte`).
+- Parked workspace hosts stop periodic runtime reads unless a promoted pane remains visible; this must not stop
+  application-owned launch reconciliation (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::startRuntimePolling`).
 - A live view's desired set claims its sessions even when a tab is hidden; only unclaimed sessions enter the bounded, release-ordered LRU, and a zero limit disables retention (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionReleased`).
 - While a workspace switch awaits destination runtime reconciliation, cache trimming must protect that destination prefix; otherwise releasing the previous workspace can evict the pending cache hit at capacity (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::releaseOwnedSessions`).
 - Retention keeps the parsed xterm subtree and connected socket but relinquishes interaction, resize, and WebGL resources; reclaim reparents the same subtree without reconnect or replay (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`, `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::syncRendererState`).

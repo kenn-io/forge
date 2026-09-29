@@ -70,7 +70,7 @@ test.afterAll(async () => {
 
 test("settings saves and reloads workspace terminal options", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);
-  await openSettingsPanel(page, "Terminal");
+  await openSettingsPanel(page, "Workspaces");
 
   const input = page.getByLabel("Monospace font family");
   const fontSize = page.getByRole("spinbutton", { name: "Font size", exact: true });
@@ -79,7 +79,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   const letterSpacing = page.getByLabel("Letter spacing");
   const retainedSessions = page.getByLabel("Retained terminal sessions");
   const cursorBlink = page.getByLabel("Cursor blink");
-  const saveButton = page.getByRole("button", {
+  const saveButton = page.getByRole("region", { name: "Terminal", exact: true }).getByRole("button", {
     name: "Save",
     exact: true,
   });
@@ -88,7 +88,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
   await expect(scrollback).toHaveValue("1000");
   await expect(lineHeight).toHaveValue("1");
   await expect(letterSpacing).toHaveValue("0");
-  await expect(retainedSessions).toHaveValue("10");
+  await expect(retainedSessions).toHaveValue("50");
   await expect(cursorBlink).toBeChecked();
 
   await fontSize.fill("18");
@@ -149,7 +149,7 @@ test("settings saves and reloads workspace terminal options", async ({ page }) =
     });
 
   await page.reload();
-  await openSettingsPanel(page, "Terminal");
+  await openSettingsPanel(page, "Workspaces");
   await expect(page.getByLabel("Monospace font family")).toHaveValue('"Iosevka Term", monospace');
   await expect(page.getByRole("spinbutton", { name: "Font size", exact: true })).toHaveValue("18");
   await expect(page.getByLabel("Scrollback")).toHaveValue("5000");

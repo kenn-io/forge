@@ -35,7 +35,7 @@ func expandHomeCWD(cwd string) string {
 
 func (s *Handler) lookupRepoByProviderRoute(
 	ctx context.Context, provider, platformHost, owner, name string,
-) (*db.Repo, error) {
+) (*db.ActiveRepo, error) {
 	if s.lookupRepo != nil {
 		return s.lookupRepo(ctx, provider, platformHost, owner, name)
 	}
@@ -78,7 +78,7 @@ func repoProviderHost(repo db.Repo) string {
 }
 
 func (s *Handler) repoRefFromParts(
-	provider, host, owner, name string,
+	provider, host, owner, name string, platformRepoID int64,
 ) httpapi.RepoRefResponse {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
@@ -86,7 +86,8 @@ func (s *Handler) repoRefFromParts(
 	}
 	resp := httpapi.RepoRefResponse{
 		Provider: provider, PlatformHost: host,
-		RepoPath: owner + "/" + name, Owner: owner, Name: name,
+		PlatformRepoID: platformRepoID,
+		RepoPath:       owner + "/" + name, Owner: owner, Name: name,
 	}
 	if s.resolver != nil {
 		resp.Capabilities = s.resolver.Capabilities(platform.Kind(provider), host)

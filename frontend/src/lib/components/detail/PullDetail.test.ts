@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { tick, type ComponentProps } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import type { DiffResult, Label, PullDetail } from "../../api/types.js";
+import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { NAVIGATE_KEY, STORES_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
@@ -89,6 +90,7 @@ vi.mock("../../utils/markdown.js", async (importOriginal) => {
 
 import PullDetailComponent from "./PullDetail.svelte";
 import PullDetailTestHarness from "./PullDetailTestHarness.svelte";
+import { getCommentDraftKey, setCommentDraft } from "./comment-drafts.svelte.js";
 
 const capabilities = {
   read_repositories: true,
@@ -168,7 +170,7 @@ function pullDetail(): PullDetail {
       owner: "acme",
       name: "widget",
       repo_path: "acme/widget",
-      platform_repo_id: "widget-repo-id",
+      platform_repo_id: 1001,
     },
     merge_request: {
       ID: 1,
@@ -235,6 +237,7 @@ function renderPullDetail(
     onOpenWorkspace?: (workspaceId: string) => void;
     hideTabs?: boolean;
     detailLoading?: boolean;
+    detailFromCache?: boolean;
     detailSyncing?: boolean;
     deferRefresh?: boolean;
     refreshFailure?: string;
@@ -294,7 +297,7 @@ function renderPullDetail(
     stopDetailPolling: vi.fn(),
     getDetail: () => detail,
     getDetailEnvelopeTick: () => envelopeTick,
-    isDetailFromCache: () => false,
+    isDetailFromCache: () => options.detailFromCache ?? false,
     isDetailLoading: () => options.detailLoading ?? false,
     getDetailError: () => null,
     isDetailSyncing: () => options.detailSyncing ?? false,
@@ -346,6 +349,7 @@ function renderPullDetail(
         runMergeAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
     ),
     editComment: vi.fn(),
+    submitComment: vi.fn(),
     savePRBodyInBackground: vi.fn(),
     setLocalPRBody: vi.fn(),
     applyReviewSuggestions: vi.fn(
@@ -998,7 +1002,7 @@ describe("PullDetail provider workflow actions", () => {
         owner: "acme",
         name: "widget",
         repoPath: "acme/widget",
-        platformRepoId: "widget-repo-id",
+        platformRepoId: 1001,
       },
       "release.yml",
     );
@@ -1030,6 +1034,38 @@ describe("PullDetail provider workflow actions", () => {
 });
 
 describe("PullDetail activity refresh", () => {
+  it.each([false, true])("allows a cached pull draft only for the selected item (mismatch=%s)", async (mismatch) => {
+    const detail = pullDetail();
+    detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };
+    detail.repo.operations = { add_comment: { available: true } };
+    const number = detail.merge_request.Number + (mismatch ? 1 : 0);
+    const draftKey = getCommentDraftKey("pull", {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number,
+      platformRepoId: detail.repo.platform_repo_id,
+    });
+    setCommentDraft(draftKey, "Draft while refreshing");
+    onTestFinished(() => setCommentDraft(draftKey, ""));
+    const { container, detailStore } = renderPullDetail(detail, undefined, undefined, {
+      detailFromCache: true,
+      detailLoading: true,
+      detailProps: { number },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector(".comment-editor-input")?.textContent).toBe("Draft while refreshing"),
+    );
+    expect(container.querySelector(".comment-editor-input")?.getAttribute("contenteditable")).toBe(String(!mismatch));
+    const submit = screen.getByRole("button", { name: "Comment", exact: true }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    await fireEvent.click(submit);
+    expect(detailStore.submitComment).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     cleanup();
     for (const item of getFlashes()) dismissFlash(item.id);
@@ -1261,7 +1297,7 @@ describe("PullDetail approvals", () => {
     renderPullDetail(detail);
 
     const trigger = screen.getByRole("button", {
-      name: "APPROVED (2)",
+      name: "Approved (2)",
     });
     await fireEvent.click(trigger);
 
@@ -2553,11 +2589,11 @@ describe("PullDetail approvals", () => {
       if (navigation === "unmount") {
         unmount();
       } else if (navigation.startsWith("repository replacement")) {
-        detail.repo.platform_repo_id = "replacement-id";
-        await rerender({ platformRepoId: "replacement-id" });
+        detail.repo.platform_repo_id = 7999;
+        await rerender({ platformRepoId: 7999 });
         if (navigation === "repository replacement cycle") {
-          detail.repo.platform_repo_id = "widget-repo-id";
-          await rerender({ platformRepoId: "widget-repo-id" });
+          detail.repo.platform_repo_id = 7101;
+          await rerender({ platformRepoId: 7101 });
         }
       } else {
         await rerender({
@@ -2679,14 +2715,14 @@ describe("PullDetail approvals", () => {
         await screen.findByText("Merging");
       }
 
-      current = { ...current, repo: { ...current.repo, platform_repo_id: "replacement-id" } };
+      current = { ...current, repo: { ...current.repo, platform_repo_id: 7999 } };
       store.loadDetail("acme", "widget", 1, {
         provider: "github",
         platformHost: "github.com",
         repoPath: "acme/widget",
         sync: false,
       });
-      await waitFor(() => expect(store.getDetail()?.repo.platform_repo_id).toBe("replacement-id"));
+      await waitFor(() => expect(store.getDetail()?.repo.platform_repo_id).toBe(7999));
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull());
       if (phase === "submitted") {
         merge.resolve({
@@ -2734,18 +2770,23 @@ describe("PullDetail inline workspace handoff", () => {
     const detail = pullDetail();
     detail.platform_host = platformHost;
     Object.assign(detail.repo, { Host: platformHost, PlatformHost: platformHost, platform_host: platformHost });
+    const snapshot = Promise.withResolvers<unknown>();
     const apiClient = {
-      GET: vi.fn().mockResolvedValue({
-        data: {
-          hosts: [
-            {
-              configKey: "devbox:compute-a",
-              kind: "devbox",
-              operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
-            },
-          ],
-        },
-      }),
+      GET: vi.fn().mockImplementation(() =>
+        reason
+          ? Promise.resolve({
+              data: {
+                hosts: [
+                  {
+                    configKey: "devbox:compute-a",
+                    kind: "devbox",
+                    operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
+                  },
+                ],
+              },
+            })
+          : snapshot.promise,
+      ),
       POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
     };
     renderPullDetail(detail, undefined, apiClient, {
@@ -2769,7 +2810,105 @@ describe("PullDetail inline workspace handoff", () => {
         ),
       );
     }
+    snapshot.resolve({ data: { hosts: [] } });
   });
+
+  it("shows a quiet status hint after directory failure and still creates on the saved devbox", async () => {
+    const snapshot = Promise.withResolvers<unknown>();
+    const apiClient = {
+      GET: vi
+        .fn()
+        .mockImplementation((path: string) =>
+          path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: {} }),
+        ),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
+    };
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "devbox:compute-a",
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(apiClient.GET).toHaveBeenCalledWith("/snapshot", expect.anything()));
+    snapshot.reject(new Error("directory unavailable"));
+    await waitFor(() => expect(create.title).toContain("Preferred devbox status unavailable."));
+    expect(document.getElementById(create.getAttribute("aria-describedby")!)?.textContent).toContain(
+      "Preferred devbox status unavailable.",
+    );
+    expect(create.disabled).toBe(false);
+    await fireEvent.click(create);
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces",
+        expect.objectContaining({ params: { path: { connection_id: "compute-a" } } }),
+      ),
+    );
+  });
+
+  it.each(["pending", "failed"])(
+    "creates on the saved devbox when cached availability is unavailable and directory refresh is %s",
+    async (refresh) => {
+      const snapshot = Promise.withResolvers<unknown>();
+      const apiClient = {
+        GET: vi
+          .fn()
+          .mockResolvedValueOnce({
+            data: {
+              hosts: [
+                {
+                  configKey: "devbox:compute-a",
+                  kind: "devbox",
+                  operationAvailability: {
+                    workspaceWrite: { available: false, unavailableReason: "Devbox is in maintenance" },
+                  },
+                },
+              ],
+            },
+          })
+          .mockImplementation((path: string) =>
+            path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: {} }),
+          ),
+        POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
+      };
+      detailRuntime = makeTestAppRuntime(apiClient);
+      const warm = detailRuntime.runCommand(loadFleetSnapshot(), {
+        operation: "warm workspace directory",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      expect((await warm.exit)._tag).toBe("Success");
+
+      renderPullDetail(pullDetail(), undefined, apiClient, {
+        hideWorkspaceAction: false,
+        defaultExecutionTarget: "devbox:compute-a",
+      });
+      const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+      await waitFor(() => expect(apiClient.GET.mock.calls.filter(([path]) => path === "/snapshot")).toHaveLength(2));
+      if (refresh === "failed") {
+        snapshot.reject(new Error("directory unavailable"));
+        await waitFor(() => expect(create.title).toContain("Preferred devbox status unavailable."));
+      }
+      expect(create.disabled).toBe(false);
+      await fireEvent.click(create);
+      await waitFor(() =>
+        expect(apiClient.POST).toHaveBeenCalledWith(
+          "/devboxes/{connection_id}/workspaces",
+          expect.objectContaining({
+            params: { path: { connection_id: "compute-a" } },
+            body: {
+              provider: "github",
+              platform_host: "github.com",
+              platform_repo_id: 1001,
+              owner: "acme",
+              name: "widget",
+              mr_number: 1,
+            },
+          }),
+        ),
+      );
+      expect(apiClient.POST).toHaveBeenCalledTimes(1);
+      snapshot.resolve({ data: { hosts: [] } });
+    },
+  );
 
   function deferredWorkspaceApiClient() {
     let resolvePost!: (value: { data?: { id: string; status: string; created?: boolean } }) => void;
@@ -2797,7 +2936,12 @@ describe("PullDetail inline workspace handoff", () => {
     });
 
     await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
-    await waitFor(() => expect(runtimeClient.POST).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(runtimeClient.POST).toHaveBeenCalledWith(
+        "/workspaces",
+        expect.objectContaining({ body: expect.objectContaining({ platform_repo_id: 1001 }) }),
+      ),
+    );
     resolvePost({ data: { id: "ws-runtime", status: "provisioning" } });
 
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
@@ -3216,6 +3360,7 @@ describe("PullDetail inline workspace handoff", () => {
 
   it("phone presentation renders the actions as one kit action grid instead of fit stages", async () => {
     const detail = pullDetail();
+    detail.repo.capabilities = { ...detail.repo.capabilities, review_mutation: true };
     detail.workspace = { id: "ws-1", status: "ready" };
 
     const { navigate } = renderPullDetail(detail, undefined, undefined, {

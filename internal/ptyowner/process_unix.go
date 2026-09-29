@@ -9,6 +9,8 @@ import (
 	gopty "github.com/aymanbagabas/go-pty"
 )
 
+func validateCommandLine([]string) error { return nil }
+
 func configureOwnerCommand(cmd *gopty.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }

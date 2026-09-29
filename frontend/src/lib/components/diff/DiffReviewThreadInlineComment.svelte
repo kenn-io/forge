@@ -309,7 +309,7 @@
     color: var(--accent-purple);
     font-size: var(--font-size-2xs);
     font-weight: 700;
-    text-transform: uppercase;
+    text-transform: var(--label-transform, uppercase);
   }
 
   .review-thread-location {

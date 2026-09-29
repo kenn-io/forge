@@ -26,24 +26,6 @@ type workspaceSubjectCandidate struct {
 func (s *Handler) WorkspaceSubjectSnapshot(
 	ctx context.Context,
 ) (WorkspaceSubjectSnapshot, error) {
-	if s.db == nil {
-		return emptyWorkspaceSubjectSnapshot(), nil
-	}
-	releaseReconciliation, err := s.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return WorkspaceSubjectSnapshot{}, err
-	}
-	defer releaseReconciliation()
-	return s.WorkspaceSubjectSnapshotUnderRepositoryReconciliationRead(ctx)
-}
-
-// WorkspaceSubjectSnapshotUnderRepositoryReconciliationRead returns the same
-// snapshot as WorkspaceSubjectSnapshot for a caller that already holds the
-// repository-reconciliation read lock. Acquiring the lock again can deadlock
-// behind a queued reconciliation writer.
-func (s *Handler) WorkspaceSubjectSnapshotUnderRepositoryReconciliationRead(
-	ctx context.Context,
-) (WorkspaceSubjectSnapshot, error) {
 	snapshot := emptyWorkspaceSubjectSnapshot()
 	if s.db == nil {
 		return snapshot, nil
@@ -52,9 +34,6 @@ func (s *Handler) WorkspaceSubjectSnapshotUnderRepositoryReconciliationRead(
 	summaries, err := s.db.ListWorkspaceSummaries(ctx)
 	if err != nil {
 		return WorkspaceSubjectSnapshot{}, err
-	}
-	if s.workspaceSubjectAfterSummariesForTest != nil {
-		s.workspaceSubjectAfterSummariesForTest()
 	}
 
 	keys := make([]db.WorkspaceSubjectKey, 0, len(summaries)*2)

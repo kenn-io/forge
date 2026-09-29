@@ -79,6 +79,8 @@ const (
 	ownerOutputLimit       = 64 * 1024
 )
 
+var ErrCommandLineTooLong = errors.New("command line exceeds the Windows limit of 32,767 UTF-16 code units; shorten the prompt or launch arguments")
+
 type Attachment struct {
 	Output <-chan []byte
 	Done   <-chan struct{}
@@ -132,6 +134,9 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 	if len(command) == 0 {
 		command = defaultShellCommand()
 	}
+	if err := validateCommandLine(command); err != nil {
+		return err
+	}
 	commandJSON, err := json.Marshal(command)
 	if err != nil {
 		return err
@@ -151,6 +156,9 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 	}
 	exe, args := c.ownerCommand(exe, session, cwd, string(commandJSON))
 	cmd := procutil.Command(exe, args...)
+	if err := validateCommandLine(cmd.Args); err != nil {
+		return err
+	}
 	cmd.Env = c.ownerHelperEnvironment(os.Environ())
 	detachCommand(cmd)
 	stdout := newBoundedOutputBuffer(ownerOutputLimit)

@@ -114,7 +114,7 @@
     kind: "branch";
     row: ActivityRow;
     provider: string;
-    platformRepoId: string;
+    platformRepoId?: number | undefined;
     repoOwner: string;
     repoName: string;
     repoPath: string;
@@ -422,7 +422,7 @@
       kind: "branch",
       row,
       provider: item.repo.provider,
-      platformRepoId: item.repo.platform_repo_id ?? "",
+      platformRepoId: item.repo.platform_repo_id,
       repoOwner: item.repo.owner,
       repoName: item.repo.name,
       repoPath: item.repo.repo_path,
@@ -1089,8 +1089,8 @@
     padding: 6px 0 4px;
     font-size: var(--font-size-2xs);
     font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.5px);
     color: var(--text-muted);
     border-bottom: 1px solid var(--border-default);
     position: sticky;

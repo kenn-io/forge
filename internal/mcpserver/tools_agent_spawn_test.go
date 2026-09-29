@@ -44,7 +44,7 @@ func TestSpawnWorkspaceWithAgentCallsDirectServicesAndUsesAuthoritativeEvidence(
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
 		Source: &workspaceSourceInput{Type: "item", Item: &itemRefInput{
 			Type: "pr", Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-acme-widget",
+			PlatformRepoID: 1001,
 			Owner:          "acme", Name: "widget", Number: 42,
 		}},
 		AgentTarget: "codex", InitialMessage: "review this\r\nthen implement", Timeout: "2s",
@@ -70,9 +70,10 @@ func TestSpawnWorkspaceWithAgentCustomTargetObservesCanonicalHookAgent(t *testin
 	backend.listLaunchTargetsFn = func(context.Context) ([]LaunchTarget, error) {
 		return []LaunchTarget{{Key: "custom-worker", Kind: "agent", Available: true}}, nil
 	}
-	backend.launchWorkspaceRuntimeFn = func(_ context.Context, workspaceID, target string) (RuntimeSession, error) {
+	backend.launchWorkspaceRuntimeFn = func(_ context.Context, workspaceID, target, initialMessage string) (RuntimeSession, error) {
 		assert.Equal("ws-custom", workspaceID)
 		assert.Equal("custom-worker", target)
+		assert.Equal("start", initialMessage)
 		return RuntimeSession{Key: "runtime-custom", TargetKey: target, Kind: "agent", Status: "running"}, nil
 	}
 	backend.getWorkspaceRuntimeFn = func(context.Context, string) (WorkspaceRuntime, error) {
@@ -147,7 +148,7 @@ func TestSpawnWorkspaceWithAgentResumesExistingRuntimeAfterHookTimeout(t *testin
 	deliveries := 0
 	submissions := 0
 	hookVisible := false
-	backend.launchWorkspaceRuntimeFn = func(context.Context, string, string) (RuntimeSession, error) {
+	backend.launchWorkspaceRuntimeFn = func(context.Context, string, string, string) (RuntimeSession, error) {
 		launches++
 		return RuntimeSession{
 			Key: "runtime-resume", TargetKey: "codex", Kind: "agent", Status: "running",
@@ -260,7 +261,7 @@ func TestSpawnWorkspaceWithAgentResumesPromptSubmissionOnExistingRuntime(t *test
 	backend := successfulSpawnBackend("ws-submit-resume", "runtime-submit-resume", "coding-submit-resume")
 	launches := 0
 	inputReady := false
-	backend.launchWorkspaceRuntimeFn = func(context.Context, string, string) (RuntimeSession, error) {
+	backend.launchWorkspaceRuntimeFn = func(context.Context, string, string, string) (RuntimeSession, error) {
 		launches++
 		return RuntimeSession{
 			Key: "runtime-submit-resume", TargetKey: "codex", Kind: "agent", Status: "running",
@@ -334,7 +335,7 @@ func TestSpawnWorkspaceWithAgentDefaultsToMostUsedRecentAgent(t *testing.T) {
 		assert.ElementsMatch([]string{"codex", "claude"}, candidates)
 		return "claude", true, nil
 	}
-	backend.launchWorkspaceRuntimeFn = func(_ context.Context, workspaceID, target string) (RuntimeSession, error) {
+	backend.launchWorkspaceRuntimeFn = func(_ context.Context, workspaceID, target, initialMessage string) (RuntimeSession, error) {
 		assert.Equal("ws-default", workspaceID)
 		assert.Equal("claude", target)
 		return RuntimeSession{
@@ -359,7 +360,7 @@ func TestSpawnWorkspaceWithAgentDefaultsToMostUsedRecentAgent(t *testing.T) {
 					"type": "item",
 					"item": map[string]any{
 						"type": "pr", "provider": "github",
-						"platform_repo_id": "repo-acme-widget",
+						"platform_repo_id": 1001,
 						"owner":            "acme", "name": "widget", "number": 42,
 					},
 				},
@@ -484,7 +485,7 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 
 		out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
 			Source: &workspaceSourceInput{Type: "item", Item: &itemRefInput{
-				Type: "issue", Provider: "github", PlatformRepoID: "repo-acme-widget",
+				Type: "issue", Provider: "github", PlatformRepoID: 1001,
 				Owner: "acme", Name: "widget", Number: 7,
 			}},
 			AgentTarget: "codex", InitialMessage: "fix the issue", Timeout: "2s",
@@ -508,7 +509,7 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 		out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
 			Source: &workspaceSourceInput{Type: "adhoc", AdHoc: &adHocWorkspaceSource{
 				Repo: repoFilterInput{
-					Provider: "github", PlatformRepoID: "repo-acme-widget",
+					Provider: "github", PlatformRepoID: 1001,
 					Owner: "acme", Name: "widget",
 				},
 			}},
@@ -648,7 +649,7 @@ func TestSpawnWorkspaceWithAgentRejectsInvalidInputBeforeBackendCalls(t *testing
 		{AgentTarget: "codex", InitialMessage: "start", Timeout: "16m"},
 		{
 			Source: &workspaceSourceInput{Type: "item", Item: &itemRefInput{
-				Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget",
+				Type: "pr", Provider: "github", PlatformRepoID: 1001,
 				Owner: "acme", Name: "widget", Number: 42,
 			}},
 			AgentTarget: "codex", InitialMessage: " \n\t",
@@ -677,7 +678,7 @@ func successfulSpawnBackend(workspaceID, runtimeKey, codingSessionID string) *fa
 	backend.getWorkspaceFn = func(context.Context, string) (Workspace, error) {
 		return Workspace{ID: workspaceID, Status: "ready"}, nil
 	}
-	backend.launchWorkspaceRuntimeFn = func(_ context.Context, gotWorkspace, target string) (RuntimeSession, error) {
+	backend.launchWorkspaceRuntimeFn = func(_ context.Context, gotWorkspace, target, initialMessage string) (RuntimeSession, error) {
 		if gotWorkspace != workspaceID || target != "codex" {
 			return RuntimeSession{}, errors.New("unexpected runtime launch")
 		}
@@ -707,7 +708,7 @@ func successfulSpawnBackend(workspaceID, runtimeKey, codingSessionID string) *fa
 func prSpawnInput(message string) spawnWorkspaceWithAgentInput {
 	return spawnWorkspaceWithAgentInput{
 		Source: &workspaceSourceInput{Type: "item", Item: &itemRefInput{
-			Type: "pr", Provider: "github", PlatformRepoID: "repo-acme-widget",
+			Type: "pr", Provider: "github", PlatformRepoID: 1001,
 			Owner: "acme", Name: "widget", Number: 42,
 		}},
 		AgentTarget: "codex", InitialMessage: message, Timeout: "2s",

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v91/github"
+	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -571,7 +571,7 @@ func waitForRepoSynced(
 			!got.LastSyncCompletedAt.After(*after) {
 			return false
 		}
-		repo = got
+		repo = got.Row()
 		return true
 	}, 5*time.Second, 10*time.Millisecond)
 

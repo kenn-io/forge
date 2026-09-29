@@ -881,8 +881,9 @@ test.describe("detail action buttons", () => {
       await expect
         .poll(() => payloads)
         .toEqual([
-          {},
+          { platform_repo_id: 3579412034 },
           {
+            platform_repo_id: 3579412034,
             git_head_ref: scenario.branch,
             ...scenario.reusePayload,
           },
@@ -1017,8 +1018,9 @@ test.describe("detail action buttons", () => {
     await expect
       .poll(() => payloads)
       .toEqual([
-        {},
+        { platform_repo_id: 3579412034 },
         {
+          platform_repo_id: 3579412034,
           git_head_ref: "kenn-forge/issue-10-2",
         },
       ]);

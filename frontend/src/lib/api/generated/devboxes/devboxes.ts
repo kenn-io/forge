@@ -26,6 +26,7 @@ import type {
   GetDevboxFilesPathParameters,
   GetDevboxRuntimePathParameters,
   GetDevboxWorkspacePathParameters,
+  GetDevboxWorkspaceViewStatePathParameters,
   LaunchDevboxHandoffPathParameters,
   LaunchDevboxSessionPathParameters,
   LaunchWorkspaceAgentHandoffInputBody,
@@ -51,6 +52,7 @@ import type {
   StoreDevboxPasteImagePathParameters,
   SubmitInitialMessageInputBody,
   TerminalPasteImageOutputBody,
+  UpdateDevboxWorkspaceViewStatePathParameters,
   WatchDevboxDiffParams,
   WatchDevboxDiffPathParameters,
   WorkerCreateRequest,
@@ -60,6 +62,7 @@ import type {
   WorkspaceLaunchSpec,
   WorkspaceResponse,
   WorkspaceRuntimeResponse,
+  WorkspaceViewState,
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
@@ -695,6 +698,52 @@ export const sendDevboxInitialMessage = async (
       body: JSON.stringify(submitInitialMessageInputBody),
     },
   );
+};
+
+export const getGetDevboxWorkspaceViewStateUrl = ({ connectionId, id }: GetDevboxWorkspaceViewStatePathParameters) => {
+  return `/devboxes/${encodeURIComponent(String(connectionId))}/workspaces/${encodeURIComponent(String(id))}/view-state`;
+};
+
+/**
+ * @summary Forward an execution operation to its owning devbox
+ */
+export const getDevboxWorkspaceViewState = async (
+  { connectionId, id }: GetDevboxWorkspaceViewStatePathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceViewState> => {
+  return orvalFetch<WorkspaceViewState>(getGetDevboxWorkspaceViewStateUrl({ connectionId, id }), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getUpdateDevboxWorkspaceViewStateUrl = ({
+  connectionId,
+  id,
+}: UpdateDevboxWorkspaceViewStatePathParameters) => {
+  return `/devboxes/${encodeURIComponent(String(connectionId))}/workspaces/${encodeURIComponent(String(id))}/view-state`;
+};
+
+/**
+ * @summary Forward an execution operation to its owning devbox
+ */
+export const updateDevboxWorkspaceViewState = async (
+  { connectionId, id }: UpdateDevboxWorkspaceViewStatePathParameters,
+  workspaceViewState: NonReadonly<WorkspaceViewState>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceViewState> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<WorkspaceViewState>(getUpdateDevboxWorkspaceViewStateUrl({ connectionId, id }), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(workspaceViewState),
+  });
 };
 
 export const getGetExecutionWorkerUrl = () => {

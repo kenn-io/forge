@@ -35,6 +35,18 @@ func TestResponseClientArrayQueryEncoding(t *testing.T) {
 			},
 		},
 		{
+			name:  "large integer IDs keep their exact digits",
+			body:  `{}`,
+			query: url.Values{"platform_repo_id": {"9007199254740993"}},
+			request: func(ctx context.Context, client *generated.Client) error {
+				id := int64(9007199254740993)
+				_, err := client.ListActivityThreadEventsWithResponse(ctx, &generated.ListActivityThreadEventsRequestOptions{Query: &generated.ListActivityThreadEventsQuery{
+					PlatformRepoID: &id,
+				}})
+				return err
+			},
+		},
+		{
 			name:  "explode true repeats archive repositories",
 			body:  `[]`,
 			query: url.Values{"repo": {"github|github.com/team/repo-a", "gitlab|gitlab.com/group/repo-b"}},

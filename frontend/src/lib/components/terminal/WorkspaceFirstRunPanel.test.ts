@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   showFlash: vi.fn(),
 }));
 
-vi.mock("../../api/fleet-snapshot.ts", () => ({
+vi.mock("../../api/fleet-snapshot.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../api/fleet-snapshot.ts")>()),
   loadSnapshotHosts: mocks.loadSnapshotHosts,
 }));
 

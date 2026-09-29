@@ -2799,7 +2799,7 @@ test.describe("inline workspace pane continuity", () => {
 
       await page.getByRole("button", { name: "Settings" }).click();
       await expect(page).toHaveURL(/\/settings$/);
-      await openSettingsPanel(page, "Terminal");
+      await openSettingsPanel(page, "Workspaces");
       const witness = page.locator('[data-retention-save-witness="a"]');
       await expect(witness).toHaveCount(1);
 
@@ -2822,14 +2822,16 @@ test.describe("inline workspace pane continuity", () => {
       });
 
       const retainedSessions = page.getByLabel("Retained terminal sessions");
-      const save = page.getByRole("button", { name: "Save", exact: true });
+      const save = page
+        .getByRole("region", { name: "Terminal", exact: true })
+        .getByRole("button", { name: "Save", exact: true });
       await retainedSessions.fill("0");
       const failedSave = page.waitForResponse(
         (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
       );
       await save.click();
       expect((await failedSave).status()).toBe(503);
-      await expect(retainedSessions).toHaveValue("10");
+      await expect(retainedSessions).toHaveValue("50");
       await expect(witness).toHaveCount(1);
       expect(await sessionWebSockets(page, workspaceA.id)).toEqual([originalSocket]);
 

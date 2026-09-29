@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
@@ -19,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -146,13 +148,122 @@ func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {
 	assert.Equal(mcpserver.ErrorCodeWorkspaceAlreadyExists, backendErr.Code)
 }
 
+type recordingMCPLaunchResolver struct {
+	*Server
+	requests []providerplane.WorkspaceLaunchRequest
+}
+
+func (r *recordingMCPLaunchResolver) ResolveWorkspaceLaunchSpec(
+	ctx context.Context, request providerplane.WorkspaceLaunchRequest,
+) (db.WorkspaceLaunchSpec, error) {
+	r.requests = append(r.requests, request)
+	return r.Server.ResolveWorkspaceLaunchSpec(ctx, request)
+}
+
+func TestMCPWorkspaceReusePreservesRepositoryIdentity(t *testing.T) {
+	for _, itemType := range []string{db.WorkspaceItemTypePullRequest, db.WorkspaceItemTypeIssue} {
+		t.Run(itemType, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			database := dbtest.Open(t)
+			seedPR(t, database, "acme", "widget", 42)
+			seedIssue(t, database, "acme", "widget", 42, "open")
+			seedWorkspace(t, database, "ws-existing", "acme", "widget", itemType, 42)
+			resolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})
+			srv := &Server{db: database, repoResolver: resolver, now: time.Now}
+			spec, err := srv.ResolveWorkspaceLaunchSpec(t.Context(), providerplane.WorkspaceLaunchRequest{
+				Repository: providerplane.RepositoryRoute{
+					Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+				},
+				PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), ItemType: itemType, ItemNumber: 42,
+				GitHeadRef: "feature/ws-existing",
+			})
+			require.NoError(err)
+			require.NoError(database.PutWorkspaceLaunchSpec(t.Context(), "ws-existing", spec))
+			launchResolver := &recordingMCPLaunchResolver{Server: srv}
+			srv.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
+				DB: database, Resolver: resolver, Workspaces: workspace.NewManager(database, t.TempDir()),
+				LaunchSpecResolver: launchResolver, EnrichmentDisabled: true,
+			})
+			t.Cleanup(func() {
+				require.NoError(srv.workspaceAPI.Shutdown(context.WithoutCancel(t.Context())))
+			})
+			item := mcpserver.ItemIdentity{
+				Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+				Owner: "acme", Name: "widget", Number: 42,
+			}
+			if itemType == db.WorkspaceItemTypePullRequest {
+				_, err := srv.MCPBackend().CreatePullWorkspace(t.Context(), item, true)
+				var backendErr *mcpserver.Error
+				require.ErrorAs(err, &backendErr)
+				assert.Equal(mcpserver.ErrorCodeWorkspaceAlreadyExists, backendErr.Code)
+			} else {
+				result, err := srv.MCPBackend().CreateIssueWorkspace(t.Context(), item, true)
+				require.NoError(err)
+				assert.Equal("ws-existing", result.ID)
+			}
+			// Reuse must pass through admission with the identity MCP validated,
+			// even when an existing workspace means no new row is written.
+			require.Len(launchResolver.requests, 1)
+			assert.Equal(testutil.FixtureRepoID("acme", "widget"), launchResolver.requests[0].PlatformRepoID)
+		})
+	}
+}
+
+func TestMCPAdHocWorkspaceRejectsRouteReplacementBeforeReuse(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	identity := verifiedGitHubRepoIdentity("github.com", "acme", "widget")
+	_, err := database.ObserveRepository(ctx, identity)
+	require.NoError(err)
+	resolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})
+	srv := &Server{db: database, repoResolver: resolver}
+	srv.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
+		DB: database, Resolver: resolver, Workspaces: workspace.NewManager(database, t.TempDir()),
+		EnrichmentDisabled: true,
+		ResolveRepository: func(requestCtx context.Context, route providerplane.RepositoryRoute, platformRepoID int64) (*db.Repo, error) {
+			// Provider sync can reassign the route after MCP validates it.
+			identity.PlatformRepoID = 1002
+			replacement, observeErr := database.ObserveRepository(ctx, identity)
+			require.NoError(observeErr)
+			require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+				ID: "ws-replacement", RepoID: replacement.Repository.ID,
+				Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget",
+				ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: "adhoc:feature/work",
+				GitHeadRef: "feature/work", WorkspaceBranch: "feature/work",
+				WorktreePath: t.TempDir(), Status: "ready",
+			}))
+			repo, lookupErr := resolver.LookupSelection(requestCtx, route.Provider, route.PlatformHost, route.Owner, route.Name, platformRepoID)
+			if lookupErr != nil {
+				return nil, httpapi.ProviderRouteLookupError(lookupErr)
+			}
+			return repo.Row(), nil
+		},
+	})
+	t.Cleanup(func() {
+		require.NoError(srv.workspaceAPI.Shutdown(context.WithoutCancel(ctx)))
+	})
+
+	result, err := srv.MCPBackend().CreateAdHocWorkspace(ctx, mcpserver.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+		Owner: "acme", Name: "widget",
+	}, "feature/work")
+
+	var backendErr *mcpserver.Error
+	require.ErrorAs(err, &backendErr)
+	assert.Equal(string(httpapi.CodeRepoNotFound), backendErr.Code)
+	assert.Empty(result.ID)
+}
+
 func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 42)
 
 	_, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
 		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: "replacement-repository",
+		PlatformRepoID: 1002,
 		Owner:          "acme", Name: "widget", Number: 42,
 	})
 
@@ -199,7 +310,7 @@ func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
 	assert.Equal(rows[0].MergeableState, detail.Pull.MergeableState)
 	assert.Equal(rows[0].ReviewDecision, detail.Pull.ReviewDecision)
 	assert.Equal(rows[0].Checks, detail.Checks)
-	identity.PlatformRepoID = "replacement-repository"
+	identity.PlatformRepoID = 1002
 	_, err = srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{Repository: identity, State: "open"})
 	var backendErr *mcpserver.Error
 	require.ErrorAs(err, &backendErr)
@@ -278,15 +389,14 @@ func TestMCPBackendListsPullsWithMalformedCachedChecks(t *testing.T) {
 	assert.Equal("dirty", byNumber[43].MergeableState)
 }
 
-func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
+func TestMCPWorkspaceRepositoryRejectsHubDescriptorWithAnotherID(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	observedAt := time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)
 	descriptor := providerplane.RepositoryDescriptor{
 		ProtocolVersion: federation.ProtocolVersion,
-		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
-		Owner: "acme", Name: "new-repo", CloneURL: "https://github.com/acme/new-repo.git",
-		DefaultBranch: "main", SnapshotRevision: 1, ObservedAt: observedAt,
+		Provider:        "github", PlatformHost: "github.com", PlatformRepoID: 1002,
+		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git",
+		DefaultBranch: "main", ObservedAt: time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC),
 	}
 	encoded, err := json.Marshal(descriptor)
 	require.NoError(err)
@@ -308,25 +418,56 @@ func TestMCPWorkspaceRepositoryFenceReconcilesHubIdentity(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, srv) })
 	srv.providerSource = &hubProviderSource{client: client, db: database}
 	backend := mcpBackend{server: srv}
-	identity := mcpserver.RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-new",
-		Owner: "acme", Name: "new-repo",
-	}
 
-	resolved, err := backend.resolveWorkspaceRepositoryFence(t.Context(), identity)
+	_, err = backend.resolveWorkspaceRepository(t.Context(), mcpserver.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Owner: "acme", Name: "widget",
+	})
 
-	require.NoError(err)
-	require.NotNil(resolved.repo)
-	assert.Equal(t, "repo-new", resolved.repo.PlatformRepoID)
-	assert.False(t, resolved.hub)
-	observed, err := database.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "repo-new",
-	)
-	require.NoError(err)
-	require.NotNil(observed)
+	var backendErr *mcpserver.Error
+	require.ErrorAs(err, &backendErr)
+	assert.Equal(t, "not_found", backendErr.Kind)
+	assert.Equal(t, string(httpapi.CodeRepoNotFound), backendErr.Code)
 }
 
-func TestMCPBackendReadFailsClosedWhenRouteReassignedMidRead(t *testing.T) {
+func TestMCPBackendResolvesRepositoryByProviderIDAcrossRename(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 42, withSeedPRTitle("renamed repository pull"))
+	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	renamed := db.GitHubRepoIdentity("github.com", "acme", "gadget")
+	renamed.PlatformRepoID = repo.PlatformRepoID
+	_, err = database.ObserveRepository(ctx, renamed)
+	require.NoError(err)
+	backend := srv.MCPBackend()
+
+	// The request still names the old route; the provider ID decides which
+	// repository is read, and the read follows it to its current route.
+	detail, err := backend.GetPull(ctx, mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com",
+		PlatformRepoID: repo.PlatformRepoID, Owner: "acme", Name: "widget", Number: 42,
+	})
+	require.NoError(err)
+	require.NotNil(detail.Pull)
+	assert.Equal("renamed repository pull", detail.Pull.Title)
+	assert.Equal("gadget", detail.Pull.Repository.Name)
+	assert.Equal(repo.PlatformRepoID, detail.Pull.Repository.PlatformRepoID)
+
+	_, err = backend.GetPull(ctx, mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com",
+		PlatformRepoID: repo.PlatformRepoID + 1, Owner: "acme", Name: "gadget", Number: 42,
+	})
+	var backendErr *mcpserver.Error
+	require.ErrorAs(err, &backendErr)
+	assert.Equal("not_found", backendErr.Kind)
+	assert.Equal(string(httpapi.CodeRepoNotFound), backendErr.Code)
+}
+
+func TestMCPBackendRejectsIDWhoseRouteWasReusedByAnotherRepository(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -335,26 +476,16 @@ func TestMCPBackendReadFailsClosedWhenRouteReassignedMidRead(t *testing.T) {
 	repo, err := database.GetRepoByIdentity(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
-	backend := mcpBackend{server: srv}
-
-	resolved, err := backend.resolveRepositoryFence(ctx, mcpserver.RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: repo.PlatformRepoID,
-		Owner:          "acme", Name: "widget",
+	_, err = database.ObserveRepository(ctx, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002,
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(err)
 
-	// Reassign route ownership between stable-identity validation and the
-	// route-addressed read, the window the fence exists to police.
-	_, accepted, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "replacement-repository",
-		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
-	}, time.Now().UTC())
-	require.NoError(err)
-	require.True(accepted)
-
-	err = backend.confirmRepositoryRoute(ctx, resolved)
+	_, err = srv.MCPBackend().GetPull(ctx, mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com",
+		PlatformRepoID: repo.PlatformRepoID, Owner: "acme", Name: "widget", Number: 42,
+	})
 
 	var backendErr *mcpserver.Error
 	require.ErrorAs(err, &backendErr)

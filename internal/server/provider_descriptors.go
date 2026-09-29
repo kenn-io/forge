@@ -2,18 +2,20 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
 
 type federationRepositoryDescriptorInput struct {
-	Body providerplane.RepositoryRoute
+	Body providerplane.RepositoryDescriptorRequest
 }
 
 type federationRepositoryDescriptorOutput = httpapi.BodyOutput[providerplane.RepositoryDescriptor]
@@ -54,30 +56,21 @@ func (s *Server) federationRepositoryDescriptor(
 			httpapi.CodeValidationError, err.Error(), nil,
 		)
 	}
-	if s.providerDescriptorBeforeSnapshotForTest != nil {
-		s.providerDescriptorBeforeSnapshotForTest()
-	}
-	release, err := s.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("lock repository descriptor snapshot failed")
-	}
-	defer release()
-	// The timestamp and identity snapshot share one reconciliation read lease.
-	// A queued route change therefore finishes before both, or after both.
 	observedAt := s.now().UTC()
-	snapshot, err := s.db.GetRepositoryProviderSnapshotUnderRepositoryReconciliationRead(
-		ctx, descriptorDBIdentity(input.Body),
+	repo, err := s.repoResolver.LookupSelection(
+		ctx, input.Body.Provider, input.Body.PlatformHost,
+		input.Body.Owner, input.Body.Name, input.Body.PlatformRepoID,
 	)
-	if err != nil {
-		return nil, httpapi.Internal("resolve repository descriptor failed")
-	}
-	if snapshot == nil {
+	if errors.Is(err, httpapi.ErrRepoNotFound) {
 		return nil, httpapi.NotFound(
 			httpapi.CodeRepoNotFound, "repository not found", nil,
 		)
 	}
+	if err != nil {
+		return nil, httpapi.Internal("resolve repository descriptor failed")
+	}
 	descriptor, err := providerplane.BuildRepositoryDescriptor(
-		repositoryDescriptorSnapshot(snapshot, observedAt),
+		repositoryDescriptorSnapshot(repo.Repo, observedAt),
 	)
 	if err != nil {
 		return nil, httpapi.Internal("build repository descriptor failed")
@@ -98,15 +91,8 @@ func (s *Server) federationDiffDescriptor(
 			"body.pull_number", "pull number must be positive",
 		)
 	}
-	release, err := s.db.LockRepositoryReconciliationRead(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("lock diff descriptor snapshot failed")
-	}
-	defer release()
-	// See the repository endpoint: identity and time are ordered together
-	// against repository reconciliation.
 	observedAt := s.now().UTC()
-	snapshot, err := s.db.GetPullDiffProviderSnapshotUnderRepositoryReconciliationRead(
+	snapshot, err := s.db.GetPullDiffProviderSnapshot(
 		ctx, descriptorDBIdentity(input.Body.Repository), input.Body.PullNumber,
 	)
 	if err != nil {
@@ -137,7 +123,7 @@ func (s *Server) federationDiffDescriptor(
 		)
 	}
 	descriptor, err := providerplane.BuildDiffDescriptor(providerplane.DiffSnapshot{
-		Repository: repositoryDescriptorSnapshot(&snapshot.Repository, observedAt),
+		Repository: repositoryDescriptorSnapshot(snapshot.Repository, observedAt),
 		PullNumber: snapshot.PullNumber, SnapshotRevision: uint64(snapshot.SnapshotRevision),
 		PlatformHeadSHA: snapshot.PlatformHeadSHA,
 		PlatformBaseSHA: snapshot.PlatformBaseSHA,
@@ -159,23 +145,19 @@ func descriptorDBIdentity(route providerplane.RepositoryRoute) db.RepoIdentity {
 }
 
 func repositoryDescriptorSnapshot(
-	snapshot *db.RepositoryProviderSnapshot, observedAt time.Time,
+	repo db.Repo, observedAt time.Time,
 ) providerplane.RepositorySnapshot {
-	result := providerRepositorySnapshot(snapshot)
+	result := providerRepositorySnapshot(repo)
 	result.ObservedAt = observedAt.UTC()
 	return result
 }
 
-func providerRepositorySnapshot(
-	snapshot *db.RepositoryProviderSnapshot,
-) providerplane.RepositorySnapshot {
-	repo := snapshot.Repository
+func providerRepositorySnapshot(repo db.Repo) providerplane.RepositorySnapshot {
 	return providerplane.RepositorySnapshot{
 		Provider: repo.Platform, PlatformHost: repo.PlatformHost,
 		PlatformRepoID: repo.PlatformRepoID,
 		Owner:          repo.Owner, Name: repo.Name,
 		CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch,
-		SnapshotRevision: uint64(snapshot.Route.Generation),
-		Stale:            strings.TrimSpace(repo.LastSyncError) != "",
+		Stale: strings.TrimSpace(repo.LastSyncError) != "",
 	}
 }

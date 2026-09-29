@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
@@ -423,7 +424,7 @@ func (s *Server) reconcileSpokePreparationProjects(
 		}
 		seen[route] = struct{}{}
 		var descriptor providerplane.RepositoryDescriptor
-		httpRequest, requestErr := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: new(generated.RepositoryRoute{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name})})
+		httpRequest, requestErr := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name}})
 		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderRead, httpRequest, requestErr, &descriptor); err != nil {
 			report.HandoffErrors = append(report.HandoffErrors,
 				fmt.Sprintf("resolve project %s repository: %v", project.ID, err))

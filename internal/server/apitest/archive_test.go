@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -477,9 +478,9 @@ func setupArchiveTestServer(
 	database := dbtest.Open(t)
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test", Owner: "owner",
-		Name: "repo", RepoPath: "owner/repo", PlatformExternalID: "repo-owner-repo",
+		Name: "repo", RepoPath: "owner/repo", PlatformID: 1001,
 	}
-	_, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(ref))
+	_, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(t, err)
 	provider := &archiveAPITestProvider{}
 	wakeCount := &atomic.Int32{}
@@ -724,8 +725,8 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	outside := ref
 	outside.Name = "not-configured"
 	outside.RepoPath = "owner/not-configured"
-	outside.PlatformExternalID = "other-id"
-	_, err = database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(outside))
+	outside.PlatformID = 2002
+	_, err = reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(outside))
 	require.NoError(err)
 	query.Repo = []string{string(outside.Platform) + "|" + outside.Host + "/" + outside.RepoPath}
 	rejected, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
@@ -743,5 +744,42 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	require.Error(err)
 	require.NotNil(oversized.Error)
 	assert.Equal(generated.ProblemErrorCodePayloadTooLarge, oversized.Error.Code)
+	assert.Zero(provider.calls.Load())
+}
+
+func TestAPIArchiveSnapshotOpenIssueScope(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, provider, _, ref := setupArchiveTestServer(t, nil)
+	client := setupTestClient(t, srv)
+	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	_, err = database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID: repo.ID, PlatformID: 1, Number: 1, Title: "Unresolved repair",
+		State: "open", CreatedAt: old, UpdatedAt: old,
+	})
+	require.NoError(err)
+	query := generated.GetArchiveSnapshotQuery{Start: "2026-09-13T12:00:00Z", End: "2026-09-20T12:00:00Z"}
+	windowed, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.NoError(err)
+	require.NotNil(windowed.JSON200)
+	assert.Empty(windowed.JSON200.Issues)
+	assert.Nil(windowed.JSON200.IssueScope)
+	scope := generated.GetArchiveSnapshotQueryIssueScopeOpen
+	query.IssueScope = &scope
+	open, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.NoError(err)
+	require.NotNil(open.JSON200)
+	require.NotNil(open.JSON200.IssueScope)
+	assert.Equal(generated.ArchiveSnapshotIssueScopeOpen, *open.JSON200.IssueScope)
+	require.Len(open.JSON200.Issues, 1)
+	assert.Equal("Unresolved repair", open.JSON200.Issues[0].Title)
+	scope = "unsupported"
+	rejected, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.Error(err)
+	require.NotNil(rejected.Error)
+	assert.Equal(generated.ProblemErrorCodeValidationError, rejected.Error.Code)
 	assert.Zero(provider.calls.Load())
 }

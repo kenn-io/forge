@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"strconv"
 	"strings"
 
 	"go.kenn.io/forge/internal/config"
@@ -34,7 +35,6 @@ func canonicalRepoRef(repo RepoRef) RepoRef {
 		PlatformHost:       canonicalRepoHost(repo.PlatformHost),
 		RepoPath:           strings.TrimSpace(repo.RepoPath),
 		PlatformRepoID:     repo.PlatformRepoID,
-		PlatformExternalID: strings.TrimSpace(repo.PlatformExternalID),
 		WebURL:             strings.TrimSpace(repo.WebURL),
 		CloneURL:           strings.TrimSpace(repo.CloneURL),
 		DefaultBranch:      strings.TrimSpace(repo.DefaultBranch),
@@ -61,7 +61,7 @@ func canonicalRepoPattern(pattern string) string {
 type ConfiguredRepoStatus struct {
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID int64  `json:"platform_repo_id,omitempty"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 	RepoPath       string `json:"repo_path"`
@@ -92,11 +92,11 @@ func FallbackConfiguredRepoRefs(
 	host := raw.PlatformHostOrDefault()
 	repoPath := configuredRepoPath(raw)
 	if !raw.HasNameGlob() {
-		if providerID := strings.TrimSpace(raw.PlatformRepoID); providerID != "" {
+		if providerID := raw.PlatformRepoID; providerID != 0 {
 			for _, repo := range previous {
 				if repoPlatform(repo) == kind &&
 					sameConfiguredRepoHost(repoHost(repo), host) &&
-					repo.PlatformExternalID == providerID {
+					repo.PlatformRepoID == providerID {
 					repo.ConfiguredRepoPath = repoPath
 					return []RepoRef{repo}
 				}
@@ -259,16 +259,16 @@ func resolveConfiguredRepo(
 			)
 		}
 		resolved := repoRefFromRepository(raw, kind, host, repo)
-		configuredProviderID := strings.TrimSpace(raw.PlatformRepoID)
-		if configuredProviderID != "" &&
-			resolved.PlatformExternalID != configuredProviderID {
+		configuredProviderID := raw.PlatformRepoID
+		if configuredProviderID != 0 &&
+			resolved.PlatformRepoID != configuredProviderID {
 			return status, nil, fmt.Errorf(
 				"resolve configured repo %s/%s: provider repository ID changed",
 				raw.Owner, raw.Name,
 			)
 		}
 		status.MatchedRepoCount = 1
-		status.PlatformRepoID = resolved.PlatformExternalID
+		status.PlatformRepoID = resolved.PlatformRepoID
 		return status, []RepoRef{resolved}, nil
 	}
 
@@ -352,19 +352,12 @@ func repoRefFromRepository(
 		Name:               strings.TrimSpace(name),
 		PlatformHost:       canonicalRepoHost(host),
 		RepoPath:           strings.TrimSpace(repo.Ref.RepoPath),
-		PlatformRepoID:     repo.PlatformID,
-		PlatformExternalID: repo.PlatformExternalID,
+		PlatformRepoID:     repo.Ref.PlatformID,
 		WebURL:             repo.WebURL,
 		CloneURL:           repo.CloneURL,
 		DefaultBranch:      repo.DefaultBranch,
 		Archived:           repo.Archived,
 		ConfiguredRepoPath: exactConfiguredRepoPath(raw),
-	}
-	if ref.PlatformRepoID == 0 {
-		ref.PlatformRepoID = repo.Ref.PlatformID
-	}
-	if ref.PlatformExternalID == "" {
-		ref.PlatformExternalID = repo.Ref.PlatformExternalID
 	}
 	if ref.WebURL == "" {
 		ref.WebURL = repo.Ref.WebURL
@@ -429,12 +422,12 @@ func expandedRepoRouteKey(repo RepoRef) string {
 }
 
 func expandedRepoIdentityKey(repo RepoRef) string {
-	if strings.TrimSpace(repo.PlatformExternalID) == "" {
+	if repo.PlatformRepoID == 0 {
 		return ""
 	}
 	canonical := canonicalRepoRef(repo)
 	return string(repoPlatform(canonical)) + "\x00" + canonical.PlatformHost +
-		"\x00" + canonical.PlatformExternalID
+		"\x00" + strconv.FormatInt(canonical.PlatformRepoID, 10)
 }
 
 func (s *ExpandedRepoSet) Add(repo RepoRef, providerResolved bool) {
@@ -535,7 +528,7 @@ func RegisterConfiguredRepoCredentialAliases(
 			continue
 		}
 		router.RegisterRepoCredentialAlias(
-			repo.Owner, repo.Name, configured, repo.PlatformExternalID,
+			repo.Owner, repo.Name, configured, repo.PlatformRepoID,
 		)
 	}
 }

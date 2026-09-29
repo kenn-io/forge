@@ -6,10 +6,20 @@ import (
 	"context"
 	"os"
 	"strconv"
+	"unicode/utf16"
 
 	gopty "github.com/aymanbagabas/go-pty"
 	"go.kenn.io/forge/internal/procutil"
+	"golang.org/x/sys/windows"
 )
+
+func validateCommandLine(command []string) error {
+	// CreateProcessW allows 32,767 UTF-16 code units, including the terminating NUL.
+	if len(utf16.Encode([]rune(windows.ComposeCommandLine(command)))) >= 32767 {
+		return ErrCommandLineTooLong
+	}
+	return nil
+}
 
 func configureOwnerCommand(*gopty.Cmd) {}
 

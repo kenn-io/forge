@@ -3,19 +3,7 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { mockSettings } from "../../../test/mockApiFetch.js";
-
-type TerminalSettings = {
-  font_family: string;
-  font_size: number;
-  scrollback: number;
-  line_height: number;
-  letter_spacing: number;
-  cursor_blink: boolean;
-  font_ligatures: boolean;
-  hide_tmux_status: boolean;
-  graphics: boolean;
-  tmux_mouse: boolean;
-};
+import type { TerminalSettings } from "../../api/types.js";
 
 type ModeVisibility = {
   activity: boolean;
@@ -47,6 +35,7 @@ const {
     hide_tmux_status: false,
     graphics: true,
     tmux_mouse: true,
+    retained_sessions: 50,
   };
   const modes: ModeVisibility = {
     activity: true,
@@ -95,6 +84,7 @@ vi.mock("../../context.js", async (importOriginal) => {
       hide_tmux_status: false,
       graphics: true,
       tmux_mouse: true,
+      retained_sessions: 50,
     },
     getStores: () => ({
       settings: {

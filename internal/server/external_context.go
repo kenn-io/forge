@@ -26,7 +26,7 @@ type externalContextInput struct {
 	Name           string `path:"name"`
 	Number         int    `path:"number" minimum:"1"`
 	SourceID       string `path:"source_id" minLength:"1" maxLength:"128"`
-	PlatformRepoID string `query:"platform_repo_id" required:"true" minLength:"1"`
+	PlatformRepoID int64  `query:"platform_repo_id" required:"true" minimum:"1"`
 	Refresh        bool   `query:"refresh"`
 }
 
@@ -37,12 +37,12 @@ type externalContextHostInput struct {
 	Name           string `path:"name"`
 	Number         int    `path:"number" minimum:"1"`
 	SourceID       string `path:"source_id" minLength:"1" maxLength:"128"`
-	PlatformRepoID string `query:"platform_repo_id" required:"true" minLength:"1"`
+	PlatformRepoID int64  `query:"platform_repo_id" required:"true" minimum:"1"`
 	Refresh        bool   `query:"refresh"`
 }
 
 type externalContextActionRequest struct {
-	PlatformRepoID string `json:"platform_repo_id" minLength:"1"`
+	PlatformRepoID int64  `json:"platform_repo_id" minimum:"1"`
 	HeadSHA        string `json:"head_sha" minLength:"1" maxLength:"128"`
 }
 
@@ -132,7 +132,7 @@ func (s *Server) runPullExternalContextActionOnHost(ctx context.Context, input *
 }
 
 // Both paths read the hub's last synced snapshot, never a live provider head.
-func (s *Server) externalContextPull(ctx context.Context, input repoNumberInput, expectedRepoID string) (externalcontext.PullRequest, error) {
+func (s *Server) externalContextPull(ctx context.Context, input repoNumberInput, expectedRepoID int64) (externalcontext.PullRequest, error) {
 	item := pullapi.ItemIdentity{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number}
 	var detail pullapi.MergeRequestDetailResponse
 	var err error
@@ -144,7 +144,7 @@ func (s *Server) externalContextPull(ctx context.Context, input repoNumberInput,
 	if err != nil {
 		return externalcontext.PullRequest{}, err
 	}
-	if detail.Repo.PlatformRepoID == "" || detail.Repo.PlatformRepoID != expectedRepoID {
+	if detail.Repo.PlatformRepoID <= 0 || detail.Repo.PlatformRepoID != expectedRepoID {
 		return externalcontext.PullRequest{}, httpapi.Conflict(httpapi.CodeConflict, "The repository identity changed. Reload the pull request.", map[string]any{"reason": "stale_state"})
 	}
 	if detail.MergeRequest == nil {

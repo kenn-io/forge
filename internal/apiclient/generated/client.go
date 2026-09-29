@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
+	"go.kenn.io/forge/internal/apiclient/paramcodec"
 )
 
 // ListWorkflowRunsRequestOptions is the options needed to make a request to ListWorkflowRuns.
@@ -22,7 +23,7 @@ type ListWorkflowRunsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListWorkflowRunsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +35,7 @@ func (o *ListWorkflowRunsRequestOptions) GetPathParams() (map[string]any, error)
 
 // GetQuery returns the query params as a map.
 func (o *ListWorkflowRunsRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -54,7 +55,7 @@ type ListWorkflowRunJobsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListWorkflowRunJobsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +87,7 @@ type ListWorkflowsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListWorkflowsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +120,7 @@ type DispatchWorkflowRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DispatchWorkflowRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +157,7 @@ func (o *ListActivityRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *ListActivityRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -181,7 +182,7 @@ func (o *ListActivityAuthorsRequestOptions) GetPathParams() (map[string]any, err
 
 // GetQuery returns the query params as a map.
 func (o *ListActivityAuthorsRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -206,7 +207,7 @@ func (o *ListActivityThreadEventsRequestOptions) GetPathParams() (map[string]any
 
 // GetQuery returns the query params as a map.
 func (o *ListActivityThreadEventsRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -228,7 +229,7 @@ type ReceiveAgentHookRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ReceiveAgentHookRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +291,7 @@ func (o *GetArchiveReportRequestOptions) GetPathParams() (map[string]any, error)
 
 // GetQuery returns the query params as a map.
 func (o *GetArchiveReportRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -315,7 +316,7 @@ func (o *GetArchiveSnapshotRequestOptions) GetPathParams() (map[string]any, erro
 
 // GetQuery returns the query params as a map.
 func (o *GetArchiveSnapshotRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -365,7 +366,7 @@ func (o *ListArchiveStatusRequestOptions) GetPathParams() (map[string]any, error
 
 // GetQuery returns the query params as a map.
 func (o *ListArchiveStatusRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -415,7 +416,7 @@ func (o *DiscoverDevboxesRequestOptions) GetPathParams() (map[string]any, error)
 
 // GetQuery returns the query params as a map.
 func (o *DiscoverDevboxesRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -435,7 +436,7 @@ type DisconnectDevboxRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DisconnectDevboxRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +468,7 @@ type ReconnectDevboxRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ReconnectDevboxRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -501,7 +502,7 @@ type StoreDevboxPasteImageRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *StoreDevboxPasteImageRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -533,7 +534,7 @@ type ListDevboxWorkspacesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListDevboxWorkspacesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +567,7 @@ type CreateDevboxWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -599,7 +600,7 @@ type DeleteDevboxWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +612,7 @@ func (o *DeleteDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, e
 
 // GetQuery returns the query params as a map.
 func (o *DeleteDevboxWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -631,7 +632,7 @@ type GetDevboxWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -663,7 +664,7 @@ type ListDevboxAgentSessionsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListDevboxAgentSessionsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -695,7 +696,7 @@ type GetDevboxCommitsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDevboxCommitsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -728,7 +729,7 @@ type GetDevboxDiffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDevboxDiffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -740,7 +741,7 @@ func (o *GetDevboxDiffRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *GetDevboxDiffRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -761,7 +762,7 @@ type WatchDevboxDiffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *WatchDevboxDiffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -773,7 +774,7 @@ func (o *WatchDevboxDiffRequestOptions) GetPathParams() (map[string]any, error) 
 
 // GetQuery returns the query params as a map.
 func (o *WatchDevboxDiffRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -794,7 +795,7 @@ type GetDevboxFilePreviewRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDevboxFilePreviewRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -806,7 +807,7 @@ func (o *GetDevboxFilePreviewRequestOptions) GetPathParams() (map[string]any, er
 
 // GetQuery returns the query params as a map.
 func (o *GetDevboxFilePreviewRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -827,7 +828,7 @@ type GetDevboxFilesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDevboxFilesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -839,7 +840,7 @@ func (o *GetDevboxFilesRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *GetDevboxFilesRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -859,7 +860,7 @@ type PullDevboxWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PullDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -891,7 +892,7 @@ type PushDevboxWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PushDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -923,7 +924,7 @@ type RefreshDevboxWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -955,7 +956,7 @@ type RetryDevboxWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RetryDevboxWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -987,7 +988,7 @@ type GetDevboxRuntimeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDevboxRuntimeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1020,7 +1021,7 @@ type LaunchDevboxHandoffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *LaunchDevboxHandoffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1053,7 +1054,7 @@ type LaunchDevboxSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *LaunchDevboxSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1085,7 +1086,7 @@ type StopDevboxSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *StopDevboxSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1118,7 +1119,7 @@ type RenameDevboxSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RenameDevboxSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1150,7 +1151,7 @@ type GetDevboxAttachSpecRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDevboxAttachSpecRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1183,7 +1184,7 @@ type SendDevboxInitialMessageRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SendDevboxInitialMessageRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1208,6 +1209,71 @@ func (o *SendDevboxInitialMessageRequestOptions) GetHeader() (map[string]string,
 	return nil, nil
 }
 
+// GetDevboxWorkspaceViewStateRequestOptions is the options needed to make a request to GetDevboxWorkspaceViewState.
+type GetDevboxWorkspaceViewStateRequestOptions struct {
+	PathParams *GetDevboxWorkspaceViewStatePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetDevboxWorkspaceViewStateRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetDevboxWorkspaceViewStateRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetDevboxWorkspaceViewStateRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetDevboxWorkspaceViewStateRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// UpdateDevboxWorkspaceViewStateRequestOptions is the options needed to make a request to UpdateDevboxWorkspaceViewState.
+type UpdateDevboxWorkspaceViewStateRequestOptions struct {
+	PathParams *UpdateDevboxWorkspaceViewStatePath
+	Body       *UpdateDevboxWorkspaceViewStateBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateDevboxWorkspaceViewStateRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateDevboxWorkspaceViewStateRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateDevboxWorkspaceViewStateRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateDevboxWorkspaceViewStateRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // BrowseDocsFoldersRequestOptions is the options needed to make a request to BrowseDocsFolders.
 type BrowseDocsFoldersRequestOptions struct {
 	Query *BrowseDocsFoldersQuery
@@ -1220,7 +1286,7 @@ func (o *BrowseDocsFoldersRequestOptions) GetPathParams() (map[string]any, error
 
 // GetQuery returns the query params as a map.
 func (o *BrowseDocsFoldersRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -1265,7 +1331,7 @@ type DeleteDocsFolderRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteDocsFolderRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1298,7 +1364,7 @@ type UpdateDocsFolderRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *UpdateDocsFolderRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1331,7 +1397,7 @@ type ReadDocsBlobRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ReadDocsBlobRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1343,7 +1409,7 @@ func (o *ReadDocsBlobRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *ReadDocsBlobRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -1364,7 +1430,7 @@ type DeleteDocsFileRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteDocsFileRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1376,7 +1442,7 @@ func (o *DeleteDocsFileRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *DeleteDocsFileRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -1397,7 +1463,7 @@ type ReadDocsFileRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ReadDocsFileRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1409,7 +1475,7 @@ func (o *ReadDocsFileRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *ReadDocsFileRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -1431,7 +1497,7 @@ type CreateDocsFileRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateDocsFileRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1443,7 +1509,7 @@ func (o *CreateDocsFileRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *CreateDocsFileRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -1465,7 +1531,7 @@ type WriteDocsFileRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *WriteDocsFileRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1477,7 +1543,7 @@ func (o *WriteDocsFileRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *WriteDocsFileRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -1498,7 +1564,7 @@ type RenameDocsFileRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RenameDocsFileRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1530,7 +1596,7 @@ type GetDocsGitStatusRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDocsGitStatusRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1562,7 +1628,7 @@ type GetDocsGitChangesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDocsGitChangesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1595,7 +1661,7 @@ type PublishDocsGitRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PublishDocsGitRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1627,7 +1693,7 @@ type PullDocsGitRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PullDocsGitRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1660,7 +1726,7 @@ type SearchDocsFolderRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SearchDocsFolderRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1672,7 +1738,7 @@ func (o *SearchDocsFolderRequestOptions) GetPathParams() (map[string]any, error)
 
 // GetQuery returns the query params as a map.
 func (o *SearchDocsFolderRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -1692,7 +1758,7 @@ type GetDocsTreeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetDocsTreeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1729,7 +1795,7 @@ func (o *SearchDocsRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *SearchDocsRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -1754,7 +1820,7 @@ func (o *StreamEventsRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *StreamEventsRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -1800,7 +1866,7 @@ type AbortFederationEnrollmentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *AbortFederationEnrollmentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1833,7 +1899,7 @@ type ActivateFederationEnrollmentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ActivateFederationEnrollmentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1865,7 +1931,7 @@ type BeginFederationSpokePreparationRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *BeginFederationSpokePreparationRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1898,7 +1964,7 @@ type SealFederationSpokePreparationRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SealFederationSpokePreparationRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1936,7 +2002,7 @@ func (o *StreamFederationProviderEventsRequestOptions) GetPathParams() (map[stri
 
 // GetQuery returns the query params as a map.
 func (o *StreamFederationProviderEventsRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -2256,7 +2322,7 @@ type QueueFederationWorkspaceCleanupRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *QueueFederationWorkspaceCleanupRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2293,7 +2359,7 @@ func (o *CompleteFilesystemPathRequestOptions) GetPathParams() (map[string]any, 
 
 // GetQuery returns the query params as a map.
 func (o *CompleteFilesystemPathRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -2318,7 +2384,7 @@ func (o *ValidateFilesystemRepoRequestOptions) GetPathParams() (map[string]any, 
 
 // GetQuery returns the query params as a map.
 func (o *ValidateFilesystemRepoRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -2363,7 +2429,7 @@ type RevokeFederationEnrollmentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RevokeFederationEnrollmentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2396,7 +2462,7 @@ type CompleteFleetFilesystemPathRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CompleteFleetFilesystemPathRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2408,7 +2474,7 @@ func (o *CompleteFleetFilesystemPathRequestOptions) GetPathParams() (map[string]
 
 // GetQuery returns the query params as a map.
 func (o *CompleteFleetFilesystemPathRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -2429,7 +2495,7 @@ type ValidateFleetFilesystemRepoRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ValidateFleetFilesystemRepoRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2441,7 +2507,7 @@ func (o *ValidateFleetFilesystemRepoRequestOptions) GetPathParams() (map[string]
 
 // GetQuery returns the query params as a map.
 func (o *ValidateFleetFilesystemRepoRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -2462,7 +2528,7 @@ type CreateFleetIssueWorkspaceOnPlatformHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateFleetIssueWorkspaceOnPlatformHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2495,7 +2561,7 @@ type CreateFleetRepoWorkspaceOnPlatformHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateFleetRepoWorkspaceOnPlatformHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2528,7 +2594,7 @@ type CreateFleetIssueWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateFleetIssueWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2561,7 +2627,7 @@ type RegisterFleetProjectRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RegisterFleetProjectRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2594,7 +2660,7 @@ type CloneFleetProjectRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CloneFleetProjectRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2626,7 +2692,7 @@ type DeleteFleetProjectRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteFleetProjectRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2658,7 +2724,7 @@ type GetFleetProjectRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetProjectRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2690,7 +2756,7 @@ type ListFleetProjectBranchesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListFleetProjectBranchesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2722,7 +2788,7 @@ type ListFleetProjectWorktreesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListFleetProjectWorktreesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2755,7 +2821,7 @@ type CreateFleetProjectWorktreeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateFleetProjectWorktreeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2788,7 +2854,7 @@ type CreateFleetProjectWorktreeFromMergeRequestRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateFleetProjectWorktreeFromMergeRequestRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2821,7 +2887,7 @@ type RemoveFleetProjectWorktreeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RemoveFleetProjectWorktreeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2853,7 +2919,7 @@ type InspectFleetProjectWorktreeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *InspectFleetProjectWorktreeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2886,7 +2952,7 @@ type SetFleetProjectWorktreeLinksRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetFleetProjectWorktreeLinksRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2918,7 +2984,7 @@ type RefreshFleetProjectWorktreeStatsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshFleetProjectWorktreeStatsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2950,7 +3016,7 @@ type GetFleetProjectWorktreeRuntimeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetProjectWorktreeRuntimeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -2983,7 +3049,7 @@ type LaunchFleetProjectWorktreeRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *LaunchFleetProjectWorktreeRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3015,7 +3081,7 @@ type StopFleetProjectWorktreeRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *StopFleetProjectWorktreeRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3047,7 +3113,7 @@ type GetFleetProjectWorktreeRuntimeSessionAttachSpecRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetProjectWorktreeRuntimeSessionAttachSpecRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3079,7 +3145,7 @@ type EnsureFleetProjectWorktreeRuntimeShellRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EnsureFleetProjectWorktreeRuntimeShellRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3112,7 +3178,7 @@ type SetFleetProjectWorktreeSessionBackendRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetFleetProjectWorktreeSessionBackendRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3145,7 +3211,7 @@ type CreateFleetRepoWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateFleetRepoWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3178,7 +3244,7 @@ type LaunchFleetHostRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *LaunchFleetHostRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3210,7 +3276,7 @@ type StopFleetHostRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *StopFleetHostRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3242,7 +3308,7 @@ type GetFleetHostRuntimeSessionAttachSpecRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetHostRuntimeSessionAttachSpecRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3275,7 +3341,7 @@ type StoreFleetTerminalPasteImageRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *StoreFleetTerminalPasteImageRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3307,7 +3373,7 @@ type ListFleetWorkspacesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListFleetWorkspacesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3340,7 +3406,7 @@ type CreateFleetWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateFleetWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3373,7 +3439,7 @@ type DeleteFleetWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteFleetWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3385,7 +3451,7 @@ func (o *DeleteFleetWorkspaceRequestOptions) GetPathParams() (map[string]any, er
 
 // GetQuery returns the query params as a map.
 func (o *DeleteFleetWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -3405,7 +3471,7 @@ type GetFleetWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3437,7 +3503,7 @@ type GetFleetWorkspaceCommitsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetWorkspaceCommitsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3470,7 +3536,7 @@ type GetFleetWorkspaceDiffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetWorkspaceDiffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3482,7 +3548,7 @@ func (o *GetFleetWorkspaceDiffRequestOptions) GetPathParams() (map[string]any, e
 
 // GetQuery returns the query params as a map.
 func (o *GetFleetWorkspaceDiffRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -3503,7 +3569,7 @@ type WatchFleetWorkspaceDiffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *WatchFleetWorkspaceDiffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3515,7 +3581,7 @@ func (o *WatchFleetWorkspaceDiffRequestOptions) GetPathParams() (map[string]any,
 
 // GetQuery returns the query params as a map.
 func (o *WatchFleetWorkspaceDiffRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -3536,7 +3602,7 @@ type GetFleetWorkspaceFilePreviewRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetWorkspaceFilePreviewRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3548,7 +3614,7 @@ func (o *GetFleetWorkspaceFilePreviewRequestOptions) GetPathParams() (map[string
 
 // GetQuery returns the query params as a map.
 func (o *GetFleetWorkspaceFilePreviewRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -3569,7 +3635,7 @@ type GetFleetWorkspaceFilesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetWorkspaceFilesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3581,7 +3647,7 @@ func (o *GetFleetWorkspaceFilesRequestOptions) GetPathParams() (map[string]any, 
 
 // GetQuery returns the query params as a map.
 func (o *GetFleetWorkspaceFilesRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -3601,7 +3667,7 @@ type PullFleetWorkspaceBranchRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PullFleetWorkspaceBranchRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3633,7 +3699,7 @@ type PushFleetWorkspaceBranchRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PushFleetWorkspaceBranchRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3665,7 +3731,7 @@ type RefreshFleetWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshFleetWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3697,7 +3763,7 @@ type RetryFleetWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RetryFleetWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3729,7 +3795,7 @@ type RevealFleetWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RevealFleetWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3761,7 +3827,7 @@ type GetFleetWorkspaceRuntimeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetWorkspaceRuntimeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3794,7 +3860,7 @@ type LaunchFleetWorkspaceRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *LaunchFleetWorkspaceRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3826,7 +3892,7 @@ type StopFleetWorkspaceRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *StopFleetWorkspaceRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3859,7 +3925,7 @@ type RenameFleetWorkspaceRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RenameFleetWorkspaceRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3891,7 +3957,7 @@ type GetFleetWorkspaceRuntimeSessionAttachSpecRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetFleetWorkspaceRuntimeSessionAttachSpecRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -3916,6 +3982,71 @@ func (o *GetFleetWorkspaceRuntimeSessionAttachSpecRequestOptions) GetHeader() (m
 	return nil, nil
 }
 
+// GetFleetWorkspaceViewStateRequestOptions is the options needed to make a request to GetFleetWorkspaceViewState.
+type GetFleetWorkspaceViewStateRequestOptions struct {
+	PathParams *GetFleetWorkspaceViewStatePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetFleetWorkspaceViewStateRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetFleetWorkspaceViewStateRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetFleetWorkspaceViewStateRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetFleetWorkspaceViewStateRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// UpdateFleetWorkspaceViewStateRequestOptions is the options needed to make a request to UpdateFleetWorkspaceViewState.
+type UpdateFleetWorkspaceViewStateRequestOptions struct {
+	PathParams *UpdateFleetWorkspaceViewStatePath
+	Body       *UpdateFleetWorkspaceViewStateBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateFleetWorkspaceViewStateRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateFleetWorkspaceViewStateRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateFleetWorkspaceViewStateRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateFleetWorkspaceViewStateRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // CreateFleetBrowserLoginRequestOptions is the options needed to make a request to CreateFleetBrowserLogin.
 type CreateFleetBrowserLoginRequestOptions struct {
 	PathParams *CreateFleetBrowserLoginPath
@@ -3924,7 +4055,7 @@ type CreateFleetBrowserLoginRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateFleetBrowserLoginRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4007,7 +4138,7 @@ type ListWorkflowRunsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListWorkflowRunsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4019,7 +4150,7 @@ func (o *ListWorkflowRunsOnHostRequestOptions) GetPathParams() (map[string]any, 
 
 // GetQuery returns the query params as a map.
 func (o *ListWorkflowRunsOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -4039,7 +4170,7 @@ type ListWorkflowRunJobsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListWorkflowRunJobsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4071,7 +4202,7 @@ type ListWorkflowsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListWorkflowsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4104,7 +4235,7 @@ type DispatchWorkflowOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DispatchWorkflowOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4137,7 +4268,7 @@ type CreateIssueOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateIssueOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4169,7 +4300,7 @@ type GetIssueOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetIssueOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4202,7 +4333,7 @@ type EditIssueContentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditIssueContentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4235,7 +4366,7 @@ type SetIssueAssigneesOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetIssueAssigneesOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4268,7 +4399,7 @@ type PostIssueCommentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PostIssueCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4300,7 +4431,7 @@ type DeleteIssueCommentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteIssueCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4333,7 +4464,7 @@ type EditIssueCommentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditIssueCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4366,7 +4497,7 @@ type SetIssueGithubStateOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetIssueGithubStateOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4398,7 +4529,7 @@ type ListIssueKataLinksOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListIssueKataLinksOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4431,7 +4562,7 @@ type CreateIssueKataLinkOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateIssueKataLinkOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4463,7 +4594,7 @@ type DeleteIssueKataLinkOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteIssueKataLinkOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4496,7 +4627,7 @@ type SetIssueLabelsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetIssueLabelsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4528,7 +4659,7 @@ type SyncIssueOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SyncIssueOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4560,7 +4691,7 @@ type EnqueueIssueSyncOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EnqueueIssueSyncOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4593,7 +4724,7 @@ type CreateIssueWorkspaceOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateIssueWorkspaceOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4625,7 +4756,7 @@ type GetPullOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4658,7 +4789,7 @@ type EditPrContentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditPrContentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4691,7 +4822,7 @@ type ApprovePullOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ApprovePullOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4723,7 +4854,7 @@ type ApprovePullWorkflowsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ApprovePullWorkflowsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4756,7 +4887,7 @@ type SetPrAssigneesOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetPrAssigneesOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4788,7 +4919,7 @@ type RefreshPullCiOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshPullCiOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4821,7 +4952,7 @@ type PostPrCommentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PostPrCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4853,7 +4984,7 @@ type DeletePrCommentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeletePrCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4886,7 +5017,7 @@ type EditPrCommentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditPrCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4918,7 +5049,7 @@ type GetPullCommitsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullCommitsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4951,7 +5082,7 @@ type GetPullDiffOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullDiffOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -4963,7 +5094,7 @@ func (o *GetPullDiffOnHostRequestOptions) GetPathParams() (map[string]any, error
 
 // GetQuery returns the query params as a map.
 func (o *GetPullDiffOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -4984,7 +5115,7 @@ type ReplyToDiscussionOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ReplyToDiscussionOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5017,7 +5148,7 @@ type ResolveDiscussionOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ResolveDiscussionOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5050,7 +5181,7 @@ type GetPullExternalContextOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullExternalContextOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5062,7 +5193,7 @@ func (o *GetPullExternalContextOnHostRequestOptions) GetPathParams() (map[string
 
 // GetQuery returns the query params as a map.
 func (o *GetPullExternalContextOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -5083,7 +5214,7 @@ type RunPullExternalContextActionOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RunPullExternalContextActionOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5116,7 +5247,7 @@ type GetPullFilePreviewOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullFilePreviewOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5128,7 +5259,7 @@ func (o *GetPullFilePreviewOnHostRequestOptions) GetPathParams() (map[string]any
 
 // GetQuery returns the query params as a map.
 func (o *GetPullFilePreviewOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -5148,7 +5279,7 @@ type GetPullFilesOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullFilesOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5181,7 +5312,7 @@ type SetPrGithubStateOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetPrGithubStateOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5213,7 +5344,7 @@ type GetPullImportMetadataOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullImportMetadataOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5245,7 +5376,7 @@ type ListPullRequestKataLinksOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListPullRequestKataLinksOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5278,7 +5409,7 @@ type CreatePullRequestKataLinkOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreatePullRequestKataLinkOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5310,7 +5441,7 @@ type DeletePullRequestKataLinkOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeletePullRequestKataLinkOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5343,7 +5474,7 @@ type SetPrLabelsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetPrLabelsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5376,7 +5507,7 @@ type MergePullOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *MergePullOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5409,7 +5540,7 @@ type DeferMergePullOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeferMergePullOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5441,7 +5572,7 @@ type MarkPullReadyForReviewOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *MarkPullReadyForReviewOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5474,7 +5605,7 @@ type RequestPullChangesOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RequestPullChangesOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5506,7 +5637,7 @@ type DiscardPrReviewDraftOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DiscardPrReviewDraftOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5538,7 +5669,7 @@ type GetPrReviewDraftOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPrReviewDraftOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5571,7 +5702,7 @@ type CreatePrReviewDraftCommentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreatePrReviewDraftCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5603,7 +5734,7 @@ type DeletePrReviewDraftCommentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeletePrReviewDraftCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5636,7 +5767,7 @@ type EditPrReviewDraftCommentOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditPrReviewDraftCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5669,7 +5800,7 @@ type PublishPrReviewDraftOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PublishPrReviewDraftOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5702,7 +5833,7 @@ type ApplyPrReviewSuggestionsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ApplyPrReviewSuggestionsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5734,7 +5865,7 @@ type ResolvePrReviewThreadOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ResolvePrReviewThreadOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5766,7 +5897,7 @@ type UnresolvePrReviewThreadOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *UnresolvePrReviewThreadOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5799,7 +5930,7 @@ type SetPrReviewersOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetPrReviewersOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5831,7 +5962,7 @@ type GetPullStackOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullStackOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5864,7 +5995,7 @@ type SetKanbanStateOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetKanbanStateOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5896,7 +6027,7 @@ type SyncPullOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SyncPullOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5928,7 +6059,7 @@ type EnqueuePrSyncOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EnqueuePrSyncOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5960,7 +6091,7 @@ type DeleteRepoOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteRepoOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -5992,7 +6123,7 @@ type GetRepoOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6025,7 +6156,7 @@ type GetRepoBrowserAssetOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserAssetOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6037,7 +6168,7 @@ func (o *GetRepoBrowserAssetOnHostRequestOptions) GetPathParams() (map[string]an
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserAssetOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6058,7 +6189,7 @@ type GetRepoBrowserBlobOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserBlobOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6070,7 +6201,7 @@ func (o *GetRepoBrowserBlobOnHostRequestOptions) GetPathParams() (map[string]any
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserBlobOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6091,7 +6222,7 @@ type GetRepoBrowserCommitOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserCommitOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6103,7 +6234,7 @@ func (o *GetRepoBrowserCommitOnHostRequestOptions) GetPathParams() (map[string]a
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserCommitOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6124,7 +6255,7 @@ type GetRepoBrowserHistoryOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserHistoryOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6136,7 +6267,7 @@ func (o *GetRepoBrowserHistoryOnHostRequestOptions) GetPathParams() (map[string]
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserHistoryOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6157,7 +6288,7 @@ type GetRepoBrowserLastChangedOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserLastChangedOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6169,7 +6300,7 @@ func (o *GetRepoBrowserLastChangedOnHostRequestOptions) GetPathParams() (map[str
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserLastChangedOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6190,7 +6321,7 @@ type ListRepoBrowserRefsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListRepoBrowserRefsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6202,7 +6333,7 @@ func (o *ListRepoBrowserRefsOnHostRequestOptions) GetPathParams() (map[string]an
 
 // GetQuery returns the query params as a map.
 func (o *ListRepoBrowserRefsOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6223,7 +6354,7 @@ type ListRepoBrowserTreeOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListRepoBrowserTreeOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6235,7 +6366,7 @@ func (o *ListRepoBrowserTreeOnHostRequestOptions) GetPathParams() (map[string]an
 
 // GetQuery returns the query params as a map.
 func (o *ListRepoBrowserTreeOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6256,7 +6387,7 @@ type GetCommentAutocompleteOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetCommentAutocompleteOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6268,7 +6399,7 @@ func (o *GetCommentAutocompleteOnHostRequestOptions) GetPathParams() (map[string
 
 // GetQuery returns the query params as a map.
 func (o *GetCommentAutocompleteOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6289,7 +6420,7 @@ type GetRepoCommitDiffOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoCommitDiffOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6301,7 +6432,7 @@ func (o *GetRepoCommitDiffOnHostRequestOptions) GetPathParams() (map[string]any,
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoCommitDiffOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6321,7 +6452,7 @@ type ListRepoLabelsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListRepoLabelsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6354,7 +6485,7 @@ type GetMarkdownImageOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetMarkdownImageOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6366,7 +6497,7 @@ func (o *GetMarkdownImageOnHostRequestOptions) GetPathParams() (map[string]any, 
 
 // GetQuery returns the query params as a map.
 func (o *GetMarkdownImageOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6386,7 +6517,7 @@ type RefreshRepoOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshRepoOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6419,7 +6550,7 @@ type ResolveRepoItemOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ResolveRepoItemOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6431,7 +6562,7 @@ func (o *ResolveRepoItemOnHostRequestOptions) GetPathParams() (map[string]any, e
 
 // GetQuery returns the query params as a map.
 func (o *ResolveRepoItemOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6452,7 +6583,7 @@ type UpdateRepoUIVisibilityOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *UpdateRepoUIVisibilityOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6485,7 +6616,7 @@ type CreateRepoWorkspaceOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateRepoWorkspaceOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6518,7 +6649,7 @@ type UpdateRepoWorktreeBaseOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *UpdateRepoWorktreeBaseOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6555,7 +6686,7 @@ func (o *ListIssuesRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *ListIssuesRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6576,7 +6707,7 @@ type CreateIssueRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateIssueRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6608,7 +6739,7 @@ type GetIssueRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetIssueRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6641,7 +6772,7 @@ type EditIssueContentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditIssueContentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6674,7 +6805,7 @@ type SetIssueAssigneesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetIssueAssigneesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6707,7 +6838,7 @@ type PostIssueCommentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PostIssueCommentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6739,7 +6870,7 @@ type DeleteIssueCommentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteIssueCommentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6772,7 +6903,7 @@ type EditIssueCommentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditIssueCommentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6805,7 +6936,7 @@ type SetIssueGithubStateRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetIssueGithubStateRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6837,7 +6968,7 @@ type ListIssueKataLinksRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListIssueKataLinksRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6870,7 +7001,7 @@ type CreateIssueKataLinkRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateIssueKataLinkRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6902,7 +7033,7 @@ type DeleteIssueKataLinkRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteIssueKataLinkRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6935,7 +7066,7 @@ type SetIssueLabelsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetIssueLabelsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6967,7 +7098,7 @@ type SyncIssueRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SyncIssueRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -6999,7 +7130,7 @@ type EnqueueIssueSyncRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EnqueueIssueSyncRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7032,7 +7163,7 @@ type CreateIssueWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateIssueWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7065,7 +7196,7 @@ type ResolveKataIssueReferenceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ResolveKataIssueReferenceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7077,7 +7208,7 @@ func (o *ResolveKataIssueReferenceRequestOptions) GetPathParams() (map[string]an
 
 // GetQuery returns the query params as a map.
 func (o *ResolveKataIssueReferenceRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -7097,7 +7228,7 @@ type GetKataIssueDetailRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetKataIssueDetailRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7129,7 +7260,7 @@ type GetKataLaunchTargetRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetKataLaunchTargetRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7162,7 +7293,7 @@ type ListKataReferencesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListKataReferencesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7174,7 +7305,7 @@ func (o *ListKataReferencesRequestOptions) GetPathParams() (map[string]any, erro
 
 // GetQuery returns the query params as a map.
 func (o *ListKataReferencesRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -7249,7 +7380,7 @@ func (o *ListNotificationsRequestOptions) GetPathParams() (map[string]any, error
 
 // GetQuery returns the query params as a map.
 func (o *ListNotificationsRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -7349,7 +7480,7 @@ func (o *ListUserRepositoriesRequestOptions) GetPathParams() (map[string]any, er
 
 // GetQuery returns the query params as a map.
 func (o *ListUserRepositoriesRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -7419,7 +7550,7 @@ type DeleteProjectRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteProjectRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7451,7 +7582,7 @@ type GetProjectRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetProjectRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7483,7 +7614,7 @@ type ListProjectBranchesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListProjectBranchesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7515,7 +7646,7 @@ type ListLaunchTargetsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListLaunchTargetsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7547,7 +7678,7 @@ type ListWorktreesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListWorktreesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7580,7 +7711,7 @@ type RegisterWorktreeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RegisterWorktreeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7613,7 +7744,7 @@ type CreateWorktreeFromMergeRequestRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateWorktreeFromMergeRequestRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7645,7 +7776,7 @@ type DeleteWorktreeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteWorktreeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7678,7 +7809,7 @@ type RemoveWorktreeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RemoveWorktreeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7711,7 +7842,7 @@ type SetWorktreeHiddenRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetWorktreeHiddenRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7743,7 +7874,7 @@ type InspectProjectWorktreeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *InspectProjectWorktreeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7776,7 +7907,7 @@ type SetWorktreeLinksRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetWorktreeLinksRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7808,7 +7939,7 @@ type RefreshWorktreeStatsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshWorktreeStatsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7840,7 +7971,7 @@ type GetProjectWorktreeRuntimeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetProjectWorktreeRuntimeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7873,7 +8004,7 @@ type LaunchProjectWorktreeRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *LaunchProjectWorktreeRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7905,7 +8036,7 @@ type StopProjectWorktreeRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *StopProjectWorktreeRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7937,7 +8068,7 @@ type GetProjectWorktreeRuntimeSessionAttachSpecRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetProjectWorktreeRuntimeSessionAttachSpecRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -7969,7 +8100,7 @@ type EnsureProjectWorktreeRuntimeShellRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EnsureProjectWorktreeRuntimeShellRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8002,7 +8133,7 @@ type SetWorktreeSessionBackendRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetWorktreeSessionBackendRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8039,7 +8170,7 @@ func (o *ListPullsRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *ListPullsRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -8059,7 +8190,7 @@ type GetPullRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8092,7 +8223,7 @@ type EditPrContentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditPrContentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8125,7 +8256,7 @@ type ApprovePullRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ApprovePullRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8157,7 +8288,7 @@ type ApprovePullWorkflowsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ApprovePullWorkflowsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8190,7 +8321,7 @@ type SetPrAssigneesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetPrAssigneesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8222,7 +8353,7 @@ type RefreshPullCiRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshPullCiRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8255,7 +8386,7 @@ type PostPrCommentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PostPrCommentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8287,7 +8418,7 @@ type DeletePrCommentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeletePrCommentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8320,7 +8451,7 @@ type EditPrCommentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditPrCommentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8352,7 +8483,7 @@ type GetPullCommitsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullCommitsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8385,7 +8516,7 @@ type GetPullDiffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullDiffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8397,7 +8528,7 @@ func (o *GetPullDiffRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *GetPullDiffRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -8418,7 +8549,7 @@ type ReplyToDiscussionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ReplyToDiscussionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8451,7 +8582,7 @@ type ResolveDiscussionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ResolveDiscussionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8484,7 +8615,7 @@ type GetPullExternalContextRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullExternalContextRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8496,7 +8627,7 @@ func (o *GetPullExternalContextRequestOptions) GetPathParams() (map[string]any, 
 
 // GetQuery returns the query params as a map.
 func (o *GetPullExternalContextRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -8517,7 +8648,7 @@ type RunPullExternalContextActionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RunPullExternalContextActionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8550,7 +8681,7 @@ type GetPullFilePreviewRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullFilePreviewRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8562,7 +8693,7 @@ func (o *GetPullFilePreviewRequestOptions) GetPathParams() (map[string]any, erro
 
 // GetQuery returns the query params as a map.
 func (o *GetPullFilePreviewRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -8582,7 +8713,7 @@ type GetPullFilesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullFilesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8615,7 +8746,7 @@ type SetPrGithubStateRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetPrGithubStateRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8647,7 +8778,7 @@ type GetPullImportMetadataRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullImportMetadataRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8679,7 +8810,7 @@ type ListPullRequestKataLinksRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListPullRequestKataLinksRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8712,7 +8843,7 @@ type CreatePullRequestKataLinkRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreatePullRequestKataLinkRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8744,7 +8875,7 @@ type DeletePullRequestKataLinkRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeletePullRequestKataLinkRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8777,7 +8908,7 @@ type SetPrLabelsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetPrLabelsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8810,7 +8941,7 @@ type MergePullRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *MergePullRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8843,7 +8974,7 @@ type DeferMergePullRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeferMergePullRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8875,7 +9006,7 @@ type MarkPullReadyForReviewRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *MarkPullReadyForReviewRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8908,7 +9039,7 @@ type RequestPullChangesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RequestPullChangesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8940,7 +9071,7 @@ type DiscardPrReviewDraftRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DiscardPrReviewDraftRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -8972,7 +9103,7 @@ type GetPrReviewDraftRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPrReviewDraftRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9005,7 +9136,7 @@ type CreatePrReviewDraftCommentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreatePrReviewDraftCommentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9037,7 +9168,7 @@ type DeletePrReviewDraftCommentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeletePrReviewDraftCommentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9070,7 +9201,7 @@ type EditPrReviewDraftCommentRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EditPrReviewDraftCommentRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9103,7 +9234,7 @@ type PublishPrReviewDraftRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PublishPrReviewDraftRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9136,7 +9267,7 @@ type ApplyPrReviewSuggestionsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ApplyPrReviewSuggestionsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9168,7 +9299,7 @@ type ResolvePrReviewThreadRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ResolvePrReviewThreadRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9200,7 +9331,7 @@ type UnresolvePrReviewThreadRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *UnresolvePrReviewThreadRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9233,7 +9364,7 @@ type SetPrReviewersRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetPrReviewersRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9265,7 +9396,7 @@ type GetPullStackRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPullStackRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9298,7 +9429,7 @@ type SetKanbanStateRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SetKanbanStateRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9330,7 +9461,7 @@ type SyncPullRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SyncPullRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9362,7 +9493,7 @@ type EnqueuePrSyncRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *EnqueuePrSyncRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9394,7 +9525,7 @@ type DeleteRepoRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteRepoRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9426,7 +9557,7 @@ type GetRepoRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9459,7 +9590,7 @@ type GetRepoBrowserAssetRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserAssetRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9471,7 +9602,7 @@ func (o *GetRepoBrowserAssetRequestOptions) GetPathParams() (map[string]any, err
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserAssetRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9492,7 +9623,7 @@ type GetRepoBrowserBlobRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserBlobRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9504,7 +9635,7 @@ func (o *GetRepoBrowserBlobRequestOptions) GetPathParams() (map[string]any, erro
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserBlobRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9525,7 +9656,7 @@ type GetRepoBrowserCommitRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserCommitRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9537,7 +9668,7 @@ func (o *GetRepoBrowserCommitRequestOptions) GetPathParams() (map[string]any, er
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserCommitRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9558,7 +9689,7 @@ type GetRepoBrowserHistoryRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserHistoryRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9570,7 +9701,7 @@ func (o *GetRepoBrowserHistoryRequestOptions) GetPathParams() (map[string]any, e
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserHistoryRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9591,7 +9722,7 @@ type GetRepoBrowserLastChangedRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoBrowserLastChangedRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9603,7 +9734,7 @@ func (o *GetRepoBrowserLastChangedRequestOptions) GetPathParams() (map[string]an
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoBrowserLastChangedRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9624,7 +9755,7 @@ type ListRepoBrowserRefsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListRepoBrowserRefsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9636,7 +9767,7 @@ func (o *ListRepoBrowserRefsRequestOptions) GetPathParams() (map[string]any, err
 
 // GetQuery returns the query params as a map.
 func (o *ListRepoBrowserRefsRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9657,7 +9788,7 @@ type ListRepoBrowserTreeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListRepoBrowserTreeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9669,7 +9800,7 @@ func (o *ListRepoBrowserTreeRequestOptions) GetPathParams() (map[string]any, err
 
 // GetQuery returns the query params as a map.
 func (o *ListRepoBrowserTreeRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9690,7 +9821,7 @@ type GetCommentAutocompleteRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetCommentAutocompleteRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9702,7 +9833,7 @@ func (o *GetCommentAutocompleteRequestOptions) GetPathParams() (map[string]any, 
 
 // GetQuery returns the query params as a map.
 func (o *GetCommentAutocompleteRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9723,7 +9854,7 @@ type GetRepoCommitDiffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetRepoCommitDiffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9735,7 +9866,7 @@ func (o *GetRepoCommitDiffRequestOptions) GetPathParams() (map[string]any, error
 
 // GetQuery returns the query params as a map.
 func (o *GetRepoCommitDiffRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9755,7 +9886,7 @@ type ListRepoLabelsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListRepoLabelsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9788,7 +9919,7 @@ type GetMarkdownImageRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetMarkdownImageRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9800,7 +9931,7 @@ func (o *GetMarkdownImageRequestOptions) GetPathParams() (map[string]any, error)
 
 // GetQuery returns the query params as a map.
 func (o *GetMarkdownImageRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9820,7 +9951,7 @@ type RefreshRepoRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshRepoRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9853,7 +9984,7 @@ type ResolveRepoItemRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ResolveRepoItemRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9865,7 +9996,7 @@ func (o *ResolveRepoItemRequestOptions) GetPathParams() (map[string]any, error) 
 
 // GetQuery returns the query params as a map.
 func (o *ResolveRepoItemRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -9886,7 +10017,7 @@ type UpdateRepoUIVisibilityRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *UpdateRepoUIVisibilityRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9919,7 +10050,7 @@ type CreateRepoWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateRepoWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9952,7 +10083,7 @@ type UpdateRepoWorktreeBaseRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *UpdateRepoWorktreeBaseRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10084,7 +10215,7 @@ type StopHostRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *StopHostRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10116,7 +10247,7 @@ type GetHostRuntimeSessionAttachSpecRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetHostRuntimeSessionAttachSpecRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10248,7 +10379,7 @@ type DeleteRepoPresetRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteRepoPresetRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10281,7 +10412,7 @@ type UpdateRepoPresetRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *UpdateRepoPresetRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10318,7 +10449,7 @@ func (o *GetSnapshotRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *GetSnapshotRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10343,7 +10474,7 @@ func (o *GetSnapshotAggregateRequestOptions) GetPathParams() (map[string]any, er
 
 // GetQuery returns the query params as a map.
 func (o *GetSnapshotAggregateRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10368,7 +10499,7 @@ func (o *ListStacksRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *ListStacksRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10393,7 +10524,7 @@ func (o *UnsetStarredRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *UnsetStarredRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10443,7 +10574,7 @@ func (o *TriggerSyncRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *TriggerSyncRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10590,7 +10721,7 @@ type RefreshWorkerContextRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshWorkerContextRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10648,7 +10779,7 @@ type DeleteWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10660,7 +10791,7 @@ func (o *DeleteWorkspaceRequestOptions) GetPathParams() (map[string]any, error) 
 
 // GetQuery returns the query params as a map.
 func (o *DeleteWorkspaceRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10680,7 +10811,7 @@ type GetWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10712,7 +10843,7 @@ type ListWorkspaceAgentSessionsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListWorkspaceAgentSessionsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10744,7 +10875,7 @@ type GetWorkspaceCommitsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetWorkspaceCommitsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10777,7 +10908,7 @@ type GetWorkspaceDiffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetWorkspaceDiffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10789,7 +10920,7 @@ func (o *GetWorkspaceDiffRequestOptions) GetPathParams() (map[string]any, error)
 
 // GetQuery returns the query params as a map.
 func (o *GetWorkspaceDiffRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10810,7 +10941,7 @@ type WatchWorkspaceDiffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *WatchWorkspaceDiffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10822,7 +10953,7 @@ func (o *WatchWorkspaceDiffRequestOptions) GetPathParams() (map[string]any, erro
 
 // GetQuery returns the query params as a map.
 func (o *WatchWorkspaceDiffRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10843,7 +10974,7 @@ type GetWorkspaceFilePreviewRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetWorkspaceFilePreviewRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10855,7 +10986,7 @@ func (o *GetWorkspaceFilePreviewRequestOptions) GetPathParams() (map[string]any,
 
 // GetQuery returns the query params as a map.
 func (o *GetWorkspaceFilePreviewRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10876,7 +11007,7 @@ type GetWorkspaceFilesRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetWorkspaceFilesRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10888,7 +11019,7 @@ func (o *GetWorkspaceFilesRequestOptions) GetPathParams() (map[string]any, error
 
 // GetQuery returns the query params as a map.
 func (o *GetWorkspaceFilesRequestOptions) GetQuery() (map[string]any, error) {
-	return runtime.AsMap[any](o.Query)
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10908,7 +11039,7 @@ type ListWorkspaceKataLinksRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *ListWorkspaceKataLinksRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10941,7 +11072,7 @@ type CreateWorkspaceKataLinkRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *CreateWorkspaceKataLinkRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -10973,7 +11104,7 @@ type DeleteWorkspaceKataLinkRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *DeleteWorkspaceKataLinkRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11005,7 +11136,7 @@ type PullWorkspaceBranchRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PullWorkspaceBranchRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11037,7 +11168,7 @@ type PushWorkspaceBranchRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *PushWorkspaceBranchRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11069,7 +11200,7 @@ type RefreshWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RefreshWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11101,7 +11232,7 @@ type RetryWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RetryWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11133,7 +11264,7 @@ type RevealWorkspaceRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RevealWorkspaceRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11165,7 +11296,7 @@ type GetWorkspaceRuntimeRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetWorkspaceRuntimeRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11198,7 +11329,7 @@ type LaunchWorkspaceAgentHandoffRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *LaunchWorkspaceAgentHandoffRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11231,7 +11362,7 @@ type LaunchWorkspaceRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *LaunchWorkspaceRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11263,7 +11394,7 @@ type StopWorkspaceRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *StopWorkspaceRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11296,7 +11427,7 @@ type RenameWorkspaceRuntimeSessionRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *RenameWorkspaceRuntimeSessionRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11328,7 +11459,7 @@ type GetWorkspaceRuntimeSessionAttachSpecRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetWorkspaceRuntimeSessionAttachSpecRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11360,7 +11491,7 @@ type GetWorkspaceRuntimeSessionInitialMessageRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetWorkspaceRuntimeSessionInitialMessageRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11393,7 +11524,7 @@ type SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -11415,6 +11546,71 @@ func (o *SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions) GetBody() an
 
 // GetHeader returns the headers as a map.
 func (o *SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetWorkspaceViewStateRequestOptions is the options needed to make a request to GetWorkspaceViewState.
+type GetWorkspaceViewStateRequestOptions struct {
+	PathParams *GetWorkspaceViewStatePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetWorkspaceViewStateRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetWorkspaceViewStateRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetWorkspaceViewStateRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetWorkspaceViewStateRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// UpdateWorkspaceViewStateRequestOptions is the options needed to make a request to UpdateWorkspaceViewState.
+type UpdateWorkspaceViewStateRequestOptions struct {
+	PathParams *UpdateWorkspaceViewStatePath
+	Body       *UpdateWorkspaceViewStateBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateWorkspaceViewStateRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateWorkspaceViewStateRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateWorkspaceViewStateRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateWorkspaceViewStateRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -11610,6 +11806,8 @@ type ClientInterface interface {
 	RenameDevboxSessionWithResponse(ctx context.Context, options *RenameDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameDevboxSessionResp, error)
 	GetDevboxAttachSpecWithResponse(ctx context.Context, options *GetDevboxAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxAttachSpecResp, error)
 	SendDevboxInitialMessageWithResponse(ctx context.Context, options *SendDevboxInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SendDevboxInitialMessageResp, error)
+	GetDevboxWorkspaceViewStateWithResponse(ctx context.Context, options *GetDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxWorkspaceViewStateResp, error)
+	UpdateDevboxWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateDevboxWorkspaceViewStateResp, error)
 	BrowseDocsFoldersWithResponse(ctx context.Context, options *BrowseDocsFoldersRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BrowseDocsFoldersResp, error)
 	ListDocsFoldersWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListDocsFoldersResp, error)
 	CreateDocsFolderWithResponse(ctx context.Context, options *CreateDocsFolderRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateDocsFolderResp, error)
@@ -11705,6 +11903,8 @@ type ClientInterface interface {
 	StopFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *StopFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopFleetWorkspaceRuntimeSessionResp, error)
 	RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *RenameFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResp, error)
 	GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetFleetWorkspaceRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceRuntimeSessionAttachSpecResp, error)
+	GetFleetWorkspaceViewStateWithResponse(ctx context.Context, options *GetFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceViewStateResp, error)
+	UpdateFleetWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetWorkspaceViewStateResp, error)
 	CreateFleetBrowserLoginWithResponse(ctx context.Context, options *CreateFleetBrowserLoginRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetBrowserLoginResp, error)
 	JoinFederationWithResponse(ctx context.Context, options *JoinFederationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*JoinFederationResp, error)
 	PrepareFederationSpokeWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*PrepareFederationSpokeResp, error)
@@ -11964,6 +12164,8 @@ type ClientInterface interface {
 	GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetWorkspaceRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeSessionAttachSpecResp, error)
 	GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, options *GetWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeSessionInitialMessageResp, error)
 	SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, options *SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResp, error)
+	GetWorkspaceViewStateWithResponse(ctx context.Context, options *GetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceViewStateResp, error)
+	UpdateWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkspaceViewStateResp, error)
 	RemoveStaleWorktreeWithResponse(ctx context.Context, options *RemoveStaleWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RemoveStaleWorktreeResp, error)
 }
 
@@ -12646,8 +12848,9 @@ func (c *Client) GetArchiveSnapshotWithResponse(ctx context.Context, options *Ge
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":   {Style: "form", Explode: &[]bool{false}[0]},
-		"start": {Style: "form", Explode: &[]bool{false}[0]},
+		"end":         {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":       {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -14305,6 +14508,119 @@ func (c *Client) SendDevboxInitialMessageWithResponse(ctx context.Context, optio
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "SendDevboxInitialMessageResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetDevboxWorkspaceViewState Forward an execution operation to its owning devbox
+func (c *Client) GetDevboxWorkspaceViewStateWithResponse(ctx context.Context, options *GetDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxWorkspaceViewStateResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/view-state",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/view-state")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetDevboxWorkspaceViewStateResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetDevboxWorkspaceViewStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetDevboxWorkspaceViewStateResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxWorkspaceViewStateResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdateDevboxWorkspaceViewState Forward an execution operation to its owning devbox
+func (c *Client) UpdateDevboxWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateDevboxWorkspaceViewStateResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/view-state",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/view-state")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateDevboxWorkspaceViewStateResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateDevboxWorkspaceViewStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdateDevboxWorkspaceViewStateResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateDevboxWorkspaceViewStateResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -18402,6 +18718,119 @@ func (c *Client) GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx conte
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetFleetWorkspaceViewState Get workspace view state on fleet host
+func (c *Client) GetFleetWorkspaceViewStateWithResponse(ctx context.Context, options *GetFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceViewStateResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/view-state",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/fleet/hosts/{host_key}/workspaces/{id}/view-state")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetFleetWorkspaceViewStateResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetFleetWorkspaceViewStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetFleetWorkspaceViewStateResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetWorkspaceViewStateResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdateFleetWorkspaceViewState Update workspace view state on fleet host
+func (c *Client) UpdateFleetWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetWorkspaceViewStateResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/view-state",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/fleet/hosts/{host_key}/workspaces/{id}/view-state")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateFleetWorkspaceViewStateResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateFleetWorkspaceViewStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdateFleetWorkspaceViewStateResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateFleetWorkspaceViewStateResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
 		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
@@ -32682,6 +33111,119 @@ func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx con
 	}
 }
 
+// GetWorkspaceViewState Get workspace view state
+func (c *Client) GetWorkspaceViewStateWithResponse(ctx context.Context, options *GetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceViewStateResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/view-state",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/workspaces/{id}/view-state")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetWorkspaceViewStateResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetWorkspaceViewStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetWorkspaceViewStateResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceViewStateResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdateWorkspaceViewState Update workspace view state
+func (c *Client) UpdateWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkspaceViewStateResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/view-state",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/workspaces/{id}/view-state")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateWorkspaceViewStateResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateWorkspaceViewStateErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdateWorkspaceViewStateResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateWorkspaceViewStateResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // RemoveStaleWorktree Remove a stale worktree
 func (c *Client) RemoveStaleWorktreeWithResponse(ctx context.Context, options *RemoveStaleWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RemoveStaleWorktreeResp, error) {
 	var err error
@@ -32968,8 +33510,9 @@ func (c *Client) GetArchiveReportRaw(ctx context.Context, httpClient *http.Clien
 func (c *Client) GetArchiveSnapshotRaw(ctx context.Context, httpClient *http.Client, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":   {Style: "form", Explode: &[]bool{false}[0]},
-		"start": {Style: "form", Explode: &[]bool{false}[0]},
+		"end":         {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":       {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -33457,6 +34000,37 @@ func (c *Client) SendDevboxInitialMessageRaw(ctx context.Context, httpClient *ht
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
 		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetDevboxWorkspaceViewStateRaw returns an unread response. The caller must close its body.
+func (c *Client) GetDevboxWorkspaceViewStateRaw(ctx context.Context, httpClient *http.Client, options *GetDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/view-state",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdateDevboxWorkspaceViewStateRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateDevboxWorkspaceViewStateRaw(ctx context.Context, httpClient *http.Client, options *UpdateDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/view-state",
+		Method:      "PUT",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -34938,6 +35512,37 @@ func (c *Client) GetFleetWorkspaceRuntimeSessionAttachSpecRaw(ctx context.Contex
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
 		Method:     "GET",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetFleetWorkspaceViewStateRaw returns an unread response. The caller must close its body.
+func (c *Client) GetFleetWorkspaceViewStateRaw(ctx context.Context, httpClient *http.Client, options *GetFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/view-state",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdateFleetWorkspaceViewStateRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateFleetWorkspaceViewStateRaw(ctx context.Context, httpClient *http.Client, options *UpdateFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/view-state",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -39218,6 +39823,37 @@ func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessageRaw(ctx context.Cont
 	return httpClient.Do(req)
 }
 
+// GetWorkspaceViewStateRaw returns an unread response. The caller must close its body.
+func (c *Client) GetWorkspaceViewStateRaw(ctx context.Context, httpClient *http.Client, options *GetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/view-state",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdateWorkspaceViewStateRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateWorkspaceViewStateRaw(ctx context.Context, httpClient *http.Client, options *UpdateWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/view-state",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // RemoveStaleWorktreeRaw returns an unread response. The caller must close its body.
 func (c *Client) RemoveStaleWorktreeRaw(ctx context.Context, httpClient *http.Client, options *RemoveStaleWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -39477,8 +40113,9 @@ func NewGetArchiveSnapshotRequest(ctx context.Context, baseURL string, options *
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":   {Style: "form", Explode: &[]bool{false}[0]},
-		"start": {Style: "form", Explode: &[]bool{false}[0]},
+		"end":         {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":       {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -39995,6 +40632,39 @@ func NewSendDevboxInitialMessageRequest(ctx context.Context, baseURL string, opt
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
 		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetDevboxWorkspaceViewStateRequest constructs a typed request for a caller-owned transport.
+func NewGetDevboxWorkspaceViewStateRequest(ctx context.Context, baseURL string, options *GetDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/view-state",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdateDevboxWorkspaceViewStateRequest constructs a typed request for a caller-owned transport.
+func NewUpdateDevboxWorkspaceViewStateRequest(ctx context.Context, baseURL string, options *UpdateDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/view-state",
+		Method:      "PUT",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -41569,6 +42239,39 @@ func NewGetFleetWorkspaceRuntimeSessionAttachSpecRequest(ctx context.Context, ba
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
 		Method:     "GET",
 		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetFleetWorkspaceViewStateRequest constructs a typed request for a caller-owned transport.
+func NewGetFleetWorkspaceViewStateRequest(ctx context.Context, baseURL string, options *GetFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/view-state",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdateFleetWorkspaceViewStateRequest constructs a typed request for a caller-owned transport.
+func NewUpdateFleetWorkspaceViewStateRequest(ctx context.Context, baseURL string, options *UpdateFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/view-state",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -46104,6 +46807,39 @@ func NewSubmitWorkspaceRuntimeSessionInitialMessageRequest(ctx context.Context, 
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetWorkspaceViewStateRequest constructs a typed request for a caller-owned transport.
+func NewGetWorkspaceViewStateRequest(ctx context.Context, baseURL string, options *GetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/view-state",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdateWorkspaceViewStateRequest constructs a typed request for a caller-owned transport.
+func NewUpdateWorkspaceViewStateRequest(ctx context.Context, baseURL string, options *UpdateWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/view-state",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewRemoveStaleWorktreeRequest constructs a typed request for a caller-owned transport.
 func NewRemoveStaleWorktreeRequest(ctx context.Context, baseURL string, options *RemoveStaleWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -46265,6 +47001,13 @@ const (
 	ArchiveReportCoverageResponseStatusPaused           ArchiveReportCoverageResponseStatus = "paused"
 	ArchiveReportCoverageResponseStatusRunning          ArchiveReportCoverageResponseStatus = "running"
 	ArchiveReportCoverageResponseStatusWaitingForBudget ArchiveReportCoverageResponseStatus = "waiting_for_budget"
+)
+
+// ArchiveSnapshotIssueScope When open, includes all cached open issues and linked closed context regardless of creation time.
+type ArchiveSnapshotIssueScope string
+
+const (
+	ArchiveSnapshotIssueScopeOpen ArchiveSnapshotIssueScope = "open"
 )
 
 type ArchiveStatusResponseCollectionMode string
@@ -46577,6 +47320,13 @@ const (
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
 )
 
+// GetArchiveSnapshotQueryIssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
+type GetArchiveSnapshotQueryIssueScope string
+
+const (
+	GetArchiveSnapshotQueryIssueScopeOpen GetArchiveSnapshotQueryIssueScope = "open"
+)
+
 // GetDevboxFilePreviewQueryBase Diff base: head, pushed, or merge-target
 type GetDevboxFilePreviewQueryBase string
 
@@ -46845,6 +47595,16 @@ type GetDevboxAttachSpecPath struct {
 type SendDevboxInitialMessagePath struct {
 	ID           string `json:"id"`
 	SessionKey   string `json:"session_key"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type GetDevboxWorkspaceViewStatePath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
+type UpdateDevboxWorkspaceViewStatePath struct {
+	ID           string `json:"id"`
 	ConnectionID string `json:"connection_id"`
 }
 
@@ -47180,6 +47940,16 @@ type GetFleetWorkspaceRuntimeSessionAttachSpecPath struct {
 	HostKey    string `json:"host_key"`
 	ID         string `json:"id"`
 	SessionKey string `json:"session_key"`
+}
+
+type GetFleetWorkspaceViewStatePath struct {
+	HostKey string `json:"host_key"`
+	ID      string `json:"id"`
+}
+
+type UpdateFleetWorkspaceViewStatePath struct {
+	HostKey string `json:"host_key"`
+	ID      string `json:"id"`
 }
 
 type CreateFleetBrowserLoginPath struct {
@@ -48553,6 +49323,14 @@ type SubmitWorkspaceRuntimeSessionInitialMessagePath struct {
 	SessionKey string `json:"session_key"`
 }
 
+type GetWorkspaceViewStatePath struct {
+	ID string `json:"id"`
+}
+
+type UpdateWorkspaceViewStatePath struct {
+	ID string `json:"id"`
+}
+
 type DispatchWorkflowBody = WorkflowDispatchBody
 
 type ReceiveAgentHookBody = HookEvent
@@ -48574,6 +49352,8 @@ type LaunchDevboxSessionBody = LaunchWorkspaceRuntimeSessionInputBody
 type RenameDevboxSessionBody = RenameWorkspaceRuntimeSessionInputBody
 
 type SendDevboxInitialMessageBody = SubmitInitialMessageInputBody
+
+type UpdateDevboxWorkspaceViewStateBody = WorkspaceViewState
 
 type CreateDocsFolderBody = CreateDocsFolderInputBody
 
@@ -48601,7 +49381,7 @@ type FederationFilterUnassignedActivitySubjectsBody = FederationUnassignedActivi
 
 type FederationGetDiffDescriptorBody = FederationDiffDescriptorRequest
 
-type FederationGetRepositoryDescriptorBody = RepositoryRoute
+type FederationGetRepositoryDescriptorBody = RepositoryDescriptorRequest
 
 type FederationUpdateProviderSettingsBody = ProviderSettingsUpdate
 
@@ -48652,6 +49432,8 @@ type CreateFleetWorkspaceBody map[string]any
 type LaunchFleetWorkspaceRuntimeSessionBody map[string]any
 
 type RenameFleetWorkspaceRuntimeSessionBody map[string]any
+
+type UpdateFleetWorkspaceViewStateBody map[string]any
 
 type CreateFleetBrowserLoginBody = BrowserLoginRequestBody
 
@@ -48859,6 +49641,8 @@ type RenameWorkspaceRuntimeSessionBody = RenameWorkspaceRuntimeSessionInputBody
 
 type SubmitWorkspaceRuntimeSessionInitialMessageBody = SubmitInitialMessageInputBody
 
+type UpdateWorkspaceViewStateBody = WorkspaceViewState
+
 type RemoveStaleWorktreeBody = RemoveStaleWorktreeInputBody
 
 type ListWorkflowRunsQuery struct {
@@ -48906,7 +49690,7 @@ type ListActivityAuthorsQuery struct {
 type ListActivityThreadEventsQuery struct {
 	Provider       *string                                `json:"provider,omitempty"`
 	PlatformHost   *string                                `json:"platform_host,omitempty"`
-	PlatformRepoID *string                                `json:"platform_repo_id,omitempty"`
+	PlatformRepoID *int64                                 `json:"platform_repo_id,omitempty"`
 	ItemType       *ListActivityThreadEventsQueryItemType `json:"item_type,omitempty"`
 	ItemNumber     *int64                                 `json:"item_number,omitempty"`
 	Types          []string                               `json:"types,omitempty"`
@@ -48936,13 +49720,16 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
+	// IssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
+	IssueScope *GetArchiveSnapshotQueryIssueScope `json:"issue_scope,omitempty"`
+
 	// Repo Optional configured repository subset. Repeat repo=provider|platform_host/repo_path to split large exports. Limits: 10,000 items/reviews/references and 32 MiB projected text or response; no items are dropped.
 	Repo []string `json:"repo,omitempty"`
 
-	// Start Inclusive UTC RFC3339 issue-creation boundary.
+	// Start Inclusive UTC RFC3339 issue-creation boundary; not applied when issue_scope=open.
 	Start string `json:"start"`
 
-	// End Exclusive UTC RFC3339 issue-creation boundary. Open pull requests have no age limit.
+	// End Exclusive UTC RFC3339 issue-creation boundary; not applied when issue_scope=open. Open pull requests have no age limit.
 	End string `json:"end"`
 }
 
@@ -49186,8 +49973,8 @@ type GetPullDiffOnHostQuery struct {
 }
 
 type GetPullExternalContextOnHostQuery struct {
-	PlatformRepoID string `json:"platform_repo_id"`
-	Refresh        *bool  `json:"refresh,omitempty"`
+	PlatformRepoID int64 `json:"platform_repo_id"`
+	Refresh        *bool `json:"refresh,omitempty"`
 }
 
 type GetPullFilePreviewOnHostQuery struct {
@@ -49361,8 +50148,8 @@ type GetPullDiffQuery struct {
 }
 
 type GetPullExternalContextQuery struct {
-	PlatformRepoID string `json:"platform_repo_id"`
-	Refresh        *bool  `json:"refresh,omitempty"`
+	PlatformRepoID int64 `json:"platform_repo_id"`
+	Refresh        *bool `json:"refresh,omitempty"`
 }
 
 type GetPullFilePreviewQuery struct {
@@ -49721,6 +50508,14 @@ type SendDevboxInitialMessageResponse = AgentInitialMessageStatusResponse
 
 type SendDevboxInitialMessageErrorResponse = ProblemError
 
+type GetDevboxWorkspaceViewStateResponse = WorkspaceViewState
+
+type GetDevboxWorkspaceViewStateErrorResponse = ProblemError
+
+type UpdateDevboxWorkspaceViewStateResponse = WorkspaceViewState
+
+type UpdateDevboxWorkspaceViewStateErrorResponse = ProblemError
+
 type BrowseDocsFoldersResponse = DocsBrowseOutputBody
 
 type BrowseDocsFoldersErrorResponse = ProblemError
@@ -49982,6 +50777,22 @@ type StopFleetWorkspaceRuntimeSessionResponse map[string]any
 type RenameFleetWorkspaceRuntimeSessionResponse map[string]any
 
 type GetFleetWorkspaceRuntimeSessionAttachSpecResponse map[string]any
+
+type GetFleetWorkspaceViewStateResponse = WorkspaceViewState
+
+type GetFleetWorkspaceViewStateErrorResponse map[string]any
+
+func (r GetFleetWorkspaceViewStateErrorResponse) Error() string {
+	return "unmapped client error"
+}
+
+type UpdateFleetWorkspaceViewStateResponse = WorkspaceViewState
+
+type UpdateFleetWorkspaceViewStateErrorResponse map[string]any
+
+func (r UpdateFleetWorkspaceViewStateErrorResponse) Error() string {
+	return "unmapped client error"
+}
 
 type CreateFleetBrowserLoginResponse = BrowserLoginOutputBody
 
@@ -50697,7 +51508,7 @@ type UpdateRepoWorktreeBaseResponse = SettingsResponse
 
 type UpdateRepoWorktreeBaseErrorResponse = ProblemError
 
-type ListReposResponse []RepoResponse
+type ListReposResponse []RepoCatalogResponse
 
 type ListReposErrorResponse = ProblemError
 
@@ -50934,6 +51745,14 @@ type GetWorkspaceRuntimeSessionInitialMessageErrorResponse = ProblemError
 type SubmitWorkspaceRuntimeSessionInitialMessageResponse = AgentInitialMessageStatusResponse
 
 type SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse = ProblemError
+
+type GetWorkspaceViewStateResponse = WorkspaceViewState
+
+type GetWorkspaceViewStateErrorResponse = ProblemError
+
+type UpdateWorkspaceViewStateResponse = WorkspaceViewState
+
+type UpdateWorkspaceViewStateErrorResponse = ProblemError
 
 type RemoveStaleWorktreeResponse = RemoveStaleWorktreeOutputBody
 
@@ -51261,6 +52080,22 @@ type SendDevboxInitialMessageResp struct {
 	StatusCode   int
 	Error        *SendDevboxInitialMessageErrorResponse
 	JSON200      *SendDevboxInitialMessageResponse
+}
+
+type GetDevboxWorkspaceViewStateResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetDevboxWorkspaceViewStateErrorResponse
+	JSON200      *GetDevboxWorkspaceViewStateResponse
+}
+
+type UpdateDevboxWorkspaceViewStateResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateDevboxWorkspaceViewStateErrorResponse
+	JSON200      *UpdateDevboxWorkspaceViewStateResponse
 }
 
 type BrowseDocsFoldersResp struct {
@@ -51911,6 +52746,22 @@ type GetFleetWorkspaceRuntimeSessionAttachSpecResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+}
+
+type GetFleetWorkspaceViewStateResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetFleetWorkspaceViewStateErrorResponse
+	JSON200      *GetFleetWorkspaceViewStateResponse
+}
+
+type UpdateFleetWorkspaceViewStateResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateFleetWorkspaceViewStateErrorResponse
+	JSON200      *UpdateFleetWorkspaceViewStateResponse
 }
 
 type CreateFleetBrowserLoginResp struct {
@@ -53978,6 +54829,22 @@ type SubmitWorkspaceRuntimeSessionInitialMessageResp struct {
 	JSON200      *SubmitWorkspaceRuntimeSessionInitialMessageResponse
 }
 
+type GetWorkspaceViewStateResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetWorkspaceViewStateErrorResponse
+	JSON200      *GetWorkspaceViewStateResponse
+}
+
+type UpdateWorkspaceViewStateResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateWorkspaceViewStateErrorResponse
+	JSON200      *UpdateWorkspaceViewStateResponse
+}
+
 type RemoveStaleWorktreeResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -54059,12 +54926,12 @@ type ActivityItemResponse struct {
 }
 
 type ActivityRepoRefResponse struct {
-	Name           string  `json:"name"`
-	Owner          string  `json:"owner"`
-	PlatformHost   string  `json:"platform_host"`
-	PlatformRepoID *string `json:"platform_repo_id,omitempty"`
-	Provider       string  `json:"provider"`
-	RepoPath       string  `json:"repo_path"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID *int64 `json:"platform_repo_id,omitempty"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type ActivityResponse struct {
@@ -54305,15 +55172,18 @@ type ArchiveRepositoryRef struct {
 
 type ArchiveSnapshot struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string               `json:"$schema,omitempty"`
-	End          time.Time             `json:"end"`
-	Issues       []SnapshotItem        `json:"issues"`
-	ObservedAt   time.Time             `json:"observed_at"`
-	PullRequests []SnapshotPullRequest `json:"pull_requests"`
-	Relations    []SnapshotRelation    `json:"relations"`
-	Repositories []SnapshotRepository  `json:"repositories"`
-	Schema1      string                `json:"schema"`
-	Start        time.Time             `json:"start"`
+	Schema *string   `json:"$schema,omitempty"`
+	End    time.Time `json:"end"`
+
+	// IssueScope When open, includes all cached open issues and linked closed context regardless of creation time.
+	IssueScope   *ArchiveSnapshotIssueScope `json:"issue_scope,omitempty"`
+	Issues       []SnapshotItem             `json:"issues"`
+	ObservedAt   time.Time                  `json:"observed_at"`
+	PullRequests []SnapshotPullRequest      `json:"pull_requests"`
+	Relations    []SnapshotRelation         `json:"relations"`
+	Repositories []SnapshotRepository       `json:"repositories"`
+	Schema1      string                     `json:"schema"`
+	Start        time.Time                  `json:"start"`
 }
 
 type ArchiveStatusResponse struct {
@@ -54515,7 +55385,7 @@ type ConfiguredRepoStatus struct {
 	Name              string  `json:"name"`
 	Owner             string  `json:"owner"`
 	PlatformHost      string  `json:"platform_host"`
-	PlatformRepoID    *string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID    *int64  `json:"platform_repo_id,omitempty"`
 	Provider          string  `json:"provider"`
 	RepoPath          string  `json:"repo_path"`
 	TrackedRepoPath   *string `json:"tracked_repo_path,omitempty"`
@@ -54554,8 +55424,11 @@ type CreateAdHocWorkspaceHostInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// Branch Branch for the new worktree; generated when empty
-	Branch              *string `json:"branch,omitempty"`
-	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
+	Branch *string `json:"branch,omitempty"`
+
+	// PlatformRepoID Expected stable repository ID from the catalog
+	PlatformRepoID      *int64 `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch *bool  `json:"reuse_existing_branch,omitempty"`
 }
 
 type CreateAdHocWorkspaceInputBody struct {
@@ -54563,8 +55436,11 @@ type CreateAdHocWorkspaceInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// Branch Branch for the new worktree; generated when empty
-	Branch              *string `json:"branch,omitempty"`
-	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
+	Branch *string `json:"branch,omitempty"`
+
+	// PlatformRepoID Expected stable repository ID from the catalog
+	PlatformRepoID      *int64 `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch *bool  `json:"reuse_existing_branch,omitempty"`
 }
 
 type CreateDevboxWorkspaceInputBody struct {
@@ -54576,6 +55452,7 @@ type CreateDevboxWorkspaceInputBody struct {
 	Name                string  `json:"name"`
 	Owner               string  `json:"owner"`
 	PlatformHost        string  `json:"platform_host"`
+	PlatformRepoID      *int64  `json:"platform_repo_id,omitempty"`
 	Provider            string  `json:"provider"`
 	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }
@@ -54635,6 +55512,7 @@ type CreateIssueWorkspaceHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                 *string `json:"$schema,omitempty"`
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
+	PlatformRepoID         *int64  `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
 	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
@@ -54644,6 +55522,7 @@ type CreateIssueWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                 *string `json:"$schema,omitempty"`
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
+	PlatformRepoID         *int64  `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
 	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
@@ -54656,6 +55535,7 @@ type CreateWorkspaceInputBody struct {
 	Name               string  `json:"name"`
 	Owner              string  `json:"owner"`
 	PlatformHost       string  `json:"platform_host"`
+	PlatformRepoID     *int64  `json:"platform_repo_id,omitempty"`
 	Provider           string  `json:"provider"`
 	SuppressAutoAssign *bool   `json:"suppress_auto_assign,omitempty"`
 }
@@ -55029,7 +55909,7 @@ type ExternalContextActionRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema         *string `json:"$schema,omitempty"`
 	HeadSha        string  `json:"head_sha"`
-	PlatformRepoID string  `json:"platform_repo_id"`
+	PlatformRepoID int64   `json:"platform_repo_id"`
 }
 
 type ExternalContextCard struct {
@@ -55068,7 +55948,7 @@ type FeatureCapabilities struct {
 
 type FederationActivityRepositoryIdentity struct {
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 }
 
@@ -55128,7 +56008,7 @@ type FederationWorkflowItemIdentity struct {
 	Number         int64  `json:"number"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 	Type           string `json:"type"`
 }
@@ -55162,7 +56042,7 @@ type FederationWorkflowRepositoryIdentity struct {
 	Name           string `json:"name"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 	RepoPath       string `json:"repo_path"`
 }
@@ -56481,13 +57361,12 @@ type ProviderCapabilitiesResponse struct {
 }
 
 type ProviderRepositoryObservation struct {
-	Name           string    `json:"name"`
-	ObservedAt     time.Time `json:"observed_at"`
-	Owner          string    `json:"owner"`
-	PlatformHost   string    `json:"platform_host"`
-	PlatformRepoID string    `json:"platform_repo_id"`
-	Provider       string    `json:"provider"`
-	RepoPath       string    `json:"repo_path"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type ProviderSettingsResponse struct {
@@ -56533,7 +57412,7 @@ type ProviderStateRepository struct {
 	Name           string `json:"name"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 }
 
@@ -56576,10 +57455,11 @@ type ProviderStateWorkflowPayload struct {
 
 type ProviderWorkspaceItemRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema     *string         `json:"$schema,omitempty"`
-	ItemNumber int64           `json:"item_number"`
-	ItemType   string          `json:"item_type"`
-	Repository RepositoryRoute `json:"repository"`
+	Schema         *string         `json:"$schema,omitempty"`
+	ItemNumber     int64           `json:"item_number"`
+	ItemType       string          `json:"item_type"`
+	PlatformRepoID int64           `json:"platform_repo_id"`
+	Repository     RepositoryRoute `json:"repository"`
 }
 
 type PublishChange struct {
@@ -56991,6 +57871,23 @@ type RepoBrowserTreeResponse struct {
 	Truncated bool                   `json:"truncated"`
 }
 
+type RepoCatalogResponse struct {
+	AllowMergeCommit    bool       `json:"AllowMergeCommit"`
+	AllowRebaseMerge    bool       `json:"AllowRebaseMerge"`
+	AllowSquashMerge    bool       `json:"AllowSquashMerge"`
+	CreatedAt           time.Time  `json:"CreatedAt"`
+	ID                  int64      `json:"ID"`
+	LastSyncCompletedAt *time.Time `json:"LastSyncCompletedAt,omitempty"`
+	LastSyncError       string     `json:"LastSyncError"`
+	LastSyncStartedAt   *time.Time `json:"LastSyncStartedAt,omitempty"`
+	Name                string     `json:"Name"`
+	Owner               string     `json:"Owner"`
+	Platform            string     `json:"Platform"`
+	PlatformHost        string     `json:"PlatformHost"`
+	PlatformRepoID      int64      `json:"PlatformRepoID"`
+	ViewerCanMerge      bool       `json:"ViewerCanMerge"`
+}
+
 type RepoLabelsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema    *string `json:"$schema,omitempty"`
@@ -57037,7 +57934,7 @@ type RepoPreset struct {
 
 type RepoPresetRepository struct {
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 	RepoPath       string `json:"repo_path"`
 }
@@ -57082,7 +57979,7 @@ type RepoRefResponse struct {
 	Operations     *RepoOperations              `json:"operations,omitempty"`
 	Owner          string                       `json:"owner"`
 	PlatformHost   string                       `json:"platform_host"`
-	PlatformRepoID *string                      `json:"platform_repo_id,omitempty"`
+	PlatformRepoID *int64                       `json:"platform_repo_id,omitempty"`
 	Provider       string                       `json:"provider"`
 	RepoPath       string                       `json:"repo_path"`
 }
@@ -57102,7 +57999,7 @@ type RepoResponse struct {
 	Owner               string                       `json:"Owner"`
 	Platform            string                       `json:"Platform"`
 	PlatformHost        string                       `json:"PlatformHost"`
-	PlatformRepoID      string                       `json:"PlatformRepoID"`
+	PlatformRepoID      int64                        `json:"PlatformRepoID"`
 	ViewerCanMerge      bool                         `json:"ViewerCanMerge"`
 	Capabilities        ProviderCapabilitiesResponse `json:"capabilities"`
 	Operations          RepoOperations               `json:"operations"`
@@ -57176,35 +58073,42 @@ type RepoWorktreeBaseRequest struct {
 
 type RepositoryDescriptor struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema           *string   `json:"$schema,omitempty"`
-	CloneURL         string    `json:"clone_url"`
-	DefaultBranch    string    `json:"default_branch"`
-	Name             string    `json:"name"`
-	ObservedAt       time.Time `json:"observed_at"`
-	Owner            string    `json:"owner"`
-	PlatformHost     string    `json:"platform_host"`
-	PlatformRepoID   string    `json:"platform_repo_id"`
-	ProtocolVersion  int64     `json:"protocol_version"`
-	Provider         string    `json:"provider"`
-	SnapshotRevision int64     `json:"snapshot_revision"`
-	Stale            bool      `json:"stale"`
+	Schema          *string   `json:"$schema,omitempty"`
+	CloneURL        string    `json:"clone_url"`
+	DefaultBranch   string    `json:"default_branch"`
+	Name            string    `json:"name"`
+	ObservedAt      time.Time `json:"observed_at"`
+	Owner           string    `json:"owner"`
+	PlatformHost    string    `json:"platform_host"`
+	PlatformRepoID  int64     `json:"platform_repo_id"`
+	ProtocolVersion int64     `json:"protocol_version"`
+	Provider        string    `json:"provider"`
+	Stale           bool      `json:"stale"`
+}
+
+type RepositoryDescriptorRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string `json:"$schema,omitempty"`
+	Name           string  `json:"name"`
+	Owner          string  `json:"owner"`
+	PlatformHost   string  `json:"platform_host"`
+	PlatformRepoID *int64  `json:"platform_repo_id,omitempty"`
+	Provider       string  `json:"provider"`
 }
 
 type RepositoryIdentity struct {
 	Name           *string `json:"name,omitempty"`
 	Owner          *string `json:"owner,omitempty"`
 	PlatformHost   string  `json:"platformHost"`
-	PlatformRepoID string  `json:"platformRepoID"`
+	PlatformRepoID int64   `json:"platformRepoID"`
 	Provider       string  `json:"provider"`
 }
 
 type RepositoryRoute struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	Name         string  `json:"name"`
-	Owner        string  `json:"owner"`
-	PlatformHost string  `json:"platform_host"`
-	Provider     string  `json:"provider"`
+	Name         string `json:"name"`
+	Owner        string `json:"owner"`
+	PlatformHost string `json:"platform_host"`
+	Provider     string `json:"provider"`
 }
 
 type RequestChangesPRHostInputBody struct {
@@ -57524,7 +58428,7 @@ type SnapshotRepository struct {
 	LastSyncAt    *time.Time        `json:"last_sync_at,omitempty"`
 	Path          string            `json:"path"`
 	Provider      string            `json:"provider"`
-	ProviderID    string            `json:"provider_id"`
+	ProviderID    int64             `json:"provider_id"`
 	SyncError     string            `json:"sync_error"`
 }
 
@@ -58043,7 +58947,7 @@ type WorkspaceKataSummary struct {
 type WorkspaceLaunchPull struct {
 	BaseBranch       *string                         `json:"base_branch,omitempty"`
 	BaseOid          *string                         `json:"base_oid,omitempty"`
-	BaseRepoID       *string                         `json:"base_repo_id,omitempty"`
+	BaseRepoID       *int64                          `json:"base_repo_id,omitempty"`
 	HeadBranch       string                          `json:"head_branch"`
 	HeadOid          *string                         `json:"head_oid,omitempty"`
 	HeadRepoCloneURL string                          `json:"head_repo_clone_url"`
@@ -58057,19 +58961,20 @@ type WorkspaceLaunchRepository struct {
 	Name           string `json:"name"`
 	Owner          string `json:"owner"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Provider       string `json:"provider"`
 }
 
 type WorkspaceLaunchRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema          *string         `json:"$schema,omitempty"`
+	ForCreation     *bool           `json:"for_creation,omitempty"`
 	GitHeadRef      *string         `json:"git_head_ref,omitempty"`
 	IssueBranchSlug *bool           `json:"issue_branch_slug,omitempty"`
 	ItemKey         *string         `json:"item_key,omitempty"`
 	ItemNumber      int64           `json:"item_number"`
 	ItemType        string          `json:"item_type"`
-	PlatformRepoID  *string         `json:"platform_repo_id,omitempty"`
+	PlatformRepoID  *int64          `json:"platform_repo_id,omitempty"`
 	Repository      RepositoryRoute `json:"repository"`
 }
 
@@ -58098,12 +59003,12 @@ type WorkspaceRef struct {
 }
 
 type WorkspaceRepositorySummary struct {
-	Name           string  `json:"name"`
-	Owner          string  `json:"owner"`
-	PlatformHost   string  `json:"platform_host"`
-	PlatformRepoID *string `json:"platform_repo_id,omitempty"`
-	Provider       string  `json:"provider"`
-	RepoPath       string  `json:"repo_path"`
+	Name           string `json:"name"`
+	Owner          string `json:"owner"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID *int64 `json:"platform_repo_id,omitempty"`
+	Provider       string `json:"provider"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type WorkspaceResponse struct {
@@ -58230,6 +59135,14 @@ type WorkspaceSummary struct {
 	Visible               bool                       `json:"visible"`
 	WorktreeDirty         *bool                      `json:"worktree_dirty,omitempty"`
 	WorktreePath          string                     `json:"worktree_path"`
+}
+
+type WorkspaceViewState struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// ActiveTab Selected workflow tab: home, terminal, or session:<key>; empty when unset
+	ActiveTab string `json:"active_tab"`
 }
 
 type Workspaces struct {

@@ -96,7 +96,7 @@ func (o *{{$op.ID | ucFirst}}RequestOptions) Validate() error {
 // GetPathParams returns the path params as a map.
 func (o *{{$op.ID | ucFirst}}RequestOptions) GetPathParams() (map[string]any, error) {
     {{- if $op.PathParams -}}
-    params, err := runtime.AsMap[any](o.PathParams)
+    params, err := paramcodec.Map(o.PathParams)
     if err != nil { return nil, err }
     for key, value := range params {
         params[key] = url.PathEscape(fmt.Sprint(value))
@@ -110,7 +110,7 @@ func (o *{{$op.ID | ucFirst}}RequestOptions) GetPathParams() (map[string]any, er
 // GetQuery returns the query params as a map.
 func (o *{{$op.ID | ucFirst}}RequestOptions) GetQuery() (map[string]any, error) {
     {{- if $op.Query -}}
-    return runtime.AsMap[any](o.Query)
+    return paramcodec.Map(o.Query)
     {{- else -}}
     return nil, nil
     {{- end}}

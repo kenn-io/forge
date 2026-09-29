@@ -58,8 +58,8 @@ func (s *Server) listRepoLabels(
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
-	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(*repo), capabilityReadLabels) {
-		return nil, httpapi.UnsupportedCapability(*repo, capabilityReadLabels)
+	if !httpapi.CapabilityEnabled(s.repoResolver.CapabilitiesForRepo(repo.Repo), capabilityReadLabels) {
+		return nil, httpapi.UnsupportedCapability(repo.Repo, capabilityReadLabels)
 	}
 
 	labels, freshness, err := s.db.ListRepoLabelCatalog(ctx, repo.ID)
@@ -68,7 +68,7 @@ func (s *Server) listRepoLabels(
 	}
 	syncing := false
 	if labelCatalogStale(freshness, time.Now().UTC()) {
-		syncing = s.enqueueRepoLabelCatalogRefresh(*repo)
+		syncing = s.enqueueRepoLabelCatalogRefresh(repo.Repo)
 	}
 
 	return &listRepoLabelsOutput{Body: repoLabelsResponse{

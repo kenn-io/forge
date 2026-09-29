@@ -309,8 +309,8 @@
     margin: 0 0 6px;
     font-size: var(--font-size-sm);
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.04em);
   }
   .file-list {
     list-style: none;
@@ -336,7 +336,7 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-muted);
-    text-transform: uppercase;
+    text-transform: var(--label-transform, uppercase);
   }
   .file-path { color: var(--text-primary); }
   .file-old { color: var(--text-muted); font-style: italic; }

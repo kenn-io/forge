@@ -6,6 +6,7 @@ export interface CreateIssueWorkspaceInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   git_head_ref?: string;
+  platform_repo_id?: number;
   reuse_existing_branch?: boolean;
   reuse_existing_directory?: boolean;
   suppress_auto_assign?: boolean;

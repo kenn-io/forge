@@ -80,6 +80,8 @@ service is the supported tool here.
 - Repeated reads of the same PR or issue list query share the pending request;
   only a changed query replaces it, so polling cannot starve a slow response
   (`frontend/src/lib/effect/latest-shared-read.ts::makeLatestSharedRead`).
+- Fleet snapshot consumers share pending reads within the app runtime; completed results do not suppress later refreshes,
+  and releasing one consumer does not cancel another (`frontend/src/lib/api/fleet-snapshot.ts::FleetSnapshotReadsLive`).
 - Navigation retains successful previews for explicit commit/range scopes;
   head and workspace previews still follow their mutable refresh generations
   (`frontend/src/lib/stores/diff-preview-workflow.ts::FilePreviewWorkflowLive`).

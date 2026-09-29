@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
+	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/platform"
 )
 
@@ -41,7 +41,6 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 	assert.Equal("Group/SubGroup", repo.Ref.Owner)
 	assert.Equal("project", repo.Ref.Name)
 	assert.Equal(int64(42), repo.Ref.PlatformID)
-	assert.Equal("42", repo.Ref.PlatformExternalID)
 	assert.True(repo.Private)
 	assert.True(repo.Archived)
 	require.NotNil(t, repo.ViewerCanMerge)

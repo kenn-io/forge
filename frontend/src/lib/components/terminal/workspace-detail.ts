@@ -49,7 +49,7 @@ const Repo = Schema.Struct({
   name: Schema.String,
   owner: Schema.String,
   platform_host: Schema.String,
-  platform_repo_id: Schema.optionalKey(Schema.String),
+  platform_repo_id: Schema.optionalKey(Schema.Number),
   provider: Schema.String,
   repo_path: Schema.String,
 });

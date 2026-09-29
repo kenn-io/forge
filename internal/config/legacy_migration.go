@@ -28,7 +28,17 @@ func LoadOrCreate(path string) (*Config, error) {
 	if err := EnsureDefault(path); err != nil {
 		return nil, err
 	}
-	return Load(path)
+	cfg, err := Load(path)
+	if err != nil || !cfg.upgradedRepositoryIDs {
+		return cfg, err
+	}
+	// Persist the integer IDs so later releases can read the file without
+	// the text conversion.
+	if err := cfg.Save(path); err != nil {
+		return nil, fmt.Errorf("save upgraded repository IDs: %w", err)
+	}
+	cfg.upgradedRepositoryIDs = false
+	return cfg, nil
 }
 
 func migrateLegacyDatabase(configPath string) error {

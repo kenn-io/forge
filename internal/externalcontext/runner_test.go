@@ -94,7 +94,7 @@ func fixtureSource(t *testing.T, mode string, extra ...string) (config.ExternalC
 }
 
 func fixturePull() PullRequest {
-	return PullRequest{Provider: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: "123", RepoPath: "group/subgroup/project", Number: 42, URL: "https://git.example.test/group/subgroup/project/-/merge_requests/42", State: "open", HeadSHA: "head-one", BaseSHA: "base-one"}
+	return PullRequest{Provider: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: 123, RepoPath: "group/subgroup/project", Number: 42, URL: "https://git.example.test/group/subgroup/project/-/merge_requests/42", State: "open", HeadSHA: "head-one", BaseSHA: "base-one"}
 }
 
 func invocations(t *testing.T, dir string) []os.DirEntry {
@@ -125,7 +125,7 @@ func TestReadProtocolCacheAndAction(t *testing.T) {
 	require.Len(t, files, 1)
 	payload, err := os.ReadFile(filepath.Join(dir, files[0].Name()))
 	require.NoError(t, err)
-	assert.JSONEq(`{"version":1,"operation":"read","pull_request":{"provider":"gitlab","platform_host":"git.example.test","platform_repo_id":"123","repo_path":"group/subgroup/project","number":42,"url":"https://git.example.test/group/subgroup/project/-/merge_requests/42","state":"open","head_sha":"head-one","base_sha":"base-one"}}`, string(payload))
+	assert.JSONEq(`{"version":1,"operation":"read","pull_request":{"provider":"gitlab","platform_host":"git.example.test","platform_repo_id":123,"repo_path":"group/subgroup/project","number":42,"url":"https://git.example.test/group/subgroup/project/-/merge_requests/42","state":"open","head_sha":"head-one","base_sha":"base-one"}}`, string(payload))
 	_, err = runner.Read(t.Context(), "metrics", pull, false)
 	require.NoError(t, err)
 	assert.Len(invocations(t, dir), 1)
@@ -273,7 +273,7 @@ func TestReadCacheUsesCompletePullSnapshot(t *testing.T) {
 		func(*PullRequest) {},
 		func(p *PullRequest) { p.Provider = "forgejo" },
 		func(p *PullRequest) { p.PlatformHost = "other.example.test" },
-		func(p *PullRequest) { p.PlatformRepoID = "456" },
+		func(p *PullRequest) { p.PlatformRepoID = 456 },
 		func(p *PullRequest) { p.RepoPath = "renamed/project" },
 		func(p *PullRequest) { p.Number = 43 },
 		func(p *PullRequest) { p.URL = "https://example.test/pull/42" },

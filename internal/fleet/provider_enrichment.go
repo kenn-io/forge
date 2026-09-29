@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"encoding/json/v2"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,18 +114,16 @@ func providerRepository(
 ) (*db.RepositoryCatalogEntry, error) {
 	if database == nil || strings.TrimSpace(identity.Provider) == "" ||
 		strings.TrimSpace(identity.PlatformHost) == "" ||
-		strings.TrimSpace(identity.PlatformRepoID) == "" {
+		identity.PlatformRepoID == 0 {
 		return nil, nil
 	}
 	key := strings.ToLower(strings.TrimSpace(identity.Provider)) + "\x00" +
 		strings.ToLower(strings.TrimSpace(identity.PlatformHost)) + "\x00" +
-		strings.TrimSpace(identity.PlatformRepoID)
+		strconv.FormatInt(identity.PlatformRepoID, 10)
 	if repository, ok := cache[key]; ok {
 		return repository, nil
 	}
-	repository, err := database.GetRepositoryByProviderID(
-		ctx, identity.Provider, identity.PlatformHost, identity.PlatformRepoID,
-	)
+	repository, err := database.GetRepositoryByProviderID(ctx, identity.ProviderIdentity())
 	if err != nil {
 		return nil, err
 	}

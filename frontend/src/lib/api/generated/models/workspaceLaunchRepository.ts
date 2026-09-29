@@ -8,6 +8,6 @@ export interface WorkspaceLaunchRepository {
   name: string;
   owner: string;
   platform_host: string;
-  platform_repo_id: string;
+  platform_repo_id: number;
   provider: string;
 }

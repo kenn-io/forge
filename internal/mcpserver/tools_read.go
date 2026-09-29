@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,7 +21,7 @@ type listReposInput struct {
 type repoRow struct {
 	Provider            string `json:"provider"`
 	PlatformHost        string `json:"platform_host"`
-	PlatformRepoID      string `json:"platform_repo_id"`
+	PlatformRepoID      int64  `json:"platform_repo_id"`
 	Owner               string `json:"owner"`
 	Name                string `json:"name"`
 	RepoPath            string `json:"repo_path"`
@@ -373,7 +374,7 @@ func itemSortKey(item itemRef) string {
 	return strings.Join([]string{
 		item.Provider,
 		item.PlatformHost,
-		item.PlatformRepoID,
+		strconv.FormatInt(item.PlatformRepoID, 10),
 		item.RepoPath,
 		item.Type,
 		fmt.Sprintf("%08d", item.Number),

@@ -20,6 +20,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/projects"
 	"go.kenn.io/forge/internal/testutil"
 )

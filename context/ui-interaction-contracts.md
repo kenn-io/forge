@@ -53,9 +53,30 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
-- Recent detail snapshots stay read-only until that visit's revalidation succeeds;
-  preserve the original workspace lifecycle tick. Settled mutations invalidate saved views
-  so hidden optimistic state cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
+- Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow local comment drafts.
+  Preserve the original workspace lifecycle tick; settled mutations invalidate saved views so hidden optimistic state
+  cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
+- Workspace lists retain their last successful snapshot across view changes, including empty lists;
+  restore it before revalidation without keeping hidden sidebar polling alive
+  (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflowService`).
+- Confirmed workspace deletions evict the matching host and ID from visible rows and the shared snapshot
+  before revalidation, preserving same-ID entries on other hosts
+  (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::removeWorkspaceListEntry`).
+- Repository pickers share the app's successful catalog during refresh and refresh failures;
+  refreshed options preserve the selected stable identity across renames or clear it, never select another repository
+  (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
+- Remembered new-workspace repositories restore by stable identity; unresolved or route-only saved
+  preferences require a new choice (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::defaultRepoSelection`).
+- Explicit repository seeds follow stable identity across renames, using the current catalog route;
+  missing or unavailable identities require a new choice, including retained workspaces whose repository became inactive
+  (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::defaultRepoSelection`).
+- Repository catalogs use stored metadata; credential resolution and mutation availability belong to
+  action/detail reads, not picker readiness (`internal/server/huma_routes.go::listRepos`).
+- Treat backend latency as normal: gate each action only on the data it requires,
+  and verify cached navigation and local choices with responses held pending
+  (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
+- Workspace sidebars show cached details for the selected PR or issue during revalidation;
+  a cache miss must hide the previous item's details (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
 - Restore recent details only with a verified provider/host/repository ID; an unknown
   ID requires a fresh response because owner/name routes can be reused
   (`frontend/src/lib/stores/detail.svelte.ts::loadDetail`).
@@ -389,6 +410,9 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/components/detail/PullDetail.svelte::submitWorkflow`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
+- Terminal appearance and retention belong under Workspaces settings; keep them
+  searchable there rather than introducing a separate terminal category
+  (`frontend/src/lib/components/settings/SettingsPage.svelte`).
 - Settings controls persist on change. Do not add a Save button, a dirty draft,
   or a saving state that disables sibling controls; queue saves serially and
   build each payload from the latest persisted values

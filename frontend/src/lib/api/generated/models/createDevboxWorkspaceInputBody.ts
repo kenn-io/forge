@@ -11,6 +11,7 @@ export interface CreateDevboxWorkspaceInputBody {
   name: string;
   owner: string;
   platform_host: string;
+  platform_repo_id?: number;
   provider: string;
   reuse_existing_branch?: boolean;
 }

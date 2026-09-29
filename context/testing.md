@@ -161,6 +161,9 @@ owner:
 - Retiring or shutting down e2e state must stop its private tmux server before slower
   asynchronous cleanup; interrupted runners otherwise leave test-owned daemons behind
   (`cmd/e2e-server/main.go::run`).
+- The e2e fixture provider serves each ID at its seeded route. A scenario that moves
+  a repository must forget the moved ID, or a background sync observes it back at the
+  old route (`internal/testutil/fixture_client.go::FixtureClient.ForgetRepository`).
 - Clipboard-race tests must emit OSC 52 through the attached tmux client, not print
   an application OSC 52 sequence that tmux blocks, and must assert the socket observed
   OSC 52 before trusting clipboard ordering (`frontend/tests/e2e-full/00-tmux-browser-clipboard.spec.ts::typeScheduledTmuxClipboardWrite`).
@@ -372,6 +375,12 @@ ID; those names feed checked-in generated clients, so changing an
 `OperationID` is a generated-client API change even when the HTTP path is
 unchanged.
 
+Generated Go clients encode path and query parameters through
+`paramcodec.Map`, never the generator's `runtime.AsMap`, which routes numbers
+through float64 and sends large IDs in exponent form. Cover new integer
+parameters with real-size values (`internal/apiclient/generated/templates/client-options.tmpl`,
+`internal/apiclient/generated/client_query_test.go`).
+
 Health routes on the separate health Huma API intentionally disable OpenAPI and
 docs output. Terminal and proxy routes registered through `Adapter().Handle`
 must stay hidden or on a docs-disabled API unless they are promoted to public
@@ -413,7 +422,7 @@ concern. The main levers are:
   short polling loops that check immediately before waiting;
 - reuse migrated SQLite template databases for isolated non-migration tests;
 - prepare SQLite fixtures before starting a subprocess timeout and pass the file
-  to the child; process-local template caches are cold after exec (`internal/workspace/manager_test.go::TestSyncWorkspaceBaseBranchSurvivesQueuedReconciliationWriter`);
+  to the child; process-local template caches are cold after exec;
 - add `t.Parallel` only after proving the test does not touch process-global
   state, fixed external resources, shared tmux sessions, or shared database
   files.

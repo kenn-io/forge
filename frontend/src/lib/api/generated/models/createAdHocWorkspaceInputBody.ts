@@ -7,5 +7,7 @@ export interface CreateAdHocWorkspaceInputBody {
   readonly $schema?: string;
   /** Branch for the new worktree; generated when empty */
   branch?: string;
+  /** Expected stable repository ID from the catalog */
+  platform_repo_id?: number;
   reuse_existing_branch?: boolean;
 }

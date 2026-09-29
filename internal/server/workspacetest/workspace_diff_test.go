@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -199,8 +200,8 @@ func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
 
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = "repo-acme-widget"
-	_, err := database.UpsertRepo(t.Context(), identity)
+	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	_, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{
 		WorktreeDir: filepath.Join(dir, "managed-worktrees"),

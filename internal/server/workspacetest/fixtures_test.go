@@ -20,8 +20,10 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"golang.org/x/sync/semaphore"
 )
@@ -129,7 +131,7 @@ func setupWorkspaceServerFixtureWithTmuxInjection(
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	clones := gitclone.New(bareDir, nil)
 	bare, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), "repo-acme-widget"),
+		gitclone.WithRepositoryIdentity(t.Context(), testutil.FixtureRepoID("acme", "widget")),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(t, err)
@@ -267,14 +269,13 @@ func seedPRWithHeadRepo(
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity(host, owner, name))
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)
-	require.NoError(t, database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
-		PlatformRepoID: "repo-" + owner + "-" + name,
-		WebURL:         fmt.Sprintf("https://%s/%s/%s", host, owner, name),
-		CloneURL:       fmt.Sprintf("https://%s/%s/%s.git", host, owner, name),
-		DefaultBranch:  "main",
-	}))
+	require.NoError(t, database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
+		WebURL:        fmt.Sprintf("https://%s/%s/%s", host, owner, name),
+		CloneURL:      fmt.Sprintf("https://%s/%s/%s.git", host, owner, name),
+		DefaultBranch: "main",
+	}, nil, nil))
 
 	now := time.Now().UTC().Truncate(time.Second)
 	pr := &db.MergeRequest{
@@ -314,16 +315,15 @@ func seedIssue(
 	t.Helper()
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(
-		ctx, verifiedGitHubRepoIdentity("github.com", owner, name),
+	repoID, err := reposeed.Seed(
+		ctx, database, verifiedGitHubRepoIdentity("github.com", owner, name),
 	)
 	require.NoError(t, err)
-	require.NoError(t, database.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
-		PlatformRepoID: "repo-" + owner + "-" + name,
-		WebURL:         fmt.Sprintf("https://github.com/%s/%s", owner, name),
-		CloneURL:       fmt.Sprintf("https://github.com/%s/%s.git", owner, name),
-		DefaultBranch:  "main",
-	}))
+	require.NoError(t, database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
+		WebURL:        fmt.Sprintf("https://github.com/%s/%s", owner, name),
+		CloneURL:      fmt.Sprintf("https://github.com/%s/%s.git", owner, name),
+		DefaultBranch: "main",
+	}, nil, nil))
 
 	now := time.Now().UTC().Truncate(time.Second)
 	issue := &db.Issue{
@@ -348,7 +348,7 @@ func seedIssue(
 
 func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = "repo-" + owner + "-" + name
+	identity.PlatformRepoID = reposeed.SyntheticID(identity)
 	return identity
 }
 

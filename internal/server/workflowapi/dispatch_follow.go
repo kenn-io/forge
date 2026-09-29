@@ -27,7 +27,7 @@ const (
 type WorkflowDispatchProgressPayload struct {
 	Provider       string               `json:"provider"`
 	PlatformHost   string               `json:"platform_host"`
-	PlatformRepoID string               `json:"platform_repo_id"`
+	PlatformRepoID int64                `json:"platform_repo_id"`
 	RepoPath       string               `json:"repo_path"`
 	Owner          string               `json:"owner"`
 	Name           string               `json:"name"`

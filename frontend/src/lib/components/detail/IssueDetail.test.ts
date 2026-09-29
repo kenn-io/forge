@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import type { ComponentProps } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { GeneratedClient } from "../../api/generated-api.js";
 import type { IssueDetail, Label, QuickAction } from "../../api/types.js";
@@ -51,6 +51,7 @@ vi.mock("@kenn-io/kit-ui", async (importOriginal) => {
 
 import IssueDetailComponent from "./IssueDetail.svelte";
 import IssueDetailTestHarness from "./IssueDetailTestHarness.svelte";
+import { getCommentDraftKey, setCommentDraft } from "./comment-drafts.svelte.js";
 
 let issueRuntime: OwnedAppRuntime | null = null;
 
@@ -114,6 +115,7 @@ function issueDetail(): IssueDetail {
       capabilities,
       provider: "github",
       platform_host: "github.com",
+      platform_repo_id: 1001,
       owner: "acme",
       name: "widget",
       repo_path: "acme/widget",
@@ -182,6 +184,7 @@ function renderIssueDetail(
     staleRefreshing?: boolean;
     defaultExecutionTarget?: string;
     detailLoading?: boolean;
+    detailFromCache?: boolean;
     detailSyncing?: boolean;
     deferRefresh?: boolean;
     refreshFailure?: string;
@@ -204,7 +207,7 @@ function renderIssueDetail(
     stopIssueDetailPolling: vi.fn(),
     getIssueDetail: () => detail,
     getIssueDetailEnvelopeTick: () => envelopeTick,
-    isIssueDetailFromCache: () => false,
+    isIssueDetailFromCache: () => options.detailFromCache ?? false,
     isIssueDetailLoading: () => options.detailLoading ?? false,
     getIssueDetailError: () => null,
     isIssueStaleRefreshing: () => options.staleRefreshing ?? false,
@@ -227,6 +230,7 @@ function renderIssueDetail(
     toggleIssueStar: vi.fn(),
     setIssueState: vi.fn(),
     editIssueComment: vi.fn(),
+    submitIssueComment: vi.fn(),
     deleteIssueComment,
     setIssueLabels: vi.fn(),
     setIssueAssignees: vi.fn(),
@@ -300,6 +304,38 @@ function renderIssueDetail(
 }
 
 describe("IssueDetail activity view", () => {
+  it.each([false, true])("allows a cached issue draft only for the selected item (mismatch=%s)", async (mismatch) => {
+    const detail = issueDetail();
+    detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };
+    detail.repo.operations = { add_comment: { available: true } };
+    const number = detail.issue.Number + (mismatch ? 1 : 0);
+    const draftKey = getCommentDraftKey("issue", {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number,
+      platformRepoId: detail.repo.platform_repo_id,
+    });
+    setCommentDraft(draftKey, "Draft while refreshing");
+    onTestFinished(() => setCommentDraft(draftKey, ""));
+    const { container, issuesStore } = renderIssueDetail(detail, undefined, {
+      detailFromCache: true,
+      detailLoading: true,
+      detailProps: { number },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector(".comment-editor-input")?.textContent).toBe("Draft while refreshing"),
+    );
+    expect(container.querySelector(".comment-editor-input")?.getAttribute("contenteditable")).toBe(String(!mismatch));
+    const submit = screen.getByRole("button", { name: "Comment", exact: true }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    await fireEvent.click(submit);
+    expect(issuesStore.submitIssueComment).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     localStorage.clear();
   });
@@ -599,18 +635,23 @@ describe("IssueDetail inline workspace handoff", () => {
     const detail = issueDetail();
     detail.platform_host = platformHost;
     Object.assign(detail.repo, { Host: platformHost, PlatformHost: platformHost, platform_host: platformHost });
+    const snapshot = Promise.withResolvers<unknown>();
     const apiClient = {
-      GET: vi.fn().mockResolvedValue({
-        data: {
-          hosts: [
-            {
-              configKey: "devbox:compute-a",
-              kind: "devbox",
-              operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
-            },
-          ],
-        },
-      }),
+      GET: vi.fn().mockImplementation(() =>
+        reason
+          ? Promise.resolve({
+              data: {
+                hosts: [
+                  {
+                    configKey: "devbox:compute-a",
+                    kind: "devbox",
+                    operationAvailability: { workspaceWrite: { available, unavailableReason: reason } },
+                  },
+                ],
+              },
+            })
+          : snapshot.promise,
+      ),
       POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
     };
     renderIssueDetail(
@@ -634,10 +675,42 @@ describe("IssueDetail inline workspace handoff", () => {
       await waitFor(() =>
         expect(apiClient.POST).toHaveBeenCalledWith(
           "/devboxes/{connection_id}/workspaces",
-          expect.objectContaining({ params: { path: { connection_id: "compute-a" } } }),
+          expect.objectContaining({
+            params: { path: { connection_id: "compute-a" } },
+            body: expect.objectContaining({ platform_repo_id: 1001 }),
+          }),
         ),
       );
     }
+    snapshot.resolve({ data: { hosts: [] } });
+  });
+
+  it("shows a quiet status hint after directory failure and still creates on the saved devbox", async () => {
+    const snapshot = Promise.withResolvers<unknown>();
+    const apiClient = {
+      GET: vi
+        .fn()
+        .mockImplementation((path: string) =>
+          path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: {} }),
+        ),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
+    };
+    renderIssueDetail(issueDetail(), undefined, { defaultExecutionTarget: "devbox:compute-a" }, apiClient);
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(apiClient.GET).toHaveBeenCalledWith("/snapshot", expect.anything()));
+    snapshot.reject(new Error("directory unavailable"));
+    await waitFor(() => expect(create.title).toContain("Preferred devbox status unavailable."));
+    expect(document.getElementById(create.getAttribute("aria-describedby")!)?.textContent).toContain(
+      "Preferred devbox status unavailable.",
+    );
+    expect(create.disabled).toBe(false);
+    await fireEvent.click(create);
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces",
+        expect.objectContaining({ params: { path: { connection_id: "compute-a" } } }),
+      ),
+    );
   });
 
   function deferredWorkspaceApiClient() {
@@ -673,25 +746,37 @@ describe("IssueDetail inline workspace handoff", () => {
     };
   }
 
-  it("creates an issue workspace through the app runtime", async () => {
+  it.each([
+    ["github.com", "/issues/{provider}/{owner}/{name}/{number}/workspace"],
+    ["github.example.com", "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/workspace"],
+  ])("creates an issue workspace through the app runtime on %s", async (platformHost, path) => {
     const controller = createTestController("split");
     const { apiClient: runtimeClient, resolvePost } = deferredWorkspaceApiClient();
     const contextClient = {
       GET: vi.fn(),
       POST: vi.fn(async () => ({ error: { title: "legacy client used" } })),
     };
+    const detail = issueDetail();
+    detail.platform_host = platformHost;
+    Object.assign(detail.repo, { Host: platformHost, PlatformHost: platformHost, platform_host: platformHost });
     renderIssueDetail(
-      issueDetail(),
+      detail,
       undefined,
       {
         inlineWorkspace: controller,
         runtimeClient: runtimeClient as unknown as GeneratedClient,
+        detailProps: { platformHost },
       },
       contextClient,
     );
 
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
-    await waitFor(() => expect(runtimeClient.POST).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(runtimeClient.POST).toHaveBeenCalledWith(
+        path,
+        expect.objectContaining({ body: expect.objectContaining({ platform_repo_id: 1001 }) }),
+      ),
+    );
     resolvePost({ data: { id: "ws-runtime", status: "provisioning" } });
 
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());

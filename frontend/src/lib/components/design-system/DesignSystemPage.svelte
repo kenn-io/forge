@@ -242,8 +242,8 @@
     color: var(--accent-blue);
     font-size: var(--font-size-sm);
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.08em);
+    text-transform: var(--label-transform, uppercase);
   }
 
   h1,
@@ -324,8 +324,8 @@
     color: var(--text-muted);
     font-size: var(--font-size-sm);
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.06em);
+    text-transform: var(--label-transform, uppercase);
     padding-top: 4px;
   }
 

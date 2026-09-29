@@ -69,7 +69,7 @@ func seedStatementCacheRepos(tb testing.TB, d *DB) RepoIdentity {
 		if i == 0 {
 			first = identity
 		}
-		_, err := d.UpsertRepo(ctx, identity)
+		_, err := seedTestRepo(ctx, d, identity)
 		require.NoError(tb, err)
 	}
 	return first

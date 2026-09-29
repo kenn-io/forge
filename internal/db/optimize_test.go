@@ -36,7 +36,7 @@ func TestOptimizeRecordsStatisticsForPopulatedTables(t *testing.T) {
 	require.Zero(plannerStatisticsRows(t, d, "forge_merge_requests"),
 		"the copied template fixture starts without merge request statistics")
 
-	repoID, err := d.UpsertRepo(ctx, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
+	repoID, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "acme", "widget"))
 	require.NoError(err)
 	for number := 1; number <= 20; number++ {
 		insertTestMR(t, d, repoID, number, "change", baseTime())

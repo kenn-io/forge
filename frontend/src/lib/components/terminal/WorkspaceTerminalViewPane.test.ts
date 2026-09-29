@@ -279,7 +279,7 @@ describe("WorkspaceTerminalView pane props", () => {
         pr: {
           provider: "github",
           platformHost: "example.com",
-          platformRepoId: "repo-55",
+          platformRepoId: 1055,
           owner: "other",
           name: "gadgets",
           repoPath: "other/gadgets",

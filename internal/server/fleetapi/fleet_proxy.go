@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -21,12 +22,14 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/terminalpaste"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/tracing"
 )
 
 type fleetRESTProxyRoute struct {
+	responseType reflect.Type
 	operationID  string
 	method       string
 	path         string
@@ -155,6 +158,29 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			pathParams:  []string{"host_key", "id"},
 			targetPath: func(r *http.Request) string {
 				return "/api/v1/workspaces/" + escapePath(r.PathValue("id"))
+			},
+		},
+		{
+			operationID:  "get-fleet-workspace-view-state",
+			responseType: reflect.TypeFor[workspaceapi.WorkspaceViewState](),
+			method:       http.MethodGet,
+			path:         "/fleet/hosts/{host_key}/workspaces/{id}/view-state",
+			summary:      "Get workspace view state on fleet host",
+			pathParams:   []string{"host_key", "id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/view-state"
+			},
+		},
+		{
+			operationID:  "update-fleet-workspace-view-state",
+			responseType: reflect.TypeFor[workspaceapi.WorkspaceViewState](),
+			method:       http.MethodPut,
+			path:         "/fleet/hosts/{host_key}/workspaces/{id}/view-state",
+			summary:      "Update workspace view state on fleet host",
+			pathParams:   []string{"host_key", "id"},
+			body:         true,
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/view-state"
 			},
 		},
 		{
@@ -600,6 +626,14 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			Parameters:   fleetProxyParams(route.pathParams, route.queryParams...),
 			Responses:    fleetProxyResponses(),
 			MaxBodyBytes: maxBodyBytes,
+		}
+		if route.responseType != nil {
+			op.Responses["200"] = &huma.Response{
+				Description: "Response returned by the owning fleet host.",
+				Content: map[string]*huma.MediaType{
+					"application/json": {Schema: api.OpenAPI().Components.Schemas.Schema(route.responseType, true, route.responseType.Name())},
+				},
+			}
 		}
 		if route.binaryBody {
 			op.RequestBody = fleetProxyBinaryRequestBody()

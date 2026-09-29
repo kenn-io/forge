@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
+	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/platform"
 )
 

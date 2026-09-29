@@ -25,8 +25,10 @@ beforeEach(() => {
 afterEach(() => {
   document.documentElement.classList.remove("dark");
   document.documentElement.style.cssText = "";
+  document.documentElement.removeAttribute("data-kit-theme");
   try {
     localStorage.removeItem("kenn-forge-theme");
+    localStorage.removeItem("kenn-forge-theme-name");
   } catch {
     /* storage blocked */
   }
@@ -59,5 +61,18 @@ describe("standalone mode (no config)", () => {
     toggleTheme();
     expect(isDark()).toBe(false);
     expect(localStorage.getItem("kenn-forge-theme")).toBe("light");
+  });
+});
+
+describe("kit identity", () => {
+  it("selects the quiet theme even when no theme name is stored", () => {
+    initTheme();
+    expect(document.documentElement.dataset["kitTheme"]).toBe("quiet");
+  });
+
+  it("keeps the quiet theme across a dark-mode toggle", () => {
+    initTheme();
+    toggleTheme();
+    expect(document.documentElement.dataset["kitTheme"]).toBe("quiet");
   });
 });

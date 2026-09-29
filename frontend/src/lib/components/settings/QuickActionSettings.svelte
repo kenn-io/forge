@@ -377,7 +377,7 @@
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     font-weight: 600;
-    text-transform: uppercase;
+    text-transform: var(--label-transform, uppercase);
   }
 
   .field input,

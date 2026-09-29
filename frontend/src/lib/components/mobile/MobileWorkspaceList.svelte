@@ -26,7 +26,9 @@
   import {
     WorkspaceListWorkflow,
     makeWorkspaceRefreshHub,
+    removeWorkspaceListEntry,
     workspaceListLifecycle,
+    type WorkspaceListSnapshot,
   } from "../terminal/workspace-list-workflow.js";
   import {
     decodeWorkspaceList,
@@ -133,24 +135,35 @@
 
   function loadWorkspaces() {
     return Effect.gen(function* () {
+      const workflow = yield* WorkspaceListWorkflow;
       const payload = yield* loadFleetSnapshot().pipe(Effect.timeout(loadTimeout));
       const decoded = yield* decodeWorkspaceList({ workspaces: payload.workspaces });
       const nextHosts = payload.hosts ?? [];
-      workspaces = retainDegradedHostWorkspaces(
+      const nextWorkspaces = retainDegradedHostWorkspaces(
         workspaces,
         decoded.filter((workspace) => workspace.visible !== false),
         nextHosts,
         payload.aggregateIncomplete ?? false,
       );
-      fleetHosts = nextHosts;
-      peerErrors = Object.fromEntries(
-        fleetHosts
-          .filter((host) => host.kind !== "self" && host.error)
-          .map((host) => [host.configKey, host.error ?? "Host unavailable"]),
-      );
-      fleetError = null;
-      listStatus = "loaded";
+      workflow.snapshot = {
+        workspaces: nextWorkspaces,
+        hosts: nextHosts,
+        aggregateComplete: !(payload.aggregateIncomplete ?? false),
+      };
+      applySnapshot(workflow.snapshot);
     });
+  }
+
+  function applySnapshot(snapshot: WorkspaceListSnapshot): void {
+    workspaces = snapshot.workspaces;
+    fleetHosts = snapshot.hosts;
+    peerErrors = Object.fromEntries(
+      fleetHosts
+        .filter((host) => host.kind !== "self" && host.error)
+        .map((host) => [host.configKey, host.error ?? "Host unavailable"]),
+    );
+    fleetError = null;
+    listStatus = "loaded";
   }
 
   const refreshWorkspaces = makeWorkspaceRefreshHub(
@@ -336,6 +349,7 @@
         ).pipe(Effect.asVoid);
     appRuntime.runCommand(
       command.pipe(
+        Effect.tap(() => removeWorkspaceListEntry(workspace.id, hostKey)),
         Effect.tap(() =>
           Effect.sync(() => {
             notifyWorkspaceDeleted(workspace.id, hostKey, {
@@ -444,6 +458,7 @@
       Effect.scoped(
         Effect.gen(function* () {
           const workflow = yield* WorkspaceListWorkflow;
+          if (workflow.snapshot) applySnapshot(workflow.snapshot);
           yield* workflow.claim(refreshOwner, refreshWorkspaces.request);
           yield* workspaceListLifecycle({ refreshWorkspaces, refreshFleet, workspaceEvents: events });
         }),
@@ -694,7 +709,7 @@
   .mobile-workspace-list__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   .mobile-workspace-list__state { min-height: 12rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; padding: 2rem; color: var(--text-muted); text-align: center; font-size: var(--font-size-md); }
   .mobile-workspace-list__state strong { color: var(--text-primary); }
-  .mobile-workspace-group h2 { min-height: 2.5rem; display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 0.5rem 0.875rem; color: var(--text-muted); border-bottom: thin solid var(--border-muted); background: var(--bg-inset); font-size: var(--font-size-sm); font-weight: 700; letter-spacing: 0.055em; text-transform: uppercase; }
+  .mobile-workspace-group h2 { min-height: 2.5rem; display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 0.5rem 0.875rem; color: var(--text-muted); border-bottom: thin solid var(--border-muted); background: var(--bg-inset); font-size: var(--font-size-sm); font-weight: 700; letter-spacing: var(--letter-spacing-label, 0.055em); text-transform: var(--label-transform, uppercase); }
   .mobile-workspace-group h2 span { font-family: var(--font-mono); font-weight: 500; }
   .mobile-workspace-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: stretch; border-bottom: thin solid var(--border-default); background: var(--bg-surface); }
   .mobile-workspace-row:focus-within { box-shadow: inset 0 0 0 1px var(--accent-blue); }
@@ -723,7 +738,7 @@
   :global(.kit-modal-panel:has(.mobile-sheet-content)) { max-height: min(82vh, 44rem); border-bottom: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
   :global(.kit-modal-body:has(> .mobile-sheet-content)) { padding: 0 0 max(1rem, env(safe-area-inset-bottom)); }
   .mobile-sheet-content fieldset { margin: 0; padding: 0.875rem; border: 0; }
-  .mobile-sheet-content legend { padding: 0; color: var(--text-muted); font-size: var(--font-size-sm); font-weight: 700; letter-spacing: 0.055em; text-transform: uppercase; }
+  .mobile-sheet-content legend { padding: 0; color: var(--text-muted); font-size: var(--font-size-sm); font-weight: 700; letter-spacing: var(--letter-spacing-label, 0.055em); text-transform: var(--label-transform, uppercase); }
   .mobile-sheet-content fieldset label { min-height: 3.75rem; display: flex; align-items: center; gap: 0.75rem; border-bottom: thin solid var(--border-muted); }
   .mobile-sheet-content fieldset input { width: 1.25rem; height: 1.25rem; accent-color: var(--accent-blue); }
   .mobile-sheet-content label span, .mobile-sheet__switches :global(.kit-toggle__label > span) { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 0.125rem; text-align: left; }

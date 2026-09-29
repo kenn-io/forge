@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
@@ -23,6 +24,64 @@ import (
 type recordingWorkspaceAutomation struct {
 	requests chan ProviderWorkspaceItemRequest
 	release  <-chan struct{}
+}
+
+func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
+	t.Parallel()
+	for _, itemType := range []string{
+		db.WorkspaceItemTypePullRequest, db.WorkspaceItemTypeIssue, db.WorkspaceItemTypeAdHoc,
+	} {
+		t.Run(itemType, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			assert := assert.New(t)
+			database := dbtest.Open(t)
+			entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+			})
+			require.NoError(err)
+			ws := &db.Workspace{
+				ID: "ws-identity", Platform: "github", PlatformHost: "github.com",
+				RepoID: entry.Repository.ID, RepoOwner: "acme", RepoName: "widget",
+				ItemType: itemType, ItemNumber: 42, GitHeadRef: "feature/identity",
+				WorktreePath: t.TempDir(), Status: "creating",
+			}
+			if itemType == db.WorkspaceItemTypeAdHoc {
+				ws.ItemNumber = 0
+				ws.ItemKey = "adhoc:feature/identity"
+				ws.AssociatedPRNumber = new(42)
+			}
+			require.NoError(database.InsertWorkspace(t.Context(), ws))
+			manager := workspace.NewManager(database, t.TempDir())
+			handler := New(Deps{
+				DB: database, Workspaces: manager, EnrichmentDisabled: true,
+			})
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+				defer cancel()
+				require.NoError(handler.Shutdown(ctx))
+			})
+			summary, err := manager.GetSummary(t.Context(), ws.ID)
+			require.NoError(err)
+			require.NotNil(summary)
+			require.Equal(int64(1001), summary.RepoPlatformID)
+			if itemType == db.WorkspaceItemTypeAdHoc {
+				require.True(summary.AssociatedPRVisible)
+			}
+
+			result, err := handler.GetWorkspaceService(t.Context(), ws.ID)
+			require.NoError(err)
+			for name, response := range map[string]WorkspaceResponse{
+				"get without enrichment": result.Workspace,
+				"cached enrichment":      handler.workspaceResponseFromEnrichmentCacheEntry(summary, nil),
+				"full enrichment":        handler.Response(t.Context(), summary),
+				"tmux enrichment":        handler.workspaceResponseWithTmuxEnrichment(t.Context(), summary).response,
+			} {
+				assert.Equal(int64(1001), response.Repo.PlatformRepoID, name)
+			}
+		})
+	}
 }
 
 func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testing.T) {
@@ -38,18 +97,18 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 		}),
 		Workspaces: manager,
 		ResolveRepository: func(
-			ctx context.Context, route providerplane.RepositoryRoute,
+			ctx context.Context, route providerplane.RepositoryRoute, _ int64,
 		) (*db.Repo, error) {
 			resolved = true
 			assert.Equal(providerplane.RepositoryRoute{
 				Provider: "github", PlatformHost: "github.com",
 				Owner: "acme", Name: "widget",
 			}, route)
-			entry, _, err := database.ReconcileRepositoryObservation(ctx, db.RepoIdentity{
+			entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 				Platform: route.Provider, PlatformHost: route.PlatformHost,
-				PlatformRepoID: "stable-provider-id",
+				PlatformRepoID: 1003,
 				Owner:          route.Owner, Name: route.Name,
-			}, time.Now().UTC())
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -74,9 +133,9 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 	require.NoError(err)
 	assert.True(resolved)
 	assert.NotEmpty(result.Workspace.ID)
-	entry, err := database.GetRepositoryByProviderID(
-		t.Context(), "github", "github.com", "stable-provider-id",
-	)
+	entry, err := database.GetRepositoryByProviderID(t.Context(), platform.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1003,
+	})
 	require.NoError(err)
 	require.NotNil(entry)
 	assert.Equal("acme", entry.Repository.Owner)
@@ -99,9 +158,9 @@ func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
-	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	resolver := stubLaunchSpecResolver{}
@@ -159,16 +218,14 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	base := t.TempDir()
-	observedAt := time.Now().UTC().Add(-3 * time.Minute)
 	oldIdentity := db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-old-widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
 	}
-	oldRepo, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), oldIdentity, observedAt,
+	oldRepo, err := database.ObserveRepository(
+		t.Context(), oldIdentity,
 	)
 	require.NoError(err)
-	require.True(accepted)
 	require.NotNil(oldRepo)
 	displacedPath := filepath.Join(
 		base, "github", "github.com", "acme", "widget", "pr-42",
@@ -182,20 +239,15 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	}))
 	oldIdentity.Owner = "acme-archive"
 	oldIdentity.Name = "widget-old"
-	_, accepted, err = database.ReconcileRepositoryObservation(
-		t.Context(), oldIdentity, observedAt.Add(time.Minute),
+	_, err = database.ObserveRepository(
+		t.Context(), oldIdentity,
 	)
 	require.NoError(err)
-	require.True(accepted)
-	newRepo, accepted, err := database.ReconcileRepositoryObservation(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
-		}, observedAt.Add(2*time.Minute),
-	)
+	newRepoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
-	require.True(accepted)
-	require.NotNil(newRepo)
 
 	resolver := stubLaunchSpecResolver{}
 	manager := workspace.NewManager(database, base)
@@ -225,7 +277,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	assert.Equal(
 		filepath.Join(
 			base, "github", "github.com", "acme",
-			fmt.Sprintf("widget-%d", newRepo.Repository.ID), "pr-42",
+			fmt.Sprintf("widget-%d", newRepoID), "pr-42",
 		),
 		replacement.WorktreePath,
 		"a replacement repository on a reused route must not share the "+
@@ -240,9 +292,9 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 	ctx := t.Context()
 	repoIdentity := db.RepoIdentity{
 		Platform: "gitlab", PlatformHost: "git.example.test",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		Owner: "acme", Name: "widget",
 	}
-	repoID, err := database.UpsertRepo(ctx, repoIdentity)
+	repoID, err := reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -319,9 +371,9 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			database := dbtest.Open(t)
-			_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+			_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				Owner: "acme", Name: "widget",
 			})
 			require.NoError(err)
 			resolver := stubLaunchSpecResolver{}
@@ -348,6 +400,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 			go func() { created <- test.create(handler) }()
 			select {
 			case request := <-automation.requests:
+				assert.Equal(int64(3609862021), request.PlatformRepoID)
 				assert.Equal(test.itemType, request.ItemType)
 				assert.Equal(test.number, request.ItemNumber)
 			case <-time.After(5 * time.Second):
@@ -400,7 +453,7 @@ func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
 	})
 
 	session, err := handler.LaunchWorkspaceRuntimeService(
-		ctx, workspaceID, string(localruntime.LaunchTargetPlainShell),
+		ctx, workspaceID, string(localruntime.LaunchTargetPlainShell), "",
 	)
 
 	require.NoError(err)

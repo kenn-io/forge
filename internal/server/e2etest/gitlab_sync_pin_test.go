@@ -136,14 +136,13 @@ func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {
 	database := dbtest.Open(t)
 	clones := gitclone.New(t.TempDir(), nil)
 	repo := ghclient.RepoRef{
-		Platform:           platform.KindGitLab,
-		Owner:              "acme",
-		Name:               "widget",
-		PlatformHost:       "gitlab.com",
-		RepoPath:           "acme/widget",
-		PlatformRepoID:     4242,
-		PlatformExternalID: "4242",
-		CloneURL:           cloneURL,
+		Platform:       platform.KindGitLab,
+		Owner:          "acme",
+		Name:           "widget",
+		PlatformHost:   "gitlab.com",
+		RepoPath:       "acme/widget",
+		PlatformRepoID: 4242,
+		CloneURL:       cloneURL,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, clones, []ghclient.RepoRef{repo}, time.Minute, nil, nil,

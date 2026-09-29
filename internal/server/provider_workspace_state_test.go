@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -54,7 +55,7 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 		return hubServer.Client().Do(request)
 	})}
 	repository := fleet.RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner: "acme", Name: "widget",
 	}
 

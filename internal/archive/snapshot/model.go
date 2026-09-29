@@ -18,6 +18,7 @@ const (
 var ErrTooLarge = errors.New("cached archive snapshot exceeds the 10,000-record or 32 MiB text/response budget; narrow the repo scope; no items were dropped")
 
 type ArchiveSnapshot struct {
+	IssueScope   string                `json:"issue_scope,omitempty" enum:"open" doc:"When open, includes all cached open issues and linked closed context regardless of creation time."`
 	ExportSchema string                `json:"schema"`
 	ObservedAt   time.Time             `json:"observed_at"`
 	Start        time.Time             `json:"start"`
@@ -32,7 +33,7 @@ type SnapshotRepository struct {
 	ID            string            `json:"id"`
 	Provider      string            `json:"provider"`
 	Host          string            `json:"host"`
-	ProviderID    string            `json:"provider_id"`
+	ProviderID    int64             `json:"provider_id"`
 	Path          string            `json:"path"`
 	DefaultBranch string            `json:"default_branch"`
 	LastSyncAt    *time.Time        `json:"last_sync_at"`

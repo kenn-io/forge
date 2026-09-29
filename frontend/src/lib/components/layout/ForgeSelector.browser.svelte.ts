@@ -350,6 +350,29 @@ describe("ForgeSelector (browser)", () => {
     });
   });
 
+  it("lets a slow directory request finish through repeated focus events", async () => {
+    const pending = Promise.withResolvers<Response>();
+    globalThis.fetch = vi.fn(() => pending.promise);
+    await renderSelector();
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledOnce());
+
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
+    pending.resolve(
+      Response.json({
+        protocolVersion: 3,
+        generation: 1,
+        hosts: [host("self", "Local", { kind: "self" }), host("hub", "Hub")],
+        projects: [],
+        worktrees: [],
+        sessions: [],
+        workspaces: [],
+      }),
+    );
+    await waitForDirectory();
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
   it("fits the compact selector within a phone viewport", async () => {
     await page.viewport(375, 700);
     snapshotHosts = [

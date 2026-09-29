@@ -18,7 +18,7 @@ a category.
 | Sync | Pause automatic background sync with airplane mode. Relay updates, item visits, and manual Sync remain available. |
 | Pull requests | Choose whether Forge may merge a pull request from the middle of a detected stack. |
 | Detail views and Activity | Set the initial timeline size and the defaults used when Activity opens. |
-| Workspaces and Terminal | Choose workspace creation behavior, optional Roborev initialization for managed clones, the default right sidebar, and terminal appearance. |
+| Workspaces | Choose workspace creation behavior, optional Roborev initialization for managed clones, the default right sidebar, and terminal appearance and retention. |
 | Kata mappings | Override the repository matched to a Kata project. |
 | Workspace agents | Enable agents and edit the command and arguments used to launch each one. |
 | Fleet federation | Connect remote Forge hosts and control which sessions they share. |

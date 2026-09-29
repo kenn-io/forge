@@ -98,9 +98,9 @@ type Deps struct {
 	RecomputeWorktreeLinks  func(context.Context)
 	RefreshWorktreeStats    func(context.Context, string, string) error
 	RefreshProjectInventory func(context.Context, string) error
-	LookupRepo              func(context.Context, string, string, string, string) (*db.Repo, error)
+	LookupRepo              func(context.Context, string, string, string, string) (*db.ActiveRepo, error)
 	ResolveRepository       func(
-		context.Context, providerplane.RepositoryRoute,
+		context.Context, providerplane.RepositoryRoute, int64,
 	) (*db.Repo, error)
 	EnqueueDetailSync func(
 		string, []any, func(context.Context) error, func(context.Context),
@@ -136,8 +136,8 @@ type Handler struct {
 	recomputeWorktreeLinks         func(context.Context)
 	refreshWorktreeStats           func(context.Context, string, string) error
 	refreshProjectInventory        func(context.Context, string) error
-	lookupRepo                     func(context.Context, string, string, string, string) (*db.Repo, error)
-	resolveRepository              func(context.Context, providerplane.RepositoryRoute) (*db.Repo, error)
+	lookupRepo                     func(context.Context, string, string, string, string) (*db.ActiveRepo, error)
+	resolveRepository              func(context.Context, providerplane.RepositoryRoute, int64) (*db.Repo, error)
 	enqueueDetailSync              func(string, []any, func(context.Context) error, func(context.Context)) bool
 	providerWriteGate              providerplane.WriteAdmitter
 	launchSpecResolver             providerplane.WorkspaceLaunchSpecResolver
@@ -175,20 +175,17 @@ type Handler struct {
 	workspaceTmuxPrunedAt      time.Time
 	workspaceTmuxPrunePending  bool
 	workspaceTmuxPruneInFlight bool
-	// workspaceSubjectAfterSummariesForTest pauses a snapshot between its two
-	// repository-identity reads so tests can prove the reconciliation fence.
-	workspaceSubjectAfterSummariesForTest func()
-	runtimeRecoveryCursor                 string
-	runtimeRestoreMu                      sync.Mutex
-	runtimeRecoveryMu                     sync.Mutex
-	runtimeRecoveryPending                map[string]bool
-	lifecycleMu                           sync.Mutex
-	lifecycleCtx                          context.Context
-	lifecycleCancel                       context.CancelFunc
-	lifecycleWG                           sync.WaitGroup
-	lifecycleStarted                      bool
-	lifecycleStopping                     bool
-	lifecycleDone                         chan struct{}
+	runtimeRecoveryCursor      string
+	runtimeRestoreMu           sync.Mutex
+	runtimeRecoveryMu          sync.Mutex
+	runtimeRecoveryPending     map[string]bool
+	lifecycleMu                sync.Mutex
+	lifecycleCtx               context.Context
+	lifecycleCancel            context.CancelFunc
+	lifecycleWG                sync.WaitGroup
+	lifecycleStarted           bool
+	lifecycleStopping          bool
+	lifecycleDone              chan struct{}
 }
 
 // New creates the workspace and project handler.
@@ -332,6 +329,10 @@ func (s *Handler) RegisterExecution(api huma.API) {
 		httpapi.DocumentOperation("list-workspaces", "List workspaces", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace,
 		httpapi.DocumentOperation("get-workspace", "Get workspace", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}/view-state", s.getWorkspaceViewState,
+		httpapi.DocumentOperation("get-workspace-view-state", "Get workspace view state", "Workspaces"))
+	huma.Put(api, "/workspaces/{id}/view-state", s.updateWorkspaceViewState,
+		httpapi.DocumentOperation("update-workspace-view-state", "Update workspace view state", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/agent-sessions", s.listWorkspaceAgentSessions,
 		httpapi.DocumentOperation("list-workspace-agent-sessions", "List live coding sessions", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/commits", s.getWorkspaceCommits,

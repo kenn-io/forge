@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -111,13 +112,13 @@ type Service struct {
 }
 
 // resolvedRepositoryCache remembers the worker's resolved configured
-// repositories so an idle pass performs no repository resolution queries. It
-// is valid only while the configured refs and the store's repository
-// reconciliation generation both match what it was built from.
+// repositories so an idle pass performs no repository resolution queries.
+// Repository rows keep their ID for their whole life, so the cache is valid
+// while the configured refs match what it was built from. It is only kept
+// when every ref resolved, so a failed ref is retried on the next pass.
 type resolvedRepositoryCache struct {
-	refKeys    []string
-	generation uint64
-	resolved   []resolvedRepository
+	refKeys  []string
+	resolved []resolvedRepository
 }
 
 type Status struct {
@@ -167,8 +168,9 @@ func (s *Service) SetMaintenanceInterval(interval time.Duration) {
 func (s *Service) SetWake(wake func()) { s.wake = wake }
 
 // workerRepositories returns the configured repositories the worker should
-// schedule, resolving them only when the configuration or the store's
-// repository reconciliation generation changed since the cached resolution.
+// schedule, resolving them only when the configured repositories or their
+// provider IDs changed since the cached resolution or an earlier pass left a
+// ref unresolved.
 func (s *Service) workerRepositories(ctx context.Context) ([]resolvedRepository, error) {
 	if s.configured == nil {
 		return nil, errors.New("run eligible archives: configured repository source is required")
@@ -177,34 +179,33 @@ func (s *Service) workerRepositories(ctx context.Context) ([]resolvedRepository,
 	if err != nil {
 		return nil, fmt.Errorf("list configured archive repositories: %w", err)
 	}
+	// The key carries each ref's provider repository ID, so a different
+	// repository taking over a configured route invalidates the cache. A ref
+	// without an ID is resolved every pass rather than trusted by route.
 	refKeys := make([]string, 0, len(refs))
+	cacheable := true
 	for _, ref := range refs {
-		refKeys = append(refKeys, archiveRepoIdentityKey(ref))
+		refKeys = append(refKeys, archiveRepoIdentityKey(ref)+"\x00"+strconv.FormatInt(ref.PlatformID, 10))
+		cacheable = cacheable && ref.PlatformID > 0
 	}
-	// Sample the generation before resolving: a reconciliation write that
-	// starts during resolution advances it, so the next pass re-resolves.
-	generation := s.db.RepositoryReconciliationGeneration()
 	s.reposMu.Lock()
 	cached := s.repos
 	s.reposMu.Unlock()
-	if cached != nil && cached.generation == generation && slices.Equal(cached.refKeys, refKeys) {
+	if cached != nil && slices.Equal(cached.refKeys, refKeys) {
 		return cached.resolved, nil
 	}
-	// Configuration reconciliation runs at startup and on configuration reload;
-	// its catalog writes advance the generation, so a seeded ref is resolved
-	// on the next pass. The pass itself stays read-only when nothing is
-	// eligible. Resolution failures are repository-scoped: a configured entry
-	// that seeding skipped must not block archive work for every healthy
-	// repository.
+	// The pass stays read-only when nothing is eligible. Resolution failures
+	// are repository-scoped: a configured entry that seeding skipped must not
+	// block archive work for every healthy repository.
 	resolved, err := s.resolveRepositoriesTolerant(ctx, refs, true)
 	if err != nil {
 		return nil, err
 	}
-	s.reposMu.Lock()
-	s.repos = &resolvedRepositoryCache{
-		refKeys: refKeys, generation: generation, resolved: resolved,
+	if cacheable && len(resolved) == len(refs) {
+		s.reposMu.Lock()
+		s.repos = &resolvedRepositoryCache{refKeys: refKeys, resolved: resolved}
+		s.reposMu.Unlock()
 	}
-	s.reposMu.Unlock()
 	return resolved, nil
 }
 
@@ -284,52 +285,41 @@ func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRe
 		return 0, err
 	}
 	identity := platformdb.DBRepoIdentity(ref)
-	// Captured before any provider lookup so a slow resolve cannot
-	// stamp its route data newer than intervening sync observations.
-	observedAt := time.Now().UTC()
-	// Config-asserted and provider-verified identities may move
-	// routes; a catalog-cached identity resolves read-only.
-	authoritative := identity.PlatformRepoID != ""
-	storedID := int64(0)
-	if identity.PlatformRepoID == "" {
+	if identity.PlatformRepoID != 0 {
+		stored, err := s.db.GetRepositoryByProviderID(ctx, identity.ProviderIdentity())
+		if err != nil {
+			return 0, fmt.Errorf("resolve stored archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+		}
+		if stored != nil {
+			return stored.Repository.ID, nil
+		}
+	} else {
 		stored, err := s.db.ResolveActiveRepositoryRoute(ctx, identity)
 		if err != nil {
 			return 0, fmt.Errorf("resolve stored archive repository %s: %w", archiveRepoIdentityKey(ref), err)
 		}
-		if stored != nil && stored.Repository.PlatformRepoID != "" {
-			identity.PlatformRepoID = stored.Repository.PlatformRepoID
-			storedID = stored.Repository.ID
-		} else {
-			reader, err := s.registry.RepositoryReader(ref.Platform, ref.Host)
-			if err != nil {
-				return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
-			}
-			resolved, err := reader.GetRepository(ctx, ref)
-			if err != nil {
-				return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
-			}
-			identity = platformdb.DBRepositoryIdentity(resolved)
-			if identity.PlatformRepoID == "" {
-				return 0, fmt.Errorf("resolve archive repository %s: provider returned no repository id", archiveRepoIdentityKey(ref))
-			}
-			authoritative = true
+		if stored != nil {
+			return stored.Repository.ID, nil
 		}
 	}
-	if authoritative {
-		entry, _, err := s.db.ReconcileRepositoryObservation(ctx, identity, observedAt)
-		if err != nil {
-			return storedID, fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
-		}
-		if entry != nil {
-			return entry.Repository.ID, nil
-		}
-		return storedID, nil
-	}
-	id, err := s.db.UpsertRepoByProviderID(ctx, identity)
+	// Unknown to the catalog: the provider decides the repository (by ID
+	// when the configuration pins one) and its current route.
+	reader, err := s.registry.RepositoryReader(ref.Platform, ref.Host)
 	if err != nil {
-		return storedID, fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+		return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
 	}
-	return id, nil
+	resolved, err := reader.GetRepository(ctx, ref)
+	if err != nil {
+		return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+	}
+	if identity.PlatformRepoID != 0 && resolved.Ref.PlatformID != identity.PlatformRepoID {
+		return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), db.ErrRepositoryIdentityChanged)
+	}
+	entry, err := s.db.ObserveRepository(ctx, platformdb.DBRepositoryIdentity(resolved))
+	if err != nil {
+		return 0, fmt.Errorf("seed archive repository %s: %w", archiveRepoIdentityKey(ref), err)
+	}
+	return entry.Repository.ID, nil
 }
 
 // RetryAuthentication makes credential-blocked repositories eligible after a
@@ -447,7 +437,7 @@ func (s *Service) statusAll(ctx context.Context) ([]Status, error) {
 			Repo: platform.RepoRef{
 				Platform: platform.Kind(repo.Platform), Host: repo.PlatformHost,
 				Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
-				PlatformExternalID: repo.PlatformRepoID, WebURL: repo.WebURL,
+				PlatformID: repo.PlatformRepoID, WebURL: repo.WebURL,
 				CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch,
 			},
 			RepoID: state.RepoID, State: state, Progress: byID[state.RepoID],

@@ -158,13 +158,18 @@ func (s *Handler) fetchPeerResults(
 	memberTimeout time.Duration,
 ) []fleet.PeerResult {
 	var results []fleet.PeerResult
+	var members sync.WaitGroup
 	if fleetConfig.Enabled && len(fleetConfig.Members) > 0 {
-		results = s.fetchMemberResults(ctx, fleetConfig, memberTimeout)
+		members.Go(func() {
+			results = s.fetchMemberResults(ctx, fleetConfig, memberTimeout)
+		})
 	}
+	var targets []fleet.PeerResult
 	if s.executionTargets != nil {
-		results = append(results, s.executionTargets(ctx, memberTimeout)...)
+		targets = s.executionTargets(ctx, memberTimeout)
 	}
-	return results
+	members.Wait()
+	return append(results, targets...)
 }
 
 // fetchMemberResults fans out to each active member's raw endpoint.

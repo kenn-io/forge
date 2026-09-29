@@ -74,4 +74,5 @@ back to TOML.
   targets at use time, not at config load, so a missing binary never rejects the file
   (`internal/config/config.go::Config.validateQuickActions`,
   `internal/server/settings_handlers.go::updateSettingsRequest`).
+- Never make users hand-edit config after a field changes type. Text `platform_repo_id` values from older releases (decimal or GitHub node IDs, which decode offline) convert on load, and daemon startup saves the file once (`internal/config/legacy_repository_ids.go::upgradeRepositoryIDs`, `internal/config/legacy_migration.go::LoadOrCreate`).
 - Repository preset config stores only named custom definitions; `Global` is a derived UI preset and must never be serialized to TOML. Each member persists provider, provider host, provider-verified repository ID, and a last-known display route; preset create/update/delete use dedicated atomic settings endpoints instead of replacing the collection through generic settings (`internal/config/config.go::RepoPreset`, `internal/server/settings_handlers.go::mutateRepoPresets`).

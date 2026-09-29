@@ -7,10 +7,10 @@
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
-  import { executeGeneratedApiRequest } from "../api/generated-api.js";
+  import { RepositoryReads } from "../api/repository-reads.js";
   import { canonicalRepoFilterValue, displayRepoFilterValue, normalizeRepoFilterSelection } from "../utils/repo-filter-values.js";
   import { getStores } from "../context.js";
-  import type { ConfigRepo, Repo, RepoPreset } from "../api/types.js";
+  import type { ConfigRepo, RepoCatalog, RepoPreset } from "../api/types.js";
   import { canonicalProvider } from "../api/provider-routes.js";
   import type { RepoTreeOption } from "./repoTree.js";
   import RepoTreeNode from "./RepoTreeNode.svelte";
@@ -106,7 +106,7 @@
     ]);
   });
 
-  let fetchedRepos = $state<Repo[]>([]);
+  let fetchedRepos = $state.raw<RepoCatalog[]>([]);
   let reposLoading = $state(false);
   let query = $state("");
   let open = $state(false);
@@ -132,11 +132,14 @@
     const loaded = settingsLoaded;
 
     reposLoading = true;
-    fetchedRepos = [];
     const execution = untrack(() => runtime.runCommand(
-      executeGeneratedApiRequest("GET /repos", (generatedClient, signal) =>
-        generatedClient.RepositoriesService.listRepos({ signal })
-      ).pipe(
+      Effect.gen(function* () {
+        const reads = yield* RepositoryReads;
+        yield* Effect.sync(() => {
+          if (reads.snapshot !== undefined) fetchedRepos = reads.snapshot;
+        });
+        return yield* reads.refresh;
+      }).pipe(
         Effect.matchEffect({
           onFailure: () => Effect.sync(() => {
             reposLoading = false;
@@ -166,7 +169,7 @@
     stores?.settings?.getRepoPresets?.() ?? [],
   );
 
-  function optionFromRepo(repo: Repo): RepoOption {
+  function optionFromRepo(repo: RepoCatalog): RepoOption {
     const repoPath = `${repo.Owner}/${repo.Name}`;
     return {
       value: `${repo.PlatformHost}/${repoPath}`,
@@ -192,7 +195,7 @@
       provider: canonicalProvider(repo.provider),
       platformHost: repo.platform_host,
       platform_host: repo.platform_host,
-      platform_repo_id: repo.platform_repo_id ?? "",
+      platform_repo_id: repo.platform_repo_id ?? 0,
       repoPath: path,
       repo_path: path,
     };
@@ -200,7 +203,7 @@
 
   function mergeOptions(
     configured: ConfigRepo[],
-    fetched: Repo[],
+    fetched: RepoCatalog[],
     workspace: readonly RepoPresetCatalogEntry[],
   ): RepoOption[] {
     const merged: RepoOption[] = [];

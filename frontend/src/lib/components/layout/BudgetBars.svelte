@@ -122,8 +122,8 @@
   .budget-label {
     font-size: 0.9em;
     font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.3px);
   }
   .budget-track {
     display: inline-block;

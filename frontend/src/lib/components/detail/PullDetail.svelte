@@ -237,7 +237,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoPath: string;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -648,7 +648,7 @@
   });
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
-  let lastDetailLoadPlatformRepoId: string | undefined;
+  let lastDetailLoadPlatformRepoId: number | undefined;
   let lastDetailLoadAutoSync: DetailSyncMode | undefined;
   let lastDetailLoadWorkflowApprovalSync: boolean | undefined;
 
@@ -741,7 +741,7 @@
   // would discard an in-flight create's success and re-enable the button
   // for a duplicate request.
   let lastResetIdentity: WorkspaceItemIdentity | null = null;
-  let lastResetPlatformRepoId: string | undefined;
+  let lastResetPlatformRepoId: number | undefined;
   $effect(() => {
     // Reset for another provider/host/item or a replacement repository at the same route.
     const current = $state.snapshot(itemIdentity);
@@ -1782,6 +1782,7 @@
     const requestBody = {
       provider: requestIdentity.provider,
       platform_host: detail.platform_host,
+      ...(detail.repo.platform_repo_id ? { platform_repo_id: detail.repo.platform_repo_id } : {}),
       owner: detail.repo_owner,
       name: detail.repo_name,
       mr_number: detail.merge_request.Number,
@@ -2836,7 +2837,7 @@
             disabled={stalePR || workspaceTarget.reason !== ""}
             disabledReason={stalePR
               ? "Refresh details before creating a workspace."
-              : workspaceTarget.reason || createWorkspaceTitle}
+              : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
             descriptionId={createWorkspaceDescriptionId}
             onCreate={(targetKey) => createWorkspace(targetKey)}
             quickActions={settings.getQuickActions()}
@@ -3072,7 +3073,7 @@
       <!-- Approve / Merge / Close / Reopen actions -->
       {#if !workspace}
         <span id={createWorkspaceDescriptionId} class="kit-sr-only">
-          {stalePR ? "Refresh details before creating a workspace." : workspaceTarget.reason || createWorkspaceTitle}
+          {stalePR ? "Refresh details before creating a workspace." : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
         </span>
       {/if}
       {#if showActionSurface}
@@ -3390,6 +3391,7 @@
           platformRepoId={detail.repo.platform_repo_id}
           repoPath={detail.repo.repo_path}
           disabled={stalePR || !capabilities.comment_mutation || addCommentGate.unavailable}
+          editorDisabled={detailMismatch || !capabilities.comment_mutation || addCommentGate.unavailable}
           disabledReason={addCommentGate.unavailable ? addCommentGate.reason : undefined}
         />
       </div>
@@ -4212,28 +4214,36 @@
   }
 
   .section-title {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.05em);
+    color: var(--text-primary);
   }
 
   .section-title-inline {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.05em);
+    color: var(--text-primary);
   }
 
   .inset-box__content {
-    padding: 10px 12px;
+    padding: var(--space-2) 0;
     font-size: var(--font-size-root);
     color: var(--text-primary);
     word-break: break-word;
     line-height: 1.6;
   }
+  .inset-box__content > :global(:first-child) {
+    margin-top: 0;
+  }
+
+  .inset-box__content > :global(:last-child) {
+    margin-bottom: 0;
+  }
+
 
   .files-stat {
     font-family: var(--font-mono);

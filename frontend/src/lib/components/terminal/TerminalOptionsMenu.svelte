@@ -161,8 +161,8 @@
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.06em);
     border-bottom: 1px solid var(--border-muted);
     margin-bottom: 8px;
   }

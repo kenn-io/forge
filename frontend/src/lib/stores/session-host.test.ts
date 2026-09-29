@@ -234,6 +234,24 @@ describe("session host registry", () => {
     expect(isSessionClaimed(third.hostKey)).toBe(false);
   });
 
+  it("retains a configured working set larger than twenty sessions", () => {
+    setRetainedSessionLimit(50);
+    for (let index = 1; index <= 50; index += 1) {
+      const session = mountedSession(`ws-${index}`, "agent");
+      mountConnected(session);
+      noteSessionReleased(session.hostKey);
+    }
+
+    expect(isSessionMounted(agentOnA)).toBe(true);
+    expect(mountedSessions()).toHaveLength(50);
+
+    const next = mountedSession("ws-51", "agent");
+    mountConnected(next);
+    noteSessionReleased(next.hostKey);
+    expect(isSessionMounted(agentOnA)).toBe(false);
+    expect(mountedSessions()).toHaveLength(50);
+  });
+
   it("protects a pending destination from eviction while releasing the previous workspace", () => {
     const destination = mountedSession("ws-1", "agent");
     const previous = mountedSession("ws-2", "agent");

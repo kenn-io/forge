@@ -55,6 +55,21 @@ func TestFleetWorktreeLifecycleProxiesToPeer(t *testing.T) {
 		wantPath   string
 	}{
 		{
+			name:       "get workspace view state",
+			method:     http.MethodGet,
+			path:       "/fleet/hosts/" + testMemberNodeID + "/workspaces/work-a/view-state",
+			wantMethod: http.MethodGet,
+			wantPath:   "/api/v1/workspaces/work-a/view-state",
+		},
+		{
+			name:       "update workspace view state",
+			method:     http.MethodPut,
+			path:       "/fleet/hosts/" + testMemberNodeID + "/workspaces/work-a/view-state",
+			body:       `{"active_tab":"session:agent-a"}`,
+			wantMethod: http.MethodPut,
+			wantPath:   "/api/v1/workspaces/work-a/view-state",
+		},
+		{
 			name:       "get project",
 			method:     http.MethodGet,
 			path:       "/fleet/hosts/" + testMemberNodeID + "/projects/prj_1",

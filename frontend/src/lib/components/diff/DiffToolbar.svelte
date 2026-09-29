@@ -360,8 +360,8 @@
     color: var(--text-muted);
     font-size: 0.9em;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.06em);
+    text-transform: var(--label-transform, uppercase);
   }
 
   .compact-menu-grid {

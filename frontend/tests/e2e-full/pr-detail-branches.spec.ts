@@ -41,7 +41,7 @@ test.describe("PR detail branch info", () => {
   });
 
   test("reveals current approvers from full-stack review events", async ({ page }) => {
-    const trigger = page.getByRole("button", { name: "APPROVED (2)" });
+    const trigger = page.getByRole("button", { name: "Approved (2)" });
     await expect(trigger).toBeVisible();
 
     await trigger.click();

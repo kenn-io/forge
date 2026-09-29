@@ -8,11 +8,13 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
-type repoResponse struct {
+// RepoCatalogResponse contains stored repository data without provider lookups.
+// Keep it exported: Huma skips unexported fields, including embedded structs.
+type RepoCatalogResponse struct {
 	ID                  int64
 	Platform            string
 	PlatformHost        string
-	PlatformRepoID      string
+	PlatformRepoID      int64
 	Owner               string
 	Name                string
 	LastSyncStartedAt   *time.Time
@@ -23,8 +25,12 @@ type repoResponse struct {
 	AllowRebaseMerge    bool
 	ViewerCanMerge      bool
 	CreatedAt           time.Time
-	Capabilities        httpapi.ProviderCapabilitiesResponse `json:"capabilities"`
-	Operations          httpapi.RepoOperations               `json:"operations"`
+}
+
+type repoResponse struct {
+	RepoCatalogResponse
+	Capabilities httpapi.ProviderCapabilitiesResponse `json:"capabilities"`
+	Operations   httpapi.RepoOperations               `json:"operations"`
 }
 
 type repoSummaryAuthorResponse struct {
@@ -233,7 +239,7 @@ type activityResponse struct {
 type activityRepoRefResponse struct {
 	Provider       string `json:"provider"`
 	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID int64  `json:"platform_repo_id,omitempty"`
 	RepoPath       string `json:"repo_path"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`

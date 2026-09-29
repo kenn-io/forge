@@ -18,13 +18,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gitcmd "go.kenn.io/kit/git/cmd"
+
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 // TestW1SliceAGate is the falsifiable capability gate from the convergence

@@ -1,17 +1,28 @@
 package apitest
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/platform"
 )
 
 func TestAPIClientConstruction(t *testing.T) {
@@ -94,7 +105,7 @@ func TestAPIListRepos(t *testing.T) {
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	resp, err := client.HTTP.ListReposWithResponse(t.Context())
@@ -104,6 +115,99 @@ func TestAPIListRepos(t *testing.T) {
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].Owner)
 	require.Equal("widget", (*resp.JSON200)[0].Name)
+}
+
+func TestAPIListReposDoesNotWaitForWriteCredentials(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	database := dbtest.Open(t)
+	identities := []db.RepoIdentity{
+		{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
+		{Platform: "gitlab", PlatformHost: "gitlab.example.com", PlatformRepoID: 202, Owner: "group/subgroup", Name: "widget", RepoPath: "group/subgroup/widget"},
+		{Platform: "forgejo", PlatformHost: "forge.example.com", PlatformRepoID: 303, Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
+		{Platform: "gitea", PlatformHost: "forge.example.com", PlatformRepoID: 404, Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
+		{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 505, Owner: "acme", Name: "hidden", RepoPath: "acme/hidden"},
+	}
+	tracked := make([]ghclient.RepoRef, 0, len(identities))
+	cfg := &config.Config{}
+	for _, identity := range identities {
+		id, err := reposeed.Seed(t.Context(), database, identity)
+		require.NoError(err)
+		if identity.Name == "hidden" {
+			require.NoError(database.SetRepoHiddenFromUI(t.Context(), id, true))
+		}
+		tracked = append(tracked, ghclient.RepoRef{
+			Platform: platform.Kind(identity.Platform), PlatformHost: identity.PlatformHost,
+			Owner: identity.Owner, Name: identity.Name, RepoPath: identity.RepoPath,
+		})
+		cfg.Repos = append(cfg.Repos, config.Repo{
+			Platform: identity.Platform, PlatformHost: identity.PlatformHost,
+			Owner: identity.Owner, Name: identity.Name, PlatformRepoID: identity.PlatformRepoID,
+		})
+	}
+	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "untracked"))
+	require.NoError(err)
+	syncer := ghclient.NewSyncer(nil, database, nil, tracked, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	credentialStarted := make(chan struct{}, 1)
+	credentialRelease := make(chan struct{})
+	releaseCredential := sync.OnceFunc(func() { close(credentialRelease) })
+	defer releaseCredential()
+	sources := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(ctx context.Context, _ string) (string, error) {
+			credentialStarted <- struct{}{}
+			select {
+			case <-credentialRelease:
+				return "", nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		},
+	})
+	sources.Upsert(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: "github.com"},
+		Candidates: []tokenauth.Candidate{
+			{Kind: tokenauth.SourceKindGitHubApp, Host: "github.com", FilePath: "/unused/app.pem", AppID: 7, InstallationID: 11},
+			{Kind: tokenauth.SourceKindGitHubCLI, Host: "github.com"},
+		},
+	})
+	srv := servertest.New(t, database, syncer, nil, "/", cfg, server.ServerOptions{
+		TokenSources: sources,
+		HostCheck: server.HostCheckOptions{
+			Bind:    config.HostKey{Host: "127.0.0.1", Port: "8091"},
+			Allowed: []config.HostKey{{Host: "forge.test"}},
+		},
+	})
+	client := setupTestClient(t, srv)
+	completed := make(chan struct{})
+	var response *generated.ListReposResp
+	var responseErr error
+	go func() {
+		response, responseErr = client.HTTP.ListReposWithResponse(t.Context())
+		close(completed)
+	}()
+	select {
+	case <-credentialStarted:
+		releaseCredential()
+		<-completed
+		require.FailNow("repository catalog waited for a write credential")
+	case <-completed:
+	case <-t.Context().Done():
+		require.FailNow("repository catalog did not complete")
+	}
+	require.NoError(responseErr)
+	require.Equal(http.StatusOK, response.StatusCode)
+	require.NotNil(response.JSON200)
+	var got []string
+	for _, repo := range *response.JSON200 {
+		got = append(got, repo.Platform+"|"+repo.PlatformHost+"|"+strconv.FormatInt(repo.PlatformRepoID, 10)+"|"+repo.Owner+"/"+repo.Name)
+	}
+	require.ElementsMatch([]string{
+		"github|github.com|101|acme/widget",
+		"gitlab|gitlab.example.com|202|group/subgroup/widget",
+		"forgejo|forge.example.com|303|acme/widget",
+		"gitea|forge.example.com|404|acme/widget",
+	}, got)
 }
 
 func TestAPISetStarred(t *testing.T) {
@@ -339,7 +443,7 @@ func TestAPIGetMRImportMetadata(t *testing.T) {
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
 
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -445,10 +549,10 @@ func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	host := "gitlab.example.test:8443"
 	repoPath := "Team One/Sub Team/project+#1"
 	number := int64(7)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       provider,
 		PlatformHost:   host,
-		PlatformRepoID: "gid://gitlab/Project/7000",
+		PlatformRepoID: 7000,
 		Owner:          "Team One/Sub Team",
 		Name:           "project+#1",
 		RepoPath:       repoPath,
@@ -488,10 +592,10 @@ func TestProviderIssueRouteHandlesNestedGitLabRepoPathOverHTTP(t *testing.T) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       "gitlab",
 		PlatformHost:   "git.example.com",
-		PlatformRepoID: "gid://gitlab/Project/7007",
+		PlatformRepoID: 7007,
 		Owner:          "group/subgroup",
 		Name:           "project",
 		RepoPath:       "group/subgroup/project",
@@ -641,7 +745,7 @@ func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {
 
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
-	repoID, err := database.UpsertRepo(ctx, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)

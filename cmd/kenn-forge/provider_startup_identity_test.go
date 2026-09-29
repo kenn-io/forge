@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
@@ -982,11 +983,18 @@ func TestProductionStartupRoutesTwoOwnersThroughSyncAndMutationAPI(t *testing.T)
 			return
 		}
 
-		if !strings.HasPrefix(r.URL.Path, "/api/v3/repos/") {
+		repoPath := r.URL.Path
+		switch repoPath {
+		case "/api/v3/repositories/101":
+			repoPath = "/api/v3/repos/org-a/one"
+		case "/api/v3/repositories/202":
+			repoPath = "/api/v3/repos/org-b/two"
+		}
+		if !strings.HasPrefix(repoPath, "/api/v3/repos/") {
 			http.NotFound(w, r)
 			return
 		}
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v3/repos/"), "/")
+		parts := strings.Split(strings.TrimPrefix(repoPath, "/api/v3/repos/"), "/")
 		if len(parts) < 2 {
 			http.NotFound(w, r)
 			return
@@ -1077,8 +1085,8 @@ func TestProductionStartupRoutesTwoOwnersThroughSyncAndMutationAPI(t *testing.T)
 	}, caps.Archive)
 
 	repos := []github.RepoRef{
-		{Platform: "github", PlatformHost: host, Owner: "org-a", Name: "one"},
-		{Platform: "github", PlatformHost: host, Owner: "org-b", Name: "two"},
+		{Platform: "github", PlatformHost: host, PlatformRepoID: 101, Owner: "org-a", Name: "one"},
+		{Platform: "github", PlatformHost: host, PlatformRepoID: 202, Owner: "org-b", Name: "two"},
 	}
 	syncer := github.NewSyncerWithRegistry(
 		startup.registry, database, nil, repos, time.Minute,
@@ -1195,14 +1203,14 @@ func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {
 	assert.Equal("user:123", uncoveredRoute.writeIdentity.Principal)
 
 	repos := []github.RepoRef{
-		{Owner: "acme", Name: "covered", PlatformHost: "github.com", PlatformExternalID: "repo-acme-covered"},
-		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com", PlatformExternalID: "repo-acme-uncovered"},
+		{Owner: "acme", Name: "covered", PlatformHost: "github.com", PlatformRepoID: 1001},
+		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com", PlatformRepoID: 1002},
 	}
 	for _, repo := range repos {
-		_, err := database.UpsertRepo(
-			t.Context(), db.RepoIdentity{
+		_, err := reposeed.Seed(
+			t.Context(), database, db.RepoIdentity{
 				Platform: "github", PlatformHost: repo.PlatformHost,
-				PlatformRepoID: repo.PlatformExternalID, Owner: repo.Owner, Name: repo.Name,
+				PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
 			},
 		)
 		require.NoError(err)

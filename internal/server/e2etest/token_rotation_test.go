@@ -23,7 +23,9 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -106,28 +108,26 @@ token_file = %q
 
 	database := dbtest.Open(t)
 	ref := ghclient.RepoRef{
-		Platform:           platform.KindGitLab,
-		Owner:              "group",
-		Name:               "project",
-		PlatformHost:       "gitlab.example.com",
-		RepoPath:           "group/project",
-		PlatformRepoID:     42,
-		PlatformExternalID: "42",
-		WebURL:             "https://gitlab.example.com/group/project",
-		CloneURL:           "https://gitlab.example.com/group/project.git",
-		DefaultBranch:      "main",
+		Platform:       platform.KindGitLab,
+		Owner:          "group",
+		Name:           "project",
+		PlatformHost:   "gitlab.example.com",
+		RepoPath:       "group/project",
+		PlatformRepoID: 42,
+		WebURL:         "https://gitlab.example.com/group/project",
+		CloneURL:       "https://gitlab.example.com/group/project.git",
+		DefaultBranch:  "main",
 	}
-	repoID, err := database.UpsertRepo(ctx, platformdb.DBRepoIdentity(platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         42,
-		PlatformExternalID: "42",
-		WebURL:             "https://gitlab.example.com/group/project",
-		CloneURL:           "https://gitlab.example.com/group/project.git",
-		DefaultBranch:      "main",
+	repoID, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    42,
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}))
 	require.NoError(err)
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -778,17 +778,16 @@ func startGitLabTokenSyncServer(
 	require.NoError(t, err)
 	database := dbtest.Open(t)
 	ref := gitLabTokenRepoRef()
-	repoID, err := database.UpsertRepo(t.Context(), platformdb.DBRepoIdentity(platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         42,
-		PlatformExternalID: "42",
-		WebURL:             "https://gitlab.example.com/group/project",
-		CloneURL:           "https://gitlab.example.com/group/project.git",
-		DefaultBranch:      "main",
+	repoID, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    42,
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}))
 	require.NoError(t, err)
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -807,16 +806,15 @@ func startGitLabTokenSyncServer(
 
 func gitLabTokenRepoRef() ghclient.RepoRef {
 	return ghclient.RepoRef{
-		Platform:           platform.KindGitLab,
-		Owner:              "group",
-		Name:               "project",
-		PlatformHost:       "gitlab.example.com",
-		RepoPath:           "group/project",
-		PlatformRepoID:     42,
-		PlatformExternalID: "42",
-		WebURL:             "https://gitlab.example.com/group/project",
-		CloneURL:           "https://gitlab.example.com/group/project.git",
-		DefaultBranch:      "main",
+		Platform:       platform.KindGitLab,
+		Owner:          "group",
+		Name:           "project",
+		PlatformHost:   "gitlab.example.com",
+		RepoPath:       "group/project",
+		PlatformRepoID: 42,
+		WebURL:         "https://gitlab.example.com/group/project",
+		CloneURL:       "https://gitlab.example.com/group/project.git",
+		DefaultBranch:  "main",
 	}
 }
 
@@ -992,9 +990,9 @@ func waitForTokenRotationConfigEvent(
 func seedReadyRuntimeWorkspace(t *testing.T, database *db.DB, worktreePath string) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
-	_, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 	})
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(worktreePath, 0o755))
@@ -1023,7 +1021,7 @@ func seedReadyRuntimeWorkspace(t *testing.T, database *db.DB, worktreePath strin
 			Version: db.WorkspaceLaunchSpecVersion,
 			Repository: db.WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1,

@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )

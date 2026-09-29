@@ -508,6 +508,9 @@ func openFederationEventStream(
 	t.Helper()
 	request, err := federationEventRequest(t, server.URL, token, cursor)
 	require.NoError(t, err)
+	// The scanner can still be exiting when the test closes its stream.
+	// Keep that connection out of the client's idle pool during cleanup.
+	request.Close = true
 	response, err := server.Client().Do(request)
 	require.NoError(t, err)
 	t.Cleanup(func() {

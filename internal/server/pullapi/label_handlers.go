@@ -85,14 +85,14 @@ func (s *Handler) resolveRequestedLabelNames(
 	if err != nil {
 		return nil, nil, nil, providerRouteLookupError(err)
 	}
-	caps := s.capabilitiesForRepo(*repo)
+	caps := s.capabilitiesForRepo(repo.Repo)
 	if !capabilityEnabled(caps, capabilityReadLabels) {
-		return nil, nil, nil, unsupportedCapabilityProblem(*repo, capabilityReadLabels)
+		return nil, nil, nil, unsupportedCapabilityProblem(repo.Repo, capabilityReadLabels)
 	}
 	if !capabilityEnabled(caps, capabilityLabelMutation) {
-		return nil, nil, nil, unsupportedCapabilityProblem(*repo, capabilityLabelMutation)
+		return nil, nil, nil, unsupportedCapabilityProblem(repo.Repo, capabilityLabelMutation)
 	}
-	mr, err := s.requireVisibleMergeRequest(ctx, repo, number)
+	mr, err := s.requireVisibleMergeRequest(ctx, repo.Row(), number)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -105,7 +105,7 @@ func (s *Handler) resolveRequestedLabelNames(
 		return nil, nil, nil, httpapi.Internal("list repo labels failed")
 	}
 	if labelCatalogStale(freshness, time.Now().UTC()) && s.syncer != nil {
-		_ = s.syncer.RefreshRepoLabelCatalog(ctx, *repo)
+		_ = s.syncer.RefreshRepoLabelCatalog(ctx, repo.Repo)
 		catalog, _, err = s.db.ListRepoLabelCatalog(ctx, repo.ID)
 		if err != nil {
 			return nil, nil, nil, httpapi.Internal("list repo labels failed")
@@ -139,7 +139,7 @@ func (s *Handler) resolveRequestedLabelNames(
 		seen[labelName] = struct{}{}
 		resolved = append(resolved, labelName)
 	}
-	return repo, mr, resolved, nil
+	return repo.Row(), mr, resolved, nil
 }
 
 func labelCatalogStale(freshness db.LabelCatalogFreshness, now time.Time) bool {

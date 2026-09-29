@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
+
 	"go.kenn.io/forge/internal/archive"
 	archivereport "go.kenn.io/forge/internal/archive/report"
 	"go.kenn.io/forge/internal/db"
@@ -60,7 +61,6 @@ type giteaLikeContainerManifest struct {
 	CloneURL               string `json:"clone_url"`
 	DefaultBranch          string `json:"default_branch"`
 	RepositoryID           int64  `json:"repository_id"`
-	RepositoryIDString     string `json:"repository_id_string"`
 	PullRequestIndex       int    `json:"pull_request_index"`
 	IssueIndex             int    `json:"issue_index"`
 	Label                  string `json:"label"`
@@ -172,16 +172,15 @@ func assertGiteaLikeContainerSync(
 	registry, err := platform.NewRegistry(client)
 	require.NoError(err)
 	repo := ghclient.RepoRef{
-		Platform:           kind,
-		PlatformHost:       manifest.Host,
-		Owner:              manifest.Owner,
-		Name:               manifest.Name,
-		RepoPath:           manifest.RepoPath,
-		PlatformRepoID:     manifest.RepositoryID,
-		PlatformExternalID: manifest.RepositoryIDString,
-		WebURL:             manifest.WebURL,
-		CloneURL:           manifest.CloneURL,
-		DefaultBranch:      manifest.DefaultBranch,
+		Platform:       kind,
+		PlatformHost:   manifest.Host,
+		Owner:          manifest.Owner,
+		Name:           manifest.Name,
+		RepoPath:       manifest.RepoPath,
+		PlatformRepoID: manifest.RepositoryID,
+		WebURL:         manifest.WebURL,
+		CloneURL:       manifest.CloneURL,
+		DefaultBranch:  manifest.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute,
@@ -203,7 +202,7 @@ func assertGiteaLikeContainerSync(
 	repoRow, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
 		Platform:       string(kind),
 		PlatformHost:   manifest.Host,
-		PlatformRepoID: manifest.RepositoryIDString,
+		PlatformRepoID: manifest.RepositoryID,
 		Owner:          manifest.Owner,
 		Name:           manifest.Name,
 		RepoPath:       manifest.RepoPath,

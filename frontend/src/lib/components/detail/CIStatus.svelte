@@ -326,8 +326,8 @@
   .ci-section-heading {
     font-size: var(--font-size-2xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.04em);
     padding: 6px 12px 4px;
     color: var(--text-muted);
   }

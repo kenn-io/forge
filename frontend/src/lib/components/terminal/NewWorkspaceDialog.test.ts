@@ -63,12 +63,19 @@ vi.mock("../../stores/router.svelte.js", () => ({
   navigate: (path: string) => mockNavigate(path),
 }));
 
-function repoFixture(owner: string, name: string, platformHost = "github.com", platform = "github") {
+function repoFixture(
+  owner: string,
+  name: string,
+  platformRepoId: number,
+  platformHost = "github.com",
+  platform = "github",
+) {
   return {
     ID: 1,
     Name: name,
     Owner: owner,
     Platform: platform,
+    PlatformRepoID: platformRepoId,
     PlatformHost: platformHost,
   };
 }
@@ -115,7 +122,7 @@ describe("NewWorkspaceDialog", () => {
     mockPost.mockReset();
     mockNavigate.mockReset();
     mockGet.mockResolvedValue({
-      data: [repoFixture("acme", "widget"), repoFixture("acme", "gadget")],
+      data: [repoFixture("acme", "widget", 1001), repoFixture("acme", "gadget", 1002)],
     });
     mockPost.mockResolvedValue({ data: { id: "ws-new" } });
   });
@@ -137,11 +144,11 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
     const [path, options] = mockPost.mock.calls[0] as [
       string,
-      { params: { path: Record<string, string> }; body: Record<string, string> },
+      { params: { path: Record<string, string> }; body: Record<string, string | number> },
     ];
     expect(path).toBe("/repo/{provider}/{owner}/{name}/workspaces");
     expect(options.params.path).toEqual({ provider: "github", owner: "acme", name: "widget" });
-    expect(options.body).toEqual({});
+    expect(options.body).toEqual({ platform_repo_id: 1001 });
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new");
     expect(onClose).toHaveBeenCalled();
   });
@@ -208,8 +215,8 @@ describe("NewWorkspaceDialog", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
-    const [, options] = mockPost.mock.calls[0] as [string, { body: Record<string, string> }];
-    expect(options.body).toEqual({ branch: "spike/rate-limits" });
+    const [, options] = mockPost.mock.calls[0] as [string, { body: Record<string, string | number> }];
+    expect(options.body).toEqual({ branch: "spike/rate-limits", platform_repo_id: 1001 });
   });
 
   it("creates against the repo the user picks from the list", async () => {
@@ -236,6 +243,60 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
   });
 
+  it("restores the last-used repository after a rename and browser reload", async () => {
+    await renderDialog();
+    await pickRepo("acme/gadget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new"));
+    cleanup();
+    await Effect.runPromise(runtimeCapture.current!.disposeEffect);
+    runtimeCapture.current = makeAppRuntime();
+    mockGet.mockResolvedValue({
+      data: [repoFixture("acme", "widget", 1001), repoFixture("acme", "gadget-next", 1002)],
+    });
+
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget-next"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    expect(mockPost).toHaveBeenLastCalledWith(
+      "/repo/{provider}/{owner}/{name}/workspaces",
+      expect.objectContaining({
+        params: { path: { provider: "github", owner: "acme", name: "gadget-next" } },
+        body: { platform_repo_id: 1002 },
+      }),
+    );
+  });
+
+  it("requires a new choice when the last-used repository route is reused after a reload", async () => {
+    await renderDialog();
+    await pickRepo("acme/gadget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new"));
+    cleanup();
+    await Effect.runPromise(runtimeCapture.current!.disposeEffect);
+    runtimeCapture.current = makeAppRuntime();
+    mockGet.mockResolvedValue({
+      data: [repoFixture("acme", "widget", 1001), repoFixture("acme", "gadget", 1999)],
+    });
+
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).not.toContain("Loading repositories"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(repoPicker().textContent).not.toContain("acme/gadget");
+    expect(repoPicker().textContent).not.toContain("acme/widget");
+    await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+
+    await pickRepo("acme/gadget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    expect(mockPost).toHaveBeenLastCalledWith(
+      "/repo/{provider}/{owner}/{name}/workspaces",
+      expect.objectContaining({ body: { platform_repo_id: 1999 } }),
+    );
+  });
+
   it("prefers the seeded repo over the last used one", async () => {
     await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
@@ -245,33 +306,83 @@ describe("NewWorkspaceDialog", () => {
     cleanup();
 
     await renderDialog({
-      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget" },
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: 1001,
+        owner: "acme",
+        name: "widget",
+      },
     });
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
   });
 
-  it("falls back to the first repo when the last used one is no longer tracked", async () => {
-    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/retired");
+  it("requires a new choice for a saved preference without a stable repository ID", async () => {
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/widget");
     await renderDialog();
 
-    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await waitFor(() => expect(repoPicker().textContent).not.toContain("Loading repositories"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(repoPicker().textContent).not.toContain("acme/widget");
+    await pickRepo("acme/widget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
   });
 
   it("preselects the seeded repo", async () => {
     await renderDialog({
-      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "gadget" },
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: 1002,
+        owner: "acme",
+        name: "gadget",
+      },
     });
 
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
+  });
+
+  it("preselects a renamed seeded repo and creates using its current route", async () => {
+    mockGet.mockResolvedValue({
+      data: [repoFixture("acme", "gadget", 1999), repoFixture("team", "gadget-next", 1002)],
+    });
+    await renderDialog({
+      seedRepo: {
+        provider: "gh",
+        platformHost: "github.com",
+        platformRepoId: 1002,
+        owner: "acme",
+        name: "gadget",
+      },
+    });
+
+    await waitFor(() => expect(repoPicker().textContent).toContain("team/gadget-next"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "team", name: "gadget-next" } },
+          body: { platform_repo_id: 1002 },
+        }),
+      ),
+    );
   });
 
   it("requires an explicit choice when the seeded repo is not offered", async () => {
     // A seed that no longer resolves (for example a repository hidden from
     // the UI) must not silently divert the workspace to another repository,
     // even when a last-used repo is remembered.
-    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/gadget");
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github|github.com|id|1002");
     await renderDialog({
-      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "concealed" },
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: 1005,
+        owner: "acme",
+        name: "concealed",
+      },
     });
 
     await waitFor(() =>
@@ -281,13 +392,67 @@ describe("NewWorkspaceDialog", () => {
     expect(repoPicker().textContent).not.toContain("acme/gadget");
   });
 
+  it("does not preselect a replacement for the repository of the current workspace", async () => {
+    await renderDialog({
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: 1006,
+        owner: "acme",
+        name: "widget",
+      },
+    });
+    await waitFor(() => expect(repoPicker().textContent).not.toContain("Loading repositories"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(repoPicker().textContent).not.toContain("acme/widget");
+  });
+
+  it.each(["", "github|github.com|id|1002"])(
+    "requires a choice for an inactive workspace seed without a repository ID (saved: %s)",
+    async (lastUsed) => {
+      if (lastUsed) localStorage.setItem("kenn-forge:workspace:new_repo", lastUsed);
+      mockGet.mockResolvedValue({
+        data: [repoFixture("acme", "widget", 1999), repoFixture("acme", "gadget", 1002)],
+      });
+      // An inactive repository's workspace keeps its route in the sidebar,
+      // but its snapshot no longer includes the repository's stable ID.
+      await renderDialog({
+        seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget" },
+      });
+
+      await waitFor(() => expect(repoPicker().textContent).not.toContain("Loading repositories"));
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+      expect(repoPicker().textContent).not.toContain("acme/widget");
+      expect(repoPicker().textContent).not.toContain("acme/gadget");
+      await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
+      expect(mockPost).not.toHaveBeenCalled();
+
+      await pickRepo("acme/widget");
+      await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+      await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget" } },
+          body: { platform_repo_id: 1999 },
+        }),
+      );
+    },
+  );
+
   it("keeps requiring a choice for an unavailable seed after switching sources", async () => {
     // The seed promise holds across source switches: leaving for Kata and
     // returning to the repository source must not divert to the last-used
     // or first repository when the seed is still unavailable.
-    localStorage.setItem("kenn-forge:workspace:new_repo", "github/github.com/acme/gadget");
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github|github.com|id|1002");
     await renderDialog({
-      seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "concealed" },
+      seedRepo: {
+        provider: "github",
+        platformHost: "github.com",
+        platformRepoId: 1005,
+        owner: "acme",
+        name: "concealed",
+      },
     });
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),
@@ -312,7 +477,7 @@ describe("NewWorkspaceDialog", () => {
 
   it("accepts the current Kata API schema", async () => {
     mockGet.mockImplementation((path: string) => {
-      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget")] });
+      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
       if (path === "/kata/daemons") {
         return Promise.resolve({
           data: {
@@ -339,7 +504,7 @@ describe("NewWorkspaceDialog", () => {
   });
 
   it("routes non-default hosts through the host-scoped path", async () => {
-    mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", "git.example.test", "forgejo")] });
+    mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", 1001, "git.example.test", "forgejo")] });
     await renderDialog();
 
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
@@ -353,7 +518,7 @@ describe("NewWorkspaceDialog", () => {
 
   it("creates and opens repository workspaces on the selected spoke", async () => {
     mockGet.mockImplementation((path: string) => {
-      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget")] });
+      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
       if (path === "/snapshot") {
         return Promise.resolve({
           data: {
@@ -390,7 +555,7 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
     const [path, options] = mockPost.mock.calls[0] as [
       string,
-      { params: { path: Record<string, string> }; body: Record<string, string> },
+      { params: { path: Record<string, string> }; body: Record<string, string | number> },
     ];
     expect(path).toBe("/fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces");
     expect(options.params.path).toEqual({
@@ -399,7 +564,7 @@ describe("NewWorkspaceDialog", () => {
       owner: "acme",
       name: "widget",
     });
-    expect(options.body).toEqual({});
+    expect(options.body).toEqual({ platform_repo_id: 1001 });
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/build-node/ws-new");
   });
 
@@ -427,7 +592,7 @@ describe("NewWorkspaceDialog", () => {
                   },
                 ],
               }
-            : [repoFixture("acme", "widget")],
+            : [repoFixture("acme", "widget", 1001)],
       }),
     );
     await renderDialog();
@@ -437,9 +602,193 @@ describe("NewWorkspaceDialog", () => {
     expect(mockPost.mock.calls[0][0]).toBe("/devboxes/{connection_id}/workspaces");
     expect(mockPost.mock.calls[0][1]).toMatchObject({
       params: { path: { connection_id: "compute-a" } },
-      body: { provider: "github", owner: "acme", name: "widget" },
+      body: { provider: "github", owner: "acme", name: "widget", platform_repo_id: 1001 },
     });
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/devbox%3Acompute-a/ws-new");
+  });
+
+  it("submits the preferred devbox before fleet discovery and retains its submitted destination", async () => {
+    preferredTarget = "devbox:compute-a";
+    const snapshot = Promise.withResolvers<unknown>();
+    const created = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] }),
+    );
+    mockPost.mockReturnValue(created.promise);
+    const onCreated = vi.fn();
+    const view = await renderDialog({ onCreated });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    expect(screen.getByRole("combobox", { name: /Workspace machine:.*checking/i })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace options" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces",
+        expect.objectContaining({
+          params: { path: { connection_id: "compute-a" } },
+          body: {
+            provider: "github",
+            platform_host: "github.com",
+            owner: "acme",
+            name: "widget",
+            platform_repo_id: 1001,
+          },
+        }),
+      ),
+    );
+    await view.rerender({ open: false });
+    preferredTarget = "";
+    await view.rerender({ open: true });
+    created.resolve({ data: { id: "ws-devbox" } });
+    await waitFor(() => expect(discardWorkspaceLaunch("ws-devbox", "devbox:compute-a")).toBe("codex"));
+    expect(onCreated).not.toHaveBeenCalled();
+    snapshot.resolve({ data: { hosts: [] } });
+  });
+
+  it("keeps an explicit local choice when the delayed preferred-machine lookup completes", async () => {
+    preferredTarget = "devbox:compute-a";
+    const snapshot = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] }),
+    );
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await fireEvent.click(screen.getByRole("combobox", { name: /Workspace machine:/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "This Forge machine" }));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    snapshot.resolve({
+      data: {
+        hosts: [
+          {
+            configKey: "hub",
+            kind: "self",
+            federationRole: "hub",
+            name: "Studio",
+            operationAvailability: { workspaceWrite: { available: true } },
+          },
+          {
+            configKey: "devbox:compute-a",
+            kind: "devbox",
+            name: "Compute A",
+            operationAvailability: { workspaceWrite: { available: true } },
+          },
+        ],
+      },
+    });
+    await screen.findByRole("combobox", { name: "Workspace machine: Studio (this machine)" });
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({ params: { path: { provider: "github", owner: "acme", name: "widget" } } }),
+      ),
+    );
+  });
+
+  it("restores cached unavailable machines while refreshing and blocks a freshly removed choice", async () => {
+    const snapshot = Promise.withResolvers<unknown>();
+    let refreshing = false;
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot"
+        ? refreshing
+          ? snapshot.promise
+          : Promise.resolve({
+              data: {
+                hosts: [
+                  {
+                    configKey: "hub",
+                    kind: "self",
+                    federationRole: "hub",
+                    name: "Studio",
+                    operationAvailability: { workspaceWrite: { available: true } },
+                  },
+                  {
+                    configKey: "devbox:compute-a",
+                    kind: "devbox",
+                    name: "Compute A",
+                    operationAvailability: {
+                      workspaceWrite: { available: false, unavailableReason: "Devbox is in maintenance" },
+                    },
+                  },
+                ],
+              },
+            })
+        : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] }),
+    );
+    const view = await renderDialog();
+    await screen.findByRole("combobox", { name: "Workspace machine: Studio (this machine)" });
+    view.unmount();
+    refreshing = true;
+    await renderDialog();
+    await fireEvent.click(await screen.findByRole("combobox", { name: "Workspace machine: Studio (this machine)" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Compute A (devbox)" }));
+    await screen.findByRole("combobox", { name: "Workspace machine: Compute A (devbox)" });
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    snapshot.resolve({
+      data: {
+        hosts: [
+          {
+            configKey: "hub",
+            kind: "self",
+            federationRole: "hub",
+            name: "Studio",
+            operationAvailability: { workspaceWrite: { available: true } },
+          },
+        ],
+      },
+    });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+    await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("blocks an unsupported repository on the preferred devbox before discovery completes", async () => {
+    preferredTarget = "devbox:compute-a";
+    const snapshot = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot"
+        ? snapshot.promise
+        : Promise.resolve({ data: [repoFixture("acme", "widget", 1001, "gitlab.com", "gitlab")] }),
+    );
+    await renderDialog();
+    await screen.findByText(/Devboxes currently support only github.com/);
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
+    expect(mockPost).not.toHaveBeenCalled();
+    snapshot.resolve({ data: { hosts: [] } });
+  });
+
+  it("uses a newly saved devbox absent from cached hosts while refresh is pending or fails", async () => {
+    const snapshot = Promise.withResolvers<unknown>();
+    let refreshing = false;
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot"
+        ? refreshing
+          ? snapshot.promise
+          : Promise.resolve({ data: { hosts: [] } })
+        : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] }),
+    );
+    const view = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    view.unmount();
+    preferredTarget = "devbox:added";
+    refreshing = true;
+    await renderDialog();
+    await screen.findByRole("combobox", { name: /Workspace machine:.*checking/i });
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    snapshot.reject(new Error("snapshot unavailable"));
+    await screen.findByRole("combobox", { name: /Workspace machine:.*status unavailable/i });
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces",
+        expect.objectContaining({ params: { path: { connection_id: "added" } } }),
+      ),
+    );
   });
 
   it.each([
@@ -472,7 +821,7 @@ describe("NewWorkspaceDialog", () => {
                   },
                 ],
               }
-            : [repoFixture("acme", "widget", host, provider)],
+            : [repoFixture("acme", "widget", 1001, host, provider)],
       }),
     );
     await renderDialog();
@@ -491,7 +840,7 @@ describe("NewWorkspaceDialog", () => {
     await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
     expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/Your preferred machine is unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Your selected machine is unavailable/)).toBeTruthy();
     expect(mockPost).not.toHaveBeenCalled();
   });
 
@@ -520,8 +869,8 @@ describe("NewWorkspaceDialog", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
-    const [, options] = mockPost.mock.calls[1] as [string, { body: Record<string, string> }];
-    expect(options.body).toEqual({ branch: "spike/thing-2" });
+    const [, options] = mockPost.mock.calls[1] as [string, { body: Record<string, string | number> }];
+    expect(options.body).toEqual({ branch: "spike/thing-2", platform_repo_id: 1001 });
   });
 
   it("keeps the dialog open and reports the failure when the create fails", async () => {
@@ -623,26 +972,104 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("cannot submit against the previous selection while a reopen reloads", async () => {
+  it("restores repository choices on reopen and preserves a new selection during refresh", async () => {
     const { rerender } = await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
     await rerender({ open: false });
 
-    let resolveGet: (value: unknown) => void = () => {};
-    mockGet.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveGet = resolve;
-        }),
+    const response = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? response.promise : Promise.resolve({ data: { hosts: [] } }),
     );
     await rerender({ open: true });
 
-    await waitFor(() => expect(repoPicker().textContent).toContain("Loading repositories"));
-    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await pickRepo("acme/gadget");
 
-    resolveGet({ data: [repoFixture("acme", "gadget")] });
-    await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
+    response.resolve({ data: [repoFixture("acme", "new-repo", 1003), repoFixture("acme", "gadget", 1002)] });
+    await fireEvent.click(repoPicker());
+    await screen.findByRole("option", { name: /acme\/new-repo/ });
+    await fireEvent.keyDown(screen.getByRole("combobox", { name: "Filter repositories" }), { key: "Escape" });
+    expect(repoPicker().textContent).toContain("acme/gadget");
     expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("preserves a cached repository choice through a rename during refresh", async () => {
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await rerender({ open: false });
+    const response = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? response.promise : Promise.resolve({ data: { hosts: [] } }),
+    );
+    await rerender({ open: true });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await pickRepo("acme/gadget");
+
+    response.resolve({
+      data: [
+        repoFixture("acme", "widget", 1001),
+        repoFixture("acme", "gadget", 1999),
+        repoFixture("moved", "gadget-next", 1002),
+      ],
+    });
+    await waitFor(() => expect(repoPicker().textContent).toContain("moved/gadget-next"));
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost).toHaveBeenCalledWith(
+      "/repo/{provider}/{owner}/{name}/workspaces",
+      expect.objectContaining({
+        params: { path: { provider: "github", owner: "moved", name: "gadget-next" } },
+        body: { platform_repo_id: 1002 },
+      }),
+    );
+  });
+
+  it("clears a cached selection when the same route belongs to a different repository", async () => {
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await rerender({ open: false });
+    const response = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? response.promise : Promise.resolve({ data: { hosts: [] } }),
+    );
+    await rerender({ open: true });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+
+    response.resolve({ data: [repoFixture("acme", "widget", 1999)] });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(repoPicker().textContent).not.toContain("acme/widget");
+    expect(mockPost).not.toHaveBeenCalled();
+
+    await pickRepo("acme/widget");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({ body: { platform_repo_id: 1999 } }),
+      ),
+    );
+  });
+
+  it("submits the cached repository ID while catalog refresh is pending", async () => {
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await rerender({ open: false });
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? new Promise(() => {}) : Promise.resolve({ data: { hosts: [] } }),
+    );
+    await rerender({ open: true });
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/repo/{provider}/{owner}/{name}/workspaces",
+        expect.objectContaining({ body: { platform_repo_id: 1001 } }),
+      ),
+    );
   });
 
   it("interrupts the repository load when the dialog closes", async () => {
@@ -660,6 +1087,20 @@ describe("NewWorkspaceDialog", () => {
     await rerender({ open: false });
 
     expect(repositoryLoadInterrupted).toBe(true);
+  });
+
+  it("keeps cached repositories selectable when a background refresh fails", async () => {
+    const { rerender } = await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+    await rerender({ open: false });
+    mockGet.mockRejectedValue(new Error("network down"));
+    await rerender({ open: true });
+
+    await fireEvent.click(repoPicker());
+    await screen.findByRole("alert");
+    await fireEvent.mouseDown(screen.getByRole("option", { name: /acme\/gadget/ }));
+    expect(repoPicker().textContent).toContain("acme/gadget");
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("reports a rejected create instead of failing silently", async () => {

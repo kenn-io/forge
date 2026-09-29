@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
+	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/platform"
 )
 
@@ -908,9 +908,6 @@ func (c *Client) normalizeRef(ref platform.RepoRef, id int64) platform.RepoRef {
 	ref.Platform = platform.KindGitLab
 	ref.Host = c.host
 	ref.PlatformID = id
-	if ref.PlatformExternalID == "" && id != 0 {
-		ref.PlatformExternalID = strconv.FormatInt(id, 10)
-	}
 	return ref
 }
 

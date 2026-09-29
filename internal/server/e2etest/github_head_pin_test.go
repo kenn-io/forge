@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v91/github"
+	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -50,10 +51,10 @@ func setupGitHubHeadPinServerWithDiff(
 	now := time.Now().UTC().Truncate(time.Second)
 
 	database := dbtest.Open(t)
-	repoID, err := database.UpsertRepo(ctx, db.RepoIdentity{
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:       "github",
 		PlatformHost:   "github.com",
-		PlatformRepoID: "1",
+		PlatformRepoID: 1,
 		Owner:          "acme",
 		Name:           "widget",
 		RepoPath:       "acme/widget",

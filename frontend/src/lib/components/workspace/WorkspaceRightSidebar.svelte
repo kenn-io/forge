@@ -15,7 +15,7 @@
     workspaceHostKey?: string | undefined;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: string | undefined;
+    platformRepoId?: number | undefined;
     repoOwner: string;
     repoName: string;
     repoPath: string;
@@ -112,6 +112,7 @@
             {...displayedPR}
             hideTabs={true}
             hideWorkspaceAction={true}
+            hideStaleWhileLoading={true}
           />
         </div>
       {/key}
@@ -122,7 +123,7 @@
     {#if displayedIssue}
       {#key `issue:${workspaceHostKey ?? "self"}:${workspaceID}:${JSON.stringify(displayedIssue)}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
-          <IssueDetail {...displayedIssue} />
+          <IssueDetail {...displayedIssue} hideStaleWhileLoading={true} />
         </div>
       {/key}
     {:else}

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import WorkspaceHome from "./WorkspaceHome.svelte";
@@ -122,6 +122,44 @@ describe("WorkspaceHome", () => {
     expect(onOpenSession).toHaveBeenCalledWith("ws-1:codex");
     await fireEvent.click(screen.getByRole("button", { name: /Shell\s+Running/ }));
     expect(onOpenSession).toHaveBeenCalledWith("ws-1:shell");
+  });
+
+  it("groups ACP agents apart from terminal launch targets", async () => {
+    const onLaunch = vi.fn();
+    render(WorkspaceHome, {
+      props: {
+        launchTargets: [
+          { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true },
+          { key: "chat", label: "Chat agent", kind: "acp", source: "config", available: true },
+          { key: "plain_shell", label: "Plain shell", kind: "plain_shell", source: "system", available: true },
+        ],
+        sessions: [],
+        onLaunch,
+      },
+    });
+
+    const terminal = within(screen.getByRole("group", { name: "Launch" }));
+    const acp = within(screen.getByRole("group", { name: "ACP agents" }));
+    expect(terminal.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Codex",
+      "Shell",
+    ]);
+    expect(acp.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(["Chat agent"]);
+
+    await fireEvent.click(acp.getByRole("button", { name: "Chat agent" }));
+    expect(onLaunch).toHaveBeenCalledWith("chat");
+  });
+
+  it("shows only the ACP section when every launch target is ACP", () => {
+    render(WorkspaceHome, {
+      props: {
+        launchTargets: [{ key: "chat", label: "Chat agent", kind: "acp", source: "config", available: true }],
+        sessions: [],
+      },
+    });
+
+    expect(screen.queryByRole("group", { name: "Launch" })).toBeNull();
+    expect(screen.getByRole("group", { name: "ACP agents" })).toBeTruthy();
   });
 
   it("runs configured quick actions and disables ones whose agent cannot launch", async () => {

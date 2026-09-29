@@ -143,6 +143,59 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 	return nil
 }
 
+// Record stores state reported directly by a runtime protocol rather than by a
+// hook, such as an ACP connection. A repeated completion keeps its original
+// timestamp so an acknowledged done does not reappear as new.
+func (s *Store) Record(agent, sessionID, runtimeSessionKey, cwd string, state State) error {
+	if s == nil || strings.TrimSpace(s.root) == "" {
+		return nil
+	}
+	agent = strings.ToLower(strings.TrimSpace(agent))
+	sessionID = strings.TrimSpace(sessionID)
+	runtimeSessionKey = strings.TrimSpace(runtimeSessionKey)
+	if agent == "" || sessionID == "" || runtimeSessionKey == "" {
+		return nil
+	}
+	if statePriority(state) == 0 {
+		return fmt.Errorf("unknown agent activity state %q", state)
+	}
+	canonicalCWD, err := canonicalWorkspacePath(cwd)
+	if err != nil {
+		return err
+	}
+	report := Report{
+		Agent: agent, SessionID: sessionID, RuntimeSessionKey: runtimeSessionKey,
+		CWD: canonicalCWD, State: state, UpdatedAt: s.now().UTC(),
+	}
+	if state == StateDone {
+		previous, ok := s.readReport(s.reportPath(agent, sessionID))
+		if ok && previous.RuntimeSessionKey == runtimeSessionKey && previous.State == StateDone {
+			report.UpdatedAt = previous.UpdatedAt
+		}
+	}
+	return s.writeReport(report)
+}
+
+// Remove deletes one session's report when its runtime protocol ends it.
+func (s *Store) Remove(agent, sessionID string) error {
+	if s == nil || strings.TrimSpace(s.root) == "" {
+		return nil
+	}
+	agent = strings.ToLower(strings.TrimSpace(agent))
+	sessionID = strings.TrimSpace(sessionID)
+	if agent == "" || sessionID == "" {
+		return nil
+	}
+	err := os.Remove(s.reportPath(agent, sessionID))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err == nil {
+		s.invalidateCache()
+	}
+	return err
+}
+
 func isIdlePrompt(hook HookEvent) bool {
 	return hook.HookEventName == "Notification" && hook.NotificationType == "idle_prompt"
 }

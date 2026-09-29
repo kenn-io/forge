@@ -6,6 +6,7 @@
   } from "../../api/types.js";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import FolderIcon from "@lucide/svelte/icons/folder";
+  import MessagesSquareIcon from "@lucide/svelte/icons/messages-square";
   import PlayIcon from "@lucide/svelte/icons/play";
   import ZapIcon from "@lucide/svelte/icons/zap";
   import LaunchTargetName from "./LaunchTargetName.svelte";
@@ -52,6 +53,9 @@
   }: WorkspaceHomeProps = $props();
 
   const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
+  // ACP agents open a chat, not a terminal, so they get their own section.
+  const terminalTargets = $derived(visibleTargets.filter((target) => target.kind !== "acp"));
+  const acpTargets = $derived(visibleTargets.filter((target) => target.kind === "acp"));
   const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
   const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
 
@@ -107,19 +111,9 @@
     </header>
   {/if}
 
-  <div class="home-section">
-    <div class="section-bar">
-      <PlayIcon
-        class="section-icon"
-        size="12"
-        strokeWidth="2.25"
-        aria-hidden="true"
-      />
-      <span class="section-title">Launch</span>
-      <span class="section-count">{visibleTargets.length}</span>
-    </div>
+  {#snippet launchCards(targets: LaunchTarget[])}
     <div class="launch-grid">
-      {#each visibleTargets as target (target.key)}
+      {#each targets as target (target.key)}
         {@const isLaunching = launchingKey === target.key}
         <button
           class="launch-card"
@@ -135,7 +129,40 @@
         </button>
       {/each}
     </div>
-  </div>
+  {/snippet}
+
+  {#if terminalTargets.length > 0 || acpTargets.length === 0}
+    <div class="home-section" role="group" aria-label="Launch">
+      <div class="section-bar">
+        <PlayIcon
+          class="section-icon"
+          size="12"
+          strokeWidth="2.25"
+          aria-hidden="true"
+        />
+        <span class="section-title">Launch</span>
+        <span class="section-count">{terminalTargets.length}</span>
+      </div>
+      {@render launchCards(terminalTargets)}
+    </div>
+  {/if}
+
+  {#if acpTargets.length > 0}
+    <div class="home-section" role="group" aria-label="ACP agents">
+      <div class="section-bar">
+        <MessagesSquareIcon
+          class="section-icon acp"
+          size="12"
+          strokeWidth="2.25"
+          aria-hidden="true"
+        />
+        <span class="section-title">ACP agents</span>
+        <span class="section-count">{acpTargets.length}</span>
+        <span class="section-hint">Chat sessions</span>
+      </div>
+      {@render launchCards(acpTargets)}
+    </div>
+  {/if}
 
   {#if showQuickActions}
     <div class="home-section">
@@ -380,8 +407,19 @@
     color: var(--accent-amber);
   }
 
-  .workspace-home.readonly .section-bar :global(.section-icon.quick) {
+  .section-bar :global(.section-icon.acp) {
+    color: var(--accent-purple);
+  }
+
+  .workspace-home.readonly .section-bar :global(.section-icon.quick),
+  .workspace-home.readonly .section-bar :global(.section-icon.acp) {
     color: var(--text-muted);
+  }
+
+  .section-hint {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: var(--font-size-2xs);
   }
 
   .quick-card {

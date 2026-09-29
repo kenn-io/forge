@@ -81,7 +81,7 @@ func (s *Handler) ListWorkspaceAgentSessionsService(
 	}
 	liveByKey := make(map[string]localruntime.SessionInfo)
 	for _, session := range s.runtime.ListSessions(summary.ID) {
-		if session.Kind != localruntime.LaunchTargetAgent ||
+		if !session.Kind.IsAgent() ||
 			(session.Status != localruntime.SessionStatusStarting &&
 				session.Status != localruntime.SessionStatusRunning) {
 			continue
@@ -94,16 +94,16 @@ func (s *Handler) ListWorkspaceAgentSessionsService(
 	}
 	results := make([]AgentSessionResult, 0)
 	for _, report := range s.agentActivity.LiveReportsForWorkspace(summary.WorktreePath, liveKeys) {
-		agent, parseErr := agenthook.ParseAgent(report.Agent)
-		if parseErr != nil {
-			continue
-		}
 		live, ok := liveByKey[report.RuntimeSessionKey]
 		if !ok {
 			continue
 		}
+		agent, ok := reportedAgent(report, live)
+		if !ok {
+			continue
+		}
 		result := AgentSessionResult{
-			Agent: string(agent), SessionID: report.SessionID,
+			Agent: agent, SessionID: report.SessionID,
 			RuntimeSessionKey: report.RuntimeSessionKey, TargetKey: live.TargetKey,
 			State: report.State, UpdatedAt: report.UpdatedAt.UTC(),
 		}
@@ -128,6 +128,19 @@ func (s *Handler) ListWorkspaceAgentSessionsService(
 		return strings.Compare(a.RuntimeSessionKey, b.RuntimeSessionKey)
 	})
 	return results, nil
+}
+
+// reportedAgent accepts hook reports from supported coding agents on terminal
+// runtimes and ACP owner reports on ACP runtimes.
+func reportedAgent(report agentactivity.Report, live localruntime.SessionInfo) (string, bool) {
+	if live.Kind == localruntime.LaunchTargetACP {
+		return report.Agent, report.Agent == localruntime.ACPActivityAgent
+	}
+	agent, err := agenthook.ParseAgent(report.Agent)
+	if err != nil {
+		return "", false
+	}
+	return string(agent), true
 }
 
 func initialMessageAttemptResult(attempt initialMessageAttempt) InitialMessageResult {

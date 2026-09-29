@@ -43,10 +43,12 @@ Recommended flow:
     `kenn_forge_spawn_workspace_with_agent` with one PR, issue, or ad-hoc source
     and one initial message. Report the workspace and runtime identifiers even
     when a later stage fails.
-11. Use `kenn_forge_list_workspace_agent_sessions` for fresh hook-reported
-    coding session IDs. Do not infer IDs from terminal text. To continue work in
-    a live runtime, call `kenn_forge_send_agent_message` with its workspace ID,
-    runtime session key, and the follow-up message.
+11. Use `kenn_forge_list_workspace_agent_sessions` for fresh coding session
+    IDs and states. Terminal agents report them through hooks; ACP agents
+    through their ACP connection. Do not infer IDs from terminal text. To
+    continue work in a live runtime, call `kenn_forge_send_agent_message` with
+    its workspace ID, runtime session key, and the follow-up message. An ACP
+    agent in the middle of a turn queues the follow-up for after that turn.
 
 Repository-wide PR scans:
 
@@ -90,7 +92,7 @@ Handoff flow:
 2. Call kenn_forge_spawn_workspace_with_agent once with the selected source,
    target, and initial message.
 3. Do not retry an ambiguous workspace or runtime mutation. If prompt delivery
-   or hook observation times out after a runtime identifier is returned, call
+   or session observation times out after a runtime identifier is returned, call
    the tool with resume, the returned workspace and runtime identifiers, and
    the same target and initial message. Resume never launches another runtime.
 4. Report every returned workspace, runtime, prompt-delivery, and coding-session

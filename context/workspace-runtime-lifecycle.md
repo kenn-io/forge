@@ -48,9 +48,18 @@ Rules:
   retain active turns, permissions, and chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved
   ACP session only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
-- ACP messages and pending permissions share a 4 MiB JSON budget; retain the latest
-  submitted prompt for reconnect deduplication and disclose removed history in chat
+- ACP messages, pending permissions and elicitations, and queued prompts share a
+  4 MiB JSON budget; retain the latest submitted prompt for reconnect
+  deduplication and disclose removed history in chat
   (`internal/workspace/localruntime/acp.go::ACP.trimStateToBytesLocked`).
+- A running ACP turn never rejects input: sends queue, and steering is used only when
+  initialize advertises it. The queue drains one prompt per `end_turn` and pauses on any
+  other stop, error, exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).
+- ACP owners, not the daemon, write chat activity reports so sidebar state survives
+  daemon downtime; a reloaded session starts idle, never newly done
+  (`internal/workspace/localruntime/acp_activity.go::reportACPActivity`).
+- Sub-agents come from legacy tool-call markers; the Go SDK cannot decode draft native
+  subagent updates (`internal/workspace/localruntime/acp_client.go::toolCallLineage`).
 - Project-worktree runtime APIs expose terminal targets only. ACP targets require
   the workspace chat transport and are neither listed nor launchable
   through project-worktree runtime routes (`internal/server/workspaceapi/projects_handlers.go`).

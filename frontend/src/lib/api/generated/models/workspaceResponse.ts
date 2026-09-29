@@ -12,9 +12,9 @@ import type { WorkspaceResponseMrHeadRepoKind } from "./workspaceResponseMrHeadR
 export interface WorkspaceResponse {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state. */
+  /** Hook- or ACP-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state. */
   agent_state?: WorkspaceResponseAgentState;
-  /** UTC timestamp of the hook report that produced agent_state. */
+  /** UTC timestamp of the activity report that produced agent_state. */
   agent_state_updated_at?: string;
   associated_pr_number?: number;
   /** True when the current branch has an origin upstream configured but its local remote-tracking ref is absent; clients may offer Push so branch sync can verify or create the remote branch. */

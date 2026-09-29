@@ -3,6 +3,7 @@ package localruntime
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"net"
 	"net/rpc"
 	"sync"
@@ -68,7 +69,18 @@ func (o *acpOwnerRPC) Watch(request ACPWatch, reply *ACPUpdate) error {
 	}
 }
 
-func (o *acpOwnerRPC) Command(command ACPCommand, _ *struct{}) error { return o.agent.Command(command) }
+// ACPCommandReply types the one command failure callers branch on. net/rpc
+// reduces returned errors to text, so it travels as a successful reply.
+type ACPCommandReply struct{ Unavailable bool }
+
+func (o *acpOwnerRPC) Command(command ACPCommand, reply *ACPCommandReply) error {
+	err := o.agent.Command(command)
+	if errors.Is(err, ErrACPAgentUnavailable) {
+		reply.Unavailable = true
+		return nil
+	}
+	return err
+}
 
 func (o *acpOwnerRPC) Bind(binding ACPMCPBinding, _ *struct{}) error { return o.proxy.Bind(binding) }
 
@@ -106,7 +118,14 @@ func (a *acpAttachment) Snapshot() ([]byte, error) {
 }
 
 func (a *acpAttachment) Command(command ACPCommand) error {
-	return a.client.Call("ACP.Command", command, &struct{}{})
+	var reply ACPCommandReply
+	if err := a.client.Call("ACP.Command", command, &reply); err != nil {
+		return err
+	}
+	if reply.Unavailable {
+		return ErrACPAgentUnavailable
+	}
+	return nil
 }
 
 func (a *acpAttachment) Prompt(text string) error {

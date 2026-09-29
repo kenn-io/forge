@@ -395,3 +395,26 @@ func TestStoreRetainRuntimeSessionsRemovesOthers(t *testing.T) {
 	_, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-b"})
 	assert.False(ok, "the report of a runtime not in the keep set is removed")
 }
+
+func TestRecordKeepsFirstCompletionAndRemovesSession(t *testing.T) {
+	store := NewStore(t.TempDir())
+	cwd := t.TempDir()
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	require.NoError(t, store.Record("acp", "chat", "runtime", cwd, StateDone))
+	now = now.Add(time.Minute)
+	require.NoError(t, store.Record("acp", "chat", "runtime", cwd, StateDone))
+	reports := store.LiveReportsForWorkspace(cwd, []string{"runtime"})
+	require.Len(t, reports, 1)
+	assert.Equal(t, time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC), reports[0].UpdatedAt)
+
+	require.NoError(t, store.Record("acp", "chat", "runtime", cwd, StateWorking))
+	require.NoError(t, store.Record("acp", "chat", "runtime", cwd, StateDone))
+	reports = store.LiveReportsForWorkspace(cwd, []string{"runtime"})
+	require.Len(t, reports, 1)
+	assert.Equal(t, now, reports[0].UpdatedAt, "a new turn completes as new")
+	require.Error(t, store.Record("acp", "chat", "runtime", cwd, "unknown"))
+
+	require.NoError(t, store.Remove("acp", "chat"))
+	assert.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+}

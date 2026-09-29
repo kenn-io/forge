@@ -14,6 +14,7 @@ type listAgentTargetsInput struct{}
 type agentTargetRow struct {
 	Key            string `json:"key"`
 	Label          string `json:"label"`
+	Protocol       string `json:"protocol"`
 	Source         string `json:"source"`
 	Available      bool   `json:"available"`
 	DisabledReason string `json:"disabled_reason,omitempty"`
@@ -66,6 +67,7 @@ type listWorkspaceAgentSessionsOutput struct {
 type workspaceAgentRuntimeRow struct {
 	RuntimeSessionKey string `json:"runtime_session_key"`
 	TargetKey         string `json:"target_key"`
+	Protocol          string `json:"protocol"`
 	Status            string `json:"status"`
 	CreatedAt         string `json:"created_at"`
 	HookObserved      bool   `json:"hook_observed"`
@@ -76,22 +78,25 @@ func (s *Server) registerAgentTools() {
 		Name: "kenn_forge_list_agent_targets",
 		Description: "List configured coding-agent launch targets, including custom targets. " +
 			"Unavailable targets remain visible, but command arguments are never returned. " +
-			"Handoff completion requires the launched runtime to report a supported coding-agent hook session.",
+			"protocol is terminal for hook-reporting terminal agents and acp for Agent Client Protocol chat agents; " +
+			"both can be launched and messaged through these tools.",
 	}, wrapTool(s.listAgentTargets))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_workspace_agent_sessions",
-		Description: "List live agent runtimes and their fresh hook-authoritative coding sessions for one workspace. " +
-			"A runtime with hook_observed=false has launched but has not reported its first hook. This is a live projection, not session history.",
+		Description: "List live agent runtimes and their fresh coding sessions for one workspace. " +
+			"Terminal agents report sessions through hooks; ACP agents report through their ACP connection with agent=acp. " +
+			"A runtime with hook_observed=false has launched but has not reported its first session. This is a live projection, not session history.",
 	}, wrapTool(s.listWorkspaceAgentSessions))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_send_agent_message",
 		Description: "Submit a follow-up message to one existing live coding-agent runtime. " +
-			"Use the workspace ID and runtime session key returned by Forge.",
+			"Use the workspace ID and runtime session key returned by Forge. " +
+			"An ACP agent in the middle of a turn queues the message and runs it after the turn ends.",
 	}, wrapTool(s.sendAgentMessage))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_spawn_workspace_with_agent",
 		Description: "Create or reuse a workspace, launch one configured coding agent, submit exactly one initial message, " +
-			"and observe the resulting hook session. When agent_target is omitted for a new handoff, the most used " +
+			"and observe the resulting coding session. When agent_target is omitted for a new handoff, the most used " +
 			"available agent from the previous 14 days is selected. Resume can continue an existing runtime without " +
 			"launching another agent. Partial resources are never cleaned up automatically.",
 	}, wrapTool(s.spawnWorkspaceWithAgent))
@@ -107,12 +112,11 @@ func (s *Server) sendAgentMessage(
 	if err != nil {
 		return sendAgentMessageOutput{}, err
 	}
-	terminalAgent := slices.ContainsFunc(runtime.Sessions, func(session RuntimeSession) bool {
-		return session.Key == runtimeSessionKey && session.Kind == "agent" &&
-			(session.Status == "starting" || session.Status == "running")
+	liveAgent := slices.ContainsFunc(runtime.Sessions, func(session RuntimeSession) bool {
+		return session.Key == runtimeSessionKey && isLiveAgentRuntime(session)
 	})
-	if !terminalAgent {
-		return sendAgentMessageOutput{}, errors.New("runtime session is not a live terminal coding agent")
+	if !liveAgent {
+		return sendAgentMessageOutput{}, errors.New("runtime session is not a live coding agent")
 	}
 	result, err := s.backend.SubmitAgentMessage(ctx, AgentMessageRequest{
 		WorkspaceID: workspaceID, RuntimeSessionKey: runtimeSessionKey, Message: in.Message,
@@ -138,12 +142,14 @@ func (s *Server) listAgentTargets(
 	out := listAgentTargetsOutput{Targets: make([]agentTargetRow, 0)}
 	for index, target := range targets {
 		key := strings.ToLower(strings.TrimSpace(target.Key))
-		if target.Kind != "agent" {
+		protocol, ok := agentProtocol(target.Kind)
+		if !ok {
 			continue
 		}
 		out.Targets = append(out.Targets, agentTargetRow{
 			Key:            key,
 			Label:          target.Label,
+			Protocol:       protocol,
 			Source:         target.Source,
 			Available:      target.Available,
 			DisabledReason: target.DisabledReason,
@@ -199,13 +205,15 @@ func (s *Server) listWorkspaceAgentSessions(
 		out.Sessions = append(out.Sessions, row)
 	}
 	for _, session := range runtime.Sessions {
-		if session.Kind != "agent" || (session.Status != "starting" && session.Status != "running") {
+		if !isLiveAgentRuntime(session) {
 			continue
 		}
 		_, hookObserved := observedRuntimeKeys[session.Key]
+		protocol, _ := agentProtocol(session.Kind)
 		out.Runtimes = append(out.Runtimes, workspaceAgentRuntimeRow{
 			RuntimeSessionKey: session.Key,
 			TargetKey:         session.TargetKey,
+			Protocol:          protocol,
 			Status:            session.Status,
 			CreatedAt:         formatMCPTime(session.CreatedAt),
 			HookObserved:      hookObserved,
@@ -218,6 +226,23 @@ func (s *Server) listWorkspaceAgentSessions(
 		return strings.Compare(a.RuntimeSessionKey, b.RuntimeSessionKey)
 	})
 	return out, nil
+}
+
+// agentProtocol maps a runtime launch kind to the MCP agent protocol. Terminal
+// agents are driven through their PTY; ACP agents through their chat session.
+func agentProtocol(kind string) (string, bool) {
+	switch kind {
+	case "agent":
+		return "terminal", true
+	case "acp":
+		return "acp", true
+	}
+	return "", false
+}
+
+func isLiveAgentRuntime(session RuntimeSession) bool {
+	_, agent := agentProtocol(session.Kind)
+	return agent && (session.Status == "starting" || session.Status == "running")
 }
 
 func compareWorkspaceAgentSessions(a, b WorkspaceAgentSession) int {

@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/config"
 )
 
@@ -37,6 +38,7 @@ func TestACPStdioHelper(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	var promptID jsontext.Value
+	elicitationOffered := false
 	model, effort := "fast", "low"
 	configResponse := func(id jsontext.Value) {
 		if os.Getenv("KENN_FORGE_ACP_MODEL_DEPENDENT") == "1" {
@@ -66,12 +68,18 @@ func TestACPStdioHelper(t *testing.T) {
 				continue
 			}
 			var params struct {
-				ProtocolVersion int `json:"protocolVersion"`
+				ProtocolVersion    int `json:"protocolVersion"`
+				ClientCapabilities struct {
+					Elicitation *struct {
+						Form *struct{} `json:"form"`
+					} `json:"elicitation"`
+				} `json:"clientCapabilities"`
 			}
 			if json.Unmarshal(message.Params, &params) != nil || params.ProtocolVersion != 1 {
 				os.Exit(3)
 			}
-			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"http":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1")
+			elicitationOffered = params.ClientCapabilities.Elicitation != nil && params.ClientCapabilities.Elicitation.Form != nil
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"http":%t}},"_meta":{"steering":{"supported":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1", os.Getenv("KENN_FORGE_ACP_STEERING") == "1")
 		case "session/new", "session/load":
 			if fixtureDir != "" {
 				file, err := os.OpenFile(filepath.Join(fixtureDir, "sessions"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
@@ -108,6 +116,7 @@ func TestACPStdioHelper(t *testing.T) {
 				_ = os.WriteFile(filepath.Join(fixtureDir, "mcp.json"), data, 0o600)
 			}
 			configResponse(message.ID)
+			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review changes","input":{"hint":"focus area"}},{"name":"compact","description":"Compact history"}]}}}`)
 		case "session/set_config_option":
 			var params struct {
 				ConfigID string `json:"configId"`
@@ -141,7 +150,18 @@ func TestACPStdioHelper(t *testing.T) {
 			promptID = message.ID
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello "}}}}`)
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"workspace"}}}}`)
-			if params.Prompt[0].Text == "permission" {
+			if params.Prompt[0].Text == "delegate" {
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call","toolCallId":"agent-1","title":"Explore the parser","kind":"think","status":"in_progress","_meta":{"claudeCode":{"toolName":"Agent"}}}}}`)
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call","toolCallId":"child-1","title":"Read parser.go","kind":"read","status":"completed","_meta":{"claudeCode":{"toolName":"Read","parentToolUseId":"agent-1"}}}}}`)
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call","toolCallId":"codex-1","title":"Start subagent reviewer","kind":"other","status":"in_progress","rawInput":{"agentThreadId":"thread-2","agentPath":"reviewer","activityKind":"started"}}}}`)
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call_update","toolCallId":"agent-1","status":"completed"}}}`)
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
+			} else if params.Prompt[0].Text == "elicit" {
+				if !elicitationOffered {
+					os.Exit(11)
+				}
+				fmt.Println(`{"jsonrpc":"2.0","id":"elicit","method":"elicitation/create","params":{"sessionId":"fixture-session","mode":"form","message":"Pick one","requestedSchema":{"type":"object","title":"Choice","properties":{"choice":{"type":"string","enum":["a","b"]}},"required":["choice"]}}}`)
+			} else if params.Prompt[0].Text == "permission" {
 				if fixtureDir != "" {
 					go func() {
 						ticker := time.NewTicker(10 * time.Millisecond)
@@ -160,9 +180,47 @@ func TestACPStdioHelper(t *testing.T) {
 			} else if params.Prompt[0].Text != "wait" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
 			}
+		case "_session/steering":
+			var params struct {
+				Prompt []struct {
+					Text string `json:"text"`
+				} `json:"prompt"`
+				Meta struct {
+					Steering struct {
+						IdleBehavior string `json:"idleBehavior"`
+					} `json:"steering"`
+				} `json:"_meta"`
+			}
+			if json.Unmarshal(message.Params, &params) != nil || len(params.Prompt) != 1 || params.Meta.Steering.IdleBehavior != "promptRequired" {
+				os.Exit(13)
+			}
+			switch params.Prompt[0].Text {
+			case "adjust":
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"injected"}}`+"\n", message.ID)
+			case "finish":
+				// The turn ends before the text is taken, so Forge must send it.
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"promptRequired"}}`+"\n", message.ID)
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
+			default:
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"failed"}}`+"\n", message.ID)
+			}
 		case "session/cancel":
 			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"cancelled"}}`+"\n", promptID)
 		case "":
+			if string(message.ID) == `"elicit"` {
+				var result struct {
+					Action  string `json:"action"`
+					Content struct {
+						Choice string `json:"choice"`
+					} `json:"content"`
+				}
+				if json.Unmarshal(message.Result, &result) != nil || result.Action != "accept" {
+					os.Exit(12)
+				}
+				fmt.Printf(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"chose %s"}}}}`+"\n", result.Content.Choice)
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
+				continue
+			}
 			var result struct {
 				Outcome struct {
 					Outcome  string `json:"outcome"`
@@ -244,6 +302,186 @@ func TestACPWorkspaceConversation(t *testing.T) {
 	require.Eventually(t, func() bool { data, _ := agent.Snapshot(); _ = json.Unmarshal(data, &state); return !state.Busy }, 5*time.Second, 10*time.Millisecond)
 	require.NoError(t, manager.Stop(context.Background(), "workspace", info.Key))
 	assert.Empty(t, manager.ListSessions("workspace"))
+}
+
+// The owner is the durable reporter: activity must follow the ACP turn
+// signals without any hook, and questions must block the turn until answered.
+func TestACPReportsActivityCommandsAndElicitation(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	activityDir := t.TempDir()
+	manager := newACPTestManager(t, Options{Targets: targets, AgentActivityDir: activityDir})
+	activity := agentactivity.NewStore(activityDir)
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	reportState := func() agentactivity.State {
+		reports := activity.LiveReportsForWorkspace(cwd, []string{info.Key})
+		if len(reports) != 1 {
+			return ""
+		}
+		assert.Equal(t, ACPActivityAgent, reports[0].Agent)
+		assert.Equal(t, "fixture-session", reports[0].SessionID)
+		return reports[0].State
+	}
+	var state ACPState
+	// Conditions run off the test goroutine, so they must not call require.
+	snapshot := func() ACPState {
+		var current ACPState
+		data, err := agent.Snapshot()
+		if err == nil {
+			err = json.Unmarshal(data, &current)
+		}
+		if err != nil {
+			current.Error = err.Error()
+		}
+		return current
+	}
+	require.Eventually(t, func() bool { return reportState() == agentactivity.StateIdle }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { state = snapshot(); return len(state.Commands) == 2 }, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []ACPCommandInfo{
+		{Name: "review", Description: "Review changes", InputHint: "focus area"},
+		{Name: "compact", Description: "Compact history"},
+	}, state.Commands)
+
+	require.NoError(t, manager.SubmitAgentMessage(t.Context(), "workspace", info.Key, "elicit"))
+	require.Eventually(t, func() bool { state = snapshot(); return len(state.Elicitations) == 1 }, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, "Pick one", state.Elicitations[0].Message)
+	assert.Equal(t, "Choice", state.Elicitations[0].Schema.Title)
+	assert.Equal(t, []string{"choice"}, state.Elicitations[0].Schema.Required)
+	assert.Contains(t, state.Elicitations[0].Schema.Properties, "choice")
+	require.Eventually(t, func() bool { return reportState() == agentactivity.StateInput }, 5*time.Second, 10*time.Millisecond)
+	require.ErrorContains(t, agent.Command(ACPCommand{Type: "elicitation", ID: state.Elicitations[0].ID, Action: "maybe"}), "accept, decline, or cancel")
+	require.NoError(t, agent.Command(ACPCommand{Type: "elicitation", ID: state.Elicitations[0].ID, Action: "accept", Content: jsontext.Value(`{"choice":"b"}`)}))
+	require.Eventually(t, func() bool {
+		state = snapshot()
+		return !state.Busy && len(state.Elicitations) == 0 && len(state.Messages) > 0 && strings.HasSuffix(state.Messages[len(state.Messages)-1].Text, "chose b")
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return reportState() == agentactivity.StateDone }, 5*time.Second, 10*time.Millisecond)
+
+	require.NoError(t, manager.SubmitAgentMessage(t.Context(), "workspace", info.Key, "wait"))
+	require.Eventually(t, func() bool { return reportState() == agentactivity.StateWorking }, 5*time.Second, 10*time.Millisecond)
+	// A running turn never rejects input: the follow-up waits in the queue.
+	require.NoError(t, manager.SubmitAgentMessage(t.Context(), "workspace", info.Key, "while busy"))
+	state = snapshot()
+	require.Len(t, state.Queue, 1)
+	assert.Equal(t, "while busy", state.Queue[0].Text)
+	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+	require.Eventually(t, func() bool { return reportState() == agentactivity.StateDone }, 5*time.Second, 10*time.Millisecond)
+	state = snapshot()
+	assert.True(t, state.QueuePaused, "stopping a turn must not start queued work")
+	require.Len(t, state.Queue, 1)
+	require.NoError(t, agent.Command(ACPCommand{Type: "resume"}))
+	require.Eventually(t, func() bool {
+		state = snapshot()
+		return !state.Busy && len(state.Queue) == 0 && !state.QueuePaused &&
+			slices.ContainsFunc(state.Messages, func(m ACPMessage) bool { return m.Role == "user" && m.Text == "while busy" })
+	}, 5*time.Second, 10*time.Millisecond)
+
+	require.NoError(t, manager.Stop(context.Background(), "workspace", info.Key))
+	require.Eventually(t, func() bool {
+		return len(activity.LiveReportsForWorkspace(cwd, []string{info.Key})) == 0
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestACPSteersAndDrainsQueuedPrompts(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets})
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	snapshot := func() ACPState {
+		var state ACPState
+		data, err := agent.Snapshot()
+		if err == nil {
+			_ = json.Unmarshal(data, &state)
+		}
+		return state
+	}
+	userTexts := func(state ACPState) []string {
+		var texts []string
+		for _, message := range state.Messages {
+			if message.Role == "user" {
+				texts = append(texts, message.Text)
+			}
+		}
+		return texts
+	}
+	require.True(t, snapshot().SteeringSupported)
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "second", ID: "queued"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "second", ID: "queued"}), "a retried submission is idempotent")
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer-1"}))
+	state := snapshot()
+	assert.True(t, state.Busy, "an injected steer belongs to the running turn")
+	assert.Equal(t, []string{"wait", "adjust"}, userTexts(state))
+	assert.Equal(t, []ACPQueuedPrompt{{ID: "queued", Text: "second"}}, state.Queue)
+	require.ErrorContains(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "refuse", ID: "steer-2"}), "did not accept")
+
+	// The turn ends before "finish" is taken; it runs next, ahead of the queue.
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "finish", ID: "steer-3"}))
+	require.Eventually(t, func() bool {
+		state = snapshot()
+		return !state.Busy && len(state.Queue) == 0 && len(userTexts(state)) == 4
+	}, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []string{"wait", "adjust", "finish", "second"}, userTexts(state))
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn-2"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "dropped", ID: "queued-2"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
+	require.Error(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
+	assert.Empty(t, snapshot().Queue)
+	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+}
+
+func TestACPMarksSubagentToolCalls(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets})
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	require.NoError(t, agent.Prompt("delegate"))
+	tools := map[string]ACPMessage{}
+	require.Eventually(t, func() bool {
+		data, err := agent.Snapshot()
+		var state ACPState
+		if err != nil || json.Unmarshal(data, &state) != nil || state.Busy {
+			return false
+		}
+		for _, message := range state.Messages {
+			if message.Role == "tool" {
+				tools[message.ToolCallID] = message
+			}
+		}
+		return len(tools) == 3
+	}, 5*time.Second, 10*time.Millisecond)
+	assert.True(t, tools["agent-1"].Subagent)
+	assert.Equal(t, "completed", tools["agent-1"].Status, "a status update must not drop the subagent marker")
+	assert.False(t, tools["child-1"].Subagent)
+	assert.Equal(t, "agent-1", tools["child-1"].ParentToolCallID)
+	assert.True(t, tools["codex-1"].Subagent)
 }
 
 func TestACPConnectionProbe(t *testing.T) {

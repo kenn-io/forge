@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/kit/atomicfile"
 )
@@ -27,6 +28,7 @@ type acpOwnerConfig struct {
 	CWD         string
 	Strip       []string
 	Preferences string
+	Activity    string
 	MCP         ACPMCPBinding
 }
 
@@ -89,7 +91,7 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	if err := os.MkdirAll(paths.Dir, 0o700); err != nil {
 		return launchCommand{}, err
 	}
-	cfg := acpOwnerConfig{Root: m.acpSessionsDir, Info: SessionInfo{Key: key, WorkspaceID: workspaceID, TargetKey: target.Key, Kind: LaunchTargetACP}, Command: target.Command, CWD: cwd, Strip: m.currentStripEnvVars(), Preferences: m.acpPreferencesPath, MCP: ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}}
+	cfg := acpOwnerConfig{Root: m.acpSessionsDir, Info: SessionInfo{Key: key, WorkspaceID: workspaceID, TargetKey: target.Key, Kind: LaunchTargetACP}, Command: target.Command, CWD: cwd, Strip: m.currentStripEnvVars(), Preferences: m.acpPreferencesPath, Activity: m.agentActivityDir, MCP: ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}}
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return launchCommand{}, err
@@ -274,7 +276,12 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = agent.Stop(context.Background()) }()
+	reported := make(chan struct{})
+	go func() {
+		defer close(reported)
+		reportACPActivity(agentactivity.NewStore(cfg.Activity), agent, cfg.Info.Key, cfg.CWD)
+	}()
+	defer func() { _ = agent.Stop(context.Background()); <-reported }()
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", paths.Socket)
 	if err != nil {
 		return err

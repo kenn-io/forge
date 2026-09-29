@@ -111,7 +111,10 @@ type Options struct {
 	AgentMCPToken      string
 	ACPPreferencesPath string
 	ACPSessionsDir     string
-	ACPOwnerCommand    []string
+	// AgentActivityDir is where ACP owners report turn state for the
+	// workspace activity views, alongside hook-reported agents.
+	AgentActivityDir string
+	ACPOwnerCommand  []string
 
 	Targets      []LaunchTarget
 	ShellCommand []string
@@ -155,6 +158,7 @@ type Manager struct {
 	acpPreferencesMu   sync.Mutex
 	acpPreferencesPath string
 	acpSessionsDir     string
+	agentActivityDir   string
 	acpOwnerCommand    []string
 	acpPreferences     map[string]map[string]string
 
@@ -307,6 +311,7 @@ func NewManager(options Options) *Manager {
 		agentMCPToken:      options.AgentMCPToken,
 		acpPreferencesPath: options.ACPPreferencesPath,
 		acpSessionsDir:     options.ACPSessionsDir,
+		agentActivityDir:   options.AgentActivityDir,
 		acpOwnerCommand:    slices.Clone(options.ACPOwnerCommand),
 		acpPreferences:     make(map[string]map[string]string),
 
@@ -1510,8 +1515,10 @@ func (m *Manager) SubmitInitialMessage(
 }
 
 // SubmitAgentMessage writes one bounded, already-normalized prompt through a
-// live agent runtime. It requires observed bracketed-paste mode and sends the
-// complete paste frame and Enter in one serialized terminal operation.
+// live agent runtime. ACP runtimes receive it as a chat prompt, queued behind
+// any running turn, and reject it unwritten only while disconnected. Terminal
+// runtimes require observed bracketed-paste mode and receive the complete
+// paste frame and Enter in one serialized terminal operation.
 func (m *Manager) SubmitAgentMessage(
 	ctx context.Context,
 	workspaceID string,
@@ -1522,7 +1529,11 @@ func (m *Manager) SubmitAgentMessage(
 		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
 	}
 	if acp, err := m.ACP(workspaceID, sessionKey); err == nil {
-		return acp.Prompt(message)
+		err := acp.Prompt(message)
+		if errors.Is(err, ErrACPAgentUnavailable) {
+			return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
+		}
+		return err
 	}
 	attachment, err := m.AttachSession(workspaceID, sessionKey)
 	if err != nil {

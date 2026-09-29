@@ -129,6 +129,11 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/stores/workspace-quick-actions.ts::sortQuickActionsByLabel`).
 - Workspace quick actions use one lightning icon beside Play, without a visible label
   or chevron, to preserve tab-strip space (`frontend/src/lib/components/terminal/LaunchMenu.svelte`).
+- The session launcher groups ACP chat targets in their own section apart from terminal
+  targets (`frontend/src/lib/components/terminal/WorkspaceHome.svelte`).
+- The ACP composer never blocks while a turn runs; only a disconnected chat disables it.
+  Busy input steers when the agent supports it, otherwise queues
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and

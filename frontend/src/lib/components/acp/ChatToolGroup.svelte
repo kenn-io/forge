@@ -1,10 +1,17 @@
 <!-- Copied from the shared console chat; imports and touch sizing adapted for Forge. -->
 <script lang="ts">
-  import { Ban, Check, ChevronDown, Clock, Wrench, X } from "@lucide/svelte"
+  import { Ban, Bot, Check, ChevronDown, Clock, Wrench, X } from "@lucide/svelte"
   import { Spinner } from "@kenn-io/kit-ui"
   import type { ChatMessage } from "./chat-types.js"
 
-  let { messages }: { messages: ChatMessage[] } = $props()
+  let {
+    messages,
+    childCounts = {},
+  }: {
+    messages: ChatMessage[]
+    /** Tool calls made inside each sub-agent, keyed by its toolCallId. */
+    childCounts?: Readonly<Record<string, number>>
+  } = $props()
   const id = $props.id()
   let open = $state(false)
 
@@ -17,9 +24,13 @@
         message.status === "pending" || message.status === "in_progress",
     ),
   )
+  const subagents = $derived(
+    messages.filter((message) => message.subagent).length,
+  )
   const summary = $derived(
     [
       `${messages.length} ${messages.length === 1 ? "tool" : "tools"}`,
+      subagents ? `${subagents} ${subagents === 1 ? "sub-agent" : "sub-agents"}` : "",
       failed ? `${failed} failed` : "",
       running ? "running" : "",
     ]
@@ -37,7 +48,10 @@
     aria-controls={`${id}-list`}
     onclick={() => (open = !open)}
   >
-    {#if running}<Spinner size={12} label="Tools running" />{:else}<Wrench
+    {#if running}<Spinner size={12} label="Tools running" />{:else if subagents}<Bot
+        size={12}
+        aria-hidden="true"
+      />{:else}<Wrench
         size={12}
         aria-hidden="true"
       />{/if}
@@ -58,7 +72,17 @@
             {:else if message.status === "cancelled"}<Ban size={12} />
             {:else}<Check size={12} />{/if}
           </span>
-          <span class="tool-name">{message.text}</span>
+          <span class="tool-name">
+            {#if message.subagent}
+              {@const children = message.toolCallId ? (childCounts[message.toolCallId] ?? 0) : 0}
+              <span class="subagent"
+                ><Bot size={12} aria-hidden="true" />{children
+                  ? `Sub-agent · ${children} ${children === 1 ? "tool call" : "tool calls"}`
+                  : "Sub-agent"}</span
+              >
+            {/if}
+            {message.text}
+          </span>
           <span
             class="state"
             title={message.createdAt
@@ -160,6 +184,17 @@
     min-width: 0;
     overflow-wrap: anywhere;
     color: var(--text-primary);
+  }
+  .subagent {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-right: var(--space-3);
+    padding: 0 var(--space-2);
+    border: 1px solid color-mix(in srgb, var(--accent-purple) 35%, var(--border-default));
+    border-radius: var(--radius-sm);
+    color: var(--accent-purple);
+    white-space: nowrap;
   }
   .state {
     color: var(--text-secondary);

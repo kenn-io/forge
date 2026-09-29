@@ -3,7 +3,7 @@
  */
 
 /**
- * Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
+ * Hook- or ACP-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
  */
 export type WorkspaceResponseAgentState =
   (typeof WorkspaceResponseAgentState)[keyof typeof WorkspaceResponseAgentState];

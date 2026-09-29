@@ -3,7 +3,7 @@
  */
 
 /**
- * Hook-reported state of live agent sessions in the linked workspace.
+ * Hook- or ACP-reported state of live agent sessions in the linked workspace.
  */
 export type WorkspaceRefAgentState = (typeof WorkspaceRefAgentState)[keyof typeof WorkspaceRefAgentState];
 

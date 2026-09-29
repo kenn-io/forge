@@ -135,14 +135,15 @@
   must remain launchable and handoffs match the live runtime and target key
   (`internal/mcpserver/tools_agent_spawn.go::Server.waitForCodingSession`).
 - Agent-session inspection returns live agent runtimes separately from
-  hook-authoritative sessions. `hook_observed=false` distinguishes a launched
-  runtime awaiting its first hook from a workspace with no agent runtime
+  reported sessions. `hook_observed=false` distinguishes a launched
+  runtime awaiting its first report from a workspace with no agent runtime
   (`internal/mcpserver/tools_agent.go::Server.listWorkspaceAgentSessions`).
+- MCP agent tools cover terminal and ACP agents; ACP sessions come only from `agent=acp`
+  owner reports on ACP runtimes, never hooks (`internal/server/workspaceapi/agent_sessions.go::reportedAgent`).
 - Follow-up MCP messages address one existing live agent runtime by workspace ID
-  and runtime session key. MCP agent-management tools include terminal coding-agent
-  runtimes only; ACP chats use their workspace chat transport. Follow-ups reuse the initial prompt's serialized
-  bracketed-paste and Enter path, then return without launching, persisting, or
-  waiting for hook activity
+  and runtime session key, then return without launching, persisting, or
+  waiting for activity. Terminal follow-ups reuse the serialized bracketed-paste
+  and Enter path; ACP follow-ups queue behind a running turn
   (`internal/mcpserver/tools_agent.go::Server.sendAgentMessage`,
   `internal/workspace/localruntime/manager.go::Manager.SubmitAgentMessage`).
 - An omitted MCP agent target selects the most-used available workspace agent

@@ -1214,6 +1214,7 @@ func newServer(
 			acpPreferencesPath = filepath.Join(cfg.DataDir, "acp-preferences.json")
 		}
 		s.runtime = localruntime.NewManager(localruntime.Options{
+			AgentActivityDir:   agentActivityDir(options.WorktreeDir),
 			AgentMCPURL:        options.AgentMCPURL,
 			AgentMCPToken:      options.DaemonAccess.Token,
 			ACPPreferencesPath: acpPreferencesPath,
@@ -1257,12 +1258,10 @@ func newServer(
 		Runtime:             s.runtime,
 		TerminalClipboard:   terminalClipboard,
 		TerminalPasteImages: terminalPasteImages,
-		AgentActivity: agentactivity.NewStore(filepath.Join(
-			filepath.Dir(options.WorktreeDir), "agent-activity",
-		)),
-		TmuxCommand:        tmuxCmd,
-		Now:                workspaceNow,
-		EnrichmentDisabled: options.DisableWorkspaceEnrichment,
+		AgentActivity:       agentactivity.NewStore(agentActivityDir(options.WorktreeDir)),
+		TmuxCommand:         tmuxCmd,
+		Now:                 workspaceNow,
+		EnrichmentDisabled:  options.DisableWorkspaceEnrichment,
 		Broadcast: func(event workspaceapi.Event) uint64 {
 			return s.hub.Broadcast(Event{Type: event.Type, Data: event.Data})
 		},
@@ -2293,4 +2292,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// agentActivityDir holds hook and ACP activity reports. ACP owners write there
+// directly, so it must be the same directory the workspace API reads.
+func agentActivityDir(worktreeDir string) string {
+	return filepath.Join(filepath.Dir(worktreeDir), "agent-activity")
 }

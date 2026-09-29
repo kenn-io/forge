@@ -179,8 +179,10 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
       await mobileChat.getByRole("button", { name: "Send", exact: true }).tap();
       await expect(mobileChat.getByRole("button", { name: "Allow once" })).toBeVisible();
       expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      const send = await mobileChat.getByRole("button", { name: "Send", exact: true }).boundingBox();
-      expect(send?.height).toBe(40);
+      // A running turn never locks the composer; its primary action queues instead.
+      await expect(mobileChat.getByRole("textbox", { name: "Message agent" })).toBeEnabled();
+      const queue = await mobileChat.getByRole("button", { name: "Queue message", exact: true }).boundingBox();
+      expect(queue?.height).toBe(40);
       await expect(mobileChat.getByRole("textbox", { name: "Message agent" })).toHaveCSS("font-size", "16px");
       await expect(mobileChat.locator(".message-body").last()).toHaveCSS("font-size", "14px");
       await mobile.screenshot({ path: testInfo.outputPath("acp-phone.png") });

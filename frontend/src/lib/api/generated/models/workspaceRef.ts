@@ -4,7 +4,7 @@
 import type { WorkspaceRefAgentState } from "./workspaceRefAgentState.ts";
 
 export interface WorkspaceRef {
-  /** Hook-reported state of live agent sessions in the linked workspace. */
+  /** Hook- or ACP-reported state of live agent sessions in the linked workspace. */
   agent_state?: WorkspaceRefAgentState;
   id: string;
   status: string;

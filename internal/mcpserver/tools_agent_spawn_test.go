@@ -197,6 +197,63 @@ func TestSpawnWorkspaceWithAgentResumesExistingRuntimeAfterHookTimeout(t *testin
 	assert.Equal(1, deliveries)
 }
 
+// ACP owners report their session through the activity store rather than a
+// hook, so a spawned ACP chat completes on the same session evidence.
+func TestSpawnWorkspaceWithAgentLaunchesAndResumesACPTarget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	backend := successfulSpawnBackend("ws-acp", "runtime-acp", "acp-session")
+	acpRuntime := RuntimeSession{
+		Key: "runtime-acp", TargetKey: "chat", Kind: "acp", Status: "running",
+		CreatedAt: time.Date(2026, 8, 7, 15, 0, 0, 0, time.UTC),
+	}
+	backend.listLaunchTargetsFn = func(context.Context) ([]LaunchTarget, error) {
+		return []LaunchTarget{{Key: "chat", Label: "Chat", Kind: "acp", Source: "config", Available: true}}, nil
+	}
+	launches := 0
+	backend.launchWorkspaceRuntimeFn = func(_ context.Context, _ string, target string) (RuntimeSession, error) {
+		launches++
+		assert.Equal("chat", target)
+		return acpRuntime, nil
+	}
+	backend.getWorkspaceRuntimeFn = func(context.Context, string) (WorkspaceRuntime, error) {
+		return WorkspaceRuntime{Sessions: []RuntimeSession{acpRuntime}}, nil
+	}
+	backend.listWorkspaceAgentSessionsFn = func(context.Context, string) ([]WorkspaceAgentSession, error) {
+		return []WorkspaceAgentSession{{
+			Agent: "acp", SessionID: "acp-session", RuntimeSessionKey: "runtime-acp",
+			TargetKey: "chat", State: "working", UpdatedAt: time.Now().UTC(),
+		}}, nil
+	}
+	s := newMCPTestServer(t, backend)
+	input := prSpawnInput("review this")
+	input.AgentTarget = ""
+
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), input)
+
+	require.NoError(err)
+	assert.Equal("coding_session_observed", out.Stage)
+	assert.Equal("chat", out.Runtime.TargetKey)
+	require.NotNil(out.CodingSession)
+	assert.Equal("acp", out.CodingSession.Agent)
+	assert.Equal("acp-session", out.CodingSession.SessionID)
+
+	resumed, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
+		Resume:      &agentHandoffResume{WorkspaceID: "ws-acp", RuntimeSessionKey: "runtime-acp"},
+		AgentTarget: "chat", InitialMessage: "review this", Timeout: "2s",
+	})
+
+	require.NoError(err)
+	assert.Equal("coding_session_observed", resumed.Stage)
+	assert.Equal(1, launches)
+
+	sessions, err := s.listWorkspaceAgentSessions(t.Context(), listWorkspaceAgentSessionsInput{WorkspaceID: "ws-acp"})
+	require.NoError(err)
+	require.Len(sessions.Runtimes, 1)
+	assert.Equal("acp", sessions.Runtimes[0].Protocol)
+	assert.True(sessions.Runtimes[0].HookObserved)
+}
+
 func TestSpawnWorkspaceWithAgentResumesPromptSubmissionOnExistingRuntime(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

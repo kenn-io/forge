@@ -28,22 +28,47 @@ func TestListAgentTargetsIncludesCustomAgentsWithoutCommands(t *testing.T) {
 	out, err := s.listAgentTargets(t.Context(), listAgentTargetsInput{})
 
 	require.NoError(err)
-	require.Len(out.Targets, 4)
-	assert.Equal("codex", out.Targets[0].Key)
-	assert.False(out.Targets[0].Available)
-	assert.Equal("custom", out.Targets[1].Key)
-	assert.Equal("gemini", out.Targets[2].Key)
-	assert.Equal("opencode", out.Targets[3].Key)
+	keys := make([]string, 0, len(out.Targets))
+	protocols := make([]string, 0, len(out.Targets))
+	for _, target := range out.Targets {
+		keys = append(keys, target.Key)
+		protocols = append(protocols, target.Protocol)
+	}
+	assert.Equal([]string{"chat", "codex", "custom", "gemini", "opencode"}, keys)
+	assert.Equal([]string{"acp", "terminal", "terminal", "terminal", "terminal"}, protocols)
+	assert.False(out.Targets[1].Available)
 	raw, err := json.Marshal(out)
 	require.NoError(err)
 	assert.NotContains(string(raw), "command")
 }
 
-func TestSendAgentMessageRejectsACP(t *testing.T) {
+func TestSendAgentMessageSubmitsToACPRuntime(t *testing.T) {
+	var got AgentMessageRequest
+	backend := &fakeBackend{
+		getWorkspaceRuntimeFn: func(context.Context, string) (WorkspaceRuntime, error) {
+			return WorkspaceRuntime{Sessions: []RuntimeSession{{Key: "chat", TargetKey: "chat", Kind: "acp", Status: "running"}}}, nil
+		},
+		submitAgentMessageFn: func(_ context.Context, request AgentMessageRequest) (AgentMessageResult, error) {
+			got = request
+			return AgentMessageResult{TargetKey: "chat", MessageBytes: 5}, nil
+		},
+	}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.sendAgentMessage(t.Context(), sendAgentMessageInput{
+		WorkspaceID: "workspace", RuntimeSessionKey: "chat", Message: "hello",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, AgentMessageRequest{WorkspaceID: "workspace", RuntimeSessionKey: "chat", Message: "hello"}, got)
+	assert.Equal(t, "chat", out.TargetKey)
+}
+
+func TestSendAgentMessageRejectsNonAgentRuntime(t *testing.T) {
 	submitted := false
 	backend := &fakeBackend{
 		getWorkspaceRuntimeFn: func(context.Context, string) (WorkspaceRuntime, error) {
-			return WorkspaceRuntime{Sessions: []RuntimeSession{{Key: "chat", Kind: "acp", Status: "running"}}}, nil
+			return WorkspaceRuntime{Sessions: []RuntimeSession{{Key: "shell", Kind: "plain_shell", Status: "running"}}}, nil
 		},
 		submitAgentMessageFn: func(context.Context, AgentMessageRequest) (AgentMessageResult, error) {
 			submitted = true
@@ -53,10 +78,10 @@ func TestSendAgentMessageRejectsACP(t *testing.T) {
 	s := newMCPTestServer(t, backend)
 
 	_, err := s.sendAgentMessage(t.Context(), sendAgentMessageInput{
-		WorkspaceID: "workspace", RuntimeSessionKey: "chat", Message: "hello",
+		WorkspaceID: "workspace", RuntimeSessionKey: "shell", Message: "hello",
 	})
 
-	require.ErrorContains(t, err, "not a live terminal coding agent")
+	require.ErrorContains(t, err, "not a live coding agent")
 	assert.False(t, submitted)
 }
 

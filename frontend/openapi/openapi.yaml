@@ -10769,7 +10769,7 @@ components:
       additionalProperties: false
       properties:
         agent_state:
-          description: Hook-reported state of live agent sessions in the linked workspace.
+          description: Hook- or ACP-reported state of live agent sessions in the linked workspace.
           enum:
             - idle
             - working
@@ -10818,7 +10818,7 @@ components:
           readOnly: true
           type: string
         agent_state:
-          description: Hook-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
+          description: Hook- or ACP-reported aggregate state for live agent sessions. Omitted when no live session has reported lifecycle state.
           enum:
             - idle
             - working
@@ -10827,7 +10827,7 @@ components:
             - done
           type: string
         agent_state_updated_at:
-          description: UTC timestamp of the hook report that produced agent_state.
+          description: UTC timestamp of the activity report that produced agent_state.
           format: date-time
           type: string
         associated_pr_number:

@@ -197,3 +197,21 @@ func TestACPActivityReplacesReportsLeftByAnEarlierOwner(t *testing.T) {
 	<-reported
 	assert.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
 }
+
+// The chat UI requires every state list to be an array, so a fresh chat and a
+// chat whose questions were just cleared must never send null.
+func TestACPSnapshotsListStateAsArrays(t *testing.T) {
+	agent := newDetachedACP(t)
+	agent.mu.Lock()
+	agent.state.Messages, agent.state.Permissions, agent.state.Elicitations = nil, nil, nil
+	agent.state.Queue, agent.state.Commands, agent.state.Plan = nil, nil, nil
+	agent.clearPendingLocked()
+	agent.mu.Unlock()
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(data, &raw))
+	for _, field := range []string{"messages", "permissions", "elicitations", "queue", "commands", "plan"} {
+		assert.Equal(t, []any{}, raw[field], field)
+	}
+}

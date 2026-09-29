@@ -37,13 +37,15 @@
     aria-expanded={open}
     onclick={() => { open = !open; }}
   >
-    <StatusDot status={status.connected ? "working" : "stale"} label={status.connected ? "Relay connected" : "Relay disconnected"} size={5} />
-    Relay
+    <StatusDot status={status.incompatible ? "unclean" : status.connected ? "working" : "stale"} label={status.incompatible ? "Relay incompatible" : status.connected ? "Relay connected" : "Relay disconnected"} size={5} />
+    {status.incompatible ? "Relay incompatible" : "Relay"}
   </button>
   {#if open}
     <div class="relay-popover kit-popover-card" role="dialog" aria-label="Recent relay activity">
       <h2>Recent relay activity</h2>
-      {#if status.connected}
+      {#if status.incompatible}
+        <p class="relay-error" role="alert">Forge cannot read the relay's message format. Ask the relay administrator to check that Forge and the relay run compatible versions. Normal syncing continues.</p>
+      {:else if status.connected}
         <p>Connected. Changes arrive as GitHub reports them.</p>
       {:else}
         <p class="relay-error">Not connected to the relay. Reconnecting; normal syncing continues.</p>

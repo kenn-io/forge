@@ -65,9 +65,14 @@ type Stream struct {
 
 const (
 	hintEvent         = "hint"
+	protocolHeader    = "X-Kenn-Forge-Relay-Protocol"
+	protocolVersion   = "1"
 	maxEventLineBytes = 4096
 	streamIdleTimeout = 3 * keepaliveInterval
 )
+
+// ErrIncompatible identifies a feed whose format this consumer cannot read.
+var ErrIncompatible = errors.New("relay message format is incompatible")
 
 // Open connects to the feed and returns once the relay has accepted the
 // subscription. Callers own the returned stream and must close it.
@@ -90,10 +95,16 @@ func Open(ctx context.Context, client *http.Client, baseURL string) (*Stream, er
 		_ = response.Body.Close()
 		return nil, fmt.Errorf("relay returned HTTP %d", response.StatusCode)
 	}
+	// Existing relays omit the header. They still have to pass hint decoding;
+	// adding this header must not break a compatible, already deployed feed.
+	if version := response.Header.Get(protocolHeader); version != "" && version != protocolVersion {
+		_ = response.Body.Close()
+		return nil, ErrIncompatible
+	}
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || mediaType != "text/event-stream" {
 		_ = response.Body.Close()
-		return nil, errors.New("relay did not return an event stream")
+		return nil, ErrIncompatible
 	}
 	return &Stream{body: response.Body, idleTimeout: streamIdleTimeout}, nil
 }
@@ -118,7 +129,7 @@ func (s *Stream) Read(handle func(Hint)) error {
 			if event == hintEvent {
 				var hint Hint
 				if json.Unmarshal([]byte(strings.Join(data, "\n")), &hint) != nil || hint.Validate() != nil {
-					return errors.New("relay sent an invalid hint")
+					return ErrIncompatible
 				}
 				handle(hint)
 			}

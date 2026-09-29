@@ -1,10 +1,12 @@
 package activityrelay
 
 import (
+	"bufio"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net/http"
@@ -19,6 +21,56 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Freeze the receiving side independently of Hint so changing both relay and
+// consumer together cannot silently redefine the deployed wire contract.
+func TestFeedWireContract(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	feed := new(Broadcaster)
+	ingress, private := Handlers(feed, map[string]Source{"team": {Secret: []byte("synthetic-secret"), RepositoryIDs: []int64{12345}}})
+	server := httptest.NewServer(private)
+	t.Cleanup(server.Close)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/activity", nil)
+	require.NoError(err)
+	response, err := server.Client().Do(request)
+	require.NoError(err)
+	t.Cleanup(func() { response.Body.Close() })
+	require.Equal("1", response.Header.Get("X-Kenn-Forge-Relay-Protocol"))
+	reader := bufio.NewReader(response.Body)
+	for range 2 {
+		_, err = reader.ReadString('\n')
+		require.NoError(err)
+	}
+	require.Equal(http.StatusNoContent, deliver(t, ingress, []byte("synthetic-secret"), "issues", `{"repository":{"id":12345},"issue":{"number":7}}`).Code)
+	event, err := reader.ReadString('\n')
+	require.NoError(err)
+	require.Equal("event: hint\n", event)
+	data, err := reader.ReadString('\n')
+	require.NoError(err)
+	var legacyConsumer struct {
+		Provider     string `json:"provider"`
+		Host         string `json:"host"`
+		RepositoryID int64  `json:"repository_id"`
+		Target       string `json:"target"`
+		Number       int    `json:"number"`
+	}
+	require.NoError(json.Unmarshal([]byte(strings.TrimPrefix(data, "data: ")), &legacyConsumer))
+	require.Equal("github", legacyConsumer.Provider)
+	require.Equal("github.com", legacyConsumer.Host)
+	require.Equal(int64(12345), legacyConsumer.RepositoryID)
+	require.Equal("issue", legacyConsumer.Target)
+	require.Equal(7, legacyConsumer.Number)
+}
+
+func TestReadUnversionedWireContract(t *testing.T) {
+	t.Parallel()
+	stream := &Stream{idleTimeout: time.Second, body: io.NopCloser(strings.NewReader("event: hint\ndata: {\"provider\":\"github\",\"host\":\"github.com\",\"repository_id\":12345,\"target\":\"issue\",\"number\":7,\"future_optional_field\":true}\n\n"))}
+	var received []Hint
+	err := stream.Read(func(hint Hint) { received = append(received, hint) })
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	require.Equal(t, []Hint{{Provider: "github", Host: "github.com", RepositoryID: 12345, Target: "issue", Number: 7}}, received)
+}
 
 // subscribe opens a stream and returns hints as they arrive. The stream is
 // closed when the test ends.
@@ -110,7 +162,7 @@ func TestOpenRejectsNonStreamResponses(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	_, err := Open(t.Context(), server.Client(), server.URL)
-	require.Error(err, "a page response must not be mistaken for a subscription")
+	require.ErrorIs(err, ErrIncompatible, "a page response must not be mistaken for a subscription")
 	_, err = Open(t.Context(), server.Client(), server.URL+"/missing")
 	require.Error(err)
 }

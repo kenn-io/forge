@@ -20,8 +20,9 @@ import (
 
 // RelayStatus is a process-local view of the subscription, carried with sync status.
 type RelayStatus struct {
-	Connected bool            `json:"connected"`
-	Recent    []RelayActivity `json:"recent"`
+	Connected    bool            `json:"connected"`
+	Incompatible bool            `json:"incompatible,omitempty"`
+	Recent       []RelayActivity `json:"recent"`
 }
 
 type RelayActivity struct {
@@ -97,17 +98,29 @@ func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
 			opened := time.Now()
 			s.updateRelayStatus(func(status *RelayStatus) { status.Connected = true })
 			err = stream.Read(func(hint activityrelay.Hint) {
+				if s.Status().Relay.Incompatible {
+					s.updateRelayStatus(func(status *RelayStatus) { status.Incompatible = false })
+				}
 				sequence++
 				s.receiveRelayHint(hint, sequence, queue)
 			})
 			_ = stream.Close()
-			s.updateRelayStatus(func(status *RelayStatus) { status.Connected = false })
 			// An accepted stream that dies at once is still a failure; only a
 			// stream that stayed up resets the backoff, so a relay or proxy
 			// that accepts and immediately drops cannot cause a reconnect storm.
 			if time.Since(opened) >= relayStableAfter {
 				policy.Reset()
 			}
+		}
+		incompatible := errors.Is(err, activityrelay.ErrIncompatible)
+		if incompatible && !s.Status().Relay.Incompatible {
+			slog.Warn("relay message format is incompatible; update Forge and the relay to compatible versions")
+		}
+		if status := s.Status().Relay; status.Connected || (incompatible && !status.Incompatible) {
+			s.updateRelayStatus(func(status *RelayStatus) {
+				status.Connected = false
+				status.Incompatible = status.Incompatible || incompatible
+			})
 		}
 		if ctx.Err() != nil {
 			return

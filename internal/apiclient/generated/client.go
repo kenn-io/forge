@@ -57731,8 +57731,9 @@ type RelayActivity struct {
 }
 
 type RelayStatus struct {
-	Connected bool            `json:"connected"`
-	Recent    []RelayActivity `json:"recent"`
+	Connected    bool            `json:"connected"`
+	Incompatible *bool           `json:"incompatible,omitempty"`
+	Recent       []RelayActivity `json:"recent"`
 }
 
 type RemoveStaleWorktreeInputBody struct {

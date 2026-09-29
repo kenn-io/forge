@@ -72,6 +72,7 @@ func Handlers(broadcaster *Broadcaster, sources map[string]Source) (http.Handler
 		}},
 	}, func(context.Context, *struct{}) (*huma.StreamResponse, error) {
 		return &huma.StreamResponse{Body: func(ctx huma.Context) {
+			ctx.SetHeader(protocolHeader, protocolVersion)
 			ctx.SetHeader("Content-Type", "text/event-stream")
 			ctx.SetHeader("Cache-Control", "no-cache")
 			_, w := humago.Unwrap(ctx)

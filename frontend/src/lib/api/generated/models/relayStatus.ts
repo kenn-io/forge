@@ -5,5 +5,6 @@ import type { RelayActivity } from "./relayActivity.ts";
 
 export interface RelayStatus {
   connected: boolean;
+  incompatible?: boolean;
   recent: RelayActivity[];
 }

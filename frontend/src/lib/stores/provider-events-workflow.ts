@@ -145,6 +145,7 @@ export class SyncStatusEvent extends Schema.Class<SyncStatusEvent>("SyncStatusEv
   relay: Schema.optionalKey(
     Schema.Struct({
       connected: Schema.Boolean,
+      incompatible: Schema.optionalKey(Schema.Boolean),
       recent: Schema.mutable(
         Schema.Array(
           Schema.Struct({

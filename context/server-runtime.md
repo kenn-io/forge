@@ -18,6 +18,9 @@
 
 ## Activity relay boundary
 
+- Protocol metadata must be additive; a version check never authorizes breaking existing clients.
+  Keep fixed producer and consumer wire fixtures independent of shared Go types.
+  (`internal/activityrelay/protocol.go::Open`)
 - Build the relay as a separate binary in this module so CI can test it with Forge; it must not
   import the SPA or depend on a running Forge daemon. (`cmd/kenn-forge-relay/main.go`)
 - Public ingress authenticates GitHub signatures; private feed authorization belongs to the

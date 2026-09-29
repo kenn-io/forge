@@ -799,6 +799,8 @@ error or cancellation unchanged and never adopts.
 
 ## Activity relay
 
+- Format failures remain visible across reconnects until a valid hint proves decoding recovered;
+  accepting an HTTP stream is not evidence of compatibility. (`internal/github/relay.go::RunRelay`)
 - Relay hints accelerate normal polling; each consumer still uses its own credentials and rate gates.
   (`internal/github/relay.go::refreshRelayHint`)
 - One `RunRelay` loop owns the subscription and reconnects with jittered exponential backoff from

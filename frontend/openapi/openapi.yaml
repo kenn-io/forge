@@ -7427,6 +7427,8 @@ components:
       properties:
         connected:
           type: boolean
+        incompatible:
+          type: boolean
         recent:
           items:
             $ref: "#/components/schemas/RelayActivity"

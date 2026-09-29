@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -110,6 +111,59 @@ func TestRelaySubscriptionStatusAndRecentActivity(t *testing.T) {
 	unavailable.Store(false)
 	awaitRelayStatus(t, statuses, func(status RelayStatus) bool { return status.Connected })
 	assert.Len(syncer.Status().Relay.Recent, 20, "reconnecting must not replay activity")
+}
+
+func TestRelayProtocolWarningSurvivesReconnectUntilValidHint(t *testing.T) {
+	t.Parallel()
+	for _, failure := range []string{"payload", "version"} {
+		t.Run(failure, func(t *testing.T) {
+			require := require.New(t)
+			database := openTestDB(t)
+			syncer := NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+			statuses := relayStatuses(t, syncer)
+			var connections atomic.Int32
+			recoverFeed := make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				if connections.Add(1) == 1 {
+					if failure == "version" {
+						w.Header().Set("X-Kenn-Forge-Relay-Protocol", "999")
+						fmt.Fprint(w, ": connected\n\n")
+						http.NewResponseController(w).Flush()
+						<-r.Context().Done()
+						return
+					}
+					fmt.Fprint(w, "event: hint\ndata: {\"provider\":\"github\",\"host\":\"github.com\",\"repository_id\":\"R_legacy\",\"target\":\"issue\",\"number\":7}\n\n")
+					return
+				}
+				fmt.Fprint(w, ": connected\n\n")
+				http.NewResponseController(w).Flush()
+				select {
+				case <-r.Context().Done():
+					return
+				case <-recoverFeed:
+				}
+				// A valid hint proves decoding works even for an untracked repository.
+				fmt.Fprint(w, "event: hint\ndata: {\"provider\":\"github\",\"host\":\"github.com\",\"repository_id\":1001,\"target\":\"issue\",\"number\":7}\n\n")
+				http.NewResponseController(w).Flush()
+				<-r.Context().Done()
+			}))
+			t.Cleanup(server.Close)
+			ctx, cancel := context.WithCancel(t.Context())
+			stopped := make(chan struct{})
+			go func() {
+				defer close(stopped)
+				syncer.RunRelay(ctx, RelayOptions{URL: server.URL, Client: server.Client(), Backoff: backoff.NewConstantBackOff(time.Millisecond)})
+			}()
+			t.Cleanup(func() { cancel(); <-stopped })
+			failed := awaitRelayStatus(t, statuses, func(status RelayStatus) bool { return status.Incompatible })
+			require.False(failed.Connected)
+			reconnected := awaitRelayStatus(t, statuses, func(status RelayStatus) bool { return status.Connected })
+			require.True(reconnected.Incompatible, "opening a new stream must not erase the decoding failure")
+			close(recoverFeed)
+			awaitRelayStatus(t, statuses, func(status RelayStatus) bool { return status.Connected && !status.Incompatible })
+		})
+	}
 }
 
 func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {

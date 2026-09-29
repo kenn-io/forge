@@ -39,6 +39,7 @@ only routes to them.
 | Database schema migrations or the SQLite connection layer | `context/db-migrations.md` |
 | Deferred merge behavior | `context/deferred-merge.md` |
 | Daemon startup, discovery, host/origin validation, or SSE replay | `context/server-runtime.md` |
+| Activity relay protocol, consumer, or status | `context/server-runtime.md`, `context/github-sync-invariants.md` |
 | Fleet settings, snapshots, host routing, or peer transports | `context/fleet-architecture.md` |
 | API failures or frontend error branching | `context/error-handling.md` |
 | Retries, rate limits, scheduling, or single-flight work | `context/retries-and-backoffs.md` |
@@ -63,6 +64,7 @@ only routes to them.
 ## Conventions
 
 - Prefer stdlib over external dependencies
+- Never make backward-incompatible changes to the activity relay wire format. Relays and Forge clients upgrade independently; preserve existing field types, meanings, and events, and verify changes against fixed wire fixtures from deployed versions.
 - The `kenn-forge` binary has one Cobra root command. Register every public command on that tree; do not add a second parser, manual dispatcher, or command-facing `flag.FlagSet`. (`cmd/kenn-forge/cli.go::newRootCommand`)
 - CLI flags must affect execution or fail validation; reject shared persistent flags outside the commands that consume them instead of silently ignoring user input. (`internal/cli/ctl/ctl.go::installControlFlagValidation`)
 - Do the task requested, not the task imagined. Do not widen scope without explicitly confirming with the user first

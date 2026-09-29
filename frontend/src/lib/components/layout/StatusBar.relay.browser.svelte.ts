@@ -101,3 +101,38 @@ it("keeps the control visible while disconnected with no recent activity", async
   await page.getByRole("button", { name: "Show provider quota details" }).click();
   await expect.element(dialog).not.toBeInTheDocument();
 });
+
+it("shows an incompatible relay warning through reconnects until decoding recovers", async () => {
+  mounted = await mountBrowserApp("/pulls", {
+    overrides: [
+      (req) =>
+        req.url.pathname === "/api/v1/sync/status"
+          ? jsonResponse({ running: false, relay: { connected: false, incompatible: true, recent: [] } })
+          : null,
+    ],
+  });
+  const trigger = page.getByRole("button", { name: "Show relay activity" });
+  await expect.element(trigger).toHaveTextContent("Relay incompatible");
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Recent relay activity" });
+  await expect.element(dialog.getByRole("alert")).toHaveTextContent("Forge cannot read the relay's message format");
+  emitBrowserEventSource("sync_status", {
+    running: false,
+    relay: {
+      connected: true,
+      incompatible: true,
+      recent: [
+        { id: 1, repository: "team/project", target: "issue", number: 9, received_at: new Date().toISOString() },
+      ],
+    },
+  });
+  await expect.element(dialog.getByText("Issue #9")).toBeVisible();
+  await expect.element(trigger).toHaveTextContent("Relay incompatible");
+  await expect.element(dialog.getByText("Connected. Changes arrive as GitHub reports them.")).not.toBeInTheDocument();
+  emitBrowserEventSource("sync_status", {
+    running: false,
+    relay: { connected: true, recent: [] },
+  });
+  await expect.element(dialog.getByRole("alert")).not.toBeInTheDocument();
+  await expect.element(dialog.getByText("Connected. Changes arrive as GitHub reports them.")).toBeVisible();
+});

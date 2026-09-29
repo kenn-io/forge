@@ -101,6 +101,22 @@
   --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));
 }
 
+/* Muted quiet light palette: cool gray chrome and a soft gray reading
+   surface instead of pure white, with the same small elevation steps as
+   dark. Muted text, green, and amber darken just enough to stay AA on
+   every step. Keep kit's high-contrast palette authoritative when enabled. */
+:root[data-kit-theme="quiet"]:not(.dark):not(.high-contrast) {
+  --bg-primary: #e9ebee; /* kit-ui-check-ignore: quiet light chrome canvas */
+  --bg-surface: #f1f2f4; /* kit-ui-check-ignore: soft reading surface without glare */
+  --bg-inset: #eaecef; /* kit-ui-check-ignore: one step below the surface */
+  --bg-surface-hover: #e4e7eb; /* kit-ui-check-ignore: two steps below the surface */
+  --border-default: #d3d7dd; /* kit-ui-check-ignore: control edges on the gray surface */
+  --border-muted: #e0e3e7; /* kit-ui-check-ignore: dividers on the gray surface */
+  --text-muted: #5f6772; /* kit-ui-check-ignore: AA on the hover step */
+  --accent-green: #036b4e; /* kit-ui-check-ignore: AA status text on the hover step */
+  --accent-amber: #a84d08; /* kit-ui-check-ignore: AA warning text on the hover step */
+}
+
 /* Darker quiet reading surfaces with small, even elevation steps: inset
    and hover sit just above the surface so tabs, group headers, and chips
    read as structure, not gray blocks. Kit's muted text stays AA on every
@@ -112,8 +128,7 @@
   --bg-surface-hover: #24272c; /* kit-ui-check-ignore: two steps above the surface */
   --border-default: #33363c; /* kit-ui-check-ignore: control edges on the darker surface */
   --border-muted: #26292e; /* kit-ui-check-ignore: dividers on the darker surface */
-  --sidebar-row-hover-bg: color-mix(in srgb, var(--bg-surface-hover) 55%, var(--bg-surface));
-  --bg-row-selected: var(--bg-surface-hover);
+  --sidebar-row-hover-bg: var(--bg-surface-hover);
 }
 
 /* Base. The root stays at the browser default (no html font-size) so the

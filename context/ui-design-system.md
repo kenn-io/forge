@@ -22,8 +22,11 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Keep the quiet dark canvas and content surfaces dark enough for comfortable
   reading. Inset, hover, and border tokens step up in small, even increments so
   tab strips, group headers, chips, and hovered rows read as structure, never as
-  bright gray fills. Muted text must stay AA on every step. Preserve kit's
-  explicit high-contrast palette (`frontend/src/app.css`).
+  bright gray fills. The quiet light palette mirrors this with cool gray
+  chrome and a soft gray reading surface, never pure white. Muted text and
+  accent text must stay AA on every step, and selected rows stay between the
+  surface and hover (`tests/e2e-full/sidebar-scroll-indicator.spec.ts`).
+  Preserve kit's explicit high-contrast palette (`frontend/src/app.css`).
 - Detail background refresh uses the metadata-row `Syncing` indicator; a manual
   Activity refresh reports progress only in its initiating icon button. Do not
   add stale-data banners or other progress surfaces. Keep the manual control

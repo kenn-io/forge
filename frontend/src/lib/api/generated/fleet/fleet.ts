@@ -85,6 +85,7 @@ import type {
   GetFleetWorkspaceRuntimePathParameters,
   GetFleetWorkspaceRuntimeSessionAttachSpecDefaultOne,
   GetFleetWorkspaceRuntimeSessionAttachSpecPathParameters,
+  GetFleetWorkspaceViewStatePathParameters,
   GetSnapshotAggregateParams,
   GetSnapshotParams,
   InspectFleetProjectWorktreeDefaultOne,
@@ -164,6 +165,8 @@ import type {
   StoreFleetTerminalPasteImagePathParameters,
   StreamFederationProviderEventsHeaders,
   StreamFederationProviderEventsParams,
+  UpdateFleetWorkspaceViewStateBody,
+  UpdateFleetWorkspaceViewStatePathParameters,
   ValidateFleetFilesystemRepoDefaultOne,
   ValidateFleetFilesystemRepoParams,
   ValidateFleetFilesystemRepoPathParameters,
@@ -172,6 +175,7 @@ import type {
   WatchFleetWorkspaceDiffPathParameters,
   WorkspaceLaunchRequest,
   WorkspaceLaunchSpec,
+  WorkspaceViewState,
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
@@ -1949,6 +1953,49 @@ export const getFleetWorkspaceRuntimeSessionAttachSpec = async (
       method: "GET",
     },
   );
+};
+
+export const getGetFleetWorkspaceViewStateUrl = ({ hostKey, id }: GetFleetWorkspaceViewStatePathParameters) => {
+  return `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/view-state`;
+};
+
+/**
+ * @summary Get workspace view state on fleet host
+ */
+export const getFleetWorkspaceViewState = async (
+  { hostKey, id }: GetFleetWorkspaceViewStatePathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceViewState> => {
+  return orvalFetch<WorkspaceViewState>(getGetFleetWorkspaceViewStateUrl({ hostKey, id }), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getUpdateFleetWorkspaceViewStateUrl = ({ hostKey, id }: UpdateFleetWorkspaceViewStatePathParameters) => {
+  return `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/view-state`;
+};
+
+/**
+ * @summary Update workspace view state on fleet host
+ */
+export const updateFleetWorkspaceViewState = async (
+  { hostKey, id }: UpdateFleetWorkspaceViewStatePathParameters,
+  updateFleetWorkspaceViewStateBody: UpdateFleetWorkspaceViewStateBody,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceViewState> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<WorkspaceViewState>(getUpdateFleetWorkspaceViewStateUrl({ hostKey, id }), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateFleetWorkspaceViewStateBody),
+  });
 };
 
 export const getCreateFleetBrowserLoginUrl = ({ nodeId }: CreateFleetBrowserLoginPathParameters) => {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json/v2"
 	"fmt"
 	"io"
@@ -176,6 +177,54 @@ func TestDevboxCreationRejectsCachedRepositoryRouteReplacement(t *testing.T) {
 			assert.Zero(creations.Load(), "route replacement must not forward workspace creation to the worker")
 		})
 	}
+}
+
+func TestDevboxWorkspaceViewStatePersistsOnWorker(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "work-a", Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 1, WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	workerMux := http.NewServeMux()
+	workspaceAPI := workspaceapi.New(workspaceapi.Deps{DB: database})
+	t.Cleanup(func() { require.NoError(workspaceAPI.Shutdown(context.Background())) })
+	workspaceAPI.RegisterExecution(humago.NewWithPrefix(workerMux, "/api/v1", huma.DefaultConfig("worker", "1")))
+	worker := httptest.NewServer(workerMux)
+	t.Cleanup(worker.Close)
+	directory := t.TempDir()
+	raw, err := json.Marshal([]any{map[string]any{
+		"id": "compute-a", "profile": devbox.Profile{
+			Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token",
+		},
+	}})
+	require.NoError(err)
+	require.NoError(os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
+	connections, err := devbox.OpenConnections(directory)
+	require.NoError(err)
+	t.Cleanup(connections.Close)
+	controller := &Server{options: ServerOptions{Devboxes: connections}}
+	mux := http.NewServeMux()
+	api := humago.New(mux, huma.DefaultConfig("controller", "1"))
+	workspaceAPI.RegisterExecution(api)
+	controller.registerDevboxAPI(api)
+	for _, method := range []string{http.MethodPut, http.MethodGet} {
+		body := ""
+		if method == http.MethodPut {
+			body = `{"active_tab":"session:agent-a"}`
+		}
+		request := httptest.NewRequestWithContext(t.Context(), method, "/devboxes/compute-a/workspaces/work-a/view-state", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		require.Equal(http.StatusOK, response.Code, response.Body.String())
+		var state workspaceapi.WorkspaceViewState
+		require.NoError(json.Unmarshal(response.Body.Bytes(), &state))
+		assert.Equal(t, "session:agent-a", state.ActiveTab)
+	}
+	activeTab, err := database.GetWorkspaceActiveTab(t.Context(), "work-a")
+	require.NoError(err)
+	assert.Equal(t, "session:agent-a", activeTab)
 }
 
 func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {

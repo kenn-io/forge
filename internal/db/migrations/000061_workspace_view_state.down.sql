@@ -1,0 +1,1 @@
+DROP TABLE forge_workspace_view_state;

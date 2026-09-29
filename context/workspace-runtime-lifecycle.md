@@ -456,7 +456,14 @@ stale tabs.
   container pixels do not trigger resize observation (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 - Keyboard and pointer interactions inside workspace rows must not trigger
   unintended navigation when the user is targeting a nested control.
-- Persisted "last active tab" state must be scoped per workspace.
+- Selected tabs persist on the workspace's execution host and restore across browsers; browser storage is only a cache.
+  Restoration and automatic focus must not overwrite a saved choice; promoted agent focus counts as selection
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::loadWorkspaceTabProgram`).
+- Promoted terminal-region sessions remember `terminal` without changing detail-pane placement; open its top dock
+  on entering Workspaces. Resolve saved session keys against the browser's current region
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoreWorkspaceTabSelection`).
+- Order selection requests per workspace and execution host; a delayed peer must not block another workspace
+  (`frontend/src/lib/components/terminal/workspace-view-state.ts::workspaceRequests`).
 
 ## Released Terminal Retention
 

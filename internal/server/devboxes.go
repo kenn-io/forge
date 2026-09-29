@@ -232,6 +232,8 @@ type devboxProxyRoute struct{ method, path, operation string }
 var devboxProxyRoutes = []devboxProxyRoute{
 	{"GET", "/workspaces", "list-devbox-workspaces"},
 	{"GET", "/workspaces/{id}", "get-devbox-workspace"},
+	{"GET", "/workspaces/{id}/view-state", "get-devbox-workspace-view-state"},
+	{"PUT", "/workspaces/{id}/view-state", "update-devbox-workspace-view-state"},
 	{"GET", "/workspaces/{id}/agent-sessions", "list-devbox-agent-sessions"},
 	{"GET", "/workspaces/{id}/commits", "get-devbox-commits"},
 	{"GET", "/workspaces/{id}/diff", "get-devbox-diff"},
@@ -256,7 +258,7 @@ var devboxProxyRoutes = []devboxProxyRoute{
 func (s *Server) registerDevboxProxy(api huma.API, route devboxProxyRoute) {
 	op := &huma.Operation{OperationID: route.operation, Method: route.method, Path: "/devboxes/{connection_id}" + route.path, Tags: []string{"Devboxes"}, Summary: "Forward an execution operation to its owning devbox"}
 	if item := api.OpenAPI().Paths[route.path]; item != nil {
-		source := map[string]*huma.Operation{"GET": item.Get, "POST": item.Post, "DELETE": item.Delete, "PATCH": item.Patch}[route.method]
+		source := map[string]*huma.Operation{"GET": item.Get, "POST": item.Post, "PUT": item.Put, "DELETE": item.Delete, "PATCH": item.Patch}[route.method]
 		if source != nil {
 			op.Parameters = slices.Clone(source.Parameters)
 			op.RequestBody, op.Responses, op.Metadata = source.RequestBody, source.Responses, source.Metadata

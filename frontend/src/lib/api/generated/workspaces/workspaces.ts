@@ -25,6 +25,7 @@ import type {
   GetWorkspaceRuntimePathParameters,
   GetWorkspaceRuntimeSessionAttachSpecPathParameters,
   GetWorkspaceRuntimeSessionInitialMessagePathParameters,
+  GetWorkspaceViewStatePathParameters,
   LaunchWorkspaceAgentHandoffInputBody,
   LaunchWorkspaceAgentHandoffPathParameters,
   LaunchWorkspaceRuntimeSessionInputBody,
@@ -44,12 +45,14 @@ import type {
   StopWorkspaceRuntimeSessionPathParameters,
   SubmitInitialMessageInputBody,
   SubmitWorkspaceRuntimeSessionInitialMessagePathParameters,
+  UpdateWorkspaceViewStatePathParameters,
   WatchWorkspaceDiffParams,
   WatchWorkspaceDiffPathParameters,
   WorkspaceAgentHandoffResponse,
   WorkspaceDiffWatchResponse,
   WorkspaceResponse,
   WorkspaceRuntimeResponse,
+  WorkspaceViewState,
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
@@ -648,4 +651,47 @@ export const submitWorkspaceRuntimeSessionInitialMessage = async (
       body: JSON.stringify(submitInitialMessageInputBody),
     },
   );
+};
+
+export const getGetWorkspaceViewStateUrl = ({ id }: GetWorkspaceViewStatePathParameters) => {
+  return `/workspaces/${encodeURIComponent(String(id))}/view-state`;
+};
+
+/**
+ * @summary Get workspace view state
+ */
+export const getWorkspaceViewState = async (
+  { id }: GetWorkspaceViewStatePathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceViewState> => {
+  return orvalFetch<WorkspaceViewState>(getGetWorkspaceViewStateUrl({ id }), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getUpdateWorkspaceViewStateUrl = ({ id }: UpdateWorkspaceViewStatePathParameters) => {
+  return `/workspaces/${encodeURIComponent(String(id))}/view-state`;
+};
+
+/**
+ * @summary Update workspace view state
+ */
+export const updateWorkspaceViewState = async (
+  { id }: UpdateWorkspaceViewStatePathParameters,
+  workspaceViewState: NonReadonly<WorkspaceViewState>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceViewState> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<WorkspaceViewState>(getUpdateWorkspaceViewStateUrl({ id }), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(workspaceViewState),
+  });
 };

@@ -2166,6 +2166,306 @@ describe("WorkspaceTerminalView", () => {
     expect(container.querySelector(".workspace-stage.grid")).toBeNull();
   });
 
+  it("keeps the agent selected when moving from a PR pane to Workspaces", async () => {
+    localStorage.clear();
+    const view = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" },
+    });
+    await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+
+    await view.rerender({ workspaceId: "ws-1", paneSurface: undefined });
+
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Helper/ }).getAttribute("aria-selected")).toBe("true"));
+  });
+
+  it("restores a shell moved to workflow in another browser", async () => {
+    localStorage.clear();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoTerminalSessions());
+    let savedTab = "home";
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/view-state")) {
+        if (request.method === "PUT") savedTab = (await request.json()).active_tab;
+        return Response.json({ active_tab: savedTab });
+      }
+      return fallback(input, init);
+    });
+    const first = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await fireEvent.click(await screen.findByRole("button", { name: "Open terminal panel" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Shell 2" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Move Shell 2 to workflow" }));
+    await waitFor(() => expect(savedTab).toBe("session:ws-1_shell_b"));
+    first.unmount();
+    localStorage.clear();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Terminal" }).getAttribute("aria-selected")).toBe("true"),
+    );
+    await waitFor(() =>
+      expect(
+        document.querySelector(".terminal-panel .session-host-wrapper")?.getAttribute("data-session-host"),
+      ).toContain("ws-1_shell_b"),
+    );
+  });
+
+  it("retries selecting the same tab after its save failed", async () => {
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithDuplicateWorkflowSessions());
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const savedTabs: string[] = [];
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/view-state")) {
+        if (request.method === "PUT") {
+          savedTabs.push((await request.json()).active_tab);
+          if (savedTabs.length === 1) return Response.json({ detail: "temporarily unavailable" }, { status: 503 });
+        }
+        return Response.json({ active_tab: "home" });
+      }
+      return fallback(input, init);
+    });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    const tab = await screen.findByRole("tab", { name: /Helper 2/ });
+    await fireEvent.click(tab);
+    await waitFor(() => expect(warning).toHaveBeenCalled());
+    await fireEvent.click(tab);
+    await waitFor(() => expect(savedTabs).toEqual(["session:ws-1:helper-b", "session:ws-1:helper-b"]));
+  });
+
+  it("restores the server-selected agent in a browser without local state", async () => {
+    localStorage.clear();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithDuplicateWorkflowSessions());
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname === "/api/v1/workspaces/ws-1/view-state") {
+        return Promise.resolve(Response.json({ active_tab: `session:${duplicateAgentSession.key}` }));
+      }
+      return fallback(input, init);
+    });
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /Helper 2/ }).getAttribute("aria-selected")).toBe("true"),
+    );
+  });
+
+  it("remembers the promoted agent used in a PR when opening Workspaces", async () => {
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithDuplicateWorkflowSessions());
+    claimForPrs();
+    const view = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" },
+    });
+    await screen.findByRole("tab", { name: /Helper 2/ });
+    const paneKey = sessionPaneKey("ws-1", undefined, duplicateAgentSession.key);
+    const layout = getPaneLayoutStore("prs");
+    noteWorkspacePaneRendered("prs");
+    expect(promoteSessionBesideWorkspace(layout, paneKey)).toBe(true);
+    expect(layout.isTabActive(paneKey)).toBe(true);
+    layout.notePaneRender({
+      activeInputTabKey: paneKey,
+      editableTabs: ["conversation", "workspace", paneKey],
+      onScreenTabs: ["conversation", "workspace", paneKey],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+    flushSync();
+
+    expect(localStorage.getItem("kenn-forge-workspace-active-tab:ws-1")).toBe("session:ws-1:helper-b");
+
+    await view.rerender({ workspaceId: "ws-1", paneSurface: undefined });
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /Helper 2/ }).getAttribute("aria-selected")).toBe("true"),
+    );
+  });
+
+  it.each(["top", "bottom"])("restores a promoted %s-docked session through the Terminal tab", async (dock) => {
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      JSON.stringify({ ...JSON.parse(persistedTerminalLayout("tabs")), dock }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue({
+      launch_targets: [],
+      sessions: [runningSession, runningShellSession],
+    });
+    let savedTab = "";
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/view-state")) {
+        if (request.method === "PUT") savedTab = (await request.json()).active_tab;
+        return Response.json({ active_tab: savedTab });
+      }
+      return fallback(input, init);
+    });
+    claimForPrs();
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    await screen.findByRole("tab", { name: /Helper/ });
+    const paneKey = sessionPaneKey("ws-1", undefined, runningShellSession.key);
+    const layout = getPaneLayoutStore("prs");
+    noteWorkspacePaneRendered("prs");
+    expect(promoteSessionBesideWorkspace(layout, paneKey)).toBe(true);
+    layout.notePaneRender({
+      activeInputTabKey: paneKey,
+      editableTabs: ["conversation", "workspace", paneKey],
+      onScreenTabs: ["conversation", "workspace", paneKey],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+    await waitFor(() => expect(savedTab).toBe("terminal"));
+    const promotedLayout = JSON.parse(localStorage.getItem("kenn-forge-workspace-terminal-layout:ws-1")!);
+    expect(promotedLayout.dock).toBe(dock);
+    expect(promotedLayout.open).toBe(false);
+
+    await view.rerender({ workspaceId: "ws-1", paneSurface: undefined });
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Terminal" }).getAttribute("aria-selected")).toBe("true"),
+    );
+    expect(document.querySelector(".terminal-panel")).not.toBeNull();
+    view.unmount();
+    localStorage.clear();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Terminal" }).getAttribute("aria-selected")).toBe("true"),
+    );
+    expect(document.querySelector(".terminal-panel")).not.toBeNull();
+  });
+
+  it.each([undefined, "peer", "devbox:box"])(
+    "saves tab choices for reloads and another browser on %s",
+    async (hostKey) => {
+      const path = `/api/v1${hostKey === undefined ? "" : hostKey === "peer" ? "/fleet/hosts/peer" : "/devboxes/box"}/workspaces/ws-1/view-state`;
+      let savedTab = "";
+      const fallback = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (new URL(request.url).pathname === "/api/v1/devboxes/box/workspaces/ws-1/runtime") {
+          return Response.json(runtimeWithDuplicateWorkflowSessions());
+        }
+        if (new URL(request.url).pathname === path) {
+          if (request.method === "PUT") savedTab = (await request.json()).active_tab;
+          return Response.json({ active_tab: savedTab });
+        }
+        return fallback(input, init);
+      });
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithDuplicateWorkflowSessions());
+      const props = { workspaceId: "ws-1", workspaceHostKey: hostKey };
+      const first = render(WorkspaceTerminalView, { props });
+      await fireEvent.click(await screen.findByRole("tab", { name: /Helper 2/ }));
+      await waitFor(() => expect(savedTab).toBe("session:ws-1:helper-b"));
+      first.unmount();
+
+      // A reload must restore the same agent; a fresh browser has no local cache.
+      for (const freshBrowser of [false, true]) {
+        if (freshBrowser) localStorage.clear();
+        const reopened = render(WorkspaceTerminalView, { props });
+        await waitFor(() =>
+          expect(screen.getByRole("tab", { name: /Helper 2/ }).getAttribute("aria-selected")).toBe("true"),
+        );
+        reopened.unmount();
+      }
+      const home = render(WorkspaceTerminalView, { props });
+      await fireEvent.click(await screen.findByRole("tab", { name: "Home" }));
+      await waitFor(() => expect(savedTab).toBe("home"));
+      home.unmount();
+      localStorage.clear();
+      render(WorkspaceTerminalView, { props });
+      await waitFor(() => expect(screen.getByRole("tab", { name: "Home" }).getAttribute("aria-selected")).toBe("true"));
+    },
+  );
+
+  it.each([false, true])(
+    "remembers using an already-selected agent in a PR (multiple sessions: %s)",
+    async (multiple) => {
+      localStorage.clear();
+      let savedTab = "";
+      const fallback = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (new URL(request.url).pathname.endsWith("/view-state")) {
+          if (request.method === "PUT") savedTab = (await request.json()).active_tab;
+          return Response.json({ active_tab: savedTab });
+        }
+        return fallback(input, init);
+      });
+      if (multiple) mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithDuplicateWorkflowSessions());
+      claimForPrs();
+      const first = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+      if (multiple) {
+        const tab = await screen.findByRole("tab", { name: "Helper, Helper running" });
+        await waitFor(() => expect(tab.getAttribute("aria-selected")).toBe("true"));
+        await fireEvent.click(tab);
+      } else {
+        await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+        await fireEvent.pointerDown(document.querySelector(".sole-embedded-session")!);
+      }
+      await waitFor(() => expect(savedTab).toBe("session:ws-1:helper"));
+      first.unmount();
+      localStorage.clear();
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "Helper, Helper running" }).getAttribute("aria-selected")).toBe("true"),
+      );
+    },
+  );
+
+  it("does not save provisional focus over the server-selected agent during restore", async () => {
+    const sessionHost = await import("../../stores/session-host.svelte.ts");
+    const requestFocus = vi.spyOn(sessionHost, "requestSessionFocus");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithDuplicateWorkflowSessions());
+    const selection = deferred<Response>();
+    const savedTabs: string[] = [];
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/view-state")) {
+        if (request.method === "GET") return selection.promise;
+        savedTabs.push((await request.json()).active_tab);
+        return Response.json({ active_tab: savedTabs.at(-1) });
+      }
+      return fallback(input, init);
+    });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    await screen.findByRole("tab", { name: /Helper 2/ });
+    await waitFor(() => expect(mocks.mockTerminalInstances.length).toBeGreaterThan(0));
+    // Navigation must wait for the saved preference before restoring keyboard focus.
+    expect(requestFocus).not.toHaveBeenCalled();
+    selection.resolve(Response.json({ active_tab: "session:ws-1:helper-b" }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /Helper 2/ }).getAttribute("aria-selected")).toBe("true"),
+    );
+    expect(savedTabs).toEqual([]);
+  });
+
+  it("preserves a saved Home choice when a PR automatically focuses its sole session", async () => {
+    const sessionHost = await import("../../stores/session-host.svelte.ts");
+    const requestFocus = vi.spyOn(sessionHost, "requestSessionFocus");
+    const savedTabs: string[] = [];
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/view-state")) {
+        if (request.method === "PUT") savedTabs.push((await request.json()).active_tab);
+        return Response.json({ active_tab: "home" });
+      }
+      return fallback(input, init);
+    });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+
+    await waitFor(() => expect(requestFocus).toHaveBeenCalled());
+    await waitFor(() => expect(document.activeElement?.closest(".sole-embedded-session")).not.toBeNull());
+    expect(savedTabs).toEqual([]);
+
+    await fireEvent.keyDown(document.activeElement!, { key: "a" });
+    await waitFor(() => expect(savedTabs).toEqual(["session:ws-1:helper"]));
+    await fireEvent.keyDown(document.activeElement!, { key: "b" });
+    await fireEvent.pointerDown(document.activeElement!);
+    expect(savedTabs).toEqual(["session:ws-1:helper"]);
+  });
+
   it("drops a restored legacy Shell tab after runtime tabs are normalized", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "shell");
 
@@ -4985,6 +5285,23 @@ describe("WorkspaceTerminalView", () => {
         ).toBe("true"),
       );
       expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
+    });
+
+    it("keeps an explicitly opened launcher dismissed when its workspace becomes visible", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+      const { rerender } = render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", paneSurface: "prs" as const, hostVisible: false },
+      });
+      await waitFor(() => expect(hostedWorkspaceLauncher("prs")).not.toBeNull());
+
+      // Focus Terminal opens the launcher while revealing a previously hidden host.
+      hostedWorkspaceLauncher("prs")!();
+      await rerender({ workspaceId: "ws-1", paneSurface: "prs" as const, hostVisible: true });
+      await screen.findByRole("dialog", { name: "Launch a session" });
+      await fireEvent.keyDown(window, { key: "Escape" });
+
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull());
     });
 
     it("runs a configured quick action from the launcher and closes it", async () => {

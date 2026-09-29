@@ -202,8 +202,8 @@
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.08em);
   }
 
   .scope-toggle {

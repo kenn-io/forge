@@ -67,9 +67,9 @@
     font-family: inherit;
     font-size: var(--font-size-xs);
     font-weight: 600;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--letter-spacing-label, 0.05em);
     text-align: left;
-    text-transform: uppercase;
+    text-transform: var(--label-transform, uppercase);
   }
 
   .sidebar-group-header:hover {

@@ -671,8 +671,8 @@
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: 650;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.04em);
+    text-transform: var(--label-transform, uppercase);
   }
 
   .pane-heading__tools {

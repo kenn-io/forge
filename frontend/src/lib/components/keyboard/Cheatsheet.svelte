@@ -238,8 +238,8 @@
     padding: 6px 16px 4px;
     font-size: var(--font-size-2xs);
     font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.06em);
+    text-transform: var(--label-transform, uppercase);
     color: var(--text-secondary);
   }
 

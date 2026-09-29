@@ -233,8 +233,8 @@
     margin: 0;
     font-size: var(--font-size-xs);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.05em);
     color: var(--text-muted);
   }
 

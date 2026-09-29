@@ -713,7 +713,7 @@
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     font-weight: 700;
-    text-transform: uppercase;
+    text-transform: var(--label-transform, uppercase);
   }
 
   .pull-row {

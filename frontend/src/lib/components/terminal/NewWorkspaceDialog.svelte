@@ -902,8 +902,8 @@
     font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.05em);
   }
 
   .field-hint {

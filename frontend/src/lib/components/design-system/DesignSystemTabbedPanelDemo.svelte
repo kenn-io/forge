@@ -117,8 +117,8 @@
     color: var(--accent-blue);
     font-size: var(--font-size-xs);
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.06em);
   }
 
   .panel-surface h3 {

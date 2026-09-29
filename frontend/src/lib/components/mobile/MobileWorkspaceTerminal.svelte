@@ -1185,7 +1185,7 @@
   .mobile-terminal-options-sheet__actions span { display: inline-flex; align-items: center; gap: 0.625rem; font-weight: 650; }
   .mobile-terminal-options-sheet__actions small, .mobile-terminal-options-sheet__danger small { color: var(--text-muted); font-size: var(--font-size-sm); }
   .mobile-terminal-options-sheet__settings { padding: 1rem 0.875rem 0; }
-  .mobile-terminal-options-sheet__settings h3 { margin: 0 0 0.875rem; color: var(--text-muted); font-size: var(--font-size-sm); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .mobile-terminal-options-sheet__settings h3 { margin: 0 0 0.875rem; color: var(--text-muted); font-size: var(--font-size-sm); font-weight: 700; letter-spacing: var(--letter-spacing-label, 0.04em); text-transform: var(--label-transform, uppercase); }
   .mobile-terminal-options-sheet__settings :global(.terminal-settings.compact) { width: 100%; }
   .mobile-terminal-options-sheet__danger { display: flex; flex-direction: column; gap: 0.375rem; padding: 0.75rem 0.875rem; border-bottom: thin solid var(--border-muted); }
   .mobile-terminal-options-sheet__danger > button { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.5rem; padding: 0; color: var(--accent-red); border: 0; background: transparent; font: inherit; font-weight: 700; }

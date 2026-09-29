@@ -899,7 +899,7 @@
 
   .repo-browser__provider {
     color: var(--text-muted);
-    text-transform: uppercase;
+    text-transform: var(--label-transform, uppercase);
     font-size: var(--font-size-2xs);
     font-weight: 700;
   }

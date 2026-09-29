@@ -50,8 +50,8 @@
     color: var(--text-muted);
     font-size: var(--font-size-3xs);
     font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.08em);
+    text-transform: var(--label-transform, uppercase);
     padding: 0 6px 8px;
   }
 

@@ -140,8 +140,8 @@
   .commit-section__label {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.4px);
   }
 
   .commit-section__count {

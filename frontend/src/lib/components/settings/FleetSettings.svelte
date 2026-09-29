@@ -319,8 +319,8 @@
     margin-bottom: 2px;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.06em);
   }
 
   .state-badge,

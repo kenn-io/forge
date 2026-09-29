@@ -72,8 +72,13 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 `svelte-check`. See kit-ui's `docs/migration.md` and
 `docs/theming.md`. Invariants kenn-forge relies on:
 
-- Theme tokens come from kit `theme.css`; theming is `dark` /
-  `high-contrast` classes on `<html>`. Frontend components additionally
+- Theme tokens come from kit `theme.css` plus the kit `quiet` identity from
+  `themes.css`: system type, AA-contrast muted text, sentence-case labels,
+  and tinted label pills. `index.html` sets `data-kit-theme="quiet"` for
+  first paint and embeds; `initTheme` re-asserts it through `setThemeName`
+  because the kit store strips the attribute when no name is set
+  (`frontend/src/lib/stores/theme.svelte.ts`). Dark mode and high contrast
+  remain `dark` / `high-contrast` classes on `<html>`. Frontend components additionally
   consume app tokens from `frontend/src/app.css` — style-asserting harnesses must load `app.css` like
   `browserAppHarness.ts`.
 - Disabled styling: native controls that dim when disabled use
@@ -84,6 +89,10 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   on `<html>` forces the touch scale. Never pin `html { font-size }`.
 - Breakpoints are written in px (shared steps 640/760/900) — media-query
   `rem` resolves against the browser's 16px, not the app root.
+- Label case: app-owned labels, eyebrows, and section titles set
+  `text-transform: var(--label-transform, uppercase)` and
+  `letter-spacing: var(--letter-spacing-label, …)`, never a literal
+  `uppercase`, so they follow the active kit theme like kit's own chips.
 - Spacing: `--space-1…8` = 2/4/6/8/12/16/24/32px. New or edited `gap`
   declarations use ladder tokens (both axes of shorthands); off-ladder px
   snaps to the nearest step, biased compact. On-ladder raw px in untouched

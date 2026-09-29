@@ -1810,8 +1810,8 @@
   .sidebar-header-label {
     font-size: var(--font-size-xs);
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.08em);
+    text-transform: var(--label-transform, uppercase);
     color: var(--text-muted);
   }
 
@@ -1869,8 +1869,8 @@
   .fleet-status-title {
     font-size: var(--font-size-2xs);
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label, 0.08em);
+    text-transform: var(--label-transform, uppercase);
     color: var(--text-muted);
   }
 
@@ -2294,8 +2294,8 @@
     font-size: 0.9em;
     font-weight: 600;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.04em);
   }
 
   .kit-filter-dropdown__divider {

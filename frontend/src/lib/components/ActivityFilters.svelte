@@ -414,8 +414,8 @@
     color: var(--text-muted);
     font-size: 0.9em;
     font-weight: var(--font-weight-semibold, 600);
-    letter-spacing: var(--letter-spacing-label, 0.04em);
-    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-label,  var(--letter-spacing-label, 0.04em));
+    text-transform: var(--label-transform, uppercase);
   }
 
   .activity-filters__divider {

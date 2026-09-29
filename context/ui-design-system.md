@@ -26,7 +26,8 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
   chrome and a soft gray reading surface, never pure white. Muted text and
   accent text must stay AA on every step and, for accents, on their own
   `color-mix` tints (up to 16%) such as stale banners; selected rows stay between the
-  surface and hover (`tests/e2e-full/sidebar-scroll-indicator.spec.ts`).
+  surface and hover in both themes. The light contrast and both row orders are
+  checked in `frontend/tests/e2e-full/sidebar-scroll-indicator.spec.ts`.
   Preserve kit's explicit high-contrast palette (`frontend/src/app.css`).
 - Detail background refresh uses the metadata-row `Syncing` indicator; a manual
   Activity refresh reports progress only in its initiating icon button. Do not

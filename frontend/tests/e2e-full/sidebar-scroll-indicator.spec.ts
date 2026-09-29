@@ -63,32 +63,79 @@ test("grouped rails share labeled native scroll regions", async ({ page, browser
   }
 });
 
-test("dark grouped rows keep selected between the surface and hover", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("kenn-forge-theme", "dark"));
+for (const theme of ["dark", "light"] as const) {
+  test(`${theme} grouped rows keep selected between the surface and hover`, async ({ page }) => {
+    await page.addInitScript((name) => localStorage.setItem("kenn-forge-theme", name), theme);
+    await page.goto("/pulls");
+
+    const lightness = await page.evaluate(() => {
+      const colors = ["--sidebar-row-bg", "--bg-row-selected", "--sidebar-row-hover-bg"].map((token) => {
+        const sample = document.createElement("div");
+        sample.style.background = `var(${token})`;
+        document.body.append(sample);
+        const color = getComputedStyle(sample).backgroundColor;
+        sample.remove();
+        return color;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const context = canvas.getContext("2d", { willReadFrequently: true })!;
+      return colors.map((color) => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        const [red, green, blue] = context.getImageData(0, 0, 1, 1).data;
+        return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+      });
+    });
+
+    const [surface, selected, hover] = lightness as [number, number, number];
+    expect(selected).toBeGreaterThan(Math.min(surface, hover));
+    expect(selected).toBeLessThan(Math.max(surface, hover));
+  });
+}
+
+test("light accents and muted text stay AA on hover and on their own tints", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("kenn-forge-theme", "light"));
   await page.goto("/pulls");
 
-  const lightness = await page.evaluate(() => {
-    const colors = ["--sidebar-row-bg", "--bg-row-selected", "--sidebar-row-hover-bg"].map((token) => {
-      const sample = document.createElement("div");
-      sample.style.background = `var(${token})`;
-      document.body.append(sample);
-      const color = getComputedStyle(sample).backgroundColor;
-      sample.remove();
-      return color;
-    });
+  const ratios = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 1;
     canvas.height = 1;
     const context = canvas.getContext("2d", { willReadFrequently: true })!;
-    return colors.map((color) => {
+    const luminance = (background: string) => {
+      const sample = document.createElement("div");
+      sample.style.background = background;
+      document.body.append(sample);
       context.clearRect(0, 0, 1, 1);
-      context.fillStyle = color;
+      context.fillStyle = getComputedStyle(sample).backgroundColor;
+      sample.remove();
       context.fillRect(0, 0, 1, 1);
-      const [red, green, blue] = context.getImageData(0, 0, 1, 1).data;
+      const [red, green, blue] = Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3)).map((channel) => {
+        const value = channel / 255;
+        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
       return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
-    });
+    };
+    const contrast = (foreground: string, background: string) => {
+      const [low, high] = [luminance(foreground), luminance(background)].sort((a, b) => a - b);
+      return (high! + 0.05) / (low! + 0.05);
+    };
+    const results: Record<string, number> = {
+      "text-muted on hover": contrast("var(--text-muted)", "var(--bg-surface-hover)"),
+      "diff-stale-text on stale banner": contrast("var(--diff-stale-text)", "var(--diff-stale-bg)"),
+    };
+    for (const accent of ["blue", "amber", "purple", "green", "red", "teal"]) {
+      const color = `var(--accent-${accent})`;
+      results[`${accent} on hover`] = contrast(color, "var(--bg-surface-hover)");
+      results[`${accent} on its 16% tint`] = contrast(color, `color-mix(in srgb, ${color} 16%, var(--bg-inset))`);
+    }
+    return results;
   });
 
-  expect(lightness[1]).toBeGreaterThan(lightness[0]!);
-  expect(lightness[1]).toBeLessThan(lightness[2]!);
+  for (const [pair, ratio] of Object.entries(ratios)) {
+    expect(ratio, pair).toBeGreaterThanOrEqual(4.5);
+  }
 });

@@ -998,8 +998,8 @@ func (s *Handler) serveFleetWebSocketProxy(
 	defer clientConn.Close(websocket.StatusNormalClosure, "hub detached")
 
 	if r.URL.Query().Get("protocol") == "acp" {
-		clientConn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
-		peerConn.SetReadLimit(terminalwebsocket.ACPStateReadLimit)
+		clientConn.SetReadLimit(terminalwebsocket.ACPReadLimit)
+		peerConn.SetReadLimit(terminalwebsocket.ACPReadLimit)
 	}
 	endAttachSpan()
 	BridgeWebSocketProxy(r.Context(), clientConn, peerConn)

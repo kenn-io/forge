@@ -612,12 +612,12 @@ func TestACPPromptAcknowledgesOnlyAfterWrite(t *testing.T) {
 	close(agent.done)
 }
 
-func TestACPPromptPrecedesConcurrentOutputAfterHistoryTrim(t *testing.T) {
+func TestACPPromptPrecedesConcurrentOutput(t *testing.T) {
 	reader, writer := io.Pipe()
 	agent := &ACP{
 		stdin: writer, done: make(chan struct{}),
 		subscribers: make(map[chan struct{}]struct{}),
-		state:       ACPState{Connected: true, Messages: []ACPMessage{{Role: "assistant", Text: strings.Repeat("old", 2<<20)}}},
+		state:       ACPState{Connected: true, Messages: []ACPMessage{{Role: "assistant", Text: "old answer"}}},
 	}
 	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close(); close(agent.done) })
 	peerReader, peerWriter := io.Pipe()
@@ -636,11 +636,12 @@ func TestACPPromptPrecedesConcurrentOutputAfterHistoryTrim(t *testing.T) {
 	var state ACPState
 	require.Eventually(t, func() bool {
 		data, err := agent.Snapshot()
-		return err == nil && json.Unmarshal(data, &state) == nil && len(state.Messages) == 2
+		return err == nil && json.Unmarshal(data, &state) == nil && len(state.Messages) == 3
 	}, 5*time.Second, 10*time.Millisecond)
-	assert.Equal(t, "new question", state.Messages[0].Text)
-	assert.Equal(t, "new-submission", state.Messages[0].SubmissionID)
-	assert.Equal(t, "new answer", state.Messages[1].Text)
+	assert.Equal(t, "old answer", state.Messages[0].Text)
+	assert.Equal(t, "new question", state.Messages[1].Text)
+	assert.Equal(t, "new-submission", state.Messages[1].SubmissionID)
+	assert.Equal(t, "new answer", state.Messages[2].Text)
 }
 
 func TestACPStopClosesStdoutReader(t *testing.T) {
@@ -691,28 +692,6 @@ func TestACPReportsNaturalExitCode(t *testing.T) {
 		assert.Equal(t, 7, *info.ExitCode)
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "ACP exit was not reported")
-	}
-}
-
-func TestACPBoundsRetainedTranscript(t *testing.T) {
-	for _, text := range []string{"x", "\x00", "語"} {
-		t.Run(fmt.Sprintf("character-%x", text), func(t *testing.T) {
-			agent := &ACP{subscribers: make(map[chan struct{}]struct{}), state: ACPState{Messages: []ACPMessage{{Role: "user", Text: "question", SubmissionID: "accepted"}}}}
-			for range 5 {
-				require.NoError(t, agent.SessionUpdate(t.Context(), acpsdk.SessionNotification{Update: acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{Content: acpsdk.TextBlock(strings.Repeat(text, 1<<20))}}}))
-			}
-			data, err := agent.Snapshot()
-			require.NoError(t, err)
-			// History has a 4 MiB wire budget; the fixed snapshot fields fit in 512 B.
-			require.LessOrEqual(t, len(data), (4<<20)+512)
-			var state ACPState
-			require.NoError(t, json.Unmarshal(data, &state))
-			require.True(t, state.HistoryTruncated)
-			require.Len(t, state.Messages, 2)
-			assert.Equal(t, "accepted", state.Messages[0].SubmissionID)
-			assert.Equal(t, "question", state.Messages[0].Text)
-			assert.True(t, strings.HasSuffix(state.Messages[1].Text, text))
-		})
 	}
 }
 
@@ -835,4 +814,67 @@ func newACPTestManager(t *testing.T, options Options) *Manager {
 		manager.Shutdown()
 	})
 	return manager
+}
+
+// The owner keeps the whole transcript. Updates carry the recent window, and
+// earlier messages page in by absolute index.
+func TestACPSnapshotWindowsAndHistoryPagesTheWholeTranscript(t *testing.T) {
+	messages := make([]ACPMessage, 250)
+	for i := range messages {
+		messages[i] = ACPMessage{Role: "assistant", Text: fmt.Sprintf("m%d", i)}
+	}
+	agent := &ACP{state: ACPState{Messages: messages}}
+
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	var state ACPState
+	require.NoError(t, json.Unmarshal(data, &state))
+	assert.Equal(t, 250, state.MessageCount)
+	assert.Equal(t, 50, state.MessageOffset)
+	require.Len(t, state.Messages, acpMessageWindow)
+	assert.Equal(t, "m50", state.Messages[0].Text)
+	assert.Equal(t, "m249", state.Messages[len(state.Messages)-1].Text)
+	assert.Len(t, agent.state.Messages, 250, "the owner must keep every message")
+
+	page := func(before, limit int) ACPHistory {
+		t.Helper()
+		data, err := agent.History(before, limit)
+		require.NoError(t, err)
+		var frame map[string]ACPHistory
+		require.NoError(t, json.Unmarshal(data, &frame))
+		return frame["history"]
+	}
+	earlier := page(state.MessageOffset, 0)
+	assert.Equal(t, 0, earlier.Offset)
+	require.Len(t, earlier.Messages, 50)
+	assert.Equal(t, "m0", earlier.Messages[0].Text)
+	assert.Equal(t, "m49", earlier.Messages[49].Text)
+
+	middle := page(200, 30)
+	assert.Equal(t, 170, middle.Offset)
+	require.Len(t, middle.Messages, 30)
+	assert.Equal(t, "m170", middle.Messages[0].Text)
+
+	assert.Equal(t, 250-acpHistoryPage, page(1000, 0).Offset, "a past-the-end cursor pages from the end")
+	assert.Empty(t, page(-5, 10).Messages)
+}
+
+// A message that is still entirely held is not part of the published
+// transcript, so the count and pages agree with what clients have seen.
+func TestACPWindowCountsOnlyPublishedMessages(t *testing.T) {
+	agent := &ACP{state: ACPState{Messages: []ACPMessage{{Role: "user", Text: "question"}, {Role: "assistant", Text: "held"}}}, heldBytes: len("held")}
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	var state ACPState
+	require.NoError(t, json.Unmarshal(data, &state))
+	assert.Equal(t, 1, state.MessageCount)
+	assert.Equal(t, 0, state.MessageOffset)
+	require.Len(t, state.Messages, 1)
+
+	data, err = agent.History(5, 10)
+	require.NoError(t, err)
+	var frame map[string]ACPHistory
+	require.NoError(t, json.Unmarshal(data, &frame))
+	require.Len(t, frame["history"].Messages, 1)
+	assert.Equal(t, "question", frame["history"].Messages[0].Text)
 }

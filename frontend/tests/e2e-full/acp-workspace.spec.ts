@@ -159,11 +159,8 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(
       chat.getByRole("log", { name: "Conversation" }).getByText("Permission received. The turn is complete."),
     ).toBeVisible();
-    await chat.getByRole("textbox", { name: "Message agent" }).fill("é".repeat(32769));
-    await expect(chat.getByText("Message must not exceed 65,536 bytes.")).toBeVisible();
-    await expect(chat.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
-    // An accepted 64 KiB prompt exceeds 128 KiB once JSON escapes are included.
-    await chat.getByRole("textbox", { name: "Message agent" }).fill('"'.repeat(65536));
+    // Prompts have no size limit, even once JSON escapes double their frame.
+    await chat.getByRole("textbox", { name: "Message agent" }).fill('"'.repeat(256 * 1024));
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(chat.getByRole("button", { name: "Allow once" })).toBeVisible();
     await chat.getByRole("button", { name: "Allow once" }).click();

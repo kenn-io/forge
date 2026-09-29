@@ -75,6 +75,15 @@ func (o *acpOwnerRPC) Watch(request ACPWatch, reply *ACPUpdate) error {
 // reduces returned errors to text, so it travels as a successful reply.
 type ACPCommandReply struct{ Unavailable bool }
 
+// ACPHistoryRequest selects transcript messages [Before-Limit, Before).
+type ACPHistoryRequest struct{ Before, Limit int }
+
+func (o *acpOwnerRPC) History(request ACPHistoryRequest, reply *[]byte) error {
+	data, err := o.agent.History(request.Before, request.Limit)
+	*reply = data
+	return err
+}
+
 func (o *acpOwnerRPC) Command(command ACPCommand, reply *ACPCommandReply) error {
 	err := o.agent.Command(command)
 	if errors.Is(err, ErrACPAgentUnavailable) {
@@ -128,6 +137,12 @@ func (a *acpAttachment) Command(command ACPCommand) error {
 		return ErrACPAgentUnavailable
 	}
 	return nil
+}
+
+func (a *acpAttachment) History(before, limit int) ([]byte, error) {
+	var reply []byte
+	err := a.client.Call("ACP.History", ACPHistoryRequest{Before: before, Limit: limit}, &reply)
+	return reply, err
 }
 
 func (a *acpAttachment) Prompt(text string) error {

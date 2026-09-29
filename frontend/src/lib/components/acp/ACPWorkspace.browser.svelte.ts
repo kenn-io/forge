@@ -13,7 +13,7 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { TerminalSessionOptions } from "../terminal/terminal-session.js";
 import ACPWorkspace from "./ACPWorkspace.svelte";
 
-const socket = vi.hoisted(() => ({ options: undefined as TerminalSessionOptions | undefined }));
+const socket = vi.hoisted(() => ({ options: undefined as TerminalSessionOptions | undefined, sent: [] as string[] }));
 const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
 
 vi.mock("../../app/runtime-context.js", () => ({ getAppRuntime: () => runtimeCapture.current }));
@@ -22,7 +22,13 @@ vi.mock("../terminal/terminal-session.js", async () => {
   return {
     makeTerminalSessionController: (options: TerminalSessionOptions) => {
       socket.options = options;
-      return { program: Effect.never, send: () => undefined, isConnected: () => true };
+      return {
+        program: Effect.never,
+        send: (data: string | Uint8Array) => {
+          if (typeof data === "string") socket.sent.push(data);
+        },
+        isConnected: () => true,
+      };
     },
   };
 });
@@ -43,9 +49,10 @@ async function renderChat(width: number) {
         { role: "user", text: "Summarize the change", createdAt: "2026-09-28T21:09:00Z" },
         { role: "assistant", text: "The change adds a gutter.", createdAt: "2026-09-28T21:10:00Z" },
       ],
+      messageOffset: 0,
+      messageCount: 2,
       configOptions: [],
       configuring: false,
-      historyTruncated: false,
       permissions: [],
       busy: false,
       connected: true,
@@ -65,6 +72,7 @@ async function renderChat(width: number) {
 
 beforeEach(() => {
   socket.options = undefined;
+  socket.sent = [];
   runtimeCapture.current = makeAppRuntime();
 });
 
@@ -98,8 +106,77 @@ describe("ACPWorkspace message gutter (browser)", () => {
     await expect.poll(() => getComputedStyle(gutter).opacity).toBe("1");
   });
 
-  it("omits the gutter in a narrow pane", async () => {
-    const { gutter } = await renderChat(420);
-    expect(getComputedStyle(gutter).display).toBe("none");
+  it("shows time and copy as a visible line below the message in a narrow pane", async () => {
+    const { cell, gutter } = await renderChat(420);
+    const body = cell.querySelector<HTMLElement>(".message-body")!;
+    const copy = gutter.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')!;
+
+    expect(getComputedStyle(gutter).position).toBe("static");
+    expect(getComputedStyle(gutter).opacity).toBe("1");
+    expect(gutter.querySelector("time")?.textContent).not.toBe("");
+    expect(copy.getBoundingClientRect().width).toBeGreaterThan(0);
+    expect(gutter.getBoundingClientRect().top).toBeGreaterThanOrEqual(body.getBoundingClientRect().bottom);
+    expect(Math.abs(gutter.getBoundingClientRect().left - body.getBoundingClientRect().left)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("ACPWorkspace transcript paging (browser)", () => {
+  const message = (index: number) => ({
+    role: index % 2 ? "assistant" : "user",
+    text: `Message ${index}: ${"a longer line of transcript text ".repeat((index % 3) + 1)}`,
+  });
+  const range = (from: number, to: number) => Array.from({ length: to - from }, (_, offset) => message(from + offset));
+
+  it("keeps the reader's place when earlier messages load above", async () => {
+    const host = document.createElement("div");
+    host.style.cssText = "width: 900px; height: 600px; display: flex; flex-direction: column;";
+    document.body.append(host);
+    await render(ACPWorkspace, { target: host, props: { websocketPath: "/ws/chat" } });
+    await expect.poll(() => socket.options).toBeDefined();
+    socket.options!.onOpen?.();
+    socket.options!.onMessage(
+      JSON.stringify({
+        messages: range(200, 240),
+        messageOffset: 200,
+        messageCount: 240,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    await nextFrame();
+    await nextFrame();
+    const conversation = host.querySelector<HTMLElement>(".conversation")!;
+    expect(conversation.scrollHeight).toBeGreaterThan(conversation.clientHeight);
+    // WebKit has no scroll anchoring; turn Chromium's off so the pane's own
+    // compensation is what holds the position.
+    conversation.style.overflowAnchor = "none";
+
+    // Scroll near the top: the pane asks for the page before the window.
+    conversation.scrollTop = 120;
+    conversation.dispatchEvent(new Event("scroll"));
+    await expect
+      .poll(() => socket.sent.map((frame) => JSON.parse(frame) as unknown))
+      .toContainEqual({
+        type: "history",
+        before: 200,
+        limit: 100,
+      });
+    const anchor = [...host.querySelectorAll<HTMLElement>("article")].find((article) =>
+      article.textContent?.includes("Message 203:"),
+    )!;
+    const before = anchor.getBoundingClientRect().top;
+
+    socket.options!.onMessage(JSON.stringify({ history: { offset: 100, messages: range(100, 200) } }));
+    await nextFrame();
+    await nextFrame();
+
+    expect(host.querySelector("article")?.textContent).toContain("Message 100:");
+    expect(conversation.scrollTop).toBeGreaterThan(1000);
+    // Within sub-pixel rounding of the integer scroll offset.
+    expect(Math.abs(anchor.getBoundingClientRect().top - before)).toBeLessThan(2);
   });
 });

@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 
@@ -23,6 +22,9 @@ import (
 // ACPChat is the daemon attachment to an execution-host-owned conversation.
 type ACPChat interface {
 	Snapshot() ([]byte, error)
+	// History returns earlier transcript messages [before-limit, before) as
+	// a {"history": ...} client frame.
+	History(before, limit int) ([]byte, error)
 	Subscribe() (<-chan struct{}, func())
 	Command(ACPCommand) error
 	Prompt(string) error
@@ -73,8 +75,6 @@ type ACP struct {
 }
 
 type acpExternalTurn struct{ active bool }
-
-const maxACPStateBytes = 4 << 20
 
 // ErrACPAgentUnavailable rejects a prompt before anything is written to a
 // disconnected agent. The owner RPC carries only its text, so attachments
@@ -158,13 +158,16 @@ type ACPState struct {
 	ConfigOptions []ACPConfigOption `json:"configOptions"`
 	Commands      []ACPCommandInfo  `json:"commands"`
 	// Plan is the agent's current plan; each update replaces it.
-	Plan             []ACPPlanEntry   `json:"plan"`
-	Configuring      bool             `json:"configuring"`
-	Messages         []ACPMessage     `json:"messages"`
-	Permissions      []ACPPermission  `json:"permissions"`
-	Elicitations     []ACPElicitation `json:"elicitations"`
-	HistoryTruncated bool             `json:"historyTruncated"`
-	Busy             bool             `json:"busy"`
+	Plan        []ACPPlanEntry `json:"plan"`
+	Configuring bool           `json:"configuring"`
+	Messages    []ACPMessage   `json:"messages"`
+	// MessageOffset is the transcript index of Messages[0] in a published
+	// update; MessageCount is the length of the whole transcript.
+	MessageOffset int              `json:"messageOffset"`
+	MessageCount  int              `json:"messageCount"`
+	Permissions   []ACPPermission  `json:"permissions"`
+	Elicitations  []ACPElicitation `json:"elicitations"`
+	Busy          bool             `json:"busy"`
 	// Stopping is true from a stop request until the turn ends.
 	Stopping  bool   `json:"stopping"`
 	Connected bool   `json:"connected"`
@@ -194,6 +197,9 @@ type ACPCommand struct {
 	ID       string `json:"id,omitempty"`
 	OptionID string `json:"optionId,omitempty"`
 	Value    string `json:"value,omitempty"`
+	// Before and Limit select a history page.
+	Before int `json:"before,omitempty"`
+	Limit  int `json:"limit,omitempty"`
 	// Action and Content answer an elicitation. Content is the accepted form
 	// values as a JSON object; it stays raw so the owner RPC can carry it.
 	Action  string         `json:"action,omitempty"`
@@ -518,107 +524,11 @@ func (a *ACP) startPromptLocked(text, submissionID string) error {
 	if submissionID != "" {
 		a.state.Queue = slices.DeleteFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == submissionID })
 	}
-	a.trimStateLocked()
 	persistErr := a.persistLocked()
 	a.changedLocked()
 	a.mu.Unlock()
 	go a.finishTurn(completed)
 	return persistErr
-}
-
-// Include wire overhead and escaping so even many tiny tool updates or control
-// characters stay within the retained history budget.
-func acpMessageBytes(message ACPMessage) int {
-	data, _ := json.Marshal(message)
-	return len(data) + 1
-}
-
-func acpPermissionBytes(permission ACPPermission) int {
-	data, _ := json.Marshal(permission)
-	return len(data) + 1
-}
-
-func acpElicitationBytes(elicitation ACPElicitation) int {
-	data, _ := json.Marshal(elicitation)
-	return len(data) + 1
-}
-
-func (a *ACP) retainedStateBytesLocked() int {
-	size := 0
-	for _, message := range a.state.Messages {
-		size += acpMessageBytes(message)
-	}
-	for _, permission := range a.state.Permissions {
-		size += acpPermissionBytes(permission)
-	}
-	for _, elicitation := range a.state.Elicitations {
-		size += acpElicitationBytes(elicitation)
-	}
-	for _, queued := range a.state.Queue {
-		size += acpQueuedBytes(queued)
-	}
-	return size
-}
-
-func (a *ACP) trimStateLocked() {
-	a.trimStateToBytesLocked(maxACPStateBytes)
-}
-
-func (a *ACP) trimStateToBytesLocked(limit int) {
-	size := a.retainedStateBytesLocked()
-	// Keep the latest accepted prompt so reconnects can acknowledge/deduplicate
-	// it even when the agent produces more output than the history budget.
-	latestUser := -1
-	for i, message := range slices.Backward(a.state.Messages) {
-		if message.Role == "user" {
-			latestUser = i
-			break
-		}
-	}
-	last := len(a.state.Messages) - 1
-	index := -1
-	removedBeforePrompt := 0
-	a.state.Messages = slices.DeleteFunc(a.state.Messages, func(message ACPMessage) bool {
-		index++
-		if size <= limit || index == latestUser || index == last {
-			return false
-		}
-		size -= acpMessageBytes(message)
-		if a.promptIndex != nil && index < *a.promptIndex {
-			removedBeforePrompt++
-		}
-		a.state.HistoryTruncated = true
-		return true
-	})
-	if a.promptIndex != nil {
-		*a.promptIndex -= removedBeforePrompt
-	}
-	for size > limit && len(a.state.Messages) > 0 {
-		last = len(a.state.Messages) - 1
-		message := &a.state.Messages[last]
-		if message.Role == "user" {
-			break
-		}
-		messageBytes := acpMessageBytes(*message)
-		if len(message.Text) > 0 {
-			// Removing this many UTF-8 bytes removes at least as many JSON bytes.
-			// Cap each cut at half the remaining text: JSON escaping can
-			// make the wire overflow larger than the entire raw string.
-			start := min(size-limit, max(len(message.Text)/2, 1))
-			for start < len(message.Text) && !utf8.RuneStart(message.Text[start]) {
-				start++
-			}
-			message.Text = strings.Clone(message.Text[start:])
-			size += acpMessageBytes(*message) - messageBytes
-		} else {
-			size -= messageBytes
-			a.state.Messages = slices.Delete(a.state.Messages, last, last+1)
-			if a.promptIndex != nil {
-				*a.promptIndex = min(*a.promptIndex, len(a.state.Messages))
-			}
-		}
-		a.state.HistoryTruncated = true
-	}
 }
 
 func (m *Manager) ACP(workspaceID, key string) (ACPChat, error) {

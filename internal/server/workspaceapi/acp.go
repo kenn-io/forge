@@ -18,7 +18,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "chat detached")
-	conn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
+	conn.SetReadLimit(terminalwebsocket.ACPReadLimit)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	changes, unsubscribe := agent.Subscribe()
@@ -65,6 +65,15 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 			switch command.Type {
 			case "heartbeat":
 				if conn.Write(ctx, websocket.MessageText, []byte(`{"type":"heartbeat"}`)) != nil {
+					return
+				}
+			case "history":
+				// Older transcript pages go only to the client that asked.
+				data, err := agent.History(command.Before, command.Limit)
+				if err != nil {
+					data, _ = json.Marshal(map[string]string{"commandError": err.Error()})
+				}
+				if conn.Write(ctx, websocket.MessageText, data) != nil {
 					return
 				}
 			case "prompt", "config":

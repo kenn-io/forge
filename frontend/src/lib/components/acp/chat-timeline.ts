@@ -5,9 +5,12 @@ type ChatRow =
   | { kind: "message"; id: number; message: ChatMessage }
   | { kind: "tools"; id: number; messages: ChatMessage[] };
 
-export function chatRows(messages: readonly ChatMessage[]): ChatRow[] {
+// Row ids are transcript indices (offset is the index of messages[0]), so
+// rows keep their identity when earlier pages are prepended.
+export function chatRows(messages: readonly ChatMessage[], offset = 0): ChatRow[] {
   const rows: ChatRow[] = [];
-  messages.forEach((message, index) => {
+  messages.forEach((message, position) => {
+    const index = offset + position;
     if (message.role !== "tool") {
       rows.push({ kind: "message", id: index, message });
       return;

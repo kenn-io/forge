@@ -142,7 +142,7 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 				return
 			}
 			defer conn.Close(websocket.StatusNormalClosure, "done")
-			conn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
+			conn.SetReadLimit(terminalwebsocket.ACPReadLimit)
 			peerExtensions <- w.Header().Get("Sec-WebSocket-Extensions")
 			peerHeaders <- r.Header.Clone()
 
@@ -190,7 +190,7 @@ func TestFleetWebSocketProxyNegotiatesContextTakeoverOnBothLegs(t *testing.T) {
 	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
-	conn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
+	conn.SetReadLimit(terminalwebsocket.ACPReadLimit)
 	require.NotNil(resp)
 
 	clientExtensions := resp.Header.Get("Sec-WebSocket-Extensions")

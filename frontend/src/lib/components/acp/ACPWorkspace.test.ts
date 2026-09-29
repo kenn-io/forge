@@ -35,7 +35,6 @@ const baseState = {
   messages: [],
   configOptions: [],
   configuring: false,
-  historyTruncated: false,
   permissions: [],
   busy: false,
   connected: true,
@@ -50,7 +49,11 @@ async function openChat(state: Record<string, unknown>, props: { disabled?: bool
 }
 
 async function push(state: Record<string, unknown>) {
-  socket.options!.onMessage(JSON.stringify({ ...baseState, ...state }));
+  // An unpaged fixture is the whole transcript.
+  const messages = (state.messages ?? []) as unknown[];
+  socket.options!.onMessage(
+    JSON.stringify({ ...baseState, messageOffset: 0, messageCount: messages.length, ...state }),
+  );
   await tick();
 }
 
@@ -867,5 +870,105 @@ describe("ACPWorkspace terminal output", () => {
 
     // Terminal IDs are internal; a terminal with nothing to show adds no row.
     expect(screen.queryByText(/term-3/)).toBeNull();
+  });
+});
+
+describe("ACPWorkspace transcript paging", () => {
+  const user = (index: number) => ({ role: "user", text: `Message ${index}` });
+  const range = (from: number, to: number) => Array.from({ length: to - from }, (_, offset) => user(from + offset));
+  const texts = () => screen.queryAllByRole("article").map((article) => article.textContent?.trim());
+  const historyRequests = () =>
+    (sentCommands() as Array<{ type: string }>).filter((command) => command.type === "history");
+  const conversation = () => document.querySelector<HTMLElement>(".conversation")!;
+
+  it("renders a window at its offset and loads the page before it", async () => {
+    await openChat({ messages: range(200, 202), messageOffset: 200, messageCount: 202 });
+    expect(texts()).toEqual(["Message 200", "Message 201"]);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
+    expect(historyRequests()).toEqual([{ type: "history", before: 200, limit: 100 }]);
+    const loading = screen.getByRole("button", { name: "Loading earlier messages…" }) as HTMLButtonElement;
+    expect(loading.disabled).toBe(true);
+
+    // One request in flight: scrolling to the top does not ask again.
+    await fireEvent.scroll(conversation());
+    expect(historyRequests()).toHaveLength(1);
+
+    socket.options!.onMessage(JSON.stringify({ history: { offset: 100, messages: range(100, 200) } }));
+    await tick();
+    expect(texts()).toHaveLength(102);
+    expect(texts().slice(0, 2)).toEqual(["Message 100", "Message 101"]);
+    expect(texts().slice(-3)).toEqual(["Message 199", "Message 200", "Message 201"]);
+
+    await fireEvent.scroll(conversation());
+    expect(historyRequests().at(-1)).toEqual({ type: "history", before: 100, limit: 100 });
+  });
+
+  it("asks for earlier history when the conversation scrolls near the top", async () => {
+    await openChat({ messages: range(50, 52), messageOffset: 50, messageCount: 52 });
+    await fireEvent.scroll(conversation());
+    expect(historyRequests()).toEqual([{ type: "history", before: 50, limit: 100 }]);
+  });
+
+  it("keeps loaded messages when the window slides forward", async () => {
+    await openChat({ messages: range(0, 3), messageOffset: 0, messageCount: 3 });
+    await push({ messages: range(2, 5), messageOffset: 2, messageCount: 5 });
+
+    expect(texts()).toEqual(["Message 0", "Message 1", "Message 2", "Message 3", "Message 4"]);
+    expect(screen.queryByRole("button", { name: "Load earlier messages" })).toBeNull();
+  });
+
+  it("does not request history once the transcript start is loaded", async () => {
+    await openChat({ messages: range(0, 2), messageOffset: 0, messageCount: 2 });
+    expect(screen.queryByRole("button", { name: /earlier messages/ })).toBeNull();
+    await fireEvent.scroll(conversation());
+    expect(historyRequests()).toEqual([]);
+  });
+
+  it("re-enables loading after a failed request", async () => {
+    await openChat({ messages: range(10, 12), messageOffset: 10, messageCount: 12 });
+    await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
+    socket.options!.onMessage(JSON.stringify({ commandError: "History is unavailable." }));
+    await tick();
+
+    expect(screen.getByRole("alert").textContent).toContain("History is unavailable.");
+    await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
+    expect(historyRequests()).toHaveLength(2);
+  });
+
+  it("uses transcript indices for the live tail of a paged window", async () => {
+    await openChat({
+      busy: true,
+      messageOffset: 500,
+      messageCount: 502,
+      messages: [user(500), { role: "thought", text: "Planning the edit" }],
+    });
+    expect(screen.getByRole("button", { name: "Thinking" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("starts over from the new window after reconnecting", async () => {
+    await openChat({ messages: range(200, 202), messageOffset: 200, messageCount: 202 });
+    await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
+    socket.options!.onMessage(JSON.stringify({ history: { offset: 100, messages: range(100, 200) } }));
+    await tick();
+    expect(texts()).toHaveLength(102);
+
+    socket.options!.onOpen?.();
+    await push({ messages: range(201, 203), messageOffset: 201, messageCount: 203 });
+    expect(texts()).toEqual(["Message 201", "Message 202"]);
+  });
+});
+
+describe("ACPWorkspace composer size", () => {
+  it("sends drafts of any size", async () => {
+    await openChat({});
+    const text = "x".repeat(70_000);
+    await fireEvent.input(screen.getByRole("textbox", { name: "Message agent" }), { target: { value: text } });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    const send = screen.getByRole("button", { name: "Send" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    await fireEvent.click(send);
+    expect(sentCommands()).toEqual([{ type: "prompt", mode: "send", id: expect.any(String), text }]);
   });
 });

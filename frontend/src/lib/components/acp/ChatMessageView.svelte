@@ -119,9 +119,10 @@
     {:else}
       <div class="message-body">{@render body()}</div>
     {/if}
-    <!-- Hover or focus reveals time and copy in a gutter left of the cell,
-         laid over reserved space so nothing reflows. Panes too narrow for the
-         gutter omit it. -->
+    <!-- Time and copy. Wide panes reveal them on hover or focus in a gutter
+         left of the cell, laid over reserved space so nothing reflows; panes
+         too narrow for the gutter show them as a quiet line below the message. -->
+    {#if timestamp || (!streaming && message.text) || copyError}
     <div class="gutter" class:pinned={!!copyError || copied}>
     {#if timestamp}
       <time datetime={message.createdAt} title={timestamp.toLocaleString()}
@@ -143,6 +144,7 @@
     <span class="kit-sr-only" role="status">{copied ? "Copied" : ""}</span>
     {#if copyError}<span class="copy-error" role="alert">{copyError}</span>{/if}
     </div>
+    {/if}
   </div>
 </article>
 
@@ -224,27 +226,35 @@
   .message-body :global(.markdown > :last-child) {
     margin-bottom: 0;
   }
-  /* The conversation pane reserves --acp-gutter to the left of every cell
-     once it is wide enough (ACPWorkspace.svelte .messages). */
+  /* Narrow panes: one always-visible muted line under the message, on the
+     message's own text edge. */
   .gutter {
-    display: none;
-    position: absolute;
-    top: 0;
-    right: calc(100% + var(--space-3));
-    width: var(--acp-gutter);
+    display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: flex-end;
     gap: var(--space-1) var(--space-2);
-    color: var(--text-secondary);
+    margin-top: var(--space-1);
+    color: var(--text-muted);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
-    opacity: 0;
-    transition: opacity var(--transition-fast) ease-out;
   }
+  .user .gutter {
+    justify-content: flex-end;
+  }
+  /* Wide panes: the conversation reserves --acp-gutter to the left of every
+     cell (ACPWorkspace.svelte .messages) and the gutter sits there, revealed on
+     hover or focus. */
   @container acp-conversation (min-width: 40rem) {
     .gutter {
-      display: flex;
+      position: absolute;
+      top: 0;
+      right: calc(100% + var(--space-3));
+      width: var(--acp-gutter);
+      margin-top: 0;
+      justify-content: flex-end;
+      color: var(--text-secondary);
+      opacity: 0;
+      transition: opacity var(--transition-fast) ease-out;
     }
     .cell:hover .gutter,
     .cell:focus-within .gutter,
@@ -279,6 +289,10 @@
 
   @media (pointer: coarse) {
     .thought-toggle {
+      min-height: var(--mobile-chrome-hit-target);
+    }
+    .gutter :global(button) {
+      min-width: var(--mobile-chrome-hit-target);
       min-height: var(--mobile-chrome-hit-target);
     }
   }

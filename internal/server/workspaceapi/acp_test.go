@@ -194,7 +194,8 @@ type stallingChat struct {
 	done      chan struct{}
 }
 
-func (c *stallingChat) Snapshot() ([]byte, error) { return []byte(`{}`), nil }
+func (c *stallingChat) Snapshot() ([]byte, error)        { return []byte(`{}`), nil }
+func (c *stallingChat) History(int, int) ([]byte, error) { return []byte(`{}`), nil }
 func (c *stallingChat) Subscribe() (<-chan struct{}, func()) {
 	return make(chan struct{}), func() {}
 }
@@ -231,4 +232,33 @@ func TestACPChatReadsStopWhileAPromptStalls(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "stop waited behind a stalled prompt")
 	}
+}
+
+// historyChat records history requests and answers them with a page frame.
+type historyChat struct {
+	stallingChat
+	requests chan [2]int
+}
+
+func (c *historyChat) History(before, limit int) ([]byte, error) {
+	c.requests <- [2]int{before, limit}
+	return []byte(`{"history":{"offset":3,"messages":[]}}`), nil
+}
+
+// Earlier transcript pages are answered on the connection that asked.
+func TestACPChatAnswersHistoryRequests(t *testing.T) {
+	chat := &historyChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}, make(chan [2]int, 1)}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
+	defer server.Close()
+	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	require.NoError(t, err)
+	defer conn.CloseNow()
+
+	require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(`{"type":"history","before":13,"limit":10}`)))
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	_, data, err := conn.Read(ctx)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"history":{"offset":3,"messages":[]}}`, string(data))
+	assert.Equal(t, [2]int{13, 10}, <-chat.requests)
 }

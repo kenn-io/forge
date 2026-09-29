@@ -50,16 +50,18 @@
   const commandMatches = $derived(slash && !commandMenuDismissed && !disabled && chatState?.connected ? matchCommands(commands, slash.query) : []);
   const activeCommand = $derived(Math.min(commandHighlight, commandMatches.length - 1));
   const inputHint = $derived(pendingInputHint(commands, draft));
-  const textEncoder = new TextEncoder();
-  const draftBytes = $derived(textEncoder.encode(draft).byteLength);
   const primaryOptions = $derived(chatState?.configOptions.filter(option => !option.category || option.category === "model" || option.category === "thought_level") ?? []);
   const otherOptions = $derived(chatState?.configOptions.filter(option => option.category && option.category !== "model" && option.category !== "thought_level") ?? []);
   const optionsDisabled = $derived(!connected || !chatState?.connected || chatState.configuring || settingPending || disabled);
   let resyncPending = false;
-  const rows = $derived(chatRows(chatState?.messages ?? []));
+  let historyLoading = $state(false);
+  // Transcript index of the first loaded message; earlier pages load on demand.
+  const firstLoaded = $derived(chatState?.messageOffset ?? 0);
+  const lastIndex = $derived(firstLoaded + (chatState?.messages.length ?? 0) - 1);
+  const rows = $derived(chatRows(chatState?.messages ?? [], firstLoaded));
   // A running turn never blocks the composer: prompts sent while busy steer
   // the turn or queue behind it on the host.
-  const canSend = $derived(connected && chatState?.connected && !pending && !disabled && draft.trim().length > 0 && draftBytes <= 65536);
+  const canSend = $derived(connected && chatState?.connected && !pending && !disabled && draft.trim().length > 0);
   const running = $derived(!!chatState?.busy || !!chatState?.steering);
   const stopping = $derived(!!chatState?.stopping);
   const steeringSupported = $derived(!!chatState?.steeringSupported);
@@ -78,6 +80,7 @@
       const session = makeChatSession({
         path, initialStatus,
         onState: (next) => {
+          if (scroll && chatState && (next.messageOffset ?? 0) < firstLoaded) keepReadingPosition(scroll);
           const exited = !next.connected && chatState?.connected !== false;
           chatState = next;
           settingPending = false;
@@ -97,6 +100,7 @@
         },
         onError: (message) => { error = message; pending = null; settingPending = false; },
         onConnection: (value) => { connected = value; if (value) resyncPending = true; onConnectionChange?.(value); },
+        onHistoryLoading: (value) => { historyLoading = value; },
       });
       connection = session;
       const execution = runtime.runCommand(Effect.scoped(session.program), {
@@ -111,6 +115,36 @@
     if (!chatState) return;
     if (scroll && active && follow) scroll.scrollTop = scroll.scrollHeight;
   });
+  // Older messages are inserted above what the reader is looking at. Pin the
+  // first row still in view to its on-screen position once they render (and
+  // for the next frames, while inserted rows settle). This is explicit because
+  // Safari has no scroll anchoring.
+  function keepReadingPosition(element: HTMLDivElement) {
+    const top = element.getBoundingClientRect().top;
+    const anchor = [...element.querySelectorAll<HTMLElement>(".messages > :not(.earlier)")].find(
+      (row) => row.getBoundingClientRect().bottom > top,
+    );
+    if (!anchor) return;
+    const offset = anchor.getBoundingClientRect().top;
+    const restore = () => {
+      if (anchor.isConnected) element.scrollTop += anchor.getBoundingClientRect().top - offset;
+    };
+    void tick().then(() => {
+      restore();
+      requestAnimationFrame(() => {
+        restore();
+        requestAnimationFrame(restore);
+      });
+    });
+  }
+  function loadEarlier() {
+    if (firstLoaded > 0) connection?.loadEarlier(100);
+  }
+  function onConversationScroll() {
+    if (!scroll) return;
+    follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+    if (scroll.scrollTop < 200) loadEarlier();
+  }
   function send(mode: PromptMode) {
     if (!canSend) return;
     // getRandomValues is available on plain HTTP origins as well as HTTPS.
@@ -177,14 +211,21 @@
       {:else}{label}{/if}
     </div>
   </div>
-  <div class="conversation" bind:this={scroll} onscroll={() => { if (scroll) follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80; }}>
+  <div class="conversation" bind:this={scroll} onscroll={onConversationScroll}>
     <!-- The log is not live: streamed blocks would be read piecemeal. The
          region below announces the finished reply once the turn ends. -->
     <div class="messages" role="log" aria-label="Conversation" aria-live="off" aria-busy={chatState?.busy ?? false}>
+      {#if firstLoaded > 0}
+        <div class="earlier">
+          <Button size="sm" surface="soft" disabled={historyLoading || !connected} onclick={loadEarlier}>
+            {#if historyLoading}<Spinner size={12} label="" />Loading earlier messages…{:else}Load earlier messages{/if}
+          </Button>
+        </div>
+      {/if}
       {#if rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.id)}
         {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} {childCounts} />
-        {:else}<ChatMessageView message={row.message} streaming={!!chatState?.busy && row.id === (chatState?.messages.length ?? 0) - 1} />{/if}
+        {:else}<ChatMessageView message={row.message} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
       {/each}
       <!-- Questions read as part of the conversation, in the reply column,
            right after the message that asked them. -->
@@ -207,7 +248,6 @@
   </div>
   <div class="kit-sr-only" aria-live="polite" aria-atomic="true">{#if chatState && !chatState.busy}{chatState.messages.at(-1)?.role === "assistant" ? chatState.messages.at(-1)?.text : ""}{/if}</div>
   {#if !follow}<button class="latest" type="button" onclick={() => { follow = true; }}>Latest messages</button>{/if}
-  {#if chatState?.historyTruncated}<p class="history-notice" role="status">Earlier chat messages were removed to keep this session responsive.</p>{/if}
   {#if chatState?.error}
     <div class="error" role="alert">
       <p>{chatState.error}{#if chatState.errorCode != null}{" "}<span class="error-code">ACP {chatState.errorCode}</span>{/if}</p>
@@ -215,7 +255,6 @@
     </div>
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#if draftBytes > 65536}<p class="error" role="alert">Message must not exceed 65,536 bytes.</p>{/if}
   <div class="dock">
     {#if chatState?.plan?.length || subagents.length || queue.length}
       <ChatDockRail
@@ -297,7 +336,7 @@
   .conversation { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; container: acp-conversation / inline-size; }
   .messages { display: flex; flex-direction: column; gap: var(--space-6); max-width: var(--acp-column); margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
   .empty { color: var(--text-secondary); }
-  .dock, .error, .history-notice, .chat-status__inner { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }
+  .dock, .error, .chat-status__inner { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }
   .messages > :global(.request) { align-self: flex-start; width: 100%; max-width: 36rem; }
   .permission-title { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
   .permission-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
@@ -305,10 +344,11 @@
   .error p { margin: 0; }
   .error-code { font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-secondary); }
   .error pre { max-height: 10rem; overflow: auto; margin: var(--space-3) 0 0; color: var(--text-primary); font-size: var(--font-size-xs); white-space: pre-wrap; }
-  .history-notice { color: var(--text-secondary); margin: 0; padding: var(--space-4) var(--space-6); overflow-wrap: anywhere; }
+  .earlier { display: flex; justify-content: center; }
   .latest { align-self: center; padding: var(--space-3) var(--space-5); color: var(--text-primary); border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: var(--radius-md); font: inherit; }
   @media (pointer: coarse) {
-    .messages, .dock, .error, .history-notice, .chat-status__inner { padding-inline: var(--space-4); }
+    .messages, .dock, .error, .chat-status__inner { padding-inline: var(--space-4); }
+    .earlier :global(button) { min-height: var(--mobile-chrome-hit-target); }
   }
   /* Reserve the message time/copy gutter (ChatMessageView .gutter) only when
      the pane is wide enough; narrow panes go without it. Declared after the
@@ -317,7 +357,7 @@
     .messages { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
   }
   @container acp-pane (min-width: 40rem) {
-    .dock, .error, .history-notice, .chat-status__inner { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
+    .dock, .error, .chat-status__inner { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
   }
   .dock {
     position: relative;

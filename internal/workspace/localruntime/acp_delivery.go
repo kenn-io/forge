@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"encoding/json/v2"
 	"regexp"
 	"strings"
 	"time"
@@ -143,7 +144,6 @@ func (a *ACP) releaseHeldTextLocked() {
 }
 
 func (a *ACP) publishProgressLocked() {
-	a.trimStateLocked()
 	_ = a.persistLocked()
 	a.changedLocked()
 }
@@ -162,7 +162,7 @@ func (a *ACP) heldTextLocked() string {
 		return ""
 	}
 	text := a.state.Messages[len(a.state.Messages)-1].Text
-	// History trimming can shorten the held message itself.
+	// Replacing the last message (a restore or reset) can leave it shorter.
 	a.heldBytes = min(a.heldBytes, len(text))
 	return text[len(text)-a.heldBytes:]
 }
@@ -171,18 +171,61 @@ func (a *ACP) heldTextLocked() string {
 // the last message, and a message that is entirely held is left out.
 func (a *ACP) publishedStateLocked() ACPState {
 	state := a.state
+	messages := a.publishedMessagesLocked()
+	// The owner keeps the whole transcript; each update carries only the
+	// recent window, and clients page older messages in with History.
+	state.MessageCount = len(messages)
+	state.MessageOffset = max(0, len(messages)-acpMessageWindow)
+	state.Messages = messages[state.MessageOffset:]
+	return state
+}
+
+// acpMessageWindow is how many recent messages each state update carries.
+const acpMessageWindow = 200
+
+// acpHistoryPage is the page size when a history request names none.
+const acpHistoryPage = 100
+
+// publishedMessagesLocked is the full transcript as clients may see it.
+func (a *ACP) publishedMessagesLocked() []ACPMessage {
+	messages := a.state.Messages
 	held := len(a.heldTextLocked())
 	if held == 0 {
-		return state
+		return messages
 	}
-	last := len(state.Messages) - 1
-	state.Messages = append([]ACPMessage(nil), state.Messages...)
-	message := state.Messages[last]
+	last := len(messages) - 1
+	messages = append([]ACPMessage(nil), messages...)
+	message := messages[last]
 	message.Text = message.Text[:len(message.Text)-held]
 	if message.Text == "" {
-		state.Messages = state.Messages[:last]
-	} else {
-		state.Messages[last] = message
+		return messages[:last]
 	}
-	return state
+	messages[last] = message
+	return messages
+}
+
+// ACPHistory is a page of earlier transcript messages starting at the
+// absolute transcript index Offset.
+type ACPHistory struct {
+	Offset   int          `json:"offset"`
+	Messages []ACPMessage `json:"messages"`
+}
+
+// historyLocked returns messages [before-limit, before) of the published
+// transcript, as the {"history": ...} frame a client receives.
+func (a *ACP) historyLocked(before, limit int) ([]byte, error) {
+	messages := a.publishedMessagesLocked()
+	before = min(max(before, 0), len(messages))
+	if limit <= 0 {
+		limit = acpHistoryPage
+	}
+	start := max(0, before-limit)
+	return json.Marshal(map[string]ACPHistory{"history": {Offset: start, Messages: messages[start:before]}}, json.Deterministic(true))
+}
+
+// History returns a page of earlier messages as a client frame.
+func (a *ACP) History(before, limit int) ([]byte, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.historyLocked(before, limit)
 }

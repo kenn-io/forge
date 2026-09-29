@@ -94,7 +94,10 @@ export const ChatStateSchema = Schema.Struct({
   messages: Schema.Array(ChatMessageSchema),
   configOptions: Schema.Array(SessionConfigOptionSchema),
   configuring: Schema.Boolean,
-  historyTruncated: Schema.Boolean,
+  // Transcript index of messages[0] and the transcript's total length.
+  // Snapshots carry only the latest window of the transcript.
+  messageOffset: Schema.Number,
+  messageCount: Schema.Number,
   permissions: Schema.Array(
     Schema.Struct({
       id: Schema.String,
@@ -129,6 +132,7 @@ export type ChatCommand =
   | { type: "prompt"; mode: PromptMode; text: string; id: string }
   | { type: "unqueue"; id: string }
   | { type: "resume" }
+  | { type: "history"; before: number; limit: number }
   | { type: "cancel" }
   | { type: "config"; id: string; value: string }
   | { type: "permission"; id: string; optionId: string }

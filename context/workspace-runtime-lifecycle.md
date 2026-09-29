@@ -48,10 +48,10 @@ Rules:
   retain active turns, permissions, and chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved
   ACP session only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
-- ACP messages, pending permissions and elicitations, and queued prompts share a
-  4 MiB JSON budget; retain the latest submitted prompt for reconnect
-  deduplication and disclose removed history in chat
-  (`internal/workspace/localruntime/acp.go::ACP.trimStateToBytesLocked`).
+- The ACP owner keeps the whole transcript and never deletes messages. State
+  updates carry only the latest message window with its absolute offset and total
+  count; clients page earlier messages in with `history` requests answered to the
+  asking connection (`internal/workspace/localruntime/acp_delivery.go::ACP.publishedStateLocked`).
 - A running ACP turn never rejects input: sends queue, and steering is used only when
   initialize advertises it. The queue drains one prompt per `end_turn` and pauses on any
   other stop, error, exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).
@@ -68,8 +68,8 @@ Rules:
   (`internal/workspace/localruntime/acp.go::startACPSession`).
 - Keep every ACP content type: a changed `messageId` starts a new message, and non-text blocks
   and thoughts are their own entries (`internal/workspace/localruntime/acp_client.go::ACP.appendContentLocked`).
-- Never cap or truncate agent-provided ACP data (commands, plans, media, tool output, errors);
-  a session too large for the UI must page older history in, not drop it.
+- Never cap or truncate ACP data in either direction (prompts, commands, plans, media, tool
+  output, errors, websocket frames); a session too large for the UI pages older history in.
 - Command output arrives as Zed terminal tool-call metadata (`terminal_output_delta`,
   `terminal_exit`), keyed by terminal ID (`internal/workspace/localruntime/acp_content.go::applyTerminalMeta`).
 - Project-worktree runtime APIs expose terminal targets only. ACP targets require

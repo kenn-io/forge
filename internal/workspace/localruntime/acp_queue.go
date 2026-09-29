@@ -29,8 +29,8 @@ type acpTurnResult struct {
 // the prompt, or steers it into the turn when asked and supported.
 func (a *ACP) submit(command ACPCommand) error {
 	text := command.Text
-	if strings.TrimSpace(text) == "" || len(text) > 64<<10 {
-		return errors.New("message must contain between 1 and 65536 bytes")
+	if strings.TrimSpace(text) == "" {
+		return errors.New("message must not be empty")
 	}
 	switch command.Mode {
 	case "", "send", "queue", "steer":
@@ -108,11 +108,6 @@ func (a *ACP) submittedLocked(id, text string) (bool, error) {
 func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) error {
 	if prompt.ID == "" {
 		prompt.ID = "queued-" + rand.Text()
-	}
-	promptBytes := acpQueuedBytes(prompt)
-	a.trimStateToBytesLocked(max(maxACPStateBytes-promptBytes, 0))
-	if a.retainedStateBytesLocked()+promptBytes > maxACPStateBytes {
-		return errors.New("the queue cannot retain another message")
 	}
 	if front {
 		a.state.Queue = slices.Insert(a.state.Queue, 0, prompt)
@@ -291,7 +286,6 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 				}()
 			}
 		}
-		a.trimStateLocked()
 		err = a.persistLocked()
 		a.changedLocked()
 		a.mu.Unlock()
@@ -310,9 +304,4 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 		a.mu.Unlock()
 		return fmt.Errorf("the agent did not accept the steering message (%q)", result.Outcome)
 	}
-}
-
-func acpQueuedBytes(prompt ACPQueuedPrompt) int {
-	data, _ := json.Marshal(prompt)
-	return len(data) + 1
 }

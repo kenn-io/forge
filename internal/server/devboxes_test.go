@@ -353,7 +353,7 @@ func TestDevboxTerminalsBypassDefaultHTTPProxy(t *testing.T) {
 			return
 		}
 		defer conn.CloseNow()
-		conn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
+		conn.SetReadLimit(terminalwebsocket.ACPReadLimit)
 		assert.NoError(conn.Write(r.Context(), websocket.MessageText, []byte(r.URL.RequestURI())))
 		typ, message, err := conn.Read(r.Context())
 		if err == nil {
@@ -398,7 +398,7 @@ func TestDevboxTerminalsBypassDefaultHTTPProxy(t *testing.T) {
 		require.NoError(err)
 		assert.Equal("/ws/v1"+path+"?protocol=acp", string(message))
 		prompt := `{"type":"prompt","id":"submission-1","text":"` + strings.Repeat(`\u0000`, 64<<10) + `"}`
-		conn.SetReadLimit(terminalwebsocket.ACPCommandReadLimit)
+		conn.SetReadLimit(terminalwebsocket.ACPReadLimit)
 		require.NoError(conn.Write(t.Context(), websocket.MessageText, []byte(prompt)))
 		typ, message, err := conn.Read(t.Context())
 		require.NoError(err)

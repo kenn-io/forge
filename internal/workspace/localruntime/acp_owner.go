@@ -65,7 +65,6 @@ func (a *ACP) persistLocked() error {
 // its own.
 func (a *ACP) restoreTranscriptLocked(saved ACPState) {
 	a.state.Messages = saved.Messages
-	a.state.HistoryTruncated = saved.HistoryTruncated
 	a.state.Queue = saved.Queue
 	a.state.QueuePaused = len(a.state.Queue) > 0
 	a.state.Plan = saved.Plan

@@ -232,16 +232,6 @@ func (a *ACP) RequestPermission(ctx context.Context, params acpsdk.RequestPermis
 	for _, option := range params.Options {
 		permission.Options = append(permission.Options, ACPPermissionOption{OptionID: string(option.OptionId), Name: option.Name, Kind: string(option.Kind)})
 	}
-	permissionBytes := acpPermissionBytes(permission)
-	if permissionBytes <= maxACPStateBytes {
-		a.trimStateToBytesLocked(maxACPStateBytes - permissionBytes)
-	}
-	if a.retainedStateBytesLocked()+permissionBytes > maxACPStateBytes {
-		a.state.Error = "The agent requested more permission data than this chat can retain."
-		a.changedLocked()
-		a.mu.Unlock()
-		return acpsdk.RequestPermissionResponse{Outcome: acpsdk.NewRequestPermissionOutcomeCancelled()}, nil
-	}
 	response := make(chan acpsdk.RequestPermissionOutcome, 1)
 	a.permissions[permission.ID] = response
 	a.state.Permissions = append(a.state.Permissions, permission)
@@ -286,16 +276,6 @@ func (a *ACP) UnstableCreateElicitation(ctx context.Context, params acpsdk.Unsta
 	}
 	if elicitation.Schema.Properties == nil {
 		elicitation.Schema.Properties = map[string]any{}
-	}
-	elicitationBytes := acpElicitationBytes(elicitation)
-	if elicitationBytes <= maxACPStateBytes {
-		a.trimStateToBytesLocked(maxACPStateBytes - elicitationBytes)
-	}
-	if a.retainedStateBytesLocked()+elicitationBytes > maxACPStateBytes {
-		a.state.Error = "The agent requested more input form data than this chat can retain."
-		a.changedLocked()
-		a.mu.Unlock()
-		return acpsdk.NewUnstableCreateElicitationResponseCancel(), nil
 	}
 	response := make(chan acpsdk.UnstableCreateElicitationResponse, 1)
 	a.elicitations[elicitation.ID] = response

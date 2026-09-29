@@ -17,9 +17,10 @@ vi.mock("../terminal/terminal-session.js", async () => {
 const frame = (messages: unknown[]) =>
   JSON.stringify({
     messages,
+    messageOffset: 0,
+    messageCount: messages.length,
     configOptions: [],
     configuring: false,
-    historyTruncated: false,
     permissions: [],
     busy: true,
     connected: true,

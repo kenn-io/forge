@@ -2248,7 +2248,7 @@
   function loadWorkspaceTabProgram(id: string, hostKey: string | undefined) {
     const generation = workspacePresentationGeneration;
     return loadWorkspaceViewState(id, hostKey).pipe(
-      Effect.tap((state) => Effect.sync(() => {
+      Effect.tap((state) => Effect.gen(function* () {
         if (
           !isCurrentWorkspace(id, hostKey) ||
           generation !== workspacePresentationGeneration ||
@@ -2262,7 +2262,16 @@
             sessionKey &&
             hasAppliedRuntimeFor(id, hostKey) &&
             !runtime?.sessions.some((session) => session.key === sessionKey)
-          ) return;
+          ) {
+            // The saved choice may be newer than the independently loaded runtime.
+            const fresh = yield* fetchRuntimeProgram({ force: true });
+            if (
+              !isCurrentWorkspace(id, hostKey) ||
+              generation !== workspacePresentationGeneration ||
+              lastRequestedTabKey !== null ||
+              !fresh?.sessions.some((session) => session.key === sessionKey)
+            ) return;
+          }
           restoredTabKey = tab;
           restoreWorkspaceTabSelection(tab);
         }

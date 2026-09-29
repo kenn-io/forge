@@ -2233,6 +2233,38 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(savedTabs).toEqual(["session:ws-1:helper-b", "session:ws-1:helper-b"]));
   });
 
+  it.each([false, true])(
+    "refreshes runtime for a newer saved agent without overriding user selection (%s)",
+    async (selectHome) => {
+      localStorage.clear();
+      const selection = deferred<Response>();
+      const freshRuntime = deferred<ReturnType<typeof runtimeWithDuplicateWorkflowSessions>>();
+      const fallback = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation((input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (new URL(request.url).pathname.endsWith("/view-state")) {
+          if (request.method === "GET") return selection.promise;
+          return Promise.resolve(Response.json({ active_tab: "home" }));
+        }
+        return fallback(input, init);
+      });
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await screen.findByRole("tab", { name: /Helper/ });
+
+      mocks.getWorkspaceRuntime.mockReturnValue(freshRuntime.promise);
+      const response = Response.json({ active_tab: "session:ws-1:helper-b" });
+      selection.resolve(response);
+      await waitFor(() => expect(response.bodyUsed).toBe(true));
+      if (selectHome) await fireEvent.click(screen.getByRole("tab", { name: "Home" }));
+      freshRuntime.resolve(runtimeWithDuplicateWorkflowSessions());
+
+      const agentTab = await screen.findByRole("tab", { name: /Helper 2/ });
+      const selected = selectHome ? screen.getByRole("tab", { name: "Home" }) : agentTab;
+      await waitFor(() => expect(selected.getAttribute("aria-selected")).toBe("true"));
+    },
+  );
+
   it("restores the server-selected agent in a browser without local state", async () => {
     localStorage.clear();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithDuplicateWorkflowSessions());

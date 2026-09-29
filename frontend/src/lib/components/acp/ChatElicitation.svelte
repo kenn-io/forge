@@ -58,8 +58,7 @@
 {/snippet}
 
 <form class="elicitation" aria-labelledby={`${uid}-message`} novalidate onsubmit={submit}>
-  {#if elicitation.schema.title}<strong class="title">{elicitation.schema.title}</strong>{/if}
-  <p class="message" id={`${uid}-message`}>{elicitation.message || "The agent needs more information."}</p>
+  <p class="message" id={`${uid}-message`}>{elicitation.message || elicitation.schema.title || "The agent needs more information."}</p>
   {#each fields as field, index (field.key)}
     {@const id = `${uid}-${index}`}
     {@const problem = fieldProblem(field, values)}
@@ -118,17 +117,16 @@
     </div>
   {/each}
   <div class="actions">
-    <Button type="submit" tone="info" surface="solid" disabled={disabled || !ready}>Submit</Button>
-    <Button {disabled} onclick={() => onrespond({ action: "decline" })}>Decline</Button>
-    <Button {disabled} onclick={() => onrespond({ action: "cancel" })}>Cancel</Button>
+    <Button type="submit" size="sm" tone="info" surface="solid" disabled={disabled || !ready}>Submit</Button>
+    <Button size="sm" {disabled} onclick={() => onrespond({ action: "decline" })}>Decline</Button>
+    <Button size="sm" {disabled} onclick={() => onrespond({ action: "cancel" })}>Cancel</Button>
   </div>
 </form>
 
 <style>
-  .elicitation { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
-  .title, .message { overflow-wrap: anywhere; }
-  .message { margin: 0; white-space: pre-wrap; }
-  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; max-width: 32rem; }
+  .elicitation { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+  .message { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); }
+  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; max-width: 24rem; }
   .label, legend { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--text-secondary); }
   fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
   legend { padding: 0; margin-bottom: var(--space-2); }
@@ -138,7 +136,7 @@
   .problem { color: var(--accent-red); }
   .select :global(.kit-select-dropdown),
   .select :global(.kit-select-dropdown__trigger) { width: 100%; min-width: 0; }
-  .actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
   @media (pointer: coarse) {
     .actions :global(button),
     .select :global(.kit-select-dropdown__trigger),

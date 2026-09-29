@@ -254,7 +254,6 @@ describe("ACPWorkspace slash commands", () => {
     await fireEvent.input(composer(), { target: { value: "/RE" } });
     expect(optionNames()).toEqual(["/review", "/release-notes", "/prereq"]);
     expect(screen.getByText("Review the current changes")).toBeTruthy();
-    expect(screen.getByText("pull request")).toBeTruthy();
 
     await fireEvent.input(composer(), { target: { value: "/review now" } });
     expect(screen.queryByRole("listbox")).toBeNull();
@@ -339,7 +338,8 @@ describe("ACPWorkspace busy composer", () => {
 
     expect(composer().disabled).toBe(false);
     expect(composer().placeholder).toBe("Steer the reply, or queue a follow-up…");
-    expect(screen.getByText("Enter steers this reply")).toBeTruthy();
+    // Queueing stays one chip away; Enter steers.
+    expect(screen.getByRole("button", { name: "Queue" }).getAttribute("aria-keyshortcuts")).toBe("Alt+Enter");
     expect((screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement).disabled).toBe(false);
 
     await fireEvent.input(composer(), { target: { value: "Focus on the tests" } });
@@ -355,7 +355,8 @@ describe("ACPWorkspace busy composer", () => {
     await openChat({ busy: true, steeringSupported: false });
 
     expect(composer().placeholder).toBe("Queue a follow-up…");
-    expect(screen.queryByText("Enter steers this reply")).toBeNull();
+    // The primary action already queues, so there is no second Queue control.
+    expect(screen.queryByRole("button", { name: "Queue" })).toBeNull();
     await fireEvent.input(composer(), { target: { value: "Then update the docs" } });
     expect((screen.getByRole("button", { name: "Queue message" }) as HTMLButtonElement).disabled).toBe(false);
     await fireEvent.keyDown(composer(), { key: "Enter" });
@@ -409,30 +410,35 @@ describe("ACPWorkspace busy composer", () => {
       ],
     });
 
-    const section = screen.getByRole("group", { name: "Queued messages" });
-    expect(within(section).getByText("2 queued · sends after this reply")).toBeTruthy();
+    // The queue is one quiet chip until opened.
+    const chip = screen.getByRole("button", { name: /2 queued/ });
+    expect(chip.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("list", { name: "Queued messages" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume queue" })).toBeNull();
+
+    await fireEvent.click(chip);
+    const list = screen.getByRole("list", { name: "Queued messages" });
     expect(
-      within(section)
+      within(list)
         .getAllByRole("listitem")
         .map((item) => item.textContent?.trim()),
     ).toEqual(["Run the full suite", "Summarize the diff"]);
-    expect(within(section).getByText("Run the full suite").getAttribute("title")).toBe("Run the full suite");
-    expect(within(section).queryByRole("button", { name: "Resume queue" })).toBeNull();
+    expect(within(list).getByText("Run the full suite").getAttribute("title")).toBe("Run the full suite");
 
-    await fireEvent.click(within(section).getAllByRole("button", { name: "Remove queued message" })[0]!);
+    await fireEvent.click(within(list).getAllByRole("button", { name: "Remove queued message" })[0]!);
     expect(sentCommands()).toEqual([{ type: "unqueue", id: "q1" }]);
   });
 
   it("shows a paused queue with Resume, and hides the section when the queue is empty", async () => {
     await openChat({ queuePaused: true, queue: [{ id: "q1", text: "Run the full suite" }] });
 
-    const section = screen.getByRole("group", { name: "Queued messages" });
-    expect(within(section).getByText("1 queued · Paused")).toBeTruthy();
-    await fireEvent.click(within(section).getByRole("button", { name: "Resume queue" }));
+    expect(screen.getByRole("button", { name: /1 queued\s*·\s*paused/ })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Resume queue" }));
     expect(sentCommands()).toEqual([{ type: "resume" }]);
 
     await push({ queue: [] });
-    expect(screen.queryByRole("group", { name: "Queued messages" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /queued/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume queue" })).toBeNull();
   });
 });
 
@@ -450,18 +456,19 @@ describe("ACPWorkspace sub-agents", () => {
   it("shows running sub-agents with their child tool counts and hides once all finish", async () => {
     await openChat({ busy: true, messages });
 
-    const strip = screen.getByRole("group", { name: "Running sub-agents" });
-    expect(within(strip).getByText("2 sub-agents running")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: /2 sub-agents running/ }));
+    const list = screen.getByRole("list", { name: "Running sub-agents" });
     expect(
-      within(strip)
+      within(list)
         .getAllByRole("listitem")
         .map((item) => item.textContent),
-    ).toEqual(["Explore repository2 tool calls", "Write tests0 tool calls"]);
+    ).toEqual(["Explore repository 2 tool calls", "Write tests 0 tool calls"]);
 
     await push({
       messages: messages.map((message) => ("status" in message ? { ...message, status: "completed" } : message)),
     });
-    expect(screen.queryByRole("group", { name: "Running sub-agents" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /sub-agents? running/ })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Running sub-agents" })).toBeNull();
   });
 
   it("marks sub-agent tool calls in the transcript", async () => {
@@ -731,7 +738,7 @@ describe("ACPWorkspace rich content", () => {
     }
   });
 
-  it("expands tool rows into kind, locations, diff, output, and raw JSON", async () => {
+  it("expands tool rows into the diff, output, and raw JSON without repeating the path", async () => {
     await openChat({
       messages: [
         {
@@ -760,8 +767,9 @@ describe("ACPWorkspace rich content", () => {
     await fireEvent.click(row);
     const details = document.getElementById(row.getAttribute("aria-controls")!)!;
 
-    expect(within(details).getByText("Edit")).toBeTruthy();
-    expect(within(details).getByText("src/app.ts:12")).toBeTruthy();
+    // The diff caption carries the location; the path is not listed twice.
+    expect(within(details).queryByRole("list", { name: "Locations" })).toBeNull();
+    expect(details.querySelector("figcaption")?.textContent).toBe("src/app.ts:12");
     const diff = within(details).getByRole("list", { name: "Changes to src/app.ts" });
     const kinds = ["context", "removed", "added"];
     expect(
@@ -776,7 +784,8 @@ describe("ACPWorkspace rich content", () => {
       ["context", " three"],
     ]);
     expect(within(details).getByText("Applied 1 change").tagName).toBe("PRE");
-    expect(within(details).getByText("Terminal term-1")).toBeTruthy();
+    // A terminal with neither output nor an exit code adds no row.
+    expect(within(details).queryByText(/Terminal|No output/)).toBeNull();
     expect(within(details).getByText("Raw input").closest("details")?.querySelector("pre")?.textContent).toBe(
       '{\n  "path": "src/app.ts"\n}',
     );
@@ -794,15 +803,18 @@ describe("ACPWorkspace rich content", () => {
       ],
     });
 
-    const plan = screen.getByRole("region", { name: "Plan" });
-    expect(within(plan).getByText("2/5 done")).toBeTruthy();
+    // The plan is one chip with its progress until opened.
+    const chip = screen.getByRole("button", { name: /Plan 2\/5/ });
+    expect(screen.queryByRole("list", { name: "Plan" })).toBeNull();
+    await fireEvent.click(chip);
+    const plan = screen.getByRole("list", { name: "Plan" });
     expect(within(plan).getAllByRole("listitem")).toHaveLength(5);
     expect(within(plan).getAllByRole("listitem")[2]!.textContent).toContain("In progress: Add tests");
-    await fireEvent.click(within(plan).getByRole("button", { name: /Plan/ }));
-    expect(within(plan).queryAllByRole("listitem")).toHaveLength(0);
+    await fireEvent.click(chip);
+    expect(screen.queryByRole("list", { name: "Plan" })).toBeNull();
 
     await push({ plan: [] });
-    expect(screen.queryByRole("region", { name: "Plan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Plan/ })).toBeNull();
   });
 });
 
@@ -833,18 +845,19 @@ describe("ACPWorkspace terminal output", () => {
     await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
     await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
 
-    const passed = screen.getByLabelText("Terminal term-1 output");
-    expect(passed.tagName).toBe("PRE");
-    expect(passed.textContent).toBe("ok 12 passed\ndone");
-    const passedBadge = passed.closest("figure")!.querySelector(".exit")!;
+    const [passed, failed] = screen.getAllByLabelText("Command output");
+    expect(screen.getAllByLabelText("Command output")).toHaveLength(2);
+    expect(passed!.tagName).toBe("PRE");
+    expect(passed!.textContent).toBe("ok 12 passed\ndone");
+    const passedBadge = passed!.closest("figure")!.querySelector(".exit")!;
     expect(passedBadge.textContent).toBe("exit 0");
     expect(passedBadge.classList.contains("exit--ok")).toBe(true);
 
-    const failedBadge = screen.getByLabelText("Terminal term-2 output").closest("figure")!.querySelector(".exit")!;
+    const failedBadge = failed!.closest("figure")!.querySelector(".exit")!;
     expect(failedBadge.textContent).toBe("exit 1");
     expect(failedBadge.classList.contains("exit--failed")).toBe(true);
 
-    expect(screen.queryByLabelText("Terminal term-3 output")).toBeNull();
-    expect(screen.getByText("Terminal term-3")).toBeTruthy();
+    // Terminal IDs are internal; a terminal with nothing to show adds no row.
+    expect(screen.queryByText(/term-3/)).toBeNull();
   });
 });

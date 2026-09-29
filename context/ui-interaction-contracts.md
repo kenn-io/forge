@@ -137,6 +137,12 @@ Interactive surfaces must agree on which item is selected.
 - ACP message time and copy live in a hover/focus gutter left of the message, never a footer
   line; the gutter never shifts layout and is absent when the chat pane is too narrow
   (`frontend/src/lib/components/acp/ChatMessageView.svelte`).
+- Everything in the ACP pane (conversation, questions, notices, composer) shares one reading
+  column; agent questions render inline in it. Turn status above the composer is one line of
+  chips that expand on demand (`frontend/src/lib/components/acp/ChatDockRail.svelte`).
+- Composer popovers such as the slash menu are kit popover cards sized to their content and
+  anchored to the composer edge, never composer-wide; rows are one line
+  (`frontend/src/lib/components/acp/ChatCommandMenu.svelte`).
 - Agent-provided ACP content reaches the page only as text, sanitized markdown, or checked
   image/audio data URLs; only http(s) and mailto links are clickable
   (`frontend/src/lib/components/acp/chat-content.ts`).

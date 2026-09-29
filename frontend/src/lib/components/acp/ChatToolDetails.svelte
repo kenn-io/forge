@@ -1,47 +1,39 @@
 <script lang="ts">
-  import ArrowRightLeft from "@lucide/svelte/icons/arrow-right-left";
-  import Brain from "@lucide/svelte/icons/brain";
-  import FileText from "@lucide/svelte/icons/file-text";
-  import Globe from "@lucide/svelte/icons/globe";
-  import Pencil from "@lucide/svelte/icons/pencil";
-  import Search from "@lucide/svelte/icons/search";
-  import Settings from "@lucide/svelte/icons/settings-2";
   import Terminal from "@lucide/svelte/icons/terminal";
-  import Trash from "@lucide/svelte/icons/trash-2";
-  import Wrench from "@lucide/svelte/icons/wrench";
   import ChatContentBlock from "./ChatContentBlock.svelte";
   import { lineDiff, stripAnsi } from "./chat-content.js";
   import type { ChatMessage } from "./chat-types.js";
 
   let { message, id }: { message: ChatMessage; id: string } = $props();
 
-  const kinds: Record<string, { icon: typeof Wrench; label: string }> = {
-    read: { icon: FileText, label: "Read" },
-    edit: { icon: Pencil, label: "Edit" },
-    delete: { icon: Trash, label: "Delete" },
-    move: { icon: ArrowRightLeft, label: "Move" },
-    search: { icon: Search, label: "Search" },
-    execute: { icon: Terminal, label: "Execute" },
-    think: { icon: Brain, label: "Think" },
-    fetch: { icon: Globe, label: "Fetch" },
-    switch_mode: { icon: Settings, label: "Switch mode" },
-  };
-  const kind = $derived(kinds[message.kind ?? ""] ?? { icon: Wrench, label: "Tool" });
+  const content = $derived(message.toolContent ?? []);
+  const diffPaths = $derived(new Set(content.flatMap((item) => (item.type === "diff" && item.path ? [item.path] : []))));
+  // A location a diff already names adds nothing; its line number moves into the diff caption.
+  const locations = $derived((message.locations ?? []).filter((location) => !diffPaths.has(location.path)));
+  const diffLine = (path: string | null | undefined) => message.locations?.find((location) => location.path === path)?.line;
+
+  // Agents report absolute paths; the last segments identify the file and the
+  // full path stays available on hover.
+  function shortPath(path: string | null | undefined): string {
+    if (!path) return "file";
+    const parts = path.split("/").filter(Boolean);
+    return parts.length > 3 ? `…/${parts.slice(-3).join("/")}` : path;
+  }
 </script>
 
 <div class="details" {id}>
-  <div class="kind"><kind.icon size={12} aria-hidden="true" />{kind.label}</div>
-  {#if message.locations?.length}
+  {#if locations.length}
     <ul class="locations" aria-label="Locations">
-      {#each message.locations as location, index (index)}
-        <li><code>{location.path}{location.line != null ? `:${location.line}` : ""}</code></li>
+      {#each locations as location, index (index)}
+        <li><code title={location.path}>{shortPath(location.path)}{location.line != null ? `:${location.line}` : ""}</code></li>
       {/each}
     </ul>
   {/if}
-  {#each message.toolContent ?? [] as item, index (index)}
+  {#each content as item, index (index)}
     {#if item.type === "diff"}
+      {@const line = diffLine(item.path)}
       <figure class="diff">
-        <figcaption><code>{item.path ?? "file"}</code>{item.oldText == null ? " (new file)" : ""}</figcaption>
+        <figcaption><code title={item.path ?? undefined}>{shortPath(item.path)}{line != null ? `:${line}` : ""}</code>{item.oldText == null ? " · new file" : ""}</figcaption>
         <ol aria-label={`Changes to ${item.path ?? "file"}`}>
           {#each lineDiff(item.oldText, item.newText) as line, lineIndex (lineIndex)}
             {#if line.kind === "gap"}
@@ -60,15 +52,11 @@
       {/snippet}
       {#if item.output}
         <figure class="terminal-output">
-          <figcaption>
-            <Terminal size={12} aria-hidden="true" />Terminal {item.terminalId ?? ""}{@render exit(item.exitCode)}
-          </figcaption>
-          <pre aria-label={item.terminalId ? `Terminal ${item.terminalId} output` : "Terminal output"}>{stripAnsi(item.output)}</pre>
+          <figcaption><Terminal size={12} aria-hidden="true" />Output{@render exit(item.exitCode)}</figcaption>
+          <pre aria-label="Command output">{stripAnsi(item.output)}</pre>
         </figure>
-      {:else}
-        <span class="terminal"
-          ><Terminal size={12} aria-hidden="true" />Terminal {item.terminalId ?? ""}{@render exit(item.exitCode)}</span
-        >
+      {:else if item.exitCode != null}
+        <span class="terminal"><Terminal size={12} aria-hidden="true" />No output{@render exit(item.exitCode)}</span>
       {/if}
     {:else if item.content?.type === "text"}
       <pre class="output">{item.content.text ?? ""}</pre>
@@ -92,18 +80,12 @@
     min-width: 0;
     padding: 0 var(--space-5) var(--space-3) calc(14px + var(--space-4) + var(--space-5));
   }
-  .kind,
   .terminal {
     display: inline-flex;
     align-items: center;
+    align-self: flex-start;
     gap: var(--space-2);
     color: var(--text-secondary);
-  }
-  .terminal {
-    align-self: flex-start;
-    padding: 0 var(--space-3);
-    border: 1px solid var(--border-default);
-    border-radius: 999px;
   }
   .locations {
     display: flex;

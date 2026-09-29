@@ -127,6 +127,7 @@
   }
   .image {
     display: block;
+    width: fit-content;
     max-width: 100%;
     padding: 0;
     border: 1px solid var(--border-muted);
@@ -153,7 +154,8 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
-    max-width: 36rem;
+    width: fit-content;
+    max-width: min(36rem, 100%);
     padding: var(--space-3) var(--space-4);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);

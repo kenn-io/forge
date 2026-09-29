@@ -544,6 +544,10 @@ decimals — a fixed scale rounds small magnitudes to a meaningless zero
 
 ## Implementation guidance
 
+Never add side stripes ("fingernails"): no colored left/right border or inset edge shadow to
+mark selection, activity, emphasis, or quotes. Show selection with a background tint; indent
+or mute nested content instead of ruling it.
+
 When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`) alongside this document.
 
 Effect-owned frontend work shares the single main `ManagedRuntime` and reaches it through Svelte context; do not create per-feature runtimes or detach async work from its scope (`frontend/src/lib/app/runtime.ts::makeAppRuntime`, `frontend/src/lib/app/mount.ts::mountApplication`).

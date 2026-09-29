@@ -215,7 +215,6 @@
   .thought-body {
     margin-top: var(--space-2);
     padding-left: var(--space-5);
-    border-left: 2px solid var(--border-muted);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }

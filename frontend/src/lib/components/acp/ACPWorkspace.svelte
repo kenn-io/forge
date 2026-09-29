@@ -6,17 +6,16 @@
   import Settings from "@lucide/svelte/icons/settings-2";
   import CornerDownLeft from "@lucide/svelte/icons/corner-down-left";
   import ListPlus from "@lucide/svelte/icons/list-plus";
-  import X from "@lucide/svelte/icons/x";
   import ChatOptionMenu from "./ChatOptionMenu.svelte";
   import ChatSessionOptions from "./ChatSessionOptions.svelte";
-  import { Button, IconButton, Spinner } from "@kenn-io/kit-ui";
-  import KbdBadge from "../keyboard/KbdBadge.svelte";
+  import { Button, Card, Spinner } from "@kenn-io/kit-ui";
+  import { kbdGlyph } from "../keyboard/useKbdLabel.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import ChatMessageView from "./ChatMessageView.svelte";
   import ChatToolGroup from "./ChatToolGroup.svelte";
   import ChatElicitation from "./ChatElicitation.svelte";
   import ChatCommandMenu from "./ChatCommandMenu.svelte";
-  import ChatPlan from "./ChatPlan.svelte";
+  import ChatDockRail from "./ChatDockRail.svelte";
   import { insertCommand, matchCommands, pendingInputHint, slashToken } from "./chat-commands.js";
   import { chatRows } from "./chat-timeline.js";
   import { runningSubagents, subagentChildCounts } from "./chat-subagents.js";
@@ -70,7 +69,7 @@
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
   const subagents = $derived(runningSubagents(chatState?.messages ?? [], childCounts));
   const composerPlaceholder = $derived(!running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
-  const queueShortcut = { key: "Enter", alt: true };
+  const queueShortcutLabel = kbdGlyph({ key: "Enter", alt: true });
 
   $effect(() => {
     const path = websocketPath;
@@ -185,17 +184,19 @@
         {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} {childCounts} />
         {:else}<ChatMessageView message={row.message} streaming={!!chatState?.busy && row.id === (chatState?.messages.length ?? 0) - 1} />{/if}
       {/each}
+      <!-- Questions read as part of the conversation, in the reply column,
+           right after the message that asked them. -->
+      {#each elicitations as elicitation (elicitation.id)}
+        <Card level="default" padding="md" class="request">
+          <ChatElicitation {elicitation} disabled={!connected || disabled} onrespond={(response) => connection?.send({ type: "elicitation", id: elicitation.id, ...response })} />
+        </Card>
+      {/each}
     </div>
   </div>
   <div class="kit-sr-only" aria-live="polite" aria-atomic="true">{#if chatState && !chatState.busy}{chatState.messages.at(-1)?.role === "assistant" ? chatState.messages.at(-1)?.text : ""}{/if}</div>
   {#if !follow}<button class="latest" type="button" onclick={() => { follow = true; }}>Latest messages</button>{/if}
-  {#if chatState?.permissions.length || elicitations.length}
+  {#if chatState?.permissions.length}
     <div class="permissions" aria-label="Agent requests">
-      {#each elicitations as elicitation (elicitation.id)}
-        <div class="permission">
-          <ChatElicitation {elicitation} disabled={!connected || disabled} onrespond={(response) => connection?.send({ type: "elicitation", id: elicitation.id, ...response })} />
-        </div>
-      {/each}
       {#each chatState?.permissions ?? [] as permission (permission.id)}
         <div class="permission">
           <strong>{permission.title || "Agent requests permission"}</strong>
@@ -218,42 +219,27 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if draftBytes > 65536}<p class="error" role="alert">Message must not exceed 65,536 bytes.</p>{/if}
   <div class="dock">
-    {#if commandMatches.length}
-      <ChatCommandMenu id={commandMenuId} commands={commandMatches} active={activeCommand} onpick={pickCommand} />
-    {/if}
-    {#if chatState?.plan?.length}<ChatPlan entries={chatState.plan} />{/if}
-    {#if subagents.length}
-      <div class="subagents" role="group" aria-label="Running sub-agents">
-        <div class="subagents__head"><Spinner size={12} label="" />{subagents.length} {subagents.length === 1 ? "sub-agent" : "sub-agents"} running</div>
-        <ul>
-          {#each subagents as subagent (subagent.toolCallId)}
-            <li><span class="subagents__title" title={subagent.title}>{subagent.title}</span><span class="subagents__count">{subagent.children} {subagent.children === 1 ? "tool call" : "tool calls"}</span></li>
-          {/each}
-        </ul>
-      </div>
+    {#if chatState?.plan?.length || subagents.length || queue.length}
+      <ChatDockRail
+        plan={chatState?.plan ?? []}
+        {subagents}
+        {queue}
+        {queuePaused}
+        disabled={!connected || disabled}
+        suppressed={commandMatches.length > 0}
+        onresume={() => connection?.send({ type: "resume" })}
+        onunqueue={(id) => connection?.send({ type: "unqueue", id })}
+      />
     {/if}
     <form class="composer" onsubmit={(event) => { event.preventDefault(); send(running ? busyMode : "send"); }}>
+      {#if commandMatches.length}
+        <ChatCommandMenu id={commandMenuId} commands={commandMatches} active={activeCommand} onpick={pickCommand} />
+      {/if}
       {#if settingsOpen}
         <div class="settings-sheet">
           <strong>Agent settings</strong>
           <p>Remembered for this client on this host across workspaces.</p>
           <ChatSessionOptions options={otherOptions} disabled={optionsDisabled || !!chatState?.busy} onchange={configure} />
-        </div>
-      {/if}
-      {#if queue.length}
-        <div class="queue" role="group" aria-label="Queued messages">
-          <div class="queue__head">
-            <span>{queue.length} queued · {queuePaused ? "Paused" : "sends after this reply"}</span>
-            {#if queuePaused}<Button size="sm" disabled={!connected || disabled} onclick={() => connection?.send({ type: "resume" })}>Resume queue</Button>{/if}
-          </div>
-          <ol>
-            {#each queue as queued (queued.id)}
-              <li>
-                <span class="queue__text" title={queued.text}>{queued.text}</span>
-                <IconButton size="sm" ariaLabel="Remove queued message" disabled={!connected || disabled} onclick={() => connection?.send({ type: "unqueue", id: queued.id })}><X size={14} /></IconButton>
-              </li>
-            {/each}
-          </ol>
         </div>
       {/if}
       <div class="input">
@@ -277,12 +263,6 @@
              placeholder cannot show once the field holds text. -->
         {#if inputHint}<div class="input-hint" id={`${uid}-input-hint`}><span class="input-hint__typed" aria-hidden="true">{draft}</span>{inputHint}</div>{/if}
       </div>
-      {#if running && steeringSupported}
-        <div class="steer-hint">
-          <span class="steer-hint__text">Enter steers this reply</span>
-          <button type="button" class="tb-chip" aria-keyshortcuts="Alt+Enter" disabled={!canSend} onclick={() => send("queue")}>Queue <span class="steer-hint__kbd"><KbdBadge binding={queueShortcut} /></span></button>
-        </div>
-      {/if}
       <div class="toolbar">
         <div class="chips">
           {#each primaryOptions as option (option.id)}
@@ -293,6 +273,9 @@
           {/if}
         </div>
         <div class="send-cluster">
+          {#if running && steeringSupported}
+            <button type="button" class="tb-chip" aria-keyshortcuts="Alt+Enter" title={`Queue for after this reply (${queueShortcutLabel})`} disabled={!canSend} onclick={() => send("queue")}><ListPlus size={14} aria-hidden="true" /><span>Queue</span></button>
+          {/if}
           {#if running || stopping}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
           {#if !running}
             <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}>{#if pending}<Spinner size={14} />{:else}<ArrowUp size={16} />{/if}</button>
@@ -308,23 +291,27 @@
 </section>
 
 <style>
-  .acp-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); color: var(--text-primary); }
+  /* One reading column for everything in the pane: the conversation, notices,
+     requests, and the composer share its width and edges. */
+  .acp-workspace { --acp-column: 52rem; --acp-gutter: 5.5rem; container: acp-pane / inline-size; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); color: var(--text-primary); }
   .chat-status { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-6); font-size: var(--font-size-sm); color: var(--text-secondary); border-bottom: 1px solid var(--border-muted); }
   .conversation { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; container: acp-conversation / inline-size; }
-  .messages { --acp-gutter: 5.5rem; display: flex; flex-direction: column; gap: var(--space-6); max-width: 52rem; margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
+  .messages { display: flex; flex-direction: column; gap: var(--space-6); max-width: var(--acp-column); margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
   .empty { color: var(--text-secondary); }
-  .permissions { flex-shrink: 0; max-height: 35%; overflow: auto; padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border-default); background: var(--bg-surface); }
+  .permissions { flex-shrink: 0; max-height: 35%; overflow: auto; padding-block: var(--space-4); border-top: 1px solid var(--border-default); background: var(--bg-surface); }
+  .dock, .error, .history-notice, .permission { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }
   .permission + .permission { margin-top: var(--space-4); }
+  .messages > :global(.request) { align-self: flex-start; width: 100%; max-width: 36rem; }
   .permission-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
   .permission strong { overflow-wrap: anywhere; }
   .error { color: var(--accent-red); margin: 0; padding: var(--space-4) var(--space-6); overflow-wrap: anywhere; }
   .error p { margin: 0; }
   .error-code { font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-secondary); }
-  .error pre { max-height: 10rem; overflow: auto; margin: var(--space-3) 0 0; padding-left: var(--space-4); border-left: 2px solid var(--border-default); color: var(--text-primary); font-size: var(--font-size-xs); white-space: pre-wrap; }
+  .error pre { max-height: 10rem; overflow: auto; margin: var(--space-3) 0 0; color: var(--text-primary); font-size: var(--font-size-xs); white-space: pre-wrap; }
   .history-notice { color: var(--text-secondary); margin: 0; padding: var(--space-4) var(--space-6); overflow-wrap: anywhere; }
   .latest { align-self: center; padding: var(--space-3) var(--space-5); color: var(--text-primary); border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: var(--radius-md); font: inherit; }
   @media (pointer: coarse) {
-    .messages, .permissions { padding-inline: var(--space-4); }
+    .messages, .dock, .error, .history-notice, .permission { padding-inline: var(--space-4); }
   }
   /* Reserve the message time/copy gutter (ChatMessageView .gutter) only when
      the pane is wide enough; narrow panes go without it. Declared after the
@@ -332,15 +319,19 @@
   @container acp-conversation (min-width: 40rem) {
     .messages { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
   }
+  @container acp-pane (min-width: 40rem) {
+    .dock, .error, .history-notice, .permission { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
+  }
   .dock {
     position: relative;
     flex: none;
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-    padding: var(--space-2) var(--space-5) var(--space-5);
+    padding-block: var(--space-2) var(--space-5);
   }
   .composer {
+    position: relative;
     container-type: inline-size;
     display: flex;
     flex-direction: column;
@@ -521,19 +512,6 @@
   }
 
   .settings-sheet { padding: var(--space-5); border-bottom: 1px solid var(--border-muted); }
-  .subagents { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-4); font-size: var(--font-size-xs); color: var(--text-secondary); }
-  .subagents__head { display: flex; align-items: center; gap: var(--space-3); color: var(--text-primary); }
-  .subagents ul { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0 0 0 var(--space-7); list-style: none; }
-  .subagents li { display: flex; gap: var(--space-3); min-width: 0; }
-  .subagents__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .subagents__count { flex: none; font-variant-numeric: tabular-nums; }
-  .queue { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-muted); font-size: var(--font-size-xs); }
-  .queue__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 24px; color: var(--text-secondary); }
-  .queue ol { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
-  .queue li { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
-  .queue__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
-  .steer-hint { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); padding: 0 var(--space-3) 0 var(--space-5); font-size: var(--font-size-xs); color: var(--text-secondary); }
-  .steer-hint__text { flex: 1; min-width: 0; }
   .settings-sheet p { margin: var(--space-2) 0 var(--space-4); font-size: var(--font-size-xs); color: var(--text-secondary); }
   .send-cluster {
     flex: none;
@@ -583,10 +561,8 @@
   }
 
   @media (pointer: coarse) {
-    .acp-workspace :global(.tb-chip), .round, .permission-actions :global(button), .queue :global(button) { min-width: var(--mobile-chrome-hit-target); min-height: var(--mobile-chrome-hit-target); }
+    .acp-workspace :global(.tb-chip), .round, .permission-actions :global(button) { min-width: var(--mobile-chrome-hit-target); min-height: var(--mobile-chrome-hit-target); }
     /* Enter inserts a newline on touch keyboards, so the key hints do not apply. */
-    .steer-hint__text, .steer-hint__kbd { display: none; }
-    .queue, .subagents { font-size: var(--font-size-sm); }
     .messages { gap: var(--space-4); padding-block: var(--space-4); font-size: var(--font-size-phone-prose); }
     .messages :global(.markdown) { font-size: inherit; }
     .permissions { font-size: var(--font-size-sm); }

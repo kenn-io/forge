@@ -101,20 +101,26 @@
   --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));
 }
 
-/* Muted quiet light palette: cool gray chrome and a soft gray reading
-   surface instead of pure white, with the same small elevation steps as
-   dark. Muted text, green, and amber darken just enough to stay AA on
-   every step. Keep kit's high-contrast palette authoritative when enabled. */
+/* Soft quiet light palette: cool gray chrome and a gray reading surface
+   instead of pure white, with the same small elevation steps as dark.
+   Muted text and every accent darken just enough to stay AA on the hover
+   step. Keep kit's high-contrast palette authoritative when enabled. */
 :root[data-kit-theme="quiet"]:not(.dark):not(.high-contrast) {
-  --bg-primary: #e9ebee; /* kit-ui-check-ignore: quiet light chrome canvas */
-  --bg-surface: #f1f2f4; /* kit-ui-check-ignore: soft reading surface without glare */
-  --bg-inset: #eaecef; /* kit-ui-check-ignore: one step below the surface */
-  --bg-surface-hover: #e4e7eb; /* kit-ui-check-ignore: two steps below the surface */
-  --border-default: #d3d7dd; /* kit-ui-check-ignore: control edges on the gray surface */
-  --border-muted: #e0e3e7; /* kit-ui-check-ignore: dividers on the gray surface */
-  --text-muted: #5f6772; /* kit-ui-check-ignore: AA on the hover step */
-  --accent-green: #036b4e; /* kit-ui-check-ignore: AA status text on the hover step */
-  --accent-amber: #a84d08; /* kit-ui-check-ignore: AA warning text on the hover step */
+  --bg-primary: #e3e6ea; /* kit-ui-check-ignore: soft light chrome canvas */
+  --bg-surface: #eceef1; /* kit-ui-check-ignore: soft reading surface without glare */
+  --bg-inset: #e5e8ec; /* kit-ui-check-ignore: one step below the surface */
+  --bg-surface-hover: #dee1e6; /* kit-ui-check-ignore: two steps below the surface */
+  --border-default: #cbd0d7; /* kit-ui-check-ignore: control edges on the gray surface */
+  --border-muted: #dadde2; /* kit-ui-check-ignore: dividers on the gray surface */
+  --text-muted: #5c636d; /* kit-ui-check-ignore: AA on the hover step */
+  --accent-blue: #005dcc; /* kit-ui-check-ignore: AA on the hover step */
+  --accent-amber: #a04a08; /* kit-ui-check-ignore: AA on the hover step */
+  --accent-purple: #6a48d0; /* kit-ui-check-ignore: AA on the hover step */
+  --accent-green: #047051; /* kit-ui-check-ignore: AA on the hover step */
+  --accent-red: #bc2626; /* kit-ui-check-ignore: AA on the hover step */
+  --accent-teal: #0d6b84; /* kit-ui-check-ignore: AA on the hover step */
+  --status-waiting: #735f37; /* kit-ui-check-ignore: AA on the hover step */
+  --diff-stale-text: #865a00; /* kit-ui-check-ignore: AA on the hover step */
 }
 
 /* Darker quiet reading surfaces with small, even elevation steps: inset

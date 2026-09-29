@@ -274,11 +274,15 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 	switch result.Outcome {
 	case "injected", "startedNewTurn":
 		a.state.Messages = slices.Insert(a.state.Messages, index, ACPMessage{Role: "user", Text: text, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
-		if result.Outcome == "startedNewTurn" && a.threadStatus != "idle" {
+		if result.Outcome == "startedNewTurn" {
 			// The agent owns this turn; it ends when the thread goes idle,
-			// whether or not the original prompt has completed yet.
-			a.external = &acpExternalTurn{active: a.threadStatus == "active"}
-			a.state.Busy = true
+			// whether or not the original prompt has completed yet. An agent
+			// that does not report thread status never says when, so its turn
+			// ends with the prompt rather than leaving the chat busy for good.
+			if a.reportsThreadStatus && a.threadStatus != "idle" {
+				a.external = &acpExternalTurn{active: a.threadStatus == "active"}
+				a.state.Busy = true
+			}
 			if a.state.Stopping {
 				// A stop requested during the steer applies to the new turn too.
 				go func() {

@@ -79,6 +79,7 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 	if kind != "active" && kind != "idle" {
 		return
 	}
+	a.reportsThreadStatus = true
 	// An idle before the replacement's active transition belongs to the old
 	// turn; statuses are ordered but carry no turn correlation.
 	if kind == "active" || a.threadStatus == "active" {

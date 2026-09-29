@@ -72,6 +72,9 @@ type ACP struct {
 	// It ends when the agent reports an idle thread after an active one.
 	external     *acpExternalTurn
 	threadStatus string
+	// reportsThreadStatus records that the agent reports Codex thread
+	// status, the only signal for when a turn it started itself ends.
+	reportsThreadStatus bool
 }
 
 type acpExternalTurn struct{ active bool }

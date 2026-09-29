@@ -36,6 +36,12 @@ func TestACPStdioHelper(t *testing.T) {
 	if fixtureDir != "" {
 		_ = os.WriteFile(filepath.Join(fixtureDir, "pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)
 	}
+	// Codex reports thread status; other steering agents may not.
+	threadStatus := func(kind string) {
+		if os.Getenv("KENN_FORGE_ACP_NO_THREAD_STATUS") != "1" {
+			fmt.Printf(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"session_info_update","_meta":{"codex":{"threadStatus":{"type":%q}}}}}}`+"\n", kind)
+		}
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	var promptID jsontext.Value
 	elicitationOffered := false
@@ -183,8 +189,8 @@ func TestACPStdioHelper(t *testing.T) {
 				fmt.Println(`{"jsonrpc":"2.0","id":"approval","method":"session/request_permission","params":{"sessionId":"fixture-session","toolCall":{"toolCallId":"edit","title":"Edit file"},"options":[{"optionId":"allow","name":"Allow once","kind":"allow_once"},{"optionId":"deny","name":"Reject","kind":"reject_once"}]}}`)
 			} else if params.Prompt[0].Text != "wait" {
 				// Like Codex, report the thread going idle when a turn ends.
-				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"session_info_update","_meta":{"codex":{"threadStatus":{"type":"active"}}}}}}`)
-				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"session_info_update","_meta":{"codex":{"threadStatus":{"type":"idle"}}}}}}`)
+				threadStatus("active")
+				threadStatus("idle")
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
 			}
 		case "_session/steering":
@@ -214,10 +220,10 @@ func TestACPStdioHelper(t *testing.T) {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"startedNewTurn"}}`+"\n", message.ID)
 				time.Sleep(20 * time.Millisecond)
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
-				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"session_info_update","_meta":{"codex":{"threadStatus":{"type":"active"}}}}}}`)
+				threadStatus("active")
 				go func() {
 					time.Sleep(300 * time.Millisecond)
-					fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"session_info_update","_meta":{"codex":{"threadStatus":{"type":"idle"}}}}}}`)
+					threadStatus("idle")
 				}()
 			default:
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"failed"}}`+"\n", message.ID)
@@ -484,6 +490,37 @@ func TestACPSteersAndDrainsQueuedPrompts(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 	texts := userTexts(state)
 	assert.Equal(t, []string{"wait", "takeover", "after takeover"}, texts[len(texts)-3:])
+}
+
+// An agent that never reports thread status gives no signal for when a turn
+// it started after a steer ends, so that turn must not keep the chat busy.
+func TestACPSteerTakeoverWithoutThreadStatusStillDrains(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
+	t.Setenv("KENN_FORGE_ACP_NO_THREAD_STATUS", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets})
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "after takeover", ID: "queued"}))
+	var state ACPState
+	require.Eventually(t, func() bool {
+		data, err := agent.Snapshot()
+		if err != nil || json.Unmarshal(data, &state) != nil || state.Busy || len(state.Queue) != 0 {
+			return false
+		}
+		return slices.ContainsFunc(state.Messages, func(message ACPMessage) bool { return message.Text == "after takeover" })
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestACPMarksSubagentToolCalls(t *testing.T) {

@@ -61,7 +61,8 @@ Rules:
 - A turn the agent starts after a steer keeps the chat busy from its first active thread
   status until the thread goes idle, even when that status arrives after the prompt completed.
   Once the original prompt has completed, any idle ends that turn, active or not: the SDK
-  handles every status sent before a response before returning it.
+  handles every status sent before a response before returning it. A stopped or failed
+  original prompt ends the takeover turn at once.
   Until a status confirms it, the turn ends with the prompt, so an agent that never reports
   status cannot leave the chat busy (`internal/workspace/localruntime/acp_queue.go::ACP.steerLocked`).
 - ACP owners, not the daemon, write chat activity reports so sidebar state survives

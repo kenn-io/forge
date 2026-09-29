@@ -177,6 +177,12 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 	if result.err != nil || result.stopReason != acpsdk.StopReasonEndTurn {
 		a.state.QueuePaused = true
 	}
+	if a.external != nil && (result.err != nil || result.stopReason != acpsdk.StopReasonEndTurn) {
+		// A stop or failure ends the agent's own turn too; waiting for an
+		// idle that may never come would leave the chat busy.
+		a.external = nil
+	}
+	a.takeoverPending = a.takeoverPending && result.err == nil && result.stopReason == acpsdk.StopReasonEndTurn
 	if a.external != nil {
 		// A turn the agent started after a steer is still running.
 		a.external.promptDone = true

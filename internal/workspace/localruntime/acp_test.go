@@ -1006,3 +1006,30 @@ func TestACPWindowCountsOnlyPublishedMessages(t *testing.T) {
 	require.Len(t, frame["history"].Messages, 1)
 	assert.Equal(t, "question", frame["history"].Messages[0].Text)
 }
+
+// A stopped or failed prompt ends a takeover turn too, instead of waiting for
+// an idle thread status that may never come.
+func TestACPStoppedPromptEndsATakeoverTurn(t *testing.T) {
+	for name, result := range map[string]acpTurnResult{
+		"cancelled": {stopReason: acpsdk.StopReasonCancelled},
+		"failed":    {err: errors.New("agent failed")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			agent := newDetachedACP(t)
+			agent.state.Busy, agent.state.Stopping = true, true
+			agent.state.Queue = []ACPQueuedPrompt{{ID: "queued", Text: "next"}}
+			agent.external = &acpExternalTurn{}
+			completed := make(chan acpTurnResult, 1)
+			completed <- result
+			agent.finishTurn(completed)
+
+			agent.mu.Lock()
+			defer agent.mu.Unlock()
+			assert.Nil(t, agent.external)
+			assert.False(t, agent.state.Busy)
+			assert.False(t, agent.state.Stopping)
+			assert.True(t, agent.state.QueuePaused, "queued work still waits after a stop")
+			assert.Len(t, agent.state.Queue, 1)
+		})
+	}
+}

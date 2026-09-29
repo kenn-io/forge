@@ -16,6 +16,7 @@
   import ChatToolGroup from "./ChatToolGroup.svelte";
   import ChatElicitation from "./ChatElicitation.svelte";
   import ChatCommandMenu from "./ChatCommandMenu.svelte";
+  import ChatPlan from "./ChatPlan.svelte";
   import { insertCommand, matchCommands, pendingInputHint, slashToken } from "./chat-commands.js";
   import { chatRows } from "./chat-timeline.js";
   import { runningSubagents, subagentChildCounts } from "./chat-subagents.js";
@@ -61,6 +62,7 @@
   // the turn or queue behind it on the host.
   const canSend = $derived(connected && chatState?.connected && !pending && !disabled && draft.trim().length > 0 && draftBytes <= 65536);
   const running = $derived(!!chatState?.busy || !!chatState?.steering);
+  const stopping = $derived(!!chatState?.stopping);
   const steeringSupported = $derived(!!chatState?.steeringSupported);
   const busyMode = $derived<PromptMode>(steeringSupported ? "steer" : "queue");
   const queue = $derived(chatState?.queue ?? []);
@@ -167,20 +169,25 @@
 
 <section class="acp-workspace" aria-label={`${label} chat`}>
   <div class="chat-status" role="status">
-    {#if !connected && status === "running"}<Spinner size={14} />Connecting to {label}…
+    {#if !connected && status === "running"}<Spinner size={14} />Connecting agent…
     {:else if !chatState?.connected}Agent disconnected
-    {:else if chatState.busy}<Spinner size={14} />{label} is working
+    {:else if stopping}Stopping…
+    {:else if chatState.permissions.length || elicitations.length}Needs your answer
+    {:else if running}<Spinner size={14} />{label} is replying…
     {:else}{label}{/if}
   </div>
   <div class="conversation" bind:this={scroll} onscroll={() => { if (scroll) follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80; }}>
-    <div class="messages" role="log" aria-label="Conversation" aria-live="polite" aria-busy={chatState?.busy ?? false}>
+    <!-- The log is not live: streamed blocks would be read piecemeal. The
+         region below announces the finished reply once the turn ends. -->
+    <div class="messages" role="log" aria-label="Conversation" aria-live="off" aria-busy={chatState?.busy ?? false}>
       {#if rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.id)}
         {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} {childCounts} />
-        {:else}<ChatMessageView message={row.message} agent={label} streaming={!!chatState?.busy && row.id === (chatState?.messages.length ?? 0) - 1} />{/if}
+        {:else}<ChatMessageView message={row.message} streaming={!!chatState?.busy && row.id === (chatState?.messages.length ?? 0) - 1} />{/if}
       {/each}
     </div>
   </div>
+  <div class="kit-sr-only" aria-live="polite" aria-atomic="true">{#if chatState && !chatState.busy}{chatState.messages.at(-1)?.role === "assistant" ? chatState.messages.at(-1)?.text : ""}{/if}</div>
   {#if !follow}<button class="latest" type="button" onclick={() => { follow = true; }}>Latest messages</button>{/if}
   {#if chatState?.permissions.length || elicitations.length}
     <div class="permissions" aria-label="Agent requests">
@@ -202,12 +209,19 @@
     </div>
   {/if}
   {#if chatState?.historyTruncated}<p class="history-notice" role="status">Earlier chat messages were removed to keep this session responsive.</p>{/if}
-  {#if error || chatState?.error}<p class="error" role="alert">{error || chatState?.error}</p>{/if}
+  {#if chatState?.error}
+    <div class="error" role="alert">
+      <p>{chatState.error}{#if chatState.errorCode != null}{" "}<span class="error-code">ACP {chatState.errorCode}</span>{/if}</p>
+      {#if chatState.errorData}<pre>{chatState.errorData}</pre>{/if}
+    </div>
+  {/if}
+  {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if draftBytes > 65536}<p class="error" role="alert">Message must not exceed 65,536 bytes.</p>{/if}
   <div class="dock">
     {#if commandMatches.length}
       <ChatCommandMenu id={commandMenuId} commands={commandMatches} active={activeCommand} onpick={pickCommand} />
     {/if}
+    {#if chatState?.plan?.length}<ChatPlan entries={chatState.plan} />{/if}
     {#if subagents.length}
       <div class="subagents" role="group" aria-label="Running sub-agents">
         <div class="subagents__head"><Spinner size={12} label="" />{subagents.length} {subagents.length === 1 ? "sub-agent" : "sub-agents"} running</div>
@@ -279,7 +293,7 @@
           {/if}
         </div>
         <div class="send-cluster">
-          {#if running}<button type="button" class="round stop" aria-label="Stop reply" title="Stop reply" disabled={!connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
+          {#if running || stopping}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
           {#if !running}
             <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}>{#if pending}<Spinner size={14} />{:else}<ArrowUp size={16} />{/if}</button>
           {:else if steeringSupported}
@@ -296,18 +310,27 @@
 <style>
   .acp-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); color: var(--text-primary); }
   .chat-status { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-6); font-size: var(--font-size-sm); color: var(--text-secondary); border-bottom: 1px solid var(--border-muted); }
-  .conversation { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-  .messages { display: flex; flex-direction: column; gap: var(--space-6); max-width: 52rem; margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
+  .conversation { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; container: acp-conversation / inline-size; }
+  .messages { --acp-gutter: 5.5rem; display: flex; flex-direction: column; gap: var(--space-6); max-width: 52rem; margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
   .empty { color: var(--text-secondary); }
   .permissions { flex-shrink: 0; max-height: 35%; overflow: auto; padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border-default); background: var(--bg-surface); }
   .permission + .permission { margin-top: var(--space-4); }
   .permission-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
   .permission strong { overflow-wrap: anywhere; }
   .error { color: var(--accent-red); margin: 0; padding: var(--space-4) var(--space-6); overflow-wrap: anywhere; }
+  .error p { margin: 0; }
+  .error-code { font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-secondary); }
+  .error pre { max-height: 10rem; overflow: auto; margin: var(--space-3) 0 0; padding-left: var(--space-4); border-left: 2px solid var(--border-default); color: var(--text-primary); font-size: var(--font-size-xs); white-space: pre-wrap; }
   .history-notice { color: var(--text-secondary); margin: 0; padding: var(--space-4) var(--space-6); overflow-wrap: anywhere; }
   .latest { align-self: center; padding: var(--space-3) var(--space-5); color: var(--text-primary); border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: var(--radius-md); font: inherit; }
   @media (pointer: coarse) {
     .messages, .permissions { padding-inline: var(--space-4); }
+  }
+  /* Reserve the message time/copy gutter (ChatMessageView .gutter) only when
+     the pane is wide enough; narrow panes go without it. Declared after the
+     touch padding so a wide touch pane still reserves the gutter. */
+  @container acp-conversation (min-width: 40rem) {
+    .messages { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
   }
   .dock {
     position: relative;

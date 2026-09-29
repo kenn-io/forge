@@ -49,7 +49,7 @@ func (a *ACP) persistLocked() error {
 	if a.recordPath == "" {
 		return nil
 	}
-	data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state})
+	data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state}, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -60,24 +60,14 @@ func (a *ACP) persistLocked() error {
 	return err
 }
 
-func (a *ACP) restoreSubmissionIDsLocked(messages []ACPMessage) {
-	// ACP load replays history, but submission IDs belong to Forge. Match the
-	// accepted user messages in order so browser retries stay idempotent.
-	next := 0
-	for i := range a.state.Messages {
-		message := &a.state.Messages[i]
-		if message.Role != "user" {
-			continue
-		}
-		for next < len(messages) {
-			saved := messages[next]
-			next++
-			if saved.Role == "user" && saved.Text == message.Text {
-				message.SubmissionID = saved.SubmissionID
-				break
-			}
-		}
-	}
+// restoreTranscriptLocked makes the saved transcript the conversation of
+// record after a reload. A reloaded conversation never starts queued work on
+// its own.
+func (a *ACP) restoreTranscriptLocked(saved ACPState) {
+	a.state.Messages = saved.Messages
+	a.state.HistoryTruncated = saved.HistoryTruncated
+	a.state.Queue = saved.Queue
+	a.state.QueuePaused = len(a.state.Queue) > 0
 }
 
 func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, workspaceID, key, cwd string) (launchCommand, error) {

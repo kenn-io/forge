@@ -134,6 +134,12 @@ Interactive surfaces must agree on which item is selected.
 - The ACP composer never blocks while a turn runs; only a disconnected chat disables it.
   Busy input steers when the agent supports it, otherwise queues
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
+- ACP message time and copy live in a hover/focus gutter left of the message, never a footer
+  line; the gutter never shifts layout and is absent when the chat pane is too narrow
+  (`frontend/src/lib/components/acp/ChatMessageView.svelte`).
+- Agent-provided ACP content reaches the page only as text, sanitized markdown, or checked
+  image/audio data URLs; only http(s) and mailto links are clickable
+  (`frontend/src/lib/components/acp/chat-content.ts`).
 - Inline surface claims come only from live selection effects (the list
   views' claim effects, which react to recorded overrides); async responses
   record overrides and tombstones but never claim a surface themselves, and

@@ -60,6 +60,17 @@ Rules:
   (`internal/workspace/localruntime/acp_activity.go::reportACPActivity`).
 - Sub-agents come from legacy tool-call markers; the Go SDK cannot decode draft native
   subagent updates (`internal/workspace/localruntime/acp_client.go::toolCallLineage`).
+- Publish streamed ACP text only in finished markdown blocks, paced at 400 ms and released
+  before tool activity, when the agent goes quiet, and at turn end; never per token
+  (`internal/workspace/localruntime/acp_delivery.go::ACP.deliverTextLocked`).
+- The saved ACP transcript is the conversation of record: drop `session/load` replay, and
+  continue in a new session when the agent lacks `loadSession`
+  (`internal/workspace/localruntime/acp.go::startACPSession`).
+- Keep every ACP content type: a changed `messageId` starts a new message, non-text blocks and
+  thoughts are their own entries, and media over 2 MiB keeps metadata only
+  (`internal/workspace/localruntime/acp_client.go::ACP.appendContentLocked`).
+- Command output arrives as Zed terminal tool-call metadata (`terminal_output_delta`,
+  `terminal_exit`), keyed by terminal ID (`internal/workspace/localruntime/acp_content.go::applyTerminalMeta`).
 - Project-worktree runtime APIs expose terminal targets only. ACP targets require
   the workspace chat transport and are neither listed nor launchable
   through project-worktree runtime routes (`internal/server/workspaceapi/projects_handlers.go`).

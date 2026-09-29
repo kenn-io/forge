@@ -121,6 +121,31 @@ describe("ACPWorkspace elicitations", () => {
     expect(screen.getByLabelText(/Extra/).getAttribute("type")).toBe("text");
   });
 
+  it("lists required fields first and keeps the remaining order", async () => {
+    await openChat({
+      elicitations: [
+        {
+          id: "elicit-order",
+          message: "How should the migration run?",
+          schema: {
+            properties: {
+              batchSize: { type: "integer", title: "Batch size" },
+              dryRun: { type: "boolean", title: "Dry run first" },
+              strategy: { type: "string", title: "Strategy", enum: ["backfill", "skip"] },
+            },
+            required: ["strategy"],
+          },
+        },
+      ],
+    });
+
+    const form = screen.getByText("How should the migration run?").parentElement!;
+    const text = form.textContent ?? "";
+    const positions = ["Strategy", "Batch size", "Dry run first"].map((label) => text.indexOf(label));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
   it("submits the accept command with coerced content and omits empty optional fields", async () => {
     await openChat({ elicitations: [deployForm] });
 
@@ -453,5 +478,373 @@ describe("ACPWorkspace sub-agents", () => {
       .getByText(/Read file/)
       .closest("li")!;
     expect(readFile.textContent).not.toContain("Sub-agent");
+  });
+});
+
+describe("ACPWorkspace chat status and transcript", () => {
+  function statusText(): string {
+    return document.querySelector(".chat-status")?.textContent?.trim() ?? "";
+  }
+
+  it("hides Guardian assessment tool calls from the transcript", async () => {
+    await openChat({
+      messages: [
+        { role: "tool", text: "Guardian review", toolCallId: "guardian_assessment:1", status: "completed" },
+        { role: "tool", text: "Read file", toolCallId: "t1", status: "completed" },
+      ],
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    expect(screen.getByText("Read file")).toBeTruthy();
+    expect(screen.queryByText("Guardian review")).toBeNull();
+  });
+
+  it("treats a tool call without a status as pending", async () => {
+    await openChat({ messages: [{ role: "tool", text: "Run tests", toolCallId: "t1" }] });
+
+    const chip = screen.getByRole("button", { name: /1 tool · running/ });
+    await fireEvent.click(chip);
+    expect(screen.getByText("Run tests").closest("li")?.textContent).toContain("pending");
+  });
+
+  it("reads Stopping and disables Stop until the turn ends", async () => {
+    await openChat({ busy: true });
+    expect(statusText()).toBe("Agent is replying…");
+    expect((screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement).disabled).toBe(false);
+
+    await push({ busy: true, stopping: true });
+    expect(statusText()).toBe("Stopping…");
+    expect((screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement).disabled).toBe(true);
+
+    await push({});
+    expect(statusText()).toBe("Agent");
+    expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
+  });
+
+  it("reads Needs your answer while a permission or elicitation is pending", async () => {
+    await openChat({
+      busy: true,
+      permissions: [
+        { id: "p1", title: "Run a command", options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }] },
+      ],
+    });
+    expect(statusText()).toBe("Needs your answer");
+
+    await push({
+      busy: true,
+      elicitations: [{ id: "e1", message: "Pick one", schema: { properties: {} } }],
+    });
+    expect(statusText()).toBe("Needs your answer");
+
+    await push({ busy: true });
+    expect(statusText()).toBe("Agent is replying…");
+  });
+
+  it("shows JSON-RPC error codes and data", async () => {
+    await openChat({ error: "Internal error", errorCode: -32603, errorData: '{\n  "detail": "boom"\n}' });
+
+    const alert = screen.getByRole("alert");
+    expect(alert.querySelector("p")?.textContent).toBe("Internal error ACP -32603");
+    expect(alert.querySelector("pre")?.textContent).toBe('{\n  "detail": "boom"\n}');
+
+    await push({ error: "Agent exited" });
+    expect(screen.getByRole("alert").textContent?.trim()).toBe("Agent exited");
+    expect(screen.getByRole("alert").querySelector("pre")).toBeNull();
+  });
+
+  it("keeps the log quiet and announces only the finished reply", async () => {
+    await openChat({
+      busy: true,
+      messages: [
+        { role: "user", text: "Explain the change" },
+        { role: "assistant", text: "The first paragraph" },
+      ],
+    });
+    const log = screen.getByRole("log", { name: "Conversation" });
+    expect(log.getAttribute("aria-live")).toBe("off");
+    const announcer = document.querySelector('[aria-live="polite"][aria-atomic="true"]')!;
+    expect(announcer.textContent).toBe("");
+
+    await push({
+      messages: [
+        { role: "user", text: "Explain the change" },
+        { role: "assistant", text: "The first paragraph" },
+        { role: "assistant", text: "The final answer" },
+      ],
+    });
+    expect(announcer.textContent).toBe("The final answer");
+  });
+});
+
+describe("ACPWorkspace message gutter", () => {
+  const createdAt = "2026-09-28T21:10:00Z";
+
+  it("drops the per-message footer for a time and copy gutter", async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    await openChat({ messages: [{ role: "assistant", text: "The change is ready.", createdAt }] });
+
+    const article = screen.getByRole("article", { name: "Assistant" });
+    expect(within(article).queryByText("Agent")).toBeNull();
+    const time = article.querySelector("time")!;
+    expect(time.getAttribute("datetime")).toBe(createdAt);
+    expect(time.textContent).toBe(new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+
+    await fireEvent.click(within(article).getByRole("button", { name: "Copy message" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("The change is ready."));
+  });
+});
+
+describe("ACPWorkspace rich content", () => {
+  const assistant = (content: Record<string, unknown>, text = "") => ({ role: "assistant", text, content });
+
+  it("keeps a live thought open and folds it once the turn moves on", async () => {
+    const thought = { role: "thought", text: "Weighing the two approaches" };
+    await openChat({ busy: true, messages: [{ role: "user", text: "Pick one" }, thought] });
+
+    const toggle = screen.getByRole("button", { name: "Thinking" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(await screen.findByText("Weighing the two approaches")).toBeTruthy();
+
+    await push({
+      busy: true,
+      messages: [{ role: "user", text: "Pick one" }, thought, { role: "assistant", text: "The first." }],
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Weighing the two approaches")).toBeNull();
+
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(await screen.findByText("Weighing the two approaches")).toBeTruthy();
+  });
+
+  it("starts a finished thought collapsed", async () => {
+    await openChat({ messages: [{ role: "thought", text: "Done thinking" }] });
+    expect(screen.getByRole("button", { name: "Thinking" }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("renders images from data and opens them in the image viewer", async () => {
+    await openChat({
+      messages: [assistant({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=", title: "Chart" })],
+    });
+
+    const image = screen.getByRole("img", { name: "Chart" }) as HTMLImageElement;
+    expect(image.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
+    await fireEvent.click(screen.getByRole("button", { name: "Open Chart at full size" }));
+    const viewer = screen.getByRole("dialog", { name: "Expanded image" });
+    expect(viewer.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
+    await fireEvent.click(within(viewer).getByRole("button", { name: "Close expanded image" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows placeholders for omitted or non-image payloads", async () => {
+    await openChat({
+      messages: [
+        assistant({ type: "image", mimeType: "image/png", size: 2621440, omitted: true }),
+        assistant({ type: "image", mimeType: "text/html", data: "PGI+" }),
+      ],
+    });
+
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getByText("Image too large to show")).toBeTruthy();
+    expect(screen.getByText("image/png · 2.5 MB")).toBeTruthy();
+    expect(screen.getByText("Image unavailable")).toBeTruthy();
+  });
+
+  it("plays audio with native controls", async () => {
+    await openChat({ messages: [assistant({ type: "audio", mimeType: "audio/wav", data: "UklGRg==" })] });
+
+    const audio = document.querySelector("audio")!;
+    expect(audio.getAttribute("src")).toBe("data:audio/wav;base64,UklGRg==");
+    expect(audio.hasAttribute("controls")).toBe(true);
+  });
+
+  it("links resource cards only for web addresses", async () => {
+    await openChat({
+      messages: [
+        assistant({
+          type: "resource_link",
+          uri: "https://example.com/spec",
+          title: "Spec",
+          description: "The design notes",
+          size: 2048,
+        }),
+        assistant({ type: "resource_link", uri: "file:///repo/README.md", name: "README.md" }),
+        assistant({ type: "resource_link", uri: "javascript:alert(1)", name: "Script" }),
+      ],
+    });
+
+    const link = screen.getByRole("link", { name: "Spec" });
+    expect(link.getAttribute("href")).toBe("https://example.com/spec");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(screen.getByText("The design notes")).toBeTruthy();
+    expect(screen.getByText("2.0 KB")).toBeTruthy();
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+    expect(screen.getByText("file:///repo/README.md").tagName).toBe("CODE");
+    expect(screen.getByText("javascript:alert(1)").tagName).toBe("CODE");
+  });
+
+  it("shows embedded text resources as code without injecting markup", async () => {
+    const html = "<b>bold</b><script>window.injected = true</script>";
+    await openChat({
+      messages: [assistant({ type: "resource", uri: "file:///repo/page.html", mimeType: "text/html", text: html })],
+    });
+
+    const article = screen.getByRole("article", { name: "Assistant" });
+    expect(within(article).getByText("file:///repo/page.html", { selector: "summary span" })).toBeTruthy();
+    expect(article.textContent).toContain(html);
+    expect(article.querySelector("b, script")).toBeNull();
+  });
+
+  it("downloads binary resources through a blob URL named after the resource", async () => {
+    const created: Blob[] = [];
+    const createObjectURL = vi.fn((blob: Blob) => {
+      created.push(blob);
+      return "blob:report";
+    });
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    const clicked: HTMLAnchorElement[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this);
+    });
+    try {
+      await openChat({
+        messages: [
+          assistant({
+            type: "resource",
+            uri: "file:///repo/build/report.pdf?v=2",
+            mimeType: "application/pdf",
+            data: "JVBERi0=",
+            size: 5,
+          }),
+        ],
+      });
+      await fireEvent.click(screen.getByRole("button", { name: "Download" }));
+
+      expect(created[0]?.type).toBe("application/pdf");
+      expect(await created[0]?.text()).toBe("%PDF-");
+      expect(clicked[0]?.download).toBe("report.pdf");
+      expect(clicked[0]?.getAttribute("href")).toBe("blob:report");
+    } finally {
+      click.mockRestore();
+    }
+  });
+
+  it("expands tool rows into kind, locations, diff, output, and raw JSON", async () => {
+    await openChat({
+      messages: [
+        {
+          role: "tool",
+          text: "Edit app.ts",
+          toolCallId: "t1",
+          status: "completed",
+          kind: "edit",
+          locations: [{ path: "src/app.ts", line: 12 }],
+          toolContent: [
+            { type: "diff", path: "src/app.ts", oldText: "one\ntwo\nthree", newText: "one\nTWO\nthree" },
+            { type: "content", content: { type: "text", text: "Applied 1 change" } },
+            { type: "terminal", terminalId: "term-1" },
+          ],
+          rawInput: '{\n  "path": "src/app.ts"\n}',
+          rawOutput: '{\n  "ok": true\n}',
+        },
+        { role: "tool", text: "Plain step", toolCallId: "t2", status: "completed" },
+      ],
+    });
+    await fireEvent.click(screen.getByRole("button", { name: /^2 tools/ }));
+    expect(screen.queryByRole("button", { name: /Plain step/ })).toBeNull();
+
+    const row = screen.getByRole("button", { name: /Edit app\.ts/ });
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    await fireEvent.click(row);
+    const details = document.getElementById(row.getAttribute("aria-controls")!)!;
+
+    expect(within(details).getByText("Edit")).toBeTruthy();
+    expect(within(details).getByText("src/app.ts:12")).toBeTruthy();
+    const diff = within(details).getByRole("list", { name: "Changes to src/app.ts" });
+    const kinds = ["context", "removed", "added"];
+    expect(
+      Array.from(diff.querySelectorAll("li"), (line) => [
+        kinds.find((kind) => line.classList.contains(kind)),
+        line.textContent,
+      ]),
+    ).toEqual([
+      ["context", " one"],
+      ["removed", "-Removed: two"],
+      ["added", "+Added: TWO"],
+      ["context", " three"],
+    ]);
+    expect(within(details).getByText("Applied 1 change").tagName).toBe("PRE");
+    expect(within(details).getByText("Terminal term-1")).toBeTruthy();
+    expect(within(details).getByText("Raw input").closest("details")?.querySelector("pre")?.textContent).toBe(
+      '{\n  "path": "src/app.ts"\n}',
+    );
+    expect(within(details).getByText("Raw output").closest("details")?.hasAttribute("open")).toBe(false);
+  });
+
+  it("summarizes the plan and hides it when empty", async () => {
+    await openChat({
+      plan: [
+        { content: "Read the code", priority: "medium", status: "completed" },
+        { content: "Write the fix", priority: "high", status: "completed" },
+        { content: "Add tests", priority: "high", status: "in_progress" },
+        { content: "Update docs", priority: "low", status: "pending" },
+        { content: "Open a pull request", priority: "low", status: "pending" },
+      ],
+    });
+
+    const plan = screen.getByRole("region", { name: "Plan" });
+    expect(within(plan).getByText("2/5 done")).toBeTruthy();
+    expect(within(plan).getAllByRole("listitem")).toHaveLength(5);
+    expect(within(plan).getAllByRole("listitem")[2]!.textContent).toContain("In progress: Add tests");
+    await fireEvent.click(within(plan).getByRole("button", { name: /Plan/ }));
+    expect(within(plan).queryAllByRole("listitem")).toHaveLength(0);
+
+    await push({ plan: [] });
+    expect(screen.queryByRole("region", { name: "Plan" })).toBeNull();
+  });
+});
+
+describe("ACPWorkspace terminal output", () => {
+  it("shows terminal output as plain text with the exit code", async () => {
+    const esc = String.fromCharCode(27);
+    await openChat({
+      messages: [
+        {
+          role: "tool",
+          text: "Run tests",
+          toolCallId: "t1",
+          status: "completed",
+          kind: "execute",
+          toolContent: [
+            {
+              type: "terminal",
+              terminalId: "term-1",
+              output: `${esc}[32mok${esc}[0m 12 passed\n${esc}]0;title${String.fromCharCode(7)}done`,
+              exitCode: 0,
+            },
+            { type: "terminal", terminalId: "term-2", output: "FAIL one test", exitCode: 1 },
+            { type: "terminal", terminalId: "term-3" },
+          ],
+        },
+      ],
+    });
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+
+    const passed = screen.getByLabelText("Terminal term-1 output");
+    expect(passed.tagName).toBe("PRE");
+    expect(passed.textContent).toBe("ok 12 passed\ndone");
+    const passedBadge = passed.closest("figure")!.querySelector(".exit")!;
+    expect(passedBadge.textContent).toBe("exit 0");
+    expect(passedBadge.classList.contains("exit--ok")).toBe(true);
+
+    const failedBadge = screen.getByLabelText("Terminal term-2 output").closest("figure")!.querySelector(".exit")!;
+    expect(failedBadge.textContent).toBe("exit 1");
+    expect(failedBadge.classList.contains("exit--failed")).toBe(true);
+
+    expect(screen.queryByLabelText("Terminal term-3 output")).toBeNull();
+    expect(screen.getByText("Terminal term-3")).toBeTruthy();
   });
 });

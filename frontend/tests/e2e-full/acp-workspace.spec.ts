@@ -144,13 +144,19 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await chat.getByRole("button", { name: "Agent settings", exact: true }).click();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Inspect the workspace");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
-    await expect(chat.getByText("I am working in the", { exact: false })).toBeVisible();
+    await expect(
+      chat.getByRole("log", { name: "Conversation" }).getByText("I am working in the", { exact: false }),
+    ).toBeVisible();
     await expect(chat.getByRole("button", { name: "Allow once" })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("acp-desktop.png") });
     await chat.getByRole("button", { name: "Allow once" }).click();
-    await expect(chat.getByText("Permission received. The turn is complete.")).toBeVisible();
+    await expect(
+      chat.getByRole("log", { name: "Conversation" }).getByText("Permission received. The turn is complete."),
+    ).toBeVisible();
     await page.reload();
-    await expect(chat.getByText("Permission received. The turn is complete.")).toBeVisible();
+    await expect(
+      chat.getByRole("log", { name: "Conversation" }).getByText("Permission received. The turn is complete."),
+    ).toBeVisible();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("é".repeat(32769));
     await expect(chat.getByText("Message must not exceed 65,536 bytes.")).toBeVisible();
     await expect(chat.getByRole("button", { name: "Send", exact: true })).toBeDisabled();

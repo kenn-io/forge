@@ -3,6 +3,7 @@ package localruntime
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -48,6 +49,11 @@ func (a *ACP) submit(command ACPCommand) error {
 		return ErrACPAgentUnavailable
 	}
 	running := a.state.Busy || a.state.Steering
+	if !running && len(a.state.Queue) == 0 {
+		// A new message after a stop starts work again; a paused backlog
+		// still waits for an explicit resume.
+		a.state.QueuePaused = false
+	}
 	if command.Mode == "steer" && running && a.state.SteeringSupported {
 		a.mu.Unlock()
 		return a.steerLocked(text, command.ID)
@@ -170,17 +176,65 @@ func (a *ACP) drain() {
 func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 	result := <-completed
 	a.mu.Lock()
-	a.state.Busy = false
-	a.turnCompleted = true
 	if result.err != nil {
-		a.state.Error = result.err.Error()
+		a.setErrorLocked(result.err)
 	}
 	if result.err != nil || result.stopReason != acpsdk.StopReasonEndTurn {
-		a.state.QueuePaused = len(a.state.Queue) > 0
+		a.state.QueuePaused = true
 	}
-	a.changedLocked()
+	if a.external != nil {
+		// A turn the agent started after a steer is still running.
+		a.releaseHeldTextLocked()
+		a.publishProgressLocked()
+		a.mu.Unlock()
+		return
+	}
+	a.endTurnLocked()
 	a.mu.Unlock()
 	a.drain()
+}
+
+// endTurnLocked settles what a finished turn leaves behind: open questions
+// are cancelled and held text becomes visible.
+func (a *ACP) endTurnLocked() {
+	a.state.Busy = false
+	a.state.Stopping = false
+	a.turnCompleted = true
+	a.clearPendingLocked()
+	a.releaseHeldTextLocked()
+	a.publishProgressLocked()
+}
+
+// clearPendingLocked answers every open permission and elicitation as
+// cancelled.
+func (a *ACP) clearPendingLocked() {
+	for id, response := range a.permissions {
+		response <- acpsdk.NewRequestPermissionOutcomeCancelled()
+		delete(a.permissions, id)
+	}
+	a.state.Permissions = nil
+	for id, response := range a.elicitations {
+		response <- acpsdk.NewUnstableCreateElicitationResponseCancel()
+		delete(a.elicitations, id)
+	}
+	a.state.Elicitations = nil
+}
+
+// setErrorLocked records err for the chat and keeps JSON-RPC error details.
+func (a *ACP) setErrorLocked(err error) {
+	a.state.Error, a.state.ErrorCode, a.state.ErrorData = "", nil, ""
+	if err == nil {
+		return
+	}
+	a.state.Error = err.Error()
+	if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok {
+		a.state.Error = requestErr.Message
+		a.state.ErrorCode = &requestErr.Code
+		if requestErr.Data != nil {
+			data, _ := json.Marshal(requestErr.Data, jsontext.WithIndent("  "))
+			a.state.ErrorData = string(data)
+		}
+	}
 }
 
 // steerLocked adds text to the running turn. The caller holds turnMu, so at
@@ -188,6 +242,9 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 func (a *ACP) steerLocked(text, submissionID string) error {
 	a.mu.Lock()
 	a.state.Steering = true
+	// Output that arrives while the agent takes the text follows it.
+	a.releaseHeldTextLocked()
+	a.promptIndex = new(len(a.state.Messages))
 	a.changedLocked()
 	a.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), acpSteeringTimeout)
@@ -207,14 +264,24 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 	}
 	a.mu.Lock()
 	a.state.Steering = false
+	index := min(*a.promptIndex, len(a.state.Messages))
+	a.promptIndex = nil
 	if err != nil {
+		// A failed steer must not let queued work run behind the user's back.
+		a.state.QueuePaused = true
 		a.changedLocked()
 		a.mu.Unlock()
 		return fmt.Errorf("steer ACP turn: %w", err)
 	}
 	switch result.Outcome {
 	case "injected", "startedNewTurn":
-		a.state.Messages = append(a.state.Messages, ACPMessage{Role: "user", Text: text, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		a.state.Messages = slices.Insert(a.state.Messages, index, ACPMessage{Role: "user", Text: text, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		if result.Outcome == "startedNewTurn" && a.threadStatus != "idle" {
+			// The agent owns this turn; it ends when the thread goes idle,
+			// whether or not the original prompt has completed yet.
+			a.external = &acpExternalTurn{active: a.threadStatus == "active"}
+			a.state.Busy = true
+		}
 		a.trimStateLocked()
 		err = a.persistLocked()
 		a.changedLocked()
@@ -229,6 +296,7 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 		}
 		return err
 	default:
+		a.state.QueuePaused = true
 		a.changedLocked()
 		a.mu.Unlock()
 		return fmt.Errorf("the agent did not accept the steering message (%q)", result.Outcome)

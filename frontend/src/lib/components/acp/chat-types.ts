@@ -1,7 +1,36 @@
 import { Schema } from "effect";
 
+const optionalText = Schema.optional(Schema.NullOr(Schema.String));
+// A non-text ACP content block. `type` stays open so a block kind this UI does
+// not know yet degrades instead of failing the whole frame. `omitted` marks a
+// payload the host dropped for size, leaving metadata only.
+export const ChatContentSchema = Schema.Struct({
+  type: Schema.String,
+  text: optionalText,
+  mimeType: optionalText,
+  data: optionalText,
+  uri: optionalText,
+  name: optionalText,
+  title: optionalText,
+  description: optionalText,
+  size: Schema.optional(Schema.NullOr(Schema.Number)),
+  omitted: Schema.optional(Schema.NullOr(Schema.Boolean)),
+});
+export type ChatContent = typeof ChatContentSchema.Type;
+export const ToolContentSchema = Schema.Struct({
+  type: Schema.String,
+  content: Schema.optional(Schema.NullOr(ChatContentSchema)),
+  path: optionalText,
+  oldText: optionalText,
+  newText: optionalText,
+  terminalId: optionalText,
+  // Terminal items: the command's latest output (up to 64 KiB) and exit code.
+  output: optionalText,
+  exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
+});
+export type ToolContent = typeof ToolContentSchema.Type;
 export const ChatMessageSchema = Schema.Struct({
-  role: Schema.Literals(["user", "assistant", "tool"]),
+  role: Schema.Literals(["user", "assistant", "thought", "tool"]),
   text: Schema.String,
   createdAt: Schema.optional(Schema.String),
   submissionId: Schema.optional(Schema.String),
@@ -11,8 +40,24 @@ export const ChatMessageSchema = Schema.Struct({
   // that a nested tool call was made inside.
   subagent: Schema.optional(Schema.NullOr(Schema.Boolean)),
   parentToolCallId: Schema.optional(Schema.NullOr(Schema.String)),
+  messageId: optionalText,
+  content: Schema.optional(Schema.NullOr(ChatContentSchema)),
+  kind: optionalText,
+  toolContent: Schema.optional(Schema.NullOr(Schema.Array(ToolContentSchema))),
+  locations: Schema.optional(
+    Schema.NullOr(
+      Schema.Array(Schema.Struct({ path: Schema.String, line: Schema.optional(Schema.NullOr(Schema.Number)) })),
+    ),
+  ),
+  // Pretty-printed JSON of the tool call's raw input and output.
+  rawInput: optionalText,
+  rawOutput: optionalText,
 });
 export type ChatMessage = typeof ChatMessageSchema.Type;
+// ACP tool calls without a reported status have not started yet.
+export function toolStatus(message: ChatMessage): string {
+  return message.status ?? "pending";
+}
 const ConfigChoiceSchema = Schema.Struct({ value: Schema.String, name: Schema.String });
 export const SessionConfigOptionSchema = Schema.Struct({
   id: Schema.String,
@@ -67,9 +112,18 @@ export const ChatStateSchema = Schema.Struct({
   queuePaused: Schema.optional(Schema.NullOr(Schema.Boolean)),
   steeringSupported: Schema.optional(Schema.NullOr(Schema.Boolean)),
   steering: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  stopping: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  plan: Schema.optional(
+    Schema.NullOr(
+      Schema.Array(Schema.Struct({ content: Schema.String, priority: Schema.String, status: Schema.String })),
+    ),
+  ),
   busy: Schema.Boolean,
   connected: Schema.Boolean,
   error: Schema.String,
+  // Present when the agent answered with a JSON-RPC error; data is pretty JSON.
+  errorCode: Schema.optional(Schema.NullOr(Schema.Number)),
+  errorData: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type ChatState = typeof ChatStateSchema.Type;
 export type PromptMode = "send" | "queue" | "steer";

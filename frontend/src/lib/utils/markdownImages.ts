@@ -140,7 +140,7 @@ function createImageExpanderButton(doc: Document, onClick: () => void): HTMLButt
   return button;
 }
 
-function openMarkdownImageLightbox(sourceImage: HTMLImageElement): void {
+export function openMarkdownImageLightbox(sourceImage: HTMLImageElement): void {
   closeActiveMarkdownImageLightbox?.();
 
   const doc = sourceImage.ownerDocument;

@@ -57,7 +57,22 @@ type ACP struct {
 	// turnCompleted records a finished prompt turn in this process. A loaded
 	// session starts idle so reopening it never announces a new completion.
 	turnCompleted bool
+	// heldBytes is the unpublished suffix of the last assistant message; see
+	// acp_delivery.go. heldSeq changes whenever a new message starts holding.
+	heldBytes        int
+	heldSeq          uint64
+	lastTextDelivery time.Time
+	textDelivery     *time.Timer
+	// replaying drops the agent's history replay during session/load: the
+	// saved transcript, not the replay, is the conversation of record.
+	replaying bool
+	// external is a turn the agent started itself after a steering request.
+	// It ends when the agent reports an idle thread after an active one.
+	external     *acpExternalTurn
+	threadStatus string
 }
+
+type acpExternalTurn struct{ active bool }
 
 const maxACPStateBytes = 4 << 20
 
@@ -81,6 +96,16 @@ type ACPMessage struct {
 	// links a tool call made inside such a subagent back to it.
 	Subagent         bool   `json:"subagent,omitempty"`
 	ParentToolCallID string `json:"parentToolCallId,omitempty"`
+	// MessageID is the agent's message identity; a new ID starts a new message.
+	MessageID string `json:"messageId,omitempty"`
+	// Content is a non-text block the agent sent, shown as its own entry.
+	Content *ACPContent `json:"content,omitempty"`
+	// Tool call details.
+	Kind        string            `json:"kind,omitempty"`
+	ToolContent []ACPToolContent  `json:"toolContent,omitempty"`
+	Locations   []ACPToolLocation `json:"locations,omitempty"`
+	RawInput    string            `json:"rawInput,omitempty"`
+	RawOutput   string            `json:"rawOutput,omitempty"`
 }
 type ACPPermissionOption struct {
 	OptionID string `json:"optionId"`
@@ -130,16 +155,23 @@ type ACPConfigOption struct {
 	Options      []ACPConfigChoice `json:"options"`
 }
 type ACPState struct {
-	ConfigOptions    []ACPConfigOption `json:"configOptions"`
-	Commands         []ACPCommandInfo  `json:"commands"`
-	Configuring      bool              `json:"configuring"`
-	Messages         []ACPMessage      `json:"messages"`
-	Permissions      []ACPPermission   `json:"permissions"`
-	Elicitations     []ACPElicitation  `json:"elicitations"`
-	HistoryTruncated bool              `json:"historyTruncated"`
-	Busy             bool              `json:"busy"`
-	Connected        bool              `json:"connected"`
-	Error            string            `json:"error"`
+	ConfigOptions []ACPConfigOption `json:"configOptions"`
+	Commands      []ACPCommandInfo  `json:"commands"`
+	// Plan is the agent's current plan; each update replaces it.
+	Plan             []ACPPlanEntry   `json:"plan"`
+	Configuring      bool             `json:"configuring"`
+	Messages         []ACPMessage     `json:"messages"`
+	Permissions      []ACPPermission  `json:"permissions"`
+	Elicitations     []ACPElicitation `json:"elicitations"`
+	HistoryTruncated bool             `json:"historyTruncated"`
+	Busy             bool             `json:"busy"`
+	// Stopping is true from a stop request until the turn ends.
+	Stopping  bool   `json:"stopping"`
+	Connected bool   `json:"connected"`
+	Error     string `json:"error"`
+	// ErrorCode and ErrorData keep an agent's JSON-RPC error details.
+	ErrorCode *int   `json:"errorCode,omitempty"`
+	ErrorData string `json:"errorData,omitempty"`
 	// Queue holds prompts waiting for the running turn to end. It drains one
 	// prompt per completed turn and pauses when a turn does not end normally.
 	Queue       []ACPQueuedPrompt `json:"queue"`
@@ -201,8 +233,12 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	initialized, err := a.client.Initialize(initCtx, acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
 		ClientInfo:      &acpsdk.Implementation{Name: "kenn-forge", Version: "1"},
-		// Forge renders form elicitations in chat. URL mode is not offered.
-		ClientCapabilities: acpsdk.ClientCapabilities{Elicitation: &acpsdk.ElicitationCapabilities{Form: &acpsdk.ElicitationFormCapabilities{}}},
+		// Forge renders form elicitations in chat; URL mode is not offered.
+		// Command output streams as terminal_output_delta tool call metadata.
+		ClientCapabilities: acpsdk.ClientCapabilities{
+			Elicitation: &acpsdk.ElicitationCapabilities{Form: &acpsdk.ElicitationFormCapabilities{}},
+			Meta:        map[string]any{"terminal_output_delta": true},
+		},
 	})
 	if err == nil && initialized.ProtocolVersion != acpsdk.ProtocolVersionNumber {
 		err = fmt.Errorf("unsupported ACP protocol version %d (expected %d)", initialized.ProtocolVersion, acpsdk.ProtocolVersionNumber)
@@ -213,29 +249,36 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	if err == nil {
 		steering, _ := initialized.Meta["steering"].(map[string]any)
 		a.state.SteeringSupported = steering["supported"] == true
-		if saved == nil {
+		// An agent that cannot load sessions continues the saved conversation in
+		// a new session rather than failing to start.
+		if saved == nil || !initialized.AgentCapabilities.LoadSession {
 			var created acpsdk.NewSessionResponse
 			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
 			if err == nil && created.SessionId == "" {
 				err = errors.New("ACP agent returned no session ID")
 			}
-			a.sessionID = string(created.SessionId)
 			a.mu.Lock()
+			a.sessionID = string(created.SessionId)
 			a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
+			if saved != nil {
+				a.restoreTranscriptLocked(saved.State)
+				a.state.Error = "This agent cannot reload its previous session, so it continues in a new session without that context."
+			}
 			a.mu.Unlock()
 		} else {
+			a.mu.Lock()
 			a.sessionID = saved.SessionID
+			a.replaying = true
+			a.mu.Unlock()
 			var loaded acpsdk.LoadSessionResponse
 			loaded, err = a.client.LoadSession(initCtx, acpsdk.LoadSessionRequest{Cwd: cwd, McpServers: mcpServers, SessionId: acpsdk.SessionId(saved.SessionID)})
+			a.mu.Lock()
+			a.replaying = false
 			if err == nil {
-				a.mu.Lock()
 				a.state.ConfigOptions = acpConfigOptions(loaded.ConfigOptions)
-				a.restoreSubmissionIDsLocked(saved.State.Messages)
-				// A reloaded conversation never starts queued work on its own.
-				a.state.Queue = saved.State.Queue
-				a.state.QueuePaused = len(a.state.Queue) > 0
-				a.mu.Unlock()
+				a.restoreTranscriptLocked(saved.State)
 			}
+			a.mu.Unlock()
 		}
 	}
 	if err != nil {
@@ -317,11 +360,14 @@ func (a *ACP) wait() {
 	a.exitCode = exitCode
 	a.state.Connected = false
 	a.state.Busy = false
+	a.state.Stopping = false
 	a.state.Permissions = nil
 	a.state.Elicitations = nil
 	a.state.Steering = false
+	a.external = nil
 	a.state.QueuePaused = len(a.state.Queue) > 0
-	a.changedLocked()
+	a.releaseHeldTextLocked()
+	a.publishProgressLocked()
 	a.mu.Unlock()
 	close(a.done)
 }
@@ -339,7 +385,7 @@ func (a *ACP) changedLocked() {
 func (a *ACP) Snapshot() ([]byte, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return json.Marshal(a.state)
+	return json.Marshal(a.publishedStateLocked(), json.Deterministic(true))
 }
 
 func (a *ACP) Subscribe() (<-chan struct{}, func()) {
@@ -362,21 +408,13 @@ func (a *ACP) Command(command ACPCommand) error {
 	case "resume":
 		return a.resumeQueue()
 	case "cancel":
-		a.turnMu.Lock()
-		defer a.turnMu.Unlock()
+		// Stop never waits for a prompt write, steering request, or settings
+		// change; a prompt written concurrently is cancelled after its write.
 		a.mu.Lock()
 		a.cancelling = true
-		a.state.QueuePaused = len(a.state.Queue) > 0
-		for id, response := range a.permissions {
-			response <- acpsdk.NewRequestPermissionOutcomeCancelled()
-			delete(a.permissions, id)
-		}
-		a.state.Permissions = nil
-		for id, response := range a.elicitations {
-			response <- acpsdk.NewUnstableCreateElicitationResponseCancel()
-			delete(a.elicitations, id)
-		}
-		a.state.Elicitations = nil
+		a.state.QueuePaused = true
+		a.state.Stopping = a.state.Busy || a.state.Steering
+		a.clearPendingLocked()
 		a.changedLocked()
 		a.mu.Unlock()
 		return a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
@@ -428,7 +466,7 @@ func (a *ACP) startPromptLocked(text, submissionID string) error {
 	}
 	a.state.Busy = true
 	a.cancelling = false
-	a.state.Error = ""
+	a.setErrorLocked(nil)
 	a.promptIndex = new(len(a.state.Messages))
 	written := make(chan error, 1)
 	a.promptWritten = written
@@ -458,12 +496,19 @@ func (a *ACP) startPromptLocked(text, submissionID string) error {
 		a.state.Busy = false
 		a.promptIndex = nil
 		a.promptWritten = nil
-		a.state.Error = err.Error()
+		a.setErrorLocked(err)
 		a.changedLocked()
 		a.mu.Unlock()
 		return err
 	}
 	a.mu.Lock()
+	if a.cancelling {
+		// Stop arrived while the prompt was being written, so the agent may
+		// have received that cancel before this turn existed.
+		go func() {
+			_ = a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
+		}()
+	}
 	message := ACPMessage{Role: "user", Text: text, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 	messageIndex := *a.promptIndex
 	a.promptIndex = nil

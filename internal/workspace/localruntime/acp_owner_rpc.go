@@ -32,7 +32,9 @@ type acpOwnerRPC struct {
 func (o *acpOwnerRPC) Snapshot(_ struct{}, reply *ACPUpdate) error {
 	o.agent.mu.Lock()
 	defer o.agent.mu.Unlock()
-	data, err := json.Marshal(o.agent.state)
+	// Sorted map keys keep agent-provided objects, such as form schemas,
+	// stable across snapshots.
+	data, err := json.Marshal(o.agent.publishedStateLocked(), json.Deterministic(true))
 	*reply = ACPUpdate{Revision: o.agent.revision, State: data, ExitCode: o.agent.exitCode}
 	select {
 	case <-o.agent.done:

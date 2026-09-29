@@ -44,14 +44,20 @@
   import { onDestroy } from "svelte"
   import { CopyButton } from "@kenn-io/kit-ui"
   import { Markdown } from "@kenn-io/kit-ui"
+  import Brain from "@lucide/svelte/icons/brain"
+  import ChevronDown from "@lucide/svelte/icons/chevron-down"
+  import ChatContentBlock from "./ChatContentBlock.svelte"
   import type { ChatMessage } from "./chat-types.js"
 
-  let {
-    message,
-    agent,
-    streaming = false,
-  }: { message: ChatMessage; agent: string; streaming?: boolean } = $props()
+  let { message, streaming = false }: { message: ChatMessage; streaming?: boolean } =
+    $props()
   const user = $derived(message.role === "user")
+  const thought = $derived(message.role === "thought")
+  const id = $props.id()
+  // Reasoning stays open while it is the live tail of a busy turn and folds
+  // away once anything follows it, unless the user chose otherwise.
+  let thoughtChoice = $state<boolean | null>(null)
+  const thoughtOpen = $derived(thoughtChoice ?? streaming)
   let copied = $state(false)
   let copyError = $state("")
   let resetCopy: ReturnType<typeof setTimeout> | undefined
@@ -71,20 +77,52 @@
   }
 </script>
 
-<article class:user aria-label={user ? "You" : "Assistant"}>
-  {#if user}
-    <p class="message-body bubble" data-kit-tone="info">{message.text}</p>
-  {:else}
-    <div class="message-body">
-      <Markdown
-        source={message.text}
-        renderer={streaming ? streamingChatMarkdown : chatMarkdown}
-        class="markdown"
-      />
-    </div>
+{#snippet body()}
+  {#if message.text}
+    <Markdown
+      source={message.text}
+      renderer={streaming ? streamingChatMarkdown : chatMarkdown}
+      class="markdown"
+    />
   {/if}
-  <div class="message-meta" class:pinned={!!copyError || copied}>
-    {#if !user}<span class="who">{agent}</span>{/if}
+  {#if message.content}<ChatContentBlock content={message.content} />{/if}
+{/snippet}
+
+<article
+  class:user
+  aria-label={user ? "You" : thought ? "Assistant thinking" : "Assistant"}
+>
+  <div class="cell">
+    {#if user}
+      <p class="message-body bubble" data-kit-tone="info">{message.text}</p>
+    {:else if thought}
+      <div class="thought">
+        <button
+          type="button"
+          class="thought-toggle"
+          aria-expanded={thoughtOpen}
+          aria-controls={`${id}-thought`}
+          onclick={() => (thoughtChoice = !thoughtOpen)}
+        >
+          <Brain size={13} aria-hidden="true" />Thinking<ChevronDown
+            size={12}
+            class="chevron"
+            aria-hidden="true"
+          />
+        </button>
+        {#if thoughtOpen}
+          <div class="message-body thought-body" id={`${id}-thought`}>
+            {@render body()}
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <div class="message-body">{@render body()}</div>
+    {/if}
+    <!-- Hover or focus reveals time and copy in a gutter left of the cell,
+         laid over reserved space so nothing reflows. Panes too narrow for the
+         gutter omit it. -->
+    <div class="gutter" class:pinned={!!copyError || copied}>
     {#if timestamp}
       <time datetime={message.createdAt} title={timestamp.toLocaleString()}
         >{timestamp.toLocaleTimeString([], {
@@ -93,7 +131,7 @@
         })}</time
       >
     {/if}
-    {#if !streaming}
+    {#if !streaming && message.text}
       <CopyButton
         {copied}
         onclick={() => copy()}
@@ -102,8 +140,9 @@
         title="Copy message"
       />
     {/if}
-    <span class="copy-feedback" role="status">{copied ? "Copied" : ""}</span>
+    <span class="kit-sr-only" role="status">{copied ? "Copied" : ""}</span>
     {#if copyError}<span class="copy-error" role="alert">{copyError}</span>{/if}
+    </div>
   </div>
 </article>
 
@@ -116,10 +155,16 @@
   article.user {
     align-items: flex-end;
   }
+  .cell {
+    position: relative;
+    min-width: 0;
+  }
+  .user .cell {
+    max-width: 85%;
+  }
   /* The Kit info tone: 9% tint, 30% border, 72% ink. The squared corner
      points at the composer the message came from. */
   .bubble {
-    max-width: 85%;
     margin: 0;
     padding: var(--space-4) var(--space-5);
     background: var(--kit-tone-band-bg);
@@ -135,40 +180,82 @@
     min-width: 0;
     line-height: 1.6;
   }
+  .message-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .thought-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 24px;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+  }
+  .thought-toggle:hover {
+    color: var(--text-secondary);
+  }
+  .thought-toggle:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 1px;
+  }
+  .thought-toggle :global(.chevron) {
+    transition: transform var(--transition-fast) ease-out;
+  }
+  .thought-toggle[aria-expanded="true"] :global(.chevron) {
+    transform: rotate(180deg);
+  }
+  .thought-body {
+    margin-top: var(--space-2);
+    padding-left: var(--space-5);
+    border-left: 2px solid var(--border-muted);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+  }
   .message-body :global(.markdown > :first-child) {
     margin-top: 0;
   }
   .message-body :global(.markdown > :last-child) {
     margin-bottom: 0;
   }
-  .message-meta {
-    display: flex;
+  /* The conversation pane reserves --acp-gutter to the left of every cell
+     once it is wide enough (ACPWorkspace.svelte .messages). */
+  .gutter {
+    display: none;
+    position: absolute;
+    top: 0;
+    right: calc(100% + var(--space-3));
+    width: var(--acp-gutter);
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-3);
-    min-height: 22px;
-    margin-top: var(--space-1);
+    justify-content: flex-end;
+    gap: var(--space-1) var(--space-2);
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
     opacity: 0;
     transition: opacity var(--transition-fast) ease-out;
   }
-  .user .message-meta {
-    flex-direction: row-reverse;
-  }
-  .who {
-    font-weight: 500;
-  }
-  article:hover .message-meta,
-  .message-meta:focus-within,
-  .message-meta.pinned {
-    opacity: 1;
+  @container acp-conversation (min-width: 40rem) {
+    .gutter {
+      display: flex;
+    }
+    .cell:hover .gutter,
+    .cell:focus-within .gutter,
+    .gutter.pinned {
+      opacity: 1;
+    }
   }
   .copy-error {
     color: var(--accent-red);
-  }
-  .copy-feedback:empty {
-    display: none;
+    text-align: right;
   }
   .message-body :global(.markdown .table-scroll) {
     max-width: 100%;
@@ -191,13 +278,14 @@
     outline-offset: 2px;
   }
 
-  @media (hover: none) {
-    .message-meta {
-      opacity: 1;
+  @media (pointer: coarse) {
+    .thought-toggle {
+      min-height: var(--mobile-chrome-hit-target);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .message-meta {
+    .thought-toggle :global(.chevron),
+    .gutter {
       transition: none;
     }
   }

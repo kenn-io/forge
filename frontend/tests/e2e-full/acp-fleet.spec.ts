@@ -59,11 +59,17 @@ test("hub chat exchanges ACP events with the owning spoke", async ({ page }) => 
     await expect(chat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Inspect this spoke workspace");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
-    await expect(chat.getByText("I am working in the", { exact: false })).toBeVisible();
+    await expect(
+      chat.getByRole("log", { name: "Conversation" }).getByText("I am working in the", { exact: false }),
+    ).toBeVisible();
     await chat.getByRole("button", { name: "Allow once" }).click();
-    await expect(chat.getByText("Permission received. The turn is complete.")).toBeVisible();
+    await expect(
+      chat.getByRole("log", { name: "Conversation" }).getByText("Permission received. The turn is complete."),
+    ).toBeVisible();
     await page.reload();
-    await expect(chat.getByText("Permission received. The turn is complete.")).toBeVisible();
+    await expect(
+      chat.getByRole("log", { name: "Conversation" }).getByText("Permission received. The turn is complete."),
+    ).toBeVisible();
     await expect(chat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
   } finally {
     await spoke.dispose();

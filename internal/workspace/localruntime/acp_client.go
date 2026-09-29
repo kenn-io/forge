@@ -16,35 +16,79 @@ var _ acpsdk.Client = (*ACP)(nil)
 func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.replaying || (a.sessionID != "" && string(params.SessionId) != a.sessionID) {
+		return nil
+	}
 	u := params.Update
 	switch {
 	case u.ConfigOptionUpdate != nil:
 		a.state.ConfigOptions = acpConfigOptions(u.ConfigOptionUpdate.ConfigOptions)
 	case u.AvailableCommandsUpdate != nil:
 		a.state.Commands = acpCommands(u.AvailableCommandsUpdate.AvailableCommands)
+	case u.SessionInfoUpdate != nil:
+		a.threadStatusLocked(u.SessionInfoUpdate.Meta)
+		return nil
 	case u.AgentMessageChunk != nil:
-		if content := u.AgentMessageChunk.Content.Text; content != nil {
-			a.appendTextLocked("assistant", content.Text)
+		if !a.appendContentLocked("assistant", u.AgentMessageChunk.Content, deref(u.AgentMessageChunk.MessageId)) {
+			return nil
 		}
-	case u.UserMessageChunk != nil:
-		if content := u.UserMessageChunk.Content.Text; content != nil {
-			a.appendTextLocked("user", content.Text)
+	case u.AgentThoughtChunk != nil:
+		if !a.appendContentLocked("thought", u.AgentThoughtChunk.Content, deref(u.AgentThoughtChunk.MessageId)) {
+			return nil
 		}
+	case u.Plan != nil:
+		a.state.Plan = acpPlan(u.Plan.Entries)
 	case u.ToolCall != nil:
-		a.updateToolLocked(string(u.ToolCall.ToolCallId), u.ToolCall.Title, string(u.ToolCall.Status), toolCallLineage(u.ToolCall.Meta, u.ToolCall.RawInput))
+		// Tool activity follows the text the agent produced before it.
+		a.releaseHeldTextLocked()
+		call := u.ToolCall
+		status := string(call.Status)
+		if status == "" {
+			status = string(acpsdk.ToolCallStatusPending)
+		}
+		lineage := toolCallLineage(call.Meta, call.RawInput)
+		a.state.Messages = append(a.state.Messages, ACPMessage{
+			Role: "tool", Text: call.Title, ToolCallID: string(call.ToolCallId), Status: status,
+			Subagent: lineage.subagent, ParentToolCallID: lineage.parent, Kind: string(call.Kind),
+			ToolContent: applyTerminalMeta(acpToolContent(call.Content), call.Meta), Locations: acpToolLocations(call.Locations),
+			RawInput: acpRawJSON(call.RawInput), RawOutput: acpRawJSON(call.RawOutput),
+			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		})
 	case u.ToolCallUpdate != nil:
-		title, status := "", ""
-		if u.ToolCallUpdate.Title != nil {
-			title = *u.ToolCallUpdate.Title
-		}
-		if u.ToolCallUpdate.Status != nil {
-			status = string(*u.ToolCallUpdate.Status)
-		}
-		a.updateToolLocked(string(u.ToolCallUpdate.ToolCallId), title, status, toolCallLineage(u.ToolCallUpdate.Meta, u.ToolCallUpdate.RawInput))
+		a.releaseHeldTextLocked()
+		a.updateToolLocked(u.ToolCallUpdate)
+	default:
+		// User echoes, usage, and mode updates are not shown.
+		return nil
 	}
-	a.trimStateLocked()
-	a.changedLocked()
+	a.publishProgressLocked()
 	return nil
+}
+
+// threadStatusLocked follows Codex thread status so a turn the agent started
+// after a steering request keeps the chat busy until the thread goes idle.
+func (a *ACP) threadStatusLocked(meta map[string]any) {
+	codex, _ := meta["codex"].(map[string]any)
+	status, _ := codex["threadStatus"].(map[string]any)
+	kind, _ := status["type"].(string)
+	if kind != "active" && kind != "idle" {
+		return
+	}
+	// An idle before the replacement's active transition belongs to the old
+	// turn; statuses are ordered but carry no turn correlation.
+	if kind == "active" || a.threadStatus == "active" {
+		a.threadStatus = kind
+	}
+	if a.external == nil {
+		return
+	}
+	if kind == "active" {
+		a.external.active = true
+	} else if a.external.active {
+		a.external = nil
+		a.endTurnLocked()
+		go a.drain()
+	}
 }
 
 // Each update replaces the advertised set; it is not a delta.
@@ -60,13 +104,40 @@ func acpCommands(commands []acpsdk.AvailableCommand) []ACPCommandInfo {
 	return out
 }
 
-func (a *ACP) appendTextLocked(role, text string) {
-	last := len(a.state.Messages) - 1
-	if last >= 0 && a.state.Messages[last].Role == role && (a.promptIndex == nil || last >= *a.promptIndex) {
-		a.state.Messages[last].Text += text
-	} else {
-		a.state.Messages = append(a.state.Messages, ACPMessage{Role: role, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+// appendContentLocked adds one streamed agent or thought block. Text joins
+// the current message of the same role and message ID and is held for block
+// delivery; any other content is its own entry. It reports whether the chat
+// must publish now; held text publishes on its own schedule.
+func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messageID string) bool {
+	text, content := acpContent(block)
+	if content != nil {
+		a.releaseHeldTextLocked()
+		a.state.Messages = append(a.state.Messages, ACPMessage{Role: role, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		return true
 	}
+	if text == "" {
+		return false
+	}
+	last := len(a.state.Messages) - 1
+	if last >= 0 {
+		previous := a.state.Messages[last]
+		// Agents without message IDs get the prior behavior: consecutive text
+		// of one role is one message.
+		sameMessage := previous.MessageID == "" || messageID == "" || previous.MessageID == messageID
+		if previous.Role == role && previous.Content == nil && sameMessage && (a.promptIndex == nil || last >= *a.promptIndex) {
+			a.state.Messages[last].Text += text
+			a.holdTextLocked(false, text)
+			return false
+		}
+	}
+	if a.heldBytes > 0 {
+		// The finished message becomes visible before the next one starts.
+		a.releaseHeldTextLocked()
+		a.publishProgressLocked()
+	}
+	a.state.Messages = append(a.state.Messages, ACPMessage{Role: role, MessageID: messageID, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	a.holdTextLocked(true, text)
+	return false
 }
 
 // acpToolLineage is what a tool call says about delegated agents. ACP has no
@@ -101,25 +172,45 @@ func toolCallLineage(meta map[string]any, rawInput any) acpToolLineage {
 	return lineage
 }
 
-func (a *ACP) updateToolLocked(id, title, status string, lineage acpToolLineage) {
-	for i := range a.state.Messages {
+// updateToolLocked changes the newest tool call with this ID. An update for a
+// tool call the chat never saw is ignored rather than invented. Present
+// fields replace the stored ones, as ACP specifies; absent fields are kept.
+func (a *ACP) updateToolLocked(update *acpsdk.SessionToolCallUpdate) {
+	for i := len(a.state.Messages) - 1; i >= 0; i-- {
 		item := &a.state.Messages[i]
-		if item.Role == "tool" && item.ToolCallID == id {
-			if title != "" {
-				item.Text = title
-			}
-			if status != "" {
-				item.Status = status
-			}
-			// Updates may omit the markers; never clear them once seen.
-			item.Subagent = item.Subagent || lineage.subagent
-			if item.ParentToolCallID == "" {
-				item.ParentToolCallID = lineage.parent
-			}
-			return
+		if item.Role != "tool" || item.ToolCallID != string(update.ToolCallId) {
+			continue
 		}
+		if update.Title != nil && *update.Title != "" {
+			item.Text = *update.Title
+		}
+		if update.Status != nil {
+			item.Status = string(*update.Status)
+		}
+		if update.Kind != nil {
+			item.Kind = string(*update.Kind)
+		}
+		if update.Content != nil {
+			item.ToolContent = replaceToolContent(item.ToolContent, acpToolContent(update.Content))
+		}
+		item.ToolContent = applyTerminalMeta(item.ToolContent, update.Meta)
+		if update.Locations != nil {
+			item.Locations = acpToolLocations(update.Locations)
+		}
+		if update.RawInput != nil {
+			item.RawInput = acpRawJSON(update.RawInput)
+		}
+		if update.RawOutput != nil {
+			item.RawOutput = acpRawJSON(update.RawOutput)
+		}
+		// Updates may omit the markers; never clear them once seen.
+		lineage := toolCallLineage(update.Meta, update.RawInput)
+		item.Subagent = item.Subagent || lineage.subagent
+		if item.ParentToolCallID == "" {
+			item.ParentToolCallID = lineage.parent
+		}
+		return
 	}
-	a.state.Messages = append(a.state.Messages, ACPMessage{Role: "tool", Text: title, ToolCallID: id, Status: status, Subagent: lineage.subagent, ParentToolCallID: lineage.parent, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 }
 
 func (a *ACP) RequestPermission(ctx context.Context, params acpsdk.RequestPermissionRequest) (acpsdk.RequestPermissionResponse, error) {

@@ -1,9 +1,10 @@
-import type { ChatMessage } from "./chat-types.js";
+import { toolStatus, type ChatMessage } from "./chat-types.js";
 
 export type RunningSubagent = { toolCallId: string; title: string; children: number };
 
 function isRunning(message: ChatMessage): boolean {
-  return message.status === "pending" || message.status === "in_progress";
+  const status = toolStatus(message);
+  return status === "pending" || status === "in_progress";
 }
 
 // Tool calls made inside each sub-agent, keyed by the sub-agent's toolCallId.

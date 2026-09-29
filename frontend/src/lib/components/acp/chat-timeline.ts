@@ -12,6 +12,7 @@ export function chatRows(messages: readonly ChatMessage[]): ChatRow[] {
       rows.push({ kind: "message", id: index, message });
       return;
     }
+    if (message.toolCallId?.startsWith("guardian_assessment:")) return;
     const last = rows.at(-1);
     if (last?.kind === "tools") last.messages.push(message);
     else rows.push({ kind: "tools", id: index, messages: [message] });

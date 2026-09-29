@@ -2,7 +2,8 @@
 <script lang="ts">
   import { Ban, Bot, Check, ChevronDown, Clock, Wrench, X } from "@lucide/svelte"
   import { Spinner } from "@kenn-io/kit-ui"
-  import type { ChatMessage } from "./chat-types.js"
+  import ChatToolDetails from "./ChatToolDetails.svelte"
+  import { toolStatus, type ChatMessage } from "./chat-types.js"
 
   let {
     messages,
@@ -14,14 +15,25 @@
   } = $props()
   const id = $props.id()
   let open = $state(false)
+  let expanded = $state<Record<number, boolean>>({})
+  function hasDetails(message: ChatMessage): boolean {
+    return !!(
+      message.kind ||
+      message.locations?.length ||
+      message.toolContent?.length ||
+      message.rawInput ||
+      message.rawOutput
+    )
+  }
 
   const failed = $derived(
-    messages.filter((message) => message.status === "failed").length,
+    messages.filter((message) => toolStatus(message) === "failed").length,
   )
   const running = $derived(
     messages.some(
       (message) =>
-        message.status === "pending" || message.status === "in_progress",
+        toolStatus(message) === "pending" ||
+        toolStatus(message) === "in_progress",
     ),
   )
   const subagents = $derived(
@@ -61,15 +73,18 @@
   {#if open}
     <ul id={`${id}-list`} class="list">
       {#each messages as message, index (index)}
-        <li class={`status-${message.status ?? "completed"}`}>
+        {@const status = toolStatus(message)}
+        {@const expandable = hasDetails(message)}
+        <li class={`status-${status}`}>
+          {#snippet row()}
           <span class="icon" aria-hidden="true">
-            {#if message.status === "failed"}<X size={12} />
-            {:else if message.status === "in_progress"}<Spinner
+            {#if status === "failed"}<X size={12} />
+            {:else if status === "in_progress"}<Spinner
                 size={12}
                 label=""
               />
-            {:else if message.status === "pending"}<Clock size={12} />
-            {:else if message.status === "cancelled"}<Ban size={12} />
+            {:else if status === "pending"}<Clock size={12} />
+            {:else if status === "cancelled"}<Ban size={12} />
             {:else}<Check size={12} />{/if}
           </span>
           <span class="tool-name">
@@ -88,8 +103,25 @@
             title={message.createdAt
               ? new Date(message.createdAt).toLocaleString()
               : undefined}
-            >{message.status?.replaceAll("_", " ") ?? "completed"}</span
+            >{status.replaceAll("_", " ")}</span
           >
+          {/snippet}
+          {#if expandable}
+            <button
+              type="button"
+              class="row row--button"
+              aria-expanded={!!expanded[index]}
+              aria-controls={`${id}-tool-${index}`}
+              onclick={() => (expanded[index] = !expanded[index])}
+            >
+              {@render row()}
+            </button>
+            {#if expanded[index]}
+              <ChatToolDetails {message} id={`${id}-tool-${index}`} />
+            {/if}
+          {:else}
+            <div class="row">{@render row()}</div>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -159,12 +191,28 @@
     border-radius: var(--radius-md);
     font-size: var(--font-size-xs);
   }
-  li {
+  .row {
     display: grid;
     grid-template-columns: 14px minmax(0, 1fr) auto;
     align-items: baseline;
     gap: var(--space-4);
     padding: var(--space-3) var(--space-5);
+  }
+  .row--button {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .row--button:hover {
+    background: var(--bg-surface-hover);
+  }
+  .row--button:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: -2px;
   }
   .icon {
     display: inline-flex;
@@ -203,6 +251,7 @@
 
   @media (pointer: coarse) {
     .chip { min-height: 44px; }
+    .row--button { min-height: var(--mobile-chrome-hit-target); }
   }
 
   @media (prefers-reduced-motion: reduce) {

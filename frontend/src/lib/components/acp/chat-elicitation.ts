@@ -81,7 +81,12 @@ function textFormat(value: unknown): ElicitationTextFormat | undefined {
 
 export function elicitationFields(schema: Elicitation["schema"]): ElicitationField[] {
   const required = new Set(schema.required ?? []);
-  return Object.entries(schema.properties ?? {}).map(([key, raw]): ElicitationField => {
+  // The agent's property order does not survive the host (a decoded map), so
+  // show what the agent needs first; the stable sort keeps the rest in order.
+  const entries = Object.entries(schema.properties ?? {}).sort(
+    ([left], [right]) => Number(required.has(right)) - Number(required.has(left)),
+  );
+  return entries.map(([key, raw]): ElicitationField => {
     const property = record(raw) ?? {};
     const base: FieldBase = {
       key,

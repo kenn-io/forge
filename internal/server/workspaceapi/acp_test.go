@@ -1,16 +1,20 @@
 package workspaceapi
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/rpc"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
@@ -181,4 +185,50 @@ func TestACPRuntimeReportsSessionsAndReleasesUnwrittenPrompt(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(initialMessageDelivered, status.State)
 	assert.Equal(int32(1), peer.prompts.Load())
+}
+
+// stallingChat is an ACP chat whose prompts wait on the agent until released.
+type stallingChat struct {
+	release   chan struct{}
+	cancelled chan struct{}
+	done      chan struct{}
+}
+
+func (c *stallingChat) Snapshot() ([]byte, error) { return []byte(`{}`), nil }
+func (c *stallingChat) Subscribe() (<-chan struct{}, func()) {
+	return make(chan struct{}), func() {}
+}
+
+func (c *stallingChat) Command(command localruntime.ACPCommand) error {
+	switch command.Type {
+	case "prompt":
+		<-c.release
+	case "cancel":
+		close(c.cancelled)
+	}
+	return nil
+}
+func (c *stallingChat) Prompt(string) error        { return nil }
+func (c *stallingChat) Stop(context.Context) error { return nil }
+func (c *stallingChat) Detach()                    {}
+func (c *stallingChat) Done() <-chan struct{}      { return c.done }
+func (c *stallingChat) ExitCode() int              { return 0 }
+
+// A prompt waiting on the agent must not keep the chat from reading a stop.
+func TestACPChatReadsStopWhileAPromptStalls(t *testing.T) {
+	chat := &stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}
+	defer close(chat.release)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
+	defer server.Close()
+	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	require.NoError(t, err)
+	defer conn.CloseNow()
+
+	require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(`{"type":"prompt","text":"stall"}`)))
+	require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(`{"type":"cancel"}`)))
+	select {
+	case <-chat.cancelled:
+	case <-time.After(2 * time.Second):
+		require.FailNow(t, "stop waited behind a stalled prompt")
+	}
 }

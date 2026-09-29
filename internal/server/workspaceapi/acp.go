@@ -23,7 +23,34 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 	defer cancel()
 	changes, unsubscribe := agent.Subscribe()
 	defer unsubscribe()
+	run := func(command localruntime.ACPCommand) bool {
+		if err := agent.Command(command); err != nil {
+			// Command failures belong to this caller, not every attached browser.
+			data, marshalErr := json.Marshal(map[string]string{"commandError": err.Error()})
+			if marshalErr != nil || conn.Write(ctx, websocket.MessageText, data) != nil {
+				return false
+			}
+		}
+		return true
+	}
+	// Prompts and settings can wait on the agent; they run in order on their
+	// own goroutine so a stalled one never stops this connection from reading
+	// a stop or an answer (Conn allows concurrent writes).
+	slow := make(chan localruntime.ACPCommand, 32)
 	var readers sync.WaitGroup
+	readers.Go(func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case command := <-slow:
+				if !run(command) {
+					cancel()
+					return
+				}
+			}
+		}
+	})
 	readers.Go(func() {
 		defer cancel()
 		for {
@@ -35,16 +62,19 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 			if err := json.Unmarshal(data, &command); err != nil {
 				return
 			}
-			if command.Type == "heartbeat" {
+			switch command.Type {
+			case "heartbeat":
 				if conn.Write(ctx, websocket.MessageText, []byte(`{"type":"heartbeat"}`)) != nil {
 					return
 				}
-				continue
-			}
-			if err := agent.Command(command); err != nil {
-				// Command failures belong to this caller, not every attached browser.
-				data, marshalErr := json.Marshal(map[string]string{"commandError": err.Error()})
-				if marshalErr != nil || conn.Write(ctx, websocket.MessageText, data) != nil {
+			case "prompt", "config":
+				select {
+				case slow <- command:
+				case <-ctx.Done():
+					return
+				}
+			default:
+				if !run(command) {
 					return
 				}
 			}

@@ -212,7 +212,7 @@ func TestSpawnWorkspaceWithAgentLaunchesAndResumesACPTarget(t *testing.T) {
 		return []LaunchTarget{{Key: "chat", Label: "Chat", Kind: "acp", Source: "config", Available: true}}, nil
 	}
 	launches := 0
-	backend.launchWorkspaceRuntimeFn = func(_ context.Context, _ string, target string) (RuntimeSession, error) {
+	backend.launchWorkspaceRuntimeFn = func(_ context.Context, _ string, target string, _ string) (RuntimeSession, error) {
 		launches++
 		assert.Equal("chat", target)
 		return acpRuntime, nil

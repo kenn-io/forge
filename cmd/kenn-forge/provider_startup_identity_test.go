@@ -982,11 +982,18 @@ func TestProductionStartupRoutesTwoOwnersThroughSyncAndMutationAPI(t *testing.T)
 			return
 		}
 
-		if !strings.HasPrefix(r.URL.Path, "/api/v3/repos/") {
+		repoPath := r.URL.Path
+		switch repoPath {
+		case "/api/v3/repositories/101":
+			repoPath = "/api/v3/repos/org-a/one"
+		case "/api/v3/repositories/202":
+			repoPath = "/api/v3/repos/org-b/two"
+		}
+		if !strings.HasPrefix(repoPath, "/api/v3/repos/") {
 			http.NotFound(w, r)
 			return
 		}
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v3/repos/"), "/")
+		parts := strings.Split(strings.TrimPrefix(repoPath, "/api/v3/repos/"), "/")
 		if len(parts) < 2 {
 			http.NotFound(w, r)
 			return
@@ -1077,8 +1084,8 @@ func TestProductionStartupRoutesTwoOwnersThroughSyncAndMutationAPI(t *testing.T)
 	}, caps.Archive)
 
 	repos := []github.RepoRef{
-		{Platform: "github", PlatformHost: host, Owner: "org-a", Name: "one"},
-		{Platform: "github", PlatformHost: host, Owner: "org-b", Name: "two"},
+		{Platform: "github", PlatformHost: host, PlatformRepoID: 101, Owner: "org-a", Name: "one"},
+		{Platform: "github", PlatformHost: host, PlatformRepoID: 202, Owner: "org-b", Name: "two"},
 	}
 	syncer := github.NewSyncerWithRegistry(
 		startup.registry, database, nil, repos, time.Minute,

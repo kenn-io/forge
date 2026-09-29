@@ -150,6 +150,8 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(chat.getByRole("button", { name: "Allow once" })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("acp-desktop.png") });
     await chat.getByRole("button", { name: "Allow once" }).click();
+    // An answered permission prompt leaves the conversation.
+    await expect(chat.getByRole("button", { name: "Allow once" })).toHaveCount(0);
     await expect(
       chat.getByRole("log", { name: "Conversation" }).getByText("Permission received. The turn is complete."),
     ).toBeVisible();

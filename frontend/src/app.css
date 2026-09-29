@@ -105,6 +105,7 @@
    Keep kit's high-contrast palette authoritative when explicitly enabled. */
 :root.dark[data-kit-theme="quiet"]:not(.high-contrast) {
   --bg-primary: #111214; /* kit-ui-check-ignore: quiet canvas contrast override */
+  --bg-surface: #141518; /* kit-ui-check-ignore: darken the main panels, lists, and reading background */
   --bg-inset: #303338; /* kit-ui-check-ignore: quiet control contrast override */
   --bg-surface-hover: #383c43; /* kit-ui-check-ignore: quiet hover contrast override */
   --border-default: #555b65; /* kit-ui-check-ignore: quiet control edge contrast override */

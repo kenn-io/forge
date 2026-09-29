@@ -353,6 +353,9 @@ create a local process, PTY, or durable transport session
 - Pass initial prompts to directly configured Claude commands as CLI arguments; its
   trust dialog already uses raw input, so a synthetic Enter can select exit.
   (`internal/workspace/localruntime/manager.go::Manager.LaunchWithInitialMessage`).
+- Reject oversized Windows launch commands before starting the agent or PTY helper;
+  count quoted UTF-16 arguments, including helper JSON, rather than prompt bytes
+  (`internal/ptyowner/client.go::Client.Ensure`).
 - Terminal prompt delivery requires observed bracketed-paste mode, then sends the
   opening frame, prompt, and closing frame in one terminal write and, after a
   short fixed settle delay, Enter as a separate write. Agent TUIs treat bytes

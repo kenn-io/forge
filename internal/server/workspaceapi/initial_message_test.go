@@ -312,6 +312,7 @@ type initialMessagePTYOwner struct {
 	pty                *initialMessagePTY
 	ptys               map[string]*initialMessagePTY
 	command            []string
+	startErr           error
 	emitBracketedPaste bool
 }
 
@@ -344,6 +345,9 @@ func (o *initialMessagePTYOwner) Start(
 	_ []string,
 	_ map[string]string,
 ) (ptyownerruntime.PTY, error) {
+	if o.startErr != nil {
+		return nil, o.startErr
+	}
 	pty := &initialMessagePTY{
 		output: make(chan []byte, 8), done: make(chan struct{}),
 	}

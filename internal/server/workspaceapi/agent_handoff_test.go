@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
@@ -158,6 +160,25 @@ func TestClaudeHandoffProvidesPromptAtLaunchWithoutTypingIntoStartupDialogs(t *t
 	require.NoError(err)
 	assert.Equal(result.InitialMessage, repeated)
 	assert.Empty(fixture.owner.pty.written())
+}
+
+func TestAgentHandoffReportsOversizedCommandAsBadRequest(t *testing.T) {
+	require := require.New(t)
+	fixture := newAgentHandoffFixture(t, "ready")
+	// The Windows launch boundary returns this typed error before starting a process.
+	fixture.owner.startErr = fmt.Errorf("start pty owner: %w", ptyowner.ErrCommandLineTooLong)
+	response := fixture.post(t, map[string]string{
+		"target_key": "codex", "message": "review this PR",
+	})
+	require.Equal(http.StatusBadRequest, response.Code, response.Body.String())
+	var problem struct {
+		Code   string `json:"code"`
+		Detail string `json:"detail"`
+	}
+	require.NoError(json.NewDecoder(response.Body).Decode(&problem))
+	require.Equal("badRequest", problem.Code)
+	require.Contains(problem.Detail, "shorten the prompt or launch arguments")
+	require.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
 }
 
 func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {

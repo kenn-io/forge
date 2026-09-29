@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
@@ -3022,7 +3023,7 @@ func (s *Handler) getReadyRuntimeWorkspace(
 
 func workspaceRuntimeLaunchError(err error) error {
 	msg := err.Error()
-	if errors.Is(err, tokenauth.ErrMissingToken) {
+	if errors.Is(err, tokenauth.ErrMissingToken) || errors.Is(err, ptyowner.ErrCommandLineTooLong) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, msg, nil)
 	}
 	if strings.Contains(msg, "target not found") {

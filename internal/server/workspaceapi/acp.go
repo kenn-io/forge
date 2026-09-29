@@ -35,15 +35,39 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 	}
 	// Prompts and settings can wait on the agent; they run in order on their
 	// own goroutine so a stalled one never stops this connection from reading
-	// a stop or an answer (Conn allows concurrent writes).
-	slow := make(chan localruntime.ACPCommand, 32)
+	// a stop or an answer (Conn allows concurrent writes). The backlog is
+	// unbounded: the reader never waits on it.
+	var (
+		slowMu  sync.Mutex
+		backlog []localruntime.ACPCommand
+	)
+	slowReady := make(chan struct{}, 1)
+	enqueue := func(command localruntime.ACPCommand) {
+		slowMu.Lock()
+		backlog = append(backlog, command)
+		slowMu.Unlock()
+		select {
+		case slowReady <- struct{}{}:
+		default:
+		}
+	}
 	var readers sync.WaitGroup
 	readers.Go(func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case command := <-slow:
+			case <-slowReady:
+			}
+			for {
+				slowMu.Lock()
+				if len(backlog) == 0 {
+					slowMu.Unlock()
+					break
+				}
+				command := backlog[0]
+				backlog = backlog[1:]
+				slowMu.Unlock()
 				if !run(command) {
 					cancel()
 					return
@@ -77,11 +101,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 					return
 				}
 			case "prompt", "config":
-				select {
-				case slow <- command:
-				case <-ctx.Done():
-					return
-				}
+				enqueue(command)
 			default:
 				if !run(command) {
 					return

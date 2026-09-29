@@ -234,6 +234,10 @@ func TestACPChatReadsStopWhileAPromptStalls(t *testing.T) {
 	defer conn.CloseNow()
 
 	require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(`{"type":"prompt","text":"stall"}`)))
+	// However many prompts wait behind it, the reader still takes the stop.
+	for range 100 {
+		require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(`{"type":"prompt","text":"behind"}`)))
+	}
 	require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(`{"type":"cancel"}`)))
 	select {
 	case <-chat.cancelled:

@@ -55,6 +55,8 @@ fixtures, or changing shell-script coverage.
   (`vite.config.ts::svelte-check`).
 - Hook `files` patterns mirror what each checker reads (e.g. huma-route-check
   skips test files); do not use `always_run` for whole-module checks (`prek.toml`).
+- API generation runs for every non-test Go change because schema types cross
+  package boundaries (`prek.toml`).
 - Package-local `svelte-check` tasks must pass that package's Vite config explicitly;
   implicit discovery can load the root non-Svelte task config (`vite.config.ts:56`).
 - Do not use `-v` unless the user requests it or a particular failure genuinely

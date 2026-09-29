@@ -101,17 +101,19 @@
   --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));
 }
 
-/* Separate inset controls and selected surface pills in the quiet palette.
-   Keep kit's high-contrast palette authoritative when explicitly enabled. */
+/* Darker quiet reading surfaces with small, even elevation steps: inset
+   and hover sit just above the surface so tabs, group headers, and chips
+   read as structure, not gray blocks. Kit's muted text stays AA on every
+   step. Keep kit's high-contrast palette authoritative when enabled. */
 :root.dark[data-kit-theme="quiet"]:not(.high-contrast) {
-  --bg-primary: #111214; /* kit-ui-check-ignore: quiet canvas contrast override */
-  --bg-surface: #141518; /* kit-ui-check-ignore: darken the main panels, lists, and reading background */
-  --bg-inset: #303338; /* kit-ui-check-ignore: quiet control contrast override */
-  --bg-surface-hover: #383c43; /* kit-ui-check-ignore: quiet hover contrast override */
-  --border-default: #555b65; /* kit-ui-check-ignore: quiet control edge contrast override */
-  --border-muted: #393e46; /* kit-ui-check-ignore: quiet divider contrast override */
-  --text-muted: #a0a6af; /* kit-ui-check-ignore: retains AA text contrast on the brighter controls */
-  --sidebar-row-hover-bg: var(--bg-surface-hover);
+  --bg-primary: #0f1012; /* kit-ui-check-ignore: quiet dark canvas */
+  --bg-surface: #141518; /* kit-ui-check-ignore: quiet dark reading surface */
+  --bg-inset: #1c1e22; /* kit-ui-check-ignore: one step above the surface */
+  --bg-surface-hover: #24272c; /* kit-ui-check-ignore: two steps above the surface */
+  --border-default: #33363c; /* kit-ui-check-ignore: control edges on the darker surface */
+  --border-muted: #26292e; /* kit-ui-check-ignore: dividers on the darker surface */
+  --sidebar-row-hover-bg: color-mix(in srgb, var(--bg-surface-hover) 55%, var(--bg-surface));
+  --bg-row-selected: var(--bg-surface-hover);
 }
 
 /* Base. The root stays at the browser default (no html font-size) so the

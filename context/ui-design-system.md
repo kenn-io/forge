@@ -20,7 +20,9 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Visual emphasis should come from hierarchy and semantic color, not oversized controls or decorative effects.
 - Light and dark themes should express the same UI language through shared tokens.
 - Keep the quiet dark canvas and content surfaces dark enough for comfortable
-  reading, with distinct controls and readable muted text on hover. Preserve kit's
+  reading. Inset, hover, and border tokens step up in small, even increments so
+  tab strips, group headers, chips, and hovered rows read as structure, never as
+  bright gray fills. Muted text must stay AA on every step. Preserve kit's
   explicit high-contrast palette (`frontend/src/app.css`).
 - Detail background refresh uses the metadata-row `Syncing` indicator; a manual
   Activity refresh reports progress only in its initiating icon button. Do not

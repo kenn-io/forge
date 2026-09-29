@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 func TestGitWhitespaceDigestMatchesFileSemantics(t *testing.T) {
@@ -134,7 +134,7 @@ func TestClassifyWhitespaceOnlyMatchesGit(t *testing.T) {
 			runWorkspaceTestGit(t, work, "add", "fixture.txt")
 			runWorkspaceTestGit(t, work, "commit", "-m", "fixture")
 			require.NoError(os.WriteFile(path, []byte(tt.new), 0o644))
-			_, _, gitErr := gitcmd.New().Run(
+			_, _, gitErr := gitsafe.Runner().Run(
 				t.Context(), work, nil,
 				"diff", "--quiet", "-w", "HEAD", "--", "fixture.txt",
 			)
@@ -176,7 +176,7 @@ func TestClassifyWorkspaceWhitespaceOnlyChecksWholeFileAcrossHunks(t *testing.T)
 		t.Context(), work, "HEAD", "", true, files, nil,
 	)
 	require.NoError(err)
-	_, _, gitErr := gitcmd.New().Run(
+	_, _, gitErr := gitsafe.Runner().Run(
 		t.Context(), work, nil, "diff", "--quiet", "-w", "HEAD", "--", "fixture.txt",
 	)
 

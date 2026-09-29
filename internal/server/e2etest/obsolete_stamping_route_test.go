@@ -19,11 +19,11 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/forgejo"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.T) {
@@ -35,7 +35,7 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 	require.NoError(os.MkdirAll(work, 0o755))
 	runGit := func(dir string, args ...string) string {
 		t.Helper()
-		out, stderr, err := gitcmd.New().Run(ctx, dir, nil, args...)
+		out, stderr, err := gitsafe.Runner().Run(ctx, dir, nil, args...)
 		require.NoError(err, "git %v: %s%s", args, out, stderr)
 		return strings.TrimSpace(string(out))
 	}

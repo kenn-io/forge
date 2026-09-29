@@ -18,13 +18,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -605,7 +605,7 @@ func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
 	assert := assert.New(t)
 
 	host := t.TempDir()
-	initCmd := gitcmd.New().Command(t.Context(), "", "init", "-q", "-b", "main", host)
+	initCmd := gitsafe.Runner().Command(t.Context(), "", "init", "-q", "-b", "main", host)
 	require.NoError(initCmd.Run(), "seed host repo")
 
 	hostConfig := filepath.Join(host, ".git", "config")
@@ -628,7 +628,7 @@ func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
 // initLocalOnlyGitRepo runs `git init` in dir without configuring any remote,
 // matching the no-`gh` Add Existing path.
 func initLocalOnlyGitRepo(ctx context.Context, dir string) error {
-	cmd := gitcmd.New().Command(ctx, dir, "init", "-q")
+	cmd := gitsafe.Runner().Command(ctx, dir, "init", "-q")
 	if err := cmd.Run(); err != nil {
 		return err
 	}

@@ -32,10 +32,10 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 // testRepoRoutes remembers the route behind every testRepoID so the default
@@ -372,7 +372,7 @@ func setupBareRemoteForSyncTest(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	remote := filepath.Join(dir, "remote.git")
-	cmd := gitcmd.New().Command(t.Context(), dir, "init", "--bare", "--initial-branch=main", remote)
+	cmd := gitsafe.Runner().Command(t.Context(), dir, "init", "--bare", "--initial-branch=main", remote)
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git init --bare failed: %s", out)
 	return remote
@@ -444,7 +444,7 @@ func setupSyncBranchActivityFixture(t *testing.T, defaultBranch string) syncBran
 
 func syncActivityGitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 	return strings.TrimSpace(string(out))
 }

@@ -25,15 +25,15 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 // setupGitLabCloneFixture builds a local git history (base commit on
 // main, head commit on feature) plus a bare clone usable as the sync
-// remote. gitcmd.New() strips inherited GIT_DIR/GIT_WORK_TREE so the
+// remote. gitsafe.Runner() strips inherited GIT_DIR/GIT_WORK_TREE so the
 // fixture cannot touch the host repository under the pre-commit hook.
 func setupGitLabCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string) {
 	t.Helper()
@@ -42,7 +42,7 @@ func setupGitLabCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string) {
 	work := filepath.Join(dir, "work")
 	require.NoError(os.MkdirAll(work, 0o755))
 	run := func(args ...string) string {
-		out, stderr, err := gitcmd.New().Run(t.Context(), work, nil, args...)
+		out, stderr, err := gitsafe.Runner().Run(t.Context(), work, nil, args...)
 		require.NoError(err, "git %v: %s%s", args, out, stderr)
 		return strings.TrimSpace(string(out))
 	}
@@ -59,7 +59,7 @@ func setupGitLabCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string) {
 	run("commit", "-m", "head")
 	headSHA = run("rev-parse", "HEAD")
 	cloneURL = filepath.Join(dir, "origin.git")
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, "clone", "--bare", work, cloneURL)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, "clone", "--bare", work, cloneURL)
 	require.NoError(err, "%s%s", out, stderr)
 	return cloneURL, baseSHA, headSHA
 }

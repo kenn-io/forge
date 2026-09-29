@@ -11,7 +11,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 func TestWorkspaceCreateUsesPRBranchAndFallbackBranch(t *testing.T) {
@@ -95,7 +95,7 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 
 func gitOutputForLifecycle(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := gitcmd.New().Output(t.Context(), dir, args...)
+	out, err := gitsafe.Runner().Output(t.Context(), dir, args...)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

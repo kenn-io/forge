@@ -15,9 +15,9 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
@@ -61,7 +61,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			)
 			require.NoError(err)
 			require.NoError(manager.Setup(t.Context(), first))
-			commonDir, stderr, err := gitcmd.New().Run(t.Context(), first.WorktreePath, nil, "rev-parse", "--git-common-dir")
+			commonDir, stderr, err := gitsafe.Runner().Run(t.Context(), first.WorktreePath, nil, "rev-parse", "--git-common-dir")
 			require.NoError(err, string(stderr))
 			gitDir := strings.TrimSpace(string(commonDir))
 			if !filepath.IsAbs(gitDir) {
@@ -85,7 +85,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 
 			var hotPath string
 			findHotWorktree := func() string {
-				out, stderr, err := gitcmd.New().Run(
+				out, stderr, err := gitsafe.Runner().Run(
 					t.Context(), gitDir, nil, "worktree", "list", "--porcelain",
 				)
 				if err != nil {

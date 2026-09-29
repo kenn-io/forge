@@ -24,8 +24,8 @@ import (
 	"go.kenn.io/forge/internal/server/repobrowserapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	gitcmd "go.kenn.io/kit/git/cmd"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -835,7 +835,7 @@ func setupServerRepoBrowserGitRepo(t *testing.T) (remote string, work string) {
 
 func serverRepoBrowserGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	runner := gitcmd.New().
+	runner := gitsafe.Runner().
 		WithConfig("init.defaultBranch", "main").
 		WithConfig("gc.auto", "0").
 		WithConfig("maintenance.auto", "false")
@@ -845,7 +845,7 @@ func serverRepoBrowserGit(t *testing.T, dir string, args ...string) {
 
 func testGitSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
+	out, err := gitsafe.Runner().Output(t.Context(), dir, "rev-parse", ref)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

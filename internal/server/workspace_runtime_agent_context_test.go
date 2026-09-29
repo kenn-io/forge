@@ -13,7 +13,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
@@ -21,6 +20,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -379,7 +379,7 @@ func initServerWorkspaceGitRepo(t *testing.T) string {
 
 func runServerWorkspaceTestGit(t *testing.T, dir string, args ...string) []byte {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 	return out
 }

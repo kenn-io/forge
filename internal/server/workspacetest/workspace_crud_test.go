@@ -17,13 +17,13 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func workspaceGitOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := gitcmd.New().Output(t.Context(), dir, args...)
+	out, err := gitsafe.Runner().Output(t.Context(), dir, args...)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

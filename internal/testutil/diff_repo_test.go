@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 // TestSetupDiffRepoDoesNotLeakIntoHostGitDir guards against regression
@@ -26,7 +26,7 @@ func TestSetupDiffRepoDoesNotLeakIntoHostGitDir(t *testing.T) {
 	require := require.New(t)
 
 	host := t.TempDir()
-	initCmd := gitcmd.New().Command(t.Context(), "", "init", "-q", "-b", "main", host)
+	initCmd := gitsafe.Runner().Command(t.Context(), "", "init", "-q", "-b", "main", host)
 	initCmd.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + os.Getenv("HOME"),

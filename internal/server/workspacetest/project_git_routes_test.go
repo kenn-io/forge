@@ -7,13 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
 
@@ -109,12 +109,8 @@ func TestCloneProjectBranchAndHomePath(t *testing.T) {
 	resp.Body.Close()
 	assert.Equal(filepath.Join(fakeHome, "clones", "widget"), created.LocalPath)
 
-	out, err := procutil.Command(
-		"git", "-C", created.LocalPath,
-		"rev-parse", "--abbrev-ref", "HEAD",
-	).Output()
-	require.NoError(err)
-	assert.Equal("feat/clone", string(out[:len(out)-1]))
+	out := gitfixture.Run(t, created.LocalPath, "rev-parse", "--abbrev-ref", "HEAD")
+	assert.Equal("feat/clone", strings.TrimSpace(string(out)))
 }
 
 // TestCloneProjectFailureCleansOwnedDestination pins the rollback

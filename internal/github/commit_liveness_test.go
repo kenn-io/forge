@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 type livenessTestHistory struct {
@@ -41,7 +41,7 @@ type commitLivenessFixture struct {
 
 func livenessTestGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v: %s%s", args, out, stderr)
 	return strings.TrimSpace(string(out))
 }

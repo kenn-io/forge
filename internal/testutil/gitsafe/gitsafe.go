@@ -91,6 +91,25 @@ func MutableRunner(tb testing.TB) gitcmd.Runner {
 	}
 }
 
+// UserConfigRunner returns a runner that finds global Git config the way a
+// user's Git does, through HOME and XDG_CONFIG_HOME, for tests of default
+// config discovery. home and xdgConfigHome must be test-owned temporary
+// directories; system config stays disabled. Use MutableRunner when the
+// test only needs writable global config.
+func UserConfigRunner(tb testing.TB, home, xdgConfigHome string) gitcmd.Runner {
+	tb.Helper()
+	require.NotEmpty(tb, home, "UserConfigRunner needs a test-owned HOME")
+	return gitcmd.Runner{
+		Env: replaceEnvValues(gitenv.StripAll(os.Environ()), map[string]string{
+			"GIT_CONFIG_NOSYSTEM": "1",
+			"GIT_TERMINAL_PROMPT": "0",
+			"HOME":                home,
+			"XDG_CONFIG_HOME":     xdgConfigHome,
+		}),
+		DisableSafeDirectoryForward: true,
+	}
+}
+
 func isolatedCommandEnv(base []string) []string {
 	replacements := make(map[string]string)
 	for _, key := range []string{

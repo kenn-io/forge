@@ -18,7 +18,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -31,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -692,25 +692,25 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	require.NoError(err)
 	seedNodeClone := func(target string) {
 		require.NoError(os.MkdirAll(filepath.Dir(target), 0o755))
-		_, stderr, runErr := gitcmd.New().Run(
+		_, stderr, runErr := gitsafe.Runner().Run(
 			t.Context(), "", nil, "clone", "--bare", sourceClone, target,
 		)
 		require.NoError(runErr, string(stderr))
-		_, stderr, runErr = gitcmd.New().Run(
+		_, stderr, runErr = gitsafe.Runner().Run(
 			t.Context(), target, nil, "config", "remote.origin.url", hostedCloneURL,
 		)
 		require.NoError(runErr, string(stderr))
-		_, stderr, runErr = gitcmd.New().Run(
+		_, stderr, runErr = gitsafe.Runner().Run(
 			t.Context(), target, nil, "config", "--add",
 			"url."+sourceClone+".insteadOf", hostedCloneURL,
 		)
 		require.NoError(runErr, string(stderr))
-		_, stderr, runErr = gitcmd.New().Run(
+		_, stderr, runErr = gitsafe.Runner().Run(
 			t.Context(), target, nil, "update-ref",
 			"refs/remotes/origin/main", "refs/heads/main",
 		)
 		require.NoError(runErr, string(stderr))
-		_, stderr, runErr = gitcmd.New().Run(
+		_, stderr, runErr = gitsafe.Runner().Run(
 			t.Context(), target, nil, "symbolic-ref",
 			"refs/remotes/origin/HEAD", "refs/remotes/origin/main",
 		)

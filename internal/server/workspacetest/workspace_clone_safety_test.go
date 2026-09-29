@@ -17,8 +17,8 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/workspace"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func setupLifecycleWorkspaceServer(t *testing.T) (*apiclient.Client, *db.DB, string, string) {
@@ -806,7 +806,7 @@ func TestWorkspaceCreateSameRepoHeadCloneURLTracksOriginBranchE2E(t *testing.T) 
 func requireGitRefMissing(t *testing.T, dir, ref string) {
 	t.Helper()
 
-	_, stderr, err := gitcmd.New().Run(
+	_, stderr, err := gitsafe.Runner().Run(
 		t.Context(), dir, nil, "show-ref", "--verify", "--quiet", ref,
 	)
 	var exitErr *exec.ExitError

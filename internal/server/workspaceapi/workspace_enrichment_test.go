@@ -17,10 +17,10 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestApplyWorktreeDivergenceReportsMissingConfiguredUpstream(t *testing.T) {
@@ -71,7 +71,7 @@ func newEnrichmentTestHandler(t *testing.T, tmuxScript string) *Handler {
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	_, stderr, err := gitcmd.New().WithConfig("init.defaultBranch", "main").Run(
+	_, stderr, err := gitsafe.Runner().WithConfig("init.defaultBranch", "main").Run(
 		t.Context(), dir, nil, args...,
 	)
 	require.NoError(t, err, "git %v failed: %s", args, stderr)

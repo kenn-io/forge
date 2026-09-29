@@ -13,8 +13,8 @@ import (
 
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/workspace"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
@@ -601,7 +601,7 @@ func (e *unexpectedStatusError) Error() string {
 // each managed worktree adds one more.
 func listBareWorktrees(t *testing.T, bare string) int {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), bare, nil, "worktree", "list", "--porcelain")
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), bare, nil, "worktree", "list", "--porcelain")
 	require.NoError(t, err, "git worktree list: %s%s", out, stderr)
 	count := 0
 	for line := range strings.SplitSeq(string(out), "\n") {

@@ -11,7 +11,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.
@@ -300,7 +300,7 @@ func git(ctx context.Context, dir string, args ...string) error {
 	if len(args) == 0 {
 		return errors.New("git: no args")
 	}
-	cmd := gitcmd.New().Command(ctx, dir, args...)
+	cmd := gitsafe.Runner().Command(ctx, dir, args...)
 	// Strip inherited GIT_* variables before spawning git. When the
 	// test binary is invoked from a git hook (e.g. prek's pre-commit
 	// hook running `go test`), the outer git exports GIT_DIR,
@@ -321,7 +321,7 @@ func git(ctx context.Context, dir string, args ...string) error {
 }
 
 func revParse(ctx context.Context, dir, ref string) (string, error) {
-	out, err := gitcmd.New().Output(ctx, dir, "rev-parse", ref)
+	out, err := gitsafe.Runner().Output(ctx, dir, "rev-parse", ref)
 	if err != nil {
 		return "", err
 	}

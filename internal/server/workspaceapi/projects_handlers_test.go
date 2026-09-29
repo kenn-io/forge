@@ -20,8 +20,6 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
-	gitenv "go.kenn.io/kit/git/env"
 	managedworktree "go.kenn.io/kit/git/managed"
 
 	"go.kenn.io/forge/internal/db"
@@ -29,6 +27,8 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
@@ -152,7 +152,7 @@ func TestManagedWorktreeExecutionUsesSharedProcessLimiter(t *testing.T) {
 	t.Cleanup(release)
 
 	_, err = runManagedWorktreeGit(
-		context.Background(), gitcmd.Runner{Env: os.Environ()}, t.TempDir(), "status",
+		context.Background(), gitsafe.Runner(), t.TempDir(), "status",
 	)
 	require.ErrorIs(err, procutil.ErrProcessLimitReached)
 
@@ -171,21 +171,9 @@ func TestCreateProjectWorktreeFromMergeRequestUsesHubFacts(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	gitConfig := filepath.Join(t.TempDir(), "gitconfig")
-	require.NoError(os.WriteFile(gitConfig, nil, 0o600))
-	t.Setenv("GIT_CONFIG_GLOBAL", gitConfig)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	runGit := func(dir string, args ...string) string {
 		t.Helper()
-		command := procutil.Command("git", args...)
-		command.Dir = dir
-		command.Env = append(
-			gitenv.StripAll(os.Environ()),
-			"GIT_CONFIG_GLOBAL="+gitConfig, "GIT_CONFIG_NOSYSTEM=1",
-		)
-		output, err := command.CombinedOutput()
-		require.NoError(err, "git %v: %s", args, output)
-		return strings.TrimSpace(string(output))
+		return strings.TrimSpace(string(gitfixture.Run(t, dir, args...)))
 	}
 	origin := filepath.Join(t.TempDir(), "origin")
 	require.NoError(os.MkdirAll(origin, 0o755))

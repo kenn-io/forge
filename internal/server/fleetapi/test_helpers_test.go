@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
-	gitcmd "go.kenn.io/kit/git/cmd"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -325,7 +324,7 @@ func containerLogs(ctx context.Context, container testcontainers.Container) stri
 }
 
 func initLocalOnlyGitRepo(ctx context.Context, dir string) error {
-	return gitcmd.New().Command(ctx, dir, "init", "-q").Run()
+	return gitsafe.Runner().Command(ctx, dir, "init", "-q").Run()
 }
 
 func mustMarshal(t *testing.T, value any) []byte {

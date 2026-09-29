@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 func TestRoborevManagedCloneServerAddress(t *testing.T) {
@@ -56,7 +56,7 @@ func TestManagedCloneExcludeIsWorktreeScoped(t *testing.T) {
 	secondWorktree := filepath.Join(root, "second")
 	userHome := t.TempDir()
 	t.Setenv("HOME", userHome)
-	userGit := gitcmd.Runner{StripEnv: true}
+	userGit := gitsafe.UserConfigRunner(t, userHome, t.TempDir())
 	require.NoError(os.WriteFile(
 		filepath.Join(root, "global-exclude"),
 		[]byte("/editor-cache/\n"), 0o644,
@@ -178,7 +178,7 @@ func TestManagedCloneExcludePreservesImplicitGlobalIgnore(t *testing.T) {
 			runWorkspaceTestGit(t, root, "clone", "--bare", source, commonDir)
 			runWorkspaceTestGit(t, commonDir, "worktree", "add", "-b", "first", worktree, "main")
 
-			userGit := gitcmd.Runner{StripEnv: true}
+			userGit := gitsafe.UserConfigRunner(t, userHome, xdgHome)
 			_, stderr, err := userGit.Run(
 				t.Context(), worktree, nil,
 				"check-ignore", "--quiet", "--", "editor-cache/settings.json",

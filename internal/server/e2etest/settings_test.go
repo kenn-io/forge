@@ -32,9 +32,9 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func doServerJSON(
@@ -1253,13 +1253,13 @@ func setupSettingsLocalGitRepoForDefaultHost(t *testing.T) string {
 
 func runSettingsGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }
 
 func runSettingsGitOutput(t *testing.T, dir string, args ...string) []byte {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 	return out
 }

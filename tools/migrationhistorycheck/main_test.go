@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	gitenv "go.kenn.io/kit/git/env"
 )
 
@@ -259,7 +259,7 @@ func gitCommandIn(t *testing.T, dir string, args ...string) {
 func gitCommandInWithEnv(t *testing.T, dir string, env []string, args ...string) {
 	t.Helper()
 
-	runner := gitcmd.New().WithConfig("core.hooksPath", os.DevNull)
+	runner := gitsafe.Runner().WithConfig("core.hooksPath", os.DevNull)
 	runner.Env = env
 	runner.StripEnv = false
 	output, _, err := runner.Run(t.Context(), dir, nil, args...)

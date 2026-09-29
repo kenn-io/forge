@@ -12,7 +12,6 @@ import (
 
 	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
 
 	"go.kenn.io/forge/internal/config"
 	dbpkg "go.kenn.io/forge/internal/db"
@@ -21,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -62,7 +62,7 @@ func withRepoMetadata(r *gh.Repository) *gh.Repository {
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	runner := gitcmd.New().WithConfig("init.defaultBranch", "main")
+	runner := gitsafe.Runner().WithConfig("init.defaultBranch", "main")
 	out, stderr, err := runner.Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }

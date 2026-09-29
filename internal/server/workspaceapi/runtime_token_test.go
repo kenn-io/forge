@@ -20,11 +20,11 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
@@ -118,6 +118,6 @@ func seedReadyWorkspaceForRuntimeTokenTest(
 
 func runTokenRuntimeTestGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 }

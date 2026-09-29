@@ -23,8 +23,8 @@ import (
 	forgeserver "go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestMCPToolsUseTheInProcessForgeBackend(t *testing.T) {
@@ -56,7 +56,7 @@ func TestMCPToolsUseTheInProcessForgeBackend(t *testing.T) {
 	diffRoot := t.TempDir()
 	diffRepo, err := testutil.SetupDiffRepo(ctx, diffRoot, database)
 	require.NoError(err)
-	_, stderr, err := gitcmd.New().Run(
+	_, stderr, err := gitsafe.Runner().Run(
 		ctx, filepath.Join(diffRoot, "workrepo"), nil,
 		"update-ref", "refs/pull/1/head", diffRepo.HeadSHA,
 	)

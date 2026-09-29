@@ -18,8 +18,8 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/servertest"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func setupProjectServer(t *testing.T) (*server.Server, *db.DB) {
@@ -54,7 +54,7 @@ func setupProjectServerWithConfigContent(
 }
 
 func initLocalOnlyGitRepo(ctx context.Context, dir string) error {
-	if _, _, err := gitcmd.New().Run(ctx, dir, nil, "init", "--initial-branch=main"); err != nil {
+	if _, _, err := gitsafe.Runner().Run(ctx, dir, nil, "init", "--initial-branch=main"); err != nil {
 		return err
 	}
 	return nil

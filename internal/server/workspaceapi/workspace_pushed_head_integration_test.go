@@ -18,10 +18,10 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 type pushedHeadProviderClient struct {
@@ -470,7 +470,7 @@ func gitSHA(t *testing.T, dir, ref string) string {
 
 func runGitOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	output, err := gitcmd.New().Output(t.Context(), dir, args...)
+	output, err := gitsafe.Runner().Output(t.Context(), dir, args...)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(output))
 }

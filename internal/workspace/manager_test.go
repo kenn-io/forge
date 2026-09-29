@@ -21,6 +21,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 
 	shellquote "github.com/kballard/go-shellquote"
@@ -35,7 +36,6 @@ import (
 	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -1942,7 +1942,7 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 				require.NoError(readErr)
 				assert.Equal(originalHook, content)
 				assert.NoFileExists(filepath.Join(cloneDir, "hooks", "post-rewrite"))
-				_, _, configErr := gitcmd.New().Run(
+				_, _, configErr := gitsafe.Runner().Run(
 					ctx, cloneDir, nil,
 					"config", "--local", "--get-all", "core.hooksPath",
 				)
@@ -4707,7 +4707,7 @@ func TestAddWorktreeFallsBackToDetachedWorktreeWhenBranchNamesExhausted(
 			&refUpdates, "create refs/heads/%s-%d %s\n", base, i, divergentSHA,
 		)
 	}
-	_, stderr, err := gitcmd.New().Run(
+	_, stderr, err := gitsafe.Runner().Run(
 		t.Context(), cloneDir,
 		strings.NewReader(refUpdates.String()), "update-ref", "--stdin",
 	)
@@ -5682,7 +5682,7 @@ func configureForkPRRefs(
 
 func runWorkspaceTestGit(t *testing.T, dir string, args ...string) []byte {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 	return out
 }

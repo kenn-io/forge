@@ -212,11 +212,12 @@ func TestFleetRevokePassesTheDaemonMutationGuard(t *testing.T) {
 	t.Cleanup(daemon.Close)
 	clientConfigPath := archiveCLITestConfig(t, daemon.URL, "", "local-secret")
 
-	err = (daemonFleetCommandRunner{}).Revoke(t.Context(), fleetRevokeOptions{
-		ConfigPath: clientConfigPath, Timeout: time.Second, EnrollmentID: enrollmentID,
+	cmd := newFleetCommand(fleetCLIOptions{
+		Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
 	})
+	cmd.SetArgs([]string{"revoke", enrollmentID, "--config", clientConfigPath})
 
-	require.NoError(err)
+	require.NoError(cmd.ExecuteContext(t.Context()))
 	revoked, err := enrollments.Get(t.Context(), enrollmentID)
 	require.NoError(err)
 	require.Equal(federation.EnrollmentRevoked, revoked.State)

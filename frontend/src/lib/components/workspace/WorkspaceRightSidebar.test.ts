@@ -218,7 +218,7 @@ describe("WorkspaceRightSidebar", () => {
         issue?: IssueDetail["issue"];
       };
       const item = fixture[itemField];
-      const repo = { ...fixture.repo, platform_repo_id: "widgets-repo-id" };
+      const repo = { ...fixture.repo, platform_repo_id: 1001 };
       const snapshots = new Map([
         [pathA, { ...fixture, repo, [itemField]: { ...item, Number: number, Title: "Workspace A detail" } }],
         [pathB, { ...fixture, repo, [itemField]: { ...item, Number: number + 1, Title: "Workspace B detail" } }],
@@ -244,7 +244,7 @@ describe("WorkspaceRightSidebar", () => {
         worktreePath: "/tmp/worktrees/ws-a",
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: "widgets-repo-id",
+        platformRepoId: 1001,
         repoOwner: "acme",
         repoName: "widgets",
         repoPath: "acme/widgets",

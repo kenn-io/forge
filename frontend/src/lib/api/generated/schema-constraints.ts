@@ -34,6 +34,9 @@ export const schemaConstraints = {
   NeutralSnapshot: {
     generation: { minimum: 0 },
   },
+  ProviderWorkspaceItemRequest: {
+    platform_repo_id: { minimum: 1 },
+  },
   RawSnapshot: {
     generation: { minimum: 0 },
   },

@@ -38,7 +38,7 @@ func TestRegisterProjectUsesHubRepositoryIdentity(t *testing.T) {
 	handler := New(Deps{
 		DB: database,
 		ResolveRepository: func(
-			ctx context.Context, route providerplane.RepositoryRoute, _ string,
+			ctx context.Context, route providerplane.RepositoryRoute, _ int64,
 		) (*db.Repo, error) {
 			entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 				Platform: route.Provider, PlatformHost: route.PlatformHost,

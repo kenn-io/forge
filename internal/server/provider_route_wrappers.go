@@ -260,7 +260,7 @@ type createIssueWorkspaceHostInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	Body         struct {
-		PlatformRepoID         string  `json:"platform_repo_id,omitempty"`
+		PlatformRepoID         int64   `json:"platform_repo_id,omitempty"`
 		GitHeadRef             *string `json:"git_head_ref,omitempty"`
 		ReuseExistingBranch    bool    `json:"reuse_existing_branch,omitempty"`
 		ReuseExistingDirectory bool    `json:"reuse_existing_directory,omitempty"`
@@ -274,7 +274,7 @@ type createAdHocWorkspaceHostInput struct {
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
 	Body         struct {
-		PlatformRepoID      string  `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
+		PlatformRepoID      int64   `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
 		Branch              *string `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
 		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
 	}

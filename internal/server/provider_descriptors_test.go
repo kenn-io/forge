@@ -53,14 +53,14 @@ func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	hubDB := dbtest.Open(t)
 	seedPR(t, hubDB, "acme", "widget", 42)
-	renamed, _, err := hubDB.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+	renamed, err := hubDB.ObserveRepository(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		Owner: "acme", Name: "widgets",
-	}, time.Now().UTC().Add(time.Minute))
+	})
 	require.NoError(err)
-	require.NoError(hubDB.UpdateRepoProviderMetadata(t.Context(), renamed.Repository.ID, db.RepoProviderMetadata{
-		PlatformRepoID: "repo-acme-widget", CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
-	}))
+	require.NoError(hubDB.UpdateRepoProviderObservation(t.Context(), renamed.Repository.ID, db.RepoProviderMetadata{
+		CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
+	}, nil, nil))
 	hubCredentials, err := federationauth.Open(filepath.Join(t.TempDir(), "hub-credentials.json"))
 	require.NoError(err)
 	token, err := hubCredentials.MintInbound(proxyTestNodeID, federationauth.SpokeToHubScopes())
@@ -88,7 +88,7 @@ func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
 	t.Cleanup(func() { gracefulShutdown(t, node) })
 
 	response := testutil.DoJSON(t, node, http.MethodPost, "/api/v1/fleet/hosts/self/repo/gh/acme/widget/workspaces", map[string]any{
-		"branch": "work/cached-rename", "platform_repo_id": "repo-acme-widget",
+		"branch": "work/cached-rename", "platform_repo_id": testutil.FixtureRepoID("acme", "widget"),
 	})
 	require.Equal(http.StatusAccepted, response.Code, response.Body.String())
 	var created workspaceapi.WorkspaceResponse
@@ -99,18 +99,18 @@ func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
 	identity, err := nodeDB.GetRepoByID(t.Context(), stored.RepoID)
 	require.NoError(err)
 	require.NotNil(identity)
-	assert.Equal("repo-acme-widget", identity.PlatformRepoID)
+	assert.Equal(testutil.FixtureRepoID("acme", "widget"), identity.PlatformRepoID)
 	assert.Equal("widgets", stored.RepoName)
 	assert.Equal("https://github.com/acme/widgets.git", identity.CloneURL)
 
 	// A new owner at the cached route must not redirect that same selection.
-	_, _, err = hubDB.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement",
+	_, err = hubDB.ObserveRepository(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
 		Owner: "acme", Name: "widget",
-	}, time.Now().UTC().Add(2*time.Minute))
+	})
 	require.NoError(err)
 	response = testutil.DoJSON(t, node, http.MethodPost, "/api/v1/fleet/hosts/self/repo/gh/acme/widget/workspaces", map[string]any{
-		"branch": "work/cached-rename", "platform_repo_id": "repo-acme-widget",
+		"branch": "work/cached-rename", "platform_repo_id": testutil.FixtureRepoID("acme", "widget"),
 	})
 	assert.Equal(http.StatusNotFound, response.Code, response.Body.String())
 }
@@ -118,9 +118,9 @@ func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
 func TestRepositorySelectionRejectsDifferentHubIdentity(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	descriptor, err := providerplane.BuildRepositoryDescriptor(providerplane.RepositorySnapshot{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: "replacement",
+		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
 		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
-		SnapshotRevision: 1, ObservedAt: time.Now().UTC(),
+		ObservedAt: time.Now().UTC(),
 	})
 	require.NoError(err)
 	raw, err := json.Marshal(descriptor)
@@ -131,12 +131,12 @@ func TestRepositorySelectionRejectsDifferentHubIdentity(t *testing.T) {
 	) (*http.Response, error) {
 		body, err := io.ReadAll(request.Body)
 		require.NoError(err)
-		assert.JSONEq(`{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget","platform_repo_id":"original"}`, string(body))
+		assert.JSONEq(`{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget","platform_repo_id":1001}`, string(body))
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(raw))}, nil
 	})}
 	_, err = source.ResolveRepositoryRoute(t.Context(), providerplane.RepositoryRoute{
 		Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
-	}, "original")
+	}, 1001)
 	require.Error(err)
 	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(ok)
@@ -183,10 +183,10 @@ func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {
 		}, nil, nil,
 	))
 	server.now = func() time.Time { return renameTime.Add(time.Minute) }
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement",
+	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
 		Owner: "acme", Name: "widget",
-	}, renameTime.Add(time.Minute))
+	})
 	require.NoError(err)
 
 	refreshed, err := server.RefreshWorkspaceLaunchSpec(t.Context(), current)

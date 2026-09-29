@@ -60,12 +60,12 @@ func TestCreateAdHocRejectsChangedRepositoryIdentity(t *testing.T) {
 	seedRepo(t, database, "github.com", "acme", "widget")
 	manager := NewManager(database, t.TempDir())
 	ws, err := manager.CreateAdHoc(t.Context(), "github", "github.com", "acme", "widget",
-		CreateAdHocOptions{PlatformRepoID: "repo-replaced", BranchName: "spike/stale-picker"})
-	require.ErrorIs(err, db.ErrRepositoryRouteFenceChanged)
+		CreateAdHocOptions{PlatformRepoID: 2002, BranchName: "spike/stale-picker"})
+	require.ErrorIs(err, db.ErrRepositoryIdentityChanged)
 	require.Nil(ws)
 
 	ws, err = manager.CreateAdHoc(t.Context(), "github", "github.com", "acme", "widget",
-		CreateAdHocOptions{PlatformRepoID: "repo-acme-widget", BranchName: "spike/stale-picker"})
+		CreateAdHocOptions{PlatformRepoID: testRepoID("acme", "widget"), BranchName: "spike/stale-picker"})
 	require.NoError(err)
 	require.Equal("spike/stale-picker", ws.GitHeadRef)
 }

@@ -115,7 +115,7 @@ function issueDetail(): IssueDetail {
       capabilities,
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: "widget-repo-id",
+      platform_repo_id: 1001,
       owner: "acme",
       name: "widget",
       repo_path: "acme/widget",
@@ -677,7 +677,7 @@ describe("IssueDetail inline workspace handoff", () => {
           "/devboxes/{connection_id}/workspaces",
           expect.objectContaining({
             params: { path: { connection_id: "compute-a" } },
-            body: expect.objectContaining({ platform_repo_id: "widget-repo-id" }),
+            body: expect.objectContaining({ platform_repo_id: 1001 }),
           }),
         ),
       );
@@ -774,7 +774,7 @@ describe("IssueDetail inline workspace handoff", () => {
     await waitFor(() =>
       expect(runtimeClient.POST).toHaveBeenCalledWith(
         path,
-        expect.objectContaining({ body: expect.objectContaining({ platform_repo_id: "widget-repo-id" }) }),
+        expect.objectContaining({ body: expect.objectContaining({ platform_repo_id: 1001 }) }),
       ),
     );
     resolvePost({ data: { id: "ws-runtime", status: "provisioning" } });

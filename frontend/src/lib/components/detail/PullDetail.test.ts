@@ -2897,7 +2897,7 @@ describe("PullDetail inline workspace handoff", () => {
             body: {
               provider: "github",
               platform_host: "github.com",
-              platform_repo_id: "widget-repo-id",
+              platform_repo_id: 1001,
               owner: "acme",
               name: "widget",
               mr_number: 1,
@@ -2939,7 +2939,7 @@ describe("PullDetail inline workspace handoff", () => {
     await waitFor(() =>
       expect(runtimeClient.POST).toHaveBeenCalledWith(
         "/workspaces",
-        expect.objectContaining({ body: expect.objectContaining({ platform_repo_id: "widget-repo-id" }) }),
+        expect.objectContaining({ body: expect.objectContaining({ platform_repo_id: 1001 }) }),
       ),
     );
     resolvePost({ data: { id: "ws-runtime", status: "provisioning" } });

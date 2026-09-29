@@ -306,7 +306,7 @@ func TestHubWorkspaceAutoAssignmentPreservesRepositoryIdentity(t *testing.T) {
 		assert.Equal("/api/v1/federation/provider/workspace-auto-assign", request.URL.Path)
 		body, err := io.ReadAll(request.Body)
 		require.NoError(err)
-		assert.JSONEq(`{"repository":{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget"},"platform_repo_id":"repo-acme-widget","item_type":"pull_request","item_number":7}`, string(body))
+		assert.JSONEq(`{"repository":{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget"},"platform_repo_id":1001,"item_type":"pull_request","item_number":7}`, string(body))
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(`{}`))}, nil
 	})}
 
@@ -314,7 +314,7 @@ func TestHubWorkspaceAutoAssignmentPreservesRepositoryIdentity(t *testing.T) {
 		Repository: providerplane.RepositoryRoute{
 			Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
 		},
-		PlatformRepoID: "repo-acme-widget", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+		PlatformRepoID: 1001, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
 	})
 
 	require.NoError(err)

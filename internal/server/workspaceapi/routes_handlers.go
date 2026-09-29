@@ -29,7 +29,7 @@ type createWorkspaceInput struct {
 	Body struct {
 		Provider           string `json:"provider"`
 		PlatformHost       string `json:"platform_host"`
-		PlatformRepoID     string `json:"platform_repo_id,omitempty"`
+		PlatformRepoID     int64  `json:"platform_repo_id,omitempty"`
 		Owner              string `json:"owner"`
 		Name               string `json:"name"`
 		MRNumber           int    `json:"mr_number"`
@@ -44,7 +44,7 @@ type createIssueWorkspaceInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	Body         struct {
-		PlatformRepoID         string  `json:"platform_repo_id,omitempty"`
+		PlatformRepoID         int64   `json:"platform_repo_id,omitempty"`
 		GitHeadRef             *string `json:"git_head_ref,omitempty"`
 		ReuseExistingBranch    bool    `json:"reuse_existing_branch,omitempty"`
 		ReuseExistingDirectory bool    `json:"reuse_existing_directory,omitempty"`
@@ -61,7 +61,7 @@ type createAdHocWorkspaceInput struct {
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
 	Body         struct {
-		PlatformRepoID      string  `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
+		PlatformRepoID      int64   `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
 		Branch              *string `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
 		ReuseExistingBranch bool    `json:"reuse_existing_branch,omitempty"`
 	}
@@ -627,7 +627,7 @@ func (s *Handler) createIssueWorkspaceRouteCore(
 
 	// ID-bearing requests resolve the launch specification before reuse so a
 	// replacement repository at the same route cannot supply the workspace.
-	if strings.TrimSpace(input.Body.PlatformRepoID) == "" {
+	if input.Body.PlatformRepoID == 0 {
 		existing, err := s.workspaces.GetByIssueForProvider(
 			ctx,
 			provider, input.PlatformHost, input.Owner, input.Name,
@@ -865,19 +865,28 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 		if err != nil {
 			return nil, err
 		}
-	} else if strings.TrimSpace(input.Body.PlatformRepoID) != "" {
-		repo, err = s.resolver.LookupSelection(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Body.PlatformRepoID)
 	} else {
-		repo, err = s.lookupRepoByProviderRoute(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name)
+		var active *db.ActiveRepo
+		if input.Body.PlatformRepoID != 0 {
+			active, err = s.resolver.LookupSelection(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Body.PlatformRepoID)
+		} else {
+			active, err = s.lookupRepoByProviderRoute(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name)
+		}
+		if err != nil {
+			return nil, providerRouteLookupError(err)
+		}
+		if active != nil {
+			repo = active.Row()
+		}
 	}
-	if err != nil {
-		return nil, providerRouteLookupError(err)
+	if repo == nil {
+		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound, "repo not found", nil)
 	}
 
 	branch := strings.TrimSpace(derefString(input.Body.Branch))
 	itemKey := db.AdHocWorkspaceItemKey(branch)
 	if itemKey != "" {
-		existing, err := s.adHocWorkspaceForBranch(ctx, repo.Row(), itemKey)
+		existing, err := s.adHocWorkspaceForBranch(ctx, repo, itemKey)
 		if err != nil {
 			return nil, err
 		}
@@ -899,7 +908,7 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 		},
 	)
 	if err != nil {
-		return s.adHocWorkspaceCreateError(ctx, repo.Row(), itemKey, err)
+		return s.adHocWorkspaceCreateError(ctx, repo, itemKey, err)
 	}
 
 	createdBranch := ws.WorkspaceBranch != ""

@@ -320,7 +320,7 @@ describe("view navigation", () => {
           ID: 9,
           Platform: "github",
           PlatformHost: "github.com",
-          PlatformRepoID: "9",
+          PlatformRepoID: 9,
           Owner: "acme",
           Name: holdRefresh ? "updated-repo" : "cached-only",
         },

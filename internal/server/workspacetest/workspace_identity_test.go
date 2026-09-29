@@ -20,17 +20,17 @@ func TestItemWorkspaceCreationRejectsReplacedRepositoryIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
-	current, _, err := fixture.database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-replacement",
+	current, err := fixture.database.ObserveRepository(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
 		Owner: "acme", Name: "widget",
-	}, time.Now().UTC().Add(time.Hour))
+	})
 	require.NoError(err)
 	require.NotNil(current)
-	require.NoError(fixture.database.UpdateRepoProviderMetadata(t.Context(), current.Repository.ID, db.RepoProviderMetadata{
-		PlatformRepoID: "repo-replacement", CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
-	}))
+	require.NoError(fixture.database.UpdateRepoProviderObservation(t.Context(), current.Repository.ID, db.RepoProviderMetadata{
+		CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+	}, nil, nil))
 	bare, err := fixture.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), "repo-replacement"), "github", "github.com", "acme", "widget",
+		gitclone.WithRepositoryIdentity(t.Context(), 2002), "github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)
 	gitfixture.Run(t, t.TempDir(), "clone", "--bare", fixture.remote, bare)
@@ -71,9 +71,9 @@ func TestItemWorkspaceCreationRejectsReplacedRepositoryIdentity(t *testing.T) {
 		"/api/v1/fleet/hosts/self/issues/github/acme/widget/7/workspace",
 		"/api/v1/fleet/hosts/self/host/github.com/issues/github/acme/widget/8/workspace",
 	} {
-		body := `{"platform_repo_id":"repo-acme-widget"}`
+		body := `{"platform_repo_id":3609862021}`
 		if strings.HasSuffix(path, "/workspaces") {
-			body = `{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget","mr_number":1,"platform_repo_id":"repo-acme-widget"}`
+			body = `{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget","mr_number":1,"platform_repo_id":3609862021}`
 		}
 		request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://forge.test"+path, strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
@@ -92,7 +92,7 @@ func TestItemWorkspaceCreationRejectsReplacedRepositoryIdentity(t *testing.T) {
 		"/api/v1/host/github.com/issues/github/acme/widget/7/workspace",
 	} {
 		request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://forge.test"+path,
-			strings.NewReader(`{"platform_repo_id":"repo-replacement"}`))
+			strings.NewReader(`{"platform_repo_id":2002}`))
 		request.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
 		fixture.server.ServeHTTP(response, request)

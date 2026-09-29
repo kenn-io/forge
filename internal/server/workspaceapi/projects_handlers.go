@@ -385,7 +385,7 @@ func (s *Handler) registerProjectAtPath(
 			repository, resolveErr := s.resolveRepository(ctx, providerplane.RepositoryRoute{
 				Provider: identity.Platform, PlatformHost: identity.Host,
 				Owner: identity.Owner, Name: identity.Name,
-			}, "")
+			}, 0)
 			if resolveErr != nil {
 				return nil, resolveErr
 			}

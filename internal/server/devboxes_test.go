@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -35,13 +34,14 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	database := dbtest.Open(t)
 	seedPR(t, database, "acme", "widget", 7)
-	entry, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widgets",
-	}, time.Now().UTC().Add(time.Minute))
+	platformRepoID := testutil.FixtureRepoID("acme", "widget")
+	entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: platformRepoID, Owner: "acme", Name: "widgets",
+	})
 	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderMetadata(t.Context(), entry.Repository.ID, db.RepoProviderMetadata{
-		PlatformRepoID: "repo-acme-widget", CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
-	}))
+	require.NoError(database.UpdateRepoProviderObservation(t.Context(), entry.Repository.ID, db.RepoProviderMetadata{
+		CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
+	}, nil, nil))
 	seedIssueForRepo(t, database, entry.Repository.ID, "github.com", "acme", "widgets", 7, "open", "Update project")
 	var creations, contextRefreshes atomic.Int32
 	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,20 +53,20 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 			if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
 				return
 			}
-			assert.Equal("repo-acme-widget", request.Repository.PlatformRepoID)
+			assert.Equal(platformRepoID, request.Repository.PlatformRepoID)
 			assert.Equal("widgets", request.Repository.Name)
 			assert.Equal("https://github.com/acme/widgets.git", request.Repository.CloneURL)
 			creations.Add(1)
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"id":"original-workspace"}`))
 		case "GET /api/v1/workspaces/original-workspace":
-			_, _ = w.Write([]byte(`{"id":"original-workspace","repo":{"provider":"github","platform_repo_id":"repo-acme-widget"},"platform_host":"github.com","repo_owner":"acme","repo_name":"widget","item_type":"pull_request","item_number":7,"item_key":"7","git_head_ref":"feature"}`))
+			_, _ = fmt.Fprintf(w, `{"id":"original-workspace","repo":{"provider":"github","platform_repo_id":%d},"platform_host":"github.com","repo_owner":"acme","repo_name":"widget","item_type":"pull_request","item_number":7,"item_key":"7","git_head_ref":"feature"}`, platformRepoID)
 		case "PUT /api/v1/worker/workspaces/original-workspace/context":
 			var spec db.WorkspaceLaunchSpec
 			if !assert.NoError(json.UnmarshalRead(r.Body, &spec)) {
 				return
 			}
-			assert.Equal("repo-acme-widget", spec.Repository.PlatformRepoID)
+			assert.Equal(platformRepoID, spec.Repository.PlatformRepoID)
 			assert.Equal("widgets", spec.Repository.Name)
 			contextRefreshes.Add(1)
 			w.WriteHeader(http.StatusNoContent)
@@ -91,7 +91,7 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 	controller := New(database, nil, nil, "/", nil, ServerOptions{Devboxes: connections, DisableWorkspaceBackgroundMonitors: true})
 	t.Cleanup(func() { gracefulShutdown(t, controller) })
 	for _, itemField := range []string{"branch", "mr_number", "issue_number"} {
-		body := map[string]any{"provider": "github", "platform_host": "github.com", "owner": "acme", "name": "widget", "platform_repo_id": "repo-acme-widget", itemField: 7}
+		body := map[string]any{"provider": "github", "platform_host": "github.com", "owner": "acme", "name": "widget", "platform_repo_id": platformRepoID, itemField: 7}
 		if itemField == "branch" {
 			body[itemField] = "work/cached-rename"
 		}
@@ -99,9 +99,9 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 		assert.Equal(http.StatusOK, response.Code, "%s: %s", itemField, response.Body.String())
 	}
 	assert.Equal(int32(3), creations.Load())
-	_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement", Owner: "acme", Name: "widget",
-	}, time.Now().UTC().Add(2*time.Minute))
+	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+	})
 	require.NoError(err)
 	response := testutil.DoJSON(t, controller, http.MethodPost, "/api/v1/devboxes/compute-a/workspaces/original-workspace/runtime/sessions", map[string]any{
 		"target_key": "codex", "display_region": "workflow",
@@ -110,29 +110,26 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 	assert.Equal(int32(1), contextRefreshes.Load(), "existing workspace context must follow its ID even after route reuse")
 }
 
-func TestDevboxCreationRejectsRepositoryRouteReplacement(t *testing.T) {
+func TestDevboxCreationRejectsCachedRepositoryRouteReplacement(t *testing.T) {
 	for _, itemField := range []string{"mr_number", "issue_number"} {
 		t.Run(itemField, func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
 			database := dbtest.Open(t)
-			replacement := db.RepoIdentity{
-				Platform: "github", PlatformHost: "github.com", PlatformRepoID: "R_Replacement",
+			original := db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 				Owner: "example-org", Name: "project",
 			}
-			repoID, err := database.UpsertRepo(t.Context(), replacement)
+			_, err := database.ObserveRepository(t.Context(), original)
+			require.NoError(err)
+			replacement := original
+			replacement.PlatformRepoID = 1002
+			entry, err := database.ObserveRepository(t.Context(), replacement)
 			require.NoError(err)
 			if itemField == "mr_number" {
-				seedPRForRepo(t, database, repoID, "github.com", "example-org", "project", 7)
+				seedPRForRepo(t, database, entry.Repository.ID, "github.com", "example-org", "project", 7)
 			} else {
-				seedIssueForRepo(t, database, repoID, "github.com", "example-org", "project", 7, "open", "Update project")
+				seedIssueForRepo(t, database, entry.Repository.ID, "github.com", "example-org", "project", 7, "open", "Update project")
 			}
-			// Keep the replacement's item history and launch metadata, but make
-			// another repository own the route when the request first reads it.
-			original := replacement
-			original.PlatformRepoID = "R_Original"
-			observedAt := time.Now().UTC().Add(time.Minute)
-			_, _, err = database.ReconcileRepositoryObservation(t.Context(), original, observedAt)
-			require.NoError(err)
 
 			var creations atomic.Int32
 			worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -168,40 +165,13 @@ func TestDevboxCreationRejectsRepositoryRouteReplacement(t *testing.T) {
 			mux := http.NewServeMux()
 			controller.registerDevboxAPI(humago.New(mux, huma.DefaultConfig("test", "1")))
 
-			writerQueued := make(chan struct{})
-			t.Cleanup(database.SetBeforeRepositoryReconciliationWriteLockForTest(func() { close(writerQueued) }))
-			database.ReadDB().SetMaxOpenConns(1)
-			readConn, err := database.ReadDB().Conn(t.Context())
-			require.NoError(err)
-			t.Cleanup(func() { _ = readConn.Close() })
-			waitCount := database.ReadDB().Stats().WaitCount
-			requestDone := make(chan *httptest.ResponseRecorder, 1)
-			go func() {
-				// Existing PR/issue callers omit the optional platform_repo_id;
-				// the controller must retain the ID from its first lookup anyway.
-				body := fmt.Sprintf(`{"provider":"github","platform_host":"github.com","owner":"example-org","name":"project",%q:7}`, itemField)
-				request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/devboxes/compute-a/workspaces", strings.NewReader(body))
-				request.Header.Set("Content-Type", "application/json")
-				response := httptest.NewRecorder()
-				mux.ServeHTTP(response, request)
-				requestDone <- response
-			}()
-			// The first lookup holds the repository read lock while waiting for
-			// SQL. Queue the writer so it runs before the next repository lookup.
-			deadline := time.Now().Add(5 * time.Second)
-			for database.ReadDB().Stats().WaitCount == waitCount && time.Now().Before(deadline) {
-				runtime.Gosched()
-			}
-			require.Greater(database.ReadDB().Stats().WaitCount, waitCount, "creation never reached its repository read")
-			writerDone := make(chan error, 1)
-			go func() {
-				_, _, err := database.ReconcileRepositoryObservation(t.Context(), replacement, observedAt.Add(time.Minute))
-				writerDone <- err
-			}()
-			<-writerQueued
-			require.NoError(readConn.Close())
-			require.NoError(<-writerDone)
-			response := <-requestDone
+			// The cached selection still names the original repository, while
+			// the same route and item number now belong to the replacement.
+			body := fmt.Sprintf(`{"provider":"github","platform_host":"github.com","owner":"example-org","name":"project","platform_repo_id":1001,%q:7}`, itemField)
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/devboxes/compute-a/workspaces", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, request)
 			assert.Equal(http.StatusNotFound, response.Code, response.Body.String())
 			assert.Zero(creations.Load(), "route replacement must not forward workspace creation to the worker")
 		})

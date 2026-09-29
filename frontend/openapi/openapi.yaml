@@ -1581,7 +1581,8 @@ components:
           type: string
         platform_repo_id:
           description: Expected stable repository ID from the catalog
-          type: string
+          format: int64
+          type: integer
         reuse_existing_branch:
           type: boolean
       type: object
@@ -1600,7 +1601,8 @@ components:
           type: string
         platform_repo_id:
           description: Expected stable repository ID from the catalog
-          type: string
+          format: int64
+          type: integer
         reuse_existing_branch:
           type: boolean
       type: object
@@ -1629,7 +1631,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         reuse_existing_branch:
@@ -1782,7 +1785,8 @@ components:
         git_head_ref:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         reuse_existing_branch:
           type: boolean
         reuse_existing_directory:
@@ -1803,7 +1807,8 @@ components:
         git_head_ref:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         reuse_existing_branch:
           type: boolean
         reuse_existing_directory:
@@ -1831,7 +1836,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
         suppress_auto_assign:
@@ -6731,8 +6737,9 @@ components:
         item_type:
           type: string
         platform_repo_id:
-          minLength: 1
-          type: string
+          format: int64
+          minimum: 1
+          type: integer
         repository:
           $ref: "#/components/schemas/RepositoryRoute"
       required:
@@ -7796,7 +7803,8 @@ components:
         PlatformHost:
           type: string
         PlatformRepoID:
-          type: string
+          format: int64
+          type: integer
         ViewerCanMerge:
           type: boolean
       required:
@@ -8391,7 +8399,8 @@ components:
         platform_host:
           type: string
         platform_repo_id:
-          type: string
+          format: int64
+          type: integer
         provider:
           type: string
       required:

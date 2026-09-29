@@ -63,13 +63,19 @@ vi.mock("../../stores/router.svelte.js", () => ({
   navigate: (path: string) => mockNavigate(path),
 }));
 
-function repoFixture(owner: string, name: string, platformHost = "github.com", platform = "github") {
+function repoFixture(
+  owner: string,
+  name: string,
+  platformRepoId: number,
+  platformHost = "github.com",
+  platform = "github",
+) {
   return {
     ID: 1,
     Name: name,
     Owner: owner,
     Platform: platform,
-    PlatformRepoID: `${platform}-${owner}-${name}`,
+    PlatformRepoID: platformRepoId,
     PlatformHost: platformHost,
   };
 }
@@ -116,7 +122,7 @@ describe("NewWorkspaceDialog", () => {
     mockPost.mockReset();
     mockNavigate.mockReset();
     mockGet.mockResolvedValue({
-      data: [repoFixture("acme", "widget"), repoFixture("acme", "gadget")],
+      data: [repoFixture("acme", "widget", 1001), repoFixture("acme", "gadget", 1002)],
     });
     mockPost.mockResolvedValue({ data: { id: "ws-new" } });
   });
@@ -138,11 +144,11 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
     const [path, options] = mockPost.mock.calls[0] as [
       string,
-      { params: { path: Record<string, string> }; body: Record<string, string> },
+      { params: { path: Record<string, string> }; body: Record<string, string | number> },
     ];
     expect(path).toBe("/repo/{provider}/{owner}/{name}/workspaces");
     expect(options.params.path).toEqual({ provider: "github", owner: "acme", name: "widget" });
-    expect(options.body).toEqual({ platform_repo_id: "github-acme-widget" });
+    expect(options.body).toEqual({ platform_repo_id: 1001 });
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new");
     expect(onClose).toHaveBeenCalled();
   });
@@ -209,8 +215,8 @@ describe("NewWorkspaceDialog", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
-    const [, options] = mockPost.mock.calls[0] as [string, { body: Record<string, string> }];
-    expect(options.body).toEqual({ branch: "spike/rate-limits", platform_repo_id: "github-acme-widget" });
+    const [, options] = mockPost.mock.calls[0] as [string, { body: Record<string, string | number> }];
+    expect(options.body).toEqual({ branch: "spike/rate-limits", platform_repo_id: 1001 });
   });
 
   it("creates against the repo the user picks from the list", async () => {
@@ -246,10 +252,7 @@ describe("NewWorkspaceDialog", () => {
     await Effect.runPromise(runtimeCapture.current!.disposeEffect);
     runtimeCapture.current = makeAppRuntime();
     mockGet.mockResolvedValue({
-      data: [
-        repoFixture("acme", "widget"),
-        { ...repoFixture("acme", "gadget-next"), PlatformRepoID: "github-acme-gadget" },
-      ],
+      data: [repoFixture("acme", "widget", 1001), repoFixture("acme", "gadget-next", 1002)],
     });
 
     await renderDialog();
@@ -260,7 +263,7 @@ describe("NewWorkspaceDialog", () => {
       "/repo/{provider}/{owner}/{name}/workspaces",
       expect.objectContaining({
         params: { path: { provider: "github", owner: "acme", name: "gadget-next" } },
-        body: { platform_repo_id: "github-acme-gadget" },
+        body: { platform_repo_id: 1002 },
       }),
     );
   });
@@ -274,7 +277,7 @@ describe("NewWorkspaceDialog", () => {
     await Effect.runPromise(runtimeCapture.current!.disposeEffect);
     runtimeCapture.current = makeAppRuntime();
     mockGet.mockResolvedValue({
-      data: [repoFixture("acme", "widget"), { ...repoFixture("acme", "gadget"), PlatformRepoID: "replacement-id" }],
+      data: [repoFixture("acme", "widget", 1001), repoFixture("acme", "gadget", 1999)],
     });
 
     await renderDialog();
@@ -290,7 +293,7 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
     expect(mockPost).toHaveBeenLastCalledWith(
       "/repo/{provider}/{owner}/{name}/workspaces",
-      expect.objectContaining({ body: { platform_repo_id: "replacement-id" } }),
+      expect.objectContaining({ body: { platform_repo_id: 1999 } }),
     );
   });
 
@@ -306,7 +309,7 @@ describe("NewWorkspaceDialog", () => {
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: "github-acme-widget",
+        platformRepoId: 1001,
         owner: "acme",
         name: "widget",
       },
@@ -331,7 +334,7 @@ describe("NewWorkspaceDialog", () => {
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: "github-acme-gadget",
+        platformRepoId: 1002,
         owner: "acme",
         name: "gadget",
       },
@@ -342,16 +345,13 @@ describe("NewWorkspaceDialog", () => {
 
   it("preselects a renamed seeded repo and creates using its current route", async () => {
     mockGet.mockResolvedValue({
-      data: [
-        { ...repoFixture("acme", "gadget"), PlatformRepoID: "replacement-id" },
-        { ...repoFixture("team", "gadget-next"), PlatformRepoID: "github-acme-gadget" },
-      ],
+      data: [repoFixture("acme", "gadget", 1999), repoFixture("team", "gadget-next", 1002)],
     });
     await renderDialog({
       seedRepo: {
         provider: "gh",
         platformHost: "github.com",
-        platformRepoId: "github-acme-gadget",
+        platformRepoId: 1002,
         owner: "acme",
         name: "gadget",
       },
@@ -364,7 +364,7 @@ describe("NewWorkspaceDialog", () => {
         "/repo/{provider}/{owner}/{name}/workspaces",
         expect.objectContaining({
           params: { path: { provider: "github", owner: "team", name: "gadget-next" } },
-          body: { platform_repo_id: "github-acme-gadget" },
+          body: { platform_repo_id: 1002 },
         }),
       ),
     );
@@ -374,12 +374,12 @@ describe("NewWorkspaceDialog", () => {
     // A seed that no longer resolves (for example a repository hidden from
     // the UI) must not silently divert the workspace to another repository,
     // even when a last-used repo is remembered.
-    localStorage.setItem("kenn-forge:workspace:new_repo", "github|github.com|id|github-acme-gadget");
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github|github.com|id|1002");
     await renderDialog({
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: "github-acme-concealed",
+        platformRepoId: 1005,
         owner: "acme",
         name: "concealed",
       },
@@ -397,7 +397,7 @@ describe("NewWorkspaceDialog", () => {
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: "original-id",
+        platformRepoId: 1006,
         owner: "acme",
         name: "widget",
       },
@@ -407,12 +407,12 @@ describe("NewWorkspaceDialog", () => {
     expect(repoPicker().textContent).not.toContain("acme/widget");
   });
 
-  it.each(["", "github|github.com|id|github-acme-gadget"])(
+  it.each(["", "github|github.com|id|1002"])(
     "requires a choice for an inactive workspace seed without a repository ID (saved: %s)",
     async (lastUsed) => {
       if (lastUsed) localStorage.setItem("kenn-forge:workspace:new_repo", lastUsed);
       mockGet.mockResolvedValue({
-        data: [{ ...repoFixture("acme", "widget"), PlatformRepoID: "replacement-id" }, repoFixture("acme", "gadget")],
+        data: [repoFixture("acme", "widget", 1999), repoFixture("acme", "gadget", 1002)],
       });
       // An inactive repository's workspace keeps its route in the sidebar,
       // but its snapshot no longer includes the repository's stable ID.
@@ -434,7 +434,7 @@ describe("NewWorkspaceDialog", () => {
         "/repo/{provider}/{owner}/{name}/workspaces",
         expect.objectContaining({
           params: { path: { provider: "github", owner: "acme", name: "widget" } },
-          body: { platform_repo_id: "replacement-id" },
+          body: { platform_repo_id: 1999 },
         }),
       );
     },
@@ -444,12 +444,12 @@ describe("NewWorkspaceDialog", () => {
     // The seed promise holds across source switches: leaving for Kata and
     // returning to the repository source must not divert to the last-used
     // or first repository when the seed is still unavailable.
-    localStorage.setItem("kenn-forge:workspace:new_repo", "github|github.com|id|github-acme-gadget");
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github|github.com|id|1002");
     await renderDialog({
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: "github-acme-concealed",
+        platformRepoId: 1005,
         owner: "acme",
         name: "concealed",
       },
@@ -477,7 +477,7 @@ describe("NewWorkspaceDialog", () => {
 
   it("accepts the current Kata API schema", async () => {
     mockGet.mockImplementation((path: string) => {
-      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget")] });
+      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
       if (path === "/kata/daemons") {
         return Promise.resolve({
           data: {
@@ -504,7 +504,7 @@ describe("NewWorkspaceDialog", () => {
   });
 
   it("routes non-default hosts through the host-scoped path", async () => {
-    mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", "git.example.test", "forgejo")] });
+    mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", 1001, "git.example.test", "forgejo")] });
     await renderDialog();
 
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
@@ -518,7 +518,7 @@ describe("NewWorkspaceDialog", () => {
 
   it("creates and opens repository workspaces on the selected spoke", async () => {
     mockGet.mockImplementation((path: string) => {
-      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget")] });
+      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
       if (path === "/snapshot") {
         return Promise.resolve({
           data: {
@@ -555,7 +555,7 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
     const [path, options] = mockPost.mock.calls[0] as [
       string,
-      { params: { path: Record<string, string> }; body: Record<string, string> },
+      { params: { path: Record<string, string> }; body: Record<string, string | number> },
     ];
     expect(path).toBe("/fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces");
     expect(options.params.path).toEqual({
@@ -564,7 +564,7 @@ describe("NewWorkspaceDialog", () => {
       owner: "acme",
       name: "widget",
     });
-    expect(options.body).toEqual({ platform_repo_id: "github-acme-widget" });
+    expect(options.body).toEqual({ platform_repo_id: 1001 });
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/build-node/ws-new");
   });
 
@@ -592,7 +592,7 @@ describe("NewWorkspaceDialog", () => {
                   },
                 ],
               }
-            : [repoFixture("acme", "widget")],
+            : [repoFixture("acme", "widget", 1001)],
       }),
     );
     await renderDialog();
@@ -602,7 +602,7 @@ describe("NewWorkspaceDialog", () => {
     expect(mockPost.mock.calls[0][0]).toBe("/devboxes/{connection_id}/workspaces");
     expect(mockPost.mock.calls[0][1]).toMatchObject({
       params: { path: { connection_id: "compute-a" } },
-      body: { provider: "github", owner: "acme", name: "widget", platform_repo_id: "github-acme-widget" },
+      body: { provider: "github", owner: "acme", name: "widget", platform_repo_id: 1001 },
     });
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/devbox%3Acompute-a/ws-new");
   });
@@ -612,7 +612,7 @@ describe("NewWorkspaceDialog", () => {
     const snapshot = Promise.withResolvers<unknown>();
     const created = Promise.withResolvers<unknown>();
     mockGet.mockImplementation((path: string) =>
-      path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: [repoFixture("acme", "widget")] }),
+      path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] }),
     );
     mockPost.mockReturnValue(created.promise);
     const onCreated = vi.fn();
@@ -632,7 +632,7 @@ describe("NewWorkspaceDialog", () => {
             platform_host: "github.com",
             owner: "acme",
             name: "widget",
-            platform_repo_id: "github-acme-widget",
+            platform_repo_id: 1001,
           },
         }),
       ),
@@ -650,7 +650,7 @@ describe("NewWorkspaceDialog", () => {
     preferredTarget = "devbox:compute-a";
     const snapshot = Promise.withResolvers<unknown>();
     mockGet.mockImplementation((path: string) =>
-      path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: [repoFixture("acme", "widget")] }),
+      path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] }),
     );
     await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
@@ -714,7 +714,7 @@ describe("NewWorkspaceDialog", () => {
                 ],
               },
             })
-        : Promise.resolve({ data: [repoFixture("acme", "widget")] }),
+        : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] }),
     );
     const view = await renderDialog();
     await screen.findByRole("combobox", { name: "Workspace machine: Studio (this machine)" });
@@ -751,7 +751,7 @@ describe("NewWorkspaceDialog", () => {
     mockGet.mockImplementation((path: string) =>
       path === "/snapshot"
         ? snapshot.promise
-        : Promise.resolve({ data: [repoFixture("acme", "widget", "gitlab.com", "gitlab")] }),
+        : Promise.resolve({ data: [repoFixture("acme", "widget", 1001, "gitlab.com", "gitlab")] }),
     );
     await renderDialog();
     await screen.findByText(/Devboxes currently support only github.com/);
@@ -769,7 +769,7 @@ describe("NewWorkspaceDialog", () => {
         ? refreshing
           ? snapshot.promise
           : Promise.resolve({ data: { hosts: [] } })
-        : Promise.resolve({ data: [repoFixture("acme", "widget")] }),
+        : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] }),
     );
     const view = await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
@@ -821,7 +821,7 @@ describe("NewWorkspaceDialog", () => {
                   },
                 ],
               }
-            : [repoFixture("acme", "widget", host, provider)],
+            : [repoFixture("acme", "widget", 1001, host, provider)],
       }),
     );
     await renderDialog();
@@ -869,8 +869,8 @@ describe("NewWorkspaceDialog", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
-    const [, options] = mockPost.mock.calls[1] as [string, { body: Record<string, string> }];
-    expect(options.body).toEqual({ branch: "spike/thing-2", platform_repo_id: "github-acme-widget" });
+    const [, options] = mockPost.mock.calls[1] as [string, { body: Record<string, string | number> }];
+    expect(options.body).toEqual({ branch: "spike/thing-2", platform_repo_id: 1001 });
   });
 
   it("keeps the dialog open and reports the failure when the create fails", async () => {
@@ -986,7 +986,7 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
     await pickRepo("acme/gadget");
 
-    response.resolve({ data: [repoFixture("acme", "new-repo"), repoFixture("acme", "gadget")] });
+    response.resolve({ data: [repoFixture("acme", "new-repo", 1003), repoFixture("acme", "gadget", 1002)] });
     await fireEvent.click(repoPicker());
     await screen.findByRole("option", { name: /acme\/new-repo/ });
     await fireEvent.keyDown(screen.getByRole("combobox", { name: "Filter repositories" }), { key: "Escape" });
@@ -1008,9 +1008,9 @@ describe("NewWorkspaceDialog", () => {
 
     response.resolve({
       data: [
-        repoFixture("acme", "widget"),
-        { ...repoFixture("acme", "gadget"), PlatformRepoID: "replacement-id" },
-        { ...repoFixture("moved", "gadget-next"), PlatformRepoID: "github-acme-gadget" },
+        repoFixture("acme", "widget", 1001),
+        repoFixture("acme", "gadget", 1999),
+        repoFixture("moved", "gadget-next", 1002),
       ],
     });
     await waitFor(() => expect(repoPicker().textContent).toContain("moved/gadget-next"));
@@ -1021,7 +1021,7 @@ describe("NewWorkspaceDialog", () => {
       "/repo/{provider}/{owner}/{name}/workspaces",
       expect.objectContaining({
         params: { path: { provider: "github", owner: "moved", name: "gadget-next" } },
-        body: { platform_repo_id: "github-acme-gadget" },
+        body: { platform_repo_id: 1002 },
       }),
     );
   });
@@ -1037,7 +1037,7 @@ describe("NewWorkspaceDialog", () => {
     await rerender({ open: true });
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
 
-    response.resolve({ data: [{ ...repoFixture("acme", "widget"), PlatformRepoID: "replacement-id" }] });
+    response.resolve({ data: [repoFixture("acme", "widget", 1999)] });
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true),
     );
@@ -1049,7 +1049,7 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() =>
       expect(mockPost).toHaveBeenCalledWith(
         "/repo/{provider}/{owner}/{name}/workspaces",
-        expect.objectContaining({ body: { platform_repo_id: "replacement-id" } }),
+        expect.objectContaining({ body: { platform_repo_id: 1999 } }),
       ),
     );
   });
@@ -1067,7 +1067,7 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() =>
       expect(mockPost).toHaveBeenCalledWith(
         "/repo/{provider}/{owner}/{name}/workspaces",
-        expect.objectContaining({ body: { platform_repo_id: "github-acme-widget" } }),
+        expect.objectContaining({ body: { platform_repo_id: 1001 } }),
       ),
     );
   });

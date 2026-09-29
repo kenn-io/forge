@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,14 +30,14 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 			seedIssue(t, database, "acme", "widget", 42, "open")
 			seedPR(t, database, "acme", "widget", 43)
 			seedIssue(t, database, "acme", "widget", 43, "open")
-			renamed, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-				Platform: "github", PlatformHost: "github.com", PlatformRepoID: "repo-acme-widget",
+			renamed, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 				Owner: "acme", Name: "widgets",
-			}, time.Now().UTC().Add(time.Minute))
+			})
 			require.NoError(err)
-			require.NoError(database.UpdateRepoProviderMetadata(t.Context(), renamed.Repository.ID, db.RepoProviderMetadata{
-				PlatformRepoID: "repo-acme-widget", CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
-			}))
+			require.NoError(database.UpdateRepoProviderObservation(t.Context(), renamed.Repository.ID, db.RepoProviderMetadata{
+				CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
+			}, nil, nil))
 			credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "hub-credentials.json"))
 			require.NoError(err)
 			hub := New(database, nil, nil, "/", &config.Config{
@@ -82,10 +81,10 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 			}{
 				{path: "/workspaces", body: map[string]any{
 					"provider": "github", "platform_host": "github.com", "owner": "acme", "name": "widget",
-					"mr_number": 42, "platform_repo_id": "repo-acme-widget", "suppress_auto_assign": true,
+					"mr_number": 42, "platform_repo_id": testutil.FixtureRepoID("acme", "widget"), "suppress_auto_assign": true,
 				}},
 				{path: "/issues/gh/acme/widget/42/workspace", body: map[string]any{
-					"platform_repo_id": "repo-acme-widget", "suppress_auto_assign": true,
+					"platform_repo_id": testutil.FixtureRepoID("acme", "widget"), "suppress_auto_assign": true,
 				}},
 			}
 			for _, request := range requests {
@@ -96,14 +95,14 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 				spec, err := workspaceDB.GetWorkspaceLaunchSpec(t.Context(), created.ID)
 				require.NoError(err)
 				require.NotNil(spec)
-				assert.Equal("repo-acme-widget", spec.Repository.PlatformRepoID)
+				assert.Equal(testutil.FixtureRepoID("acme", "widget"), spec.Repository.PlatformRepoID)
 				assert.Equal("widgets", spec.Repository.Name)
 			}
 
-			_, _, err = database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-				Platform: "github", PlatformHost: "github.com", PlatformRepoID: "replacement",
+			_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
+				Platform: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
 				Owner: "acme", Name: "widget",
-			}, time.Now().UTC().Add(2*time.Minute))
+			})
 			require.NoError(err)
 			requests[0].body["mr_number"] = 43
 			requests[1].path = "/issues/gh/acme/widget/43/workspace"
@@ -119,10 +118,10 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 				// existing workspace, whose stable identity survives route reuse.
 				spec, err := server.providerSource.ResolveWorkspaceLaunchSpec(t.Context(), providerplane.WorkspaceLaunchRequest{
 					Repository:     providerplane.RepositoryRoute{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget"},
-					PlatformRepoID: "repo-acme-widget", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+					PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
 				})
 				require.NoError(err)
-				assert.Equal("repo-acme-widget", spec.Repository.PlatformRepoID)
+				assert.Equal(testutil.FixtureRepoID("acme", "widget"), spec.Repository.PlatformRepoID)
 				assert.Equal("widgets", spec.Repository.Name)
 			}
 		})

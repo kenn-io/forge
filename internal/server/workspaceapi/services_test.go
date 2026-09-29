@@ -36,14 +36,14 @@ func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			database := dbtest.Open(t)
-			repoID, err := database.UpsertRepo(t.Context(), db.RepoIdentity{
+			entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: "repo-acme-widget", Owner: "acme", Name: "widget",
+				PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 			})
 			require.NoError(err)
 			ws := &db.Workspace{
 				ID: "ws-identity", Platform: "github", PlatformHost: "github.com",
-				RepoID: repoID, RepoOwner: "acme", RepoName: "widget",
+				RepoID: entry.Repository.ID, RepoOwner: "acme", RepoName: "widget",
 				ItemType: itemType, ItemNumber: 42, GitHeadRef: "feature/identity",
 				WorktreePath: t.TempDir(), Status: "creating",
 			}
@@ -65,7 +65,7 @@ func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
 			summary, err := manager.GetSummary(t.Context(), ws.ID)
 			require.NoError(err)
 			require.NotNil(summary)
-			require.Equal("repo-acme-widget", summary.RepoPlatformID)
+			require.Equal(int64(1001), summary.RepoPlatformID)
 			if itemType == db.WorkspaceItemTypeAdHoc {
 				require.True(summary.AssociatedPRVisible)
 			}
@@ -78,7 +78,7 @@ func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
 				"full enrichment":        handler.Response(t.Context(), summary),
 				"tmux enrichment":        handler.workspaceResponseWithTmuxEnrichment(t.Context(), summary).response,
 			} {
-				assert.Equal("repo-acme-widget", response.Repo.PlatformRepoID, name)
+				assert.Equal(int64(1001), response.Repo.PlatformRepoID, name)
 			}
 		})
 	}
@@ -97,7 +97,7 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 		}),
 		Workspaces: manager,
 		ResolveRepository: func(
-			ctx context.Context, route providerplane.RepositoryRoute, _ string,
+			ctx context.Context, route providerplane.RepositoryRoute, _ int64,
 		) (*db.Repo, error) {
 			resolved = true
 			assert.Equal(providerplane.RepositoryRoute{
@@ -400,7 +400,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 			go func() { created <- test.create(handler) }()
 			select {
 			case request := <-automation.requests:
-				assert.Equal("repo-acme-widget", request.PlatformRepoID)
+				assert.Equal(int64(3609862021), request.PlatformRepoID)
 				assert.Equal(test.itemType, request.ItemType)
 				assert.Equal(test.number, request.ItemNumber)
 			case <-time.After(5 * time.Second):

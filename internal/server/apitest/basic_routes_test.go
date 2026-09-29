@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -121,16 +122,16 @@ func TestAPIListReposDoesNotWaitForWriteCredentials(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	identities := []db.RepoIdentity{
-		{Platform: "github", PlatformHost: "github.com", PlatformRepoID: "101", Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
-		{Platform: "gitlab", PlatformHost: "gitlab.example.com", PlatformRepoID: "202", Owner: "group/subgroup", Name: "widget", RepoPath: "group/subgroup/widget"},
-		{Platform: "forgejo", PlatformHost: "forge.example.com", PlatformRepoID: "303", Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
-		{Platform: "gitea", PlatformHost: "forge.example.com", PlatformRepoID: "404", Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
-		{Platform: "github", PlatformHost: "github.com", PlatformRepoID: "505", Owner: "acme", Name: "hidden", RepoPath: "acme/hidden"},
+		{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
+		{Platform: "gitlab", PlatformHost: "gitlab.example.com", PlatformRepoID: 202, Owner: "group/subgroup", Name: "widget", RepoPath: "group/subgroup/widget"},
+		{Platform: "forgejo", PlatformHost: "forge.example.com", PlatformRepoID: 303, Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
+		{Platform: "gitea", PlatformHost: "forge.example.com", PlatformRepoID: 404, Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
+		{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 505, Owner: "acme", Name: "hidden", RepoPath: "acme/hidden"},
 	}
 	tracked := make([]ghclient.RepoRef, 0, len(identities))
 	cfg := &config.Config{}
 	for _, identity := range identities {
-		id, err := database.UpsertRepo(t.Context(), identity)
+		id, err := reposeed.Seed(t.Context(), database, identity)
 		require.NoError(err)
 		if identity.Name == "hidden" {
 			require.NoError(database.SetRepoHiddenFromUI(t.Context(), id, true))
@@ -144,7 +145,7 @@ func TestAPIListReposDoesNotWaitForWriteCredentials(t *testing.T) {
 			Owner: identity.Owner, Name: identity.Name, PlatformRepoID: identity.PlatformRepoID,
 		})
 	}
-	_, err := database.UpsertRepo(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "untracked"))
+	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "untracked"))
 	require.NoError(err)
 	syncer := ghclient.NewSyncer(nil, database, nil, tracked, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
@@ -199,7 +200,7 @@ func TestAPIListReposDoesNotWaitForWriteCredentials(t *testing.T) {
 	require.NotNil(response.JSON200)
 	var got []string
 	for _, repo := range *response.JSON200 {
-		got = append(got, repo.Platform+"|"+repo.PlatformHost+"|"+repo.PlatformRepoID+"|"+repo.Owner+"/"+repo.Name)
+		got = append(got, repo.Platform+"|"+repo.PlatformHost+"|"+strconv.FormatInt(repo.PlatformRepoID, 10)+"|"+repo.Owner+"/"+repo.Name)
 	}
 	require.ElementsMatch([]string{
 		"github|github.com|101|acme/widget",

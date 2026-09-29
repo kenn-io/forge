@@ -67,7 +67,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 		repositoryID := identity.PlatformRepoID
 		if routeReused.Load() {
 			if request.Repository == "example-org/project" {
-				repositoryID = "R_Replacement"
+				repositoryID = 1002
 			} else {
 				assert.Equal("moved-org/project", request.Repository)
 			}
@@ -212,18 +212,15 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	// the worker still has the original repository's expired context.
 	renamed := db.GitHubRepoIdentity("github.com", "moved-org", "project")
 	renamed.PlatformRepoID = identity.PlatformRepoID
-	observedAt := time.Now().UTC().Add(time.Minute)
-	_, applied, err := controllerDB.ReconcileRepositoryObservation(ctx, renamed, observedAt)
+	_, err = controllerDB.ObserveRepository(ctx, renamed)
 	require.NoError(err)
-	require.True(applied)
-	require.NoError(controllerDB.UpdateRepoProviderMetadata(ctx, repoID, db.RepoProviderMetadata{
-		PlatformRepoID: identity.PlatformRepoID, CloneURL: "https://github.com/moved-org/project.git", DefaultBranch: "main",
-	}))
+	require.NoError(controllerDB.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
+		CloneURL: "https://github.com/moved-org/project.git", DefaultBranch: "main",
+	}, nil, nil))
 	replacement := identity
-	replacement.PlatformRepoID = "R_Replacement"
-	entry, applied, err := controllerDB.ReconcileRepositoryObservation(ctx, replacement, observedAt)
+	replacement.PlatformRepoID = 1002
+	entry, err := controllerDB.ObserveRepository(ctx, replacement)
 	require.NoError(err)
-	require.True(applied)
 	seedPRForRepo(t, controllerDB, entry.Repository.ID, "github.com", "example-org", "project", 7)
 	routeReused.Store(true)
 	require.NoError(database.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
@@ -235,6 +232,6 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	stored, err = database.GetWorkspaceLaunchSpec(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Equal("R_ExampleProject", stored.Repository.PlatformRepoID)
+	assert.Equal(int64(1001), stored.Repository.PlatformRepoID)
 	assert.Equal("moved-org", stored.Repository.Owner)
 }

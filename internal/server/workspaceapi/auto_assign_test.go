@@ -195,7 +195,7 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 				Provider: string(platform.KindGitLab), PlatformHost: "git.example.test",
 				Owner: "acme", Name: "widget",
 			},
-			PlatformRepoID: "repo-acme-widget",
+			PlatformRepoID: repo.PlatformRepoID,
 			ItemType:       db.WorkspaceItemTypePullRequest, ItemNumber: 7,
 		},
 	))
@@ -237,25 +237,25 @@ func TestAutoAssignmentPreservesRepositoryIdentityAfterRouteReuse(t *testing.T) 
 				database := dbtest.Open(t)
 				now := time.Now().UTC()
 				original := db.RepoIdentity{
-					Platform: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: "101",
+					Platform: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: 101,
 					Owner: "acme", Name: "widget",
 				}
-				entry, _, err := database.ReconcileRepositoryObservation(t.Context(), original, now.Add(-2*time.Minute))
+				entry, err := database.ObserveRepository(t.Context(), original)
 				require.NoError(err)
 				require.NotNil(entry)
 				originalID := entry.Repository.ID
 				request := ProviderWorkspaceItemRequest{
 					Repository:     providerplane.RepositoryRoute{Provider: "gitlab", PlatformHost: "git.example.test", Owner: "acme", Name: "widget"},
-					PlatformRepoID: "101", ItemType: itemType, ItemNumber: 7,
+					PlatformRepoID: 101, ItemType: itemType, ItemNumber: 7,
 				}
 				if renamed {
 					original.Name = "renamed"
-					_, _, err = database.ReconcileRepositoryObservation(t.Context(), original, now.Add(-time.Minute))
+					_, err = database.ObserveRepository(t.Context(), original)
 					require.NoError(err)
 				}
-				replacement, _, err := database.ReconcileRepositoryObservation(t.Context(), db.RepoIdentity{
-					Platform: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: "202", Owner: "acme", Name: "widget",
-				}, now)
+				replacement, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
+					Platform: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: 202, Owner: "acme", Name: "widget",
+				})
 				require.NoError(err)
 				require.NotNil(replacement)
 				for _, repoID := range []int64{originalID, replacement.Repository.ID} {
@@ -292,7 +292,7 @@ func TestAutoAssignmentPreservesRepositoryIdentityAfterRouteReuse(t *testing.T) 
 
 				if renamed {
 					require.NoError(err)
-					assert.Equal("101", provider.assignedRepo.PlatformExternalID)
+					assert.Equal(int64(101), provider.assignedRepo.PlatformID)
 					assert.Equal("acme/renamed", provider.assignedRepo.RepoPath)
 				} else {
 					require.Error(err)

@@ -128,8 +128,8 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 		}
 	}
 	var ws workspaceapi.WorkspaceResponse
-	request("POST", "/workspaces", map[string]string{"provider": "github", "platform_host": "github.com", "platform_repo_id": "R_StaleProject", "owner": "example-org", "name": "project", "branch": "work/devbox-test"}, http.StatusNotFound, nil)
-	request("POST", "/workspaces", map[string]string{"provider": "github", "platform_host": "github.com", "platform_repo_id": repositoryNodeID, "owner": "example-org", "name": "project", "branch": "work/devbox-test"}, 200, &ws)
+	request("POST", "/workspaces", map[string]any{"provider": "github", "platform_host": "github.com", "platform_repo_id": 43, "owner": "example-org", "name": "project", "branch": "work/devbox-test"}, http.StatusNotFound, nil)
+	request("POST", "/workspaces", map[string]any{"provider": "github", "platform_host": "github.com", "platform_repo_id": repositoryID, "owner": "example-org", "name": "project", "branch": "work/devbox-test"}, 200, &ws)
 	require.Eventually(func() bool {
 		request("GET", "/workspaces/"+ws.ID, nil, 200, &ws)
 		return ws.Status == "ready" || ws.Status == "error"

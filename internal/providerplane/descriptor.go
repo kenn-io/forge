@@ -44,7 +44,7 @@ type RepositoryRoute struct {
 // RepositoryDescriptorRequest may bind a cached route to a selected repository.
 type RepositoryDescriptorRequest struct {
 	RepositoryRoute
-	PlatformRepoID string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID int64 `json:"platform_repo_id,omitempty"`
 }
 
 // CanonicalRepositoryRoute normalizes route spellings accepted by public API

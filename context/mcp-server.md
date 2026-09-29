@@ -51,14 +51,12 @@
   workflow state use the hub; clone, workspace, runtime, and
   agent-session tools stay local, and hub outages remain typed
   (`internal/mcpserver/backend.go::NewFederatedBackend`).
-- Every MCP repository and item reference carries provider-verified
-  `platform_repo_id`. Resolve the mutable route and reject it unless the stable
-  ID still matches; never fall back to route-only identity
-  (`internal/mcpserver/types.go::repoFilterInput.repositoryIdentity`,
-  `internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
-- Provider reads resolve and recheck stable routes at the hub. Local
-  route reads recheck the captured generation, and workspace writes carry that
-  fence in context (`internal/server/mcp_backend.go::mcpBackend.confirmProviderRepositoryRoute`).
+- Every MCP repository and item reference carries provider-verified `platform_repo_id`;
+  local tools resolve it to the active repository's current route, including after renames
+  (`internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
+- Hub-backed workspace tools verify that the repository descriptor still matches the supplied
+  stable ID; route-only fallback must not redirect an existing selection
+  (`internal/server/mcp_backend.go::mcpBackend.resolveProviderRepository`).
 - Target MCP `2026-07-28`; do not advertise deprecated logging or catalog
   change notifications for the static surface (`internal/mcpserver/server.go::New`).
 - Use only canonical `kenn-forge` command/resource/prompt names and

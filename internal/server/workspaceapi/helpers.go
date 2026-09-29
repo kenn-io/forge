@@ -78,7 +78,7 @@ func repoProviderHost(repo db.Repo) string {
 }
 
 func (s *Handler) repoRefFromParts(
-	provider, host, owner, name, platformRepoID string,
+	provider, host, owner, name string, platformRepoID int64,
 ) httpapi.RepoRefResponse {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {

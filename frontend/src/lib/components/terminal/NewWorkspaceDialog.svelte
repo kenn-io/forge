@@ -82,7 +82,7 @@
     key: string;
     provider: string;
     platformHost: string;
-    platformRepoId: string;
+    platformRepoId: number;
     owner: string;
     name: string;
     label: string;

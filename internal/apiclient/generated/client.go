@@ -54558,8 +54558,8 @@ type CreateAdHocWorkspaceHostInputBody struct {
 	Branch *string `json:"branch,omitempty"`
 
 	// PlatformRepoID Expected stable repository ID from the catalog
-	PlatformRepoID      *string `json:"platform_repo_id,omitempty"`
-	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
+	PlatformRepoID      *int64 `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch *bool  `json:"reuse_existing_branch,omitempty"`
 }
 
 type CreateAdHocWorkspaceInputBody struct {
@@ -54570,8 +54570,8 @@ type CreateAdHocWorkspaceInputBody struct {
 	Branch *string `json:"branch,omitempty"`
 
 	// PlatformRepoID Expected stable repository ID from the catalog
-	PlatformRepoID      *string `json:"platform_repo_id,omitempty"`
-	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
+	PlatformRepoID      *int64 `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch *bool  `json:"reuse_existing_branch,omitempty"`
 }
 
 type CreateDevboxWorkspaceInputBody struct {
@@ -54583,7 +54583,7 @@ type CreateDevboxWorkspaceInputBody struct {
 	Name                string  `json:"name"`
 	Owner               string  `json:"owner"`
 	PlatformHost        string  `json:"platform_host"`
-	PlatformRepoID      *string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID      *int64  `json:"platform_repo_id,omitempty"`
 	Provider            string  `json:"provider"`
 	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
 }
@@ -54643,7 +54643,7 @@ type CreateIssueWorkspaceHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                 *string `json:"$schema,omitempty"`
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
-	PlatformRepoID         *string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID         *int64  `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
 	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
@@ -54653,7 +54653,7 @@ type CreateIssueWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                 *string `json:"$schema,omitempty"`
 	GitHeadRef             *string `json:"git_head_ref,omitempty"`
-	PlatformRepoID         *string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID         *int64  `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
 	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
 	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
@@ -54666,7 +54666,7 @@ type CreateWorkspaceInputBody struct {
 	Name               string  `json:"name"`
 	Owner              string  `json:"owner"`
 	PlatformHost       string  `json:"platform_host"`
-	PlatformRepoID     *string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID     *int64  `json:"platform_repo_id,omitempty"`
 	Provider           string  `json:"provider"`
 	SuppressAutoAssign *bool   `json:"suppress_auto_assign,omitempty"`
 }
@@ -56589,7 +56589,7 @@ type ProviderWorkspaceItemRequest struct {
 	Schema         *string         `json:"$schema,omitempty"`
 	ItemNumber     int64           `json:"item_number"`
 	ItemType       string          `json:"item_type"`
-	PlatformRepoID string          `json:"platform_repo_id"`
+	PlatformRepoID int64           `json:"platform_repo_id"`
 	Repository     RepositoryRoute `json:"repository"`
 }
 
@@ -57015,7 +57015,7 @@ type RepoCatalogResponse struct {
 	Owner               string     `json:"Owner"`
 	Platform            string     `json:"Platform"`
 	PlatformHost        string     `json:"PlatformHost"`
-	PlatformRepoID      string     `json:"PlatformRepoID"`
+	PlatformRepoID      int64      `json:"PlatformRepoID"`
 	ViewerCanMerge      bool       `json:"ViewerCanMerge"`
 }
 
@@ -57223,7 +57223,7 @@ type RepositoryDescriptorRequest struct {
 	Name           string  `json:"name"`
 	Owner          string  `json:"owner"`
 	PlatformHost   string  `json:"platform_host"`
-	PlatformRepoID *string `json:"platform_repo_id,omitempty"`
+	PlatformRepoID *int64  `json:"platform_repo_id,omitempty"`
 	Provider       string  `json:"provider"`
 }
 

@@ -213,7 +213,7 @@ const issues = [
 const repos = [
   {
     ID: 1,
-    PlatformRepoID: "R_widgets",
+    PlatformRepoID: 1001,
     Owner: "acme",
     Name: "widgets",
     Platform: "github",
@@ -470,7 +470,7 @@ function matchesRouteIdentity(
 function pullDetailResponse(pr: (typeof pulls)[number]) {
   return {
     merge_request: pr,
-    repo: { ...pr.repo, platform_repo_id: "widgets-repo-id" },
+    repo: { ...pr.repo, platform_repo_id: 1001 },
     repo_owner: pr.repo_owner,
     repo_name: pr.repo_name,
     platform_host: pr.platform_host,

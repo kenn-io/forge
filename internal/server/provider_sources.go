@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 type hubProviderSource struct {
@@ -209,11 +210,11 @@ func workspaceProviderName(local workspace.Workspace) string {
 func (s *hubProviderSource) GetRepositoryDescriptor(
 	ctx context.Context, route providerplane.RepositoryRoute,
 ) (providerplane.RepositoryDescriptor, error) {
-	return s.getRepositoryDescriptor(ctx, route, "")
+	return s.getRepositoryDescriptor(ctx, route, 0)
 }
 
 func (s *hubProviderSource) getRepositoryDescriptor(
-	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID string,
+	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID int64,
 ) (providerplane.RepositoryDescriptor, error) {
 	route, err := providerplane.CanonicalRepositoryRoute(route)
 	if err != nil {
@@ -229,10 +230,11 @@ func (s *hubProviderSource) getRepositoryDescriptor(
 	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &descriptor); err != nil {
 		return providerplane.RepositoryDescriptor{}, err
 	}
-	if platformRepoID == "" {
+	if platformRepoID == 0 {
 		err = descriptor.ValidateRoute(route)
-	} else if err = descriptor.Validate(); err == nil && (descriptor.Provider != route.Provider ||
-		descriptor.PlatformHost != route.PlatformHost || descriptor.PlatformRepoID != platformRepoID) {
+	} else if err = descriptor.Validate(); err == nil && descriptor.Identity() != (platform.RepositoryIdentity{
+		Provider: route.Provider, PlatformHost: route.PlatformHost, PlatformRepoID: platformRepoID,
+	}).Canonical() {
 		err = errors.New("repository descriptor does not match selected repository")
 	}
 	if err != nil {
@@ -245,9 +247,9 @@ func (s *hubProviderSource) getRepositoryDescriptor(
 }
 
 func (s *hubProviderSource) ResolveRepositoryRoute(
-	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID string,
+	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID int64,
 ) (*db.Repo, error) {
-	descriptor, err := s.getRepositoryDescriptor(ctx, route, strings.TrimSpace(platformRepoID))
+	descriptor, err := s.getRepositoryDescriptor(ctx, route, platformRepoID)
 	if err != nil {
 		return nil, err
 	}

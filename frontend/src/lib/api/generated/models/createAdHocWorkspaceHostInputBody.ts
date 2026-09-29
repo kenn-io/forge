@@ -8,6 +8,6 @@ export interface CreateAdHocWorkspaceHostInputBody {
   /** Branch for the new worktree; generated when empty */
   branch?: string;
   /** Expected stable repository ID from the catalog */
-  platform_repo_id?: string;
+  platform_repo_id?: number;
   reuse_existing_branch?: boolean;
 }

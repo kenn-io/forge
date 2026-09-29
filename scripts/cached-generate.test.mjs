@@ -1,23 +1,23 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+
+import { createGitTestRepository } from "./test-git-fixture.mjs";
 
 const script = fileURLToPath(new URL("./cached-generate.sh", import.meta.url));
 
 // The generator copies spec.txt into out.txt and appends a line to runs.log,
 // so each test can count how many times generation actually ran.
 function fixture(t) {
-  const dir = mkdtempSync(join(tmpdir(), "cached-generate-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  spawnSync("git", ["init", "-q", dir]);
+  const { root: dir, env } = createGitTestRepository(t, { prefix: "cached-generate-" });
   writeFileSync(join(dir, "spec.txt"), "v1\n");
   const generate = (command = "cp spec.txt out.txt && echo run >> runs.log") =>
     spawnSync(script, ["example", "spec.txt", "out.txt", "--", "sh", "-c", command], {
       cwd: dir,
+      env,
       encoding: "utf8",
     });
   const runs = () => readFileSync(join(dir, "runs.log"), "utf8").split("\n").filter(Boolean).length;

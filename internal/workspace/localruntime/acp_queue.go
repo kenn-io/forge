@@ -179,6 +179,7 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 	}
 	if a.external != nil {
 		// A turn the agent started after a steer is still running.
+		a.external.promptDone = true
 		a.releaseHeldTextLocked()
 		a.publishProgressLocked()
 		a.mu.Unlock()
@@ -281,7 +282,7 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 			// that never reports status ends it with the prompt rather than
 			// leaving the chat busy for good.
 			if a.reportsThreadStatus && a.threadStatus != "idle" {
-				a.external = &acpExternalTurn{active: a.threadStatus == "active"}
+				a.external = &acpExternalTurn{active: a.threadStatus == "active", promptDone: !a.state.Busy}
 				a.state.Busy = true
 			} else if !a.reportsThreadStatus {
 				a.takeoverPending = true

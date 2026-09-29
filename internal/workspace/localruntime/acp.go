@@ -80,7 +80,14 @@ type ACP struct {
 	takeoverPending bool
 }
 
-type acpExternalTurn struct{ active bool }
+// acpExternalTurn is a turn the agent started after a steer. Until it reports
+// active, an idle status may still belong to the original turn; once the
+// original prompt has completed, any idle is this turn's, because the SDK
+// handles every status the agent sent before a response before returning it.
+type acpExternalTurn struct {
+	active     bool
+	promptDone bool
+}
 
 // ErrACPAgentUnavailable rejects a prompt before anything is written to a
 // disconnected agent. The owner RPC carries only its text, so attachments

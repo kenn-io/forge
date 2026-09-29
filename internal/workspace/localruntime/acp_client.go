@@ -99,7 +99,7 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 	}
 	if kind == "active" {
 		a.external.active = true
-	} else if a.external.active {
+	} else if a.external.active || a.external.promptDone {
 		a.external = nil
 		a.endTurnLocked()
 		go a.drain()

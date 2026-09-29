@@ -62,7 +62,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway \
         profile-workspace-switch otel-lgtm \
-        frontend-api-client-check font-size-token-check huma-route-check migration-history-check timing-budget-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
+        frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check timing-budget-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
 
 # gotestsum prints package names on success and full output on failure,
@@ -260,12 +260,16 @@ script-tests: check-vite-plus-bin
 migration-history-check:
 	go run ./tools/migrationhistorycheck
 
+# Keep test Git inside the isolated gitsafe/gitfixture helpers
+git-test-fixture-check:
+	$(GO_ANALYSIS_ENV) go run ./tools/norawgittest ./...
+
 # Reject unreviewed sub-second test polling budgets.
 timing-budget-check:
 	$(GO_ANALYSIS_ENV) go run ./tools/timingbudgetcheck .
 
 guardrail-check: check-vite-plus-bin
-	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check migration-history-check playwright-version-check script-tests docs-branding-check timing-budget-check
+	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check script-tests docs-branding-check timing-budget-check
 
 
 # Regenerate the checked-in OpenAPI document and generated clients. Client
@@ -549,6 +553,7 @@ help:
 	@echo "  timing-budget-check - Reject unreviewed sub-second test polling budgets"
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  huma-route-check - Prevent non-Huma Go route registrations"
+	@echo "  git-test-fixture-check - Keep test Git inside gitsafe/gitfixture"
 	@echo "  guardrail-check - Run generated-client, font-size token, and Huma route guardrails"
 	@echo "  tidy           - Tidy go.mod"
 	@echo "  svelte-skills  - Sync repo-local Svelte AI skills and per-agent symlinks"

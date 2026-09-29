@@ -3512,7 +3512,15 @@ test.describe("workspace launch home", () => {
     await expect(page.locator(".terminal-panel.open .terminal-leaf")).toHaveCount(2);
     await expect(page.locator(".terminal-panel.open .xterm-viewport")).toHaveCount(2);
 
-    const splitMetrics = await page.evaluate(() => {
+    const accentBlue = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.color = "var(--accent-blue)";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    const splitMetrics = await page.evaluate((accent) => {
       const body = document.querySelector(".terminal-panel.bottom.open .panel-body");
       const tree = document.querySelector(".terminal-panel.bottom.open .terminal-tree");
       const selector = document.querySelector(".terminal-panel.bottom.open .terminal-selector");
@@ -3556,7 +3564,7 @@ test.describe("workspace launch home", () => {
       const activeHeaderStyles = getComputedStyle(activeHeader);
       return {
         activeHeaderBoxShadow: activeHeaderStyles.boxShadow,
-        activeLeftBorderUsesAccent: activeLeafStyles.borderLeftColor === "rgb(0, 97, 213)",
+        activeLeftBorderUsesAccent: activeLeafStyles.borderLeftColor === accent,
         activeLeafBorderTopWidth: activeLeafStyles.borderTopWidth,
         firstLeafBorderRight: firstLeafStyles.borderRightWidth,
         firstLeafToSplitLeft: Math.round(firstLeafRect.left - splitRect.left),
@@ -3574,9 +3582,9 @@ test.describe("workspace launch home", () => {
         treeToBodyTop: Math.round(treeRect.top - bodyRect.top),
         treeToSelector: Math.round(selectorRect.left - treeRect.right),
       };
-    });
+    }, accentBlue);
     expect(splitMetrics).toEqual({
-      activeHeaderBoxShadow: "rgb(0, 97, 213) 0px 2px 0px 0px inset",
+      activeHeaderBoxShadow: `${accentBlue} 0px 2px 0px 0px inset`,
       activeLeafBorderTopWidth: "0px",
       activeLeftBorderUsesAccent: false,
       firstLeafBorderRight: "0px",
@@ -3639,7 +3647,7 @@ test.describe("workspace launch home", () => {
     expect(afterSwitch).toMatchObject([
       {
         active: true,
-        headerBoxShadow: "rgb(0, 97, 213) 0px 2px 0px 0px inset",
+        headerBoxShadow: `${accentBlue} 0px 2px 0px 0px inset`,
         label: "Shell",
       },
       {

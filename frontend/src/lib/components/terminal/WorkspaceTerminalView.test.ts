@@ -2440,7 +2440,7 @@ describe("WorkspaceTerminalView", () => {
     expect(savedTabs).toEqual([]);
   });
 
-  it("preserves a saved Home choice when a PR automatically focuses its sole session", async () => {
+  it("preserves Home across PR visits until the user selects the agent", async () => {
     const sessionHost = await import("../../stores/session-host.svelte.ts");
     const requestFocus = vi.spyOn(sessionHost, "requestSessionFocus");
     const savedTabs: string[] = [];
@@ -2453,17 +2453,26 @@ describe("WorkspaceTerminalView", () => {
       }
       return fallback(input, init);
     });
-    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
 
     await waitFor(() => expect(requestFocus).toHaveBeenCalled());
     await waitFor(() => expect(document.activeElement?.closest(".sole-embedded-session")).not.toBeNull());
     expect(savedTabs).toEqual([]);
 
+    await view.rerender({ workspaceId: "ws-1", paneSurface: undefined });
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Home" }).getAttribute("aria-selected")).toBe("true"));
+    expect(savedTabs).toEqual([]);
+
+    await view.rerender({ workspaceId: "ws-1", paneSurface: "prs" });
+    await waitFor(() => expect(document.activeElement?.closest(".sole-embedded-session")).not.toBeNull());
     await fireEvent.keyDown(document.activeElement!, { key: "a" });
     await waitFor(() => expect(savedTabs).toEqual(["session:ws-1:helper"]));
     await fireEvent.keyDown(document.activeElement!, { key: "b" });
     await fireEvent.pointerDown(document.activeElement!);
     expect(savedTabs).toEqual(["session:ws-1:helper"]);
+
+    await view.rerender({ workspaceId: "ws-1", paneSurface: undefined });
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Helper/ }).getAttribute("aria-selected")).toBe("true"));
   });
 
   it("drops a restored legacy Shell tab after runtime tabs are normalized", async () => {

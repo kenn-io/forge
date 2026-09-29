@@ -459,6 +459,8 @@ stale tabs.
 - Selected tabs persist on the workspace's execution host and restore across browsers; browser storage is only a cache.
   Restoration and automatic focus must not overwrite a saved choice; promoted agent focus counts as selection
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::loadWorkspaceTabProgram`).
+- A detail pane's fallback agent must not replace an explicit Home choice when returning to Workspaces;
+  only user selection changes that choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoreWorkspaceTabSelection`).
 - Promoted terminal-region sessions remember `terminal` without changing detail-pane placement; open its top dock
   on entering Workspaces. Resolve saved session keys against the browser's current region
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoreWorkspaceTabSelection`).

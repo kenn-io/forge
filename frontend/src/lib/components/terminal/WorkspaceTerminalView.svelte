@@ -469,6 +469,7 @@
     | null = null;
   let activeTabKey = $state<WorkflowTabKey>("home");
   let workspaceTabLoaded = $state(false);
+  let restoredTabKey: WorkflowTabKey | null = null;
   let lastRequestedTabKey: WorkflowTabKey | null = null;
   let lastTabSave: { key: WorkflowTabKey } | null = null;
   let mountedSessionKeys = $state<string[]>([]);
@@ -1066,9 +1067,12 @@
   $effect(() => {
     if (!hostVisible || !runtimeLive || !workspaceTabLoaded) return;
     if (!launcherMode) {
+      // Detail panes can show a fallback without changing the saved Home choice.
       // A promoted terminal keeps its detail placement until Workspaces opens.
       untrack(() => {
-        if ((lastRequestedTabKey ?? activeTabKey) === "terminal") {
+        if ((lastRequestedTabKey ?? restoredTabKey) === "home") {
+          restoreWorkspaceTabSelection("home");
+        } else if ((lastRequestedTabKey ?? activeTabKey) === "terminal") {
           restoreWorkspaceTabSelection("terminal");
         }
       });
@@ -2259,6 +2263,7 @@
             hasAppliedRuntimeFor(id, hostKey) &&
             !runtime?.sessions.some((session) => session.key === sessionKey)
           ) return;
+          restoredTabKey = tab;
           restoreWorkspaceTabSelection(tab);
         }
       })),
@@ -2271,7 +2276,7 @@
     );
   }
 
-  function restoreWorkspaceTab(storageId: string): WorkflowTabKey {
+  function restoreWorkspaceTab(storageId: string): WorkflowTabKey | null {
     const remembered = readLocalStorage(
       `${ACTIVE_WORKSPACE_TAB_KEY_PREFIX}${storageId}`,
     );
@@ -2283,7 +2288,7 @@
     ) {
       return remembered as WorkflowTabKey;
     }
-    return "home";
+    return null;
   }
 
   function defaultSidebarTab(ws: Workspace): SidebarTab {
@@ -4093,11 +4098,12 @@
     }
     const restoredLayout = id ? loadTerminalLayout(storageId) : defaultTerminalLayout();
     const restoredTab = restoreWorkspaceTab(storageId);
+    restoredTabKey = restoredTab;
     const restoredActiveTab =
       restoredTab === "terminal" &&
       !(restoredLayout.open && restoredLayout.dock === "top")
         ? "home"
-        : restoredTab;
+        : (restoredTab ?? "home");
     const layoutForActiveTab =
       restoredActiveTab === "home"
         ? restoredLayout

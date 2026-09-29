@@ -75,6 +75,9 @@ type ACP struct {
 	// reportsThreadStatus records that the agent reports Codex thread
 	// status, the only signal for when a turn it started itself ends.
 	reportsThreadStatus bool
+	// takeoverPending records a turn the agent started after a steer that
+	// no thread status has confirmed yet; the next active status claims it.
+	takeoverPending bool
 }
 
 type acpExternalTurn struct{ active bool }
@@ -374,6 +377,7 @@ func (a *ACP) wait() {
 	a.state.Elicitations = nil
 	a.state.Steering = false
 	a.external = nil
+	a.takeoverPending = false
 	a.state.QueuePaused = len(a.state.Queue) > 0
 	a.releaseHeldTextLocked()
 	a.publishProgressLocked()
@@ -475,6 +479,8 @@ func (a *ACP) startPromptLocked(text, submissionID string) error {
 	}
 	a.state.Busy = true
 	a.cancelling = false
+	// Status from here on describes this prompt, not an earlier takeover.
+	a.takeoverPending = false
 	a.setErrorLocked(nil)
 	a.promptIndex = new(len(a.state.Messages))
 	written := make(chan error, 1)

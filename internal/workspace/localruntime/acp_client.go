@@ -85,6 +85,15 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 	if kind == "active" || a.threadStatus == "active" {
 		a.threadStatus = kind
 	}
+	if kind == "active" && a.external == nil && a.takeoverPending {
+		// The first status after a takeover confirms it, even when the
+		// original prompt has already completed.
+		a.takeoverPending = false
+		a.external = &acpExternalTurn{active: true}
+		a.state.Busy = true
+		a.changedLocked()
+		return
+	}
 	if a.external == nil {
 		return
 	}

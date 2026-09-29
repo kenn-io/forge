@@ -42,6 +42,12 @@ func TestACPStdioHelper(t *testing.T) {
 			fmt.Printf(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"session_info_update","_meta":{"codex":{"threadStatus":{"type":%q}}}}}}`+"\n", kind)
 		}
 	}
+	// A late reporter's first status is about a turn it started itself.
+	promptThreadStatus := func(kind string) {
+		if os.Getenv("KENN_FORGE_ACP_LATE_THREAD_STATUS") != "1" {
+			threadStatus(kind)
+		}
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	var promptID jsontext.Value
 	elicitationOffered := false
@@ -189,8 +195,8 @@ func TestACPStdioHelper(t *testing.T) {
 				fmt.Println(`{"jsonrpc":"2.0","id":"approval","method":"session/request_permission","params":{"sessionId":"fixture-session","toolCall":{"toolCallId":"edit","title":"Edit file"},"options":[{"optionId":"allow","name":"Allow once","kind":"allow_once"},{"optionId":"deny","name":"Reject","kind":"reject_once"}]}}`)
 			} else if params.Prompt[0].Text != "wait" {
 				// Like Codex, report the thread going idle when a turn ends.
-				threadStatus("active")
-				threadStatus("idle")
+				promptThreadStatus("active")
+				promptThreadStatus("idle")
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
 			}
 		case "_session/steering":
@@ -220,6 +226,10 @@ func TestACPStdioHelper(t *testing.T) {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"startedNewTurn"}}`+"\n", message.ID)
 				time.Sleep(20 * time.Millisecond)
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
+				if os.Getenv("KENN_FORGE_ACP_LATE_THREAD_STATUS") == "1" {
+					// The first status arrives only after the prompt completes.
+					time.Sleep(50 * time.Millisecond)
+				}
 				threadStatus("active")
 				go func() {
 					time.Sleep(300 * time.Millisecond)
@@ -520,6 +530,44 @@ func TestACPSteerTakeoverWithoutThreadStatusStillDrains(t *testing.T) {
 			return false
 		}
 		return slices.ContainsFunc(state.Messages, func(message ACPMessage) bool { return message.Text == "after takeover" })
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+// An agent whose first thread status arrives only after the steer answered,
+// and even after the original prompt completed, still has its takeover turn
+// tracked: the chat is busy again until the thread goes idle.
+func TestACPSteerTakeoverTrackedByLateThreadStatus(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
+	t.Setenv("KENN_FORGE_ACP_LATE_THREAD_STATUS", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets})
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	snapshot := func() ACPState {
+		var state ACPState
+		if data, err := agent.Snapshot(); err == nil {
+			_ = json.Unmarshal(data, &state)
+		}
+		return state
+	}
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
+	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, time.Millisecond, "the prompt completes first")
+	require.Eventually(t, func() bool { return snapshot().Busy }, 5*time.Second, time.Millisecond, "the late status claims the takeover")
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "after takeover", ID: "queued"}))
+	assert.Equal(t, []ACPQueuedPrompt{{ID: "queued", Text: "after takeover"}}, snapshot().Queue, "queued work waits for the agent's turn")
+	require.Eventually(t, func() bool {
+		state := snapshot()
+		return !state.Busy && len(state.Queue) == 0 && slices.ContainsFunc(state.Messages, func(message ACPMessage) bool { return message.Text == "after takeover" })
 	}, 5*time.Second, 10*time.Millisecond)
 }
 

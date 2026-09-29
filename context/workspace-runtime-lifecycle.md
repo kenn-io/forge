@@ -55,9 +55,10 @@ Rules:
 - A running ACP turn never rejects input: sends queue, and steering is used only when
   initialize advertises it. The queue drains one prompt per `end_turn` and pauses on any
   other stop, error, exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).
-- A turn the agent starts after a steer keeps the chat busy only when the agent reports
-  thread status, the sole signal for its end; otherwise it ends with the prompt
-  (`internal/workspace/localruntime/acp_queue.go::ACP.steerLocked`).
+- A turn the agent starts after a steer keeps the chat busy from its first active thread
+  status until the thread goes idle, even when that status arrives after the prompt completed.
+  Until a status confirms it, the turn ends with the prompt, so an agent that never reports
+  status cannot leave the chat busy (`internal/workspace/localruntime/acp_queue.go::ACP.steerLocked`).
 - ACP owners, not the daemon, write chat activity reports so sidebar state survives
   daemon downtime; a reloaded session starts idle, never newly done
   (`internal/workspace/localruntime/acp_activity.go::reportACPActivity`).

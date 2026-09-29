@@ -29,6 +29,20 @@ func TestACPStartsANewMessageWhenTheMessageIDChanges(t *testing.T) {
 	assert.Equal(t, []string{"Finished the list.\n\n", "STEERED\n\nMore.\n\n"}, publishedTexts(t, agent))
 }
 
+// Gaining or losing a message ID is a change of ID, so it starts a new message.
+func TestACPStartsANewMessageWhenAMessageIDAppearsOrDisappears(t *testing.T) {
+	agent := newDetachedACP(t)
+	acpUpdate(t, agent, acpChunk("Untagged.\n\n", ""))
+	acpUpdate(t, agent, acpChunk("Tagged.\n\n", "33333333-3333-4333-8333-333333333333"))
+	acpUpdate(t, agent, acpChunk("Untagged again.\n\n", ""))
+	acpUpdate(t, agent, acpChunk("Still untagged.\n\n", ""))
+	agent.mu.Lock()
+	agent.releaseHeldTextLocked()
+	agent.mu.Unlock()
+
+	assert.Equal(t, []string{"Untagged.\n\n", "Tagged.\n\n", "Untagged again.\n\nStill untagged.\n\n"}, publishedTexts(t, agent))
+}
+
 func TestACPKeepsThoughtsImagesAndPlans(t *testing.T) {
 	agent := newDetachedACP(t)
 	acpUpdate(t, agent, acpsdk.SessionUpdate{AgentThoughtChunk: &acpsdk.SessionUpdateAgentThoughtChunk{Content: acpsdk.TextBlock("Considering the options.\n\n")}})

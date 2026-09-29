@@ -126,10 +126,10 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 	last := len(a.state.Messages) - 1
 	if last >= 0 {
 		previous := a.state.Messages[last]
-		// Agents without message IDs get the prior behavior: consecutive text
-		// of one role is one message.
-		sameMessage := previous.MessageID == "" || messageID == "" || previous.MessageID == messageID
-		if previous.Role == role && previous.Content == nil && sameMessage && (a.promptIndex == nil || last >= *a.promptIndex) {
+		// Consecutive text of one role is one message while its message ID
+		// stays the same; any change, including gaining or losing an ID,
+		// starts a new message.
+		if previous.Role == role && previous.Content == nil && previous.MessageID == messageID && (a.promptIndex == nil || last >= *a.promptIndex) {
 			a.state.Messages[last].Text += text
 			a.holdTextLocked(false, text)
 			return false

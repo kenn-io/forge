@@ -1297,7 +1297,7 @@ describe("PullDetail approvals", () => {
     renderPullDetail(detail);
 
     const trigger = screen.getByRole("button", {
-      name: "APPROVED (2)",
+      name: "Approved (2)",
     });
     await fireEvent.click(trigger);
 

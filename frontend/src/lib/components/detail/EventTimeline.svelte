@@ -2298,6 +2298,13 @@
     --kit-card-padding-block: var(--focus-detail-space-xs, 7px);
   }
 
+  /* System events (commits, base changes, lifecycle, references) are one
+     quiet line beside their rail dot; only conversation gets a card. */
+  .event-timeline :global(.kit-card.event-card--compact) {
+    --kit-card-bg: transparent;
+    --kit-card-border: transparent;
+  }
+
   .event-header {
     display: flex;
     align-items: center;
@@ -2445,9 +2452,9 @@
 
   .event-type {
     font-size: var(--font-size-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-weight: var(--font-weight-semibold);
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.04em);
   }
 
   .event-author {
@@ -2771,7 +2778,7 @@
   .event-body {
     font-size: var(--font-size-sm);
     color: var(--text-primary);
-    padding: 0 calc(var(--focus-detail-hit-target, 26px) + var(--focus-detail-space-sm, 8px)) var(--focus-detail-space-sm, 8px) var(--focus-detail-space-sm, 10px);
+    padding: 0 calc(var(--focus-detail-hit-target, 26px) + var(--focus-detail-space-sm, 8px)) var(--focus-detail-space-sm, 8px) 0;
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.6;

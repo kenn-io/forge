@@ -1929,20 +1929,28 @@
   }
 
   .section-title {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.05em);
+    color: var(--text-primary);
   }
 
   .inset-box__content {
-    padding: 10px 12px;
+    padding: var(--space-2) 0;
     font-size: var(--font-size-root);
     color: var(--text-primary);
     word-break: break-word;
     line-height: 1.6;
   }
+  .inset-box__content > :global(:first-child) {
+    margin-top: 0;
+  }
+
+  .inset-box__content > :global(:last-child) {
+    margin-bottom: 0;
+  }
+
 
   .issue-detail :global(.issue-actions-grid) {
     padding: var(--space-4) 0;

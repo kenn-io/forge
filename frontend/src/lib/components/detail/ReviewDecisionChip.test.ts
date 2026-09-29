@@ -38,7 +38,7 @@ describe("ReviewDecisionChip", () => {
     });
 
     const trigger = screen.getByRole("button", {
-      name: "APPROVED (2)",
+      name: "Approved (2)",
     });
     await fireEvent.click(trigger);
 
@@ -49,5 +49,17 @@ describe("ReviewDecisionChip", () => {
     await fireEvent.mouseDown(document.body);
 
     expect(document.querySelector(".approval-popup")).toBeNull();
+  });
+
+  it("labels provider review decisions in sentence case", () => {
+    render(AppRuntimeHarness, {
+      props: {
+        component: ReviewDecisionChip,
+        decision: "CHANGES_REQUESTED",
+        events: [reviewEvent("alice", "CHANGES_REQUESTED")],
+      },
+    });
+
+    expect(screen.getByText("Changes requested")).toBeTruthy();
   });
 });

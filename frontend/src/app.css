@@ -103,8 +103,10 @@
 
 /* Soft quiet light palette: cool gray chrome and a gray reading surface
    instead of pure white, with the same small elevation steps as dark.
-   Muted text and every accent darken just enough to stay AA on the hover
-   step. Keep kit's high-contrast palette authoritative when enabled. */
+   Muted text stays AA on the hover step. Accent text also sits on its own
+   color-mix tint (up to 16%), so each accent darkens until it stays AA on
+   that tint over the inset step. Keep kit's high-contrast palette
+   authoritative when enabled. */
 :root[data-kit-theme="quiet"]:not(.dark):not(.high-contrast) {
   --bg-primary: #e3e6ea; /* kit-ui-check-ignore: soft light chrome canvas */
   --bg-surface: #eceef1; /* kit-ui-check-ignore: soft reading surface without glare */
@@ -113,14 +115,14 @@
   --border-default: #cbd0d7; /* kit-ui-check-ignore: control edges on the gray surface */
   --border-muted: #dadde2; /* kit-ui-check-ignore: dividers on the gray surface */
   --text-muted: #5c636d; /* kit-ui-check-ignore: AA on the hover step */
-  --accent-blue: #005dcc; /* kit-ui-check-ignore: AA on the hover step */
-  --accent-amber: #a04a08; /* kit-ui-check-ignore: AA on the hover step */
-  --accent-purple: #6a48d0; /* kit-ui-check-ignore: AA on the hover step */
-  --accent-green: #047051; /* kit-ui-check-ignore: AA on the hover step */
-  --accent-red: #bc2626; /* kit-ui-check-ignore: AA on the hover step */
-  --accent-teal: #0d6b84; /* kit-ui-check-ignore: AA on the hover step */
-  --status-waiting: #735f37; /* kit-ui-check-ignore: AA on the hover step */
-  --diff-stale-text: #865a00; /* kit-ui-check-ignore: AA on the hover step */
+  --accent-blue: #0052b5; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-amber: #8c4107; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-purple: #5f40ba; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-green: #036448; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-red: #a42121; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-teal: #0b5f76; /* kit-ui-check-ignore: AA on its 16% tint */
+  --status-waiting: #685632; /* kit-ui-check-ignore: AA on its 16% tint */
+  --diff-stale-text: #785000; /* kit-ui-check-ignore: AA on the amber stale tint */
 }
 
 /* Darker quiet reading surfaces with small, even elevation steps: inset

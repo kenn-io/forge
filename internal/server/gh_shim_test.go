@@ -16,6 +16,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
@@ -68,11 +69,11 @@ func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
 	// Reuse the hub's route for a different repository: the spoke must not
 	// serve that repository's pull request as its tracked one.
 	replacement := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	replacement.PlatformRepoID = "repo-replacement-widget"
-	replacementID, err := hubDB.UpsertRepo(t.Context(), replacement)
+	replacement.PlatformRepoID = verifiedGitHubRepoIdentity("github.com", "acme", "widget").PlatformRepoID + 1
+	replacementID, err := reposeed.Seed(t.Context(), hubDB, replacement)
 	require.NoError(err)
 	seedPR(t, hubDB, "acme", "widget", 9, func(pr *db.MergeRequest) { pr.RepoID = replacementID })
-	_, err = hubDB.UpsertRepo(t.Context(), replacement)
+	_, err = reposeed.Seed(t.Context(), hubDB, replacement)
 	require.NoError(err)
 	response := testutil.DoJSON(t, spoke, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: "view", Host: "github.com", Owner: "acme", Repo: "widget", Number: 9, State: "open", Limit: 30, Fields: []string{"number"}})
 	assert.Contains(response.Body.String(), `"reason":"data_unavailable"`)
@@ -86,18 +87,18 @@ func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
 func TestGHShimHubRequiresConfiguredProviderIdentity(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
-		providerID string
+		providerID int64
 		handled    bool
 		reason     string
 	}{
-		{"configured identity", "repo-acme-widget", true, "served"},
-		{"reused route", "repo-original-widget", false, "untracked"},
+		{"configured identity", verifiedGitHubRepoIdentity("github.com", "acme", "widget").PlatformRepoID, true, "served"},
+		{"reused route", verifiedGitHubRepoIdentity("github.com", "acme", "widget").PlatformRepoID + 1, false, "untracked"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			configured := defaultTestRepos[0]
-			configured.PlatformExternalID = tc.providerID
+			configured.PlatformRepoID = tc.providerID
 			hub, database := setupTestServerWithRepos(t, &mockGH{}, []ghclient.RepoRef{configured})
 			seedPR(t, database, "acme", "widget", 7)
 			response := testutil.DoJSON(t, hub, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: "view", Host: "github.com", Owner: "acme", Repo: "widget", Number: 7, State: "open", Limit: 30, Fields: []string{"number"}})

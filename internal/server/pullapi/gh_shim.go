@@ -2,7 +2,6 @@ package pullapi
 
 import (
 	"context"
-	"strings"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/ghshim"
@@ -40,19 +39,19 @@ func (s *Handler) ghShim(ctx context.Context, input *ghShimInput) (*ghShimOutput
 			return fallback("provider_unavailable")
 		}
 		for _, ref := range refs {
-			// Routes are mutable; only the stable provider ID proves the
-			// routed row is the configured repository.
-			if ref.Platform == platform.KindGitHub && strings.EqualFold(ref.Host, repo.PlatformHost) && ref.PlatformExternalID != "" && ref.PlatformExternalID == repo.PlatformRepoID {
+			// Routes are mutable; only the stable identity proves the routed
+			// row is the configured repository.
+			if ref.Identity() == repo.Identity() {
 				tracked = true
 				break
 			}
 		}
 	} else {
 		// Spokes retain repository config and data but have no provider syncer.
-		candidate := ghclient.RepoRef{Platform: platform.KindGitHub, PlatformHost: repo.PlatformHost, PlatformExternalID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath}
+		candidate := ghclient.RepoRef{Platform: platform.KindGitHub, PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath}
 		for _, configured := range s.ConfigSnapshot().Repositories {
 			for _, ref := range ghclient.FallbackConfiguredRepoRefs([]ghclient.RepoRef{candidate}, configured) {
-				if ref.Platform == candidate.Platform && strings.EqualFold(ref.PlatformHost, candidate.PlatformHost) && ref.PlatformExternalID == candidate.PlatformExternalID {
+				if ref.Identity() == repo.Identity() {
 					tracked = true
 				}
 			}
@@ -61,28 +60,18 @@ func (s *Handler) ghShim(ctx context.Context, input *ghShimInput) (*ghShimOutput
 	if !tracked {
 		return fallback("untracked")
 	}
-	fence, found, err := s.resolver.CaptureRepositoryRouteFence(ctx, *repo)
-	if err != nil || !found {
-		return fallback("untracked")
-	}
-	output, err := ghshim.Read(ctx, s.db, *repo, q)
+	output, err := ghshim.Read(ctx, s.db, repo.Repo, q)
 	if err != nil && q.Command == "view" && s.providerSource != nil {
 		// Use the existing provider read path; the hub needs no shim endpoint.
 		detail, readErr := s.providerSource.GetPull(ctx, ItemIdentity{Provider: "github", PlatformHost: q.Host, Owner: q.Owner, Name: q.Repo, Number: q.Number})
 		// The hub resolves owner/name itself; serve only the repository this
 		// spoke verified as tracked.
-		sameRepo := strings.EqualFold(detail.Repo.Provider, "github") && strings.EqualFold(detail.Repo.PlatformHost, repo.PlatformHost) &&
-			detail.Repo.PlatformRepoID != "" && detail.Repo.PlatformRepoID == repo.PlatformRepoID
-		if readErr == nil && detail.MergeRequest != nil && sameRepo {
+		if readErr == nil && detail.MergeRequest != nil && detail.Repo.Identity() == repo.Identity() {
 			output, err = ghshim.Encode(q, []db.MergeRequest{*detail.MergeRequest})
 		}
 	}
 	if err != nil {
 		return fallback("data_unavailable")
-	}
-	matches, err := s.resolver.RepositoryRouteFenceMatches(ctx, *repo, fence)
-	if err != nil || !matches {
-		return fallback("route_changed")
 	}
 	return &ghShimOutput{Body: ghShimResponse{Handled: true, Output: string(output), Reason: "served"}}, nil
 }

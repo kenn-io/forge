@@ -46,6 +46,9 @@ Rules:
   into the latest saved preferences (`internal/workspace/localruntime/acp_settings.go`).
 - ACP owners and their SDK connections survive daemon shutdown under tmux/ptyowner;
   retain active turns, permissions, and chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
+- Owner-to-client ACP state changes are not bridged across upgrades: an owner started by an
+  older binary may fail under a newer UI until the agent is relaunched. Do not add
+  compatibility fallbacks for it (maintainer decision; `frontend/src/lib/components/acp/chat-types.ts::ChatStateSchema`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved
   ACP session only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
 - The ACP owner keeps the whole transcript and never deletes messages. State

@@ -4258,8 +4258,12 @@ base_url = %q
 		repoWorktreeBaseRequest{WorktreeBasePath: worktreeBase})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	spoke.cfgMu.Lock()
 	assert.Equal(canonicalWorktreeBase, spoke.cfg.Repos[0].WorktreeBasePath)
+	spoke.cfgMu.Unlock()
+	hub.cfgMu.Lock()
 	assert.Empty(hub.cfg.Repos[0].WorktreeBasePath)
+	hub.cfgMu.Unlock()
 
 	var settings settingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))

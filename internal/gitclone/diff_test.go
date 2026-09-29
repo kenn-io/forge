@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 func TestIntegrationDiff(t *testing.T) {
@@ -198,7 +198,7 @@ func TestIntegrationDiffArgumentBuildersTerminateOptionsBeforeRevisions(t *testi
 
 func getSHA(t *testing.T, dir, ref string) string {
 	t.Helper()
-	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
+	out, err := gitsafe.Runner().Output(t.Context(), dir, "rev-parse", ref)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }

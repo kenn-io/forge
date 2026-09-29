@@ -17,6 +17,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/tokenauth"
 	gitcmd "go.kenn.io/kit/git/cmd"
 )
@@ -64,7 +65,7 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 	run(t, work, "git", "add", ".")
 	run(t, work, "git", "commit", "-m", msg)
 	run(t, work, "git", "push", "origin", "main")
-	out, err := gitcmd.New().Output(t.Context(), work, "rev-parse", "HEAD")
+	out, err := gitsafe.Runner().Output(t.Context(), work, "rev-parse", "HEAD")
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }
@@ -72,7 +73,7 @@ func commitAndPush(t *testing.T, work, file, content, msg string) string {
 func run(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 	require.Equal(t, "git", name)
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "command %s %v failed: %s%s", name, args, out, stderr)
 }
 
@@ -190,7 +191,7 @@ func TestIntegrationFetchRecoversFromStalledHTTP(t *testing.T) {
 
 func TestIntegrationEnsureCloneIsolatesObjectsFromLocalSource(t *testing.T) {
 	_, source := setupTestRepo(t)
-	commitBytes, err := gitcmd.New().Output(t.Context(), source, "rev-parse", "HEAD")
+	commitBytes, err := gitsafe.Runner().Output(t.Context(), source, "rev-parse", "HEAD")
 	require.NoError(t, err)
 	commit := strings.TrimSpace(string(commitBytes))
 	sourceObject := filepath.Join(source, ".git", "objects", commit[:2], commit[2:])
@@ -208,7 +209,7 @@ func TestIntegrationEnsureCloneIsolatesObjectsFromLocalSource(t *testing.T) {
 	require.NoError(t, os.WriteFile(sourceObject, []byte("corrupt"), 0o600))
 
 	clonePath := filepath.Join(clonesDir, "github.com", "testowner", "testrepo.git")
-	_, err = gitcmd.New().Output(t.Context(), clonePath, "cat-file", "-p", commit)
+	_, err = gitsafe.Runner().Output(t.Context(), clonePath, "cat-file", "-p", commit)
 	require.NoError(t, err)
 }
 
@@ -237,7 +238,7 @@ func TestIntegrationEnsureCloneInNamespacePartitionsStorage(t *testing.T) {
 func TestIntegrationEnsureClonePartitionsConcurrentRouteReuseByProviderIdentity(t *testing.T) {
 	remoteA, workA := setupTestRepo(t)
 	remoteB, workB := setupTestRepo(t)
-	shaABytes, err := gitcmd.New().Output(t.Context(), workA, "rev-parse", "HEAD")
+	shaABytes, err := gitsafe.Runner().Output(t.Context(), workA, "rev-parse", "HEAD")
 	require.NoError(t, err)
 	shaA := strings.TrimSpace(string(shaABytes))
 	shaB := commitAndPush(t, workB, "replacement.go", "package replacement\n", "replacement")
@@ -314,7 +315,7 @@ func TestIntegrationEnsureCloneValidatedRestoresExistingCloneAfterRouteChange(
 		ctx, "github", "github.com", "acme", "widget",
 	)
 	require.NoError(t, err)
-	originalSHABytes, err := gitcmd.New().Output(
+	originalSHABytes, err := gitsafe.Runner().Output(
 		t.Context(), clonePath, "rev-parse", "refs/remotes/origin/main",
 	)
 	require.NoError(t, err)
@@ -342,15 +343,15 @@ func TestIntegrationEnsureCloneValidatedRestoresExistingCloneAfterRouteChange(
 	require.ErrorIs(t, err, validationErr)
 	assert.DirExists(t, clonePath)
 	assert.NoDirExists(t, clonePath+".removing")
-	restoredSHABytes, err := gitcmd.New().Output(
+	restoredSHABytes, err := gitsafe.Runner().Output(
 		t.Context(), clonePath, "rev-parse", "refs/remotes/origin/main",
 	)
 	require.NoError(t, err)
 	assert.Equal(t, originalSHA, strings.TrimSpace(string(restoredSHABytes)))
-	worktreeSHABytes, err := gitcmd.New().Output(t.Context(), worktreePath, "rev-parse", "HEAD")
+	worktreeSHABytes, err := gitsafe.Runner().Output(t.Context(), worktreePath, "rev-parse", "HEAD")
 	require.NoError(t, err)
 	assert.Equal(t, originalSHA, strings.TrimSpace(string(worktreeSHABytes)))
-	refspecBytes, err := gitcmd.New().Output(
+	refspecBytes, err := gitsafe.Runner().Output(
 		t.Context(), clonePath, "config", "--get-all", "remote.origin.fetch",
 	)
 	require.NoError(t, err)
@@ -843,7 +844,7 @@ func TestIntegrationEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *t
 	))
 	run(t, work, "git", "add", ".")
 	run(t, work, "git", "commit", "-m", "gitlab mr head")
-	out, err := gitcmd.New().Output(t.Context(), work, "rev-parse", "HEAD")
+	out, err := gitsafe.Runner().Output(t.Context(), work, "rev-parse", "HEAD")
 	require.NoError(err)
 	headSHA := strings.TrimSpace(string(out))
 	run(t, work, "git", "push", "origin", "HEAD:refs/merge-requests/17/head")
@@ -853,7 +854,7 @@ func TestIntegrationEnsureCloneDoesNotFetchGitLabMergeRequestHeadsByDefault(t *t
 
 	clonePath, err := mgr.ClonePath("gitlab", "gitlab.com", "testowner", "testrepo")
 	require.NoError(err)
-	got, err := gitcmd.New().Output(
+	got, err := gitsafe.Runner().Output(
 		t.Context(), clonePath, "rev-parse", "refs/merge-requests/17/head",
 	)
 	require.Error(err)
@@ -1007,7 +1008,7 @@ func TestIntegrationEnsureCloneRestoresOriginHead(t *testing.T) {
 	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
 	require.NoError(err)
 	run(t, clonePath, "git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
-	_, err = gitcmd.New().Output(t.Context(), clonePath, "symbolic-ref", "refs/remotes/origin/HEAD")
+	_, err = gitsafe.Runner().Output(t.Context(), clonePath, "symbolic-ref", "refs/remotes/origin/HEAD")
 	require.Error(err)
 
 	require.NoError(mgr.EnsureClone(
@@ -1069,7 +1070,7 @@ func TestIntegrationEnsureCloneToleratesUnresolvedRemoteHead(t *testing.T) {
 // is unset; `git config --get-all` signals that with exit code 1.
 func getFetchRefspecs(t *testing.T, clonePath string) []string {
 	t.Helper()
-	out, err := gitcmd.New().Output(t.Context(), clonePath,
+	out, err := gitsafe.Runner().Output(t.Context(), clonePath,
 		"config", "--get-all", "remote.origin.fetch")
 	if err != nil {
 		if gitcmd.IsExitCode(err, 1) {
@@ -1088,7 +1089,7 @@ func getFetchRefspecs(t *testing.T, clonePath string) []string {
 
 func gitSymbolicRef(t *testing.T, dir, ref string) string {
 	t.Helper()
-	out, err := gitcmd.New().Output(t.Context(), dir, "symbolic-ref", ref)
+	out, err := gitsafe.Runner().Output(t.Context(), dir, "symbolic-ref", ref)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
 }
@@ -1135,7 +1136,7 @@ func TestIntegrationMergeBase(t *testing.T) {
 	// Get the HEAD SHA.
 	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
 	require.NoError(err)
-	out, err := gitcmd.New().Output(t.Context(), clonePath, "rev-parse", "HEAD")
+	out, err := gitsafe.Runner().Output(t.Context(), clonePath, "rev-parse", "HEAD")
 	require.NoError(err)
 	headSHA := strings.TrimSpace(string(out))
 
@@ -1149,7 +1150,7 @@ func TestIntegrationMergeBase(t *testing.T) {
 func TestIntegrationRepoBrowserClonePartitionsRouteReuseByProviderIdentity(t *testing.T) {
 	remoteA, workA := setupTestRepo(t)
 	remoteB, workB := setupTestRepo(t)
-	shaABytes, err := gitcmd.New().Output(t.Context(), workA, "rev-parse", "HEAD")
+	shaABytes, err := gitsafe.Runner().Output(t.Context(), workA, "rev-parse", "HEAD")
 	require.NoError(t, err)
 	shaA := strings.TrimSpace(string(shaABytes))
 	shaB := commitAndPush(t, workB, "replacement.go", "package replacement\n", "replacement")
@@ -1174,9 +1175,9 @@ func TestIntegrationRepoBrowserClonePartitionsRouteReuseByProviderIdentity(t *te
 	require.NoError(t, err)
 	require.NotEqual(t, pathA, pathB,
 		"distinct repository identities sharing a path must not share browser clone storage")
-	gotA, err := gitcmd.New().Output(t.Context(), pathA, "rev-parse", "HEAD")
+	gotA, err := gitsafe.Runner().Output(t.Context(), pathA, "rev-parse", "HEAD")
 	require.NoError(t, err)
-	gotB, err := gitcmd.New().Output(t.Context(), pathB, "rev-parse", "HEAD")
+	gotB, err := gitsafe.Runner().Output(t.Context(), pathB, "rev-parse", "HEAD")
 	require.NoError(t, err)
 	assert.Equal(t, shaA, strings.TrimSpace(string(gotA)))
 	assert.Equal(t, shaB, strings.TrimSpace(string(gotB)))

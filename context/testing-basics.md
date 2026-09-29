@@ -84,7 +84,8 @@ fixtures, or changing shell-script coverage.
 - Go tests run Git only through `internal/testutil/gitfixture` or the
   `gitsafe` runners, and every such test package calls
   `gitsafe.RunIsolatedMain` from `TestMain`. `make git-test-fixture-check`
-  enforces this in pre-commit and CI (`tools/norawgittest/main.go`).
+  enforces this in pre-commit and CI, including build-tagged and platform-specific
+  files (`tools/norawgittest/main.go`).
 - JavaScript tests that create or mutate Git repositories must use the shared
   isolated fixture; raw child processes can inherit hook bindings and mutate the
   hosting checkout (`scripts/test-git-fixture.mjs::createGitTestRepository`).

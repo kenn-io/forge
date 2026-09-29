@@ -388,12 +388,13 @@ func goFiles(args []string) ([]string, error) {
 }
 
 type listedPackage struct {
-	Dir          string
-	GoFiles      []string
-	CgoFiles     []string
-	TestGoFiles  []string
-	XTestGoFiles []string
-	Error        *listedPackageError
+	Dir            string
+	GoFiles        []string
+	CgoFiles       []string
+	TestGoFiles    []string
+	XTestGoFiles   []string
+	IgnoredGoFiles []string
+	Error          *listedPackageError
 }
 
 type listedPackageError struct {
@@ -427,7 +428,9 @@ func packageGoFiles(pattern string) ([]string, error) {
 		if pkg.Error != nil {
 			return nil, errors.New(pkg.Error.Err)
 		}
-		names := slices.Concat(pkg.GoFiles, pkg.CgoFiles, pkg.TestGoFiles, pkg.XTestGoFiles)
+		// The isolation rule also covers tests and helpers excluded by build tags
+		// or the current platform.
+		names := slices.Concat(pkg.GoFiles, pkg.CgoFiles, pkg.TestGoFiles, pkg.XTestGoFiles, pkg.IgnoredGoFiles)
 		for _, name := range names {
 			full := filepath.Join(pkg.Dir, name)
 			// Report module-relative paths so scope matching and output

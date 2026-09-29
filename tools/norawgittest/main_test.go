@@ -1,11 +1,38 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRunRejectsGitInBuildTaggedTests(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOFLAGS", "")
+	for name, source := range map[string]string{
+		"go.mod":    "module example.com/widget\n\ngo 1.26\n",
+		"widget.go": "package widget\n",
+		"integration_test.go": `//go:build integration
+
+package widget
+
+import "os/exec"
+
+func setup() { exec.Command("git", "init") }
+`,
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(source), 0o600))
+	}
+	var stdout, stderr bytes.Buffer
+	assert.Equal(t, 1, run([]string{"./..."}, &stdout, &stderr), stderr.String())
+	assert.Contains(t, stdout.String(), "integration_test.go:7:16: "+rawGitMessage)
+}
 
 func TestCheckSourceFlagsRawGitInTests(t *testing.T) {
 	assert := assert.New(t)

@@ -14,10 +14,10 @@ import (
 	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitcmd "go.kenn.io/kit/git/cmd"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
@@ -27,7 +27,7 @@ import (
 // cause test git operations to mutate the host repo's config.
 func gitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := gitcmd.New().Command(t.Context(), dir, args...)
+	cmd := gitsafe.Runner().Command(t.Context(), dir, args...)
 	cmd.Env = append(cmd.Env,
 		"GIT_AUTHOR_NAME=test",
 		"GIT_AUTHOR_EMAIL=test@test.com",

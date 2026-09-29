@@ -3,18 +3,9 @@ package localruntime
 import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
-	"unicode/utf8"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 )
-
-// maxACPContentDataBytes bounds one media or blob payload kept in the chat.
-// Larger payloads keep their metadata and are marked omitted, so a single
-// image cannot consume the transcript budget.
-const maxACPContentDataBytes = 2 << 20
-
-// maxACPRawBytes bounds raw tool input or output kept for display.
-const maxACPRawBytes = 64 << 10
 
 // ACPContent is one non-text content block from the agent: an image, audio
 // clip, resource link, or embedded resource.
@@ -28,8 +19,6 @@ type ACPContent struct {
 	Title       string `json:"title,omitempty"`
 	Description string `json:"description,omitempty"`
 	Size        *int   `json:"size,omitempty"`
-	// Omitted marks a payload dropped because it exceeded the size limit.
-	Omitted bool `json:"omitted,omitempty"`
 }
 
 // ACPToolContent is what a tool call produced: content, a file diff, or a
@@ -45,9 +34,6 @@ type ACPToolContent struct {
 	Output   string `json:"output,omitempty"`
 	ExitCode *int   `json:"exitCode,omitempty"`
 }
-
-// maxACPTerminalOutputBytes keeps the latest output of one command.
-const maxACPTerminalOutputBytes = 64 << 10
 
 // applyTerminalMeta records command output and exit that agents stream in
 // tool call _meta under the Zed terminal conventions (terminal_output_delta,
@@ -71,12 +57,6 @@ func applyTerminalMeta(items []ACPToolContent, meta map[string]any) []ACPToolCon
 		}
 		item := terminal(id)
 		item.Output += data
-		if extra := len(item.Output) - maxACPTerminalOutputBytes; extra > 0 {
-			for extra < len(item.Output) && !utf8.RuneStart(item.Output[extra]) {
-				extra++
-			}
-			item.Output = item.Output[extra:]
-		}
 	}
 	if exit, _ := meta["terminal_exit"].(map[string]any); exit != nil {
 		id, _ := exit["terminal_id"].(string)
@@ -126,11 +106,11 @@ func acpContent(block acpsdk.ContentBlock) (string, *ACPContent) {
 		if block.Image.Uri != nil {
 			content.URI = *block.Image.Uri
 		}
-		content.setData(block.Image.Data)
+		content.Data = block.Image.Data
 		return "", content
 	case block.Audio != nil:
 		content := &ACPContent{Type: "audio", MimeType: block.Audio.MimeType}
-		content.setData(block.Audio.Data)
+		content.Data = block.Audio.Data
 		return "", content
 	case block.ResourceLink != nil:
 		link := block.ResourceLink
@@ -147,19 +127,11 @@ func acpContent(block acpsdk.ContentBlock) (string, *ACPContent) {
 		case resource.BlobResourceContents != nil:
 			blob := resource.BlobResourceContents
 			content := &ACPContent{Type: "resource", URI: blob.Uri, MimeType: deref(blob.MimeType)}
-			content.setData(blob.Blob)
+			content.Data = blob.Blob
 			return "", content
 		}
 	}
 	return "", nil
-}
-
-func (c *ACPContent) setData(data string) {
-	if len(data) > maxACPContentDataBytes {
-		c.Omitted = true
-		return
-	}
-	c.Data = data
 }
 
 func acpToolContent(items []acpsdk.ToolCallContent) []ACPToolContent {
@@ -197,7 +169,7 @@ func acpPlan(entries []acpsdk.PlanEntry) []ACPPlanEntry {
 	return out
 }
 
-// acpRawJSON renders raw tool input or output for display, bounded in size.
+// acpRawJSON renders raw tool input or output for display.
 func acpRawJSON(value any) string {
 	if value == nil {
 		return ""
@@ -205,13 +177,6 @@ func acpRawJSON(value any) string {
 	data, err := json.Marshal(value, jsontext.WithIndent("  "))
 	if err != nil {
 		return ""
-	}
-	if len(data) > maxACPRawBytes {
-		cut := maxACPRawBytes
-		for cut > 0 && !utf8.RuneStart(data[cut]) {
-			cut--
-		}
-		return string(data[:cut]) + "\n…"
 	}
 	return string(data)
 }

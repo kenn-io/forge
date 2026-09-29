@@ -637,28 +637,21 @@ describe("ACPWorkspace rich content", () => {
 
     const image = screen.getByRole("img", { name: "Chart" }) as HTMLImageElement;
     expect(image.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
-    await fireEvent.click(screen.getByRole("button", { name: "Open Chart at full size" }));
-    const viewer = screen.getByRole("dialog", { name: "Expanded image" });
+    await fireEvent.click(screen.getByRole("button", { name: /Open image in expanded view: Chart/ }));
+    const viewer = screen.getByRole("dialog", { name: "Chart" });
     expect(viewer.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
     await fireEvent.click(within(viewer).getByRole("button", { name: "Close expanded image" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("shows placeholders for omitted or non-image payloads", async () => {
-    await openChat({
-      messages: [
-        assistant({ type: "image", mimeType: "image/png", size: 2621440, omitted: true }),
-        assistant({ type: "image", mimeType: "text/html", data: "PGI+" }),
-      ],
-    });
+  it("shows a placeholder for a payload that is not an image", async () => {
+    await openChat({ messages: [assistant({ type: "image", mimeType: "text/html", data: "PGI+" })] });
 
     expect(screen.queryByRole("img")).toBeNull();
-    expect(screen.getByText("Image too large to show")).toBeTruthy();
-    expect(screen.getByText("image/png · 2.5 MB")).toBeTruthy();
     expect(screen.getByText("Image unavailable")).toBeTruthy();
   });
 
-  it("never renders SVG from the agent as an image", async () => {
+  it("renders SVG images and SVG files inline", async () => {
     const svg = btoa('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
     await openChat({
       messages: [
@@ -667,10 +660,10 @@ describe("ACPWorkspace rich content", () => {
       ],
     });
 
-    // Like data: images in markdown, only raster formats render inline.
-    expect(document.querySelector("img")).toBeNull();
-    expect(screen.getByText("Image unavailable")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Download/ })).toBeTruthy();
+    // An <img> renders SVG without running its scripts or loading resources.
+    const sources = Array.from(document.querySelectorAll("img"), (image) => image.getAttribute("src"));
+    expect(sources).toEqual([`data:image/svg+xml;base64,${svg}`, `data:image/svg+xml;base64,${svg}`]);
+    expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
   });
 
   it("plays audio with native controls", async () => {

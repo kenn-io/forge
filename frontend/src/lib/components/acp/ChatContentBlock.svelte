@@ -1,15 +1,13 @@
 <script lang="ts">
-  import { Button, CodeBlock } from "@kenn-io/kit-ui";
+  import { Button, CodeBlock, ImagePreview } from "@kenn-io/kit-ui";
   import Download from "@lucide/svelte/icons/download";
   import FileText from "@lucide/svelte/icons/file-text";
   import ImageIcon from "@lucide/svelte/icons/image";
   import Link from "@lucide/svelte/icons/link";
   import Music from "@lucide/svelte/icons/music";
-  import { openMarkdownImageLightbox } from "../../utils/markdownImages.js";
   import {
     decodeBase64,
     formatBytes,
-    isRasterImageType,
     mediaDataURL,
     resourceFilename,
     resourceHref,
@@ -24,8 +22,7 @@
 
   const label = $derived(content.title || content.name || content.uri || "");
   const meta = $derived([content.mimeType, formatBytes(content.size)].filter(Boolean).join(" · "));
-  // Other embedded files, including SVG images, are offered as downloads.
-  const isImageBlob = $derived(content.type === "resource" && !!content.data && isRasterImageType(content.mimeType));
+  const isImageBlob = $derived(content.type === "resource" && !!content.data && !!content.mimeType?.toLowerCase().startsWith("image/"));
   const imageSrc = $derived(
     content.type === "image" || isImageBlob ? mediaDataURL(content, "image") : undefined,
   );
@@ -35,7 +32,6 @@
     const language = resourceLanguage(content);
     return language ? { language } : {};
   });
-  let image = $state<HTMLImageElement | null>(null);
 
   function download() {
     if (!content.data) return;
@@ -63,22 +59,15 @@
   <p class="text">{content.text ?? ""}</p>
 {:else if content.type === "image" || isImageBlob}
   {#if imageSrc}
-    <button
-      type="button"
-      class="image"
-      aria-label={`Open ${label || "image"} at full size`}
-      onclick={() => { if (image) openMarkdownImageLightbox(image); }}
-    >
-      <img bind:this={image} src={imageSrc} alt={label || "Image from agent"} />
-    </button>
+    <div class="image"><ImagePreview src={imageSrc} alt={label || "Image from agent"} maxHeight="24rem" /></div>
   {:else}
-    {@render placeholder(ImageIcon, content.omitted ? "Image too large to show" : "Image unavailable")}
+    {@render placeholder(ImageIcon, "Image unavailable")}
   {/if}
 {:else if content.type === "audio"}
   {#if audioSrc}
     <audio class="audio" controls src={audioSrc} aria-label={label || "Audio from agent"}></audio>
   {:else}
-    {@render placeholder(Music, content.omitted ? "Audio too large to play" : "Audio unavailable")}
+    {@render placeholder(Music, "Audio unavailable")}
   {/if}
 {:else if content.type === "resource_link"}
   <div class="card link-card">
@@ -105,8 +94,8 @@
         {...languageProp}
       />
     </details>
-  {:else if content.omitted || !content.data}
-    {@render placeholder(FileText, content.omitted ? "Resource too large to include" : "Resource unavailable")}
+  {:else if !content.data}
+    {@render placeholder(FileText, "Resource unavailable")}
   {:else}
     <div class="card">
       <FileText size={14} aria-hidden="true" />
@@ -128,25 +117,8 @@
     overflow-wrap: anywhere;
   }
   .image {
-    display: block;
     width: fit-content;
     max-width: 100%;
-    padding: 0;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-md);
-    background: transparent;
-    cursor: zoom-in;
-    overflow: hidden;
-  }
-  .image:focus-visible {
-    outline: var(--focus-ring);
-    outline-offset: 2px;
-  }
-  .image img {
-    display: block;
-    max-width: 100%;
-    max-height: 24rem;
-    object-fit: contain;
   }
   .audio {
     display: block;

@@ -2,8 +2,7 @@ import { Schema } from "effect";
 
 const optionalText = Schema.optional(Schema.NullOr(Schema.String));
 // A non-text ACP content block. `type` stays open so a block kind this UI does
-// not know yet degrades instead of failing the whole frame. `omitted` marks a
-// payload the host dropped for size, leaving metadata only.
+// not know yet degrades instead of failing the whole frame.
 export const ChatContentSchema = Schema.Struct({
   type: Schema.String,
   text: optionalText,
@@ -14,7 +13,6 @@ export const ChatContentSchema = Schema.Struct({
   title: optionalText,
   description: optionalText,
   size: Schema.optional(Schema.NullOr(Schema.Number)),
-  omitted: Schema.optional(Schema.NullOr(Schema.Boolean)),
 });
 export type ChatContent = typeof ChatContentSchema.Type;
 export const ToolContentSchema = Schema.Struct({

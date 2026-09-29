@@ -3,19 +3,12 @@ import type { ChatContent } from "./chat-types.js";
 
 const base64Pattern = /^[A-Za-z0-9+/=\s]*$/;
 
-// Agent images render only as safe raster formats, like data: images in
-// markdown; SVG can carry script and external references.
-const rasterImageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
-
-export function isRasterImageType(mimeType: string | null | undefined): boolean {
-  return rasterImageTypes.has(mimeType?.trim().toLowerCase() ?? "");
-}
-
 // data: URLs are only ever built for <img>/<audio> sources, from a validated
-// media type and base64 payload.
+// media type and base64 payload. SVG is allowed: an <img> renders it without
+// scripts or external loads.
 export function mediaDataURL(content: ChatContent, family: "image" | "audio"): string | undefined {
   const mime = content.mimeType?.trim().toLowerCase() ?? "";
-  if (family === "image" ? !isRasterImageType(mime) : !/^audio\/[a-z0-9.+-]+$/.test(mime)) return undefined;
+  if (!new RegExp(`^${family}/[a-z0-9.+-]+$`).test(mime)) return undefined;
   if (!content.data || !base64Pattern.test(content.data)) return undefined;
   return `data:${mime};base64,${content.data.replace(/\s+/g, "")}`;
 }

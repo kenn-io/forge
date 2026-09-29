@@ -66,9 +66,10 @@ Rules:
 - The saved ACP transcript is the conversation of record: drop `session/load` replay, and
   continue in a new session when the agent lacks `loadSession`
   (`internal/workspace/localruntime/acp.go::startACPSession`).
-- Keep every ACP content type: a changed `messageId` starts a new message, non-text blocks and
-  thoughts are their own entries, and media over 2 MiB keeps metadata only
-  (`internal/workspace/localruntime/acp_client.go::ACP.appendContentLocked`).
+- Keep every ACP content type: a changed `messageId` starts a new message, and non-text blocks
+  and thoughts are their own entries (`internal/workspace/localruntime/acp_client.go::ACP.appendContentLocked`).
+- Never cap or truncate agent-provided ACP data (commands, plans, media, tool output, errors);
+  a session too large for the UI must page older history in, not drop it.
 - Command output arrives as Zed terminal tool-call metadata (`terminal_output_delta`,
   `terminal_exit`), keyed by terminal ID (`internal/workspace/localruntime/acp_content.go::applyTerminalMeta`).
 - Project-worktree runtime APIs expose terminal targets only. ACP targets require

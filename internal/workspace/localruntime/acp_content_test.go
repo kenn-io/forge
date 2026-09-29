@@ -34,7 +34,8 @@ func TestACPKeepsThoughtsImagesAndPlans(t *testing.T) {
 	acpUpdate(t, agent, acpsdk.SessionUpdate{AgentThoughtChunk: &acpsdk.SessionUpdateAgentThoughtChunk{Content: acpsdk.TextBlock("Considering the options.\n\n")}})
 	acpUpdate(t, agent, acpChunk("Here is the chart:\n\n", ""))
 	acpUpdate(t, agent, acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{Content: acpsdk.ImageBlock("aW1hZ2U=", "image/png")}})
-	acpUpdate(t, agent, acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{Content: acpsdk.ImageBlock(strings.Repeat("A", maxACPContentDataBytes+1), "image/png")}})
+	large := strings.Repeat("A", 3<<20)
+	acpUpdate(t, agent, acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{Content: acpsdk.ImageBlock(large, "image/png")}})
 	acpUpdate(t, agent, acpsdk.SessionUpdate{Plan: &acpsdk.SessionUpdatePlan{Entries: []acpsdk.PlanEntry{
 		{Content: "Read the parser", Priority: acpsdk.PlanEntryPriorityHigh, Status: acpsdk.PlanEntryStatusCompleted},
 		{Content: "Fix the bug", Priority: acpsdk.PlanEntryPriorityMedium, Status: acpsdk.PlanEntryStatusInProgress},
@@ -49,8 +50,7 @@ func TestACPKeepsThoughtsImagesAndPlans(t *testing.T) {
 	require.NotNil(t, state.Messages[2].Content)
 	assert.Equal(t, ACPContent{Type: "image", MimeType: "image/png", Data: "aW1hZ2U="}, *state.Messages[2].Content)
 	require.NotNil(t, state.Messages[3].Content)
-	assert.True(t, state.Messages[3].Content.Omitted, "an oversized image keeps its metadata only")
-	assert.Empty(t, state.Messages[3].Content.Data)
+	assert.Len(t, state.Messages[3].Content.Data, len(large), "large media is kept whole")
 	assert.Equal(t, []ACPPlanEntry{
 		{Content: "Read the parser", Priority: "high", Status: "completed"},
 		{Content: "Fix the bug", Priority: "medium", Status: "in_progress"},

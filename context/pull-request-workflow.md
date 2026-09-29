@@ -9,10 +9,15 @@ request metadata, comments, or review threads.
   from the diff, commits, and pull request metadata.
 - Do not watch or poll pull request GitHub Actions checks unless the user asks,
   or the work is running through the `$kenn:refine-pr` skill.
-- Same-repository pull requests use main-branch reusable workflows on
-  organization-managed ephemeral self-hosted runners. Fork pull requests use
-  GitHub-hosted runners even for organization members; trust follows the head
-  repository, and external fork runs also require explicit approval.
+- Public CI profiles use Namespace's [Restricted access level](https://namespace.so/docs/solutions/github-actions/runner-controls/access-levels),
+  which disables workload access to Namespace features and APIs. GitHub fork
+  approvals, token permissions, and secrets are separate controls.
+- Reusable PR CI stays pinned to `main`, with GitHub-hosted fork runners even
+  for organization members; workflow validation selects Restricted Namespace
+  directly. (`.github/workflows/ci-pr.yml`, `.github/workflows/ci.yml`, `.github/workflows/workflow-validation.yml`)
+- Parse Buildx manifest JSON for CI image digests; the plain
+  `.Manifest.Digest` formatter can emit a full report
+  (`.github/workflows/ci.yml::ensure_playwright_image`).
 - Never delete, minimize, hide, or resolve pull request comments, review
   comments, review threads, or CI/review-bot comments unless the user explicitly
   asks for that exact action. Leave stale or contradicted comments in place and

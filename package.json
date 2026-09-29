@@ -20,6 +20,7 @@
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "@sveltejs/mcp": "0.1.26",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "svelte-check": "4.7.5",
     "typescript": "6.0.3",
     "vite-plus": "0.3.0",

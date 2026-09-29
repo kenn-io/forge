@@ -55,3 +55,6 @@ __pycache__/
 # ptyowner test artifacts
 .sessions
 .env.local
+
+# svelte-check --tsgo transpile cache
+.svelte-check/

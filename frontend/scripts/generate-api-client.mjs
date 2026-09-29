@@ -10,13 +10,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { normalizePath } from "vite";
 import { parse } from "yaml";
 import { renderModule, schemaConstraints } from "../../scripts/generate-schema-constraints.mjs";
 
-const vpPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../node_modules/vite-plus/bin/vp");
+const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const vpPath = resolve(frontendRoot, "../node_modules/vite-plus/bin/vp");
 
 function operationName(operation) {
   if (!operation.operationId) throw new Error("Every API operation must have an operationId");
@@ -42,7 +43,7 @@ function run(command, args, frontendDir) {
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} exited ${result.status}`);
 }
 
-async function generateClient(frontendDir) {
+export async function generateClient(frontendDir = frontendRoot) {
   const specPath = resolve(frontendDir, "openapi/openapi.yaml");
   const generatedDir = resolve(frontendDir, "src/lib/api/generated");
   if (!existsSync(specPath)) throw new Error(`OpenAPI document does not exist: ${specPath}`);
@@ -132,4 +133,10 @@ export function frontendApiClient() {
       if (id === specPath) await generateClient(frontendDir);
     },
   };
+}
+
+// `make api-generate` runs the same generator directly; a full `vp build` only
+// to trigger buildStart made the pre-commit hook pay for a production bundle.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  await generateClient();
 }

@@ -20,7 +20,7 @@ const (
 	defaultAgentHandoffTimeout     = 5 * time.Minute
 	maxAgentHandoffTimeout         = 15 * time.Minute
 	messageStatusRecoveryTimeout   = 6 * time.Second
-	maxAgentInitialMessage         = 64 << 10
+	maxTerminalInitialMessage      = 64 << 10
 	workspaceAgentPreferenceWindow = 14 * 24 * time.Hour
 )
 
@@ -214,6 +214,10 @@ func (s *Server) prepareAgentHandoff(
 			"agent_target %q is unavailable: %s", in.AgentTarget, target.DisabledReason,
 		)
 	}
+	// Refuse a message the target cannot take before creating anything.
+	if err := checkInitialMessageForProtocol(in.InitialMessage, target.Protocol); err != nil {
+		return Workspace{}, RuntimeSession{}, err
+	}
 
 	workspace, reused, err := s.resolveOrCreateWorkspace(ctx, *in.Source)
 	if err != nil {
@@ -288,6 +292,10 @@ func (s *Server) resumeAgentHandoff(
 				ctx, errors.New("agent runtime is not live"), *out,
 				"workspace_ready", "runtime_launched",
 			)
+		}
+		protocol, _ := agentProtocol(runtime.Kind)
+		if err := checkInitialMessageForProtocol(in.InitialMessage, protocol); err != nil {
+			return workspace, runtime, handoffFailure(ctx, err, *out, "workspace_ready", "runtime_launched")
 		}
 		out.Stage = "runtime_launched"
 		return workspace, runtime, nil
@@ -394,15 +402,24 @@ func normalizeSpawnInitialMessage(message string) (string, error) {
 	if strings.TrimSpace(message) == "" {
 		return "", errors.New("initial_message must not be blank")
 	}
+	return message, nil
+}
+
+// checkInitialMessageForProtocol applies the limits of pasted terminal input.
+// ACP prompts are protocol messages with no further limits.
+func checkInitialMessageForProtocol(message, protocol string) error {
+	if protocol == "acp" {
+		return nil
+	}
 	for _, value := range message {
 		if value != '\n' && !unicode.IsPrint(value) {
-			return "", errors.New("initial_message contains an unsafe control character")
+			return errors.New("initial_message contains an unsafe control character")
 		}
 	}
-	if len(message) > maxAgentInitialMessage {
-		return "", errors.New("initial_message must not exceed 64 KiB")
+	if len(message) > maxTerminalInitialMessage {
+		return errors.New("initial_message must not exceed 64 KiB for a terminal agent")
 	}
-	return message, nil
+	return nil
 }
 
 func findAgentTarget(targets []agentTargetRow, key string) (agentTargetRow, bool) {

@@ -13,7 +13,9 @@ import (
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
-const maxInitialAgentMessageBytes = 64 << 10
+// maxTerminalAgentMessageBytes bounds a message pasted into a terminal
+// agent. ACP prompts travel as protocol messages and have no size limit.
+const maxTerminalAgentMessageBytes = 64 << 10
 
 const (
 	initialMessagePending   = "pending"
@@ -57,7 +59,11 @@ type initialMessageOutput struct {
 	Body agentInitialMessageStatusResponse
 }
 
-func normalizeInitialAgentMessage(message string) (string, int, error) {
+// normalizeAgentMessage validates a message for an agent of the given kind.
+// Every agent gets valid, non-blank UTF-8 with normalized line endings; only
+// terminal agents, which receive it as pasted input, also refuse control
+// characters and large messages.
+func normalizeAgentMessage(message string, kind localruntime.LaunchTargetKind) (string, int, error) {
 	if !utf8.ValidString(message) {
 		return "", 0, errors.New("message must be valid UTF-8")
 	}
@@ -66,16 +72,30 @@ func normalizeInitialAgentMessage(message string) (string, int, error) {
 	if strings.TrimSpace(message) == "" {
 		return "", 0, errors.New("message must not be blank")
 	}
+	if kind == localruntime.LaunchTargetACP {
+		return message, len(message), nil
+	}
 	for _, value := range message {
 		if value != '\n' && !unicode.IsPrint(value) {
 			return "", 0, fmt.Errorf("message contains unsafe control character U+%04X", value)
 		}
 	}
 	messageBytes := len(message)
-	if messageBytes > maxInitialAgentMessageBytes {
+	if messageBytes > maxTerminalAgentMessageBytes {
 		return "", 0, errors.New("message must not exceed 64 KiB after line-ending normalization")
 	}
 	return message, messageBytes, nil
+}
+
+// runtimeSessionKind is the kind of a workspace's runtime session, or empty
+// when there is none; an unknown session gets the terminal rules.
+func (s *Handler) runtimeSessionKind(workspaceID, sessionKey string) localruntime.LaunchTargetKind {
+	for _, session := range s.runtime.ListSessions(workspaceID) {
+		if session.Key == sessionKey {
+			return session.Kind
+		}
+	}
+	return ""
 }
 
 func (s *Handler) getInitialMessageStatus(
@@ -128,7 +148,7 @@ func (s *Handler) SubmitInitialMessageService(
 	if targetKey == "" {
 		return InitialMessageResult{}, httpapi.Validation("body.target_key", "target_key is required")
 	}
-	message, _, err := normalizeInitialAgentMessage(req.Message)
+	message, _, err := normalizeAgentMessage(req.Message, s.runtimeSessionKind(req.WorkspaceID, req.RuntimeSessionKey))
 	if err != nil {
 		return InitialMessageResult{}, httpapi.Validation("body.message", err.Error())
 	}
@@ -196,7 +216,7 @@ func (s *Handler) SubmitAgentMessageService(
 			"runtime_session_key", "runtime_session_key is required",
 		)
 	}
-	message, messageBytes, err := normalizeInitialAgentMessage(message)
+	message, messageBytes, err := normalizeAgentMessage(message, s.runtimeSessionKind(workspaceID, runtimeSessionKey))
 	if err != nil {
 		return AgentMessageResult{}, httpapi.Validation("message", err.Error())
 	}

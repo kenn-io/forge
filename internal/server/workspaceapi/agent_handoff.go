@@ -99,7 +99,7 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 			"body.target_key", "target_key is not an available agent launch target",
 		)
 	}
-	message, _, err := normalizeInitialAgentMessage(req.Message)
+	message, _, err := normalizeAgentMessage(req.Message, workspaceRuntimeTargetKind(s.runtime, targetKey))
 	if err != nil {
 		return WorkspaceAgentHandoffResult{}, httpapi.Validation("body.message", err.Error())
 	}

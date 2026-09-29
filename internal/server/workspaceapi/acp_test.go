@@ -185,6 +185,14 @@ func TestACPRuntimeReportsSessionsAndReleasesUnwrittenPrompt(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(initialMessageDelivered, status.State)
 	assert.Equal(int32(1), peer.prompts.Load())
+
+	// ACP prompts are protocol messages, not pasted terminal input: no size
+	// limit and no control-character refusal.
+	large := "review\tthis " + strings.Repeat("a", 256<<10)
+	result, err := handler.SubmitAgentMessageService(ctx, "workspace", "chat-runtime", large)
+	require.NoError(err)
+	assert.Equal(len(large), result.MessageBytes)
+	assert.Equal(int32(2), peer.prompts.Load())
 }
 
 // stallingChat is an ACP chat whose prompts wait on the agent until released.

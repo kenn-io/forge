@@ -385,7 +385,7 @@ question all assumptions
 
 `agent` is a workspace agent key. Labels must be unique (case-insensitive).
 Prompts may contain printable text and line breaks, and are limited to 64 KiB,
-the same rules as an agent's first message. A
+the same rules as a terminal agent's first message. A
 quick action whose agent is missing or unavailable stays visible but disabled
 until the agent is fixed.
 

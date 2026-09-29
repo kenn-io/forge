@@ -97,8 +97,12 @@
   prompt only in daemon memory. Same-daemon retries must match the live runtime
   target and prompt; daemon restart permits a fresh attempt
   (`internal/server/workspaceapi/initial_message.go::initialMessageAttempt`).
-- Terminal initial input requires an exact live agent runtime and matching target, LF or
-  printable Unicode, and tracked bracketed paste for multiline text. Hook
+- Agent messages must be non-blank valid UTF-8; only terminal agents also limit them to LF or
+  printable Unicode within 64 KiB. ACP prompts have no further limits, so validate against
+  the target's protocol before creating anything
+  (`internal/server/workspaceapi/initial_message.go::normalizeAgentMessage`).
+- Terminal initial input requires an exact live agent runtime and matching target
+  and tracked bracketed paste for multiline text. Hook
   observation is not a submission precondition. If safe paste mode is not
   observed yet, release the no-write reservation and retry only that typed
   condition on the same runtime until the handoff deadline. Terminal writes

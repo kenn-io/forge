@@ -98,12 +98,11 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 
 // Each update replaces the advertised set; it is not a delta.
 func acpCommands(commands []acpsdk.AvailableCommand) []ACPCommandInfo {
-	commands = commands[:min(len(commands), maxACPListEntries)]
 	out := make([]ACPCommandInfo, 0, len(commands))
 	for _, command := range commands {
-		info := ACPCommandInfo{Name: boundText(command.Name, maxACPLabelBytes), Description: boundText(command.Description, maxACPLabelBytes)}
+		info := ACPCommandInfo{Name: command.Name, Description: command.Description}
 		if command.Input != nil && command.Input.Unstructured != nil {
-			info.InputHint = boundText(command.Input.Unstructured.Hint, maxACPLabelBytes)
+			info.InputHint = command.Input.Unstructured.Hint
 		}
 		out = append(out, info)
 	}

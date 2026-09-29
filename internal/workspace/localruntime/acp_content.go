@@ -190,34 +190,11 @@ func acpToolLocations(locations []acpsdk.ToolCallLocation) []ACPToolLocation {
 }
 
 func acpPlan(entries []acpsdk.PlanEntry) []ACPPlanEntry {
-	entries = entries[:min(len(entries), maxACPListEntries)]
 	out := make([]ACPPlanEntry, 0, len(entries))
 	for _, entry := range entries {
-		out = append(out, ACPPlanEntry{Content: boundText(entry.Content, maxACPPlanEntryBytes), Priority: string(entry.Priority), Status: string(entry.Status)})
+		out = append(out, ACPPlanEntry{Content: entry.Content, Priority: string(entry.Priority), Status: string(entry.Status)})
 	}
 	return out
-}
-
-// Agent-controlled lists and labels outside the transcript budget are bounded
-// here, so one oversized update cannot bloat every snapshot and the saved
-// session.
-const (
-	maxACPListEntries    = 500
-	maxACPLabelBytes     = 1 << 10
-	maxACPPlanEntryBytes = 4 << 10
-	maxACPErrorDataBytes = 16 << 10
-)
-
-// boundText cuts text to at most limit bytes on a rune boundary.
-func boundText(text string, limit int) string {
-	if len(text) <= limit {
-		return text
-	}
-	cut := limit
-	for cut > 0 && !utf8.RuneStart(text[cut]) {
-		cut--
-	}
-	return text[:cut] + "…"
 }
 
 // acpRawJSON renders raw tool input or output for display, bounded in size.

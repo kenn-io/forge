@@ -226,13 +226,13 @@ func (a *ACP) setErrorLocked(err error) {
 	if err == nil {
 		return
 	}
-	a.state.Error = boundText(err.Error(), maxACPErrorDataBytes)
+	a.state.Error = err.Error()
 	if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok {
-		a.state.Error = boundText(requestErr.Message, maxACPErrorDataBytes)
+		a.state.Error = requestErr.Message
 		a.state.ErrorCode = &requestErr.Code
 		if requestErr.Data != nil {
 			data, _ := json.Marshal(requestErr.Data, jsontext.WithIndent("  "))
-			a.state.ErrorData = boundText(string(data), maxACPErrorDataBytes)
+			a.state.ErrorData = string(data)
 		}
 	}
 }

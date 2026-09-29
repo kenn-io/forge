@@ -980,6 +980,28 @@ describe("ACPWorkspace transcript paging", () => {
     await push({ messages: range(201, 203), messageOffset: 201, messageCount: 203 });
     expect(texts()).toEqual(["Message 201", "Message 202"]);
   });
+
+  it("settles a resent prompt the host acknowledges outside the visible window", async () => {
+    const composer = () => screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    await openChat({ messages: range(200, 202), messageOffset: 200, messageCount: 202 });
+    await fireEvent.input(composer(), { target: { value: "Sent while offline" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+    const prompts = () => sentCommands().filter((command) => (command as { type: string }).type === "prompt");
+    const { id } = prompts()[0] as { id: string };
+
+    // The host took the prompt while this chat was away, and it has since
+    // left the window, so the resync resends it.
+    socket.options!.onOpen?.();
+    await push({ messages: range(400, 402), messageOffset: 400, messageCount: 402 });
+    expect(prompts()).toHaveLength(2);
+    expect((prompts()[1] as { id: string }).id).toBe(id);
+
+    socket.options!.onMessage(JSON.stringify({ accepted: { command: "prompt", id } }));
+    await tick();
+    expect(composer().value).toBe("");
+    await fireEvent.input(composer(), { target: { value: "Next" } });
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(false);
+  });
 });
 
 describe("ACPWorkspace composer size", () => {

@@ -18,6 +18,7 @@ const decodeFrame = Schema.decodeUnknownOption(
       HistoryFrameSchema,
       // A failed command names itself so only that request is settled.
       Schema.Struct({ commandError: Schema.String, command: Schema.String, id: Schema.String }),
+      Schema.Struct({ accepted: Schema.Struct({ command: Schema.String, id: Schema.String }) }),
     ]),
   ),
 );
@@ -71,6 +72,8 @@ export function makeChatSession(options: {
   onState: (state: ChatState) => void;
   /** A failed command carries its type and ID; other errors carry neither. */
   onError: (message: string, failed?: { command: string; id: string }) => void;
+  /** The host took a command this client sent. */
+  onAccepted?: (accepted: { command: string; id: string }) => void;
   onConnection: (connected: boolean) => void;
   /** Whether an earlier-history request is in flight. */
   onHistoryLoading?: (loading: boolean) => void;
@@ -119,6 +122,8 @@ export function makeChatSession(options: {
       if ("commandError" in frame) {
         if (frame.command === "history") setHistoryLoading(false);
         options.onError(frame.commandError, { command: frame.command, id: frame.id });
+      } else if ("accepted" in frame) {
+        options.onAccepted?.(frame.accepted);
       } else if ("history" in frame) {
         transcript = prependPage(transcript, frame.history.offset, frame.history.messages);
         setHistoryLoading(false);

@@ -301,3 +301,27 @@ func TestACPChatErrorsNameTheFailedCommand(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"commandError":"refused","command":"cancel","id":""}`, string(data))
 }
+
+// acceptingChat takes every command.
+type acceptingChat struct{ stallingChat }
+
+func (c *acceptingChat) Command(localruntime.ACPCommand) error { return nil }
+
+// An accepted prompt is acknowledged to its sender, so a retried submission
+// the host already has, which changes no state, still settles.
+func TestACPChatAcknowledgesAcceptedPrompts(t *testing.T) {
+	chat := &acceptingChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
+	defer server.Close()
+	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	require.NoError(t, err)
+	defer conn.CloseNow()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"cancel"}`)))
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","text":"hello","id":"submission-1"}`)))
+	_, data, err := conn.Read(ctx)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"accepted":{"command":"prompt","id":"submission-1"}}`, string(data), "only the prompt is acknowledged")
+}

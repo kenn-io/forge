@@ -78,7 +78,9 @@ Rules:
 - Never cap or truncate ACP data in either direction (prompts, commands, plans, media, tool
   output, errors, websocket frames, command backlogs); a session too large for the UI pages older
   history in. The chat socket's reader never waits on queued prompts, so a stop or answer
-  always gets through (`internal/server/workspaceapi/acp.go::serveACP`).
+  always gets through, and every accepted prompt, including a deduplicated retry, is
+  acknowledged to its sender; clients never infer acceptance only from the transcript window
+  (`internal/server/workspaceapi/acp.go::serveACP`).
 - Command output arrives as Zed terminal tool-call metadata (`terminal_output_delta`,
   `terminal_exit`), keyed by terminal ID (`internal/workspace/localruntime/acp_content.go::applyTerminalMeta`).
 - Project-worktree runtime APIs expose terminal targets only. ACP targets require

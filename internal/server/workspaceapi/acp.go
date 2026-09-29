@@ -20,6 +20,12 @@ type acpCommandError struct {
 	ID      string `json:"id"`
 }
 
+// acpAccepted acknowledges a command to the client that sent it.
+type acpAccepted struct {
+	Command string `json:"command"`
+	ID      string `json:"id"`
+}
+
 func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat) {
 	conn, err := terminalwebsocket.Accept(w, r)
 	if err != nil {
@@ -32,14 +38,21 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 	changes, unsubscribe := agent.Subscribe()
 	defer unsubscribe()
 	run := func(command localruntime.ACPCommand) bool {
-		if err := agent.Command(command); err != nil {
+		err := agent.Command(command)
+		var data []byte
+		var marshalErr error
+		switch {
+		case err != nil:
 			// Command failures belong to this caller, not every attached browser.
-			data, marshalErr := json.Marshal(acpCommandError{Message: err.Error(), Command: command.Type, ID: command.ID})
-			if marshalErr != nil || conn.Write(ctx, websocket.MessageText, data) != nil {
-				return false
-			}
+			data, marshalErr = json.Marshal(acpCommandError{Message: err.Error(), Command: command.Type, ID: command.ID})
+		case command.Type == "prompt":
+			// The sender learns its prompt was taken even when a retry changed
+			// nothing, or the message has left the window it can see.
+			data, marshalErr = json.Marshal(map[string]acpAccepted{"accepted": {Command: command.Type, ID: command.ID}})
+		default:
+			return true
 		}
-		return true
+		return marshalErr == nil && conn.Write(ctx, websocket.MessageText, data) == nil
 	}
 	// Prompts and settings can wait on the agent; they run in order on their
 	// own goroutine so a stalled one never stops this connection from reading

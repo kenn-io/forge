@@ -73,6 +73,10 @@
   const composerPlaceholder = $derived(!running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
   const queueShortcutLabel = kbdGlyph({ key: "Enter", alt: true });
 
+  function settlePending() {
+    if (pending && draft === pending.text) draft = "";
+    pending = null;
+  }
   $effect(() => {
     const path = websocketPath;
     const initialStatus = status;
@@ -93,10 +97,12 @@
               session.send({ type: "prompt", ...pending });
             }
           }
-          if (pending && accepted(pending.id)) {
-            if (draft === pending.text) draft = "";
-            pending = null;
-          }
+          if (pending && accepted(pending.id)) settlePending();
+        },
+        // Covers a retried prompt the host already had, which may sit outside
+        // the transcript window this chat can see.
+        onAccepted: ({ command, id }) => {
+          if (command === "prompt" && pending?.id === id) settlePending();
         },
         onError: (message, failed) => {
           error = message;

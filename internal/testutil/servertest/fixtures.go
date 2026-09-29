@@ -95,15 +95,15 @@ func SetupGitLabIssueMutatorServer(t *testing.T, createIssueErr error) *server.S
 	database := dbtest.Open(t)
 
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "group",
-		Name:               "project",
-		RepoPath:           "group/project",
-		PlatformID:         4242,
-		WebURL:             "https://gitlab.example.com/group/project",
-		CloneURL:           "https://gitlab.example.com/group/project.git",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		PlatformID:    4242,
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}
 	provider := &serverfake.IssueMutatorGitLabProvider{
 		Ref: ref,
@@ -139,15 +139,15 @@ func SetupGitLabIssueMutatorServer(t *testing.T, createIssueErr error) *server.S
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:           platform.KindGitLab,
-		Owner:              "group",
-		Name:               "project",
-		PlatformHost:       "gitlab.example.com",
-		RepoPath:           "group/project",
-		PlatformRepoID:     4242,
-		WebURL:             "https://gitlab.example.com/group/project",
-		CloneURL:           "https://gitlab.example.com/group/project.git",
-		DefaultBranch:      "main",
+		Platform:       platform.KindGitLab,
+		Owner:          "group",
+		Name:           "project",
+		PlatformHost:   "gitlab.example.com",
+		RepoPath:       "group/project",
+		PlatformRepoID: 4242,
+		WebURL:         "https://gitlab.example.com/group/project",
+		CloneURL:       "https://gitlab.example.com/group/project.git",
+		DefaultBranch:  "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,

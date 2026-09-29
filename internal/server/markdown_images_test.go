@@ -149,7 +149,7 @@ func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	srv.markdownImages = providerapi.NewMarkdownImageCache(t.TempDir())
-	_, err = reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	_, err = reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	rr := repoBrowserRequest(t, srv, http.MethodGet,

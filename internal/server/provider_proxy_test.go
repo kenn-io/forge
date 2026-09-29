@@ -321,7 +321,7 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	))
 
 	spoke, spokeDatabase, _ := setupTestServer(t)
-	spokeRepoID, err := reposeed.Seed(t.Context(), spokeDatabase, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	spokeRepoID, err := reposeed.Seed(t.Context(), spokeDatabase, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	spoke.providerSource = &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,

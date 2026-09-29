@@ -4176,5 +4176,3 @@ func TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback(t *testing.
 	assert.Contains(string(resp.Body), `"blocking_number":100`)
 	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
 }
-
-

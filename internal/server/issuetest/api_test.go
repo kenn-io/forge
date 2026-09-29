@@ -1717,7 +1717,7 @@ func TestAPIEditIssueMissing404(t *testing.T) {
 	require := require.New(t)
 	srv, database := servertest.SetupTestServer(t)
 	// Register the repo without the issue.
-	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	rr := testutil.DoJSON(t, srv, http.MethodPatch,

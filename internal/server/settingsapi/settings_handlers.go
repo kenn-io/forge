@@ -117,8 +117,8 @@ func (s *Handlers) HiddenRepoCorrelationSet(
 	for _, repo := range hidden {
 		set.ids[repo.ID] = struct{}{}
 		key := trackedRepoIdentityKey(ghclient.RepoRef{
-			Platform:           httpapi.ProviderKind(repo),
-			PlatformHost:       httpapi.ProviderHost(repo),
+			Platform:       httpapi.ProviderKind(repo),
+			PlatformHost:   httpapi.ProviderHost(repo),
 			PlatformRepoID: repo.PlatformRepoID,
 		})
 		if key == "" {

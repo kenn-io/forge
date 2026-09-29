@@ -59,7 +59,7 @@ func newSplitTestServerWithMock(
 	set.Upsert(splitTestDescriptor(writeCandidate))
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{TokenSources: set})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
-	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 	return srv, set, syncer
 }

@@ -325,7 +325,7 @@ name = "widgets"
 platform_host = "ghe.example.com"
 `, &serverfake.MockGH{})
 
-	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("ghe.example.com", "acme", "widgets"),)
+	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("ghe.example.com", "acme", "widgets"))
 	require.NoError(err)
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:        "acme",

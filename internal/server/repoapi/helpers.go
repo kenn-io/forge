@@ -118,24 +118,22 @@ func configuredDBRepoKey(repo db.Repo) string {
 
 func (s *Handlers) RepoResponse(repo db.Repo) itemapi.RepoResponse {
 	return itemapi.RepoResponse{
-		RepoCatalogResponse: itemapi.RepoCatalogResponse{
-			ID:                  repo.ID,
-			Platform:            repo.Platform,
-			PlatformHost:        repo.PlatformHost,
-			PlatformRepoID:      repo.PlatformRepoID,
-			Owner:               repo.Owner,
-			Name:                repo.Name,
-			LastSyncStartedAt:   repo.LastSyncStartedAt,
-			LastSyncCompletedAt: repo.LastSyncCompletedAt,
-			LastSyncError:       repo.LastSyncError,
-			AllowSquashMerge:    repo.AllowSquashMerge,
-			AllowMergeCommit:    repo.AllowMergeCommit,
-			AllowRebaseMerge:    repo.AllowRebaseMerge,
-			ViewerCanMerge:      repo.ViewerCanMerge,
-			CreatedAt:           repo.CreatedAt,
-		},
-		Capabilities: s.RepoResolver.CapabilitiesForRepo(repo),
-		Operations:   s.RepoOperations(repo),
+		ID:                  repo.ID,
+		Platform:            repo.Platform,
+		PlatformHost:        repo.PlatformHost,
+		PlatformRepoID:      repo.PlatformRepoID,
+		Owner:               repo.Owner,
+		Name:                repo.Name,
+		LastSyncStartedAt:   repo.LastSyncStartedAt,
+		LastSyncCompletedAt: repo.LastSyncCompletedAt,
+		LastSyncError:       repo.LastSyncError,
+		AllowSquashMerge:    repo.AllowSquashMerge,
+		AllowMergeCommit:    repo.AllowMergeCommit,
+		AllowRebaseMerge:    repo.AllowRebaseMerge,
+		ViewerCanMerge:      repo.ViewerCanMerge,
+		CreatedAt:           repo.CreatedAt,
+		Capabilities:        s.RepoResolver.CapabilitiesForRepo(repo),
+		Operations:          s.RepoOperations(repo),
 	}
 }
 

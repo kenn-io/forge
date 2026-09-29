@@ -1558,7 +1558,7 @@ func TestAPIResolveItemMapsLookupOutcomes(t *testing.T) {
 				},
 			}
 			srv, database := servertest.SetupTestServerWithMock(t, mock)
-			_, err := reposeed.Seed(ctx, database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+			_, err := reposeed.Seed(ctx, database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 			require.NoError(err)
 
 			rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repo/gh/acme/widget/resolve/5", nil)
@@ -2536,7 +2536,7 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 func TestAPIHeadRepoKindClassifiesSameRepoForkAndUnknown(t *testing.T) {
 	require := require.New(t)
 	srv, database := servertest.SetupTestServer(t)
-	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
 	for index, test := range []struct {
@@ -2568,5 +2568,3 @@ func TestAPIHeadRepoKindClassifiesSameRepoForkAndUnknown(t *testing.T) {
 		assert.Equal(t, test.want, string(detail.HeadRepoKind))
 	}
 }
-
-

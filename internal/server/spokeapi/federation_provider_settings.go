@@ -18,9 +18,9 @@ type ProviderSettingsResponse struct {
 }
 
 type ProviderRepositoryObservation struct {
-	Provider       string    `json:"provider"`
-	PlatformHost   string    `json:"platform_host"`
-	PlatformRepoID int64     `json:"platform_repo_id"`
+	Provider       string `json:"provider"`
+	PlatformHost   string `json:"platform_host"`
+	PlatformRepoID int64  `json:"platform_repo_id"`
 	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 	RepoPath       string `json:"repo_path"`

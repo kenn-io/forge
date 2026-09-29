@@ -1550,7 +1550,7 @@ func TestAPITriggerSyncStopsDetailDrainAfterDisabledIndexResult(t *testing.T) {
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget",
 	}
-	repoID, err := reposeed.Seed(ctx, database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	repoID, err := reposeed.Seed(ctx, database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	for _, number := range []int{1, 2} {
 		_, err = database.UpsertIssue(ctx, &db.Issue{

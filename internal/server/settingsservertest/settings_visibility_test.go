@@ -33,7 +33,7 @@ func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
 		Owner:              "acme-renamed",
 		Name:               "widget-renamed",
 		PlatformHost:       "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -69,7 +69,7 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformRepoID: 1002,
+		PlatformRepoID:     1002,
 		ConfiguredRepoPath: "acme/widget",
 	}})
 	rr := testutil.DoJSON(t, srv, http.MethodPut,
@@ -82,19 +82,19 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 	// the route. The displaced row keeps its old display route without being
 	// the current occupant.
 	entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: 1003,
-			Owner:          "acme",
-			Name:           "widget",
-		})
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: 1003,
+		Owner:          "acme",
+		Name:           "widget",
+	})
 	require.NoError(err)
 	require.NotNil(entry)
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformRepoID: 1003,
+		PlatformRepoID:     1003,
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -137,12 +137,12 @@ func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 		Name:           "widget",
 	})
 	entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: 1003,
-			Owner:          "acme",
-			Name:           "widget",
-		})
+		Platform:       "github",
+		PlatformHost:   "github.com",
+		PlatformRepoID: 1003,
+		Owner:          "acme",
+		Name:           "widget",
+	})
 	require.NoError(err)
 	require.NotNil(entry)
 
@@ -151,7 +151,7 @@ func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformRepoID: 1002,
+		PlatformRepoID:     1002,
 		ConfiguredRepoPath: "acme/widget",
 	}})
 

@@ -2478,24 +2478,24 @@ func TestHandleBulkAddReposPersistsGitLabProviderIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitLab,
-		Host:               "gitlab.example.com",
-		Owner:              "Group/Subgroup",
-		Name:               "Project",
-		RepoPath:           "Group/Subgroup/Project",
-		PlatformID:         4242,
-		WebURL:             "https://gitlab.example.com/Group/Subgroup/Project",
-		CloneURL:           "https://gitlab.example.com/Group/Subgroup/Project.git",
-		DefaultBranch:      "main",
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "Group/Subgroup",
+		Name:          "Project",
+		RepoPath:      "Group/Subgroup/Project",
+		PlatformID:    4242,
+		WebURL:        "https://gitlab.example.com/Group/Subgroup/Project",
+		CloneURL:      "https://gitlab.example.com/Group/Subgroup/Project.git",
+		DefaultBranch: "main",
 	}
 	provider := repoImportTestProvider{
 		kind: platform.KindGitLab,
 		host: "gitlab.example.com",
 		repos: []platform.Repository{{
-			Ref:                ref,
-			WebURL:             ref.WebURL,
-			CloneURL:           ref.CloneURL,
-			DefaultBranch:      ref.DefaultBranch,
+			Ref:           ref,
+			WebURL:        ref.WebURL,
+			CloneURL:      ref.CloneURL,
+			DefaultBranch: ref.DefaultBranch,
 		}},
 	}
 	srv, database, cfgPath, syncer := setupTestServerWithConfigProviders(t, `
@@ -2631,12 +2631,12 @@ port = 8091
 	assert.True(syncer.IsTrackedRepoOnHost("Team", "Service", "gitea.example.com"))
 
 	ref := platform.RepoRef{
-		Platform:           platform.KindGitea,
-		Host:               "gitea.example.com",
-		Owner:              "Team",
-		Name:               "Service",
-		RepoPath:           "Team/Service",
-		PlatformID:         6262,
+		Platform:   platform.KindGitea,
+		Host:       "gitea.example.com",
+		Owner:      "Team",
+		Name:       "Service",
+		RepoPath:   "Team/Service",
+		PlatformID: 6262,
 	}
 	dbRepo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)

@@ -387,7 +387,7 @@ func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, _ := newServerWithRateTracker(t)
-	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	// Keep merge available so this fixture isolates the healthy path.
 	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
@@ -409,7 +409,7 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, rt := newServerWithRateTracker(t)
-	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	// Keep merge available so this fixture isolates rate limiting.
 	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
@@ -458,7 +458,7 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	// Keep merge available so this fixture isolates GraphQL tracker state.
 	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
@@ -505,7 +505,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 		t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-		_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+		_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 		require.NoError(err)
 		gqlRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
 
@@ -685,7 +685,7 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	// Keep merge available so this fixture isolates write tracker state.
 	require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
@@ -843,7 +843,7 @@ func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
 	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
-	_, err = reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	_, err = reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
@@ -880,7 +880,7 @@ func TestAPIRepoResponseDisablesWritesWhenConfiguredRouterHasNoRoute(t *testing.
 	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
-	_, err = reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "other", "widget"),)
+	_, err = reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "other", "widget"))
 	require.NoError(err)
 
 	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/other/widget", nil)
@@ -940,7 +940,7 @@ func newSplitTestServerWithMock(
 	set.Upsert(splitTestDescriptor(writeCandidate))
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{TokenSources: set})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
-	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 	return srv, set, syncer
 }
@@ -950,7 +950,7 @@ func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 	assert := assert.New(t)
 
 	srv, database, _ := setupTestServer(t)
-	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),)
+	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	// Schema defaults viewer_can_merge to 1; flip to false so the
 	// merge gate (not the capability gate) decides this case.

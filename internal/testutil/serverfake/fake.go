@@ -800,9 +800,9 @@ name = "widget"
 
 var DefaultTestRepos = []ghclient.RepoRef{
 	{
-		Platform:           "github",
-		Owner:              "acme",
-		Name:               "widget",
+		Platform:       "github",
+		Owner:          "acme",
+		Name:           "widget",
 		PlatformHost:   "github.com",
 		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
 		CloneURL:       "https://github.com/acme/widget.git",
@@ -2047,7 +2047,7 @@ func SeedWorkspace(
 	number int,
 ) {
 	t.Helper()
-	repoID, err := reposeed.Seed(t.Context(), database, VerifiedGitHubRepoIdentity("github.com", owner, name),)
+	repoID, err := reposeed.Seed(t.Context(), database, VerifiedGitHubRepoIdentity("github.com", owner, name))
 	require.NoError(t, err)
 	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
 		ID:              id,

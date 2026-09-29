@@ -658,6 +658,21 @@ describe("ACPWorkspace rich content", () => {
     expect(screen.getByText("Image unavailable")).toBeTruthy();
   });
 
+  it("never renders SVG from the agent as an image", async () => {
+    const svg = btoa('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    await openChat({
+      messages: [
+        assistant({ type: "image", mimeType: "image/svg+xml", data: svg }),
+        assistant({ type: "resource", uri: "file:///work/logo.svg", mimeType: "image/svg+xml", data: svg }),
+      ],
+    });
+
+    // Like data: images in markdown, only raster formats render inline.
+    expect(document.querySelector("img")).toBeNull();
+    expect(screen.getByText("Image unavailable")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Download/ })).toBeTruthy();
+  });
+
   it("plays audio with native controls", async () => {
     await openChat({ messages: [assistant({ type: "audio", mimeType: "audio/wav", data: "UklGRg==" })] });
 

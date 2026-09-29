@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json/v2"
 	"io"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/agentactivity"
 )
 
 func TestDeliverableTextPrefix(t *testing.T) {
@@ -46,7 +49,15 @@ func newDetachedACP(t *testing.T) *ACP {
 		state:        ACPState{Connected: true},
 	}
 	agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
-	t.Cleanup(func() { _ = peerWriter.Close(); _ = peerReader.Close(); close(agent.done) })
+	t.Cleanup(func() {
+		_ = peerWriter.Close()
+		_ = peerReader.Close()
+		select {
+		case <-agent.done:
+		default:
+			close(agent.done)
+		}
+	})
 	return agent
 }
 
@@ -165,4 +176,47 @@ func TestACPStopDoesNotWaitForOtherControls(t *testing.T) {
 	state := publishedACPState(t, agent)
 	assert.True(t, state.Stopping)
 	assert.True(t, state.QueuePaused)
+}
+
+// An owner that crashed leaves its report behind; the replacement owner, maybe
+// under a new ACP session ID, must be the only report for the runtime.
+func TestACPActivityReplacesReportsLeftByAnEarlierOwner(t *testing.T) {
+	store := agentactivity.NewStore(t.TempDir())
+	cwd := t.TempDir()
+	require.NoError(t, store.Record(ACPActivityAgent, "crashed-session", "runtime", cwd, agentactivity.StateApproval))
+	agent := newDetachedACP(t)
+	reported := make(chan struct{})
+	go func() {
+		defer close(reported)
+		reportACPActivity(store, agent, "runtime", cwd)
+	}()
+
+	require.Eventually(t, func() bool {
+		reports := store.LiveReportsForWorkspace(cwd, []string{"runtime"})
+		return len(reports) == 1 && reports[0].SessionID == "session" && reports[0].State == agentactivity.StateIdle
+	}, 2*time.Second, 10*time.Millisecond)
+	close(agent.done)
+	<-reported
+	assert.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+}
+
+func TestACPBoundsAgentControlledLists(t *testing.T) {
+	commands := make([]acpsdk.AvailableCommand, maxACPListEntries+10)
+	for i := range commands {
+		commands[i] = acpsdk.AvailableCommand{Name: "cmd", Description: strings.Repeat("d", maxACPLabelBytes*4)}
+	}
+	bounded := acpCommands(commands)
+	require.Len(t, bounded, maxACPListEntries)
+	assert.LessOrEqual(t, len(bounded[0].Description), maxACPLabelBytes+len("…"))
+
+	plan := acpPlan([]acpsdk.PlanEntry{{Content: strings.Repeat("é", maxACPPlanEntryBytes)}})
+	assert.LessOrEqual(t, len(plan[0].Content), maxACPPlanEntryBytes+len("…"))
+	assert.True(t, utf8.ValidString(plan[0].Content), "cuts land on rune boundaries")
+
+	agent := newDetachedACP(t)
+	agent.mu.Lock()
+	agent.setErrorLocked(&acpsdk.RequestError{Code: -32603, Message: "boom", Data: strings.Repeat("x", maxACPErrorDataBytes*2)})
+	agent.mu.Unlock()
+	state := publishedACPState(t, agent)
+	assert.LessOrEqual(t, len(state.ErrorData), maxACPErrorDataBytes+len("…"))
 }

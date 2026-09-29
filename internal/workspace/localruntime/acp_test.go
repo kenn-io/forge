@@ -98,6 +98,8 @@ func TestACPStdioHelper(t *testing.T) {
 				}
 				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"remember"}}}}`)
 				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"restored answer"}}}}`)
+				// Commands arrive during the replay, before the load answer.
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review changes"}]}}}`)
 			}
 			var params struct {
 				CWD        string `json:"cwd"`
@@ -116,7 +118,9 @@ func TestACPStdioHelper(t *testing.T) {
 				_ = os.WriteFile(filepath.Join(fixtureDir, "mcp.json"), data, 0o600)
 			}
 			configResponse(message.ID)
-			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review changes","input":{"hint":"focus area"}},{"name":"compact","description":"Compact history"}]}}}`)
+			if message.Method == "session/new" {
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review changes","input":{"hint":"focus area"}},{"name":"compact","description":"Compact history"}]}}}`)
+			}
 		case "session/set_config_option":
 			var params struct {
 				ConfigID string `json:"configId"`
@@ -178,6 +182,9 @@ func TestACPStdioHelper(t *testing.T) {
 				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call","toolCallId":"edit","title":"Edit file","status":"pending","content":[{"type":"diff","path":"/tmp/example.txt","oldText":"before","newText":"after"}]}}}`)
 				fmt.Println(`{"jsonrpc":"2.0","id":"approval","method":"session/request_permission","params":{"sessionId":"fixture-session","toolCall":{"toolCallId":"edit","title":"Edit file"},"options":[{"optionId":"allow","name":"Allow once","kind":"allow_once"},{"optionId":"deny","name":"Reject","kind":"reject_once"}]}}`)
 			} else if params.Prompt[0].Text != "wait" {
+				// Like Codex, report the thread going idle when a turn ends.
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"session_info_update","_meta":{"codex":{"threadStatus":{"type":"active"}}}}}}`)
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"session_info_update","_meta":{"codex":{"threadStatus":{"type":"idle"}}}}}}`)
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
 			}
 		case "_session/steering":

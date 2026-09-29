@@ -31,6 +31,11 @@ func (a *ACP) activityLocked() agentactivity.State {
 // then removes the report. It runs in the durable owner so activity stays
 // current while the daemon is stopped or the workspace is closed.
 func reportACPActivity(store *agentactivity.Store, agent *ACP, runtimeSessionKey, cwd string) {
+	// An owner that crashed left its report behind, possibly under a session
+	// ID this owner no longer uses; it must not keep reporting for the runtime.
+	if err := store.RemoveRuntimeSession(runtimeSessionKey); err != nil {
+		slog.Warn("clear stale ACP activity", "session_key", runtimeSessionKey, "err", err)
+	}
 	changes, unsubscribe := agent.Subscribe()
 	defer unsubscribe()
 	var last agentactivity.State

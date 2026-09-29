@@ -159,6 +159,9 @@ func testACPReloadsSavedSession(t *testing.T, sessions, errorText string) {
 	assert.NotContains(string(data), "restored answer")
 	if errorText == "" {
 		assert.Empty(state.Error)
+		// Commands the agent advertises during the reload are current state,
+		// not replayed history.
+		assert.Equal([]ACPCommandInfo{{Name: "review", Description: "Review changes"}}, state.Commands)
 	} else {
 		assert.Contains(state.Error, errorText)
 	}

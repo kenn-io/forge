@@ -16,10 +16,15 @@ var _ acpsdk.Client = (*ACP)(nil)
 func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.replaying || (a.sessionID != "" && string(params.SessionId) != a.sessionID) {
+	if a.sessionID != "" && string(params.SessionId) != a.sessionID {
 		return nil
 	}
 	u := params.Update
+	// A reload replays history; the saved transcript already holds it. Session
+	// settings and commands the agent sends meanwhile are current, not history.
+	if a.replaying && u.ConfigOptionUpdate == nil && u.AvailableCommandsUpdate == nil && u.SessionInfoUpdate == nil {
+		return nil
+	}
 	switch {
 	case u.ConfigOptionUpdate != nil:
 		a.state.ConfigOptions = acpConfigOptions(u.ConfigOptionUpdate.ConfigOptions)
@@ -93,11 +98,12 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 
 // Each update replaces the advertised set; it is not a delta.
 func acpCommands(commands []acpsdk.AvailableCommand) []ACPCommandInfo {
+	commands = commands[:min(len(commands), maxACPListEntries)]
 	out := make([]ACPCommandInfo, 0, len(commands))
 	for _, command := range commands {
-		info := ACPCommandInfo{Name: command.Name, Description: command.Description}
+		info := ACPCommandInfo{Name: boundText(command.Name, maxACPLabelBytes), Description: boundText(command.Description, maxACPLabelBytes)}
 		if command.Input != nil && command.Input.Unstructured != nil {
-			info.InputHint = command.Input.Unstructured.Hint
+			info.InputHint = boundText(command.Input.Unstructured.Hint, maxACPLabelBytes)
 		}
 		out = append(out, info)
 	}

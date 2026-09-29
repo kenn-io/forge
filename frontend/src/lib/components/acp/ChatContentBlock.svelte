@@ -9,6 +9,7 @@
   import {
     decodeBase64,
     formatBytes,
+    isRasterImageType,
     mediaDataURL,
     resourceFilename,
     resourceHref,
@@ -23,7 +24,8 @@
 
   const label = $derived(content.title || content.name || content.uri || "");
   const meta = $derived([content.mimeType, formatBytes(content.size)].filter(Boolean).join(" · "));
-  const isImageBlob = $derived(content.type === "resource" && !!content.mimeType?.toLowerCase().startsWith("image/"));
+  // Other embedded files, including SVG images, are offered as downloads.
+  const isImageBlob = $derived(content.type === "resource" && !!content.data && isRasterImageType(content.mimeType));
   const imageSrc = $derived(
     content.type === "image" || isImageBlob ? mediaDataURL(content, "image") : undefined,
   );

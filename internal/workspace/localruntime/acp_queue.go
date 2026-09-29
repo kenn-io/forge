@@ -226,13 +226,13 @@ func (a *ACP) setErrorLocked(err error) {
 	if err == nil {
 		return
 	}
-	a.state.Error = err.Error()
+	a.state.Error = boundText(err.Error(), maxACPErrorDataBytes)
 	if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok {
-		a.state.Error = requestErr.Message
+		a.state.Error = boundText(requestErr.Message, maxACPErrorDataBytes)
 		a.state.ErrorCode = &requestErr.Code
 		if requestErr.Data != nil {
 			data, _ := json.Marshal(requestErr.Data, jsontext.WithIndent("  "))
-			a.state.ErrorData = string(data)
+			a.state.ErrorData = boundText(string(data), maxACPErrorDataBytes)
 		}
 	}
 }
@@ -245,6 +245,9 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 	// Output that arrives while the agent takes the text follows it.
 	a.releaseHeldTextLocked()
 	a.promptIndex = new(len(a.state.Messages))
+	// Only thread status reported during this steer describes a turn it may
+	// start; an idle left over from an earlier turn must not hide it.
+	a.threadStatus = ""
 	a.changedLocked()
 	a.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), acpSteeringTimeout)
@@ -281,6 +284,12 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 			// whether or not the original prompt has completed yet.
 			a.external = &acpExternalTurn{active: a.threadStatus == "active"}
 			a.state.Busy = true
+			if a.state.Stopping {
+				// A stop requested during the steer applies to the new turn too.
+				go func() {
+					_ = a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
+				}()
+			}
 		}
 		a.trimStateLocked()
 		err = a.persistLocked()

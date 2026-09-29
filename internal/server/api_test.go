@@ -36,7 +36,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/creack/pty/v2"
-	gh "github.com/google/go-github/v91/github"
+	gh "github.com/google/go-github/v92/github"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"

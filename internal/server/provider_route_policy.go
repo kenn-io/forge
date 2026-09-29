@@ -170,6 +170,7 @@ var providerRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "federation-get-diff-descriptor", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-get-provider-settings", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-get-repository-descriptor", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "federation-resolve-github-repository-id", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-import-review-draft", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderHandoff},
 	{OperationID: "federation-import-workflow-state", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderHandoff},
 	{OperationID: "federation-list-workflow-states", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},

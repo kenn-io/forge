@@ -2115,6 +2115,31 @@ func (o *FederationGetDiffDescriptorRequestOptions) GetHeader() (map[string]stri
 	return nil, nil
 }
 
+// FederationResolveGithubRepositoryIDRequestOptions is the options needed to make a request to FederationResolveGithubRepositoryID.
+type FederationResolveGithubRepositoryIDRequestOptions struct {
+	Body *FederationResolveGithubRepositoryIDBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *FederationResolveGithubRepositoryIDRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *FederationResolveGithubRepositoryIDRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *FederationResolveGithubRepositoryIDRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *FederationResolveGithubRepositoryIDRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // FederationGetRepositoryDescriptorRequestOptions is the options needed to make a request to FederationGetRepositoryDescriptor.
 type FederationGetRepositoryDescriptorRequestOptions struct {
 	Body *FederationGetRepositoryDescriptorBody
@@ -11842,6 +11867,7 @@ type ClientInterface interface {
 	FederationImportWorkflowStateWithResponse(ctx context.Context, options *FederationImportWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationImportWorkflowStateResp, error)
 	FederationFilterUnassignedActivitySubjectsWithResponse(ctx context.Context, options *FederationFilterUnassignedActivitySubjectsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationFilterUnassignedActivitySubjectsResp, error)
 	FederationGetDiffDescriptorWithResponse(ctx context.Context, options *FederationGetDiffDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetDiffDescriptorResp, error)
+	FederationResolveGithubRepositoryIDWithResponse(ctx context.Context, options *FederationResolveGithubRepositoryIDRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationResolveGithubRepositoryIDResp, error)
 	FederationGetRepositoryDescriptorWithResponse(ctx context.Context, options *FederationGetRepositoryDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetRepositoryDescriptorResp, error)
 	FederationGetProviderSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*FederationGetProviderSettingsResp, error)
 	FederationUpdateProviderSettingsWithResponse(ctx context.Context, options *FederationUpdateProviderSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationUpdateProviderSettingsResp, error)
@@ -16385,6 +16411,63 @@ func (c *Client) FederationGetDiffDescriptorWithResponse(ctx context.Context, op
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "FederationGetDiffDescriptorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// FederationResolveGithubRepositoryID Resolve a stored GitHub node ID to its integer repository ID for a Forge spoke
+func (c *Client) FederationResolveGithubRepositoryIDWithResponse(ctx context.Context, options *FederationResolveGithubRepositoryIDRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationResolveGithubRepositoryIDResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/github-repository-id",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/federation/provider/github-repository-id")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &FederationResolveGithubRepositoryIDResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(FederationResolveGithubRepositoryIDErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(FederationResolveGithubRepositoryIDResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationResolveGithubRepositoryIDResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -34572,6 +34655,22 @@ func (c *Client) FederationGetDiffDescriptorRaw(ctx context.Context, httpClient 
 	return httpClient.Do(req)
 }
 
+// FederationResolveGithubRepositoryIDRaw returns an unread response. The caller must close its body.
+func (c *Client) FederationResolveGithubRepositoryIDRaw(ctx context.Context, httpClient *http.Client, options *FederationResolveGithubRepositoryIDRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/github-repository-id",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // FederationGetRepositoryDescriptorRaw returns an unread response. The caller must close its body.
 func (c *Client) FederationGetRepositoryDescriptorRaw(ctx context.Context, httpClient *http.Client, options *FederationGetRepositoryDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -41227,6 +41326,23 @@ func NewFederationGetDiffDescriptorRequest(ctx context.Context, baseURL string, 
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/diff-descriptor",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewFederationResolveGithubRepositoryIDRequest constructs a typed request for a caller-owned transport.
+func NewFederationResolveGithubRepositoryIDRequest(ctx context.Context, baseURL string, options *FederationResolveGithubRepositoryIDRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/github-repository-id",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -49381,6 +49497,8 @@ type FederationFilterUnassignedActivitySubjectsBody = FederationUnassignedActivi
 
 type FederationGetDiffDescriptorBody = FederationDiffDescriptorRequest
 
+type FederationResolveGithubRepositoryIDBody = GitHubRepositoryIDRequest
+
 type FederationGetRepositoryDescriptorBody = RepositoryDescriptorRequest
 
 type FederationUpdateProviderSettingsBody = ProviderSettingsUpdate
@@ -50633,6 +50751,10 @@ type FederationFilterUnassignedActivitySubjectsErrorResponse = ProblemError
 type FederationGetDiffDescriptorResponse = DiffDescriptor
 
 type FederationGetDiffDescriptorErrorResponse = ProblemError
+
+type FederationResolveGithubRepositoryIDResponse = GitHubRepositoryIDResponse
+
+type FederationResolveGithubRepositoryIDErrorResponse = ProblemError
 
 type FederationGetRepositoryDescriptorResponse = RepositoryDescriptor
 
@@ -52355,6 +52477,14 @@ type FederationGetDiffDescriptorResp struct {
 	StatusCode   int
 	Error        *FederationGetDiffDescriptorErrorResponse
 	JSON200      *FederationGetDiffDescriptorResponse
+}
+
+type FederationResolveGithubRepositoryIDResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *FederationResolveGithubRepositoryIDErrorResponse
+	JSON200      *FederationResolveGithubRepositoryIDResponse
 }
 
 type FederationGetRepositoryDescriptorResp struct {
@@ -56171,6 +56301,22 @@ type GitChangesResponse struct {
 	IsRepo                  bool            `json:"is_repo"`
 	SuggestedMessage        *string         `json:"suggested_message,omitempty"`
 	Upstream                *string         `json:"upstream,omitempty"`
+}
+
+type GitHubRepositoryIDRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string `json:"$schema,omitempty"`
+	Name         string  `json:"name"`
+	NodeID       string  `json:"node_id"`
+	Owner        string  `json:"owner"`
+	PlatformHost string  `json:"platform_host"`
+}
+
+type GitHubRepositoryIDResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string `json:"$schema,omitempty"`
+	Found          bool    `json:"found"`
+	PlatformRepoID int64   `json:"platform_repo_id"`
 }
 
 type GitStatusEntry struct {

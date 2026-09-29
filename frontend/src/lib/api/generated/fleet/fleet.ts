@@ -88,6 +88,8 @@ import type {
   GetFleetWorkspaceViewStatePathParameters,
   GetSnapshotAggregateParams,
   GetSnapshotParams,
+  GitHubRepositoryIDRequest,
+  GitHubRepositoryIDResponse,
   InspectFleetProjectWorktreeDefaultOne,
   InspectFleetProjectWorktreePathParameters,
   JoinRequest,
@@ -477,6 +479,31 @@ export const federationGetDiffDescriptor = async (
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(federationDiffDescriptorRequest),
+  });
+};
+
+export const getFederationResolveGithubRepositoryIdUrl = () => {
+  return `/federation/provider/github-repository-id`;
+};
+
+/**
+ * @summary Resolve a stored GitHub node ID to its integer repository ID for a Forge spoke
+ */
+export const federationResolveGithubRepositoryId = async (
+  gitHubRepositoryIDRequest: NonReadonly<GitHubRepositoryIDRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<GitHubRepositoryIDResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<GitHubRepositoryIDResponse>(getFederationResolveGithubRepositoryIdUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(gitHubRepositoryIDRequest),
   });
 };
 

@@ -3496,6 +3496,53 @@ components:
         - changes
         - ignored_non_markdown_count
       type: object
+    GitHubRepositoryIDRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/GitHubRepositoryIDRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          minLength: 1
+          type: string
+        node_id:
+          minLength: 1
+          type: string
+        owner:
+          minLength: 1
+          type: string
+        platform_host:
+          minLength: 1
+          type: string
+      required:
+        - platform_host
+        - owner
+        - name
+        - node_id
+      type: object
+    GitHubRepositoryIDResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/GitHubRepositoryIDResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        found:
+          type: boolean
+        platform_repo_id:
+          format: int64
+          type: integer
+      required:
+        - platform_repo_id
+        - found
+      type: object
     GitStatusEntry:
       additionalProperties: false
       properties:
@@ -14057,6 +14104,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Resolve a pull diff descriptor for a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/github-repository-id:
+    post:
+      operationId: federation-resolve-github-repository-id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitHubRepositoryIDRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitHubRepositoryIDResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Resolve a stored GitHub node ID to its integer repository ID for a Forge spoke
       tags:
         - Fleet
   /federation/provider/repository-descriptor:

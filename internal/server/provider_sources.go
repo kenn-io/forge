@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -298,6 +299,48 @@ func (s *hubProviderSource) GetDiffDescriptor(
 		return providerplane.DiffDescriptor{}, err
 	}
 	return descriptor, nil
+}
+
+// convertPendingGitHubRepositories finishes the integer repository-ID
+// conversion for GitHub rows this spoke stored under node IDs. A spoke has no
+// GitHub credentials, so the hub asks GitHub on its behalf. Until a host
+// converts, the catalog refuses the hub's descriptors for it. A failed lookup
+// leaves the row pending for the next hub connection.
+func (s *hubProviderSource) convertPendingGitHubRepositories(ctx context.Context) {
+	pending, err := s.db.ListPendingGitHubRepositories(ctx)
+	if err != nil {
+		slog.Warn("list pending github repository conversions", "err", err)
+		return
+	}
+	for _, repo := range pending {
+		if ctx.Err() != nil {
+			return
+		}
+		httpRequest, err := generated.NewFederationResolveGithubRepositoryIDRequest(ctx, "/api/v1", &generated.FederationResolveGithubRepositoryIDRequestOptions{Body: &generated.GitHubRepositoryIDRequest{PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name, NodeID: repo.NodeID}})
+		if err != nil {
+			slog.Warn("build github repository id request", "err", err)
+			return
+		}
+		var resolved generated.GitHubRepositoryIDResponse
+		if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &resolved); err != nil {
+			slog.Warn("resolve github repository id through hub",
+				"repo", repo.Owner+"/"+repo.Name, "host", repo.PlatformHost, "err", err,
+			)
+			continue
+		}
+		id := resolved.PlatformRepoID
+		if !resolved.Found {
+			id = 0
+			slog.Warn("github no longer resolves stored repository; keeping it inactive",
+				"repo", repo.Owner+"/"+repo.Name, "host", repo.PlatformHost,
+			)
+		}
+		if err := s.db.CompleteGitHubRepositoryConversion(ctx, repo.RepoID, id); err != nil {
+			slog.Warn("record github repository id",
+				"repo", repo.Owner+"/"+repo.Name, "host", repo.PlatformHost, "err", err,
+			)
+		}
+	}
 }
 
 func (s *hubProviderSource) observeRepositoryDescriptor(

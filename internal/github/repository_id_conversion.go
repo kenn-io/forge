@@ -2,10 +2,32 @@ package github
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"go.kenn.io/forge/platform"
 )
+
+// ErrNoGitHubFetcher reports that no configured GitHub credential covers the
+// requested host and repository, so GitHub cannot be asked about it.
+var ErrNoGitHubFetcher = errors.New("no github credential for repository")
+
+// ResolveRepositoryNodeID asks GitHub which integer repository ID a stored node
+// ID names. owner/name only select the credential. found is false when GitHub
+// no longer resolves the node. Federation spokes have no GitHub credentials, so
+// the hub answers this for them.
+func (s *Syncer) ResolveRepositoryNodeID(
+	ctx context.Context, host, owner, name, nodeID string,
+) (int64, bool, error) {
+	fetcher := s.fetcherForContext(ctx, RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: host,
+		Owner: owner, Name: name,
+	})
+	if fetcher == nil {
+		return 0, false, ErrNoGitHubFetcher
+	}
+	return fetcher.RepositoryDatabaseID(ctx, nodeID)
+}
 
 // convertPendingGitHubRepositories replaces the GitHub node IDs stored before
 // repository identity became the integer ID. GitHub decides which repository
@@ -22,14 +44,12 @@ func (s *Syncer) convertPendingGitHubRepositories(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		fetcher := s.fetcherForContext(ctx, RepoRef{
-			Platform: platform.KindGitHub, PlatformHost: repo.PlatformHost,
-			Owner: repo.Owner, Name: repo.Name,
-		})
-		if fetcher == nil {
+		id, found, err := s.ResolveRepositoryNodeID(
+			ctx, repo.PlatformHost, repo.Owner, repo.Name, repo.NodeID,
+		)
+		if errors.Is(err, ErrNoGitHubFetcher) {
 			continue
 		}
-		id, found, err := fetcher.RepositoryDatabaseID(ctx, repo.NodeID)
 		if err != nil {
 			slog.Warn("resolve github repository id",
 				"repo", repo.Owner+"/"+repo.Name, "host", repo.PlatformHost, "err", err,

@@ -271,6 +271,10 @@ func (s *Server) resynchronizeHubProviderState(ctx context.Context) error {
 	if !s.federationEnabled() {
 		return providerplane.ErrHubUnavailable
 	}
+	if s.providerSource != nil && s.providerSource.client != nil {
+		// Converted rows let the refresh below observe hub descriptors again.
+		s.providerSource.convertPendingGitHubRepositories(ctx)
+	}
 	s.hub.Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 	if s.providerSource == nil || s.providerSource.client == nil {
 		return providerplane.ErrHubUnavailable

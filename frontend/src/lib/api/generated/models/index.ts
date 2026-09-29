@@ -414,6 +414,8 @@ export * from "./getWorkspaceRuntimeSessionAttachSpecPathParameters.ts";
 export * from "./getWorkspaceRuntimeSessionInitialMessagePathParameters.ts";
 export * from "./getWorkspaceViewStatePathParameters.ts";
 export * from "./gitChangesResponse.ts";
+export * from "./gitHubRepositoryIDRequest.ts";
+export * from "./gitHubRepositoryIDResponse.ts";
 export * from "./githubStateHostInputBody.ts";
 export * from "./githubStateInputBody.ts";
 export * from "./githubStateOutputBody.ts";

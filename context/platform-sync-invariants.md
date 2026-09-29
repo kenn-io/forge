@@ -34,6 +34,9 @@ identity. Owner, name, and `repo_path` are the repository's current route.
   catalog refuses GitHub observations for that host, so history cannot split
   across two rows (`internal/github/repository_id_conversion.go`,
   `internal/db/repository_catalog.go::ErrGitHubRepositoryConversionPending`).
+  Spokes never sync, so each hub connection converts their pending rows
+  through the hub's GitHub lookup; without it every hub descriptor fails
+  (`internal/server/provider_sources.go::hubProviderSource.convertPendingGitHubRepositories`).
   Two node IDs can name one repository; a second row resolving to an ID already
   held merges into that row, whose copy wins item conflicts. Every column holding
   a `forge_repos` id must be in `repositoryOwnedColumns`

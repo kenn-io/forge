@@ -22,6 +22,8 @@ semantics.
 
 Interactive surfaces must agree on which item is selected.
 
+- Issue route selection must not depend on settings hydration: settings can
+  fail while the issue list and detail APIs remain usable (`frontend/src/App.svelte`).
 - Treat `platform_host` as part of PR and issue identity in route state, drawer
   state, and stale-detail guards.
 - When host is omitted for a provider's default host (Activity URLs,

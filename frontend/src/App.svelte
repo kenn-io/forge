@@ -887,10 +887,7 @@
         stores.pulls.clearSelection();
       }
     } else if (route.page === "issues") {
-      if (
-        route.selected &&
-        stores.settings.hasConfiguredRepos()
-      ) {
+      if (route.selected) {
         stores.issues.selectIssue(
           route.selected.owner,
           route.selected.name,

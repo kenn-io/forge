@@ -194,6 +194,21 @@ describe("issue route platform host", () => {
     await vi.waitFor(() => expect(detailTitle()).toContain("Mirror host issue"), WAIT);
     expect(seenHosts(mounted.api.requests, 7)).toContain("ghe.example.com");
   });
+
+  it("opens a listed issue when settings failed to load", async () => {
+    mounted = await mountBrowserApp("/issues", {
+      overrides: [
+        (req) =>
+          req.url.pathname === "/api/v1/settings"
+            ? jsonResponse({ title: "Settings unavailable", status: 500 }, 500)
+            : null,
+      ],
+    });
+
+    await page.getByRole("button", { name: /Theme toggle does not stick/ }).click();
+
+    await vi.waitFor(() => expect(detailTitle()).toContain("Theme toggle does not stick"), WAIT);
+  });
 });
 
 describe("issue detail assignees", () => {

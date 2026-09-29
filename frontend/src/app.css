@@ -1,6 +1,5 @@
-/* Shared design tokens (palette, typography, spacing, radii, shadows,
-   breakpoints rationale) come from kit-ui; app.css only defines
-   kenn-forge-specific tokens on top. */
+/* Shared design tokens come from kit-ui; Forge adds app-specific tokens
+   and increases the quiet dark palette's surface contrast below. */
 @import "@kenn-io/kit-ui/theme.css";
 /* The quiet identity (system type, AA muted text, sentence-case labels);
    index.html and initTheme select it with data-kit-theme="quiet". */
@@ -100,6 +99,18 @@
   --diff-stale-text: var(--accent-amber);
   --sidebar-row-hover-bg: color-mix(in srgb, var(--bg-surface-hover) 82%, var(--text-muted) 18%);
   --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));
+}
+
+/* Separate inset controls and selected surface pills in the quiet palette.
+   Keep kit's high-contrast palette authoritative when explicitly enabled. */
+:root.dark[data-kit-theme="quiet"]:not(.high-contrast) {
+  --bg-primary: #111214; /* kit-ui-check-ignore: quiet canvas contrast override */
+  --bg-inset: #303338; /* kit-ui-check-ignore: quiet control contrast override */
+  --bg-surface-hover: #383c43; /* kit-ui-check-ignore: quiet hover contrast override */
+  --border-default: #555b65; /* kit-ui-check-ignore: quiet control edge contrast override */
+  --border-muted: #393e46; /* kit-ui-check-ignore: quiet divider contrast override */
+  --text-muted: #a0a6af; /* kit-ui-check-ignore: retains AA text contrast on the brighter controls */
+  --sidebar-row-hover-bg: var(--bg-surface-hover);
 }
 
 /* Base. The root stays at the browser default (no html font-size) so the

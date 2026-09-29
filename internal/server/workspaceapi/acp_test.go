@@ -274,3 +274,30 @@ func TestACPChatAnswersHistoryRequests(t *testing.T) {
 	assert.JSONEq(t, `{"history":{"offset":3,"messages":[]}}`, string(data))
 	assert.Equal(t, [2]int{13, 10}, <-chat.requests)
 }
+
+// failingChat refuses every command.
+type failingChat struct{ stallingChat }
+
+func (c *failingChat) Command(localruntime.ACPCommand) error { return errors.New("refused") }
+
+// A failed command names itself so the client settles only that request.
+func TestACPChatErrorsNameTheFailedCommand(t *testing.T) {
+	chat := &failingChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
+	defer server.Close()
+	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	require.NoError(t, err)
+	defer conn.CloseNow()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","text":"hello","id":"submission-1"}`)))
+	_, data, err := conn.Read(ctx)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"commandError":"refused","command":"prompt","id":"submission-1"}`, string(data))
+
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"cancel"}`)))
+	_, data, err = conn.Read(ctx)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"commandError":"refused","command":"cancel","id":""}`, string(data))
+}

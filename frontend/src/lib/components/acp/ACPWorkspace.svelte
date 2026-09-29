@@ -98,7 +98,13 @@
             pending = null;
           }
         },
-        onError: (message) => { error = message; pending = null; settingPending = false; },
+        onError: (message, failed) => {
+          error = message;
+          // Only the failed request settles; an unrelated error must not make
+          // an accepted prompt look unsent.
+          if (failed?.command === "prompt" && failed.id === pending?.id) pending = null;
+          if (failed?.command === "config") settingPending = false;
+        },
         onConnection: (value) => { connected = value; if (value) resyncPending = true; onConnectionChange?.(value); },
         onHistoryLoading: (value) => { historyLoading = value; },
       });

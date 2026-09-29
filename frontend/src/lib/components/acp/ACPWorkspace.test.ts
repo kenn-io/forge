@@ -396,12 +396,35 @@ describe("ACPWorkspace busy composer", () => {
     await fireEvent.input(composer(), { target: { value: "Keep this text" } });
     await fireEvent.keyDown(composer(), { key: "Enter" });
 
-    socket.options!.onMessage(JSON.stringify({ commandError: "The agent is not accepting prompts." }));
+    const { id } = sentCommands()[0] as { id: string };
+    socket.options!.onMessage(
+      JSON.stringify({ commandError: "The agent is not accepting prompts.", command: "prompt", id }),
+    );
     await tick();
 
     expect(screen.getByRole("alert").textContent).toContain("The agent is not accepting prompts.");
     expect(composer().value).toBe("Keep this text");
     expect((screen.getByRole("button", { name: "Queue message" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("keeps a prompt in flight when an unrelated command fails", async () => {
+    await openChat({ busy: true });
+    await fireEvent.input(composer(), { target: { value: "Keep this text" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+
+    for (const failed of [
+      { command: "history", id: "" },
+      { command: "config", id: "" },
+      { command: "prompt", id: "another-submission" },
+    ]) {
+      socket.options!.onMessage(JSON.stringify({ commandError: "Something else failed.", ...failed }));
+      await tick();
+    }
+
+    expect(screen.getByRole("alert").textContent).toContain("Something else failed.");
+    // Still in flight: the prompt cannot be sent a second time.
+    expect((screen.getByRole("button", { name: "Queue message" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(sentCommands().filter((command) => (command as { type: string }).type === "prompt")).toHaveLength(1);
   });
 
   it("lists queued prompts and removes one with unqueue", async () => {
@@ -928,7 +951,7 @@ describe("ACPWorkspace transcript paging", () => {
   it("re-enables loading after a failed request", async () => {
     await openChat({ messages: range(10, 12), messageOffset: 10, messageCount: 12 });
     await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
-    socket.options!.onMessage(JSON.stringify({ commandError: "History is unavailable." }));
+    socket.options!.onMessage(JSON.stringify({ commandError: "History is unavailable.", command: "history", id: "" }));
     await tick();
 
     expect(screen.getByRole("alert").textContent).toContain("History is unavailable.");

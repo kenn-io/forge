@@ -13,7 +13,12 @@ const HistoryFrameSchema = Schema.Struct({
 });
 const decodeFrame = Schema.decodeUnknownOption(
   Schema.fromJsonString(
-    Schema.Union([ChatStateSchema, HistoryFrameSchema, Schema.Struct({ commandError: Schema.String })]),
+    Schema.Union([
+      ChatStateSchema,
+      HistoryFrameSchema,
+      // A failed command names itself so only that request is settled.
+      Schema.Struct({ commandError: Schema.String, command: Schema.String, id: Schema.String }),
+    ]),
   ),
 );
 
@@ -64,7 +69,8 @@ export function makeChatSession(options: {
   path: string;
   initialStatus: string;
   onState: (state: ChatState) => void;
-  onError: (message: string) => void;
+  /** A failed command carries its type and ID; other errors carry neither. */
+  onError: (message: string, failed?: { command: string; id: string }) => void;
   onConnection: (connected: boolean) => void;
   /** Whether an earlier-history request is in flight. */
   onHistoryLoading?: (loading: boolean) => void;
@@ -111,8 +117,8 @@ export function makeChatSession(options: {
       }
       const frame = decoded.value;
       if ("commandError" in frame) {
-        setHistoryLoading(false);
-        options.onError(frame.commandError);
+        if (frame.command === "history") setHistoryLoading(false);
+        options.onError(frame.commandError, { command: frame.command, id: frame.id });
       } else if ("history" in frame) {
         transcript = prependPage(transcript, frame.history.offset, frame.history.messages);
         setHistoryLoading(false);

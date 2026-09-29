@@ -12,6 +12,14 @@ import (
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
+// acpCommandError reports a failed command to the client that sent it, naming
+// the command and its ID so the client settles only that request.
+type acpCommandError struct {
+	Message string `json:"commandError"`
+	Command string `json:"command"`
+	ID      string `json:"id"`
+}
+
 func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat) {
 	conn, err := terminalwebsocket.Accept(w, r)
 	if err != nil {
@@ -26,7 +34,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 	run := func(command localruntime.ACPCommand) bool {
 		if err := agent.Command(command); err != nil {
 			// Command failures belong to this caller, not every attached browser.
-			data, marshalErr := json.Marshal(map[string]string{"commandError": err.Error()})
+			data, marshalErr := json.Marshal(acpCommandError{Message: err.Error(), Command: command.Type, ID: command.ID})
 			if marshalErr != nil || conn.Write(ctx, websocket.MessageText, data) != nil {
 				return false
 			}
@@ -95,7 +103,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 				// Older transcript pages go only to the client that asked.
 				data, err := agent.History(command.Before, command.Limit)
 				if err != nil {
-					data, _ = json.Marshal(map[string]string{"commandError": err.Error()})
+					data, _ = json.Marshal(acpCommandError{Message: err.Error(), Command: command.Type})
 				}
 				if conn.Write(ctx, websocket.MessageText, data) != nil {
 					return

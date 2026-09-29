@@ -124,7 +124,7 @@
   }
 
   .comment-editor-shell :global(.comment-editor-input) {
-    min-height: 112px;
+    min-height: 80px;
     max-height: 75dvh;
     padding-bottom: calc(var(--focus-detail-hit-target, 39.5px) + var(--focus-detail-space-sm, 7.5px));
   }

@@ -26,6 +26,17 @@ const forcePushEvent = {
   Resolved: false,
 } as PREvent;
 
+const commitEvent = (id: number, subject: string): PREvent =>
+  ({
+    ...forcePushEvent,
+    ID: id,
+    EventType: "commit",
+    Summary: `abcdef${id}000000000`,
+    Body: subject,
+    MetadataJSON: "",
+    DedupeKey: `commit-${id}`,
+  }) as PREvent;
+
 let runtime: OwnedAppRuntime | null = null;
 
 afterEach(async () => {
@@ -57,6 +68,54 @@ describe("EventTimeline timestamp layout", () => {
     const cardRect = card!.getBoundingClientRect();
     const timestampRect = timestamp!.getBoundingClientRect();
     expect(cardRect.right - timestampRect.right).toBeLessThanOrEqual(24);
+
+    wrapper.remove();
+  });
+
+  it("keeps a short system event on one row", async () => {
+    runtime = makeAppRuntime();
+    const wrapper = document.createElement("div");
+    wrapper.style.width = "760px";
+    document.body.appendChild(wrapper);
+
+    await render(EventTimelineTestHarness, {
+      target: wrapper,
+      props: {
+        runtime,
+        timelineProps: { events: [forcePushEvent] },
+      },
+    });
+
+    const card = wrapper.querySelector<HTMLElement>(".kit-comment-card.event-card--compact");
+    const parts = [".kit-card__eyebrow", ".kit-card__title", ".system-event-summary", ".kit-card__meta"].map(
+      (selector) => card?.querySelector<HTMLElement>(selector)?.getBoundingClientRect(),
+    );
+    expect(parts.every(Boolean)).toBe(true);
+    const middles = parts.map((rect) => rect!.top + rect!.height / 2);
+    expect(Math.max(...middles) - Math.min(...middles)).toBeLessThanOrEqual(3);
+
+    wrapper.remove();
+  });
+
+  it("packs consecutive one-line commits into tight rows", async () => {
+    runtime = makeAppRuntime();
+    const wrapper = document.createElement("div");
+    wrapper.style.width = "760px";
+    document.body.appendChild(wrapper);
+
+    await render(EventTimelineTestHarness, {
+      target: wrapper,
+      props: {
+        runtime,
+        timelineProps: { events: [commitEvent(2, "feat: add cache store"), commitEvent(3, "fix: expire entries")] },
+      },
+    });
+
+    const cards = [...wrapper.querySelectorAll<HTMLElement>(".event-card--commit")];
+    expect(cards).toHaveLength(2);
+    const [first, second] = cards.map((card) => card.getBoundingClientRect());
+    expect(first!.height).toBeLessThanOrEqual(56);
+    expect(second!.top - first!.bottom).toBeLessThanOrEqual(8);
 
     wrapper.remove();
   });

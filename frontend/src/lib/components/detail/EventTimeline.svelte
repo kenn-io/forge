@@ -2096,6 +2096,7 @@
             {@const sourceLink = crossReferenceLink(metadata, sourceUrl)}
             <CommentCard
               class="event-card--compact"
+              layout="inline"
               typeLabel="Referenced"
               tone={eventTimelineTone(event.EventType)}
               author={event.Author || undefined}
@@ -2118,6 +2119,7 @@
           {:else}
             <CommentCard
               class="event-card--compact"
+              layout="inline"
               typeLabel={event.EventType === "comment_deleted" || event.EventType === "assigned" || event.EventType === "unassigned"
                 ? undefined
                 : systemEventLabel(event.EventType)}
@@ -2294,15 +2296,18 @@
     gap: var(--focus-detail-space-sm, 0.62rem);
   }
 
-  :global(.event-card--compact) {
-    --kit-card-padding-block: var(--focus-detail-space-xs, 7px);
-  }
 
   /* System events (commits, base changes, lifecycle, references) are one
      quiet line beside their rail dot; only conversation gets a card. */
   .event-timeline :global(.kit-card.event-card--compact) {
     --kit-card-bg: transparent;
     --kit-card-border: transparent;
+    padding-block: var(--space-3);
+  }
+
+  /* Consecutive one-line events pack tighter than conversation cards. */
+  .event-timeline :global(.kit-timeline-item.event--compact) {
+    --kit-timeline-gap: var(--space-2);
   }
 
   .event-header {
@@ -2538,9 +2543,18 @@
     margin-right: var(--space-1);
   }
 
-  .commit-body-details {
-    margin-top: var(--focus-detail-space-xs, 7px);
+  .event-body.commit-body-details {
+    margin-top: var(--space-2);
     padding-right: var(--focus-detail-space-sm, 10px);
+    padding-bottom: 0;
+  }
+
+  .commit-body-details > :global(:first-child) {
+    margin-top: 0;
+  }
+
+  .commit-body-details > :global(:last-child) {
+    margin-bottom: 0;
   }
 
   .obsolete-group-row {

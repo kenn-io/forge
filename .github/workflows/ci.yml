@@ -168,7 +168,7 @@ jobs:
             exit 1
           fi
 
-          manifest_digest="$(docker buildx imagetools inspect "$image_tag" --format '{{.Manifest.Digest}}')"
+          manifest_digest="$(docker buildx imagetools inspect "$image_tag" --format '{{json .Manifest}}' | jq -er .digest)"
           if [[ ! "$manifest_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             echo "::error::Unable to resolve an immutable digest for $image_tag"
             exit 1

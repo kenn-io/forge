@@ -1,5 +1,6 @@
 import { isSafeExternalHTTPURL } from "../../utils/safe-external-url.js";
 import type { ChatContent } from "./chat-types.js";
+import { parseDiffFromFile } from "@pierre/diffs";
 
 const base64Pattern = /^[A-Za-z0-9+/=\s]*$/;
 
@@ -139,58 +140,37 @@ export function decodeBase64(data: string): Uint8Array {
 export type DiffLine = { kind: "context" | "added" | "removed" | "gap"; text: string };
 
 const diffContext = 3;
-const maxDiffCells = 4_000_000;
 
-// Line diff for one file's old/new text: an LCS walk, with unchanged runs
-// trimmed to a few lines of context. Very large inputs skip the LCS and show
-// the whole replacement.
+// Line diff for one file's old/new text, with unchanged runs trimmed to a few
+// lines of context. It has no size cutoff: every edit gets a real diff.
 export function lineDiff(oldText: string | null | undefined, newText: string | null | undefined): DiffLine[] {
-  const before = oldText ? oldText.split("\n") : [];
-  const after = newText ? newText.split("\n") : [];
-  const lines: DiffLine[] = [];
-  if (before.length * after.length > maxDiffCells) {
-    return [
-      ...before.map((text): DiffLine => ({ kind: "removed", text })),
-      ...after.map((text): DiffLine => ({ kind: "added", text })),
-    ];
-  }
-  const width = after.length + 1;
-  const table = new Uint32Array((before.length + 1) * width);
-  for (let i = before.length - 1; i >= 0; i--) {
-    for (let j = after.length - 1; j >= 0; j--) {
-      table[i * width + j] =
-        before[i] === after[j]
-          ? table[(i + 1) * width + j + 1]! + 1
-          : Math.max(table[(i + 1) * width + j]!, table[i * width + j + 1]!);
-    }
-  }
-  let i = 0;
-  let j = 0;
-  while (i < before.length || j < after.length) {
-    if (i < before.length && j < after.length && before[i] === after[j]) {
-      lines.push({ kind: "context", text: before[i]! });
-      i += 1;
-      j += 1;
-    } else if (i < before.length && (j === after.length || table[(i + 1) * width + j]! >= table[i * width + j + 1]!)) {
-      lines.push({ kind: "removed", text: before[i]! });
-      i += 1;
-    } else {
-      lines.push({ kind: "added", text: after[j]! });
-      j += 1;
-    }
-  }
-  return trimContext(lines);
-}
-
-function trimContext(lines: DiffLine[]): DiffLine[] {
-  const keep = lines.map((line) => line.kind !== "context");
-  const near = lines.map((_, index) =>
-    keep.slice(Math.max(0, index - diffContext), index + diffContext + 1).some(Boolean),
+  const diff = parseDiffFromFile(
+    { name: "file", contents: oldText ?? "" },
+    { name: "file", contents: newText ?? "" },
+    { context: diffContext },
   );
-  const result: DiffLine[] = [];
-  lines.forEach((line, index) => {
-    if (near[index]) result.push(line);
-    else if (result.at(-1)?.kind !== "gap") result.push({ kind: "gap", text: "" });
-  });
-  return result;
+  const text = (line: string | undefined) => (line ?? "").replace(/\r?\n$/, "");
+  const lines: DiffLine[] = [];
+  let end = 0;
+  for (const hunk of diff.hunks) {
+    if (hunk.collapsedBefore > 0) lines.push({ kind: "gap", text: "" });
+    for (const block of hunk.hunkContent) {
+      if (block.type === "context") {
+        for (let i = 0; i < block.lines; i++) {
+          lines.push({ kind: "context", text: text(diff.additionLines[block.additionLineIndex + i]) });
+        }
+        end = block.additionLineIndex + block.lines;
+        continue;
+      }
+      for (let i = 0; i < block.deletions; i++) {
+        lines.push({ kind: "removed", text: text(diff.deletionLines[block.deletionLineIndex + i]) });
+      }
+      for (let i = 0; i < block.additions; i++) {
+        lines.push({ kind: "added", text: text(diff.additionLines[block.additionLineIndex + i]) });
+      }
+      end = block.additionLineIndex + block.additions;
+    }
+  }
+  if (end < diff.additionLines.length) lines.push({ kind: "gap", text: "" });
+  return lines;
 }

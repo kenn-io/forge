@@ -22,6 +22,31 @@ keep calling `gh` directly.
 The shim serves GitHub repositories only. Calls for GitLab, Forgejo, and Gitea
 hosts go straight to `gh`.
 
+## Let an agent set it up
+
+The quickest setup is to give this prompt to a coding agent running on the
+same machine. It follows the manual steps on this page and checks the result.
+
+```text
+Set up the Kenn Forge GitHub CLI shim (forge-gh) on this machine.
+Follow https://forge.kenn.io/docs/gh-shim.md exactly.
+
+1. Confirm the Forge daemon is running, the real gh is installed and
+   logged in, and Go 1.27 or newer is available. Stop and tell me if
+   any of these is missing.
+2. Build forge-gh from a clone of https://github.com/kenn-io/forge and
+   install it as described in the Install section.
+3. Ask me which agent tools should use the shim. For each tool, change
+   only how that tool is launched (a shell alias or a wrapper script)
+   so the shim directory comes first on its PATH. Do not add the shim
+   directory to my login shell's PATH.
+4. Check the setup: from a checkout of a repository that Forge syncs,
+   run a supported query through the shim with piped output, then show
+   me the last usage-log entry. If the reason is not "served", explain
+   it with the reason table on the docs page.
+5. Tell me what you changed and how to undo it.
+```
+
 ## Install
 
 Release archives do not include `forge-gh` yet. Build it from a source checkout

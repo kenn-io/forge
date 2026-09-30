@@ -25,6 +25,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -316,6 +317,34 @@ func launchPlainShellRuntimeSession(
 func setTestServerNow(t *testing.T, srv *Server, now time.Time) {
 	t.Helper()
 	srv.now = func() time.Time { return now }
+}
+
+// observationClock proves a production capture point runs BEFORE a provider
+// call rather than after: the fake provider advances the clock while
+// serving each request (via a deferred call, so the tick lands after the
+// callback body runs but before control returns to the caller), so a time
+// captured before the call and one captured after it are always different
+// literal values. A test using a constant clock (setTestServerNow) cannot
+// tell the two apart.
+type observationClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func newObservationClock(start time.Time) *observationClock {
+	return &observationClock{now: start}
+}
+
+func (c *observationClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *observationClock) advance() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(time.Minute)
 }
 
 func testEDTTime(hour, minute int) time.Time {
@@ -1116,8 +1145,14 @@ func TestAPIReadyForReviewStampsMergeableStateObservedAt(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			mergeableState := tt.mergeableState
+			// The clock advances while the fake provider serves the
+			// request, so a time captured before the call (correct) and
+			// one captured after it (a regression) are different literal
+			// values; a constant clock could not tell them apart.
+			clock := newObservationClock(mutationRequestedAt)
 			mock := &serverfake.MockGH{
 				MarkReadyForReviewFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+					defer clock.advance()
 					id := int64(1001)
 					title := "Ready PR"
 					state := "open"
@@ -1142,7 +1177,7 @@ func TestAPIReadyForReviewStampsMergeableStateObservedAt(t *testing.T) {
 				},
 			}
 			srv, database, _ := setupTestServerWithMock(t, mock)
-			setTestServerNow(t, srv, mutationRequestedAt)
+			srv.now = clock.Now
 
 			repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 			require.NoError(err)
@@ -1212,10 +1247,16 @@ func TestAPISetPRGitHubStateStampsMergeableStateAndCarriesReviewAndCI(t *testing
 			require := require.New(t)
 			assert := assert.New(t)
 			mergeableState := tt.mergeableState
+			// The clock advances while the fake provider serves the edit
+			// request, so a time captured before the call (correct) and
+			// one captured after it (a regression) are different literal
+			// values; a constant clock could not tell them apart.
+			clock := newObservationClock(mutationRequestedAt)
 			mock := &serverfake.MockGH{
 				EditPullRequestFn: func(
 					_ context.Context, _, _ string, number int, opts platformgithub.EditPullRequestOpts,
 				) (*gh.PullRequest, error) {
+					defer clock.advance()
 					require.NotNil(opts.State)
 					pr := serverfake.ProviderStatePR(
 						number, *opts.State, time.Now().UTC().Add(time.Hour),
@@ -1226,7 +1267,7 @@ func TestAPISetPRGitHubStateStampsMergeableStateAndCarriesReviewAndCI(t *testing
 				},
 			}
 			srv, database, _ := setupTestServerWithMock(t, mock)
-			setTestServerNow(t, srv, mutationRequestedAt)
+			srv.now = clock.Now
 			serverfake.SeedPR(t, database, "acme", "widget", 1,
 				serverfake.WithSeedPRHeadSHA("head-sha"),
 				serverfake.WithSeedPRCI("success", `[{"name":"build","status":"completed","conclusion":"success","url":"","app":"GitHub Actions"}]`),
@@ -1289,11 +1330,18 @@ func TestAPISetPRGitHubState422RefetchStampsMergeableStateAndCarriesReviewAndCI(
 			assert := assert.New(t)
 			mergeableState := tt.mergeableState
 			state := "closed"
+			// The failed edit does not advance the clock (it never reaches
+			// a provider snapshot); the clock advances only while the fake
+			// provider serves the refetch, so a time captured before that
+			// specific call (correct) and one captured after it (a
+			// regression) are different literal values.
+			clock := newObservationClock(refetchRequestedAt)
 			mock := &serverfake.MockGH{
 				EditPullRequestFn: func(_ context.Context, _, _ string, _ int, _ platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {
 					return nil, serverfake.Make422Error()
 				},
 				GetPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+					defer clock.advance()
 					id := int64(1000)
 					now := gh.Timestamp{Time: time.Now().UTC()}
 					closedAt := gh.Timestamp{Time: time.Now().UTC()}
@@ -1309,7 +1357,7 @@ func TestAPISetPRGitHubState422RefetchStampsMergeableStateAndCarriesReviewAndCI(
 				},
 			}
 			srv, database, _ := setupTestServerWithMock(t, mock)
-			setTestServerNow(t, srv, refetchRequestedAt)
+			srv.now = clock.Now
 			serverfake.SeedPR(t, database, "acme", "widget", 1,
 				serverfake.WithSeedPRHeadSHA("head-sha"),
 				serverfake.WithSeedPRCI("success", `[{"name":"build","status":"completed","conclusion":"success","url":"","app":"GitHub Actions"}]`),

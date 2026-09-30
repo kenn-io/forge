@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,9 +22,14 @@ import (
 // mutation request time whenever the edit response reports a concrete
 // mergeable value, while review decision and CI status — which this
 // response cannot represent — stay carried from the stored row untouched.
-// The server here has no injectable clock, so the observed time is checked
-// against a before/after window around the provider call instead of a
-// literal expected value.
+// The server here has no injectable clock (unlike internal/server's own
+// package tests, which can set srv.now directly), so this test cannot use a
+// literal expected time or an advancing clock. Instead it brackets the
+// specific outbound provider call: the fake handler records the wall-clock
+// time it was hit, and the stored observed time must not be after that —
+// a capture point moved to after the provider call returns would always be
+// later than the moment the fake received the request, so this still
+// catches a before/after regression at this call site.
 func TestForgejoSetPRStateStampsMergeableStateObservedAt(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -33,10 +39,15 @@ func TestForgejoSetPRStateStampsMergeableStateObservedAt(t *testing.T) {
 	// response must report a strictly newer updated_at or the snapshot's
 	// monotonic guard silently rejects the commit.
 	providerUpdatedAt := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+	var handlerMu sync.Mutex
+	var handlerHitAt time.Time
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/repos/acme/widget/pulls/7":
+			handlerMu.Lock()
+			handlerHitAt = time.Now().UTC()
+			handlerMu.Unlock()
 			_, _ = fmt.Fprintf(w, `{
 				"id": 1001, "number": 7, "state": "closed", "title": "Label target PR",
 				"html_url": %q,
@@ -91,8 +102,12 @@ func TestForgejoSetPRStateStampsMergeableStateObservedAt(t *testing.T) {
 		"/api/v1/pulls/forgejo/acme/widget/7/github-state",
 		map[string]any{"state": "closed"},
 	)
-	responseReturnedAt := time.Now().UTC()
 	require.Equal(http.StatusOK, rr.Code, "response: %s", rr.Body.String())
+
+	handlerMu.Lock()
+	hitAt := handlerHitAt
+	handlerMu.Unlock()
+	require.False(hitAt.IsZero(), "fake provider was never called")
 
 	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
 	require.NoError(err)
@@ -102,8 +117,8 @@ func TestForgejoSetPRStateStampsMergeableStateObservedAt(t *testing.T) {
 	if assert.NotNil(pr.MergeableStateObservedAt) {
 		assert.False(pr.MergeableStateObservedAt.Before(requestSentAt),
 			"observed time must not precede the mutation request")
-		assert.False(pr.MergeableStateObservedAt.After(responseReturnedAt),
-			"observed time must not be captured after the provider call returned")
+		assert.False(pr.MergeableStateObservedAt.After(hitAt),
+			"observed time must be captured before the outbound provider call, not after it")
 	}
 	// Forgejo's edit response cannot represent review decision or CI
 	// state; closing preserves both values and their observation times

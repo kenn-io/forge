@@ -659,3 +659,7 @@ a 409 through `generated.ErrorModel` alongside the in-package original.
 - [`context/github-sync-invariants.md`](./github-sync-invariants.md) documents
   timeline freshness, SHA-sensitive CI, and fallback rules that usually
   determine which tests belong on a GitHub-specific sync change.
+
+Archive integration scenarios seed persisted collection coverage and read the
+production HTTP export; response stubs cannot prove consumers handle missing
+coverage (`cmd/e2e-server/archive_context.go::seedArchiveContext`).

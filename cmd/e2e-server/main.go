@@ -81,6 +81,7 @@ func main() {
 		}
 		return
 	}
+	scenario := flag.String("scenario", "", "fixture scenario (archive-context)")
 	port := flag.Int("port", 0, "port to listen on (0 selects a random free port)")
 	roborev := flag.String(
 		"roborev", defaultRoborevEndpoint,
@@ -127,6 +128,7 @@ func main() {
 			*defaultPlatformHost,
 			*visibleImportedModes,
 			*providerCollision,
+			*scenario,
 		)
 	}
 	stop()
@@ -1272,6 +1274,7 @@ func setPR1CIState(
 // state. The same options feed the initial startup and every
 // /__e2e/reset rebuild.
 type appOptions struct {
+	scenario             string
 	roborevEndpoint      string
 	defaultPlatformHost  string
 	visibleImportedModes bool
@@ -1601,6 +1604,9 @@ func buildAppState(
 	assets fs.FS,
 	opts appOptions,
 ) (*appState, error) {
+	if opts.scenario != "" && opts.scenario != "archive-context" {
+		return nil, fmt.Errorf("unknown fixture scenario %q", opts.scenario)
+	}
 	defaultPlatformHost := strings.TrimSpace(opts.defaultPlatformHost)
 	if defaultPlatformHost == "" {
 		defaultPlatformHost = "github.com"
@@ -2151,6 +2157,13 @@ func buildAppState(
 		PtyOwnerInProcess:             opts.preferPtyOwner,
 		FederationSpokeID:             opts.nodeID,
 	}
+	if opts.scenario == "archive-context" {
+		service, err := seedArchiveContext(ctx, database, registry)
+		if err != nil {
+			return nil, err
+		}
+		serverOptions.Archive = service
+	}
 	if opts.federation != nil {
 		serverOptions.DaemonAccess = server.DaemonAccessOptions{
 			Token: opts.federation.localToken, RequireAPIAuth: true,
@@ -2193,6 +2206,10 @@ func buildAppState(
 	forkGitRoot := filepath.Join(tmpDir, "forks")
 	forkGitHandler := http.FileServer(http.Dir(forkGitRoot))
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if opts.scenario == "archive-context" && r.Method == http.MethodPost && r.URL.Path == "/__e2e/archive-context" {
+			archiveContextControl(database, w, r)
+			return
+		}
 		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
 			strings.EqualFold(r.Host, "github.com") &&
 			strings.HasPrefix(r.URL.Path, "/forker/widgets.git/") {
@@ -3738,6 +3755,7 @@ func run(
 	roborevEndpoint, serverInfoFile, defaultPlatformHost string,
 	visibleImportedModes bool,
 	providerCollision bool,
+	scenario string,
 ) error {
 	assets, err := web.Assets()
 	if err != nil {
@@ -3745,6 +3763,7 @@ func run(
 	}
 
 	baseOpts := appOptions{
+		scenario:             scenario,
 		roborevEndpoint:      roborevEndpoint,
 		defaultPlatformHost:  defaultPlatformHost,
 		visibleImportedModes: visibleImportedModes,

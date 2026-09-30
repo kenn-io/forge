@@ -745,7 +745,7 @@ func TestRunDefaultRoborevFailsClosedThroughProxy(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
 	}()
 
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
@@ -842,7 +842,7 @@ func TestRunPprofListenerFromEnv(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
 	}()
 
 	info := waitForServerInfo(t, serverInfoFile, done)
@@ -877,7 +877,7 @@ func TestRunCancellationStopsPrivateTmuxBeforeShutdown(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
 	}()
 	info := waitForServerInfo(t, serverInfoFile, done)
 	tmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
@@ -985,7 +985,7 @@ func TestResetSwapsFixtureState(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
 	}()
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
 
@@ -1072,7 +1072,7 @@ func TestResetStopsOldPrivateTmuxServerBeforeReturning(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false)
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
 	}()
 	info := waitForServerInfo(t, serverInfoFile, done)
 	oldTmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)

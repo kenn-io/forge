@@ -8220,6 +8220,10 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	}
 	normalized.MergeableStateObservedAt = &requestedAt
 	preserveMergeableStateIfOmitted(normalized, existing)
+	// The REST pull request carries no review decision or CI state. Keep the
+	// stored values until the timeline and CI refreshes below re-observe
+	// them, so a failed refresh does not leave them cleared.
+	CarryMergeRequestDerivedFields(normalized, existing)
 
 	if normalized.Author != "" &&
 		normalized.AuthorDisplayName == "" {

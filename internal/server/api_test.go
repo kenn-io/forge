@@ -1121,14 +1121,18 @@ func TestAPICloseIssue(t *testing.T) {
 	assertTimePtrEqualsUTC(t, issue.ClosedAt, handlerNow)
 }
 
-// TestAPIReadyForReviewStampsMergeableStateObservedAt exercises the
-// ready-for-review mutation response directly: the response carries no
-// review decision or CI status, so those observation times must stay nil,
-// while the mergeable state observation time is the mutation request time
-// whenever the response reports a concrete state and nil for unknown/empty.
-func TestAPIReadyForReviewStampsMergeableStateObservedAt(t *testing.T) {
+// TestAPIReadyForReviewStampsMergeableStateAndCarriesReviewAndCI exercises
+// the ready-for-review mutation response directly: the response carries no
+// review decision, CI status, or comment count, so those values and their
+// observation times must be carried unchanged from the stored row, while the
+// mergeable state observation time is the mutation request time whenever the
+// response reports a concrete state and nil for unknown/empty.
+func TestAPIReadyForReviewStampsMergeableStateAndCarriesReviewAndCI(t *testing.T) {
 	runParallelServerTest(t)
 	mutationRequestedAt := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	reviewObservedAt := time.Date(2026, 9, 5, 8, 0, 0, 0, time.UTC)
+	ciObservedAt := time.Date(2026, 9, 6, 9, 0, 0, 0, time.UTC)
+	ciChecks := `[{"name":"build","status":"completed","conclusion":"success","url":"","app":"GitHub Actions"}]`
 
 	tests := []struct {
 		name           string
@@ -1170,7 +1174,7 @@ func TestAPIReadyForReviewStampsMergeableStateObservedAt(t *testing.T) {
 						CreatedAt:      &now,
 						UpdatedAt:      &now,
 						User:           &gh.User{Login: &author},
-						Head:           &gh.PullRequestBranch{Ref: new("feature")},
+						Head:           &gh.PullRequestBranch{Ref: new("feature"), SHA: new("head-sha")},
 						Base:           &gh.PullRequestBranch{Ref: new("main")},
 						MergeableState: &mergeableState,
 					}, nil
@@ -1183,19 +1187,26 @@ func TestAPIReadyForReviewStampsMergeableStateObservedAt(t *testing.T) {
 			require.NoError(err)
 			now := time.Now().UTC().Truncate(time.Second)
 			prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
-				RepoID:         repoID,
-				PlatformID:     1001,
-				Number:         1,
-				URL:            "https://github.com/acme/widget/pull/1",
-				Title:          "Ready PR",
-				Author:         "octocat",
-				State:          "open",
-				IsDraft:        true,
-				HeadBranch:     "feature",
-				BaseBranch:     "main",
-				CreatedAt:      now,
-				UpdatedAt:      now,
-				LastActivityAt: now,
+				RepoID:                   repoID,
+				PlatformID:               1001,
+				Number:                   1,
+				URL:                      "https://github.com/acme/widget/pull/1",
+				Title:                    "Ready PR",
+				Author:                   "octocat",
+				State:                    "open",
+				IsDraft:                  true,
+				HeadBranch:               "feature",
+				BaseBranch:               "main",
+				PlatformHeadSHA:          "head-sha",
+				CommentCount:             4,
+				ReviewDecision:           "APPROVED",
+				ReviewDecisionObservedAt: &reviewObservedAt,
+				CIStatus:                 "success",
+				CIChecksJSON:             ciChecks,
+				CIObservedAt:             &ciObservedAt,
+				CreatedAt:                now,
+				UpdatedAt:                now,
+				LastActivityAt:           now,
 			})
 			require.NoError(err)
 			require.NoError(database.EnsureKanbanState(t.Context(), prID))
@@ -1215,8 +1226,12 @@ func TestAPIReadyForReviewStampsMergeableStateObservedAt(t *testing.T) {
 			} else {
 				assert.Nil(pr.MergeableStateObservedAt)
 			}
-			assert.Nil(pr.ReviewDecisionObservedAt, "ready-for-review response carries no review decision")
-			assert.Nil(pr.CIObservedAt, "ready-for-review response carries no CI status")
+			assert.Equal(4, pr.CommentCount)
+			assert.Equal("APPROVED", pr.ReviewDecision)
+			assertTimePtrEqualsUTC(t, pr.ReviewDecisionObservedAt, reviewObservedAt)
+			assert.Equal("success", pr.CIStatus)
+			assert.JSONEq(ciChecks, pr.CIChecksJSON)
+			assertTimePtrEqualsUTC(t, pr.CIObservedAt, ciObservedAt)
 		})
 	}
 }

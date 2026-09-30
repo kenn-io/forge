@@ -136,6 +136,7 @@ type observingGitHubClient struct {
 	*mockClient
 	clock       *observationClock
 	notModified bool
+	reviewsErr  error
 }
 
 func (c *observingGitHubClient) ListOpenPullRequests(
@@ -167,6 +168,9 @@ func (c *observingGitHubClient) ListReviews(
 	ctx context.Context, owner, repo string, number int,
 ) ([]*gh.PullRequestReview, error) {
 	defer c.clock.advance()
+	if c.reviewsErr != nil {
+		return nil, c.reviewsErr
+	}
 	return c.mockClient.ListReviews(ctx, owner, repo, number)
 }
 
@@ -573,30 +577,73 @@ func TestOnDemandGitLabSyncStampsMergeableAndCIAtTheirRequests(t *testing.T) {
 	}, readMergeStatus(t, d, repoID))
 }
 
-func TestDetailDrainClearsThenReobservesGitHubReviewAndCI(t *testing.T) {
-	// PR fetch at 10:00, reviews at 10:01, check runs at 10:02.
+func TestDetailDrainCarriesThenReobservesGitHubReviewAndCI(t *testing.T) {
+	// PR fetch at 10:00, reviews at 10:01, check runs at 10:02. The REST pull
+	// request carries no review decision or CI state, so the parent snapshot
+	// keeps the stored values until the timeline and CI refreshes replace
+	// them; CI is head-derived and is carried only on the same head.
+	const newHead = "fed654cba321"
 	tests := []struct {
-		name      string
-		checksErr error
-		want      mergeStatus
+		name        string
+		head        string
+		reviewsErr  error
+		checksErr   error
+		wantErr     bool
+		wantParent  mergeStatus
+		wantOutcome mergeStatus
 	}{
 		{
-			name: "CI refresh succeeds",
-			want: mergeStatus{
+			name: "refreshes succeed", head: seededHead,
+			wantParent: mergeStatus{
+				Review: "changes_requested", ReviewAt: seededAt, CI: "failure", CIAt: seededAt,
+				Mergeable: "clean", MergeableAt: sentAt1000,
+			},
+			wantOutcome: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1002,
 				Mergeable: "clean", MergeableAt: sentAt1000,
 			},
 		},
 		{
-			name: "CI refresh fails", checksErr: errors.New("check runs unavailable"),
-			want: mergeStatus{
-				Review: "approved", ReviewAt: sentAt1001, Mergeable: "clean", MergeableAt: sentAt1000,
+			name: "CI refresh fails", head: seededHead,
+			checksErr: errors.New("check runs unavailable"),
+			wantParent: mergeStatus{
+				Review: "changes_requested", ReviewAt: seededAt, CI: "failure", CIAt: seededAt,
+				Mergeable: "clean", MergeableAt: sentAt1000,
+			},
+			wantOutcome: mergeStatus{
+				Review: "approved", ReviewAt: sentAt1001, CI: "failure", CIAt: seededAt,
+				Mergeable: "clean", MergeableAt: sentAt1000,
+			},
+		},
+		{
+			name: "timeline refresh fails on the same head", head: seededHead,
+			reviewsErr: errors.New("reviews unavailable"), wantErr: true,
+			wantParent: mergeStatus{
+				Review: "changes_requested", ReviewAt: seededAt, CI: "failure", CIAt: seededAt,
+				Mergeable: "clean", MergeableAt: sentAt1000,
+			},
+			wantOutcome: mergeStatus{
+				Review: "changes_requested", ReviewAt: seededAt, CI: "failure", CIAt: seededAt,
+				Mergeable: "clean", MergeableAt: sentAt1000,
+			},
+		},
+		{
+			name: "timeline refresh fails on a new head", head: newHead,
+			reviewsErr: errors.New("reviews unavailable"), wantErr: true,
+			wantParent: mergeStatus{
+				Review: "changes_requested", ReviewAt: seededAt,
+				Mergeable: "clean", MergeableAt: sentAt1000,
+			},
+			wantOutcome: mergeStatus{
+				Review: "changes_requested", ReviewAt: seededAt,
+				Mergeable: "clean", MergeableAt: sentAt1000,
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, "clean"))
+			syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(tt.head, "clean"))
+			client.reviewsErr = tt.reviewsErr
 			client.checkRunsErr = tt.checksErr
 			seedObservedMR(t, d, repoID, "changes_requested")
 			var afterParent mergeStatus
@@ -605,10 +652,14 @@ func TestDetailDrainClearsThenReobservesGitHubReviewAndCI(t *testing.T) {
 			}
 
 			_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1, false)
-			require.NoError(t, err)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 
-			assert.Equal(t, mergeStatus{Mergeable: "clean", MergeableAt: sentAt1000}, afterParent)
-			assert.Equal(t, tt.want, readMergeStatus(t, d, repoID))
+			assert.Equal(t, tt.wantParent, afterParent)
+			assert.Equal(t, tt.wantOutcome, readMergeStatus(t, d, repoID))
 		})
 	}
 }

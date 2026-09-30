@@ -1694,7 +1694,8 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 	if err := s.requireSyncerCapability(repo.Repo, capabilityReadyForReview); err != nil {
 		return nil, err
 	}
-	if _, err := s.requireVisibleMergeRequest(ctx, repo.Row(), input.Number); err != nil {
+	stored, err := s.requireVisibleMergeRequest(ctx, repo.Row(), input.Number)
+	if err != nil {
 		return nil, err
 	}
 	mutator, err := s.syncer.ReadyForReviewMutator(
@@ -1760,6 +1761,9 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 
 	normalized := platformdb.DBMergeRequest(repo.ID, pr)
 	normalized.MergeableStateObservedAt = &requestedAt
+	// The mutation response cannot represent sync-derived review and CI
+	// state; carry them so marking a PR ready does not erase them.
+	ghclient.CarryMergeRequestDerivedFields(normalized, stored)
 	if mrID, _, accepted, upsertErr := s.syncer.CommitMergeRequestParentSnapshot(
 		ctx, mergeRequestRepoRef(repo.Repo), normalized,
 	); upsertErr == nil && accepted {

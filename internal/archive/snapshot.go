@@ -219,10 +219,13 @@ func snapshotRepositoryID(repo db.Repo) string {
 }
 
 // minObservedAt returns the earliest of the given observation times, or nil
-// if any of them is unknown: one missing counted time makes the combined
-// time unknown. Computed in Go rather than SQL min(), which has no stable
-// DATETIME decltype for a computed column.
+// if the input is empty or any of them is unknown: one missing counted time
+// makes the combined time unknown. Computed in Go rather than SQL min(),
+// which has no stable DATETIME decltype for a computed column.
 func minObservedAt(times []*time.Time) *time.Time {
+	if len(times) == 0 {
+		return nil
+	}
 	var earliest time.Time
 	for i, t := range times {
 		if t == nil {

@@ -1195,8 +1195,9 @@ func (d *DB) UpdateRepoViewerCanMerge(ctx context.Context, id int64, viewerCanMe
 // SQLite DATETIME text stays comparable in SQL.
 // On conflict (repo_id, number), stale snapshots are ignored wholesale.
 // parseMergeRequestUserLists fills the parsed Assignees and
-// RequestedReviewers slices from their JSON columns. Empty or malformed
-// JSON leaves the slice nil.
+// RequestedReviewers slices from their JSON columns. "" (never reported) and
+// malformed JSON leave the slice nil; "[]" (confirmed empty) yields an empty
+// non-nil slice.
 func parseMergeRequestUserLists(mr *MergeRequest) {
 	mr.Assignees = ParseUserNamesJSON(mr.AssigneesJSON)
 	mr.RequestedReviewers = ParseUserNamesJSON(mr.ReviewersJSON)

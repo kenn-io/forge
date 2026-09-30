@@ -134,6 +134,12 @@ func TestSnapshotMergeStatusObservedAtIgnoresReviewDecisionOffGitHub(t *testing.
 	assert.NotContains(pull.Gaps, "merge_status_observation_time_unknown")
 }
 
+func TestMinObservedAtOnEmptyInputIsNilNotZeroTime(t *testing.T) {
+	assert := assert.New(t)
+	assert.Nil(minObservedAt(nil))
+	assert.Nil(minObservedAt([]*time.Time{}))
+}
+
 func TestSnapshotExportsOwnershipAndActivity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

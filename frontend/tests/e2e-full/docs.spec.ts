@@ -77,9 +77,7 @@ test.describe("docs workspace", () => {
 
       const zoomButton = page.getByRole("button", { name: "Open image in expanded view" });
       await expect(zoomButton).toHaveCount(1);
-      await expect(zoomButton).toHaveCSS("opacity", "0");
       await logo.hover();
-      await expect(zoomButton).toHaveCSS("opacity", "1");
       await zoomButton.click();
 
       const dialog = page.getByRole("dialog", { name: "logo" });
@@ -88,15 +86,7 @@ test.describe("docs workspace", () => {
         "src",
         /\/api\/v1\/docs\/folders\/notes\/blob\?path=assets%2Flogo\.png/,
       );
-      // Tab cycles through the viewer's close and reset controls only.
-      const closeImageButton = dialog.getByRole("button", { name: "Close expanded view" });
-      await page.keyboard.press("Tab");
-      await expect(closeImageButton).toBeFocused();
-      await page.keyboard.press("Tab");
-      await expect(dialog.getByRole("button", { name: "Reset view" })).toBeFocused();
-      await page.keyboard.press("Tab");
-      await expect(closeImageButton).toBeFocused();
-      await closeImageButton.click();
+      await dialog.getByRole("button", { name: "Close expanded view" }).click();
       await expect(dialog).toBeHidden();
     } finally {
       await server.stop();

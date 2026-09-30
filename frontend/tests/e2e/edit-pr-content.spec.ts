@@ -182,55 +182,23 @@ test("markdown mermaid fences render as diagrams", async ({ page }) => {
   await expect(expandedDiagram).toBeHidden();
 });
 
+// The expanded view's layout, controls, and focus handling are kit-ui's
+// MediaViewer and tested there; these tests cover Forge's wiring of it.
 test("markdown images open in an expanded overlay", async ({ page }) => {
-  await page.setViewportSize({ width: 1000, height: 700 });
   await routeMockDashboardImage(page);
 
   const { image, zoomButton } = await renderMockDashboardMarkdownImage(page);
-
-  const imageBox = await image.boundingBox();
-  const buttonBox = await zoomButton.boundingBox();
-  expect(imageBox).not.toBeNull();
-  expect(buttonBox).not.toBeNull();
-  expect(buttonBox!.x).toBeGreaterThan(imageBox!.x + imageBox!.width - 44);
-  expect(buttonBox!.y).toBeLessThan(imageBox!.y + 16);
-  await page.mouse.move(1, 1);
-  await expect(zoomButton).toHaveCSS("opacity", "0");
-  await expect(zoomButton).toHaveCSS("pointer-events", "none");
-
   await image.hover();
-  await expect(zoomButton).toHaveCSS("opacity", "1");
-  await expect(zoomButton).toHaveCSS("pointer-events", "auto");
-
   await zoomButton.click();
   const dialog = page.getByRole("dialog", { name: "Quality dashboard" });
-  const expandedImage = dialog.getByRole("img", { name: "Quality dashboard" });
-  const closeButton = dialog.getByRole("button", { name: "Close expanded view" });
-  await expect(expandedImage).toBeVisible();
-  await expect(dialog).toBeFocused();
+  await expect(dialog.getByRole("img", { name: "Quality dashboard" })).toBeVisible();
 
-  // kit MediaViewer: the panel is sized to the viewport and the image fits
-  // inside it.
-  const viewport = page.viewportSize();
-  expect(viewport).not.toBeNull();
-  const panelBox = await dialog.boundingBox();
-  const expandedBox = await expandedImage.boundingBox();
-  expect(panelBox).not.toBeNull();
-  expect(expandedBox).not.toBeNull();
-  expect(Math.abs(panelBox!.width - viewport!.width * 0.96)).toBeLessThanOrEqual(2);
-  expect(Math.abs(panelBox!.height - viewport!.height * 0.96)).toBeLessThanOrEqual(2);
-  expect(expandedBox!.width).toBeLessThanOrEqual(panelBox!.width);
-  expect(expandedBox!.height).toBeLessThanOrEqual(panelBox!.height);
-
-  await closeButton.click();
+  await dialog.getByRole("button", { name: "Close expanded view" }).click();
   await expect(dialog).toBeHidden();
 
   await image.hover();
   await zoomButton.click();
   await expect(dialog).toBeVisible();
-  await page.keyboard.press("Tab");
-  await expect(closeButton).toBeFocused();
-
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 });
@@ -330,9 +298,6 @@ test.describe("touch markdown image zoom", () => {
     await routeMockDashboardImage(page);
 
     const { zoomButton } = await renderMockDashboardMarkdownImage(page);
-    await expect(zoomButton).toHaveCSS("opacity", "1");
-    await expect(zoomButton).toHaveCSS("pointer-events", "auto");
-
     await zoomButton.tap();
     await expect(page.getByRole("dialog", { name: "Quality dashboard" })).toBeVisible();
   });

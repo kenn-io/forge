@@ -69,6 +69,15 @@ leave cross-file version lockstep to a dedicated checker such as
 `scripts/check-playwright-version.mjs`, which reads the current pin instead of
 hardcoding one.
 
+## Library-owned behavior
+
+Forge tests must not assert behavior that an imported library owns, such as
+kit-ui's MediaViewer panel size, control placement, hover reveal, or focus
+order. Those values change in the library, and its own suite covers them.
+Test Forge's wiring: which content gets the control, the URLs Forge builds,
+modal-frame and layer stacking, and that the flow opens and closes
+(`frontend/tests/e2e/edit-pr-content.spec.ts`).
+
 ## Provider work
 
 When adding or changing a provider, pick tests at the boundary where users would

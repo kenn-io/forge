@@ -57,11 +57,17 @@ only on locally observed agents (`frontend/src/lib/components/detail/commit-attr
 
 ## Sources of truth
 
-- Tokens: `@kenn-io/kit-ui/theme.css` and `@kenn-io/kit-ui/mermaid.css`
-  (the `--mermaid-*`/`--viewer-scrim` tokens and diagram viewer chrome;
-  both imported at the top of `frontend/src/app.css`) plus the
+- Tokens: `@kenn-io/kit-ui/theme.css`, `@kenn-io/kit-ui/mermaid.css`
+  (the `--mermaid-*` tokens and inline diagram viewer chrome), and
+  `@kenn-io/kit-ui/markdown-images.css` (markdown image expand buttons),
+  all imported at the top of `frontend/src/app.css`, plus the
   kenn-forge-specific tokens `app.css` defines on top (chrome, budget,
-  workflow status, review, verdict, diff, viewer glass controls)
+  workflow status, review, verdict, diff)
+- Expanded media: markdown images and Mermaid diagrams open kit-ui's
+  `MediaViewer`, which pages through every displayed image and diagram
+  on the page (`frontend/src/lib/app/mount.ts::openMediaViewerFrame`).
+  Do not add app-side lightboxes; kit-ui's `hand-rolled-lightbox` check
+  rule flags them.
 - Shared primitives: `@kenn-io/kit-ui` first; app-specific compositions live
   in `frontend/src/lib/components/shared/`
 - Diff/file-tree adapters: `frontend/src/lib/components/diff/PierreFileDiff.svelte`
@@ -146,11 +152,11 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   bubble so the hosting popover closes — every `SearchInput`-hosting
   popover must handle that bubbled Escape (`UserListEditor.test.ts` pins
   the flow).
-- Palette, Cheatsheet, and the image lightbox keep hand-rolled focus
-  traps and own their focus restore (the state stores' close functions;
-  the lightbox's `restoreFocusTo`): close restores focus synchronously
-  before the picked action runs, so an action's own focus move wins. kit
-  `trapFocus` restores at unmount teardown, which would undo it.
+- Palette and Cheatsheet keep hand-rolled focus traps and own their
+  focus restore (the state stores' close functions): close restores
+  focus synchronously before the picked action runs, so an action's own
+  focus move wins. kit `trapFocus` restores at unmount teardown, which
+  would undo it.
 - Focus signals: kit text fields show keyboard focus as the wrapper's
   accent border only; `app.css` drops the kit `TextInput` outline ring
   that would otherwise stack on the same wrapper (every tap or Tab into a

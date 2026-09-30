@@ -1,10 +1,10 @@
+import { initMarkdownImageViewer } from "@kenn-io/kit-ui";
 import { initMarkdownMermaidRendering } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { Cause, Effect, Exit, Fiber } from "effect";
 import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
-import { observeMarkdownImageExpansion } from "../utils/markdownImages.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 
 function renderApplicationFailure(target: HTMLElement): void {
@@ -26,13 +26,24 @@ export const appProgram = (target: HTMLElement, runtime: OwnedAppRuntime) =>
     (application) => Effect.promise(() => unmount(application)),
   ).pipe(Effect.andThen(Effect.never));
 
-const observeMarkdownMermaidRendering = (target: HTMLElement) =>
+// Markdown images and Mermaid diagrams expand into kit-ui's MediaViewer,
+// which pages through every displayed image and diagram on the page.
+const openMediaViewerFrame = () => pushModalFrame("media-viewer", []);
+
+const observeMarkdownImageExpansion = (target: HTMLElement) =>
   Effect.acquireRelease(
     Effect.sync(() =>
-      initMarkdownMermaidRendering(target, {
-        onLightboxOpen: () => pushModalFrame("mermaid-lightbox", []),
+      initMarkdownImageViewer(target, {
+        selector: ".markdown-body img, .doc-markdown img",
+        onViewerOpen: openMediaViewerFrame,
       }),
     ),
+    (controller) => Effect.sync(() => controller.disconnect()),
+  ).pipe(Effect.andThen(Effect.never));
+
+const observeMarkdownMermaidRendering = (target: HTMLElement) =>
+  Effect.acquireRelease(
+    Effect.sync(() => initMarkdownMermaidRendering(target, { onViewerOpen: openMediaViewerFrame })),
     (controller) => Effect.sync(() => controller.disconnect()),
   ).pipe(Effect.andThen(Effect.never));
 

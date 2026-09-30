@@ -664,7 +664,8 @@ describe("ACPWorkspace rich content", () => {
     const image = screen.getByRole("img", { name: "Chart" }) as HTMLImageElement;
     expect(image.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
     await fireEvent.click(screen.getByRole("button", { name: /Open image in expanded view: Chart/ }));
-    const viewer = screen.getByRole("dialog", { name: "Chart" });
+    // kit's MediaViewer loads on first open, so the dialog appears asynchronously.
+    const viewer = await screen.findByRole("dialog", { name: "Chart" });
     expect(viewer.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
     await fireEvent.click(within(viewer).getByRole("button", { name: "Close expanded image" }));
     expect(screen.queryByRole("dialog")).toBeNull();

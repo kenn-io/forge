@@ -173,13 +173,13 @@ test("markdown mermaid fences render as diagrams", async ({ page }) => {
     .not.toBe(initialTransform);
 
   await page.getByRole("button", { name: "Open diagram in expanded view" }).click();
-  const expandedDiagram = page.getByRole("dialog", { name: "Expanded Mermaid diagram" });
+  const expandedDiagram = page.getByRole("dialog", { name: "Mermaid diagram" });
   await expect(expandedDiagram).toBeVisible();
-  await expect(expandedDiagram.getByRole("button", { name: "Close expanded diagram" })).toBeVisible();
-  await expect(expandedDiagram.getByRole("button", { name: "Reset diagram view" })).toBeVisible();
+  await expect(expandedDiagram.getByRole("button", { name: "Close expanded view" })).toBeVisible();
+  await expect(expandedDiagram.getByRole("button", { name: "Reset view" })).toBeVisible();
   await expect(expandedDiagram.getByRole("button", { name: /Pan diagram/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog", { name: "Expanded Mermaid diagram" })).toBeHidden();
+  await expect(expandedDiagram).toBeHidden();
 });
 
 test("markdown images open in an expanded overlay", async ({ page }) => {
@@ -203,37 +203,25 @@ test("markdown images open in an expanded overlay", async ({ page }) => {
   await expect(zoomButton).toHaveCSS("pointer-events", "auto");
 
   await zoomButton.click();
-  const dialog = page.getByRole("dialog", { name: "Expanded image" });
-  await expect(dialog).toBeVisible();
-  const panel = dialog.locator(".markdown-image-lightbox__panel");
+  const dialog = page.getByRole("dialog", { name: "Quality dashboard" });
   const expandedImage = dialog.getByRole("img", { name: "Quality dashboard" });
-  const closeButton = dialog.getByRole("button", { name: "Close expanded image" });
+  const closeButton = dialog.getByRole("button", { name: "Close expanded view" });
   await expect(expandedImage).toBeVisible();
   await expect(dialog).toBeFocused();
 
+  // kit MediaViewer: the panel is sized to the viewport and the image fits
+  // inside it.
   const viewport = page.viewportSize();
   expect(viewport).not.toBeNull();
-  const panelBox = await panel.boundingBox();
+  const panelBox = await dialog.boundingBox();
   const expandedBox = await expandedImage.boundingBox();
   expect(panelBox).not.toBeNull();
   expect(expandedBox).not.toBeNull();
-  expect(panelBox!.width).toBeLessThanOrEqual(viewport!.width - 56 + 1);
-  expect(panelBox!.height).toBeLessThanOrEqual(viewport!.height - 56 + 1);
-  expect(expandedBox!.width).toBeLessThanOrEqual(viewport!.width - 56 + 1);
-  expect(expandedBox!.height).toBeLessThanOrEqual(viewport!.height - 56 + 1);
+  expect(Math.abs(panelBox!.width - viewport!.width * 0.96)).toBeLessThanOrEqual(2);
+  expect(Math.abs(panelBox!.height - viewport!.height * 0.96)).toBeLessThanOrEqual(2);
+  expect(expandedBox!.width).toBeLessThanOrEqual(panelBox!.width);
+  expect(expandedBox!.height).toBeLessThanOrEqual(panelBox!.height);
 
-  await expect(panel).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(panel).toHaveCSS("border-top-width", "0px");
-  await expect(panel).toHaveCSS("border-right-width", "0px");
-  await expect(panel).toHaveCSS("border-bottom-width", "0px");
-  await expect(panel).toHaveCSS("border-left-width", "0px");
-  await expect(panel).toHaveCSS("border-radius", "0px");
-  await expect(closeButton).toHaveCSS("opacity", "0");
-  await expect(closeButton).toHaveCSS("pointer-events", "none");
-
-  await expandedImage.hover();
-  await expect(closeButton).toHaveCSS("opacity", "1");
-  await expect(closeButton).toHaveCSS("pointer-events", "auto");
   await closeButton.click();
   await expect(dialog).toBeHidden();
 
@@ -242,19 +230,18 @@ test("markdown images open in an expanded overlay", async ({ page }) => {
   await expect(dialog).toBeVisible();
   await page.keyboard.press("Tab");
   await expect(closeButton).toBeFocused();
-  await expect(closeButton).toHaveCSS("opacity", "1");
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 });
 
-test("markdown image lightbox opens above drawer layers", async ({ page }) => {
+test("expanded markdown images open above drawer layers", async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 700 });
   await routeMockDashboardImage(page);
 
   const { image, zoomButton } = await renderMockDashboardMarkdownImage(page);
   await page.evaluate(() => {
-    const expander = document.querySelector(".markdown-image-expander");
+    const expander = document.querySelector(".kit-markdown-image");
     if (!expander) throw new Error("missing markdown image expander");
 
     const drawer = document.createElement("div");
@@ -278,9 +265,11 @@ test("markdown image lightbox opens above drawer layers", async ({ page }) => {
   await image.hover();
   await zoomButton.click();
 
-  const dialog = page.getByRole("dialog", { name: "Expanded image" });
+  const dialog = page.getByRole("dialog", { name: "Quality dashboard" });
   await expect(dialog).toBeVisible();
-  const dialogLayer = await dialog.evaluate((element) => Number(getComputedStyle(element).zIndex));
+  const dialogLayer = await page
+    .locator(".kit-media-viewer")
+    .evaluate((element) => Number(getComputedStyle(element).zIndex));
   const drawerLayer = await page
     .locator(".test-drawer-layer")
     .evaluate((element) => Number(getComputedStyle(element).zIndex));
@@ -288,9 +277,7 @@ test("markdown image lightbox opens above drawer layers", async ({ page }) => {
   await expect
     .poll(async () =>
       page.evaluate(() =>
-        Boolean(
-          document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)?.closest(".markdown-image-lightbox"),
-        ),
+        Boolean(document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)?.closest(".kit-media-viewer")),
       ),
     )
     .toBe(true);
@@ -312,7 +299,7 @@ test.describe("touch markdown image zoom", () => {
     await expect(zoomButton).toHaveCSS("pointer-events", "auto");
 
     await zoomButton.tap();
-    await expect(page.getByRole("dialog", { name: "Expanded image" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Quality dashboard" })).toBeVisible();
   });
 });
 

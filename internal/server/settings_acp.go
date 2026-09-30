@@ -22,9 +22,12 @@ func (s *Server) testACPAgent(ctx context.Context, in *testACPAgentInput) (*http
 	if s.runtime == nil {
 		return &httpapi.BodyOutput[testACPAgentResult]{Body: testACPAgentResult{Message: "Workspace runtime is unavailable on this host."}}, nil
 	}
-	if err := s.runtime.TestACP(ctx, in.Body.Command); err != nil {
+	warning, err := s.runtime.TestACP(ctx, in.Body.Command)
+	if err != nil {
 		result.Valid = false
 		result.Message = err.Error()
+	} else if warning != "" {
+		result.Message += " " + warning
 	}
 	return &httpapi.BodyOutput[testACPAgentResult]{Body: result}, nil
 }

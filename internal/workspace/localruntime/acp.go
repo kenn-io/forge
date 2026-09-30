@@ -56,6 +56,8 @@ type ACP struct {
 	promptIndex    *int
 	recordPath     string
 	revision       uint64
+	// startupNotice explains a degraded but usable session start.
+	startupNotice string
 	// turnCompleted records a finished prompt turn in this process. A loaded
 	// session starts idle so reopening it never announces a new completion.
 	turnCompleted bool
@@ -262,8 +264,11 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	if err == nil && initialized.ProtocolVersion != acpsdk.ProtocolVersionNumber {
 		err = fmt.Errorf("unsupported ACP protocol version %d (expected %d)", initialized.ProtocolVersion, acpsdk.ProtocolVersionNumber)
 	}
+	var notices []string
 	if err == nil && len(mcpServers) > 0 && !initialized.AgentCapabilities.McpCapabilities.Http {
-		err = errors.New("this ACP agent does not accept HTTP MCP servers required by Forge")
+		// Forge tools are optional; the agent still works with its own tools.
+		mcpServers = []acpsdk.McpServer{}
+		notices = append(notices, acpNoHTTPMCPNotice)
 	}
 	if err == nil {
 		steering, _ := initialized.Meta["steering"].(map[string]any)
@@ -281,7 +286,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 			a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
 			if saved != nil {
 				a.restoreTranscriptLocked(saved.State)
-				a.state.Error = "This agent cannot reload its previous session, so it continues in a new session without that context."
+				notices = append(notices, "This agent cannot reload its previous session, so it continues in a new session without that context.")
 			}
 			a.mu.Unlock()
 		} else {
@@ -309,6 +314,10 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	}
 	a.mu.Lock()
 	a.state.Connected = true
+	if len(notices) > 0 {
+		a.startupNotice = strings.Join(notices, " ")
+		a.state.Error = a.startupNotice
+	}
 	a.changedLocked()
 	a.mu.Unlock()
 	return a, nil
@@ -317,22 +326,25 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 func (a *ACP) Done() <-chan struct{} { return a.done }
 func (a *ACP) ExitCode() int         { a.mu.Lock(); defer a.mu.Unlock(); return a.exitCode }
 
+const acpNoHTTPMCPNotice = "This agent does not accept HTTP MCP servers, so Forge tools are unavailable in its chats."
+
 // TestACP checks the same handshake used by workspace launches without retaining
 // a process or creating a workspace. The agent gets an empty temporary directory.
-func (m *Manager) TestACP(ctx context.Context, command []string) error {
+// A usable agent with reduced capabilities returns a warning and no error.
+func (m *Manager) TestACP(ctx context.Context, command []string) (string, error) {
 	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
-		return errors.New("ACP executable is required")
+		return "", errors.New("ACP executable is required")
 	}
 	cwd, err := os.MkdirTemp("", "forge-acp-test-")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.RemoveAll(cwd)
 	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), m.agentMCPServers(), nil)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return agent.Stop(context.Background())
+	return agent.startupNotice, agent.Stop(context.Background())
 }
 
 func (a *ACP) Stop(ctx context.Context) error {

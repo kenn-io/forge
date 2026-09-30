@@ -1374,3 +1374,9 @@ func (s *Server) getVersion(
 	resp.Body = versionOutputBody(s.buildInfo)
 	return resp, nil
 }
+
+// agentActivityDir holds hook and ACP activity reports. ACP owners write there
+// directly, so it must be the same directory the workspace API reads.
+func agentActivityDir(worktreeDir string) string {
+	return filepath.Join(filepath.Dir(worktreeDir), "agent-activity")
+}

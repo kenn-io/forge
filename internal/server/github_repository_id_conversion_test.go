@@ -15,9 +15,12 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/providerapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestFederationResolveGitHubRepositoryIDReportsHostWithoutCredential(t *testing.T) {
@@ -26,11 +29,11 @@ func TestFederationResolveGitHubRepositoryIDReportsHostWithoutCredential(t *test
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
-	t.Cleanup(func() { gracefulShutdown(t, srv) })
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	rr := testutil.DoJSON(t, srv, http.MethodPost,
 		"/api/v1/federation/provider/github-repository-id",
-		GitHubRepositoryIDRequest{
+		providerapi.GitHubRepositoryIDRequest{
 			PlatformHost: "github.example.com", Owner: "acme", Name: "widget", NodeID: "R_node",
 		},
 	)
@@ -65,7 +68,7 @@ func TestSpokeConvertsPendingGitHubRepositoriesThroughHub(t *testing.T) {
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
 		assert.Equal("/api/v1/federation/provider/github-repository-id", request.URL.Path)
-		var body GitHubRepositoryIDRequest
+		var body providerapi.GitHubRepositoryIDRequest
 		require.NoError(json.NewDecoder(request.Body).Decode(&body))
 		status, payload := http.StatusOK, `{"platform_repo_id":0,"found":false}`
 		switch body.NodeID {
@@ -82,9 +85,9 @@ func TestSpokeConvertsPendingGitHubRepositoriesThroughHub(t *testing.T) {
 			Request:    request,
 		}, nil
 	})
-	source := &hubProviderSource{client: client, db: database}
+	source := &spokeapi.HubProviderSource{Client: client, Db: database}
 
-	source.convertPendingGitHubRepositories(ctx)
+	source.ConvertPendingGitHubRepositories(ctx)
 
 	stored := func(repoID int64) (int64, string) {
 		var platformRepoID int64

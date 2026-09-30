@@ -33,6 +33,29 @@ type federationDiffDescriptorInput struct {
 
 type federationDiffDescriptorOutput = httpapi.BodyOutput[providerplane.DiffDescriptor]
 
+// GitHubRepositoryIDRequest names a GitHub repository row stored before
+// repository identity became the integer ID. owner/name select the hub's
+// credential; the node ID alone decides which repository answers.
+type GitHubRepositoryIDRequest struct {
+	PlatformHost string `json:"platform_host" minLength:"1"`
+	Owner        string `json:"owner" minLength:"1"`
+	Name         string `json:"name" minLength:"1"`
+	NodeID       string `json:"node_id" minLength:"1"`
+}
+
+// GitHubRepositoryIDResponse carries the integer ID GitHub reports for a node
+// ID. Found is false when GitHub no longer resolves the node.
+type GitHubRepositoryIDResponse struct {
+	PlatformRepoID int64 `json:"platform_repo_id"`
+	Found          bool  `json:"found"`
+}
+
+type federationGitHubRepositoryIDInput struct {
+	Body GitHubRepositoryIDRequest
+}
+
+type federationGitHubRepositoryIDOutput = httpapi.BodyOutput[GitHubRepositoryIDResponse]
+
 func (s *Handlers) RegisterProviderDescriptorAPI(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "federation-get-repository-descriptor",
@@ -60,14 +83,14 @@ func (s *Handlers) RegisterProviderDescriptorAPI(api huma.API) {
 // federationResolveGitHubRepositoryID lets a spoke finish the integer
 // repository-ID conversion for rows it stored under GitHub node IDs. Spokes
 // hold no GitHub credentials, so they cannot ask GitHub themselves.
-func (s *Server) federationResolveGitHubRepositoryID(
+func (s *Handlers) federationResolveGitHubRepositoryID(
 	ctx context.Context, input *federationGitHubRepositoryIDInput,
 ) (*federationGitHubRepositoryIDOutput, error) {
 	request := input.Body
-	if s.syncer == nil {
+	if (*s.Syncer) == nil {
 		return nil, httpapi.ServiceUnavailable("github sync is not running on this hub")
 	}
-	id, found, err := s.syncer.ResolveRepositoryNodeID(
+	id, found, err := (*s.Syncer).ResolveRepositoryNodeID(
 		ctx, request.PlatformHost, request.Owner, request.Name, request.NodeID,
 	)
 	if errors.Is(err, ghclient.ErrNoGitHubFetcher) {

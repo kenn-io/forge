@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
 
@@ -40,8 +41,6 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/gitealike"
-
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestMain(m *testing.M) {
@@ -2091,12 +2090,12 @@ func setupGitealikeCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string
 	dir := t.TempDir()
 	work := filepath.Join(dir, "work")
 	require.NoError(os.MkdirAll(work, 0o755))
-	// gitcmd.New() strips inherited GIT_DIR/GIT_WORK_TREE: under the
+	// gitsafe.Runner() strips inherited GIT_DIR/GIT_WORK_TREE: under the
 	// pre-commit hook git exports them into test children, and a bare
 	// procutil git here would re-init and reconfigure the HOST repo
 	// instead of the temp fixture.
 	run := func(args ...string) string {
-		out, stderr, err := gitcmd.New().Run(t.Context(), work, nil, args...)
+		out, stderr, err := gitsafe.Runner().Run(t.Context(), work, nil, args...)
 		require.NoError(err, "git %v: %s%s", args, out, stderr)
 		return strings.TrimSpace(string(out))
 	}
@@ -2113,7 +2112,7 @@ func setupGitealikeCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string
 	run("commit", "-m", "head")
 	headSHA = run("rev-parse", "HEAD")
 	cloneURL = filepath.Join(dir, "origin.git")
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, "clone", "--bare", work, cloneURL)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, "clone", "--bare", work, cloneURL)
 	require.NoError(err, "%s%s", out, stderr)
 	return cloneURL, baseSHA, headSHA
 }

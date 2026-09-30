@@ -37,8 +37,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/platformdb"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
-	gitcmd "go.kenn.io/kit/git/cmd"
 	"golang.org/x/sync/semaphore"
 
 	"go.kenn.io/forge/internal/apiclient"

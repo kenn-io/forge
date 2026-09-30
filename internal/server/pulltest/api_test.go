@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
 
@@ -47,8 +48,6 @@ import (
 	platformgithub "go.kenn.io/forge/platform/github"
 
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
-
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestMain(m *testing.M) {
@@ -3554,7 +3553,7 @@ func gitLocalRemoteURL(path string) string {
 
 func gitOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 	return strings.TrimSpace(string(out))
 }

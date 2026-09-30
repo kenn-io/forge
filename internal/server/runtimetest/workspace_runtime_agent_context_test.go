@@ -13,12 +13,11 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
-
-	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
@@ -183,7 +182,7 @@ func initServerWorkspaceGitRepo(t *testing.T) string {
 
 func runServerWorkspaceTestGit(t *testing.T, dir string, args ...string) []byte {
 	t.Helper()
-	out, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), dir, nil, args...)
 	require.NoError(t, err, "git %v failed: %s%s", args, out, stderr)
 	return out
 }

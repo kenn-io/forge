@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/ghshim"
-	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/runtimelock"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
@@ -97,20 +97,11 @@ func TestDefaultHostMatchesGHSoleConfiguredHost(t *testing.T) {
 	assert.Equal("override.example", defaultGHHost())
 }
 
-var fixtureGitExecutable string
-
 func TestMain(m *testing.M) {
-	// Preserve the immutable executable selected by git-safe before isolation
-	// removes GIT_* variables and replaces its config home.
-	fixtureGitExecutable = os.Getenv("GIT_SAFE_REAL_GIT")
 	os.Exit(gitsafe.RunIsolatedMain(m))
 }
 
 func TestRemoteResolutionDelegatesAmbiguousSelections(t *testing.T) {
-	require := require.New(t)
-	if fixtureGitExecutable != "" {
-		t.Setenv("GIT_SAFE_REAL_GIT", fixtureGitExecutable)
-	}
 	assert := assert.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -118,21 +109,17 @@ func TestRemoteResolutionDelegatesAmbiguousSelections(t *testing.T) {
 	t.Setenv("GH_HOST", "")
 	t.Setenv("GH_CONFIG_DIR", t.TempDir())
 	for _, args := range [][]string{{"init"}, {"config", "gc.auto", "0"}, {"config", "maintenance.auto", "false"}, {"remote", "add", "origin", "https://github.com/acme/widget.git"}} {
-		output, err := procutil.CommandContext(t.Context(), "git", args...).CombinedOutput()
-		require.NoError(err, string(output))
+		gitfixture.Run(t, dir, args...)
 	}
 	var q ghshim.Query
-	require.True(resolveRepo(&q, ""))
+	require.True(t, resolveRepo(&q, ""))
 	assert.Equal("widget", q.Repo)
 	t.Setenv("GH_HOST", "other.example")
 	assert.False(resolveRepo(&q, ""))
 	t.Setenv("GH_HOST", "")
-	output, err := procutil.CommandContext(t.Context(), "git", "config", "remote.origin.gh-resolved", "acme/parent").CombinedOutput()
-	require.NoError(err, string(output))
+	gitfixture.Run(t, dir, "config", "remote.origin.gh-resolved", "acme/parent")
 	assert.False(resolveRepo(&q, ""))
-	output, err = procutil.CommandContext(t.Context(), "git", "config", "remote.origin.gh-resolved", "base").CombinedOutput()
-	require.NoError(err, string(output))
-	output, err = procutil.CommandContext(t.Context(), "git", "remote", "add", "upstream", "https://github.com/acme/parent.git").CombinedOutput()
-	require.NoError(err, string(output))
+	gitfixture.Run(t, dir, "config", "remote.origin.gh-resolved", "base")
+	gitfixture.Run(t, dir, "remote", "add", "upstream", "https://github.com/acme/parent.git")
 	assert.False(resolveRepo(&q, ""))
 }

@@ -284,6 +284,9 @@ registry helpers return typed errors for missing providers or capabilities.
   this compare the repository's provider `Kind` to `platform.KindGitHub`
   directly (`internal/archive/snapshot.go::Service.snapshot`, computing
   `merge_status_observed_at`).
+- `merge_status_observed_at` is the oldest of the counted per-field observation
+  times, not a stored column; null on an empty input and whenever any counted
+  time is null, never the zero time (`internal/archive/snapshot.go::minObservedAt`).
 - Never put foreground deadlines on a shared provider HTTP client; scope them to
   the operation context (`platform/gitlab/client.go::NewClient`).
 - Provider clients with a local sync budget must use the shared transport; duplicate

@@ -133,6 +133,16 @@ For pull requests, that means:
   provider snapshot with authoritative head-repository data clears that marker
   (`internal/github/sync.go::CommitMergeRequestParentSnapshot`,
   `internal/github/sync.go::reclassifyWorkspaceHeadRepoTrust`).
+- Merge status observation times (`ci_observed_at`, `review_decision_observed_at`,
+  `mergeable_state_observed_at`) are written in the same statement as the value
+  they time, stamped with the moment Forge sent the provider request rather than
+  the response time; a value carried unchanged from the stored row keeps that
+  row's time (`internal/github/sync.go::CommitMergeRequestParentSnapshot`).
+- A field's time is set whenever that write's provider response authoritatively
+  reported the field, even when the value is empty (an empty review decision, a
+  complete empty CI check list); only mergeable state `""`/`"unknown"` is never
+  an observation, and a path that doesn't carry a field never stamps it
+  (`internal/github/sync.go::clearUnknownMergeableStateTime`).
 
 ## Timeline Event Rules
 

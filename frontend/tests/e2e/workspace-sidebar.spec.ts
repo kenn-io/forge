@@ -3773,7 +3773,7 @@ test.describe("sidebar toggle behavior", () => {
     const workflowPanelMetrics = await page.evaluate(() => {
       const handle = document.querySelector(".sidebar-resize-handle");
       const stage = document.querySelector(".workspace-stage");
-      const launcher = document.querySelector(".workspace-stage .workspace-launcher");
+      const launcher = document.querySelector(".workspace-stage .launcher-overlay");
       if (!handle || !stage || !launcher) {
         throw new Error("Missing handle, workspace stage, or session launcher");
       }
@@ -3938,6 +3938,9 @@ test.describe("sidebar toggle behavior", () => {
 
   test("Cmd+] toggles sidebar open and closed", async ({ page }) => {
     await page.goto("/terminal/ws-123");
+    await expect(page.getByRole("dialog", { name: "Launch a session" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.locator(".terminal-view").focus();
 
     // Start closed
     await expect(page.locator(".right-sidebar")).toHaveCount(0);
@@ -3953,6 +3956,8 @@ test.describe("sidebar toggle behavior", () => {
 
   test("Cmd+] leaves the workspace sidebar closed while the command palette owns focus", async ({ page }) => {
     await page.goto("/terminal/ws-123");
+    await expect(page.getByRole("dialog", { name: "Launch a session" })).toBeVisible();
+    await page.keyboard.press("Escape");
 
     await page.keyboard.press("Meta+K");
     const palette = page.getByRole("dialog", { name: "Command palette" });
@@ -3967,6 +3972,7 @@ test.describe("sidebar toggle behavior", () => {
 
   test("Cmd+] leaves the workspace sidebar closed while application chrome owns focus", async ({ page }) => {
     await page.goto("/terminal/ws-123");
+    await expect(page.getByRole("dialog", { name: "Launch a session" })).toBeVisible();
     const settings = page.getByRole("button", { name: "Settings" });
     await settings.focus();
     await expect(settings).toBeFocused();

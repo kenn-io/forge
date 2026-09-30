@@ -91,7 +91,7 @@ test.describe("embedded workspace launcher", () => {
     });
   });
 
-  test("launches a first session from the overlay and another from the pane menu", async ({ page }) => {
+  test("launches sessions from the contained launcher and the pane menu", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -111,7 +111,24 @@ test.describe("embedded workspace launcher", () => {
       // pane has no Home tab to fall back to.
       const launcher = page.getByRole("dialog", { name: "Launch a session" });
       await expect(launcher).toBeVisible();
-      await launcher.getByRole("button", { name: "Shell" }).click();
+      const bounds = await launcher.evaluate((panel) => {
+        const stage = panel.closest(".workspace-stage")!;
+        const parent = stage.getBoundingClientRect();
+        const child = panel.getBoundingClientRect();
+        return (
+          child.left >= parent.left &&
+          child.right <= parent.right &&
+          child.top >= parent.top &&
+          child.bottom <= parent.bottom
+        );
+      });
+      expect(bounds).toBe(true);
+      // The pane toolbar stays usable while its launcher is open.
+      await page.getByRole("button", { name: "Workspace info", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Workspace info", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(launcher).toBeVisible();
+      await launcher.getByRole("button", { name: "Shell", exact: true }).click();
 
       // The successful launch response records and publishes the session, so the
       // overlay stands down without waiting on a redundant runtime reload. The live
@@ -121,13 +138,19 @@ test.describe("embedded workspace launcher", () => {
       await expect(container).toBeVisible();
       await typeMarkerCommand(page, container, workspace.worktree_path, "launcher-marker");
 
+      // Reopening over xterm must keep launch buttons above its canvas layers.
+      await runPaletteCommand(page, "Launch a workspace session");
+      await expect(launcher).toBeVisible();
+      await launcher.getByRole("button", { name: "Shell", exact: true }).click();
+      await expect(launcher).toBeHidden();
+
       await page.getByRole("button", { name: "Workspace info", exact: true }).click();
       const info = page.getByRole("dialog", { name: "Workspace info", exact: true });
       await expect(info.getByText(workspace.worktree_path, { exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(info).toBeHidden();
       await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
-      await expect(container).toBeVisible();
+      await expect(container.filter({ visible: true })).toBeVisible();
 
       // The direct pane menu must offer launch targets after a session is
       // already running, without opening the workspace controls popover first.
@@ -141,7 +164,7 @@ test.describe("embedded workspace launcher", () => {
       await launchMenu.getByRole("button", { name: "Shell", exact: true }).click();
       await expect(launchMenu).toBeHidden();
 
-      // The e2e-only endpoint reads SQLite directly, so two persisted shell targets
+      // The e2e-only endpoint reads SQLite directly, so three persisted shell targets
       // prove the header-opened launch completed across the HTTP/runtime boundary.
       await expect
         .poll(async () => {
@@ -150,7 +173,7 @@ test.describe("embedded workspace launcher", () => {
           const body = (await response.json()) as { target_keys: string[] };
           return body.target_keys;
         })
-        .toEqual(["plain_shell", "plain_shell"]);
+        .toEqual(["plain_shell", "plain_shell", "plain_shell"]);
       const activeContainer = page.locator(
         ".detail-pane-workspace-slot .tabbed-panel-tab-panel.active .terminal-container",
       );

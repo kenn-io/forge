@@ -152,6 +152,9 @@ Interactive surfaces must agree on which item is selected.
   or chevron, to preserve tab-strip space (`frontend/src/lib/components/terminal/LaunchMenu.svelte`).
 - The session launcher groups ACP chat targets in their own section apart from terminal
   targets (`frontend/src/lib/components/terminal/WorkspaceLauncher.svelte`).
+- Empty workspaces offer the launcher inside their terminal frame, without a page-wide
+  backdrop or focus trap. Launching a session dismisses it; other panes remain usable
+  (`frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.svelte`).
 - The ACP composer never blocks while a turn runs; only a disconnected chat disables it.
   Busy input steers when the agent supports it, otherwise queues
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).

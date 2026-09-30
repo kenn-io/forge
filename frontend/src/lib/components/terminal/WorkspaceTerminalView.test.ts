@@ -5469,24 +5469,32 @@ describe("WorkspaceTerminalView", () => {
       expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
     });
 
-    it("drops the Home tab in a pane and opens the launcher when nothing is running", async () => {
-      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
-      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
-      claimForPrs();
+    it.each([undefined, "prs"] as const)(
+      "keeps the empty launcher inside the terminal frame (%s)",
+      async (paneSurface) => {
+        localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+        mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+        claimForPrs();
 
-      render(WorkspaceTerminalView, {
-        props: {
-          workspaceId: "ws-1",
-          paneSurface: "prs" as const,
-        },
-      });
+        render(WorkspaceTerminalView, {
+          props: {
+            workspaceId: "ws-1",
+            paneSurface,
+          },
+        });
 
-      // The pane's one slot goes to a terminal, not to a surface only used to start
-      // one; with nothing to show, the launcher is what opens instead of an empty
-      // strip.
-      await waitFor(() => expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy());
-      expect(screen.queryByRole("tab", { name: "Home" })).toBeNull();
-    });
+        // The pane's one slot goes to a terminal, not to a surface only used to start
+        // one; with nothing to show, the launcher is what opens instead of an empty
+        // strip.
+        await waitFor(() => expect(screen.getByRole("dialog", { name: /Launch a session/ })).toBeTruthy());
+        expect(
+          screen
+            .getByRole("region", { name: "Workflow panes" })
+            .contains(screen.getByRole("dialog", { name: "Launch a session" })),
+        ).toBe(true);
+        expect(screen.queryByRole("tab", { name: "Home" })).toBeNull();
+      },
+    );
 
     it("removes the automatic launcher at item intent and never remounts it during promotion", async () => {
       const launchRequest = deferred<typeof runningSession>();
@@ -5657,20 +5665,6 @@ describe("WorkspaceTerminalView", () => {
       // The sole-session surface replaces the dock panel without changing the
       // launcher's rule: the terminal is on screen, so the overlay stays away.
       await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
-      expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
-    });
-
-    it("shows launch choices inline when a standalone workspace has no sessions", async () => {
-      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
-      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
-
-      render(WorkspaceTerminalView, {
-        props: {
-          workspaceId: "ws-1",
-        },
-      });
-
-      expect(await screen.findByRole("button", { name: "Workspace info" })).toBeTruthy();
       expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
     });
 

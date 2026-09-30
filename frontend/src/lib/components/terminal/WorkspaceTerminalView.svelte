@@ -935,10 +935,7 @@
     untrack(() => publishHostedSessions(key, sessions));
   });
 
-  // A detail pane trades the Home tab for the launcher overlay. Keyed off the pane
-  // surface rather than the flatten width: unlike the controls, the overlay is a
-  // modal and needs no chrome of its own to live in.
-  const launcherMode = $derived(paneSurface !== undefined);
+  const embeddedWorkspace = $derived(paneSurface !== undefined);
   // `auto` records who opened it: an overlay the view raised over an empty pane is
   // its own to take back once there is something to show, while one the user asked
   // for stays until they dismiss it - they may be picking a second session.
@@ -993,7 +990,7 @@
     // same reason it reports its state, and the launcher answered that by covering the
     // state message, and the Retry and Delete beside it, with an invitation to start
     // an agent inside something that cannot run one.
-    if (!launcherMode || workspace?.status !== "ready") return;
+    if (workspace?.status !== "ready") return;
     // Runtime teardown can reach any of the automatic fallback paths before the
     // deleted inline host is removed. It is not an empty workspace to relaunch.
     if (deletingSelectedWorkspace || forceDeleting) return;
@@ -1029,8 +1026,8 @@
    * Where to go when the tab the user was on disappears - a session stopped, the
    * terminal panel closed, a tab moved to the dock.
    *
-   * Keep a remaining session visible. With no sessions, standalone workspaces
-   * show launch choices inline and detail panes use their launcher overlay.
+   * Keep a remaining session visible. With no sessions, offer the launcher
+   * inside the terminal frame.
    */
   function selectFallbackTab(remember = true): void {
     const next = workflowTabDescriptors.find((tab) => tab.key !== activeTabKey);
@@ -1045,16 +1042,15 @@
   }
 
   // Reachable from outside the view: the palette command, and a Focus Terminal that
-  // finds no session to focus. Only while embedded, since that is the only mode with
-  // an overlay to open.
+  // finds no session to focus. The registry belongs to embedded detail surfaces.
   $effect(() => {
-    if (!launcherMode) return;
+    if (!embeddedWorkspace) return;
     untrack(() => registerWorkspaceLauncher(openLauncher));
     return () => untrack(() => registerWorkspaceLauncher(null));
   });
 
   $effect(() => {
-    if (!launcherMode && hostVisible && runtimeLive && workspaceTabLoaded) {
+    if (!embeddedWorkspace && hostVisible && runtimeLive && workspaceTabLoaded) {
       // Returning from a detail pane restores the selected dock to the stage.
       untrack(() => {
         if ((lastRequestedTabKey ?? activeTabKey) === "terminal") restoreWorkspaceTabSelection("terminal");
@@ -1062,8 +1058,8 @@
     }
   });
 
-  // Resolve unavailable saved tabs to a running session. Only empty detail panes
-  // open the launcher overlay; standalone workspaces show launch choices inline.
+  // Resolve unavailable saved tabs to a running session, or offer the launcher
+  // inside the empty terminal frame.
   $effect(() => {
     if (!hostVisible || !runtimeLive || !workspaceTabLoaded) return;
     // A workspace that turns out not to be ready takes its launcher back. The runtime
@@ -2205,7 +2201,7 @@
     const terminalSession = session && sessionRegion(session) === "terminal" ? session : null;
     if (terminalSession) key = "terminal";
     // Detail panes keep their placement; opening a top dock there can cover a promoted session.
-    if (key === "terminal" && !launcherMode && hostVisible) {
+    if (key === "terminal" && !embeddedWorkspace && hostVisible) {
       terminalLayout = { ...terminalLayout, open: true, dock: "top" };
     }
     if (terminalSession) selectTerminalSession(terminalSession.key, false, sessions);
@@ -4572,7 +4568,7 @@
             {#snippet headerActions()}
               {#if workspace}
                 <div class="header-end">
-                  <div class="workspace-actions">{@render workspaceControls((launcherMode || !compactHeader) && renderedWorkflowTree === null)}</div>
+                  <div class="workspace-actions">{@render workspaceControls((embeddedWorkspace || !compactHeader) && renderedWorkflowTree === null)}</div>
                   {#if !hideRightSidebar}
                     <div class="panel-toggle-group">
                       <button
@@ -4714,7 +4710,7 @@
             {/snippet}
             {#if compactHeader}
               <div class="compact-header-actions">
-                {#if !launcherMode && renderedWorkflowTree === null}
+                {#if !embeddedWorkspace && renderedWorkflowTree === null}
                   {@render workspaceInfo()}
                   <LaunchMenu
                     {launchTargets}
@@ -4881,17 +4877,29 @@
                         {/if}
                       {/snippet}
                     </WorkflowSplitTree>
-                  {:else if !launcherMode && runtimeLive && runtimeSessions.length === 0}
-                    <WorkspaceLauncher
-                      {launchTargets}
-                      sessions={[]}
-                      {launchingKey}
-                      readonly={actionsBlocked}
-                      quickActions={workspaceQuickActions}
-                      onLaunch={(key) => handleLaunch(key)}
-                      onQuickAction={handleQuickAction}
-                    />
                   {/if}
+                {/if}
+                {#if workspace !== null && launcherOverlayAllowed}
+                  <WorkspaceLauncherOverlay
+                    open={launcherOpen && interactionVisible}
+                    launchTargets={launchTargets}
+                    sessions={runtimeSessions}
+                    displayLabels={sessionDisplayLabels}
+                    {launchingKey}
+                    readonly={actionsBlocked}
+                    quickActions={workspaceQuickActions}
+                    onClose={closeLauncher}
+                    onLaunch={(key) => handleLaunch(key, undefined, launcherState?.leaf)}
+                    onQuickAction={(action) => {
+                      const leaf = launcherState?.leaf;
+                      closeLauncher();
+                      handleQuickAction(action, leaf);
+                    }}
+                    onOpenSession={(sessionKey) => {
+                      closeLauncher();
+                      openSession(sessionKey);
+                    }}
+                  />
                 {/if}
               </div>
               <!-- Kept even in a chrome-free pane. The header bar and the one-tab
@@ -5014,29 +5022,6 @@
     {@render terminalMainContent()}
   </CollapsibleSidebar>
 </div>
-
-{#if launcherMode && workspace !== null && launcherOverlayAllowed}
-  <WorkspaceLauncherOverlay
-    open={launcherOpen && interactionVisible}
-    launchTargets={launchTargets}
-    sessions={runtimeSessions}
-    displayLabels={sessionDisplayLabels}
-    {launchingKey}
-    readonly={actionsBlocked}
-    quickActions={workspaceQuickActions}
-    onClose={closeLauncher}
-    onLaunch={(key) => handleLaunch(key, undefined, launcherState?.leaf)}
-    onQuickAction={(action) => {
-      const leaf = launcherState?.leaf;
-      closeLauncher();
-      handleQuickAction(action, leaf);
-    }}
-    onOpenSession={(sessionKey) => {
-      closeLauncher();
-      openSession(sessionKey);
-    }}
-  />
-{/if}
 
 {#if attributionDialogOpen && workspace?.commit_attribution}
   {@const attribution = workspace.commit_attribution}
@@ -5287,7 +5272,7 @@
       <PanelBottomCloseIcon size="13" strokeWidth="2" aria-hidden="true" />
     </Button>
   {/if}
-  {#if !launcherMode}
+  {#if !embeddedWorkspace}
     <!-- Presets compose a whole multi-session workflow, which is what the standalone
          Workspaces tab is for. A PR or issue pane hosts one workspace beside the
          thing being reviewed, so saving and applying layouts there is a surface the
@@ -5318,7 +5303,7 @@
       terminalOptionsSaving = saving;
     }}
   />
-  {#if launcherMode}
+  {#if embeddedWorkspace}
     {#if soleEmbeddedSession !== null}
       <!-- The chrome that carried these is gone in this state, and only in this
            state: with the header bar or the session strip on screen they already

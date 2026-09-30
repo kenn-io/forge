@@ -1,19 +1,9 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { resetModalStack, getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
 
 import WorkspaceLauncherOverlay from "./WorkspaceLauncherOverlay.svelte";
 import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
-
-const workspace = {
-  id: "ws-1",
-  repo_owner: "acme",
-  repo_name: "widget",
-  item_number: 7,
-  git_head_ref: "feature/launcher",
-  worktree_path: "/tmp/widget",
-  mr_title: "Improve workspace UX",
-};
 
 const launchTargets = [
   { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true },
@@ -25,7 +15,6 @@ function renderOverlay(props: Record<string, unknown> = {}) {
     props: {
       component: WorkspaceLauncherOverlay,
       open: true,
-      workspace,
       launchTargets,
       sessions: [],
       onClose: vi.fn(),
@@ -53,12 +42,19 @@ describe("WorkspaceLauncherOverlay", () => {
     expect(onLaunch).toHaveBeenCalledWith("codex");
   });
 
-  it("holds a modal frame so global single-key shortcuts stay suppressed", () => {
-    // The overlay covers the terminal, and j/k/Escape would otherwise still be
-    // driving the list behind it.
+  it("releases keyboard ownership when focus leaves the launcher", async () => {
     renderOverlay();
-
     expect(getStackDepth()).toBeGreaterThan(0);
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    try {
+      outside.focus();
+      await waitFor(() => expect(getStackDepth()).toBe(0));
+      expect(document.activeElement).toBe(outside);
+      expect(screen.getByRole("dialog")).toBeTruthy();
+    } finally {
+      outside.remove();
+    }
   });
 
   it("renders nothing while closed", () => {

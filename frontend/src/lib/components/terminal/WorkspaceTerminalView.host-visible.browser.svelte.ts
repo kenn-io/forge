@@ -1,4 +1,4 @@
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import { flushSync, mount, unmount } from "svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -416,7 +416,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
 
       // Reappears with no further interaction: the open-state variable
       // (forcePromptMessage) survived the hidden window.
-      await expect.element(page.getByRole("dialog")).toBeVisible();
+      await expect.element(page.getByRole("dialog", { name: "Force delete workspace?" })).toBeVisible();
     } finally {
       flushSync(() => unmount(instance));
       target.remove();
@@ -478,6 +478,10 @@ describe("WorkspaceTerminalView hostVisible", () => {
         const el = document.querySelector(".header-btn.danger");
         expect(el).not.toBeNull();
       }, WAIT);
+
+      // Finish the empty-workspace prompt before testing sidebar shortcuts.
+      await expect.element(page.getByRole("dialog", { name: "Launch a session" })).toBeInTheDocument();
+      await userEvent.keyboard("{Escape}");
 
       // Visible: the window-level shortcut opens the right sidebar. The
       // clamp against the (small) test viewport may legitimately shrink
@@ -628,6 +632,9 @@ describe("WorkspaceTerminalView hostVisible", () => {
         const el = document.querySelector(".header-btn.danger");
         expect(el).not.toBeNull();
       }, WAIT);
+
+      await expect.element(page.getByRole("dialog", { name: "Launch a session" })).toBeInTheDocument();
+      await userEvent.keyboard("{Escape}");
 
       // Terminal options popover, then the font picker Modal nested inside
       // it — the deepest overlay stack a toolbar menu can build.

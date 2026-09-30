@@ -864,14 +864,13 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 		if runtimeErr != nil ||
 			runtimeResp.StatusCode != http.StatusOK ||
 			runtimeResp.JSON200 == nil ||
-			runtimeResp.JSON200.Sessions == nil {
+			runtimeResp.JSON200.Sessions == nil ||
+			len(runtimeResp.JSON200.Sessions) != 0 {
 			return false
 		}
-		return len(runtimeResp.JSON200.Sessions) == 0
+		stored, storedErr := database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
+		return storedErr == nil && len(stored) == 0
 	}, 2*time.Second, 20*time.Millisecond)
-	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
-	require.NoError(err)
-	assert.Empty(stored)
 	assert.NotEmpty(launchResp.JSON200.Key)
 }
 
@@ -905,14 +904,13 @@ func TestWorkspaceRuntimePtyOwnerQuickExitLaunchSucceedsE2E(t *testing.T) {
 		if runtimeErr != nil ||
 			runtimeResp.StatusCode != http.StatusOK ||
 			runtimeResp.JSON200 == nil ||
-			runtimeResp.JSON200.Sessions == nil {
+			runtimeResp.JSON200.Sessions == nil ||
+			len(runtimeResp.JSON200.Sessions) != 0 {
 			return false
 		}
-		return len(runtimeResp.JSON200.Sessions) == 0
+		stored, storedErr := database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
+		return storedErr == nil && len(stored) == 0
 	}, 2*time.Second, 20*time.Millisecond)
-	stored, err := database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
-	require.NoError(err)
-	assert.Empty(stored)
 }
 
 // TestWorkspaceRuntimePlainShellTerminalWebSocketE2E exercises the runtime

@@ -346,6 +346,7 @@ func (s *Syncer) refreshRelayRefs(ctx context.Context, repo RepoRef) error {
 	if err != nil {
 		return err
 	}
+	requestedAt := s.nowUTC()
 	prs, err := client.ListOpenPullRequests(ctx, repo.Owner, repo.Name)
 	if platformgithub.IsNotModified(err) {
 		return nil
@@ -354,7 +355,7 @@ func (s *Syncer) refreshRelayRefs(ctx context.Context, repo RepoRef) error {
 		return err
 	}
 	for _, pr := range prs {
-		if err := s.indexUpsertMR(ctx, client, repo, repoID, pr); err != nil {
+		if err := s.indexUpsertMR(ctx, client, repo, repoID, pr, requestedAt); err != nil {
 			return err
 		}
 	}

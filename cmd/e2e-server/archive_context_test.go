@@ -21,6 +21,12 @@ func TestArchiveContextScenarioExportsEvidenceAndCoverage(t *testing.T) {
 	state, err := buildAppState(t.Context(), assets, appOptions{scenario: "archive-context", roborevEndpoint: defaultRoborevEndpoint})
 	require.NoError(t, err)
 	t.Cleanup(state.close)
+	inventory := httptest.NewRecorder()
+	state.handler.ServeHTTP(inventory, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1/api/v1/repos", nil))
+	require.Equal(t, http.StatusOK, inventory.Code)
+	var repos []map[string]any
+	require.NoError(t, json.Unmarshal(inventory.Body.Bytes(), &repos))
+	require.Len(t, repos, 2)
 	end := time.Now().UTC().Add(time.Minute)
 	path := "http://127.0.0.1/api/v1/archive/snapshot?issue_scope=open&start=" + end.Add(-7*24*time.Hour).Format(time.RFC3339) + "&end=" + end.Format(time.RFC3339)
 	response := httptest.NewRecorder()

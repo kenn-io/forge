@@ -39,6 +39,9 @@ func TestArchiveContextScenarioExportsEvidenceAndCoverage(t *testing.T) {
 	}
 	assert.NotEmpty(result.Issues)
 	assert.NotEmpty(result.PullRequests)
+	for _, pr := range result.PullRequests {
+		assert.Len(pr.HeadSHA, 40)
+	}
 	first := result.PullRequests[0]
 	response = httptest.NewRecorder()
 	state.handler.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "http://127.0.0.1/__e2e/archive-context", strings.NewReader(`{"complete":false,"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`)))

@@ -20,6 +20,10 @@ func (repos archiveContextRepositories) ConfiguredRepositories(context.Context) 
 }
 
 func seedArchiveContext(ctx context.Context, database *db.DB, registry *platform.Registry) (*archive.Service, error) {
+	// This scenario owns a small, fully collected inventory.
+	if _, err := database.WriteDB().ExecContext(ctx, `DELETE FROM forge_repos WHERE NOT (platform='github' AND platform_host='github.com' AND owner='acme' AND name IN ('widgets','tools'))`); err != nil {
+		return nil, err
+	}
 	repos := archiveContextRepositories{}
 	for _, name := range []string{"widgets", "tools"} {
 		repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", name))
@@ -67,7 +71,7 @@ func updateArchiveContext(ctx context.Context, database *db.DB, complete bool, h
 		if _, err := database.WriteDB().ExecContext(ctx, `UPDATE forge_repos SET last_sync_completed_at=? WHERE id=?`, now, repo.ID); err != nil {
 			return err
 		}
-		if _, err := database.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET detail_fetched_at=? WHERE repo_id=?`, now, repo.ID); err != nil {
+		if _, err := database.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET detail_fetched_at=?, platform_head_sha=CASE WHEN platform_head_sha='' THEN printf('%040x',id) ELSE platform_head_sha END WHERE repo_id=?`, now, repo.ID); err != nil {
 			return err
 		}
 		if head != "" {

@@ -19,7 +19,8 @@
   import Modal from "../shared/Modal.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import DialogButton from "../shared/DialogButton.svelte";
-  import WorkspaceHome from "./WorkspaceHome.svelte";
+  import WorkspaceLauncher from "./WorkspaceLauncher.svelte";
+  import WorkspaceInfo from "./WorkspaceInfo.svelte";
   import WorkspaceLauncherOverlay from "./WorkspaceLauncherOverlay.svelte";
   import LaunchMenu from "./LaunchMenu.svelte";
   import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
@@ -950,10 +951,6 @@
   let launcherShownFor = $state<string[]>([]);
 
   function openLauncher(leaf?: WorkspaceRuntimeLaunchLeaf): void {
-    if (!launcherMode) {
-      selectWorkspaceTab("home");
-      return;
-    }
     if (!launcherShownFor.includes(viewWorkspaceKey)) {
       launcherShownFor = [...launcherShownFor, viewWorkspaceKey];
     }
@@ -996,7 +993,7 @@
     // same reason it reports its state, and the launcher answered that by covering the
     // state message, and the Retry and Delete beside it, with an invitation to start
     // an agent inside something that cannot run one.
-    if (workspace?.status !== "ready") return;
+    if (!launcherMode || workspace?.status !== "ready") return;
     // Runtime teardown can reach any of the automatic fallback paths before the
     // deleted inline host is removed. It is not an empty workspace to relaunch.
     if (deletingSelectedWorkspace || forceDeleting) return;
@@ -1032,15 +1029,10 @@
    * Where to go when the tab the user was on disappears - a session stopped, the
    * terminal panel closed, a tab moved to the dock.
    *
-   * Home is that place outside a pane. Inside one there is no Home, so it is
-   * whatever workflow tab is left, and the launcher when the workspace has nothing
-   * left to show: a pane rendering an empty strip is a dead end.
+   * Keep a remaining session visible. With no sessions, standalone workspaces
+   * show launch choices inline and detail panes use their launcher overlay.
    */
   function selectFallbackTab(remember = true): void {
-    if (!launcherMode) {
-      selectWorkspaceTab("home", remember);
-      return;
-    }
     const next = workflowTabDescriptors.find((tab) => tab.key !== activeTabKey);
     if (next !== undefined) {
       selectWorkspaceTab(next.key, remember);
@@ -1061,23 +1053,19 @@
     return () => untrack(() => registerWorkspaceLauncher(null));
   });
 
-  // A pane whose only tab was Home has nothing to show, and a remembered Home tab
-  // names a tab that no longer exists here. Both resolve the same way: show whatever
-  // session is there, and open the launcher when there is none.
+  $effect(() => {
+    if (!launcherMode && hostVisible && runtimeLive && workspaceTabLoaded) {
+      // Returning from a detail pane restores the selected dock to the stage.
+      untrack(() => {
+        if ((lastRequestedTabKey ?? activeTabKey) === "terminal") restoreWorkspaceTabSelection("terminal");
+      });
+    }
+  });
+
+  // Resolve unavailable saved tabs to a running session. Only empty detail panes
+  // open the launcher overlay; standalone workspaces show launch choices inline.
   $effect(() => {
     if (!hostVisible || !runtimeLive || !workspaceTabLoaded) return;
-    if (!launcherMode) {
-      // Detail panes can show a fallback without changing the saved Home choice.
-      // A promoted terminal keeps its detail placement until Workspaces opens.
-      untrack(() => {
-        if ((lastRequestedTabKey ?? restoredTabKey) === "home") {
-          restoreWorkspaceTabSelection("home");
-        } else if ((lastRequestedTabKey ?? activeTabKey) === "terminal") {
-          restoreWorkspaceTabSelection("terminal");
-        }
-      });
-      return;
-    }
     // A workspace that turns out not to be ready takes its launcher back. The runtime
     // load lands before the workspace record does, so the overlay is already up by the
     // time the state is known - and the guard in autoOpenLauncher cannot undo what it
@@ -1333,18 +1321,7 @@
   }
 
   const workflowTabDescriptors = $derived.by<WorkflowTabDescriptor[]>(() => {
-    // No Home tab inside a detail pane: the workspace gets one pane there, and
-    // spending half its height on a surface only used to start something is the
-    // trade this mode exists to undo. The launcher overlay replaces it.
-    const tabs: WorkflowTabDescriptor[] = launcherMode
-      ? []
-      : [
-          {
-            key: "home",
-            label: "Home",
-            kind: "home",
-          },
-        ];
+    const tabs: WorkflowTabDescriptor[] = [];
     if (
       terminalLayout.dock === "top" &&
       (terminalLayout.open || terminalSessions.length > 0)
@@ -1372,15 +1349,10 @@
     return tabs;
   });
   const renderedWorkflowTree = $derived(
-    promotedSessionKeys.size === 0 && !launcherMode
-      ? terminalLayout.workflowTree
-      : pruneWorkflowTreeToAvailable(
-          // Embedded too, not just when something is promoted: the stored tree still
-          // names Home, and a leaf whose only tab has no descriptor renders a strip
-          // with nothing in it.
-          terminalLayout.workflowTree,
-          workflowTabDescriptors.map((tab) => tab.key),
-      ),
+    pruneWorkflowTreeToAvailable(
+      terminalLayout.workflowTree,
+      workflowTabDescriptors.map((tab) => tab.key),
+    ),
   );
   // Only this strip shares the corner with the detail pane's floating controls.
   const topRightWorkflowLeafID = $derived.by(() => {
@@ -1536,10 +1508,6 @@
       for (const key of showing) mountSessionTerminal(key);
     });
   });
-
-  const terminalPanelInStage = $derived(
-    terminalLayout.open && terminalLayout.dock === "top",
-  );
 
   // While `workspaceId` has moved on but the previous workspace's
   // data is still on screen (the in-place transition), mutating
@@ -2064,7 +2032,7 @@
     sessions: RuntimeSession[],
     layout: TerminalLayoutState = terminalLayout,
   ): WorkflowTabKey[] {
-    const keys: WorkflowTabKey[] = ["home"];
+    const keys: WorkflowTabKey[] = [];
     if (
       layout.dock === "top" &&
       (layout.open || terminalSessionKeysFrom(sessions, layout).length > 0)
@@ -2223,7 +2191,9 @@
   function handleWorkflowPaneFocus(key: WorkflowTabKey): void {
     focusedWorkflowTabKey = key;
     lastWorkflowInputContentKey = workflowContentKeyFor(key);
-    handleWorkflowTabActivation(key);
+    // Focusing the collapsed dock's toggle must not open it before the click.
+    if (key === "terminal") selectWorkspaceTab(key);
+    else handleWorkflowTabActivation(key);
   }
 
   function restoreWorkspaceTabSelection(key: WorkflowTabKey): void {
@@ -4450,11 +4420,10 @@
                   You can then launch configured agents via the buttons provided
                 </span>
                 {#if emptyLaunchTargets.length > 0}
-                  <WorkspaceHome
+                  <WorkspaceLauncher
                     launchTargets={emptyLaunchTargets}
                     sessions={[]}
                     readonly
-                    showHeader={false}
                   />
                 {:else if emptyLaunchTargetsState === "error"}
                   <p class="workspace-zero-example-empty">
@@ -4603,7 +4572,7 @@
             {#snippet headerActions()}
               {#if workspace}
                 <div class="header-end">
-                  <div class="workspace-actions">{@render workspaceControls(launcherMode && renderedWorkflowTree === null)}</div>
+                  <div class="workspace-actions">{@render workspaceControls((launcherMode || !compactHeader) && renderedWorkflowTree === null)}</div>
                   {#if !hideRightSidebar}
                     <div class="panel-toggle-group">
                       <button
@@ -4745,6 +4714,18 @@
             {/snippet}
             {#if compactHeader}
               <div class="compact-header-actions">
+                {#if !launcherMode && renderedWorkflowTree === null}
+                  {@render workspaceInfo()}
+                  <LaunchMenu
+                    {launchTargets}
+                    {launchingKey}
+                    disabled={actionsBlocked}
+                    hostVisible={interactionVisible}
+                    quickActions={workspaceQuickActions}
+                    onQuickAction={handleQuickAction}
+                    onLaunch={(key) => handleLaunch(key)}
+                  />
+                {/if}
                 <WorkspacePaneControls
                   controls={interactionVisible ? { snippet: headerActions, workspaceKey: viewWorkspaceKey } : null}
                   busy={terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset}
@@ -4833,7 +4814,8 @@
                       }}
                     >
                       {#snippet leafActions(leaf)}
-                        <div style:margin-right={leaf.id === topRightWorkflowLeafID ? "var(--tabbed-panel-solo-actions-width, 0px)" : undefined}>
+                        <div class="workflow-actions" style:margin-right={leaf.id === topRightWorkflowLeafID ? "var(--tabbed-panel-solo-actions-width, 0px)" : undefined}>
+                          {#if !controlsInPane}{@render workspaceInfo()}{/if}
                           <LaunchMenu
                             {launchTargets}
                             {launchingKey}
@@ -4846,22 +4828,7 @@
                         </div>
                       {/snippet}
                       {#snippet renderTab(tabKey, active)}
-                        {#if tabKey === "home"}
-                          {#if workspace}
-                            <WorkspaceHome
-                              {workspace}
-                              launchTargets={launchTargets}
-                              sessions={runtimeSessions}
-                              displayLabels={sessionDisplayLabels}
-                              {launchingKey}
-                              readonly={actionsBlocked}
-                              quickActions={workspaceQuickActions}
-                              onLaunch={(key) => void handleLaunch(key)}
-                              onQuickAction={handleQuickAction}
-                              onOpenSession={openSession}
-                            />
-                          {/if}
-                        {:else if tabKey === "terminal" && terminalPanelInStage}
+                        {#if tabKey === "terminal"}
                           <DockedTerminalPanel
                             {workspaceId}
                             {workspaceHostKey}
@@ -4914,6 +4881,16 @@
                         {/if}
                       {/snippet}
                     </WorkflowSplitTree>
+                  {:else if !launcherMode && runtimeLive && runtimeSessions.length === 0}
+                    <WorkspaceLauncher
+                      {launchTargets}
+                      sessions={[]}
+                      {launchingKey}
+                      readonly={actionsBlocked}
+                      quickActions={workspaceQuickActions}
+                      onLaunch={(key) => handleLaunch(key)}
+                      onQuickAction={handleQuickAction}
+                    />
                   {/if}
                 {/if}
               </div>
@@ -5041,7 +5018,6 @@
 {#if launcherMode && workspace !== null && launcherOverlayAllowed}
   <WorkspaceLauncherOverlay
     open={launcherOpen && interactionVisible}
-    {workspace}
     launchTargets={launchTargets}
     sessions={runtimeSessions}
     displayLabels={sessionDisplayLabels}
@@ -5251,7 +5227,16 @@
 <!-- The workspace's own controls, defined here because every one of them is wired
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
+{#snippet workspaceInfo()}
+  {#if workspace}
+    {#key viewWorkspaceKey}
+      <WorkspaceInfo {workspace} hostVisible={interactionVisible} />
+    {/key}
+  {/if}
+{/snippet}
+
 {#snippet workspaceControls(showLaunch = true)}
+  {#if !controlsInPane && !compactHeader && renderedWorkflowTree === null}{@render workspaceInfo()}{/if}
   {#if workspace?.commit_attribution}
     {@const status = workspace.commit_attribution.status}
     <Button
@@ -5384,6 +5369,7 @@
 <!-- Sits in every related pane's tab strip. Launching is non-destructive and useful
      from a promoted session too, so it must not disappear with owner-only actions. -->
 {#snippet workspacePaneActions(leaf: TabbedPanelLeaf | undefined)}
+  {@render workspaceInfo()}
   <!-- Ready only. A workspace whose setup failed renders its own actions beside the
        Retry in the error panel, which is where the user is already looking, and one
        still being created cannot launch yet. -->
@@ -5421,6 +5407,12 @@
 {/snippet}
 
 <style>
+  .workflow-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
   .terminal-view {
     display: flex;
     width: 100%;
@@ -5547,7 +5539,7 @@
     line-height: 1.45;
   }
 
-  .workspace-zero-example :global(.workspace-home) {
+  .workspace-zero-example :global(.workspace-launcher) {
     width: 100%;
     height: auto;
     padding: 0;

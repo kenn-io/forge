@@ -2450,7 +2450,7 @@ test.describe("terminal state icons", () => {
   });
 });
 
-test.describe("workspace launch home", () => {
+test.describe("workspace launcher", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(clearWorkspaceSidebarTabStorage);
     await page.addInitScript(() => {
@@ -2461,7 +2461,7 @@ test.describe("workspace launch home", () => {
     await setupTerminalMocks(page);
   });
 
-  test("shows Worktree Home and does not attach a terminal by default", async ({ page }) => {
+  test("shows launch choices without attaching a terminal in an empty workspace", async ({ page }) => {
     const terminalSockets: string[] = [];
     page.on("websocket", (socket) => {
       const url = socket.url();
@@ -2472,7 +2472,7 @@ test.describe("workspace launch home", () => {
 
     await page.goto("/terminal/ws-123");
 
-    await expect(page.getByRole("tab", { name: "Home" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Launch" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Codex" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Shell", exact: true })).toBeEnabled();
@@ -2485,7 +2485,7 @@ test.describe("workspace launch home", () => {
     await expect.poll(() => terminalSockets.length).toBe(0);
   });
 
-  test("does not attach restored runtime sessions until selected", async ({ page }) => {
+  test("shows a restored runtime session immediately", async ({ page }) => {
     await setupTerminalMocks(page, {
       runtime: {
         ...workspaceRuntime,
@@ -2525,19 +2525,6 @@ test.describe("workspace launch home", () => {
 
     const tabs = page.getByRole("region", { name: "Workflow panes" });
     await expect(tabs.getByRole("tab", { name: "Codex" })).toBeVisible();
-    const initialTerminalSockets = await page.evaluate(() =>
-      (
-        (
-          window as unknown as {
-            __kenn_forgeWebSocketUrls: string[];
-          }
-        ).__kenn_forgeWebSocketUrls ?? []
-      ).filter((url) => url.includes("/ws/v1/workspaces/ws-123/")),
-    );
-    expect(initialTerminalSockets).toEqual([]);
-
-    await tabs.getByRole("tab", { name: "Codex" }).click();
-
     await expect(page.locator(".terminal-container")).toBeVisible();
     await expect
       .poll(async () => {
@@ -2555,7 +2542,7 @@ test.describe("workspace launch home", () => {
       .toBe(true);
   });
 
-  test("selects the top-docked terminal when moving an inactive workflow tab into it", async ({ page }) => {
+  test("selects the top-docked terminal when moving a workflow session into it", async ({ page }) => {
     await setupTerminalMocks(page, {
       runtime: {
         ...workspaceRuntime,
@@ -2574,7 +2561,7 @@ test.describe("workspace launch home", () => {
     });
     await page.addInitScript((layout) => {
       localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-123", JSON.stringify(layout));
-      localStorage.setItem("kenn-forge-workspace-active-tab:ws-123", "home");
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-123", "session:ws-123:codex");
     }, topDockedTerminalWorkflowLayout());
 
     await page.goto("/terminal/ws-123");
@@ -2582,7 +2569,7 @@ test.describe("workspace launch home", () => {
     const workflow = page.getByRole("region", {
       name: "Workflow panes",
     });
-    await expect(workflow.getByRole("tab", { name: "Home" })).toHaveAttribute("aria-selected", "true");
+    await expect(workflow.getByRole("tab", { name: "Codex" })).toHaveAttribute("aria-selected", "true");
     await expect(workflow.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "false");
 
     await workflow.getByRole("button", { name: "Move Codex to terminal" }).click();
@@ -2622,10 +2609,10 @@ test.describe("workspace launch home", () => {
       name: "Terminal",
     });
     await expect(terminalTab).toBeVisible();
-    await expect(terminalTab).toHaveAttribute("aria-selected", "false");
+    await expect(terminalTab).toHaveAttribute("aria-selected", "true");
     await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toHaveCount(0);
 
-    await terminalTab.click();
+    await workflow.getByRole("button", { name: "Open terminal panel", exact: true }).click();
 
     await expect(terminalTab).toHaveAttribute("aria-selected", "true");
     await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toBeVisible();
@@ -3785,30 +3772,27 @@ test.describe("sidebar toggle behavior", () => {
     await expect(page.locator(".right-sidebar")).toBeVisible();
     const workflowPanelMetrics = await page.evaluate(() => {
       const handle = document.querySelector(".sidebar-resize-handle");
-      const tabPanel = document.querySelector(".workspace-stage .tabbed-panel-tab-panel.active");
-      const workspaceHome = document.querySelector(".workspace-stage .workspace-home");
-      if (!handle || !tabPanel || !workspaceHome) {
-        throw new Error("Missing handle, active panel, or workspace home");
+      const stage = document.querySelector(".workspace-stage");
+      const launcher = document.querySelector(".workspace-stage .workspace-launcher");
+      if (!handle || !stage || !launcher) {
+        throw new Error("Missing handle, workspace stage, or session launcher");
       }
 
       const handleRect = handle.getBoundingClientRect();
-      const panelRect = tabPanel.getBoundingClientRect();
-      const homeRect = workspaceHome.getBoundingClientRect();
-      const panelStyles = getComputedStyle(tabPanel);
+      const stageRect = stage.getBoundingClientRect();
+      const launcherRect = launcher.getBoundingClientRect();
       return {
         handleWidth: Math.round(handleRect.width),
-        homeToPanelRight: Math.round(panelRect.right - homeRect.right),
-        homeToSplitter: Math.round(handleRect.left - homeRect.right),
-        panelOverflowY: panelStyles.overflowY,
+        launcherToStageRight: Math.round(stageRect.right - launcherRect.right),
+        launcherToSplitter: Math.round(handleRect.left - launcherRect.right),
+        stageOverflowY: getComputedStyle(stage).overflowY,
       };
     });
     expect(workflowPanelMetrics).toEqual({
       handleWidth: 4,
-      homeToPanelRight: 0,
-      // Leaf border plus the 1px ring the leaf reserves for the pane focus
-      // marker (see TabbedPanelTree); pane content sits inside both.
-      homeToSplitter: 2,
-      panelOverflowY: "hidden",
+      launcherToStageRight: 0,
+      launcherToSplitter: 0,
+      stageOverflowY: "hidden",
     });
     // PR button should be active
     await expect(prBtn).toHaveClass(/active/);
@@ -4132,7 +4116,8 @@ test.describe("workspace list fleet inventory", () => {
     await row.click();
 
     await expect(page).toHaveURL(new RegExp(`/terminal/fleet/${remoteHostKey}/member-ws-23$`));
-    await expect(page.locator(".workspace-home")).toContainText("Member workspace");
+    await page.getByRole("button", { name: "Workspace info", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Workspace info", exact: true })).toContainText("Member workspace");
   });
 
   test("hides singleton self fleet host status", async ({ page }) => {

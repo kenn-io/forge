@@ -151,7 +151,7 @@ Interactive surfaces must agree on which item is selected.
 - Workspace quick actions use one lightning icon beside Play, without a visible label
   or chevron, to preserve tab-strip space (`frontend/src/lib/components/terminal/LaunchMenu.svelte`).
 - The session launcher groups ACP chat targets in their own section apart from terminal
-  targets (`frontend/src/lib/components/terminal/WorkspaceHome.svelte`).
+  targets (`frontend/src/lib/components/terminal/WorkspaceLauncher.svelte`).
 - The ACP composer never blocks while a turn runs; only a disconnected chat disables it.
   Busy input steers when the agent supports it, otherwise queues
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
@@ -781,6 +781,9 @@ Keyboard handlers must have one clear owner for each key press.
 - An empty workflow container retires behind its surface-hosted bottom dock instead
   of resizing the recursive tree. Promoted panes then fill the stored branch, and
   demotion restores the untouched arrangement (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneRowOnlyFor`).
+- Workspace metadata belongs behind the info button, never in a Home tab that
+  competes with sessions. Opening or dismissing info preserves the selected terminal
+  (`frontend/src/lib/components/terminal/WorkspaceInfo.svelte`).
 - Keep workspace-wide controls beside the title and compact Launch controls at each pane's top-right.
   Launch adds a tab to the initiating pane even if focus changes while it starts
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleLaunch`).

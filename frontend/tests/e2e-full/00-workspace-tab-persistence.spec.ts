@@ -130,7 +130,7 @@ test.describe("workspace tab persistence", () => {
     timeout: lockedWorkspaceTestTimeoutMs,
   });
 
-  test("opening terminal tab keeps Home pane mounted across tab switches", async ({ page }) => {
+  test("workspace info preserves the active terminal pane", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),
       "git and tmux are required for the real workspace flow",
@@ -155,40 +155,23 @@ test.describe("workspace tab persistence", () => {
 
       const workflow = page.getByRole("region", { name: "Workflow panes" });
       const panes = workflow.locator(".tabbed-panel-tab-panel");
-      const homeTab = workflow.getByRole("tab", { name: "Home" });
       const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
 
-      // Initial state: only the Home pane is in the stage.
-      await expect(homeTab).toHaveAttribute("aria-selected", "true");
-      await expect(panes).toHaveCount(1);
-
+      await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
       await openTerminalWorkflowTab(page);
-
-      // After opening Terminal, both Home and Terminal panes should be
-      // in the DOM, with Terminal marked active.
-      await expect(panes).toHaveCount(2);
+      await expect(panes).toHaveCount(1);
       await expect(terminalTab).toHaveAttribute("aria-selected", "true");
       const terminalPane = workflow.locator(".tabbed-panel-tab-panel.active");
-      await expect(terminalPane).toHaveCount(1);
+      await terminalPane.evaluate((el) => el.setAttribute("data-test-terminal-id", "preserved"));
 
-      // Mark the terminal pane so we can later confirm it's the same
-      // DOM element rather than a fresh remount.
-      await terminalPane.evaluate((el) => {
-        el.setAttribute("data-test-terminal-id", "preserved");
-      });
-
-      // Switch to Home: terminal pane must remain mounted.
-      await homeTab.click();
-      await expect(homeTab).toHaveAttribute("aria-selected", "true");
-      await expect(panes).toHaveCount(2);
-      await expect(workflow.locator('.tabbed-panel-tab-panel[data-test-terminal-id="preserved"]')).toHaveCount(1);
-
-      // Switch back to Terminal: must be the same DOM element, not a
-      // freshly mounted one.
-      await terminalTab.click();
-      await expect(panes).toHaveCount(2);
-      const reactivated = workflow.locator(".tabbed-panel-tab-panel.active");
-      await expect(reactivated).toHaveAttribute("data-test-terminal-id", "preserved");
+      await page.getByRole("button", { name: "Workspace info", exact: true }).click();
+      const info = page.getByRole("dialog", { name: "Workspace info", exact: true });
+      await expect(info.getByRole("button", { name: "Copy worktree path" })).toBeVisible();
+      await expect(terminalTab).toHaveAttribute("aria-selected", "true");
+      await page.keyboard.press("Escape");
+      await expect(info).toBeHidden();
+      await expect(terminalPane).toHaveAttribute("data-test-terminal-id", "preserved");
+      await expect(terminalTab).toHaveAttribute("aria-selected", "true");
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -217,16 +200,15 @@ test.describe("workspace tab persistence", () => {
       const workflow = page.getByRole("region", {
         name: "Workflow panes",
       });
-      const homeTab = workflow.getByRole("tab", { name: "Home" });
       const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
 
-      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
 
       await openTerminalWorkflowTab(page);
       await expect(terminalTab).toHaveAttribute("aria-selected", "true");
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${secondWorkspace.id}`);
-      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
 
       await page.goto(`${isolatedServer.info.base_url}/terminal/${firstWorkspace.id}`);
       await expect(terminalTab).toHaveAttribute("aria-selected", "true");
@@ -368,11 +350,10 @@ test.describe("workspace tab persistence", () => {
 
       const workflow = page.getByRole("region", { name: "Workflow panes" });
       const panes = workflow.locator(".tabbed-panel-tab-panel");
-      const homeTab = workflow.getByRole("tab", { name: "Home" });
 
-      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
       await expect(workflow.getByRole("tab", { name: "Diff" })).toHaveCount(0);
-      await expect(panes).toHaveCount(1);
+      await expect(panes).toHaveCount(0);
 
       const diffResponse = page.waitForResponse(
         (response) =>
@@ -443,7 +424,7 @@ test.describe("workspace tab persistence", () => {
       await rightDiffHost.press("j");
       await rightDiffHost.press("k");
       await expect(workflow.getByRole("tab", { name: "Diff" })).toHaveCount(0);
-      await expect(panes).toHaveCount(1);
+      await expect(panes).toHaveCount(0);
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
@@ -496,13 +477,13 @@ test.describe("workspace tab persistence", () => {
       await expect(betaDiffFile).toHaveCount(0);
       await page.keyboard.press("Escape");
       await expect(alphaDiffFile).toBeVisible();
-      await expect(panes).toHaveCount(1);
-      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+      await expect(panes).toHaveCount(0);
+      await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
 
       await openTerminalWorkflowTab(page);
       await expect(workflow.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
-      await expect(panes).toHaveCount(2);
+      await expect(panes).toHaveCount(1);
 
       await workflow.locator(".tabbed-panel-tab-panel.active .terminal-container").click();
       for (const key of ["j", "k", "[", "]"]) {

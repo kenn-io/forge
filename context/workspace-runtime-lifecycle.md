@@ -195,8 +195,8 @@ Natural process exit should collapse stale runtime state quickly.
 
 - When a launched runtime session exits naturally, remove it from backend
   runtime state and from the workspace UI.
-- If the exited session was active, return the UI to Home rather than leaving a
-  dead terminal tab selected.
+- If the exited session was active, select a remaining session; empty workspaces
+  show launch choices (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectFallbackTab`).
 - If the session was tmux-backed, forget the persisted runtime tmux row once the
   backing tmux session is gone.
 - When the shell drawer process exits, close or collapse the drawer, forget any
@@ -503,8 +503,6 @@ stale tabs.
 - Selected tabs persist on the workspace's execution host and restore across browsers; browser storage is only a cache.
   Restoration and automatic focus must not overwrite a saved choice; promoted agent focus counts as selection
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::loadWorkspaceTabProgram`).
-- A detail pane's fallback agent must not replace an explicit Home choice when returning to Workspaces;
-  only user selection changes that choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoreWorkspaceTabSelection`).
 - Promoted terminal-region sessions remember `terminal` without changing detail-pane placement; open its top dock
   on entering Workspaces. Resolve saved session keys against the browser's current region
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::restoreWorkspaceTabSelection`).

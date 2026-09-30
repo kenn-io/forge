@@ -127,13 +127,13 @@ describe("workspace launch targets (browser)", () => {
 
     await vi.waitFor(
       () => {
-        expect(page.getByRole("region", { name: "Worktree Home" }).element()).toBeTruthy();
+        expect(page.getByRole("region", { name: "Session launcher" }).element()).toBeTruthy();
         expect(getBrowserEventSourceCount()).toBe(1);
       },
       { timeout: 10_000, interval: 50 },
     );
 
-    const home = page.getByRole("region", { name: "Worktree Home" });
+    const home = page.getByRole("region", { name: "Session launcher" });
     const homeEl = home.element();
     expect(home.getByRole("button", { name: "Codex" }).element()).toBeTruthy();
     expect(home.getByRole("button", { name: "Missing" }).element().hasAttribute("disabled")).toBe(true);

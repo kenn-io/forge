@@ -6,7 +6,6 @@
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
-  import HouseIcon from "@lucide/svelte/icons/house";
   import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag, startTabbedPanelTabDrag, workspaceTabDragScope } from "../shared/tabbed-panel-drag.js";
   import TabbedPanelTree from "../shared/TabbedPanelTree.svelte";
   import type { TabbedPanelDescriptor, TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
@@ -32,7 +31,7 @@
 
   export interface WorkflowTabDescriptor extends TabbedPanelDescriptor {
     key: WorkflowTabKey;
-    kind: "home" | "terminal" | "agent" | "plain_shell";
+    kind: "terminal" | "agent" | "plain_shell";
     targetKey?: string | undefined;
     renamable?: boolean | undefined;
     movableToTerminal?: boolean | undefined;
@@ -203,9 +202,7 @@
 
   {#snippet tabIcon(tab)}
     {@const harness = tabHarness(tab)}
-    {#if tabKind(tab) === "home"}
-      <HouseIcon size="13" strokeWidth="2" />
-    {:else if tabKind(tab) === "plain_shell" || tabKind(tab) === "terminal"}
+    {#if tabKind(tab) === "plain_shell" || tabKind(tab) === "terminal"}
       <TerminalIcon size="13" strokeWidth="2" />
     {:else if harness}
       <HarnessIcon {harness} size={13} decorative />

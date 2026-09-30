@@ -1,8 +1,7 @@
 <script lang="ts">
-  import type { ComponentProps } from "svelte";
   import Modal from "../shared/Modal.svelte";
   import type { LaunchTarget, QuickAction, RuntimeSession } from "../../api/types.js";
-  import WorkspaceHome from "./WorkspaceHome.svelte";
+  import WorkspaceLauncher from "./WorkspaceLauncher.svelte";
 
   /**
    * The launch surface as a transient overlay rather than a tab.
@@ -14,7 +13,6 @@
    */
   interface Props {
     open: boolean;
-    workspace: NonNullable<ComponentProps<typeof WorkspaceHome>["workspace"]>;
     launchTargets: LaunchTarget[];
     sessions: RuntimeSession[];
     displayLabels?: Record<string, string>;
@@ -29,7 +27,6 @@
 
   const {
     open,
-    workspace,
     launchTargets,
     sessions,
     displayLabels = {},
@@ -53,15 +50,13 @@
     onClose={onClose}
   >
     <div class="launcher-body">
-      <WorkspaceHome
-        {workspace}
+      <WorkspaceLauncher
         {launchTargets}
         {sessions}
         {displayLabels}
         {launchingKey}
         {readonly}
         {quickActions}
-        showHeader={false}
         onLaunch={onLaunch}
         {onQuickAction}
         onOpenSession={onOpenSession}

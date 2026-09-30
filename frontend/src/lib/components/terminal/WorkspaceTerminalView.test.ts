@@ -1089,7 +1089,8 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByLabelText(label).classList.contains(className)).toBe(true);
   });
 
-  it("closes an agent tab immediately when its terminal exits", async () => {
+  it("keeps the remaining agent visible when the selected terminal exits", async () => {
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
     render(WorkspaceTerminalView, {
       props: {
         workspaceId: "ws-1",
@@ -1106,8 +1107,21 @@ describe("WorkspaceTerminalView", () => {
     );
 
     await waitFor(() => expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull());
-    expect(screen.getByRole("tab", { name: /Home/ }).getAttribute("aria-selected")).toBe("true");
-    expect(localStorage.getItem("kenn-forge-workspace-active-tab:ws-1")).toBe("home");
+    expect(screen.getByRole("tab", { name: /Reviewer/ }).getAttribute("aria-selected")).toBe("true");
+    expect(localStorage.getItem("kenn-forge-workspace-active-tab:ws-1")).toBe("session:ws-1:reviewer");
+  });
+
+  it("shows workspace information without changing the selected terminal", async () => {
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    const agent = await screen.findByRole("tab", { name: /Helper/ });
+    await fireEvent.click(await screen.findByRole("button", { name: "Workspace info" }));
+    const info = await screen.findByRole("dialog", { name: "Workspace info" });
+    expect(within(info).getByText("/tmp/worktree")).toBeTruthy();
+    expect(within(info).getByText("acme/widget #7")).toBeTruthy();
+    expect(agent.getAttribute("aria-selected")).toBe("true");
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Workspace info" })).toBeNull();
+    expect(agent.getAttribute("aria-selected")).toBe("true");
   });
 
   it("restores workspace focus when the focused workflow content exits", async () => {
@@ -1212,7 +1226,7 @@ describe("WorkspaceTerminalView", () => {
     runtimeRequest.resolve(runtimeWithStaleSession());
     workspaceRequest.resolve(Response.json(workspaceResponse));
 
-    await screen.findByText("acme/widget");
+    await screen.findByRole("button", { name: "Workspace info" });
     await screen.findByRole("tab", { name: /Helper/ });
     expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1);
   });
@@ -1394,7 +1408,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     await waitFor(() =>
       expect(localStorage.getItem("kenn-forge-workspace-terminal-layout:fleet:member:ws-1")).toContain(
         '"workflowMode":"tabs"',
@@ -1526,7 +1540,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(mocks.selectWorkspace).toHaveBeenCalledWith("ws-1"));
 
     metadata.resolve(Response.json(workspaceResponse));
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     expect(mocks.selectWorkspace).toHaveBeenCalledTimes(1);
   });
 
@@ -1880,7 +1894,7 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1);
 
     resolveFirst({ launch_targets: [], sessions: [] });
-    await waitFor(() => expect(screen.getByRole("tab", { name: /Home/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Workspace info" })).toBeTruthy());
 
     runtimePoll!.callback();
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
@@ -1905,7 +1919,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await screen.findByRole("tab", { name: /Home/ });
+    await screen.findByRole("button", { name: "Workspace info" });
     const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
@@ -2009,7 +2023,7 @@ describe("WorkspaceTerminalView", () => {
 
     for (let index = 2; index <= 12; index += 1) {
       await rerender({ workspaceId: `ws-${index}` });
-      await screen.findByRole("tab", { name: "Home" });
+      await screen.findByRole("button", { name: "Workspace info" });
       await waitFor(() => expect(isSessionClaimed(firstHostKey)).toBe(false));
     }
 
@@ -2055,7 +2069,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(sockets).toHaveLength(1));
     sockets[0]!.onopen();
     await rerender({ workspaceId: "ws-2" });
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     sockets[0]!.onclose(new CloseEvent("close"));
     await waitFor(() => expect(mountedSessions()).toHaveLength(0));
 
@@ -2080,7 +2094,7 @@ describe("WorkspaceTerminalView", () => {
     const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await screen.findByRole("tab", { name: /Helper/ });
     await rerender({ workspaceId: "ws-2" });
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     const originalFetch = globalThis.fetch;
     vi.stubGlobal(
       "fetch",
@@ -2097,7 +2111,7 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
 
     await rerender({ workspaceId: "ws-2" });
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     vi.mocked(globalThis.fetch).mockImplementation(() => deferred<Response>().promise);
     await rerender({ workspaceId: "ws-1" });
     await screen.findByText("Setting up workspace...");
@@ -2235,7 +2249,7 @@ describe("WorkspaceTerminalView", () => {
 
   it.each([false, true])(
     "refreshes runtime for a newer saved agent without overriding user selection (%s)",
-    async (selectHome) => {
+    async (selectExisting) => {
       localStorage.clear();
       const selection = deferred<Response>();
       const freshRuntime = deferred<ReturnType<typeof runtimeWithDuplicateWorkflowSessions>>();
@@ -2256,11 +2270,11 @@ describe("WorkspaceTerminalView", () => {
       const response = Response.json({ active_tab: "session:ws-1:helper-b" });
       selection.resolve(response);
       await waitFor(() => expect(response.bodyUsed).toBe(true));
-      if (selectHome) await fireEvent.click(screen.getByRole("tab", { name: "Home" }));
+      if (selectExisting) await fireEvent.click(screen.getByRole("tab", { name: "Helper, Helper running" }));
       freshRuntime.resolve(runtimeWithDuplicateWorkflowSessions());
 
       const agentTab = await screen.findByRole("tab", { name: /Helper 2/ });
-      const selected = selectHome ? screen.getByRole("tab", { name: "Home" }) : agentTab;
+      const selected = selectExisting ? screen.getByRole("tab", { name: "Helper, Helper running" }) : agentTab;
       await waitFor(() => expect(selected.getAttribute("aria-selected")).toBe("true"));
     },
   );
@@ -2399,13 +2413,6 @@ describe("WorkspaceTerminalView", () => {
         );
         reopened.unmount();
       }
-      const home = render(WorkspaceTerminalView, { props });
-      await fireEvent.click(await screen.findByRole("tab", { name: "Home" }));
-      await waitFor(() => expect(savedTab).toBe("home"));
-      home.unmount();
-      localStorage.clear();
-      render(WorkspaceTerminalView, { props });
-      await waitFor(() => expect(screen.getByRole("tab", { name: "Home" }).getAttribute("aria-selected")).toBe("true"));
     },
   );
 
@@ -2472,7 +2479,7 @@ describe("WorkspaceTerminalView", () => {
     expect(savedTabs).toEqual([]);
   });
 
-  it("preserves Home across PR visits until the user selects the agent", async () => {
+  it("keeps the agent visible across PR visits when the saved tab is unavailable", async () => {
     const sessionHost = await import("../../stores/session-host.svelte.ts");
     const requestFocus = vi.spyOn(sessionHost, "requestSessionFocus");
     const savedTabs: string[] = [];
@@ -2492,7 +2499,7 @@ describe("WorkspaceTerminalView", () => {
     expect(savedTabs).toEqual([]);
 
     await view.rerender({ workspaceId: "ws-1", paneSurface: undefined });
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Home" }).getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Helper/ }).getAttribute("aria-selected")).toBe("true"));
     expect(savedTabs).toEqual([]);
 
     await view.rerender({ workspaceId: "ws-1", paneSurface: "prs" });
@@ -2516,11 +2523,11 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    const homeTab = await screen.findByRole("tab", { name: "Home" });
+    const agentTab = await screen.findByRole("tab", { name: /Helper/ });
 
-    expect(homeTab.getAttribute("aria-selected")).toBe("true");
+    expect(agentTab.getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByRole("tab", { name: /Shell/ })).toBeNull();
-    expect(sockets).toHaveLength(0);
+    await waitFor(() => expect(sockets).toHaveLength(1));
   });
 
   it("closes a terminal-panel shell when its terminal exits", async () => {
@@ -2533,7 +2540,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await screen.findByRole("tab", { name: /Home/ });
+    await screen.findByRole("button", { name: "Workspace info" });
     const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
@@ -2610,7 +2617,7 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Stop Shell?" })).toBeNull());
     expect(screen.queryByRole("button", { name: "Close Shell" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Shell 2 Running" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Shell 2 split drop targets" })).toBeTruthy();
   });
 
   it("uses an in-app modal when renaming a tab", async () => {
@@ -2705,7 +2712,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await screen.findByRole("tab", { name: /Home/ });
+    await screen.findByRole("button", { name: "Workspace info" });
     const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
@@ -2810,7 +2817,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await screen.findByRole("tab", { name: /Home/ });
+    await screen.findByRole("button", { name: "Workspace info" });
     const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
@@ -2849,7 +2856,7 @@ describe("WorkspaceTerminalView", () => {
 
     await screen.findByRole("button", { name: "Refresh workspace details" });
     initialRuntime.resolve(runtimeWithTerminalSession());
-    await screen.findByRole("tab", { name: /Home/ });
+    await screen.findByRole("button", { name: "Workspace info" });
     const terminalButton = screen.getByRole("button", {
       name: "Open terminal panel",
     });
@@ -4022,7 +4029,7 @@ describe("WorkspaceTerminalView", () => {
     expect(new TextDecoder().decode(payload)).toBe("\x1b[A");
   });
 
-  it("shows the selected launch until its session is ready instead of Worktree Home", async () => {
+  it("shows the selected launch until its session is ready instead of Session launcher", async () => {
     const launchRequest = deferred<typeof runningSession>();
     queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
@@ -4031,7 +4038,7 @@ describe("WorkspaceTerminalView", () => {
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
 
     await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
-    expect(screen.queryByRole("region", { name: "Worktree Home" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Session launcher" })).toBeNull();
     expect(screen.getByRole("status", { name: "Launching Codex..." })).toBeTruthy();
 
     const runtimeRefresh = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
@@ -4044,7 +4051,7 @@ describe("WorkspaceTerminalView", () => {
     runtimeRefresh.resolve(runtimeWithCodexTarget(true, [runningSession]));
   });
 
-  it("returns to Worktree Home when an explicit launch fails", async () => {
+  it("returns to Session launcher when an explicit launch fails", async () => {
     const launchRequest = deferred<void>();
     queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget());
@@ -4058,7 +4065,7 @@ describe("WorkspaceTerminalView", () => {
     await screen.findByRole("status", { name: "Launching Codex..." });
     launchRequest.resolve();
 
-    expect(await screen.findByRole("region", { name: "Worktree Home" })).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "Session launcher" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Codex" }).hasAttribute("disabled")).toBe(false);
     expect(mocks.showFlash).toHaveBeenCalledWith("Codex could not start", { tone: "danger" });
   });
@@ -4370,9 +4377,9 @@ describe("WorkspaceTerminalView", () => {
     serveAnyWorkspace();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(false));
     const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     await view.rerender({ workspaceId: "ws-2" });
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
 
     const freshRuntime = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
     mocks.getWorkspaceRuntime.mockReturnValue(freshRuntime.promise);
@@ -4393,7 +4400,7 @@ describe("WorkspaceTerminalView", () => {
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(false));
     mocks.launchWorkspaceSession.mockReturnValue(new Promise(() => {}));
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     const admission = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
     mocks.getWorkspaceRuntime.mockReturnValue(admission.promise);
     queueWorkspaceLaunch("ws-1", "codex", undefined);
@@ -4540,7 +4547,7 @@ describe("WorkspaceTerminalView", () => {
       },
     });
 
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     await fireEvent.click(screen.getByRole("button", { name: "Launch" }));
     const popover = document.querySelector(".launch-popover");
     if (!popover) throw new Error("expected launch popover to open");
@@ -4558,7 +4565,7 @@ describe("WorkspaceTerminalView", () => {
     queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(false));
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
     expect(mocks.showFlash).toHaveBeenCalledWith(expect.stringContaining("Codex is not configured"), {
       tone: "danger",
@@ -4570,7 +4577,7 @@ describe("WorkspaceTerminalView", () => {
     queueWorkspaceLaunch("ws-1", "missing", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue({ launch_targets: [], sessions: [] });
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
     expect(mocks.showFlash).toHaveBeenCalledWith(expect.stringContaining("is not available in this workspace"), {
       tone: "danger",
@@ -5260,9 +5267,10 @@ describe("WorkspaceTerminalView", () => {
 
   it.each([false, true])("keeps workspace controls in the title row (split: %s)", async (split) => {
     if (split) {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
       localStorage.setItem(
         "kenn-forge-workspace-terminal-layout:ws-1",
-        persistedSplitWorkflowLayout(runningSession.key),
+        persistedTwoSessionWorkflowLayout(runningSession.key, reviewerSession.key),
       );
     }
     render(WorkspaceTerminalView, {
@@ -5652,7 +5660,7 @@ describe("WorkspaceTerminalView", () => {
       expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
     });
 
-    it("keeps the Home tab on the standalone Workspaces tab", async () => {
+    it("shows launch choices inline when a standalone workspace has no sessions", async () => {
       localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
 
@@ -5662,8 +5670,7 @@ describe("WorkspaceTerminalView", () => {
         },
       });
 
-      // That tab has room for it, and its chrome is out of scope here.
-      expect(await screen.findByRole("tab", { name: "Home" })).toBeTruthy();
+      expect(await screen.findByRole("button", { name: "Workspace info" })).toBeTruthy();
       expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
     });
 
@@ -5954,7 +5961,7 @@ describe("WorkspaceTerminalView", () => {
       props: { workspaceId: "ws-1" },
     });
 
-    await screen.findByRole("tab", { name: "Home" });
+    await screen.findByRole("button", { name: "Workspace info" });
     const launchRequest = deferred<typeof runningSession>();
     const launchStarted = deferred<void>();
     mocks.launchWorkspaceSession.mockImplementationOnce(() => {

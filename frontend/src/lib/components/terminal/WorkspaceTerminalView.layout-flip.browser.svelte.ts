@@ -107,14 +107,14 @@ describe("WorkspaceTerminalView layout flip", () => {
     });
 
     try {
-      const home = screen.getByRole("tab", { name: "Home", exact: true });
+      const info = screen.getByRole("button", { name: "Workspace info", exact: true });
       const launch = screen.getByRole("button", { name: "Launch", exact: true });
       const quickActions = screen.getByRole("button", { name: "Quick actions", exact: true });
       const presets = screen.getByRole("button", { name: "Workflow presets", exact: true });
-      await expect.element(home).toBeVisible();
+      await expect.element(info).toBeVisible();
       for (const [control, anchor] of [
-        [launch, home],
-        [quickActions, home],
+        [launch, info],
+        [quickActions, info],
         [presets, screen.getByRole("button", { name: "Delete", exact: true })],
       ]) {
         const titleRow = anchor!.element().getBoundingClientRect();

@@ -1,26 +1,17 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import WorkspaceHome from "./WorkspaceHome.svelte";
+import WorkspaceLauncher from "./WorkspaceLauncher.svelte";
 
-describe("WorkspaceHome", () => {
+describe("WorkspaceLauncher", () => {
   afterEach(() => cleanup());
 
   it("renders launch targets and running sessions", async () => {
     const onLaunch = vi.fn();
     const onOpenSession = vi.fn();
 
-    render(WorkspaceHome, {
+    render(WorkspaceLauncher, {
       props: {
-        workspace: {
-          id: "ws-1",
-          repo_owner: "acme",
-          repo_name: "widget",
-          item_number: 7,
-          git_head_ref: "feature/workspace",
-          worktree_path: "/tmp/widget",
-          mr_title: "Improve workspace UX",
-        },
         launchTargets: [
           {
             key: "codex",
@@ -87,8 +78,6 @@ describe("WorkspaceHome", () => {
       },
     });
 
-    expect(screen.getByText("Improve workspace UX")).toBeTruthy();
-    expect(screen.getByText("/tmp/widget")).toBeTruthy();
     const codexLaunchButton = screen.getByRole("button", {
       name: "Codex",
     }) as HTMLButtonElement;
@@ -126,7 +115,7 @@ describe("WorkspaceHome", () => {
 
   it("groups ACP agents apart from terminal launch targets", async () => {
     const onLaunch = vi.fn();
-    render(WorkspaceHome, {
+    render(WorkspaceLauncher, {
       props: {
         launchTargets: [
           { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true },
@@ -151,7 +140,7 @@ describe("WorkspaceHome", () => {
   });
 
   it("shows only the ACP section when every launch target is ACP", () => {
-    render(WorkspaceHome, {
+    render(WorkspaceLauncher, {
       props: {
         launchTargets: [{ key: "chat", label: "Chat agent", kind: "acp", source: "config", available: true }],
         sessions: [],
@@ -165,7 +154,7 @@ describe("WorkspaceHome", () => {
   it("runs configured quick actions and disables ones whose agent cannot launch", async () => {
     const onQuickAction = vi.fn();
     const review = { label: "Review", agent: "codex", prompt: "Review this change" };
-    render(WorkspaceHome, {
+    render(WorkspaceLauncher, {
       props: {
         launchTargets: [
           { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true },
@@ -204,7 +193,7 @@ describe("WorkspaceHome", () => {
 
   it("lists quick actions by title, ignoring case", () => {
     const codex = { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true };
-    render(WorkspaceHome, {
+    render(WorkspaceLauncher, {
       props: {
         launchTargets: [codex],
         sessions: [],
@@ -222,7 +211,7 @@ describe("WorkspaceHome", () => {
   });
 
   it("omits the quick actions section when none are configured", () => {
-    render(WorkspaceHome, {
+    render(WorkspaceLauncher, {
       props: {
         launchTargets: [],
         sessions: [],

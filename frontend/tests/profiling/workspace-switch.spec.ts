@@ -318,8 +318,7 @@ async function measureColdLoad(
 
 async function openWorkspaceAndLaunchTerminal(page: Page, baseURL: string, workspaceId: string): Promise<void> {
   await page.goto(`${baseURL}/terminal/${workspaceId}`);
-  const workflow = page.getByRole("region", { name: "Workflow panes" });
-  await expect(workflow.getByRole("tab", { name: "Home" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Workspace info", exact: true })).toBeVisible();
 
   const terminalPanel = page.getByRole("region", { name: "Terminal panel" });
   await terminalPanel.getByRole("button", { name: "New terminal" }).click();

@@ -4,8 +4,6 @@
     QuickAction,
     RuntimeSession,
   } from "../../api/types.js";
-  import GitBranchIcon from "@lucide/svelte/icons/git-branch";
-  import FolderIcon from "@lucide/svelte/icons/folder";
   import MessagesSquareIcon from "@lucide/svelte/icons/messages-square";
   import PlayIcon from "@lucide/svelte/icons/play";
   import ZapIcon from "@lucide/svelte/icons/zap";
@@ -13,24 +11,12 @@
   import { isVisibleLaunchTarget } from "./launchTargets";
   import { sortQuickActionsByLabel } from "../../stores/workspace-quick-actions.js";
 
-  interface WorkspaceHomeWorkspace {
-    id: string;
-    repo_owner: string;
-    repo_name: string;
-    item_number: number;
-    git_head_ref: string;
-    worktree_path: string;
-    mr_title?: string | null;
-  }
-
-  interface WorkspaceHomeProps {
-    workspace?: WorkspaceHomeWorkspace;
+  interface WorkspaceLauncherProps {
     launchTargets: LaunchTarget[];
     sessions: RuntimeSession[];
     displayLabels?: Record<string, string>;
     launchingKey?: string | null;
     readonly?: boolean;
-    showHeader?: boolean;
     /** Configured quick actions; the section renders only when non-empty and onQuickAction is set. */
     quickActions?: QuickAction[];
     onLaunch?: (targetKey: string) => void;
@@ -39,18 +25,16 @@
   }
 
   const {
-    workspace,
     launchTargets,
     sessions,
     displayLabels = {},
     launchingKey = null,
     readonly = false,
-    showHeader = true,
     quickActions = [],
     onLaunch,
     onQuickAction,
     onOpenSession,
-  }: WorkspaceHomeProps = $props();
+  }: WorkspaceLauncherProps = $props();
 
   const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
   // ACP agents open a chat, not a terminal, so they get their own section.
@@ -70,10 +54,6 @@
     return "";
   }
 
-  function title(): string {
-    return workspace?.mr_title ?? workspace?.git_head_ref ?? "Workspace";
-  }
-
   function targetLabel(target: LaunchTarget): string {
     return target.kind === "plain_shell" ? "Shell" : target.label;
   }
@@ -90,27 +70,7 @@
   }
 </script>
 
-<section class={["workspace-home", readonly && "readonly"]} aria-label="Worktree Home">
-  {#if showHeader && workspace}
-    <header class="home-header">
-      <h2 class="home-title">{title()}</h2>
-      <div class="home-meta">
-        <span class="meta-chip">
-          {workspace.repo_owner}/{workspace.repo_name}
-          <span class="meta-chip-num">#{workspace.item_number}</span>
-        </span>
-        <span class="meta-chip mono">
-          <GitBranchIcon size="11" strokeWidth="2" aria-hidden="true" />
-          {workspace.git_head_ref}
-        </span>
-        <span class="meta-chip mono path" title={workspace.worktree_path}>
-          <FolderIcon size="11" strokeWidth="2" aria-hidden="true" />
-          {workspace.worktree_path}
-        </span>
-      </div>
-    </header>
-  {/if}
-
+<section class={["workspace-launcher", readonly && "readonly"]} aria-label="Session launcher">
   {#snippet launchCards(targets: LaunchTarget[])}
     <div class="launch-grid">
       {#each targets as target (target.key)}
@@ -132,7 +92,7 @@
   {/snippet}
 
   {#if terminalTargets.length > 0 || acpTargets.length === 0}
-    <div class="home-section" role="group" aria-label="Launch">
+    <div class="launcher-section" role="group" aria-label="Launch">
       <div class="section-bar">
         <PlayIcon
           class="section-icon"
@@ -148,7 +108,7 @@
   {/if}
 
   {#if acpTargets.length > 0}
-    <div class="home-section" role="group" aria-label="ACP agents">
+    <div class="launcher-section" role="group" aria-label="ACP agents">
       <div class="section-bar">
         <MessagesSquareIcon
           class="section-icon acp"
@@ -165,7 +125,7 @@
   {/if}
 
   {#if showQuickActions}
-    <div class="home-section">
+    <div class="launcher-section">
       <div class="section-bar">
         <ZapIcon
           class="section-icon quick"
@@ -202,7 +162,7 @@
   {/if}
 
   {#if sessions.length > 0}
-    <div class="home-section">
+    <div class="launcher-section">
       <div class="section-bar">
         <span class="section-title">Active sessions</span>
         <span class="section-count">{sessions.length}</span>
@@ -228,7 +188,7 @@
 </section>
 
 <style>
-  .workspace-home {
+  .workspace-launcher {
     display: flex;
     flex-direction: column;
     gap: var(--space-5);
@@ -240,70 +200,11 @@
     color: var(--text-primary);
   }
 
-  .workspace-home.readonly {
+  .workspace-launcher.readonly {
     pointer-events: none;
   }
 
-  .home-header {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-muted);
-  }
-
-  .home-title {
-    margin: 0;
-    font-size: var(--font-size-lg);
-    line-height: 1.3;
-    font-weight: 600;
-    color: var(--text-primary);
-    letter-spacing: -0.005em;
-  }
-
-  .home-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    font-size: var(--font-size-xs);
-  }
-
-  .meta-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    height: 20px;
-    padding: 0 7px;
-    border: 1px solid var(--border-muted);
-    border-radius: 3px;
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-    line-height: 1;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .meta-chip.mono {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-  }
-
-  .meta-chip.path {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .meta-chip-num {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-  }
-
-  .home-section {
+  .launcher-section {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -321,7 +222,7 @@
     color: var(--accent-green);
   }
 
-  .workspace-home.readonly :global(.section-icon) {
+  .workspace-launcher.readonly :global(.section-icon) {
     color: var(--text-muted);
   }
 
@@ -411,8 +312,8 @@
     color: var(--accent-purple);
   }
 
-  .workspace-home.readonly .section-bar :global(.section-icon.quick),
-  .workspace-home.readonly .section-bar :global(.section-icon.acp) {
+  .workspace-launcher.readonly .section-bar :global(.section-icon.quick),
+  .workspace-launcher.readonly .section-bar :global(.section-icon.acp) {
     color: var(--text-muted);
   }
 

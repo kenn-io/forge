@@ -121,6 +121,14 @@ test.describe("embedded workspace launcher", () => {
       await expect(container).toBeVisible();
       await typeMarkerCommand(page, container, workspace.worktree_path, "launcher-marker");
 
+      await page.getByRole("button", { name: "Workspace info", exact: true }).click();
+      const info = page.getByRole("dialog", { name: "Workspace info", exact: true });
+      await expect(info.getByText(workspace.worktree_path, { exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(info).toBeHidden();
+      await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/10$/);
+      await expect(container).toBeVisible();
+
       // The direct pane menu must offer launch targets after a session is
       // already running, without opening the workspace controls popover first.
       const headerLaunch = page
@@ -176,7 +184,7 @@ test.describe("embedded workspace launcher", () => {
         const workspace = await createIssueWorkspace(api, 10);
 
         await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-        await page.getByRole("region", { name: "Worktree Home" }).getByRole("button", { name: "Shell" }).click();
+        await page.getByRole("region", { name: "Session launcher" }).getByRole("button", { name: "Shell" }).click();
 
         const terminal = page.locator(".workspace-tab-slot .terminal-container");
         await expect(terminal).toBeVisible();

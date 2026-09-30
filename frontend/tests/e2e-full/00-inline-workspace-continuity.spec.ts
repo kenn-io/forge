@@ -962,7 +962,6 @@ test.describe("inline workspace pane continuity", () => {
       await moveToWorkflow.click();
 
       const workflow = page.getByRole("region", { name: "Workflow panes" });
-      const homeTab = workflow.getByRole("tab", { name: "Home" });
       const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
       await expect(terminalTab).toHaveAttribute("aria-selected", "true");
       await expect
@@ -974,8 +973,8 @@ test.describe("inline workspace pane continuity", () => {
         (frame) => frame.type === "resize_active" && frame.active === false,
       ).length;
 
-      await homeTab.click();
-      await expect(homeTab).toHaveAttribute("aria-selected", "true");
+      await workflow.getByRole("button", { name: "Close Terminal", exact: true }).click();
+      await expect(workflow.getByRole("button", { name: "Open terminal panel", exact: true })).toBeVisible();
       await expect
         .poll(() => controlFrames.filter((frame) => frame.type === "resize_active" && frame.active === false).length, {
           timeout: 15_000,

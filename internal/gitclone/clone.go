@@ -72,6 +72,8 @@ type Manager struct {
 	// caller has run its own route validation.
 	ensureMu      sync.Mutex
 	ensureFlights map[string]*ensureCloneFlight
+	// ensureWG tracks flight goroutines, which outlive their callers.
+	ensureWG sync.WaitGroup
 
 	repoBrowserRefreshSF singleflight.Group
 	repoBrowserMu        sync.Mutex
@@ -808,7 +810,7 @@ func (m *Manager) joinEnsureCloneFlight(
 	m.ensureFlights[key] = flight
 	m.ensureMu.Unlock()
 
-	go func() {
+	m.ensureWG.Go(func() {
 		err := run()
 		m.ensureMu.Lock()
 		flight.err = err
@@ -819,7 +821,7 @@ func (m *Manager) joinEnsureCloneFlight(
 			close(flight.released)
 		}
 		m.ensureMu.Unlock()
-	}()
+	})
 	return flight, true
 }
 
@@ -1537,4 +1539,11 @@ func isAuthGitError(err error) bool {
 	return strings.Contains(msg, "authentication failed") ||
 		strings.Contains(msg, "could not read username") ||
 		strings.Contains(msg, "terminal prompts disabled")
+}
+
+// Wait blocks until every in-flight EnsureClone fetch finishes. A fetch
+// deliberately outlives the callers that started it, so an owner that is about
+// to remove the clone directory calls Wait first.
+func (m *Manager) Wait() {
+	m.ensureWG.Wait()
 }

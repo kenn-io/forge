@@ -14,6 +14,10 @@ fixtures, or changing shell-script coverage.
   `context.WithoutCancel(t.Context())` or `context.Background()`
   (`internal/testutil/servertest/servertest.go::registerCleanup`).
   Unix-socket fixtures keep a short `/tmp` root rather than `t.TempDir()`.
+- Clone fetches outlive the workspace setup that started them, and server
+  shutdown does not wait for them; fixtures that own a `gitclone.Manager`
+  register `t.Cleanup(clones.Wait)` so TempDir removal never races a fetch
+  (`internal/server/workspacetest/fixtures_test.go::setupWorkspaceServerFixtureWithTmuxInjection`).
 - Direct Make test lanes bound package concurrency (`GO_TEST_P=` restores
   native concurrency). Go hooks run uncapped and the read-only Go consumers run
   concurrently after `golangci-lint --fix`; `KENN_FORGE_HOOK_GO_CONCURRENCY`

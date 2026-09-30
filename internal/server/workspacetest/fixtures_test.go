@@ -131,6 +131,9 @@ func setupWorkspaceServerFixtureWithTmuxInjection(
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	clones := gitclone.New(bareDir, nil)
+	// Clone fetches outlive the setup that started them. Registered before the
+	// server shutdown cleanup, this runs after it and before TempDir removal.
+	t.Cleanup(clones.Wait)
 	bare, err := clones.ClonePathForContext(
 		gitclone.WithRepositoryIdentity(t.Context(), testutil.FixtureRepoID("acme", "widget")),
 		"github", "github.com", "acme", "widget",

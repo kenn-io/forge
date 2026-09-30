@@ -54,6 +54,18 @@ func TestMain(m *testing.M) {
 	os.Exit(serverfake.RunMain(m, func() int { return gitsafe.RunIsolatedMain(m) }))
 }
 
+func assertTimePtrUTC(t *testing.T, got *time.Time) {
+	t.Helper()
+	require.NotNil(t, got)
+	assert.Equal(t, time.UTC, got.Location())
+}
+
+func assertTimePtrEqualsUTC(t *testing.T, got *time.Time, want time.Time) {
+	t.Helper()
+	assertTimePtrUTC(t, got)
+	assert.Equal(t, want.UTC(), got.UTC())
+}
+
 func seedPRWithHeadSHA(t *testing.T, database *db.DB, owner, name string, number int, headSHA string) int64 {
 	t.Helper()
 	return serverfake.SeedPR(t, database, owner, name, number, serverfake.WithSeedPRHeadSHA(headSHA))
@@ -3241,6 +3253,65 @@ func TestAPIStackBaseConflictMarksDownstreamPRsDirty(t *testing.T) {
 	require.NotNil(detailResp.JSON200)
 	assert.Equal("dirty", detailResp.JSON200.MergeRequest.MergeableState)
 	assert.Empty(serverfake.RequireMR(t, database, repo.ID, 11).MergeableState)
+}
+
+func TestAPIStackConflictOverrideDropsReplacedMergeableObservationTime(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := servertest.SetupTestServer(t)
+	client := servertest.SetupTestClient(t, srv)
+	ctx := t.Context()
+
+	seedStackedPRMergeable(
+		t, database, "acme", "widget", 10,
+		"feat/api-base", "main", db.MergeRequestStateOpen, "success", "APPROVED", "dirty",
+	)
+	seedStackedPRMergeable(
+		t, database, "acme", "widget", 11,
+		"feat/api-retry", "feat/api-base", db.MergeRequestStateOpen, "success", "APPROVED", "clean",
+	)
+	seedStackedPRMergeable(
+		t, database, "acme", "widget", 12,
+		"feat/api-docs", "feat/api-retry", db.MergeRequestStateOpen, "success", "APPROVED", "dirty",
+	)
+	serverfake.RunStackDetection(t, database, "acme", "widget")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	baseObservedAt := time.Date(2026, 9, 3, 7, 0, 0, 0, time.UTC)
+	downstreamObservedAt := time.Date(2026, 9, 4, 8, 0, 0, 0, time.UTC)
+	tipObservedAt := time.Date(2026, 9, 5, 9, 0, 0, 0, time.UTC)
+	for number, at := range map[int]time.Time{10: baseObservedAt, 11: downstreamObservedAt, 12: tipObservedAt} {
+		mr := serverfake.RequireMR(t, database, repo.ID, number)
+		mr.MergeableStateObservedAt = &at
+		_, err = database.UpsertMergeRequest(ctx, mr)
+		require.NoError(err)
+	}
+
+	listResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{}})
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode, string(listResp.Body))
+	require.NotNil(listResp.JSON200)
+	byNumber := map[int64]generated.MergeRequestResponse{}
+	for _, item := range *listResp.JSON200 {
+		byNumber[item.Number] = item
+	}
+	require.Len(byNumber, 3)
+	assert.Equal("dirty", byNumber[10].MergeableState)
+	assertTimePtrEqualsUTC(t, byNumber[10].MergeableStateObservedAt, baseObservedAt)
+	assert.Equal("dirty", byNumber[11].MergeableState)
+	assert.Nil(byNumber[11].MergeableStateObservedAt, "the clean observation does not time the override")
+	assert.Equal("dirty", byNumber[12].MergeableState)
+	assertTimePtrEqualsUTC(t, byNumber[12].MergeableStateObservedAt, tipObservedAt)
+
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(11)}})
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	assert.Equal("dirty", detailResp.JSON200.MergeRequest.MergeableState)
+	assert.Nil(detailResp.JSON200.MergeRequest.MergeableStateObservedAt)
+	assertTimePtrEqualsUTC(t, serverfake.RequireMR(t, database, repo.ID, 11).MergeableStateObservedAt, downstreamObservedAt)
 }
 
 func TestAPIListStacks_DraftNotAllGreen(t *testing.T) {

@@ -508,7 +508,7 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		}
 		responseMR := mr
 		if stackConflictBlocked[mr.ID] {
-			responseMR.MergeableState = "dirty"
+			overrideMergeableStateForStackConflict(&responseMR)
 		}
 		responseMR = mergeRequestResponseModel(responseMR)
 		if len(attributes) > 0 && !visibilityMatches[mr.ID] && !matchesPullAttributes(responseMR, attributes) {
@@ -660,7 +660,7 @@ func (s *Handler) buildPullDetailResponse(
 	if stack != nil {
 		blockedBy := computeConflictBlockedBy(members)
 		if _, ok := blockedBy[mr.Number]; ok && mr.State == db.MergeRequestStateOpen {
-			responseMR.MergeableState = "dirty"
+			overrideMergeableStateForStackConflict(&responseMR)
 		}
 	}
 	responseMR = mergeRequestResponseModel(responseMR)
@@ -720,6 +720,18 @@ func (s *Handler) BuildDetail(
 	mr *db.MergeRequest,
 ) (MergeRequestDetailResponse, error) {
 	return s.buildPullDetailResponse(ctx, mr)
+}
+
+// overrideMergeableStateForStackConflict reports a PR blocked by a
+// conflict lower in its stack as dirty. The PR's own mergeable observation
+// time does not date that derived state, so it is dropped when the value
+// changes.
+func overrideMergeableStateForStackConflict(mr *db.MergeRequest) {
+	if mr.MergeableState == "dirty" {
+		return
+	}
+	mr.MergeableState = "dirty"
+	mr.MergeableStateObservedAt = nil
 }
 
 func mergeRequestResponseModel(mr db.MergeRequest) db.MergeRequest {

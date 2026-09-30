@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/daemonclient"
 
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/config"
@@ -132,7 +133,7 @@ func (h agentHookRelay) SessionEnd(
 }
 
 func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) string {
-	daemon, err := discoverDaemonHTTP(h.configPath, 1500*time.Millisecond)
+	daemon, err := daemonclient.Discover(h.configPath, 1500*time.Millisecond)
 	if err != nil {
 		return ""
 	}

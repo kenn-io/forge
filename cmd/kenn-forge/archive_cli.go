@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/archive/report"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/daemonclient"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -255,7 +256,7 @@ func runArchiveReport(opts archiveReportOptions, daysSet bool, stdout io.Writer,
 }
 
 func newArchiveDaemonClient(flags *archiveDaemonFlags) (*apiclient.Client, error) {
-	daemon, err := discoverDaemonHTTP(flags.configPath, flags.timeout)
+	daemon, err := daemonclient.Discover(flags.configPath, flags.timeout)
 	if err != nil {
 		return nil, err
 	}

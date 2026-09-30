@@ -1,4 +1,7 @@
-package main
+// Package daemonclient discovers the local kenn-forge daemon and returns an
+// HTTP client bound to its advertised address and base path. Every local
+// thin client uses it, so they all resolve the daemon the same way.
+package daemonclient
 
 import (
 	"fmt"
@@ -10,23 +13,27 @@ import (
 	"go.kenn.io/forge/internal/runtimelock"
 )
 
-type daemonHTTPClient struct {
+// Client reaches a discovered daemon.
+type Client struct {
 	BaseURL   string
 	Client    *http.Client
 	TokenPath string
 }
 
-func discoverDaemonHTTP(configPath string, timeout time.Duration) (daemonHTTPClient, error) {
+// Discover loads configPath, reads the running daemon's runtime record, and
+// returns a client for it. The runtime record's base path wins; the config's
+// base_path applies only when the record does not carry one.
+func Discover(configPath string, timeout time.Duration) (Client, error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return daemonHTTPClient{}, fmt.Errorf("load config: %w", err)
+		return Client{}, fmt.Errorf("load config: %w", err)
 	}
 	status, err := runtimelock.Read(cfg.DataDir)
 	if err != nil {
-		return daemonHTTPClient{}, fmt.Errorf("read runtime status: %w", err)
+		return Client{}, fmt.Errorf("read runtime status: %w", err)
 	}
 	if !status.Running || status.Metadata == nil {
-		return daemonHTTPClient{}, fmt.Errorf(
+		return Client{}, fmt.Errorf(
 			"no kenn-forge daemon is running on %s", cfg.DataDir,
 		)
 	}
@@ -38,14 +45,14 @@ func discoverDaemonHTTP(configPath string, timeout time.Duration) (daemonHTTPCli
 	prefix = strings.TrimSuffix(prefix, "/")
 	token, err := runtimelock.ReadAuthToken(cfg.DataDir)
 	if err != nil {
-		return daemonHTTPClient{}, err
+		return Client{}, err
 	}
 	baseURL := fmt.Sprintf("http://%s%s", status.Metadata.ListenAddr, prefix)
 	transport := daemonOriginTransport{
 		token: token, origin: "http://" + status.Metadata.ListenAddr,
 		base: http.DefaultTransport,
 	}
-	return daemonHTTPClient{
+	return Client{
 		BaseURL:   baseURL,
 		Client:    &http.Client{Timeout: timeout, Transport: transport},
 		TokenPath: status.Metadata.TokenPath,

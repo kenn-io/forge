@@ -43,17 +43,24 @@ func TestDaemonDiscoveryUsesRuntimeBasePathAndBearer(t *testing.T) {
 		configPath := filepath.Join(dir, "shim-config.toml")
 		t.Setenv("KENN_FORGE_HOME", t.TempDir())
 		t.Setenv("FORGE_GH_CONFIG", configPath)
-		assertDaemonDiscovery(t, dir, configPath)
+		assertDaemonDiscovery(t, dir, configPath, "/running", "/running")
 	})
 	t.Run("default config", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("KENN_FORGE_HOME", dir)
 		t.Setenv("FORGE_GH_CONFIG", "")
-		assertDaemonDiscovery(t, dir, filepath.Join(dir, "config.toml"))
+		assertDaemonDiscovery(t, dir, filepath.Join(dir, "config.toml"), "/running", "/running")
+	})
+	t.Run("runtime record without base path", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "shim-config.toml")
+		t.Setenv("KENN_FORGE_HOME", t.TempDir())
+		t.Setenv("FORGE_GH_CONFIG", configPath)
+		assertDaemonDiscovery(t, dir, configPath, "", "/changed-config")
 	})
 }
 
-func assertDaemonDiscovery(t *testing.T, dir, configPath string) {
+func assertDaemonDiscovery(t *testing.T, dir, configPath, runtimeBasePath, wantBasePath string) {
 	t.Helper()
 	require := require.New(t)
 	assert := assert.New(t)
@@ -61,7 +68,7 @@ func assertDaemonDiscovery(t *testing.T, dir, configPath string) {
 	token, err := runtimelock.EnsureAuthToken(dir)
 	require.NoError(err)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal("/running/api/v1/gh/query", r.URL.Path)
+		assert.Equal(wantBasePath+"/api/v1/gh/query", r.URL.Path)
 		assert.Equal("Bearer "+token, r.Header.Get("Authorization"))
 		var q ghshim.Query
 		if !assert.NoError(json.NewDecoder(r.Body).Decode(&q)) {
@@ -76,7 +83,7 @@ func assertDaemonDiscovery(t *testing.T, dir, configPath string) {
 	lock, err := runtimelock.Acquire(dir)
 	require.NoError(err)
 	defer func() { require.NoError(lock.Release()) }()
-	require.NoError(lock.WriteMetadata(runtimelock.Metadata{PID: os.Getpid(), ListenAddr: strings.TrimPrefix(server.URL, "http://"), BasePath: "/running"}))
+	require.NoError(lock.WriteMetadata(runtimelock.Metadata{PID: os.Getpid(), ListenAddr: strings.TrimPrefix(server.URL, "http://"), BasePath: runtimeBasePath}))
 	output, handled, reason := queryDaemon(ghshim.Query{Repo: "widget"})
 	assert.True(handled)
 	assert.Equal("served", reason)

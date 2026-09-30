@@ -1,4 +1,4 @@
-package main
+package daemonclient
 
 import (
 	"net/http"

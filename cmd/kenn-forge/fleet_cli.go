@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/daemonclient"
 	"go.kenn.io/forge/internal/server/spokeapi"
 
 	"github.com/spf13/cobra"
@@ -278,7 +279,7 @@ func localFleetJSON(
 	ctx context.Context, configPath string, timeout time.Duration,
 	buildRequest func(string) (*http.Request, error), result any,
 ) error {
-	daemon, err := discoverDaemonHTTP(configPath, timeout)
+	daemon, err := daemonclient.Discover(configPath, timeout)
 	if err != nil {
 		return err
 	}

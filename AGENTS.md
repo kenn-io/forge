@@ -75,7 +75,7 @@ only routes to them.
 - User-facing docs should be concise and workflow-oriented: state the UI capabilities and the maintainer workflows kenn-forge enables, avoid overexplaining internals, and treat the HTTP API as an internal/thin-client concern rather than regular user guidance.
 - Local thin clients must not infer startup-bound daemon middleware policy from
   reloadable config; derive required request metadata from the runtime record or
-  send it safely when the middleware ignores it (`cmd/kenn-forge/daemon_client.go::discoverDaemonHTTP`).
+  send it safely when the middleware ignores it (`internal/daemonclient/daemonclient.go::Discover`).
 - The maintainer's local daemon runs under process-compose; never run `kenn-forge daemon start|restart|stop` against its config.
   `daemon restart` swaps it for an unsupervised detached copy of the invoking binary. (`process-compose.yml`)
 - Generate workflow screenshots only with `make docs-screenshots`; docs builds

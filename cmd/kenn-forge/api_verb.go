@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/daemonclient"
 )
 
 // The api verb is the thin-HTTP-client primitive: it discovers the
@@ -119,7 +120,7 @@ func runAPIVerb(method, requestPath string, opts apiVerbOptions, stdout io.Write
 		path = "/" + path
 	}
 
-	daemon, err := discoverDaemonHTTP(opts.configPath, opts.timeout)
+	daemon, err := daemonclient.Discover(opts.configPath, opts.timeout)
 	if err != nil {
 		return &apiVerbError{apiVerbExitNoRequest, err}
 	}

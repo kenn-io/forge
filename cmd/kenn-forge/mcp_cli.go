@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/daemonclient"
 
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
@@ -128,7 +129,7 @@ func loadMCPQuickstart(
 		)
 	}
 
-	daemon, err := discoverDaemonHTTP(configPath, timeout)
+	daemon, err := daemonclient.Discover(configPath, timeout)
 	if err != nil {
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: discover daemon: %w", err)
 	}

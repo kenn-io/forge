@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/daemonclient"
 	"go.kenn.io/forge/internal/ghshim"
 	"go.kenn.io/forge/internal/procutil"
-	"go.kenn.io/forge/internal/runtimelock"
 	"golang.org/x/term"
 )
 
@@ -147,33 +147,21 @@ func queryDaemon(q ghshim.Query) (string, bool, string) {
 	if configPath == "" {
 		configPath = config.DefaultConfigPath()
 	}
-	cfg, err := config.Load(configPath)
+	daemon, err := daemonclient.Discover(configPath, 10*time.Second)
 	if err != nil {
 		return "", false, "daemon_unavailable"
 	}
-	status, err := runtimelock.Read(cfg.DataDir)
-	if err != nil || !status.Running || status.Metadata == nil {
-		return "", false, "daemon_unavailable"
-	}
-	token, err := runtimelock.ReadAuthToken(cfg.DataDir)
-	if err != nil {
-		return "", false, "daemon_unavailable"
-	}
-	origin := "http://" + status.Metadata.ListenAddr
-	endpoint := origin + strings.TrimSuffix(status.Metadata.BasePath, "/") + "/api/v1/gh/query"
 	body, err := json.Marshal(q)
 	if err != nil {
 		return "", false, "unsupported"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, daemon.BaseURL+"/api/v1/gh/query", bytes.NewReader(body))
 	if err != nil {
 		return "", false, "daemon_unavailable"
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	client := http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := *daemon.Client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", false, "daemon_unavailable"

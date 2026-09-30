@@ -50,7 +50,7 @@
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "0.20.0-beta.298",
     "@xterm/xterm": "6.1.0-beta.302",
-    "dompurify": "3.4.13",
+    "dompurify": "3.4.16",
     "effect": "4.0.0-beta.107",
     "js-toml": "^2.0.0",
     "marked": "18.0.9",

@@ -27,7 +27,7 @@
     "yaml": "2.9.0"
   },
   "overrides": {
-    "dompurify": "3.4.13"
+    "dompurify": "3.4.16"
   },
   "devEngines": {
     "packageManager": {

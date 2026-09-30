@@ -137,8 +137,11 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			return result, fmt.Errorf("decode cached labels: %w", err)
 		}
 		slices.Sort(labels)
-		item := snapshot.SnapshotItem{ID: snapshotRepositoryID(repo) + ":" + row.Kind + ":" + strconv.Itoa(row.Number), RepositoryID: snapshotRepositoryID(repo), Number: row.Number, URL: row.URL, Title: row.Title, Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, State: row.State, Labels: labels, CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), DetailFetchedAt: row.DetailFetchedAt, Assignees: db.ParseUserNamesJSON(row.AssigneesJSON), LastActivityAt: new(row.LastActivityAt.UTC()), ClosedAt: row.ClosedAt}
+		item := snapshot.SnapshotItem{ID: snapshotRepositoryID(repo) + ":" + row.Kind + ":" + strconv.Itoa(row.Number), RepositoryID: snapshotRepositoryID(repo), Number: row.Number, URL: row.URL, Title: row.Title, Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, State: row.State, Labels: labels, CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), DetailFetchedAt: row.DetailFetchedAt, Assignees: db.ParseUserNamesJSON(row.AssigneesJSON), LastActivityAt: new(row.LastActivityAt.UTC())}
 		if row.Kind == "issue" {
+			// Exported pull requests are open and may keep a stale close time from
+			// before a reopen, so only issues export one.
+			item.ClosedAt = row.ClosedAt
 			issueIDs[row.ID] = item.ID
 			result.Issues = append(result.Issues, item)
 			continue

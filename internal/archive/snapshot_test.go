@@ -205,6 +205,29 @@ func TestSnapshotExportsOwnershipAndActivity(t *testing.T) {
 	assert.True(closedAt.Equal(*issue.ClosedAt))
 }
 
+func TestSnapshotOmitsClosedAtForOpenPullRequests(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	// A reopened pull request can still carry its earlier close time.
+	earlierClose := now.Add(-24 * time.Hour)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, Title: "Reopened", State: db.MergeRequestStateOpen,
+		CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now, LastActivityAt: now, ClosedAt: &earlierClose,
+	})
+	require.NoError(err)
+
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	require.NoError(err)
+	require.Len(result.PullRequests, 1)
+	assert.Nil(t, result.PullRequests[0].ClosedAt)
+}
+
 func TestSnapshotOpenIssueScope(t *testing.T) {
 	for _, kind := range []platform.Kind{platform.KindGitHub, platform.KindGitLab, platform.KindForgejo, platform.KindGitea} {
 		t.Run(string(kind), func(t *testing.T) {

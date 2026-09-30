@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"strconv"
 	"strings"
 
 	"go.kenn.io/forge/internal/config"
@@ -29,17 +28,18 @@ func canonicalRepoHost(host string) string {
 func canonicalRepoRef(repo RepoRef) RepoRef {
 	kind := repoPlatform(repo)
 	out := RepoRef{
-		Platform:           kind,
-		Owner:              strings.TrimSpace(repo.Owner),
-		Name:               strings.TrimSpace(repo.Name),
-		PlatformHost:       canonicalRepoHost(repo.PlatformHost),
-		RepoPath:           strings.TrimSpace(repo.RepoPath),
-		PlatformRepoID:     repo.PlatformRepoID,
-		WebURL:             strings.TrimSpace(repo.WebURL),
-		CloneURL:           strings.TrimSpace(repo.CloneURL),
-		DefaultBranch:      strings.TrimSpace(repo.DefaultBranch),
-		Archived:           repo.Archived,
-		ConfiguredRepoPath: strings.TrimSpace(repo.ConfiguredRepoPath),
+		Platform:                kind,
+		Owner:                   strings.TrimSpace(repo.Owner),
+		Name:                    strings.TrimSpace(repo.Name),
+		PlatformHost:            canonicalRepoHost(repo.PlatformHost),
+		RepoPath:                strings.TrimSpace(repo.RepoPath),
+		PlatformRepoID:          repo.PlatformRepoID,
+		WebURL:                  strings.TrimSpace(repo.WebURL),
+		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
+		CloneURL:                strings.TrimSpace(repo.CloneURL),
+		DefaultBranch:           strings.TrimSpace(repo.DefaultBranch),
+		Archived:                repo.Archived,
+		ConfiguredRepoPath:      strings.TrimSpace(repo.ConfiguredRepoPath),
 	}
 	if kind == platform.KindGitHub {
 		out.Owner = canonicalRepoOwner(out.Owner)
@@ -347,17 +347,18 @@ func repoRefFromRepository(
 		name = raw.Name
 	}
 	ref := RepoRef{
-		Platform:           kind,
-		Owner:              strings.TrimSpace(owner),
-		Name:               strings.TrimSpace(name),
-		PlatformHost:       canonicalRepoHost(host),
-		RepoPath:           strings.TrimSpace(repo.Ref.RepoPath),
-		PlatformRepoID:     repo.Ref.PlatformID,
-		WebURL:             repo.WebURL,
-		CloneURL:           repo.CloneURL,
-		DefaultBranch:      repo.DefaultBranch,
-		Archived:           repo.Archived,
-		ConfiguredRepoPath: exactConfiguredRepoPath(raw),
+		Platform:                kind,
+		Owner:                   strings.TrimSpace(owner),
+		Name:                    strings.TrimSpace(name),
+		PlatformHost:            canonicalRepoHost(host),
+		RepoPath:                strings.TrimSpace(repo.Ref.RepoPath),
+		PlatformRepoID:          repo.Ref.PlatformID,
+		WebURL:                  repo.WebURL,
+		BitbucketRepositoryUUID: repo.Ref.BitbucketRepositoryUUID,
+		CloneURL:                repo.CloneURL,
+		DefaultBranch:           repo.DefaultBranch,
+		Archived:                repo.Archived,
+		ConfiguredRepoPath:      exactConfiguredRepoPath(raw),
 	}
 	if ref.WebURL == "" {
 		ref.WebURL = repo.Ref.WebURL
@@ -422,12 +423,13 @@ func expandedRepoRouteKey(repo RepoRef) string {
 }
 
 func expandedRepoIdentityKey(repo RepoRef) string {
-	if repo.PlatformRepoID == 0 {
+	key := repo.providerKey()
+	if key.isZero() {
 		return ""
 	}
 	canonical := canonicalRepoRef(repo)
 	return string(repoPlatform(canonical)) + "\x00" + canonical.PlatformHost +
-		"\x00" + strconv.FormatInt(canonical.PlatformRepoID, 10)
+		"\x00" + key.String()
 }
 
 func (s *ExpandedRepoSet) Add(repo RepoRef, providerResolved bool) {

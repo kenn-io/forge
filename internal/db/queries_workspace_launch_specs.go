@@ -65,10 +65,7 @@ func (d *DB) validateWorkspaceLaunchSpecRepository(
 	if err != nil {
 		return fmt.Errorf("resolve workspace launch repository: %w", err)
 	}
-	if repo == nil ||
-		!strings.EqualFold(repo.Platform, spec.Repository.Provider) ||
-		!strings.EqualFold(repo.PlatformHost, spec.Repository.PlatformHost) ||
-		repo.PlatformRepoID != spec.Repository.PlatformRepoID {
+	if repo == nil || repo.Identity() != spec.Repository.Identity() {
 		return fmt.Errorf(
 			"%w: workspace launch specification repository identity changed",
 			ErrRepositoryIdentityChanged,

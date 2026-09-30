@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -92,6 +93,48 @@ func TestCreateWorkspaceWithLaunchSpecRejectsCatalogIdentityMismatch(t *testing.
 	stored, readErr := database.GetWorkspace(t.Context(), workspace.ID)
 	require.NoError(readErr)
 	require.Nil(stored)
+}
+
+func TestCreateWorkspaceWithLaunchSpecRejectsOtherBitbucketCloudUUID(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	database := openTestDB(t)
+	repoUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	otherUUID := uuid.MustParse("22222222-2222-4222-8222-222222222222")
+	observed, err := database.ObserveRepository(t.Context(), RepoIdentity{
+		Platform: "bitbucket", PlatformHost: "bitbucket.org",
+		BitbucketRepositoryUUID: repoUUID, Owner: "team", Name: "widgets",
+	})
+	require.NoError(err)
+	workspace := &Workspace{
+		ID: "ws-cloud-uuid", Platform: "bitbucket", PlatformHost: "bitbucket.org",
+		RepoOwner: "team", RepoName: "widgets", RepoID: observed.Repository.ID,
+		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
+		ItemKey: "7", GitHeadRef: "feature/seven", WorkspaceBranch: "feature/seven",
+		WorktreePath: "/tmp/ws-cloud-uuid", TmuxSession: "ws-cloud-uuid", Status: "ready",
+	}
+	issuedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	spec := WorkspaceLaunchSpec{
+		Version: WorkspaceLaunchSpecVersion,
+		Repository: WorkspaceLaunchRepository{
+			Provider: "bitbucket", PlatformHost: "bitbucket.org",
+			BitbucketRepositoryUUID: otherUUID, Owner: "team", Name: "widgets",
+			CloneURL: "https://bitbucket.org/team/widgets.git", DefaultBranch: "main",
+		},
+		ItemType: WorkspaceItemTypePullRequest, ItemNumber: 7,
+		ItemKey: "7", GitHeadRef: "feature/seven",
+		Pull: &WorkspaceLaunchPull{
+			HeadBranch: "feature/seven", HeadRepoKind: "same_repo", SnapshotRevision: 1,
+		},
+		SourceVisible: true, IssuedAt: issuedAt,
+		SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
+	}
+
+	err = database.CreateWorkspaceWithLaunchSpec(t.Context(), workspace, spec)
+	require.ErrorIs(err, ErrRepositoryIdentityChanged)
+
+	spec.Repository.BitbucketRepositoryUUID = repoUUID
+	require.NoError(database.CreateWorkspaceWithLaunchSpec(t.Context(), workspace, spec))
 }
 
 func TestPutWorkspaceLaunchSpecRejectsCatalogIdentityMismatch(t *testing.T) {

@@ -662,16 +662,23 @@ type MergeRequest struct {
 	MergeCommitSHA        string
 	CommentCount          int
 	ReviewDecision        string
-	CIStatus              string
-	CIChecksJSON          string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	LastActivityAt        time.Time
-	MergedAt              *time.Time
-	ClosedAt              *time.Time
-	MergeableState        string
-	DetailFetchedAt       *time.Time
-	CIHadPending          bool
+	// ReviewDecisionObservedAt, CIObservedAt, and MergeableStateObservedAt
+	// record when Forge observed the value currently stored in the sibling
+	// field, not when the row was last written. A nil time means the value
+	// is unknown-provenance (never stamped, or explicitly cleared).
+	ReviewDecisionObservedAt *time.Time `json:"review_decision_observed_at,omitzero"`
+	CIStatus                 string
+	CIChecksJSON             string
+	CIObservedAt             *time.Time `json:"ci_observed_at,omitzero"`
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+	LastActivityAt           time.Time
+	MergedAt                 *time.Time
+	ClosedAt                 *time.Time
+	MergeableState           string
+	MergeableStateObservedAt *time.Time `json:"mergeable_state_observed_at,omitzero"`
+	DetailFetchedAt          *time.Time
+	CIHadPending             bool
 	// WorkflowApprovalCheckedAt is when kenn-forge last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative

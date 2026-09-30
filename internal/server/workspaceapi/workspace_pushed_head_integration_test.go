@@ -305,7 +305,7 @@ func TestWorkspacePushedHeadQueuedCIRefreshRechecksRemovedPullRequest(t *testing
 	repoID := seedPushedHeadIntegrationPR(t, fixture.database, headSHA)
 	insertPushedHeadIntegrationWorkspace(t, fixture.database, worktreePath)
 	require.NoError(fixture.database.UpdateMRCIStatusForHead(
-		t.Context(), repoID, 1, headSHA, "pending", `[]`, true,
+		t.Context(), repoID, 1, headSHA, "pending", `[]`, true, nil,
 	))
 	change := workspace.PushedHeadUpdate{
 		WorkspaceID: "ws-pr", RepoID: repoID, Provider: platform.KindGitHub,

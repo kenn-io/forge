@@ -1,0 +1,3 @@
+ALTER TABLE forge_merge_requests DROP COLUMN mergeable_state_observed_at;
+ALTER TABLE forge_merge_requests DROP COLUMN review_decision_observed_at;
+ALTER TABLE forge_merge_requests DROP COLUMN ci_observed_at;

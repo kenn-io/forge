@@ -31,14 +31,14 @@ func TestSnapshotBoundUpdatesRejectAdvancedRevision(t *testing.T) {
 	require.True(accepted)
 	require.Greater(currentRevision, staleRevision)
 
-	applied, err := database.UpdateMergeRequestCISnapshot(ctx, mrID, currentRevision, "success", `[{"name":"current"}]`)
+	applied, err := database.UpdateMergeRequestCISnapshot(ctx, mrID, currentRevision, "success", `[{"name":"current"}]`, nil)
 	require.NoError(err)
 	require.True(applied)
 	applied, err = database.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, currentRevision, true, nil)
 	require.NoError(err)
 	require.True(applied)
 
-	applied, err = database.UpdateMergeRequestCISnapshot(ctx, mrID, staleRevision, "failure", `[{"name":"stale"}]`)
+	applied, err = database.UpdateMergeRequestCISnapshot(ctx, mrID, staleRevision, "failure", `[{"name":"stale"}]`, nil)
 	require.NoError(err)
 	assert.False(applied)
 	applied, err = database.UpdateDiffSHAsSnapshot(

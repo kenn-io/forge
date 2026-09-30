@@ -45,7 +45,13 @@ export interface MergeRequest {
   URL: string;
   UpdatedAt: string;
   assignees?: string[];
+  /** @nullable */
+  ci_observed_at?: string | null;
   labels?: Label[];
+  /** @nullable */
+  mergeable_state_observed_at?: string | null;
   platform_head_sha?: string;
   requested_reviewers?: string[];
+  /** @nullable */
+  review_decision_observed_at?: string | null;
 }

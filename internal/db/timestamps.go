@@ -33,6 +33,9 @@ func canonicalizeMergeRequestTimestamps(mr *MergeRequest) {
 	mr.MergedAt = canonicalUTCTimePtr(mr.MergedAt)
 	mr.ClosedAt = canonicalUTCTimePtr(mr.ClosedAt)
 	mr.DetailFetchedAt = canonicalUTCTimePtr(mr.DetailFetchedAt)
+	mr.CIObservedAt = canonicalUTCTimePtr(mr.CIObservedAt)
+	mr.ReviewDecisionObservedAt = canonicalUTCTimePtr(mr.ReviewDecisionObservedAt)
+	mr.MergeableStateObservedAt = canonicalUTCTimePtr(mr.MergeableStateObservedAt)
 }
 
 // canonicalizeIssueTimestamps applies the same UTC storage contract to issue

@@ -163,8 +163,10 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 		if snapshot.DerivedFields != nil {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE forge_merge_requests
-				SET review_decision = ?
-				WHERE id = ?`, snapshot.DerivedFields.ReviewDecision,
+				SET review_decision = ?, review_decision_observed_at = ?
+				WHERE id = ?`,
+				snapshot.DerivedFields.ReviewDecision,
+				canonicalUTCTimePtr(snapshot.DerivedFields.ReviewDecisionObservedAt),
 				snapshot.MergeRequestID,
 			); err != nil {
 				return fmt.Errorf("update mr review activity: %w", err)
@@ -261,18 +263,22 @@ func (d *DB) updateApplied(
 	return changed > 0, nil
 }
 
+// UpdateMergeRequestCISnapshot writes CI status and checks under the parent
+// snapshot revision guard. observedAt is the time Forge captured status and
+// checksJSON from the provider; it is stored alongside the values.
 func (d *DB) UpdateMergeRequestCISnapshot(
 	ctx context.Context,
 	mergeRequestID int64,
 	expectedRevision int64,
 	status string,
 	checksJSON string,
+	observedAt *time.Time,
 ) (bool, error) {
 	return d.updateApplied(ctx, "update merge-request CI", `
 		UPDATE forge_merge_requests
-		SET ci_status = ?, ci_checks_json = ?
+		SET ci_status = ?, ci_checks_json = ?, ci_observed_at = ?
 		WHERE id = ? AND snapshot_revision = ?`,
-		status, checksJSON, mergeRequestID, expectedRevision)
+		status, checksJSON, canonicalUTCTimePtr(observedAt), mergeRequestID, expectedRevision)
 }
 
 func (d *DB) ClearMRCISnapshot(
@@ -283,7 +289,7 @@ func (d *DB) ClearMRCISnapshot(
 ) (bool, error) {
 	return d.updateApplied(ctx, "clear merge-request CI", `
 		UPDATE forge_merge_requests
-		SET ci_status = '', ci_checks_json = '', ci_had_pending = 0
+		SET ci_status = '', ci_checks_json = '', ci_had_pending = 0, ci_observed_at = NULL
 		WHERE id = ? AND snapshot_revision = ? AND platform_head_sha = ?`,
 		mergeRequestID, expectedRevision, expectedHeadSHA)
 }

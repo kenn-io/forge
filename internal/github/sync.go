@@ -7991,7 +7991,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		ciJSON, _ = json.Marshal(ciChecks)
 		ciStatus := deriveCIStatusFromChecks(ciChecks)
 		ciApplied, err := s.db.UpdateMergeRequestCISnapshot(
-			ctx, mrID, revision, ciStatus, string(ciJSON),
+			ctx, mrID, revision, ciStatus, string(ciJSON), nil,
 		)
 		if err != nil {
 			slog.Warn("update CI status failed",
@@ -8669,7 +8669,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	ciJSON, _ := json.Marshal(dbChecks)
 	ciStatus := deriveCIStatusFromChecks(dbChecks)
 	ciApplied, err := s.db.UpdateMergeRequestCISnapshot(
-		ctx, mrID, expectedRevision, ciStatus, string(ciJSON),
+		ctx, mrID, expectedRevision, ciStatus, string(ciJSON), nil,
 	)
 	if err != nil {
 		return calls, false, fmt.Errorf("update CI status for MR #%d: %w", number, err)
@@ -9187,7 +9187,7 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 		}
 		return nil, s.db.UpdateMRCIStatusForHead(
 			ctx, repoID, number, headSHA,
-			result.Status, result.ChecksJSON, ciHasPending(result.ChecksJSON),
+			result.Status, result.ChecksJSON, ciHasPending(result.ChecksJSON), nil,
 		)
 	}
 
@@ -9218,7 +9218,7 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 	ciStatus := deriveCIStatusFromChecks(dbChecks)
 	if err := s.db.UpdateMRCIStatusForHead(
 		ctx, repoID, number, headSHA,
-		ciStatus, string(ciJSON), ciHasPending(string(ciJSON)),
+		ciStatus, string(ciJSON), ciHasPending(string(ciJSON)), nil,
 	); err != nil {
 		return nil, fmt.Errorf("update CI status for MR #%d: %w", number, err)
 	}
@@ -9259,7 +9259,7 @@ func (s *Syncer) refreshCIStatus(
 	}
 	return s.db.UpdateMRCIStatusForHead(
 		ctx, repoID, number, headSHA,
-		result.Status, result.ChecksJSON, ciHasPending(result.ChecksJSON),
+		result.Status, result.ChecksJSON, ciHasPending(result.ChecksJSON), nil,
 	)
 }
 
@@ -9281,7 +9281,7 @@ func (s *Syncer) refreshCIStatusSnapshot(
 		return true, nil
 	}
 	applied, err := s.db.UpdateMergeRequestCISnapshot(
-		ctx, mrID, expectedRevision, result.Status, result.ChecksJSON,
+		ctx, mrID, expectedRevision, result.Status, result.ChecksJSON, nil,
 	)
 	if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 		return false, nil

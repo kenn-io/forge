@@ -47,16 +47,22 @@ export interface MergeRequestResponse {
   URL: string;
   UpdatedAt: string;
   assignees?: string[];
+  /** @nullable */
+  ci_observed_at?: string | null;
   detail_fetched_at?: string;
   detail_loaded: boolean;
   labels?: Label[];
   last_workspace_activity_at?: string;
+  /** @nullable */
+  mergeable_state_observed_at?: string | null;
   platform_head_sha?: string;
   platform_host: string;
   repo: RepoRefResponse;
   repo_name: string;
   repo_owner: string;
   requested_reviewers?: string[];
+  /** @nullable */
+  review_decision_observed_at?: string | null;
   stack?: StackPlacementResponse;
   workspace?: WorkspaceRef;
   worktree_links: WorktreeLinkResponse[];

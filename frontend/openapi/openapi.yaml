@@ -5322,16 +5322,31 @@ components:
           items:
             type: string
           type: array
+        ci_observed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         labels:
           items:
             $ref: "#/components/schemas/Label"
           type: array
+        mergeable_state_observed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         platform_head_sha:
           type: string
         requested_reviewers:
           items:
             type: string
           type: array
+        review_decision_observed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
       required:
         - ID
         - RepoID
@@ -5618,6 +5633,11 @@ components:
           items:
             type: string
           type: array
+        ci_observed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         detail_fetched_at:
           type: string
         detail_loaded:
@@ -5629,6 +5649,11 @@ components:
         last_workspace_activity_at:
           format: date-time
           type: string
+        mergeable_state_observed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         platform_head_sha:
           type: string
         platform_host:
@@ -5643,6 +5668,11 @@ components:
           items:
             type: string
           type: array
+        review_decision_observed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         stack:
           $ref: "#/components/schemas/StackPlacementResponse"
         workspace:

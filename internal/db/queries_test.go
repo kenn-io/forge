@@ -3083,20 +3083,20 @@ func TestUpdateMRCIStatusForHeadSkipsStaleHead(t *testing.T) {
 	})
 	require.NoError(err)
 
-	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "old-head", "success", `[]`, false))
+	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "old-head", "success", `[]`, false, nil))
 	stale, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(stale)
 	assert.Equal("pending", stale.CIStatus)
 
-	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "new-head", "pending", `[{"name":"build","status":"in_progress"}]`, true))
+	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "new-head", "pending", `[{"name":"build","status":"in_progress"}]`, true, nil))
 	fresh, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(fresh)
 	assert.Equal("pending", fresh.CIStatus)
 	assert.True(fresh.CIHadPending)
 
-	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "new-head", "success", `[]`, false))
+	require.NoError(d.UpdateMRCIStatusForHead(ctx, repoID, 7, "new-head", "success", `[]`, false, nil))
 	done, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(done)

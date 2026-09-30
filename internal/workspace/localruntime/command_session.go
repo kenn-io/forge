@@ -245,6 +245,7 @@ func (m *Manager) ensureCommandSessionLocked(
 		return SessionInfo{}, errManagerShutdown
 	}
 	m.sessions[key] = started
+	delete(m.exited, key)
 	m.mu.Unlock()
 	go m.watchSession(started)
 	slog.Debug(

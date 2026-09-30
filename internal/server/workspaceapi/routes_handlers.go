@@ -2553,6 +2553,10 @@ func (s *Handler) workspaceRuntimeSessions(
 	if err != nil {
 		return nil, err
 	}
+	// A session that exited is gone even before its record is forgotten.
+	stored = slices.DeleteFunc(stored, func(session db.WorkspaceRuntimeSession) bool {
+		return s.runtime.Exited(session.SessionKey)
+	})
 	return mergeStoredRuntimeSessions(sessions, stored), nil
 }
 

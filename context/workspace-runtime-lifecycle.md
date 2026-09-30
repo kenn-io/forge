@@ -51,6 +51,9 @@ Rules:
   compatibility fallbacks for it (maintainer decision; `frontend/src/lib/components/acp/chat-types.ts::ChatStateSchema`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved
   ACP session only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
+- A session this daemon saw exit on its own is neither restored nor listed, even before its
+  stored record is forgotten; only an owner that died while no daemon was attached is reloaded
+  (`internal/workspace/localruntime/manager.go::Manager.Exited`).
 - The ACP owner keeps the whole transcript and never deletes messages. State
   updates carry only the latest message window with its absolute offset and total
   count; clients page earlier messages in with `history` requests answered to the

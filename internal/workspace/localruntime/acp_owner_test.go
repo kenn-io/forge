@@ -255,3 +255,41 @@ func TestACPReattachesAfterDaemonProcessExits(t *testing.T) {
 	assert.Equal("session/new\n", string(sessions))
 	assert.NotContains(string(data), "restored answer")
 }
+
+// An agent this daemon saw exit on its own is finished: a workspace open that
+// lands before the stored record is forgotten must not relaunch it. (An agent
+// that dies while no daemon is attached is still restored; see
+// TestACPReloadsSavedSessionOnlyAfterOwnerExit.)
+func TestACPDoesNotRestoreAnAgentThatExited(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_EXIT_ON_PROMPT", "7")
+	dir := t.TempDir()
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	exits := make(chan SessionInfo, 1)
+	options := withTestPtyOwnerRuntime(t, Options{
+		ACPSessionsDir: filepath.Join(dir, "acp"),
+		Targets:        ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil),
+		OnSessionExit:  func(info SessionInfo) { exits <- info },
+	})
+	manager := newACPTestManager(t, options)
+	info, err := manager.Launch(t.Context(), "workspace", dir, "chat")
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "exit"}))
+	select {
+	case <-exits:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "ACP exit was not reported")
+	}
+	assert.True(t, manager.Exited(info.Key))
+	// The owner is fully gone, as when the reopen comes a moment later.
+	require.Eventually(t, func() bool { return !options.PtyOwnerRuntime.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
+
+	err = manager.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, TmuxSession: info.TmuxSession, CWD: dir, CreatedAt: info.CreatedAt}})
+	require.ErrorIs(t, err, ErrSessionUnavailable)
+	_, err = manager.ACP("workspace", info.Key)
+	assert.Error(t, err, "the exited chat was relaunched")
+}

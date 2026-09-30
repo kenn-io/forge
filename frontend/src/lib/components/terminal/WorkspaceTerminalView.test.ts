@@ -2300,11 +2300,12 @@ describe("WorkspaceTerminalView", () => {
       const response = Response.json({ active_tab: "session:ws-1:helper-b" });
       selection.resolve(response);
       await waitFor(() => expect(response.bodyUsed).toBe(true));
-      if (selectExisting) await fireEvent.click(screen.getByRole("tab", { name: "Helper, Helper running" }));
+      // Selection does not depend on the changing status suffix in the tab name.
+      if (selectExisting) await fireEvent.click(screen.getByRole("tab", { name: /^Helper(?:,|$)/ }));
       freshRuntime.resolve(runtimeWithDuplicateWorkflowSessions());
 
       const agentTab = await screen.findByRole("tab", { name: /Helper 2/ });
-      const selected = selectExisting ? screen.getByRole("tab", { name: "Helper, Helper running" }) : agentTab;
+      const selected = selectExisting ? screen.getByRole("tab", { name: /^Helper(?:,|$)/ }) : agentTab;
       await waitFor(() => expect(selected.getAttribute("aria-selected")).toBe("true"));
     },
   );

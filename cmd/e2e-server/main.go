@@ -2163,6 +2163,9 @@ func buildAppState(
 			return nil, err
 		}
 		serverOptions.Archive = service
+		// Scenario controls own these cached observations; viewing a PR must not
+		// replace them with the unrelated general UI provider fixtures.
+		serverSyncer = nil
 	}
 	if opts.federation != nil {
 		serverOptions.DaemonAccess = server.DaemonAccessOptions{

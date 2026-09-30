@@ -235,6 +235,41 @@ test("markdown images open in an expanded overlay", async ({ page }) => {
   await expect(dialog).toBeHidden();
 });
 
+test("expanded view pages through the description's images and diagrams", async ({ page }) => {
+  await routeMockDashboardImage(page);
+  await page.goto("/pulls/github/acme/widgets/42");
+  await page.locator(".edit-body-btn").click();
+  await page
+    .locator(".body-edit-textarea")
+    .fill(
+      [
+        "![Before](/mock-dashboard.svg)",
+        "",
+        "```mermaid",
+        "sequenceDiagram",
+        "  Client->>Server: Send request",
+        "```",
+        "",
+        "![After](/mock-dashboard.svg)",
+      ].join("\n"),
+    );
+  await page.locator(".body-edit .title-edit-save").click();
+  await expect(page.locator(".markdown-body pre.mermaid.kit-mermaid-viewer")).toBeVisible();
+
+  await page.getByRole("img", { name: "Before" }).hover();
+  await page.getByRole("button", { name: "Open image in expanded view: Before" }).click();
+  const viewer = page.getByRole("dialog");
+  await expect(viewer).toHaveAccessibleName("Before (1 of 3)");
+  await page.keyboard.press("ArrowRight");
+  await expect(viewer).toHaveAccessibleName("Mermaid diagram (2 of 3)");
+  await page.getByRole("button", { name: "Next item" }).click();
+  await expect(viewer).toHaveAccessibleName("After (3 of 3)");
+  await page.keyboard.press("ArrowRight");
+  await expect(viewer).toHaveAccessibleName("Before (1 of 3)");
+  await page.keyboard.press("Escape");
+  await expect(viewer).toBeHidden();
+});
+
 test("expanded markdown images open above drawer layers", async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 700 });
   await routeMockDashboardImage(page);

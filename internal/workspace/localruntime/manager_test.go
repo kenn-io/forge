@@ -1125,6 +1125,27 @@ func TestManagerLaunchCommandDoesNotEmbedEnvForWrappedAgent(t *testing.T) {
 	assert.NotContains(paneCommand, "not-carried")
 }
 
+func TestManagerKillSessionWithEmptyTmuxServer(t *testing.T) {
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux servers are unavailable")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skipf("tmux unavailable: %v", err)
+	}
+	require := require.New(t)
+	command := privateTmuxOwner.Command(t, tmuxPath)
+	cmd := procutil.Command(command[0], append(slices.Clone(command[1:]),
+		"new-session", "-d", "-s", "seed", "sleep 30", ";",
+		"set-option", "-s", "exit-empty", "off", ";",
+		"kill-session", "-t", "seed")...)
+	out, err := cmd.CombinedOutput()
+	require.NoError(err, string(out))
+	mgr := NewManager(Options{TmuxCommand: command})
+	t.Cleanup(mgr.Shutdown)
+	require.NoError(mgr.killTmuxSession(t.Context(), "seed"))
+}
+
 func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("tmux environment handoff uses Unix tmux")

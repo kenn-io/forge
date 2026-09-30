@@ -5593,6 +5593,7 @@ func isTmuxSessionAbsent(stderr []byte, err error) bool {
 	}
 	msg := string(stderr)
 	return strings.Contains(msg, "can't find session") ||
+		strings.Contains(msg, "no current target") ||
 		strings.Contains(msg, "no server running") ||
 		(strings.Contains(msg, "error connecting to") &&
 			strings.Contains(msg, "No such file or directory"))

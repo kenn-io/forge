@@ -6162,6 +6162,39 @@ func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
 	)
 }
 
+func TestManagerDeleteWithEmptyTmuxServer(t *testing.T) {
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux servers are unavailable")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skipf("tmux unavailable: %v", err)
+	}
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/thing")
+	mgr := newTestManager(t, d, t.TempDir())
+	mgr.SetTmuxCommand(privateTmuxOwner.Command(t, tmuxPath))
+	ctx := t.Context()
+	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	require.NoError(d.UpdateWorkspaceStatus(ctx, ws.ID, "ready", nil))
+	// Keep the empty server alive to make last-session teardown deterministic.
+	require.NoError(runBuiltCmd(ctx, mgr.tmuxExec(ctx,
+		"new-session", "-d", "-s", ws.TmuxSession, "sleep 30", ";",
+		"set-option", "-s", "exit-empty", "off")))
+	recordRuntimeTmuxSessionForTest(t, d, ws.ID, ws.ID+"_shell",
+		"shell", ws.TmuxSession+"-runtime", time.Now())
+
+	dirty, err := mgr.Delete(ctx, ws.ID, true, nil)
+	require.NoError(err)
+	assert.Empty(t, dirty)
+	got, err := mgr.Get(ctx, ws.ID)
+	require.NoError(err)
+	assert.Nil(t, got)
+}
+
 func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

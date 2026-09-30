@@ -21,9 +21,7 @@ test("narrow workspace headers leave room for the terminal and keep controls rea
     const bounds = await header.boundingBox();
     expect(bounds!.height).toBeLessThanOrEqual(56);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(600);
-    await expect(
-      page.getByRole("tablist", { name: "Workflow group tabs" }).getByRole("button", { name: "Launch", exact: true }),
-    ).toBeVisible();
+    await expect(header.getByRole("button", { name: "Launch", exact: true })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath("compact-workspace-header.png") });
     await controls.click();
     const menu = page.getByRole("dialog", { name: "Workspace controls" });

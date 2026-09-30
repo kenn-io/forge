@@ -162,6 +162,7 @@ func (a *ACP) drain() {
 	a.mu.Unlock()
 	if err := a.startPromptLocked(next.Text, next.ID, next.Images); err != nil && !errors.Is(err, errACPNotIdle) {
 		a.mu.Lock()
+		a.setErrorLocked(err)
 		a.state.QueuePaused = true
 		a.changedLocked()
 		a.mu.Unlock()

@@ -1034,6 +1034,25 @@ func TestACPStoppedPromptEndsATakeoverTurn(t *testing.T) {
 	}
 }
 
+func TestACPRestoredImageQueuePausesWhenAgentDoesNotSupportImages(t *testing.T) {
+	assert := assert.New(t)
+	agent := newDetachedACP(t)
+	var written bytes.Buffer
+	agent.stdin = discardWriteCloser{&written}
+	queued := ACPQueuedPrompt{ID: "saved-image", Images: []ACPContent{{Type: "image", MimeType: "image/png", Data: "aW1hZ2U="}}}
+	agent.restoreTranscriptLocked(ACPState{Queue: []ACPQueuedPrompt{queued}})
+	// Resume the restored queue against the current agent's capabilities.
+	agent.state.QueuePaused = false
+	agent.drain()
+
+	state := publishedACPState(t, agent)
+	assert.True(state.QueuePaused)
+	assert.Equal([]ACPQueuedPrompt{queued}, state.Queue)
+	assert.Contains(state.Error, "does not accept image prompts")
+	assert.False(state.Busy)
+	assert.Empty(written.String(), "unsupported images must not reach the agent")
+}
+
 func TestACPImagePrompts(t *testing.T) {
 	for _, mode := range []string{"send", "queue", "steer"} {
 		t.Run(mode, func(t *testing.T) {

@@ -489,6 +489,10 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) 
 		a.mu.Unlock()
 		return errACPNotIdle
 	}
+	if len(images) > 0 && !a.imagesSupported {
+		a.mu.Unlock()
+		return errors.New("this agent does not accept image prompts")
+	}
 	a.state.Busy = true
 	a.cancelling = false
 	// Status from here on describes this prompt, not an earlier takeover.

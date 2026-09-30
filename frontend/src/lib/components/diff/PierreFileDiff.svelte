@@ -215,6 +215,7 @@
         font-family: var(--font-mono);
         --diffs-font-family: var(--font-mono);
         --diffs-tab-size: ${tabWidth};
+        --diffs-light: var(--text-primary);
         --diffs-light-bg: var(--bg-surface, #fff);
         --diffs-dark-bg: var(--bg-surface, #16161e);
         --diffs-bg-addition-override: light-dark(

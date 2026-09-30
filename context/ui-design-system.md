@@ -22,8 +22,11 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Keep the quiet dark canvas and content surfaces dark enough for comfortable
   reading. Inset, hover, and border tokens step up in small, even increments so
   tab strips, group headers, chips, and hovered rows read as structure, never as
-  bright gray fills. The quiet light palette mirrors this with cool gray
-  chrome and a soft gray reading surface, never pure white. Muted text and
+  bright gray fills. The quiet light palette mirrors this with muted
+  slate-blue chrome and reading surface and slate ink (about 10:1, never
+  near-black on white); diff code text follows `--text-primary` rather than
+  the Pierre theme's own foreground
+  (`frontend/src/lib/components/diff/PierreFileDiff.svelte`). Muted text and
   accent text must stay AA on every step and, for accents, on their own
   `color-mix` tints (up to 16%) such as stale banners; selected rows stay between the
   surface and hover in both themes. The light contrast and both row orders are

@@ -1691,6 +1691,7 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(repo.Repo, capabilityReadyForReview)
 	}
+	requestedAt := s.now().UTC()
 	pr, err := mutator.MarkReadyForReview(ctx, platformRepoRefFromDB(repo.Repo), input.Number)
 	if err != nil {
 		type readyForReviewFailure interface {
@@ -1746,6 +1747,7 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 	}
 
 	normalized := platformdb.DBMergeRequest(repo.ID, pr)
+	normalized.MergeableStateObservedAt = &requestedAt
 	if mrID, _, accepted, upsertErr := s.syncer.CommitMergeRequestParentSnapshot(
 		ctx, mergeRequestRepoRef(repo.Repo), normalized,
 	); upsertErr == nil && accepted {
@@ -2208,6 +2210,7 @@ func (s *Handler) setPRGitHubState(
 	if err != nil {
 		return nil, unsupportedCapabilityProblem(repo.Repo, capabilityStateMutation)
 	}
+	mutationRequestedAt := s.now().UTC()
 	updatedMR, err := mutator.SetMergeRequestState(
 		ctx, platformRepoRefFromDB(repo.Repo), input.Number, input.Body.State,
 	)
@@ -2224,6 +2227,7 @@ func (s *Handler) setPRGitHubState(
 						"GitHub API error: "+err.Error(),
 					)
 				}
+				refetchRequestedAt := s.now().UTC()
 				ghPR, fetchErr := client.GetPullRequest(
 					ctx, input.Owner, input.Name, input.Number,
 				)
@@ -2241,6 +2245,7 @@ func (s *Handler) setPRGitHubState(
 							string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo),
 						)
 					}
+					normalized.MergeableStateObservedAt = &refetchRequestedAt
 					// Refetched snapshots cannot represent sync-derived
 					// columns either; carry them like the success path so
 					// a concurrent close recovered here does not erase
@@ -2283,6 +2288,7 @@ func (s *Handler) setPRGitHubState(
 	// itself succeeded.
 	if updatedMR.Number == input.Number {
 		normalized := platformdb.DBMergeRequest(repo.ID, updatedMR)
+		normalized.MergeableStateObservedAt = &mutationRequestedAt
 		// Edit responses cannot represent sync-derived columns (CI state,
 		// review decision, comment count); carry them from the stored row
 		// so a UI close does not erase them from a row no later sync will

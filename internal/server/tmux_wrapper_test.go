@@ -36,6 +36,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/platform"
 )
 
 type lockedBuffer struct {
@@ -194,7 +195,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	clones := gitclone.New(bareDir, nil)
 	bare, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), testutil.FixtureRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testutil.FixtureRepoID("acme", "widget")}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(t, err)
@@ -984,7 +985,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	)
 	ctx := t.Context()
 	clonePath, err := srv.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, testutil.FixtureRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: testutil.FixtureRepoID("acme", "widget")}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)

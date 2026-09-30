@@ -1090,7 +1090,7 @@ func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
 		CloneURL:       h.sourceDir,
 	}
 	barePath, err := h.manager.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), providerRepo.PlatformRepoID),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: providerRepo.PlatformRepoID}),
 		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
 	)
 	require.NoError(err)

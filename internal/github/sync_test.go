@@ -7775,7 +7775,7 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 
 	require.NoError(syncer.syncRepo(ctx, repo))
 	clonePath, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: repo.PlatformRepoID}),
 		"gitlab", "gitlab.example.com", "group/subgroup", "project",
 	)
 	require.NoError(err)
@@ -7851,7 +7851,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	assert.Equal(int32(1), provider.getMRCalls.Load())
 	clonePath, err := clones.ClonePathForContext(
 		gitclone.WithRepositoryIdentity(
-			ctx, verifiedDBRepoIdentity(platformRepoRef(repo)).PlatformRepoID,
+			ctx, platform.RepositoryIdentity{PlatformRepoID: verifiedDBRepoIdentity(platformRepoRef(repo)).PlatformRepoID},
 		),
 		"gitlab", "gitlab.example.com", "group/subgroup", "project",
 	)

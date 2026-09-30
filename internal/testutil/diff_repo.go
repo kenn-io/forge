@@ -48,7 +48,7 @@ func SetupDiffRepo(
 	repoIdentity.PlatformRepoID = FixtureRepoID("acme", "widgets")
 	mgr := gitclone.New(cloneBase, nil)
 	barePath, err := mgr.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, repoIdentity.PlatformRepoID),
+		gitclone.WithRepositoryIdentity(ctx, repoIdentity.ProviderIdentity()),
 		"github", "github.com", "acme", "widgets",
 	)
 	if err != nil {

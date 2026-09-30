@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/platform"
 )
 
 // Starting new work needs no provider item: a tracked repository plus an
@@ -53,7 +54,7 @@ func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	replacementBare, err := fixture.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), 2002),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: 2002}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)
@@ -130,7 +131,7 @@ func TestCreateAdHocWorkspaceFollowsCachedRepositoryRename(t *testing.T) {
 		CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
 	}, nil, nil))
 	renamedBare, err := fixture.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), 3609862021), "github", "github.com", "acme", "widgets",
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: 3609862021}), "github", "github.com", "acme", "widgets",
 	)
 	require.NoError(err)
 	gitfixture.Run(t, t.TempDir(), "clone", "--bare", fixture.remote, renamedBare)

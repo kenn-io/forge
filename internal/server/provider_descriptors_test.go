@@ -577,7 +577,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	require.NoError(err)
 	const hostedCloneURL = "https://github.com/acme/widgets.git"
 	sourceClone, err := diffRepo.Manager.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), diffRepo.PlatformRepoID),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID}),
 		"github", "github.com", "acme", "widgets",
 	)
 	require.NoError(err)
@@ -636,7 +636,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 		descriptorCloneRoutes{source: serverfake.TestTokenSource("spoke-git-token")},
 	)
 	nodeClone, err := nodeClones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), diffRepo.PlatformRepoID),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID}),
 		"github", "github.com", "acme", "widgets",
 	)
 	require.NoError(err)
@@ -759,7 +759,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	assert.Equal(httpapi.CodeHubUnavailable, problem.Code)
 
 	localCtx := gitclone.WithRepositoryIdentity(
-		t.Context(), diffRepo.PlatformRepoID,
+		t.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID},
 	)
 	localDiff, err := nodeClones.Diff(
 		localCtx, "github", "github.com", "acme", "widgets",

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -124,8 +125,25 @@ type (
 // stable repository identity. Callers should set this after reconciling a
 // mutable owner/name route so route reuse cannot share clone state or an
 // in-flight fetch between distinct repositories.
-func WithRepositoryIdentity(ctx context.Context, providerRepoID int64) context.Context {
-	return context.WithValue(ctx, repositoryIdentityContextKey{}, providerRepoID)
+func WithRepositoryIdentity(
+	ctx context.Context, identity providerplatform.RepositoryIdentity,
+) context.Context {
+	return context.WithValue(ctx, repositoryIdentityContextKey{}, repositoryPartitionKey(identity))
+}
+
+// repositoryPartitionKey is the stable provider key that names a clone
+// partition: the integer repository ID, or the Bitbucket Cloud UUID. The
+// clone namespace already carries the platform and the path carries the
+// host, so neither is part of the key; integer keys keep the on-disk layout
+// they had before Cloud UUIDs existed. Empty means no verified identity.
+func repositoryPartitionKey(identity providerplatform.RepositoryIdentity) string {
+	if identity.BitbucketRepositoryUUID != uuid.Nil() {
+		return "bitbucket-uuid:" + identity.BitbucketRepositoryUUID.String()
+	}
+	if identity.PlatformRepoID > 0 {
+		return strconv.FormatInt(identity.PlatformRepoID, 10)
+	}
+	return ""
 }
 
 // WithRequiredCredential makes every networked Git command in ctx fail closed
@@ -220,11 +238,11 @@ func cloneNamespaceForPlatform(platform string) string {
 
 func cloneNamespaceForContext(ctx context.Context, platform string) string {
 	namespace := cloneNamespaceForPlatform(platform)
-	providerRepoID, _ := ctx.Value(repositoryIdentityContextKey{}).(int64)
-	if providerRepoID <= 0 {
+	partitionKey, _ := ctx.Value(repositoryIdentityContextKey{}).(string)
+	if partitionKey == "" {
 		return namespace
 	}
-	digest := sha256.Sum256([]byte(strconv.FormatInt(providerRepoID, 10)))
+	digest := sha256.Sum256([]byte(partitionKey))
 	identityNamespace := fmt.Sprintf("repo-%x", digest[:16])
 	if namespace == "" {
 		return identityNamespace
@@ -259,7 +277,7 @@ type CloneLocation struct {
 func (m *Manager) ClonesForContext(
 	ctx context.Context, platform string,
 ) ([]CloneLocation, error) {
-	if providerRepoID, _ := ctx.Value(repositoryIdentityContextKey{}).(int64); providerRepoID <= 0 {
+	if partitionKey, _ := ctx.Value(repositoryIdentityContextKey{}).(string); partitionKey == "" {
 		return nil, nil
 	}
 	root := filepath.Join(m.baseDir, cloneNamespaceForContext(ctx, platform))

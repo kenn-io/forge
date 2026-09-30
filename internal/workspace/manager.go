@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -671,9 +672,10 @@ func (m *Manager) CreateIssueFromLaunchSpec(
 	if !opts.ReuseExistingDirectory {
 		branchDir, ok, localBase, err := m.branchInspectionDir(ctx, workspaceRepoRef{
 			ID: repo.ID, Platform: spec.Repository.Provider,
-			PlatformHost: spec.Repository.PlatformHost,
-			ProviderID:   spec.Repository.PlatformRepoID,
-			Owner:        spec.Repository.Owner, Name: spec.Repository.Name,
+			PlatformHost:            spec.Repository.PlatformHost,
+			ProviderID:              spec.Repository.PlatformRepoID,
+			BitbucketRepositoryUUID: spec.Repository.BitbucketRepositoryUUID,
+			Owner:                   spec.Repository.Owner, Name: spec.Repository.Name,
 			RemoteURL: spec.Repository.CloneURL,
 		})
 		if err != nil {
@@ -911,7 +913,8 @@ func (m *Manager) CreateAdHoc(
 	repoRef := workspaceRepoRef{
 		ID: repo.ID, Platform: repo.Platform, PlatformHost: platformHost,
 		ProviderID: repo.PlatformRepoID, Owner: owner, Name: name,
-		RemoteURL: workspaceCloneRemoteURL(repo.Row(), platformHost, owner, name),
+		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
+		RemoteURL:               workspaceCloneRemoteURL(repo.Row(), platformHost, owner, name),
 	}
 	repoDir, err := m.workspaceRepoDir(ctx, repoRef)
 	if err != nil {
@@ -1156,9 +1159,20 @@ type workspaceRepoRef struct {
 	Platform     string
 	PlatformHost string
 	ProviderID   int64
-	Owner        string
-	Name         string
-	RemoteURL    string
+	// BitbucketRepositoryUUID is Bitbucket Cloud's identity; ProviderID is 0
+	// for Cloud.
+	BitbucketRepositoryUUID uuid.UUID
+	Owner                   string
+	Name                    string
+	RemoteURL               string
+}
+
+func (r workspaceRepoRef) providerIdentity() platform.RepositoryIdentity {
+	return platform.RepositoryIdentity{
+		Provider: r.Platform, PlatformHost: r.PlatformHost,
+		PlatformRepoID:          r.ProviderID,
+		BitbucketRepositoryUUID: r.BitbucketRepositoryUUID,
+	}.Canonical()
 }
 
 func (m *Manager) branchInspectionDir(
@@ -1171,7 +1185,7 @@ func (m *Manager) branchInspectionDir(
 		return "", false, false, nil
 	}
 
-	cloneCtx := gitclone.WithRepositoryIdentity(ctx, repo.ProviderID)
+	cloneCtx := gitclone.WithRepositoryIdentity(ctx, repo.providerIdentity())
 	if err := m.clones.EnsureCloneForInspection(
 		cloneCtx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name, repo.RemoteURL,
 		nil,
@@ -2050,7 +2064,7 @@ func (m *Manager) workspaceManagedCloneCandidates(
 	if err != nil {
 		return nil, err
 	}
-	cloneCtx := gitclone.WithRepositoryIdentity(ctx, repo.ProviderID)
+	cloneCtx := gitclone.WithRepositoryIdentity(ctx, repo.providerIdentity())
 	candidates := make([]managedCloneCandidate, 0, 4)
 	seen := make(map[string]struct{})
 	appendCandidate := func(
@@ -2309,6 +2323,7 @@ func (m *Manager) workspaceSetupGitDir(
 	}
 	if launchSpec != nil {
 		repo.ProviderID = launchSpec.Repository.PlatformRepoID
+		repo.BitbucketRepositoryUUID = launchSpec.Repository.BitbucketRepositoryUUID
 	}
 	if ws.MRHeadRepo == nil {
 		if strings.TrimSpace(worktreeBasePath) != "" {
@@ -2339,7 +2354,7 @@ func (m *Manager) workspaceSetupGitDir(
 			return workspaceGitDir{}, err
 		}
 	}
-	cloneCtx := gitclone.WithRepositoryIdentity(ctx, repo.ProviderID)
+	cloneCtx := gitclone.WithRepositoryIdentity(ctx, repo.providerIdentity())
 	if err := m.clones.EnsureCloneValidated(
 		cloneCtx, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, remoteURL,
 		nil,
@@ -2427,6 +2442,7 @@ func (m *Manager) workspaceRepositoryRef(
 		)
 	}
 	repoRef.ProviderID = repo.PlatformRepoID
+	repoRef.BitbucketRepositoryUUID = repo.BitbucketRepositoryUUID
 	return repoRef, nil
 }
 

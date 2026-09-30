@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	providerplatform "go.kenn.io/forge/platform"
 )
 
 func TestBranchActivityWalksDefaultBranchFirstParent(t *testing.T) {
@@ -229,7 +230,7 @@ func TestResolveDefaultBranchFallsBackToOriginHEAD(t *testing.T) {
 
 	cloneDir, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
 	require.NoError(err)
-	identityCtx := WithRepositoryIdentity(t.Context(), 1001)
+	identityCtx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
 	branch, ref, err = mgr.ResolveDefaultBranchInDir(identityCtx, cloneDir, "stale")
 	require.NoError(err)
 	assert.Equal("main", branch)

@@ -1199,7 +1199,7 @@ func TestCreateIssueRecoveryRejectsManagedCloneWithWrongOrigin(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), testRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")}),
 		"github", host, owner, name,
 	)
 	require.NoError(err)
@@ -1259,7 +1259,7 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), testRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")}),
 		"github", host, owner, name,
 	)
 	require.NoError(err)
@@ -1320,7 +1320,7 @@ func TestSetupReusesIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneCtx := gitclone.WithRepositoryIdentity(
-		t.Context(), spec.Repository.PlatformRepoID,
+		t.Context(), platform.RepositoryIdentity{PlatformRepoID: spec.Repository.PlatformRepoID},
 	)
 	require.NoError(clones.EnsureClone(
 		cloneCtx, "github", platformHost, "acme", "widget", oldRemoteURL,
@@ -1394,11 +1394,11 @@ func TestManagedClonePathsIncludeEveryCloneInIdentityNamespace(t *testing.T) {
 		runWorkspaceTestGit(t, t.TempDir(), "init", "--bare", path)
 		return path
 	}
-	ownCtx := gitclone.WithRepositoryIdentity(t.Context(), 1020)
+	ownCtx := gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: 1020})
 	earlierRoute := initBare(ownCtx, "acme", "widget-original")
 	transferredRoute := initBare(ownCtx, "other-org", "widget")
 	otherRepository := initBare(
-		gitclone.WithRepositoryIdentity(t.Context(), 1022), "acme", "widget",
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: 1022}), "acme", "widget",
 	)
 	routeKeyed := initBare(t.Context(), "acme", "widget")
 
@@ -1860,7 +1860,7 @@ func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
 			))
 
 			clones := gitclone.New(t.TempDir(), nil)
-			cloneCtx := gitclone.WithRepositoryIdentity(ctx, testRepoID("acme", "widget"))
+			cloneCtx := gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")})
 			require.NoError(clones.EnsureClone(
 				cloneCtx, "github", platformHost, "acme", "widget", remote,
 			))
@@ -3051,7 +3051,7 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 	require.NotNil(ws)
 	assert.Equal("gitlab", ws.Platform)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, 1016),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: 1016}),
 		"gitlab", "gitlab.example.com", "group", "project",
 	)
 	require.NoError(err)
@@ -3103,7 +3103,7 @@ func TestCreateIssueClonesExplicitlyAllowedGiteaHTTPRemote(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(ws)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, 1014),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: 1014}),
 		"gitea", platformHost, "acme", "widget",
 	)
 	require.NoError(err)
@@ -3177,7 +3177,7 @@ func TestWorkspaceBranchInspectionDoesNotRefreshExistingClone(t *testing.T) {
 	require.NoError(err)
 	require.Positive(requests.Load())
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, testRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")}),
 		"github", parsed.Host, "acme", "widget",
 	)
 	require.NoError(err)
@@ -3269,7 +3269,7 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 	)
 	clones := gitclone.New(cloneBaseDir, nil)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), testRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")}),
 		"github", host, owner, name,
 	)
 	require.NoError(err)
@@ -3768,7 +3768,7 @@ func TestCleanupFindsMissingIdentityManagedWorktreeAfterRepositoryRename(t *test
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneCtx := gitclone.WithRepositoryIdentity(
-		t.Context(), identity.PlatformRepoID,
+		t.Context(), platform.RepositoryIdentity{PlatformRepoID: identity.PlatformRepoID},
 	)
 	oldClone, err := clones.ClonePathForContext(
 		cloneCtx, identity.Platform, identity.PlatformHost,

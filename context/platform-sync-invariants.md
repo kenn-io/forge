@@ -49,11 +49,12 @@ empty UUID. Exactly one key is set
   held merges into that row, whose copy wins item conflicts. Every column holding
   a `forge_repos` id must be in `repositoryOwnedColumns`
   (`internal/db/repository_catalog.go::mergeDuplicateRepositoryTx`).
-- Config presets, federation descriptors, fleet and MCP identities, clone
-  partitioning, archive snapshot IDs, and activity rows still key only the
-  integer. A catalogued Cloud repository cannot be named there yet; do not
-  invent an integer to unblock them
-  (`internal/config/config.go::normalizeRepoPresets`).
+- Config presets, federation descriptors, fleet and MCP identities, archive
+  snapshot IDs, and activity rows still key only the integer. A catalogued
+  Cloud repository cannot be named there yet; do not invent an integer to
+  unblock them (`internal/config/config.go::normalizeRepoPresets`).
+- Clone partitions key the Cloud UUID or the integer; integer partitions keep
+  their existing on-disk paths (`internal/gitclone/clone.go::repositoryPartitionKey`).
 - Keep provider calls route-based where the provider API is; the integer ID
   confirms which repository answered and keys local state. Do not rewrite
   owner/name reads into ID reads (maintainer decision).

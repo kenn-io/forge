@@ -32,6 +32,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
 )
 
 func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testing.T) {
@@ -58,7 +59,7 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	credentials := devbox.NewBrokerClient(socket)
 	t.Cleanup(credentials.Close)
 	clones := gitclone.New(filepath.Join(directory, "clones"), credentials)
-	bare, err := clones.ClonePathForContext(gitclone.WithRepositoryIdentity(ctx, repositoryID), "github", "github.com", "example-org", "project")
+	bare, err := clones.ClonePathForContext(gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: repositoryID}), "github", "github.com", "example-org", "project")
 	require.NoError(err)
 	work := gitfixture.DivergenceWorktree(t)
 	remote := filepath.Join(filepath.Dir(work), "remote.git")

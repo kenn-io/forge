@@ -71,7 +71,7 @@ func syncTestClonePath(
 ) string {
 	t.Helper()
 	path, err := mgr.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), testRepoID(owner, name)),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testRepoID(owner, name)}),
 		"github", "github.com", owner, name,
 	)
 	require.NoError(t, err)

@@ -2204,7 +2204,7 @@ func buildAppState(
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/issue-workspace/reused-branch" {
 			identityClonePath, err := diffRepo.Manager.ClonePathForContext(
-				gitclone.WithRepositoryIdentity(r.Context(), diffRepo.PlatformRepoID),
+				gitclone.WithRepositoryIdentity(r.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID}),
 				"github", "github.com", "acme", "widgets",
 			)
 			if err != nil {
@@ -2252,7 +2252,7 @@ func buildAppState(
 			forkSnapshot := *mr
 			forkSnapshot.UpdatedAt = time.Now().UTC()
 			clonePath, err := diffRepo.Manager.ClonePathForContext(
-				gitclone.WithRepositoryIdentity(r.Context(), diffRepo.PlatformRepoID),
+				gitclone.WithRepositoryIdentity(r.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID}),
 				"github", "github.com", "acme", "widgets",
 			)
 			if err != nil {

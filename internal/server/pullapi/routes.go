@@ -2344,7 +2344,7 @@ func (s *Handler) resolvePullCloneSnapshot(
 			)
 		}
 		return &resolvedPullCloneSnapshot{
-			ctx:  gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID),
+			ctx:  gitclone.WithRepositoryIdentity(ctx, repo.Identity()),
 			repo: repo.Row(), shas: shas, stale: shas.Stale(),
 		}, nil
 	}
@@ -2379,7 +2379,7 @@ func (s *Handler) resolvePullCloneSnapshot(
 		return nil, pullClonePreparationProblem(err, repository)
 	}
 	cloneCtx := gitclone.WithRequiredCredential(
-		gitclone.WithRepositoryIdentity(ctx, repository.PlatformRepoID),
+		gitclone.WithRepositoryIdentity(ctx, repo.Identity()),
 	)
 	if err := s.clones.EnsureCloneValidated(
 		cloneCtx, repository.Provider, repository.PlatformHost,

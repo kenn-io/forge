@@ -2527,7 +2527,7 @@ func cloneRemoteURL(repo RepoRef) string {
 }
 
 func withCloneRepositoryIdentity(ctx context.Context, repo RepoRef) context.Context {
-	return gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
+	return gitclone.WithRepositoryIdentity(ctx, repo.Identity())
 }
 
 func (s *Syncer) ensureClone(ctx context.Context, repo RepoRef) error {

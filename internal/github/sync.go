@@ -1621,15 +1621,15 @@ func (s *Syncer) commitIssueParentSnapshot(
 // own view of the stored events — finalization is intrinsic to the choke
 // point, so no caller can commit a terminal transition without it and no
 // concurrent round can shift the data between compute and commit. It also
-// drops the observation time of any merge status value that is not an
-// observation (see clearUnobservedMergeStatusTimes).
+// drops the observation time of an empty or unknown mergeable state, which
+// is never an observation.
 func (s *Syncer) CommitMergeRequestParentSnapshot(
 	ctx context.Context,
 	repo RepoRef,
 	mr *db.MergeRequest,
 ) (int64, int64, bool, error) {
 	ctx = withCloneRepositoryIdentity(ctx, repo)
-	clearUnobservedMergeStatusTimes(mr)
+	clearUnknownMergeableStateTime(mr)
 	mrID, revision, accepted, err := s.db.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
 		ctx, mr, s.terminalLivenessComputer(ctx, repo, mr),
 	)
@@ -7835,6 +7835,10 @@ func (s *Syncer) syncOpenMRFromBulk(
 		normalized.ReviewDecision = DeriveReviewDecision(bulk.Reviews)
 		normalized.ReviewDecisionObservedAt = &requestedAt
 	}
+	// The child snapshot below writes the review decision again; it takes
+	// this resolved pair, not whatever the parent commit leaves in normalized.
+	reviewDecision := normalized.ReviewDecision
+	reviewDecisionObservedAt := normalized.ReviewDecisionObservedAt
 
 	// Resolve display name if missing.
 	if normalized.Author != "" &&
@@ -7966,8 +7970,8 @@ func (s *Syncer) syncOpenMRFromBulk(
 	var derived *db.MRDerivedFields
 	if bulk.CommentsComplete {
 		fields := db.MRDerivedFields{
-			ReviewDecision:           normalized.ReviewDecision,
-			ReviewDecisionObservedAt: normalized.ReviewDecisionObservedAt,
+			ReviewDecision:           reviewDecision,
+			ReviewDecisionObservedAt: reviewDecisionObservedAt,
 			CommentCount:             len(bulk.Comments),
 		}
 		derived = &fields
@@ -8010,7 +8014,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 		ciStatus := deriveCIStatusFromChecks(ciChecks)
 		ciApplied, err := s.db.UpdateMergeRequestCISnapshot(
 			ctx, mrID, revision, ciStatus, string(ciJSON),
-			ciObservedAt(ciStatus, string(ciJSON), requestedAt),
+			&requestedAt,
 		)
 		if err != nil {
 			slog.Warn("update CI status failed",
@@ -8694,7 +8698,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	ciStatus := deriveCIStatusFromChecks(dbChecks)
 	ciApplied, err := s.db.UpdateMergeRequestCISnapshot(
 		ctx, mrID, expectedRevision, ciStatus, string(ciJSON),
-		ciObservedAt(ciStatus, string(ciJSON), ciRequestedAt),
+		&ciRequestedAt,
 	)
 	if err != nil {
 		return calls, false, fmt.Errorf("update CI status for MR #%d: %w", number, err)
@@ -9165,11 +9169,9 @@ func (s *Syncer) refreshTimeline(
 
 	reviewDecision := DeriveReviewDecision(reviews)
 	derived := db.MRDerivedFields{
-		ReviewDecision: reviewDecision,
-		CommentCount:   len(comments),
-	}
-	if reviewDecision != "" {
-		derived.ReviewDecisionObservedAt = &reviewsRequestedAt
+		ReviewDecision:           reviewDecision,
+		ReviewDecisionObservedAt: &reviewsRequestedAt,
+		CommentCount:             len(comments),
 	}
 	applied, err := s.commitMergeRequestDatasets(
 		ctx, repo, mrID, number, expectedRevision,
@@ -9217,7 +9219,7 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 		return nil, s.db.UpdateMRCIStatusForHead(
 			ctx, repoID, number, headSHA,
 			result.Status, result.ChecksJSON, ciHasPending(result.ChecksJSON),
-			ciObservedAt(result.Status, result.ChecksJSON, result.RequestedAt),
+			&result.RequestedAt,
 		)
 	}
 
@@ -9250,7 +9252,7 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 	if err := s.db.UpdateMRCIStatusForHead(
 		ctx, repoID, number, headSHA,
 		ciStatus, string(ciJSON), ciHasPending(string(ciJSON)),
-		ciObservedAt(ciStatus, string(ciJSON), requestedAt),
+		&requestedAt,
 	); err != nil {
 		return nil, fmt.Errorf("update CI status for MR #%d: %w", number, err)
 	}
@@ -9292,7 +9294,7 @@ func (s *Syncer) refreshCIStatus(
 	return s.db.UpdateMRCIStatusForHead(
 		ctx, repoID, number, headSHA,
 		result.Status, result.ChecksJSON, ciHasPending(result.ChecksJSON),
-		ciObservedAt(result.Status, result.ChecksJSON, result.RequestedAt),
+		&result.RequestedAt,
 	)
 }
 
@@ -9315,7 +9317,7 @@ func (s *Syncer) refreshCIStatusSnapshot(
 	}
 	applied, err := s.db.UpdateMergeRequestCISnapshot(
 		ctx, mrID, expectedRevision, result.Status, result.ChecksJSON,
-		ciObservedAt(result.Status, result.ChecksJSON, result.RequestedAt),
+		&result.RequestedAt,
 	)
 	if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 		return false, nil
@@ -11512,7 +11514,7 @@ func preserveReviewDecisionIfOmitted(
 	if normalized == nil || existing == nil {
 		return
 	}
-	if normalized.ReviewDecision != "" || existing.ReviewDecision == "" {
+	if normalized.ReviewDecision != "" {
 		return
 	}
 	if normalized.PlatformHeadSHA != "" &&
@@ -11549,28 +11551,13 @@ func preserveCIStateIfOmitted(
 	return ciStatusChanged && normalized.CIChecksJSON == ""
 }
 
-// ciObservedAt returns the observation time for CI values taken from a
-// provider response sent at requestedAt. An empty status is an observation
-// only as a complete empty rollup; otherwise its time is unknown.
-func ciObservedAt(status, checksJSON string, requestedAt time.Time) *time.Time {
-	if status == "" && checksJSON != "[]" {
-		return nil
-	}
-	return &requestedAt
-}
-
-// clearUnobservedMergeStatusTimes drops the observation time of every merge
-// status value that is not an observation: an empty review decision, an
-// empty or unknown mergeable state, and empty CI without a complete rollup.
-func clearUnobservedMergeStatusTimes(mr *db.MergeRequest) {
-	if mr.ReviewDecision == "" {
-		mr.ReviewDecisionObservedAt = nil
-	}
+// clearUnknownMergeableStateTime drops the observation time of an empty or
+// unknown mergeable state: the provider either omitted the field or had not
+// computed it. Empty review decisions and CI keep their times, because the
+// paths that stamp them do so only from authoritative, complete responses.
+func clearUnknownMergeableStateTime(mr *db.MergeRequest) {
 	if mr.MergeableState == "" || mr.MergeableState == "unknown" {
 		mr.MergeableStateObservedAt = nil
-	}
-	if mr.CIObservedAt != nil {
-		mr.CIObservedAt = ciObservedAt(mr.CIStatus, mr.CIChecksJSON, *mr.CIObservedAt)
 	}
 }
 

@@ -99,8 +99,11 @@ var seededStatus = mergeStatus{
 
 // seedObservedMR stores merge request #1 on the seeded head with a failing CI
 // run, a dirty mergeable state, and (unless review is empty) a review
-// decision, all observed at seededAt.
-func seedObservedMR(t *testing.T, d *db.DB, repoID int64, review string, ciHadPending bool) {
+// decision, all observed at seededAt. edits adjust the row before it is
+// stored.
+func seedObservedMR(
+	t *testing.T, d *db.DB, repoID int64, review string, edits ...func(*db.MergeRequest),
+) {
 	t.Helper()
 	at := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
 	mr := &db.MergeRequest{
@@ -108,15 +111,18 @@ func seedObservedMR(t *testing.T, d *db.DB, repoID int64, review string, ciHadPe
 		URL: "https://example.com/example/project-a/pull/1", Title: "test PR", Author: "user-a",
 		State: "open", HeadBranch: "feature-branch", BaseBranch: "main",
 		PlatformHeadSHA: seededHead, PlatformBaseSHA: seededBase,
-		CIStatus:     "failure",
-		CIChecksJSON: `[{"name":"seeded","status":"completed","conclusion":"failure"}]`,
-		CIObservedAt: &at, CIHadPending: ciHadPending,
+		CIStatus:       "failure",
+		CIChecksJSON:   `[{"name":"seeded","status":"completed","conclusion":"failure"}]`,
+		CIObservedAt:   &at,
 		MergeableState: "dirty", MergeableStateObservedAt: &at,
 		CreatedAt: at, UpdatedAt: at, LastActivityAt: at,
 	}
 	if review != "" {
 		mr.ReviewDecision = review
 		mr.ReviewDecisionObservedAt = &at
+	}
+	for _, edit := range edits {
+		edit(mr)
 	}
 	_, err := d.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
@@ -289,19 +295,42 @@ func TestListSyncCarriesGitHubMergeStatusTimes(t *testing.T) {
 			return s.refreshRelayRefs(t.Context(), observedGitHubRepo)
 		},
 	}
+	observedNoDecision := func(mr *db.MergeRequest) {
+		mr.ReviewDecisionObservedAt = mr.CIObservedAt
+	}
 	tests := []struct {
-		name string
-		head string
-		want mergeStatus
+		name   string
+		review string
+		edit   func(*db.MergeRequest)
+		head   string
+		want   mergeStatus
 	}{
-		{name: "same head keeps stored values and times", head: seededHead, want: seededStatus},
-		{name: "new head clears values and times", head: "newhead", want: mergeStatus{}},
+		{
+			name: "same head keeps stored values and times", review: "changes_requested",
+			head: seededHead, want: seededStatus,
+		},
+		{
+			name: "list does not observe an absent review decision", head: seededHead,
+			want: mergeStatus{CI: "failure", CIAt: seededAt, Mergeable: "dirty", MergeableAt: seededAt},
+		},
+		{
+			name: "same head keeps an observed empty review decision", edit: observedNoDecision,
+			head: seededHead,
+			want: mergeStatus{
+				ReviewAt: seededAt, CI: "failure", CIAt: seededAt, Mergeable: "dirty", MergeableAt: seededAt,
+			},
+		},
+		{name: "new head clears values and times", review: "changes_requested", head: "newhead", want: mergeStatus{}},
 	}
 	for entryName, sync := range entries {
 		for _, tt := range tests {
 			t.Run(entryName+"/"+tt.name, func(t *testing.T) {
 				syncer, _, d, repoID := newObservedGitHubSyncer(t, observedPR(tt.head, ""))
-				seedObservedMR(t, d, repoID, "changes_requested", false)
+				if tt.edit != nil {
+					seedObservedMR(t, d, repoID, tt.review, tt.edit)
+				} else {
+					seedObservedMR(t, d, repoID, tt.review)
+				}
 
 				require.NoError(t, sync(syncer, repoID))
 
@@ -334,7 +363,7 @@ func TestListSyncStampsGitLabMergeableStateAtListRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			syncer, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(tt.head, tt.mergeable))
-			seedObservedMR(t, d, repoID, "", false)
+			seedObservedMR(t, d, repoID, "")
 
 			require.NoError(t, syncer.indexSyncRepo(t.Context(), observedGitLabRepo, repoID, false))
 
@@ -344,11 +373,11 @@ func TestListSyncStampsGitLabMergeableStateAtListRequest(t *testing.T) {
 }
 
 // graphQLPRNode renders PR #1 as the bulk GraphQL query returns it.
-func graphQLPRNode(head, mergeable, rollup string) string {
+func graphQLPRNode(head, mergeable, reviewDecision, rollup string) string {
 	return fmt.Sprintf(`{"databaseId":1000,"number":1,"title":"test PR","state":"OPEN",`+
 		`"url":"https://github.com/example/project-a/pull/1","author":{"login":"user-a"},`+
 		`"createdAt":"2026-09-01T09:30:00Z","updatedAt":"2026-09-01T09:30:00Z",`+
-		`"mergeable":%q,"reviewDecision":"APPROVED","headRefName":"feature-branch",`+
+		`"mergeable":%q,"reviewDecision":%q,"headRefName":"feature-branch",`+
 		`"baseRefName":"main","headRefOid":%q,"baseRefOid":%q,`+
 		`"labels":{"nodes":[]},"assignees":{"nodes":[]},"reviewRequests":{"nodes":[]},`+
 		`"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}},`+
@@ -357,7 +386,7 @@ func graphQLPRNode(head, mergeable, rollup string) string {
 		`"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false}},`+
 		`"lastCommit":{"nodes":[{"commit":{"statusCheckRollup":%s}}]},`+
 		`"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}}}`,
-		mergeable, head, seededBase, rollup)
+		mergeable, reviewDecision, head, seededBase, rollup)
 }
 
 func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
@@ -373,15 +402,23 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 	}{
 		{
 			name: "complete response observes every field",
-			node: graphQLPRNode(seededHead, "MERGEABLE", passingRollup),
+			node: graphQLPRNode(seededHead, "MERGEABLE", "APPROVED", passingRollup),
 			want: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
 				Mergeable: "clean", MergeableAt: sentAt1001,
 			},
 		},
 		{
+			name: "review required observes no decision",
+			node: graphQLPRNode(seededHead, "MERGEABLE", "REVIEW_REQUIRED", passingRollup),
+			want: mergeStatus{
+				Review: "", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
+				Mergeable: "clean", MergeableAt: sentAt1001,
+			},
+		},
+		{
 			name: "unknown mergeable has no time and missing rollup observes no CI",
-			node: graphQLPRNode(seededHead, "UNKNOWN", "null"),
+			node: graphQLPRNode(seededHead, "UNKNOWN", "APPROVED", "null"),
 			want: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, CI: "", CIAt: sentAt1001,
 				Mergeable: "unknown", MergeableAt: "",
@@ -389,7 +426,7 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 		},
 		{
 			name: "truncated rollup keeps stored CI",
-			node: graphQLPRNode(seededHead, "CONFLICTING", truncatedRollup),
+			node: graphQLPRNode(seededHead, "CONFLICTING", "APPROVED", truncatedRollup),
 			want: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, CI: "failure", CIAt: seededAt,
 				Mergeable: "dirty", MergeableAt: sentAt1001,
@@ -397,7 +434,7 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 		},
 		{
 			name: "new head with truncated rollup clears CI",
-			node: graphQLPRNode("newhead", "MERGEABLE", truncatedRollup),
+			node: graphQLPRNode("newhead", "MERGEABLE", "APPROVED", truncatedRollup),
 			want: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, Mergeable: "clean", MergeableAt: sentAt1001,
 			},
@@ -406,7 +443,7 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, ""))
-			seedObservedMR(t, d, repoID, "changes_requested", false)
+			seedObservedMR(t, d, repoID, "changes_requested")
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
 				w.Header().Set("Content-Type", "application/json")
@@ -437,6 +474,7 @@ func TestOnDemandGitHubSyncStampsEachFieldAtItsRequest(t *testing.T) {
 	// PR fetch at 10:00, reviews at 10:01, check runs at 10:02.
 	tests := []struct {
 		name      string
+		noReviews bool
 		checksErr error
 		want      mergeStatus
 	}{
@@ -444,6 +482,13 @@ func TestOnDemandGitHubSyncStampsEachFieldAtItsRequest(t *testing.T) {
 			name: "every fetch succeeds",
 			want: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1002,
+				Mergeable: "clean", MergeableAt: sentAt1000,
+			},
+		},
+		{
+			name: "no reviews observes no decision", noReviews: true,
+			want: mergeStatus{
+				Review: "", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1002,
 				Mergeable: "clean", MergeableAt: sentAt1000,
 			},
 		},
@@ -459,7 +504,10 @@ func TestOnDemandGitHubSyncStampsEachFieldAtItsRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, "clean"))
 			client.checkRunsErr = tt.checksErr
-			seedObservedMR(t, d, repoID, "changes_requested", false)
+			if tt.noReviews {
+				client.reviews = nil
+			}
+			seedObservedMR(t, d, repoID, "changes_requested")
 
 			require.NoError(t, syncer.SyncMR(t.Context(), "example", "project-a", 1))
 
@@ -470,7 +518,7 @@ func TestOnDemandGitHubSyncStampsEachFieldAtItsRequest(t *testing.T) {
 
 func TestOnDemandGitLabSyncStampsMergeableAndCIAtTheirRequests(t *testing.T) {
 	syncer, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(seededHead, "clean"))
-	seedObservedMR(t, d, repoID, "", false)
+	seedObservedMR(t, d, repoID, "")
 
 	require.NoError(t, syncer.SyncMROnProvider(
 		t.Context(), platform.KindGitLab, "gitlab.example.com", "example", "project-a", 1,
@@ -507,7 +555,7 @@ func TestDetailDrainClearsThenReobservesGitHubReviewAndCI(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, "clean"))
 			client.checkRunsErr = tt.checksErr
-			seedObservedMR(t, d, repoID, "changes_requested", false)
+			seedObservedMR(t, d, repoID, "changes_requested")
 			var afterParent mergeStatus
 			syncer.afterMergeRequestParentSnapshotCommit = func() {
 				afterParent = readMergeStatus(t, d, repoID)
@@ -526,7 +574,7 @@ func TestDetailDrainStampsGitLabCIAtChecksRequest(t *testing.T) {
 	mr := observedGitLabMR(seededHead, "clean")
 	mr.CIStatus = "running"
 	syncer, d, repoID := newObservedGitLabSyncer(t, mr)
-	seedObservedMR(t, d, repoID, "", false)
+	seedObservedMR(t, d, repoID, "")
 	var afterParent mergeStatus
 	syncer.afterMergeRequestParentSnapshotCommit = func() {
 		afterParent = readMergeStatus(t, d, repoID)
@@ -546,7 +594,9 @@ func TestDetailDrainStampsGitLabCIAtChecksRequest(t *testing.T) {
 func TestUnchangedDetailKeepsReviewAndMergeableAndStampsPendingCI(t *testing.T) {
 	syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, "clean"))
 	client.notModified = true
-	seedObservedMR(t, d, repoID, "changes_requested", true)
+	seedObservedMR(t, d, repoID, "changes_requested", func(mr *db.MergeRequest) {
+		mr.CIHadPending = true
+	})
 
 	_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1, false)
 	require.NoError(t, err)
@@ -585,7 +635,7 @@ func TestClosedRefetchCarriesReviewAndCIAndStampsMergeable(t *testing.T) {
 			pr.State = new("closed")
 			pr.ClosedAt = makeTimestamp(time.Date(2026, 9, 1, 9, 30, 0, 0, time.UTC))
 			syncer, _, d, repoID := newObservedGitHubSyncer(t, pr)
-			seedObservedMR(t, d, repoID, "changes_requested", false)
+			seedObservedMR(t, d, repoID, "changes_requested")
 
 			require.NoError(t, syncer.SyncClosedMROnProvider(t.Context(), repoID, 1))
 
@@ -602,7 +652,7 @@ func TestCIRefreshStampsCIAtChecksRequest(t *testing.T) {
 	}
 	t.Run("GitHub", func(t *testing.T) {
 		syncer, _, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, ""))
-		seedObservedMR(t, d, repoID, "changes_requested", false)
+		seedObservedMR(t, d, repoID, "changes_requested")
 
 		warnings, err := syncer.RefreshMRCIStatusOnProvider(
 			t.Context(), observedGitHubRepo, repoID, 1, seededHead,
@@ -612,9 +662,22 @@ func TestCIRefreshStampsCIAtChecksRequest(t *testing.T) {
 
 		assert.Equal(t, seededThenCI("success", sentAt1000), readMergeStatus(t, d, repoID))
 	})
+	t.Run("GitHub with no checks observes no CI", func(t *testing.T) {
+		syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, ""))
+		client.checkRuns = nil
+		seedObservedMR(t, d, repoID, "changes_requested")
+
+		warnings, err := syncer.RefreshMRCIStatusOnProvider(
+			t.Context(), observedGitHubRepo, repoID, 1, seededHead,
+		)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+
+		assert.Equal(t, seededThenCI("", sentAt1000), readMergeStatus(t, d, repoID))
+	})
 	t.Run("GitHub head mismatch writes nothing", func(t *testing.T) {
 		syncer, _, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, ""))
-		seedObservedMR(t, d, repoID, "changes_requested", false)
+		seedObservedMR(t, d, repoID, "changes_requested")
 
 		_, err := syncer.RefreshMRCIStatusOnProvider(
 			t.Context(), observedGitHubRepo, repoID, 1, "otherhead",
@@ -625,7 +688,7 @@ func TestCIRefreshStampsCIAtChecksRequest(t *testing.T) {
 	})
 	t.Run("GitLab", func(t *testing.T) {
 		syncer, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(seededHead, "clean"))
-		seedObservedMR(t, d, repoID, "", false)
+		seedObservedMR(t, d, repoID, "")
 
 		warnings, err := syncer.RefreshMRCIStatusOnProvider(
 			t.Context(), observedGitLabRepo, repoID, 1, seededHead,

@@ -101,31 +101,31 @@
   --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));
 }
 
-/* Slate quiet light palette: muted blue-gray chrome and reading surface
-   with slate ink around 10:1 instead of near-black on near-white, so long
-   reading sessions have no glare. Steps match dark: inset and hover sit
-   just below the surface. Muted text stays AA on the hover step. Accent
-   text also sits on its own color-mix tint (up to 16%), so each accent is
-   slightly desaturated and darkened until it stays AA on that tint over
-   the inset step. Keep kit's high-contrast palette authoritative when
+/* Slate quiet light palette: a visibly slate-blue, dimmed chrome and
+   reading surface with slate ink around 10:1 instead of near-black on
+   near-white, so long reading sessions have no glare. Steps match dark:
+   inset and hover sit just below the surface. Muted text stays AA on the
+   hover step. Accent text also sits on its own color-mix tint (up to 16%),
+   so each accent darkens until it stays AA on that tint over the inset
+   step. Keep kit's high-contrast palette authoritative when
    enabled. */
 :root[data-kit-theme="quiet"]:not(.dark):not(.high-contrast) {
-  --bg-primary: #d8dee9; /* kit-ui-check-ignore: slate chrome canvas */
-  --bg-surface: #e5e9f0; /* kit-ui-check-ignore: slate reading surface without glare */
-  --bg-inset: #dde2eb; /* kit-ui-check-ignore: one step below the surface */
-  --bg-surface-hover: #d4dae5; /* kit-ui-check-ignore: two steps below the surface */
-  --border-default: #b8c1d0; /* kit-ui-check-ignore: control edges on the slate surface */
-  --border-muted: #cbd2de; /* kit-ui-check-ignore: dividers on the slate surface */
-  --text-primary: #2e3440; /* kit-ui-check-ignore: soft slate ink, about 10:1 on the surface */
-  --text-secondary: #3f4859; /* kit-ui-check-ignore: slate secondary ink */
-  --text-muted: #525e70; /* kit-ui-check-ignore: AA on the hover step */
-  --accent-blue: #0d51a3; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-amber: #824211; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-purple: #5b43a2; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-green: #0a5d45; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-red: #982a2a; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-teal: #135a6e; /* kit-ui-check-ignore: AA on its 16% tint */
-  --status-waiting: #615234; /* kit-ui-check-ignore: AA on its 16% tint */
+  --bg-primary: #bfccdc; /* kit-ui-check-ignore: slate chrome canvas */
+  --bg-surface: #cdd8e6; /* kit-ui-check-ignore: slate reading surface without glare */
+  --bg-inset: #c5d1e0; /* kit-ui-check-ignore: one step below the surface */
+  --bg-surface-hover: #bdc9da; /* kit-ui-check-ignore: two steps below the surface */
+  --border-default: #9fadc1; /* kit-ui-check-ignore: control edges on the slate surface */
+  --border-muted: #b2bfd0; /* kit-ui-check-ignore: dividers on the slate surface */
+  --text-primary: #212a38; /* kit-ui-check-ignore: soft slate ink, about 10:1 on the surface */
+  --text-secondary: #35404f; /* kit-ui-check-ignore: slate secondary ink */
+  --text-muted: #4a5362; /* kit-ui-check-ignore: AA on the hover step */
+  --accent-blue: #004598; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-amber: #763606; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-purple: #4c29b6; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-green: #03523c; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-red: #891c1c; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-teal: #094f62; /* kit-ui-check-ignore: AA on its 16% tint */
+  --status-waiting: #564729; /* kit-ui-check-ignore: AA on its 16% tint */
   --diff-stale-text: var(--accent-amber);
 }
 

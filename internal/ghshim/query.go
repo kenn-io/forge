@@ -97,7 +97,7 @@ func (q Query) Valid() bool {
 func Encode(q Query, pulls []db.MergeRequest) ([]byte, error) {
 	for _, pr := range pulls {
 		for _, field := range q.Fields {
-			if (field == "headRefOid" && pr.PlatformHeadSHA == "") || (field == "createdAt" && pr.CreatedAt.IsZero()) || (field == "updatedAt" && pr.UpdatedAt.IsZero()) || (field == "url" && pr.URL == "") || (field == "title" && strings.TrimSpace(pr.Title) == "") {
+			if (field == "headRefOid" && pr.PlatformHeadSHA == "") || (field == "createdAt" && pr.CreatedAt.IsZero()) || (field == "updatedAt" && pr.UpdatedAt.IsZero()) || (field == "url" && pr.URL == "") || (field == "title" && strings.TrimSpace(pr.Title) == "") || (field == "mergedAt" && pr.State == db.MergeRequestStateMerged && pr.MergedAt == nil) || (field == "closedAt" && pullState(pr) != db.MergeRequestStateOpen && pr.ClosedAt == nil) {
 				return nil, fmt.Errorf("requested field is not stored")
 			}
 		}

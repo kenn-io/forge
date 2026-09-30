@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/assert"
@@ -89,6 +90,39 @@ func TestJSONMatchesRealGH(t *testing.T) {
 			actual, err := Encode(q, []db.MergeRequest{stored})
 			require.NoError(err)
 			assert.Equal(string(expected), string(actual))
+		})
+	}
+}
+
+// A merged or closed pull request without its stored lifecycle time would
+// print null where gh prints the timestamp, so the query must go to gh.
+func TestEncodeRejectsMissingLifecycleTimes(t *testing.T) {
+	now := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	base := db.MergeRequest{Number: 7, CreatedAt: now, UpdatedAt: now}
+	for _, tc := range []struct {
+		name   string
+		state  db.MergeRequestState
+		merged *time.Time
+		closed *time.Time
+		field  string
+		ok     bool
+	}{
+		{"merged without merge time", db.MergeRequestStateMerged, nil, &now, "mergedAt", false},
+		{"merged without close time", db.MergeRequestStateMerged, &now, nil, "closedAt", false},
+		{"closed without close time", db.MergeRequestStateClosed, nil, nil, "closedAt", false},
+		{"merged with times", db.MergeRequestStateMerged, &now, &now, "mergedAt", true},
+		{"closed pull request has no merge time", db.MergeRequestStateClosed, nil, &now, "mergedAt", true},
+		{"open pull request has no close time", db.MergeRequestStateOpen, nil, nil, "closedAt", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pr := base
+			pr.State, pr.MergedAt, pr.ClosedAt = tc.state, tc.merged, tc.closed
+			_, err := Encode(Query{Command: "view", Fields: []string{tc.field}}, []db.MergeRequest{pr})
+			if tc.ok {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 		})
 	}
 }

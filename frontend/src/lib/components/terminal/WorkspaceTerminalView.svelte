@@ -1320,9 +1320,6 @@
     session: RuntimeSession,
     label: string,
   ): WorkflowTabDescriptor["status"] {
-    if (session.status === "running") {
-      return { value: "idle", label: `${label} running` };
-    }
     if (session.status === "starting") {
       return { value: "stale", label: `${label} starting` };
     }

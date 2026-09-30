@@ -30,6 +30,7 @@ export type ToolContent = typeof ToolContentSchema.Type;
 export const ChatMessageSchema = Schema.Struct({
   role: Schema.Literals(["user", "assistant", "thought", "tool"]),
   text: Schema.String,
+  images: Schema.optional(Schema.Array(ChatContentSchema)),
   createdAt: Schema.optional(Schema.String),
   submissionId: Schema.optional(Schema.String),
   toolCallId: Schema.optional(Schema.String),
@@ -109,7 +110,17 @@ export const ChatStateSchema = Schema.Struct({
   // and prompt queueing/steering.
   elicitations: Schema.optional(Schema.NullOr(Schema.Array(ElicitationSchema))),
   commands: Schema.optional(Schema.NullOr(Schema.Array(AgentCommandSchema))),
-  queue: Schema.optional(Schema.NullOr(Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String })))),
+  queue: Schema.optional(
+    Schema.NullOr(
+      Schema.Array(
+        Schema.Struct({
+          id: Schema.String,
+          text: Schema.String,
+          images: Schema.optional(Schema.Array(ChatContentSchema)),
+        }),
+      ),
+    ),
+  ),
   queuePaused: Schema.optional(Schema.NullOr(Schema.Boolean)),
   steeringSupported: Schema.optional(Schema.NullOr(Schema.Boolean)),
   steering: Schema.optional(Schema.NullOr(Schema.Boolean)),
@@ -129,7 +140,7 @@ export const ChatStateSchema = Schema.Struct({
 export type ChatState = typeof ChatStateSchema.Type;
 export type PromptMode = "send" | "queue" | "steer";
 export type ChatCommand =
-  | { type: "prompt"; mode: PromptMode; text: string; id: string }
+  | { type: "prompt"; mode: PromptMode; text: string; id: string; images?: readonly ChatContent[] }
   | { type: "unqueue"; id: string }
   | { type: "resume" }
   | { type: "history"; before: number; limit: number }

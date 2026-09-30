@@ -29,8 +29,11 @@ type acpTurnResult struct {
 // the prompt, or steers it into the turn when asked and supported.
 func (a *ACP) submit(command ACPCommand) error {
 	text := command.Text
-	if strings.TrimSpace(text) == "" {
+	if strings.TrimSpace(text) == "" && len(command.Images) == 0 {
 		return errors.New("message must not be empty")
+	}
+	if len(command.Images) > 0 && !a.imagesSupported {
+		return errors.New("this agent does not accept image prompts")
 	}
 	switch command.Mode {
 	case "", "send", "queue", "steer":
@@ -40,7 +43,7 @@ func (a *ACP) submit(command ACPCommand) error {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	a.mu.Lock()
-	if submitted, err := a.submittedLocked(command.ID, text); submitted || err != nil {
+	if submitted, err := a.submittedLocked(command.ID, text, command.Images); submitted || err != nil {
 		a.mu.Unlock()
 		return err
 	}
@@ -56,10 +59,10 @@ func (a *ACP) submit(command ACPCommand) error {
 	}
 	if command.Mode == "steer" && running && a.state.SteeringSupported {
 		a.mu.Unlock()
-		return a.steerLocked(text, command.ID)
+		return a.steerLocked(text, command.ID, command.Images)
 	}
 	if command.Mode == "queue" || running || a.state.Configuring {
-		err := a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text}, false)
+		err := a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
 		a.mu.Unlock()
 		if err == nil {
 			go a.drain()
@@ -67,11 +70,11 @@ func (a *ACP) submit(command ACPCommand) error {
 		return err
 	}
 	a.mu.Unlock()
-	err := a.startPromptLocked(text, command.ID)
+	err := a.startPromptLocked(text, command.ID, command.Images)
 	if errors.Is(err, errACPNotIdle) {
 		// A settings change began after the check above.
 		a.mu.Lock()
-		err = a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text}, false)
+		err = a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
 		a.mu.Unlock()
 		if err == nil {
 			go a.drain()
@@ -82,13 +85,13 @@ func (a *ACP) submit(command ACPCommand) error {
 
 // submittedLocked makes retried submissions idempotent across the transcript
 // and the queue.
-func (a *ACP) submittedLocked(id, text string) (bool, error) {
+func (a *ACP) submittedLocked(id, text string, images []ACPContent) (bool, error) {
 	if id == "" {
 		return false, nil
 	}
 	for _, message := range a.state.Messages {
 		if message.SubmissionID == id {
-			if message.Text != text {
+			if message.Text != text || !slices.Equal(message.Images, images) {
 				return true, errors.New("submission ID already belongs to another message")
 			}
 			return true, nil
@@ -96,7 +99,7 @@ func (a *ACP) submittedLocked(id, text string) (bool, error) {
 	}
 	for _, queued := range a.state.Queue {
 		if queued.ID == id {
-			if queued.Text != text {
+			if queued.Text != text || !slices.Equal(queued.Images, images) {
 				return true, errors.New("submission ID already belongs to another message")
 			}
 			return true, nil
@@ -157,8 +160,9 @@ func (a *ACP) drain() {
 	}
 	next := a.state.Queue[0]
 	a.mu.Unlock()
-	if err := a.startPromptLocked(next.Text, next.ID); err != nil && !errors.Is(err, errACPNotIdle) {
+	if err := a.startPromptLocked(next.Text, next.ID, next.Images); err != nil && !errors.Is(err, errACPNotIdle) {
 		a.mu.Lock()
+		a.setErrorLocked(err)
 		a.state.QueuePaused = true
 		a.changedLocked()
 		a.mu.Unlock()
@@ -241,7 +245,7 @@ func (a *ACP) setErrorLocked(err error) {
 
 // steerLocked adds text to the running turn. The caller holds turnMu, so at
 // most one steering request is in flight.
-func (a *ACP) steerLocked(text, submissionID string) error {
+func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error {
 	a.mu.Lock()
 	a.state.Steering = true
 	// Output that arrives while the agent takes the text follows it.
@@ -256,7 +260,7 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 	defer cancel()
 	raw, err := a.client.CallExtension(ctx, acpSteeringMethod, map[string]any{
 		"sessionId": a.sessionID,
-		"prompt":    []acpsdk.ContentBlock{acpsdk.TextBlock(text)},
+		"prompt":    acpPromptContent(text, images),
 		// An agent whose turn already ended asks for an ordinary prompt
 		// instead of silently starting one Forge cannot track.
 		"_meta": map[string]any{"steering": map[string]any{"idleBehavior": "promptRequired"}},
@@ -280,7 +284,7 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 	}
 	switch result.Outcome {
 	case "injected", "startedNewTurn":
-		a.state.Messages = slices.Insert(a.state.Messages, index, ACPMessage{Role: "user", Text: text, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		a.state.Messages = slices.Insert(a.state.Messages, index, ACPMessage{Role: "user", Text: text, Images: images, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 		if result.Outcome == "startedNewTurn" {
 			// The agent owns this turn; it ends when the thread goes idle,
 			// whether or not the original prompt has completed yet. Until a
@@ -306,7 +310,7 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 		return err
 	case "promptRequired":
 		// The turn ended before the text arrived; it runs next.
-		err = a.enqueueLocked(ACPQueuedPrompt{ID: submissionID, Text: text}, true)
+		err = a.enqueueLocked(ACPQueuedPrompt{ID: submissionID, Text: text, Images: images}, true)
 		a.mu.Unlock()
 		if err == nil {
 			go a.drain()
@@ -318,4 +322,16 @@ func (a *ACP) steerLocked(text, submissionID string) error {
 		a.mu.Unlock()
 		return fmt.Errorf("the agent did not accept the steering message (%q)", result.Outcome)
 	}
+}
+
+// acpPromptContent keeps pasted images with the text in prompts and steers.
+func acpPromptContent(text string, images []ACPContent) []acpsdk.ContentBlock {
+	blocks := make([]acpsdk.ContentBlock, 0, 1+len(images))
+	if strings.TrimSpace(text) != "" {
+		blocks = append(blocks, acpsdk.TextBlock(text))
+	}
+	for _, image := range images {
+		blocks = append(blocks, acpsdk.ImageBlock(image.Data, image.MimeType))
+	}
+	return blocks
 }

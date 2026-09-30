@@ -396,6 +396,10 @@ global override. Re-audit these selectors whenever the kit-ui revision moves.
 
 ### TabbedPanelTree
 
+Healthy running workspace tabs have no status dot; the persistent green dot adds
+clutter without useful activity information
+(`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workflowSessionStatus`).
+
 Use `TabbedPanelTree` for VS Code-like panel workspaces: tab groups that can
 reorder tabs, drag tabs into another group, split a group horizontally or
 vertically, and resize split panes.

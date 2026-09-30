@@ -36,26 +36,27 @@ type ACPChat interface {
 
 // ACP owns the SDK connection inside the durable ACP owner process.
 type ACP struct {
-	turnMu         sync.Mutex
-	cancelling     bool
-	mu             sync.Mutex
-	cmd            *exec.Cmd
-	stdin          io.WriteCloser
-	stdout         io.ReadCloser
-	done           chan struct{}
-	client         *acpsdk.ClientSideConnection
-	promptWritten  chan error
-	nextPermission int
-	permissions    map[string]chan acpsdk.RequestPermissionOutcome
-	elicitations   map[string]chan acpsdk.UnstableCreateElicitationResponse
-	subscribers    map[chan struct{}]struct{}
-	state          ACPState
-	saveConfig     func(map[string]string) error
-	sessionID      string
-	exitCode       int
-	promptIndex    *int
-	recordPath     string
-	revision       uint64
+	turnMu          sync.Mutex
+	cancelling      bool
+	mu              sync.Mutex
+	cmd             *exec.Cmd
+	stdin           io.WriteCloser
+	stdout          io.ReadCloser
+	done            chan struct{}
+	client          *acpsdk.ClientSideConnection
+	promptWritten   chan error
+	nextPermission  int
+	permissions     map[string]chan acpsdk.RequestPermissionOutcome
+	elicitations    map[string]chan acpsdk.UnstableCreateElicitationResponse
+	subscribers     map[chan struct{}]struct{}
+	state           ACPState
+	imagesSupported bool
+	saveConfig      func(map[string]string) error
+	sessionID       string
+	exitCode        int
+	promptIndex     *int
+	recordPath      string
+	revision        uint64
 	// startupNotice explains a degraded but usable session start.
 	startupNotice string
 	// turnCompleted records a finished prompt turn in this process. A loaded
@@ -101,12 +102,13 @@ var ErrACPAgentUnavailable = errors.New("ACP agent is disconnected")
 var errACPNotIdle = errors.New("ACP agent is not idle")
 
 type ACPMessage struct {
-	SubmissionID string `json:"submissionId,omitempty"`
-	Role         string `json:"role"`
-	Text         string `json:"text"`
-	CreatedAt    string `json:"createdAt"`
-	ToolCallID   string `json:"toolCallId,omitempty"`
-	Status       string `json:"status,omitempty"`
+	SubmissionID string       `json:"submissionId,omitempty"`
+	Role         string       `json:"role"`
+	Text         string       `json:"text"`
+	Images       []ACPContent `json:"images,omitempty"`
+	CreatedAt    string       `json:"createdAt"`
+	ToolCallID   string       `json:"toolCallId,omitempty"`
+	Status       string       `json:"status,omitempty"`
 	// Subagent marks a tool call that runs a delegated agent. ParentToolCallID
 	// links a tool call made inside such a subagent back to it.
 	Subagent         bool   `json:"subagent,omitempty"`
@@ -200,18 +202,20 @@ type ACPState struct {
 	Steering          bool `json:"steering"`
 }
 type ACPQueuedPrompt struct {
-	ID   string `json:"id"`
-	Text string `json:"text"`
+	ID     string       `json:"id"`
+	Text   string       `json:"text"`
+	Images []ACPContent `json:"images,omitempty"`
 }
 type ACPCommand struct {
 	Type string `json:"type"`
 	// Mode chooses how a prompt is submitted: send (the default), queue, or
 	// steer. A send while a turn is running queues instead of failing.
-	Mode     string `json:"mode,omitempty"`
-	Text     string `json:"text,omitempty"`
-	ID       string `json:"id,omitempty"`
-	OptionID string `json:"optionId,omitempty"`
-	Value    string `json:"value,omitempty"`
+	Mode     string       `json:"mode,omitempty"`
+	Text     string       `json:"text,omitempty"`
+	Images   []ACPContent `json:"images,omitempty"`
+	ID       string       `json:"id,omitempty"`
+	OptionID string       `json:"optionId,omitempty"`
+	Value    string       `json:"value,omitempty"`
 	// Before and Limit select a history page.
 	Before int `json:"before,omitempty"`
 	Limit  int `json:"limit,omitempty"`
@@ -273,6 +277,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	if err == nil {
 		steering, _ := initialized.Meta["steering"].(map[string]any)
 		a.state.SteeringSupported = steering["supported"] == true
+		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
 		// An agent that cannot load sessions continues the saved conversation in
 		// a new session rather than failing to start.
 		if saved == nil || !initialized.AgentCapabilities.LoadSession {
@@ -486,7 +491,7 @@ func (a *ACP) Prompt(text string) error { return a.submit(ACPCommand{Type: "prom
 
 // startPromptLocked starts a turn. The caller holds turnMu. A queued prompt
 // leaves the queue in the same persisted update that records it as sent.
-func (a *ACP) startPromptLocked(text, submissionID string) error {
+func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) error {
 	a.mu.Lock()
 	if !a.state.Connected {
 		a.mu.Unlock()
@@ -495,6 +500,10 @@ func (a *ACP) startPromptLocked(text, submissionID string) error {
 	if a.state.Busy || a.state.Configuring || a.state.Steering {
 		a.mu.Unlock()
 		return errACPNotIdle
+	}
+	if len(images) > 0 && !a.imagesSupported {
+		a.mu.Unlock()
+		return errors.New("this agent does not accept image prompts")
 	}
 	a.state.Busy = true
 	a.cancelling = false
@@ -508,7 +517,7 @@ func (a *ACP) startPromptLocked(text, submissionID string) error {
 	completed := make(chan acpTurnResult, 1)
 	go func() {
 		response, err := a.client.Prompt(context.Background(), acpsdk.PromptRequest{
-			SessionId: acpsdk.SessionId(a.sessionID), Prompt: []acpsdk.ContentBlock{acpsdk.TextBlock(text)},
+			SessionId: acpsdk.SessionId(a.sessionID), Prompt: acpPromptContent(text, images),
 		})
 		completed <- acpTurnResult{stopReason: response.StopReason, err: err}
 	}()
@@ -543,7 +552,7 @@ func (a *ACP) startPromptLocked(text, submissionID string) error {
 			_ = a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
 		}()
 	}
-	message := ACPMessage{Role: "user", Text: text, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	message := ACPMessage{Role: "user", Text: text, Images: images, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 	messageIndex := *a.promptIndex
 	a.promptIndex = nil
 	a.state.Messages = append(a.state.Messages, ACPMessage{})

@@ -26,14 +26,20 @@ func TestHotWorktreeCanceledRegistration(t *testing.T) {
 	runWorkspaceTestGit(t, clone, "config", "extensions.worktreeConfig", "true")
 	realGit, err := exec.LookPath("git")
 	require.NoError(err)
+	sibling := filepath.Join(t.TempDir(), "sibling")
+	runWorkspaceTestGit(t, clone, "worktree", "add", "--detach", sibling, "HEAD")
 	gate := t.TempDir()
 	started, release := filepath.Join(gate, "started"), filepath.Join(gate, "release")
 	script := `#!/bin/sh
 case " $* " in
   *" worktree add "*)
     "$KENN_FORGE_TEST_REAL_GIT" "$@" || exit $?
+    commondir="$KENN_FORGE_TEST_CLONE/worktrees/checkout/commondir"
+    common=$(cat "$commondir")
+    : > "$commondir"
     : > "$KENN_FORGE_TEST_STARTED"
     while [ ! -f "$KENN_FORGE_TEST_RELEASE" ]; do sleep 0.02; done
+    printf '%s\n' "$common" > "$commondir"
     exit 0
     ;;
 esac
@@ -41,6 +47,7 @@ exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
 `
 	require.NoError(os.WriteFile(filepath.Join(gate, "git"), []byte(script), 0o700))
 	t.Setenv("KENN_FORGE_TEST_REAL_GIT", realGit)
+	t.Setenv("KENN_FORGE_TEST_CLONE", clone)
 	t.Setenv("KENN_FORGE_TEST_STARTED", started)
 	t.Setenv("KENN_FORGE_TEST_RELEASE", release)
 	t.Setenv("PATH", gate+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -53,12 +60,22 @@ exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
 		defer close(done)
 		prepareErr = manager.prepareHotWorktree(ctx, clone, workspacePath, "HEAD")
 	}()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() {
+		_ = os.WriteFile(release, nil, 0o600)
+		cancel()
+		<-done
+	})
 	require.Eventually(func() bool { _, err := os.Stat(started); return err == nil }, 10*time.Second, 10*time.Millisecond)
 	cancel()
+	select {
+	case <-done:
+		require.FailNow("registration stopped with incomplete shared Git metadata", "%v", prepareErr)
+	case <-time.After(time.Second):
+	}
+	require.NoError(os.WriteFile(release, nil, 0o600))
 	<-done
 	require.Error(prepareErr)
-	require.NoError(os.WriteFile(release, nil, 0o600))
+	runWorkspaceTestGit(t, clone, "worktree", "remove", "--force", sibling)
 	// Git registered the worktree, but Forge never configured it or recorded
 	// readiness. A restarted warmer must still finish and hand it off.
 	manager = NewManager(nil, manager.worktreeDir)

@@ -75,7 +75,7 @@
       <ol aria-label="Queued messages">
         {#each queue as queued (queued.id)}
           <li class="row">
-            <span class="row-text" title={queued.text}>{queued.text}</span>
+            <span class="row-text" title={queued.text}>{queued.text}{#if queued.images?.length}{" "}({queued.images.length} {queued.images.length === 1 ? "image" : "images"}){/if}</span>
             <button type="button" class="remove" aria-label="Remove queued message" title="Remove" {disabled} onclick={() => onunqueue(queued.id)}><X size={13} /></button>
           </li>
         {/each}

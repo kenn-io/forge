@@ -49,7 +49,13 @@ for await (const line of createInterface({ input: process.stdin })) {
   const request = JSON.parse(line);
   switch (request.method) {
     case "initialize":
-      write({ id: request.id, result: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true } } } });
+      write({
+        id: request.id,
+        result: {
+          protocolVersion: 1,
+          agentCapabilities: { promptCapabilities: { image: true }, mcpCapabilities: { http: true } },
+        },
+      });
       break;
     case "session/new":
       if (realpathSync(request.params.cwd) !== realpathSync(process.cwd()))
@@ -79,6 +85,15 @@ for await (const line of createInterface({ input: process.stdin })) {
     }
     case "session/prompt":
       prompt = request.id;
+      if (request.params.prompt.some((block) => block.type === "image")) {
+        const image = request.params.prompt.find((block) => block.type === "image");
+        update({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: `Received image: ${image.mimeType} ${image.data}` },
+        });
+        write({ id: prompt, result: { stopReason: "end_turn" } });
+        break;
+      }
       if (request.params.prompt[0]?.text === "exit") {
         write({ id: prompt, result: { stopReason: "end_turn" } });
         setTimeout(() => process.exit(7), 10);

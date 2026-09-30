@@ -58,6 +58,9 @@ Rules:
   updates carry only the latest message window with its absolute offset and total
   count; clients page earlier messages in with `history` requests answered to the
   asking connection (`internal/workspace/localruntime/acp_delivery.go::ACP.publishedStateLocked`).
+- Pasted images stay attached through ACP queueing, steering, retries, and saved history;
+  image-only prompts are valid, and composer attachments clear only on acceptance
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte::settlePending`).
 - A running ACP turn never rejects input: sends queue, and steering is used only when
   initialize advertises it. The queue drains one prompt per `end_turn` and pauses on any
   other stop, error, exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).
@@ -249,6 +252,10 @@ This ordering prevents a rejected delete from silently killing the user's live
 workspace sessions.
 
 ## Server Shutdown Ordering
+
+- Let spare-worktree registration finish within its own bounded context; canceling
+  Git mid-write can corrupt metadata used by every worktree in the repository
+  (`internal/workspace/hot_worktree.go::Manager.prepareHotWorktree`).
 
 Workspace and Fleet own independent idempotent, context-bounded lifecycles;
 Fleet starts after Workspace and shuts down its workers before Workspace stops

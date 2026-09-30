@@ -128,7 +128,7 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await page.goto(`${origin}/terminal/${workspace.id}`);
     expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
     expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe("undefined");
-    await page.getByRole("tab", { name: /Workspace Chat,/ }).click();
+    await page.getByRole("tab", { name: /Workspace Chat/ }).click();
     const chat = page.getByRole("region", { name: "Workspace Chat chat" });
     await expect(chat).toBeVisible();
     await chat.getByRole("button", { name: "Model: Fast" }).click();
@@ -142,6 +142,22 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await page.getByRole("option", { name: "Plan", exact: true }).click();
     await expect(chat.getByRole("combobox", { name: "Mode: Plan" })).toBeVisible();
     await chat.getByRole("button", { name: "Agent settings", exact: true }).click();
+    const imageData = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP1cAAAAASUVORK5CYII=";
+    await chat.getByRole("textbox", { name: "Message agent" }).evaluate((element, data) => {
+      const clipboardData = new DataTransfer();
+      clipboardData.items.add(
+        new File([Uint8Array.from(atob(data), (byte) => byte.charCodeAt(0))], "screenshot.png", { type: "image/png" }),
+      );
+      element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
+    }, imageData);
+    await expect(chat.getByRole("img", { name: "screenshot.png" })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("acp-pasted-image.png") });
+    await chat.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(chat.getByRole("log").getByText(`Received image: image/png ${imageData}`)).toBeVisible();
+    await expect(chat.getByRole("button", { name: "Remove screenshot.png" })).toHaveCount(0);
+    await expect(chat.getByRole("log").getByRole("img", { name: "screenshot.png" })).toBeVisible();
+    await page.reload();
+    await expect(chat.getByRole("log").getByRole("img", { name: "screenshot.png" })).toBeVisible();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Inspect the workspace");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(
@@ -203,7 +219,7 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     }
     await chat.getByRole("textbox", { name: "Message agent" }).fill("exit");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
-    await expect(page.getByRole("tab", { name: /Workspace Chat,/ })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /Workspace Chat/ })).toHaveCount(0);
   } finally {
     for (const socket of sockets) socket.destroy();
     proxy.closeAllConnections();

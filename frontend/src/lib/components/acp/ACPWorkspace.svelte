@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { Effect } from "effect";
-  import { tick, untrack } from "svelte";
+  import { Data, Effect } from "effect";
+  import { onDestroy, tick, untrack } from "svelte";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import Square from "@lucide/svelte/icons/square";
   import Settings from "@lucide/svelte/icons/settings-2";
   import CornerDownLeft from "@lucide/svelte/icons/corner-down-left";
+  import X from "@lucide/svelte/icons/x";
   import ListPlus from "@lucide/svelte/icons/list-plus";
   import ChatOptionMenu from "./ChatOptionMenu.svelte";
   import ChatSessionOptions from "./ChatSessionOptions.svelte";
@@ -20,7 +21,8 @@
   import { chatRows } from "./chat-timeline.js";
   import { runningSubagents, subagentChildCounts } from "./chat-subagents.js";
   import { makeChatSession } from "./chat-session.js";
-  import type { AgentCommand, ChatState, PromptMode } from "./chat-types.js";
+  import { mediaDataURL } from "./chat-content.js";
+  import type { AgentCommand, ChatContent, ChatState, PromptMode } from "./chat-types.js";
 
   let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onExit }: {
     websocketPath: string; label?: string; status?: string; active?: boolean; disabled?: boolean;
@@ -33,7 +35,13 @@
   let connected = $state(false);
   let error = $state("");
   let draft = $state("");
-  let pending = $state<{id: string; text: string; mode: PromptMode} | null>(null);
+  let images = $state.raw<{ id: number; name: string; content: ChatContent | null }[]>([]);
+  let imageSequence = 0;
+  const imageReads = new Map<number, () => void>();
+  let pendingImageIDs = new Set<number>();
+  let pending = $state<{id: string; text: string; mode: PromptMode; images?: readonly ChatContent[]} | null>(null);
+  class ImagePasteError extends Data.TaggedError("ImagePasteError")<{ name: string }> {}
+  onDestroy(() => { for (const interrupt of imageReads.values()) interrupt(); });
   let scroll = $state<HTMLDivElement | null>(null);
   let follow = $state(true);
   let settingsOpen = $state(false);
@@ -61,7 +69,7 @@
   const rows = $derived(chatRows(chatState?.messages ?? [], firstLoaded));
   // A running turn never blocks the composer: prompts sent while busy steer
   // the turn or queue behind it on the host.
-  const canSend = $derived(connected && chatState?.connected && !pending && !disabled && draft.trim().length > 0);
+  const canSend = $derived(connected && chatState?.connected && !pending && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
   const running = $derived(!!chatState?.busy || !!chatState?.steering);
   const stopping = $derived(!!chatState?.stopping);
   const steeringSupported = $derived(!!chatState?.steeringSupported);
@@ -75,6 +83,8 @@
 
   function settlePending() {
     if (pending && draft === pending.text) draft = "";
+    images = images.filter(image => !pendingImageIDs.has(image.id));
+    pendingImageIDs.clear();
     pending = null;
   }
   $effect(() => {
@@ -161,9 +171,43 @@
     if (!canSend) return;
     // getRandomValues is available on plain HTTP origins as well as HTTPS.
     const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
-    const submission = { id, text: draft, mode };
+    const content = images.flatMap(image => image.content ? [image.content] : []);
+    const submission = { id, text: draft, mode, ...(content.length ? { images: content } : {}) };
     error = "";
-    if (connection?.send({type: "prompt", ...submission})) { pending = submission; follow = true; }
+    if (connection?.send({type: "prompt", ...submission})) { pending = submission; pendingImageIDs = new Set(images.map(image => image.id)); follow = true; }
+  }
+  function removeImage(id: number) {
+    imageReads.get(id)?.();
+    imageReads.delete(id);
+    images = images.filter(image => image.id !== id);
+  }
+  function paste(event: ClipboardEvent) {
+    const files = Array.from(event.clipboardData?.files ?? []).filter(file => file.type.startsWith("image/"));
+    if (!files.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    error = "";
+    for (const file of files) {
+      const id = ++imageSequence;
+      const name = file.name || `Pasted image ${id}`;
+      images = [...images, { id, name, content: null }];
+      const read = Effect.callback<ChatContent, ImagePasteError>(resume => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataURL = reader.result as string;
+          resume(Effect.succeed({ type: "image", mimeType: file.type, data: dataURL.slice(dataURL.indexOf(",") + 1), name }));
+        };
+        reader.onerror = () => resume(Effect.fail(new ImagePasteError({ name })));
+        reader.readAsDataURL(file);
+        return Effect.sync(() => { reader.onload = null; reader.onerror = null; if (reader.readyState === FileReader.LOADING) reader.abort(); });
+      });
+      const execution = runtime.runCommand(read.pipe(Effect.tap(content => Effect.sync(() => { imageReads.delete(id); images = images.map(image => image.id === id ? { ...image, content } : image); }))), {
+        operation: "read pasted image",
+        safeContext: {},
+        onFailure: () => { imageReads.delete(id); images = images.filter(image => image.id !== id); error = `Could not read ${name}. Try pasting it again.`; },
+      });
+      imageReads.set(id, execution.interrupt);
+    }
   }
   function configure(id: string, value: string) {
     error = "";
@@ -291,6 +335,16 @@
           <ChatSessionOptions options={otherOptions} disabled={optionsDisabled || !!chatState?.busy} onchange={configure} />
         </div>
       {/if}
+      {#if images.length}
+        <div class="attachments" aria-label="Attached images">
+          {#each images as image (image.id)}
+            <div class="attachment">
+              {#if image.content}<img src={mediaDataURL(image.content, "image")} alt={image.name} />{:else}<Spinner size={18} />{/if}
+              <button type="button" aria-label={`Remove ${image.name}`} title={`Remove ${image.name}`} onclick={() => removeImage(image.id)}><X size={14} aria-hidden="true" /></button>
+            </div>
+          {/each}
+        </div>
+      {/if}
       <div class="input">
         <textarea
           bind:this={textarea}
@@ -301,6 +355,7 @@
           aria-describedby={inputHint ? `${uid}-input-hint` : undefined}
           placeholder={composerPlaceholder}
           bind:value={draft}
+          onpaste={paste}
           onkeydown={keydown}
           oninput={() => { commandMenuDismissed = false; commandHighlight = 0; syncCaret(); }}
           onkeyup={syncCaret}
@@ -371,6 +426,12 @@
   @container acp-pane (min-width: 40rem) {
     .dock, .error, .chat-status__inner { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
   }
+  .attachments { display: flex; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3); }
+  .attachment { position: relative; display: flex; align-items: center; justify-content: center; width: 5rem; height: 5rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); }
+  .attachment img { width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
+  .attachment button { position: absolute; top: 0; right: 0; display: flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; padding: 0; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; }
+  .attachment button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+  @media (pointer: coarse) { .attachment button { width: var(--mobile-chrome-hit-target); height: var(--mobile-chrome-hit-target); } }
   .dock {
     position: relative;
     flex: none;

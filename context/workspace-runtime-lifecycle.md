@@ -58,6 +58,9 @@ Rules:
   updates carry only the latest message window with its absolute offset and total
   count; clients page earlier messages in with `history` requests answered to the
   asking connection (`internal/workspace/localruntime/acp_delivery.go::ACP.publishedStateLocked`).
+- Pasted images stay attached through ACP queueing, steering, retries, and saved history;
+  image-only prompts are valid, and composer attachments clear only on acceptance
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte::settlePending`).
 - A running ACP turn never rejects input: sends queue, and steering is used only when
   initialize advertises it. The queue drains one prompt per `end_turn` and pauses on any
   other stop, error, exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).

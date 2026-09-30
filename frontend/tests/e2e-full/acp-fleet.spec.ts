@@ -51,7 +51,7 @@ test("hub chat exchanges ACP events with the owning spoke", async ({ page }) => 
         connection.url().includes("protocol=acp"),
     });
     await page.goto(url.href);
-    await page.getByRole("tab", { name: /Remote chat,/ }).click();
+    await page.getByRole("tab", { name: /Remote chat/ }).click();
     await socket;
     const chat = page.getByRole("region", { name: "Remote chat chat" });
     await chat.getByRole("button", { name: "Model: Fast" }).click();

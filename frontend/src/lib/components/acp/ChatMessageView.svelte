@@ -94,7 +94,10 @@
 >
   <div class="cell">
     {#if user}
-      <p class="message-body bubble" data-kit-tone="info">{message.text}</p>
+      {#if message.text}<p class="message-body bubble" data-kit-tone="info">{message.text}</p>{/if}
+      {#each message.images ?? [] as image}
+        <ChatContentBlock content={image} />
+      {/each}
     {:else if thought}
       <div class="thought">
         <button

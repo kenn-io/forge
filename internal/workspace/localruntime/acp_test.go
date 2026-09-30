@@ -1033,3 +1033,60 @@ func TestACPStoppedPromptEndsATakeoverTurn(t *testing.T) {
 		})
 	}
 }
+
+func TestACPImagePrompts(t *testing.T) {
+	for _, mode := range []string{"send", "queue", "steer"} {
+		t.Run(mode, func(t *testing.T) {
+			assert := assert.New(t)
+			peerReader, peerWriter := io.Pipe()
+			t.Cleanup(func() { _ = peerWriter.Close(); _ = peerReader.Close() })
+			var written bytes.Buffer
+			agent := &ACP{imagesSupported: true, stdin: testWriteCloser{Writer: &written}, done: make(chan struct{}), subscribers: make(map[chan struct{}]struct{}), state: ACPState{Connected: true}}
+			agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
+			var command ACPCommand
+			require.NoError(t, json.Unmarshal([]byte(`{"type":"prompt","id":"image-prompt","images":[{"type":"image","mimeType":"image/png","data":"aW1hZ2U=","name":"screenshot.png"}]}`), &command))
+			command.Mode = mode
+			if mode == "queue" {
+				agent.state.Busy = true
+			}
+			if mode == "steer" {
+				agent.state.Busy = true
+				agent.state.SteeringSupported = true
+				hostReader, hostWriter := io.Pipe()
+				agent.stdin = hostWriter
+				t.Cleanup(func() { _ = hostReader.Close(); _ = hostWriter.Close() })
+				received := make(chan []byte, 1)
+				go func() {
+					line, _ := bufio.NewReader(hostReader).ReadBytes('\n')
+					var request struct {
+						ID jsontext.Value `json:"id"`
+					}
+					_ = json.Unmarshal(line, &request)
+					_, _ = fmt.Fprintf(peerWriter, `{"jsonrpc":"2.0","id":%s,"result":{"outcome":"injected"}}`+"\n", request.ID)
+					received <- line
+				}()
+				require.NoError(t, agent.Command(command))
+				assert.Contains(string(<-received), `"method":"_session/steering"`)
+			} else {
+				require.NoError(t, agent.Command(command))
+				if mode == "queue" {
+					require.Len(t, agent.state.Queue, 1)
+					assert.Equal(command.Images, agent.state.Queue[0].Images)
+					agent.mu.Lock()
+					agent.state.Busy = false
+					agent.mu.Unlock()
+					agent.drain()
+				}
+				assert.Contains(written.String(), `"type":"image"`)
+				assert.Contains(written.String(), `"data":"aW1hZ2U="`)
+			}
+			require.Len(t, agent.state.Messages, 1)
+			assert.Equal(command.Images, agent.state.Messages[0].Images)
+			require.NoError(t, agent.Command(command), "the identical image retry is acknowledged")
+			changed := command
+			changed.Images = []ACPContent{{Type: "image", MimeType: "image/png", Data: "bmV3"}}
+			require.ErrorContains(t, agent.Command(changed), "submission ID already belongs to another message")
+			close(agent.done)
+		})
+	}
+}

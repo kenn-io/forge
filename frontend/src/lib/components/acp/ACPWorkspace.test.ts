@@ -1017,3 +1017,45 @@ describe("ACPWorkspace composer size", () => {
     expect(sentCommands()).toEqual([{ type: "prompt", mode: "send", id: expect.any(String), text }]);
   });
 });
+
+describe("ACPWorkspace pasted images", () => {
+  it("stages a removable image and sends an image-only prompt", async () => {
+    await openChat(baseState);
+    const input = screen.getByRole("textbox", { name: "Message agent" });
+    const file = new File(["clipboard image"], "screenshot.png", { type: "image/png" });
+    await fireEvent.paste(input, { clipboardData: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole("img", { name: "screenshot.png" })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Remove screenshot.png" }));
+    expect(screen.queryByRole("img", { name: "screenshot.png" })).toBeNull();
+    await fireEvent.paste(input, { clipboardData: { files: [file] } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Send", exact: true }).hasAttribute("disabled")).toBe(false),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Send", exact: true }));
+    expect(sentCommands()).toContainEqual(
+      expect.objectContaining({
+        type: "prompt",
+        text: "",
+        images: [{ type: "image", mimeType: "image/png", data: btoa("clipboard image"), name: "screenshot.png" }],
+      }),
+    );
+    socket.options!.onMessage(
+      JSON.stringify({
+        commandError: "Image rejected",
+        command: "prompt",
+        id: (sentCommands().at(-1) as { id: string }).id,
+      }),
+    );
+    await tick();
+    expect(screen.getByRole("img", { name: "screenshot.png" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send", exact: true }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("leaves ordinary text paste to the textarea", async () => {
+    await openChat(baseState);
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { files: [] } });
+    screen.getByRole("textbox", { name: "Message agent" }).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+});

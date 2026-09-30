@@ -116,6 +116,7 @@ vi.mock("./lib/stores/activity.svelte.js", () => ({
     loadActivity,
     loadActivityEffect,
     reconcileActivityEffect,
+    isInitialized: () => false,
     hydrateDefaults: vi.fn(),
     getActivity: () => [],
     isLoading: () => false,

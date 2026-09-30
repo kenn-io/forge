@@ -115,7 +115,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const activityStore = createActivityStore(activityOpts);
 
   function reconcileActivityAfterDetailSync(): void {
-    if (gp() !== "activity" && gp() !== "mobile-activity") return;
+    if (gp() !== "activity" && gp() !== "mobile-activity" && !activityStore.isInitialized()) return;
     appRuntime.runCommand(activityStore.reconcileActivityEffect(), {
       operation: "reconcile activity after detail sync",
       safeContext: {},
@@ -255,10 +255,17 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     }
   }
 
+  function refreshRetainedActivity() {
+    return gp() !== "activity" && gp() !== "mobile-activity" && activityStore.isInitialized()
+      ? activityStore.reconcileActivityEffect()
+      : Effect.void;
+  }
+
   function reconcileProviderState() {
     return Effect.all(
       [
         refreshVisibleData(),
+        refreshRetainedActivity(),
         issuesStore.refreshActiveIssueDetailEffect(),
         syncStore.reconcileSyncStatusEffect,
         workspaceItemSearch.refreshEffect,
@@ -289,7 +296,12 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     onDataChanged: () =>
       observeHubFailure(
         Effect.all(
-          [refreshVisibleData(), issuesStore.refreshActiveIssueDetailEffect(), workspaceItemSearch.refreshEffect],
+          [
+            refreshVisibleData(),
+            refreshRetainedActivity(),
+            issuesStore.refreshActiveIssueDetailEffect(),
+            workspaceItemSearch.refreshEffect,
+          ],
           {
             concurrency: "unbounded",
             discard: true,

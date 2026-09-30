@@ -20,6 +20,7 @@ import { page } from "vite-plus/test/browser";
 import { tick } from "svelte";
 
 import {
+  emitBrowserEventSource,
   mountBrowserApp,
   pressKey,
   resetKeyboardModuleState,
@@ -273,8 +274,9 @@ describe("view navigation", () => {
 
     holdRefreshes = true;
     try {
-      await page.elementLocator(viewTab("Activity")).click();
+      emitBrowserEventSource("data_changed", {});
       await vi.waitFor(() => expect(heldPaths.has("/api/v1/activity")).toBe(true));
+      await page.elementLocator(viewTab("Activity")).click();
       await expect.element(activityRow).toBeVisible();
       await page.elementLocator(viewTab("Workspaces")).click();
       await vi.waitFor(() => expect(heldPaths.has("/api/v1/snapshot")).toBe(true));

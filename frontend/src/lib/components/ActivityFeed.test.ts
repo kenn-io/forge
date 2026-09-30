@@ -137,6 +137,8 @@ vi.mock("../context.js", () => ({
     activity: {
       initializeFromMount: vi.fn(),
       loadActivity,
+      ensureActivityLoaded: loadActivity,
+      setActivityPageLimit: vi.fn(),
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",

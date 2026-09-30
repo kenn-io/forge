@@ -163,9 +163,13 @@ interface OwnedActivityResponse {
   readonly startedAt: number;
 }
 
+interface ActivityReadResponse extends OwnedActivityResponse {
+  readonly scope: string;
+}
+
 type ActivityPollProjection =
-  | { readonly mode: "append"; readonly result: OwnedActivityResponse }
-  | { readonly mode: "replace"; readonly result: OwnedActivityResponse };
+  | { readonly mode: "append"; readonly result: ActivityReadResponse }
+  | { readonly mode: "replace"; readonly result: ActivityReadResponse };
 
 export interface ActivityStoreOptions {
   runtime: AppRuntime;
@@ -233,6 +237,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let authorRequestVersion = 0;
   let authorScopeKey: string | null = null;
   let pollCount = 0;
+  let pollingStarted = false;
+  let snapshotScope: string | undefined;
   const AUTHORITATIVE_REFRESH_EVERY = 4;
   let activityLifecycleTick = 0;
   const notificationStateOwnership = new Map<string, { readonly tick: number; readonly state: string }>();
@@ -378,6 +384,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
   }
   function setActivityPageLimit(limit: number | undefined): void {
+    if (activityPageLimit === limit) return;
     activityPageLimit = limit;
     invalidatePagedActivityRequests();
   }
@@ -467,7 +474,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function initializeFromMount(): void {
+    const previousScope = pagedActivityScopeKey();
     syncFromURL();
+    if (previousScope !== pagedActivityScopeKey()) invalidatePagedActivityRequests();
     initialized = true;
     syncToURL();
   }
@@ -536,6 +545,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function invalidatePagedActivityRequests(): void {
     pagedActivityGeneration += 1;
     childProjectionInvalidationGeneration += 1;
+    loading = false;
     threadRequestTokens.clear();
     loadingThreadKeys = new Set();
     failedThreadKeys = new Set();
@@ -596,13 +606,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function activityRead(params: ActivityParams) {
+    const scope = pagedActivityScopeKey();
     return Effect.sync(() => ++activityLifecycleTick).pipe(
       Effect.flatMap((startedAt) =>
         executeGeneratedApiRequest("GET /activity", (client, signal) =>
           client.ActivityService.listActivity(params, { signal }),
         ).pipe(
           retryIdempotentRead,
-          Effect.map((response) => ({ response, startedAt })),
+          Effect.map((response) => ({ response, startedAt, scope })),
         ),
       ),
     );
@@ -692,7 +703,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     itemActivityCapped = response.item_activity_capped ?? false;
   }
 
-  function projectActivitySnapshot(result: OwnedActivityResponse, projection: ActivityParams["projection"]): void {
+  function projectActivitySnapshot(result: ActivityReadResponse, projection: ActivityParams["projection"]): void {
+    snapshotScope = result.scope;
     items = projectOwnedNotificationStates(result);
     projectActivitySubjects(result.response);
     capped = result.response.capped;
@@ -720,7 +732,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     }
   }
 
-  function projectAuthoritativeActivitySnapshot(result: OwnedActivityResponse): void {
+  function projectAuthoritativeActivitySnapshot(result: ActivityReadResponse): void {
+    snapshotScope = result.scope;
     const reconcileCollapsedThreads = shouldUseCollapsedAuthoritativeProjection();
     const autoLoadExpandedThreadEvents = activityPageLimit === undefined;
     const childProjectionStale =
@@ -840,7 +853,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const workflow = yield* ActivityWorkflow;
       const scope = activityProjectionScope(params);
       const read = activityRead(params);
-      const project = (result: OwnedActivityResponse) =>
+      const project = (result: ActivityReadResponse) =>
         Effect.sync(() => {
           if (acceptsProjection()) projectActivitySnapshot(result, params.projection);
         });
@@ -878,8 +891,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
       const scope = activityProjectionScope(params);
       const read = activityRead(params);
-      const project = (result: OwnedActivityResponse) =>
-        Effect.sync(() => projectAuthoritativeActivitySnapshot(result));
+      const project = (result: ActivityReadResponse) => Effect.sync(() => projectAuthoritativeActivitySnapshot(result));
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
         yield* Effect.all([workflow.reconcileRead(scope, read, project), loadActivityAuthorsEffect(true)], {
@@ -1069,6 +1081,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
+  function ensureActivityLoaded(): void {
+    if (snapshotScope !== pagedActivityScopeKey()) loadActivity(true);
+    startActivityPolling();
+  }
+
   function loadActivity(forceAuthors = false): void {
     invalidatePagedActivityRequests();
     const generation = pagedActivityGeneration;
@@ -1217,10 +1234,18 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   );
 
   function startActivityPolling(): void {
+    if (pollingStarted) return;
+    pollingStarted = true;
     const program = Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       yield* workflow.poll(pollNewItems, "15 seconds");
-    });
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          pollingStarted = false;
+        }),
+      ),
+    );
     runtime.runCommand(program, {
       operation: "poll activity",
       safeContext: {},
@@ -1385,6 +1410,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     hydrateDefaults,
     initializeFromMount,
     loadActivityAuthors,
+    ensureActivityLoaded,
     loadActivity,
     loadActivityEffect,
     reconcileActivityEffect,

@@ -112,8 +112,7 @@
     activityPageLimit = parked?.pageLimit ?? 30;
     pendingScrollTop = parked?.scrollTop ?? null;
     activity.setActivityPageLimit(activityPageLimit);
-    activity.loadActivity(true);
-    activity.startActivityPolling();
+    activity.ensureActivityLoaded();
     unsubSync = sync.subscribeSyncComplete(() => {
       activity.loadActivity();
       activity.loadActivityAuthors(true);
@@ -132,8 +131,6 @@
   });
 
   onDestroy(() => {
-    activity.setActivityPageLimit(undefined);
-    activity.stopActivityPolling();
     unsubSync?.();
     searchExecution?.interrupt();
   });

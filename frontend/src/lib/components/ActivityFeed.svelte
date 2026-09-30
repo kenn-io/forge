@@ -135,8 +135,8 @@
   onMount(() => {
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
-    activity.loadActivity(true);
-    activity.startActivityPolling();
+    activity.setActivityPageLimit(undefined);
+    activity.ensureActivityLoaded();
     unsubSync = sync.subscribeSyncComplete(() => {
       runtime.runCommand(activity.reconcileActivityEffect(), {
         operation: "reconcile activity after sync",
@@ -147,7 +147,6 @@
   });
 
   onDestroy(() => {
-    activity.stopActivityPolling();
     unsubSync?.();
     debounceExecution?.interrupt();
   });

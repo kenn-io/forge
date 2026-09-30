@@ -93,9 +93,68 @@ beforeEach(() => {
 afterEach(async () => {
   for (const item of getFlashes()) dismissFlash(item.id);
   if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
+  vi.useRealTimers();
 });
 
 describe("activity store workspace activity", () => {
+  it.each(["layout", "URL filters"])("resumes polling when cached %s supersede a pending load", async (change) => {
+    vi.useFakeTimers();
+    const mobile = Promise.withResolvers<{ data: { items: []; capped: false }; error: null }>();
+    let title = "Desktop activity";
+    const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (options.params?.query?.limit === 30 || options.params?.query?.search === "beta") return mobile.promise;
+      return {
+        data: { items: [], item_activity: [{ ...itemActivity(7), item_title: title }], capped: false },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    window.history.replaceState(null, "", "/?search=alpha");
+    store.initializeFromMount();
+    store.ensureActivityLoaded();
+    await vi.waitFor(() => expect(store.getItemActivity()[0]?.item_title).toBe("Desktop activity"));
+    if (change === "layout") store.setActivityPageLimit(30);
+    else store.setActivitySearch("beta");
+    store.ensureActivityLoaded();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(true));
+
+    store.setActivityPageLimit(undefined);
+    store.initializeFromMount();
+    store.ensureActivityLoaded();
+    mobile.resolve({ data: { items: [], capped: false }, error: null });
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    title = "Updated desktop activity";
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(store.getItemActivity()[0]?.item_title).toBe("Updated desktop activity"));
+  });
+
+  it("reuses an empty snapshot on return but loads a changed query", async () => {
+    const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      return {
+        data: {
+          items: [],
+          item_activity: options.params?.query?.search === "PR 7" ? [itemActivity(7)] : [],
+          capped: false,
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.ensureActivityLoaded();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    const reads = get.mock.calls.filter(([path]) => path === "/activity").length;
+
+    store.ensureActivityLoaded();
+    expect(store.isActivityLoading()).toBe(false);
+    expect(get.mock.calls.filter(([path]) => path === "/activity")).toHaveLength(reads);
+
+    store.setActivitySearch("PR 7");
+    store.ensureActivityLoaded();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_title)).toEqual(["PR 7"]));
+  });
+
   it.each(["range", "view", "neither"])(
     "keeps an explicit %s choice made before defaults arrive without pinning untouched controls",
     (selected) => {

@@ -122,6 +122,7 @@ vi.mock("../context.js", () => ({
     activity: {
       initializeFromMount: vi.fn(),
       loadActivity,
+      ensureActivityLoaded: loadActivity,
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
@@ -336,7 +337,7 @@ describe("MobileActivityView branch activity", () => {
     expect(article?.querySelector(".chip--kind-issue")).toBeNull();
   });
 
-  it("uses a bounded projection for its mounted lifetime", () => {
+  it("keeps its bounded projection for background refresh after leaving", () => {
     const view = render(MobileActivityView, { props: { onSelectItem } });
 
     expect(setActivityPageLimit).toHaveBeenCalledWith(30);
@@ -346,7 +347,7 @@ describe("MobileActivityView branch activity", () => {
     expect(setFullEventProjectionRequired).not.toHaveBeenCalled();
 
     view.unmount();
-    expect(setActivityPageLimit).toHaveBeenLastCalledWith(undefined);
+    expect(setActivityPageLimit).toHaveBeenLastCalledWith(30);
   });
 
   it("autoloads one direct-activity chunk when the end sentinel enters the viewport", async () => {

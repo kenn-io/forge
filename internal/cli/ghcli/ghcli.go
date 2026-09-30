@@ -6,12 +6,15 @@ package ghcli
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,33 +55,78 @@ func NewCommand() *cobra.Command {
 // Run serves one gh invocation and returns its exit status. Pass-through
 // replaces the process on Unix.
 func Run(args []string) int {
-	realPath, err := realGH()
+	// Legitimate nesting, such as a gh extension calling gh, stays shallow.
+	// A deep chain means gh keeps resolving back to this shim.
+	depth, _ := strconv.Atoi(os.Getenv(depthEnv))
+	if depth >= maxDepth {
+		fmt.Fprintln(os.Stderr, "kenn-forge gh: gh keeps calling back into kenn-forge gh; set FORGE_GH_REAL to the real gh executable")
+		return 1
+	}
+	skip := filepath.SplitList(os.Getenv(skipEnv))
+	// A gh wrapper script that runs `kenn-forge gh` sends the call it was
+	// handed straight back here. Skip that wrapper from now on, including in
+	// nested gh calls, and do not query or log the same call twice.
+	var handoff struct {
+		Path string   `json:"path"`
+		Argv []string `json:"argv"`
+	}
+	bounced := json.Unmarshal([]byte(os.Getenv(handoffEnv)), &handoff) == nil && slices.Equal(handoff.Argv, args)
+	if bounced {
+		skip = append(skip, handoff.Path)
+	}
+	realPath, err := realGH(skip)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	q, repo, supported := ghshim.Parse(args)
-	reason := "unsupported"
-	if supported && !term.IsTerminal(int(os.Stdout.Fd())) && os.Getenv("GH_FORCE_TTY") == "" && os.Getenv("CLICOLOR_FORCE") == "" {
-		if resolveRepo(&q, repo) {
-			output, handled, why := queryDaemon(q)
-			reason = why
-			if handled {
-				recordUsage(args, reason)
-				if _, err := os.Stdout.WriteString(output); err != nil {
-					return 1
+	if !bounced {
+		q, repo, supported := ghshim.Parse(args)
+		reason := "unsupported"
+		if supported && !term.IsTerminal(int(os.Stdout.Fd())) && os.Getenv("GH_FORCE_TTY") == "" && os.Getenv("CLICOLOR_FORCE") == "" {
+			if resolveRepo(&q, repo) {
+				output, handled, why := queryDaemon(q)
+				reason = why
+				if handled {
+					recordUsage(args, reason)
+					if _, err := os.Stdout.WriteString(output); err != nil {
+						return 1
+					}
+					return 0
 				}
-				return 0
+			} else {
+				reason = "repository_unresolved"
 			}
-		} else {
-			reason = "repository_unresolved"
 		}
+		recordUsage(args, reason)
 	}
-	recordUsage(args, reason)
+	handoff.Path, handoff.Argv = realPath, args
+	encoded, err := json.Marshal(handoff)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := errors.Join(
+		os.Setenv(skipEnv, strings.Join(skip, string(os.PathListSeparator))),
+		os.Setenv(handoffEnv, string(encoded)),
+		os.Setenv(depthEnv, strconv.Itoa(depth+1)),
+	); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	return passthrough(realPath, args)
 }
 
-func realGH() (string, error) {
+// Environment passed to the real gh. The handoff names the executable and
+// arguments of the call being passed on; the skip list holds executables that
+// turned out to be wrappers around this shim; the depth counts shim hops.
+const (
+	handoffEnv = "KENN_FORGE_GH_HANDOFF"
+	skipEnv    = "KENN_FORGE_GH_SKIP"
+	depthEnv   = "KENN_FORGE_GH_DEPTH"
+	maxDepth   = 16
+)
+
+func realGH(skip []string) (string, error) {
 	self, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -86,6 +134,12 @@ func realGH() (string, error) {
 	info, err := os.Stat(self)
 	if err != nil {
 		return "", err
+	}
+	skipped := []os.FileInfo{info}
+	for _, path := range skip {
+		if other, err := os.Stat(path); err == nil {
+			skipped = append(skipped, other)
+		}
 	}
 	candidates := []string{}
 	if explicit := os.Getenv("FORGE_GH_REAL"); explicit != "" {
@@ -100,11 +154,11 @@ func realGH() (string, error) {
 			continue
 		}
 		other, err := os.Stat(candidate)
-		if err == nil && !other.IsDir() && !os.SameFile(info, other) {
-			abs, err := filepath.Abs(candidate)
-			if err == nil {
-				return abs, nil
-			}
+		if err != nil || other.IsDir() || slices.ContainsFunc(skipped, func(info os.FileInfo) bool { return os.SameFile(info, other) }) {
+			continue
+		}
+		if abs, err := filepath.Abs(candidate); err == nil {
+			return abs, nil
 		}
 	}
 	return "", fmt.Errorf("kenn-forge gh: real gh not found; set FORGE_GH_REAL to its executable path")

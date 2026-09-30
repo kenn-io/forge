@@ -907,3 +907,6 @@ Also see [`context/testing.md`](./testing.md):
 - The shim is the `kenn-forge gh` subcommand, reached directly or through a
   `gh` link to `kenn-forge`; do not reintroduce a separate shim binary. Pass gh
   arguments through unparsed and unnormalized (`cmd/kenn-forge/cli.go::cliArgs`).
+- A `gh` wrapper script around `kenn-forge gh` must not loop: pass-through
+  records the chosen executable and argv, a returning identical call skips it,
+  and a hop cap stops other cycles (`internal/cli/ghcli/ghcli.go::Run`).

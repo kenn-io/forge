@@ -63,9 +63,8 @@ ln -sf "$(command -v kenn-forge)" ~/.kenn/forge/gh-shim/gh
 On Windows, create a hard link or copy of `kenn-forge.exe` named `gh.exe` in
 that directory.
 
-Use a link, not a `gh` script that calls `kenn-forge gh`. The shim skips only
-links and copies of itself when it looks for the real `gh`, so it would find
-the script and call itself again.
+A `gh` script that runs `kenn-forge gh "$@"` works too. The shim notices when
+the real `gh` it picked turns out to be that script, and skips it.
 
 You can also run the shim directly as `kenn-forge gh <gh arguments>`, for
 example `kenn-forge gh pr list --json number | cat`.

@@ -58,7 +58,7 @@ func TestRealGHSkipsShimSymlinkAndNonExecutable(t *testing.T) {
 	require.NoError(os.WriteFile(realPath, []byte("#!/bin/sh\nexit 0\n"), 0o700))
 	t.Setenv("FORGE_GH_REAL", "")
 	t.Setenv("PATH", strings.Join([]string{dir, other, third}, string(os.PathListSeparator)))
-	got, err := realGH()
+	got, err := realGH(nil)
 	require.NoError(err)
 	assert.Equal(realPath, got)
 }

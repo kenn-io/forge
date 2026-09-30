@@ -68,6 +68,11 @@ func TestAPIListIssuesFiltersPullRequestReferences(t *testing.T) {
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &issues))
 	require.Len(issues, 1)
 	require.Equal(1, issues[0].Number)
+
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues?referenced_by_pr=true&unassigned=true", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &issues))
+	require.Len(issues, 2)
 }
 
 func TestAPICreateIssue(t *testing.T) {

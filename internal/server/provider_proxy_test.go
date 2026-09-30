@@ -290,6 +290,16 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 		}
 	}
 
+	combined, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{Unassigned: true, InvolvesMe: true},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	require.Len(combined.WorkspaceActivity, 1)
+	assert.Equal(1, combined.WorkspaceActivity[0].ItemNumber)
+
 	response, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
 		&itemapi.ListActivityInput{Unassigned: true},

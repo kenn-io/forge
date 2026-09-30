@@ -8696,7 +8696,7 @@ func TestSyncIssueUntrackedRepoReturnsForbidden(t *testing.T) {
 
 func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 	runParallelServerTest(t)
-	srv, database := setupTestServerWithMock(t, &mockGH{authenticatedViewerLoginFn: func(context.Context) (string, error) { return "viewer", nil }})
+	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{AuthenticatedViewerLoginFn: func(context.Context) (string, error) { return "viewer", nil }})
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 	for number := 1; number <= 4; number++ {
@@ -8704,7 +8704,7 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 		if number == 1 {
 			author = "viewer"
 		}
-		id := seedPR(t, database, "acme", "widget", number, withSeedPRAuthor(author), withSeedPRTimes(now, now, now.Add(time.Duration(number)*time.Minute)))
+		id := serverfake.SeedPR(t, database, "acme", "widget", number, serverfake.WithSeedPRAuthor(author), serverfake.WithSeedPRTimes(now, now, now.Add(time.Duration(number)*time.Minute)))
 		assignees := `["other"]`
 		if number == 2 {
 			assignees = `[]`

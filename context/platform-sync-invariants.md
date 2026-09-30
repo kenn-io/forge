@@ -368,6 +368,7 @@ registry helpers return typed errors for missing providers or capabilities.
   HEAD diff (0/0 sidebar stats).
 - Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Complete comments and inline review sets replace; submitted reviews remain additive. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
 - Merge-request assignee omission remains unknown; only a provider-confirmed empty set counts as unassigned, so incomplete snapshots cannot claim that an item has no owner. (`internal/platformdb/persist.go::MarshalUserNamesJSON`, `internal/db/queries_assignees.go::unassignedCondition`)
+- This distinction carries onto the API: `assignees`/`requested_reviewers` are `omitzero` `[]string` fields, so a never-reported list is an absent JSON key and a confirmed-empty list serializes as `[]`; callers must not collapse the two. (`internal/db/queries.go::parseUserNamesJSON`)
 
 ## Historical Archive
 

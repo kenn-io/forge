@@ -10,6 +10,7 @@ import (
 	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
@@ -392,4 +393,145 @@ func TestAPIAssigneeAndReviewerMutationsAreCapabilityGated(t *testing.T) {
 			assert.Equal("unsupportedCapability", problem.Code)
 		})
 	}
+}
+
+// mergeRequestFieldPresence decodes the raw response body far enough to
+// distinguish an absent JSON key (never-reported ownership) from a present
+// key holding an empty array (provider-confirmed empty ownership). A plain
+// struct decode cannot make that distinction because Go's decoder leaves an
+// unmentioned []string field nil either way.
+func mergeRequestFieldPresence(t *testing.T, body []byte, envelopeKey string) map[string]json.RawMessage {
+	t.Helper()
+	var envelope map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &envelope))
+	var mr map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(envelope[envelopeKey], &mr))
+	return mr
+}
+
+func TestAPIGetPullNeverReportedAssigneesAndReviewersOmitJSONKeys(t *testing.T) {
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	// seedPR leaves assignees_json and reviewers_json empty, meaning the
+	// provider has never reported either field.
+	seedPR(t, database, "acme", "widget", 1)
+
+	rr := doLabelAPIRequest(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	mr := mergeRequestFieldPresence(t, rr.Body.Bytes(), "merge_request")
+	_, hasAssignees := mr["assignees"]
+	_, hasReviewers := mr["requested_reviewers"]
+	require.False(hasAssignees, "assignees key must be absent when never reported")
+	require.False(hasReviewers, "requested_reviewers key must be absent when never reported")
+}
+
+func TestAPIGetPullConfirmedEmptyAssigneesAndReviewersSerializeAsEmptyArray(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRAssigneesJSON("[]"), withSeedPRReviewersJSON("[]"))
+
+	rr := doLabelAPIRequest(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	mr := mergeRequestFieldPresence(t, rr.Body.Bytes(), "merge_request")
+	require.Contains(mr, "assignees")
+	require.Contains(mr, "requested_reviewers")
+	assert.JSONEq("[]", string(mr["assignees"]))
+	assert.JSONEq("[]", string(mr["requested_reviewers"]))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{
+		PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)},
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.NotNil(resp.JSON200)
+	assert.NotNil(resp.JSON200.MergeRequest.Assignees)
+	assert.Empty(resp.JSON200.MergeRequest.Assignees)
+	assert.NotNil(resp.JSON200.MergeRequest.RequestedReviewers)
+	assert.Empty(resp.JSON200.MergeRequest.RequestedReviewers)
+}
+
+func TestAPIGetPullPopulatedAssigneesAndReviewersSerializeLogins(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1,
+		withSeedPRAssigneesJSON(`["alice","bob"]`), withSeedPRReviewersJSON(`["carol"]`))
+
+	client := setupTestClient(t, srv)
+	resp, err := client.HTTP.GetPullWithResponse(t.Context(), &generated.GetPullRequestOptions{
+		PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)},
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.NotNil(resp.JSON200)
+	assert.Equal([]string{"alice", "bob"}, resp.JSON200.MergeRequest.Assignees)
+	assert.Equal([]string{"carol"}, resp.JSON200.MergeRequest.RequestedReviewers)
+}
+
+func TestAPIListPullsDistinguishesUnknownFromConfirmedEmptyAssignees(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 1) // never-reported
+	seedPR(t, database, "acme", "widget", 2, withSeedPRAssigneesJSON("[]"))
+	seedPR(t, database, "acme", "widget", 3, withSeedPRAssigneesJSON(`["alice"]`))
+
+	rr := doLabelAPIRequest(t, srv, http.MethodGet,
+		"/api/v1/pulls?repo=github%7Cgithub.com%2Facme%2Fwidget&state=all", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var rows []json.RawMessage
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &rows))
+	require.Len(rows, 3)
+	byNumber := make(map[float64]map[string]json.RawMessage, 3)
+	for _, row := range rows {
+		var decoded map[string]json.RawMessage
+		require.NoError(json.Unmarshal(row, &decoded))
+		var number float64
+		require.NoError(json.Unmarshal(decoded["Number"], &number))
+		byNumber[number] = decoded
+	}
+
+	_, hasAssignees := byNumber[1]["assignees"]
+	require.False(hasAssignees, "never-reported assignees must be absent from list rows")
+	require.Contains(byNumber[2], "assignees")
+	assert.JSONEq("[]", string(byNumber[2]["assignees"]))
+	require.Contains(byNumber[3], "assignees")
+	assert.JSONEq(`["alice"]`, string(byNumber[3]["assignees"]))
+
+	client := setupTestClient(t, srv)
+	state := "all"
+	listResp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{
+		Query: &generated.ListPullsQuery{Repo: new("github|github.com/acme/widget"), State: &state},
+	})
+	require.NoError(err)
+	require.Equal(http.StatusOK, listResp.StatusCode)
+	require.NotNil(listResp.JSON200)
+	require.Len(*listResp.JSON200, 3)
+	clientByNumber := make(map[int64]generated.MergeRequestResponse, 3)
+	for _, pr := range *listResp.JSON200 {
+		clientByNumber[pr.Number] = pr
+	}
+	assert.Nil(clientByNumber[1].Assignees)
+	assert.NotNil(clientByNumber[2].Assignees)
+	assert.Empty(clientByNumber[2].Assignees)
+	assert.Equal([]string{"alice"}, clientByNumber[3].Assignees)
+}
+
+func TestAPIGetIssueConfirmedEmptyAssigneesSerializesAsEmptyArray(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	seedIssueWithAssignees(t, database, "acme", "widget", 7, "open", "[]")
+
+	rr := doLabelAPIRequest(t, srv, http.MethodGet, "/api/v1/issues/github/acme/widget/7", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	issue := mergeRequestFieldPresence(t, rr.Body.Bytes(), "issue")
+	require.Contains(issue, "assignees")
+	assert.JSONEq("[]", string(issue["assignees"]))
 }

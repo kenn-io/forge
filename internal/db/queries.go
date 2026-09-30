@@ -1202,11 +1202,15 @@ func parseMergeRequestUserLists(mr *MergeRequest) {
 	mr.RequestedReviewers = parseUserNamesJSON(mr.ReviewersJSON)
 }
 
+// parseUserNamesJSON distinguishes a provider that never reported a user
+// list ("") from one that confirmed an empty list ("[]"): the former returns
+// nil, which serializes as an absent JSON key (omitzero); the latter returns
+// a non-nil empty slice, which serializes as "[]".
 func parseUserNamesJSON(raw string) []string {
-	if raw == "" || raw == "[]" {
+	if raw == "" {
 		return nil
 	}
-	var names []string
+	names := []string{}
 	if err := json.Unmarshal([]byte(raw), &names); err != nil {
 		return nil
 	}
@@ -2948,12 +2952,9 @@ func (d *DB) GetIssue(
 	if err != nil {
 		return nil, fmt.Errorf("get issue: %w", err)
 	}
-	// Parse assignees from JSON. Best-effort: malformed JSON yields an empty
-	// Assignees slice rather than failing the whole read. Writes go through
-	// json.Marshal in UpsertIssue, so corruption is unexpected in practice.
-	if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
-		_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
-	}
+	// Parse assignees from JSON. parseUserNamesJSON distinguishes never-
+	// reported ("") from provider-confirmed empty ("[]").
+	issue.Assignees = parseUserNamesJSON(issue.AssigneesJSON)
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load issue labels: %w", err)
@@ -3017,12 +3018,9 @@ func (d *DB) getIssueByRepoIDAndNumber(
 	if err != nil {
 		return nil, fmt.Errorf("get issue by repo id: %w", err)
 	}
-	// Parse assignees from JSON. Best-effort: malformed JSON yields an empty
-	// Assignees slice rather than failing the whole read. Writes go through
-	// json.Marshal in UpsertIssue, so corruption is unexpected in practice.
-	if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
-		_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
-	}
+	// Parse assignees from JSON. parseUserNamesJSON distinguishes never-
+	// reported ("") from provider-confirmed empty ("[]").
+	issue.Assignees = parseUserNamesJSON(issue.AssigneesJSON)
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load issue labels: %w", err)
@@ -3162,12 +3160,9 @@ func (d *DB) ListIssues(
 		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
 		}
-		// Parse assignees from JSON. Best-effort: malformed JSON yields an empty
-		// Assignees slice rather than failing the whole read. Writes go through
-		// json.Marshal in UpsertIssue, so corruption is unexpected in practice.
-		if issue.AssigneesJSON != "" && issue.AssigneesJSON != "[]" {
-			_ = json.Unmarshal([]byte(issue.AssigneesJSON), &issue.Assignees)
-		}
+		// Parse assignees from JSON. parseUserNamesJSON distinguishes never-
+		// reported ("") from provider-confirmed empty ("[]").
+		issue.Assignees = parseUserNamesJSON(issue.AssigneesJSON)
 		issues = append(issues, issue)
 		issueIDs = append(issueIDs, issue.ID)
 	}

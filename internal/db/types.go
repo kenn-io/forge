@@ -697,8 +697,8 @@ type MergeRequest struct {
 	// records a provider-confirmed empty set.
 	AssigneesJSON      string   `json:"-"`
 	ReviewersJSON      string   `json:"-"`
-	Assignees          []string `json:"assignees,omitempty"`
-	RequestedReviewers []string `json:"requested_reviewers,omitempty"`
+	Assignees          []string `json:"assignees,omitzero"`
+	RequestedReviewers []string `json:"requested_reviewers,omitzero"`
 }
 
 type MergeRequestState string
@@ -983,7 +983,7 @@ type Issue struct {
 	Starred            bool
 	WorkflowStatus     KanbanStatus `enum:"new,reviewing,waiting,awaiting_merge"`
 	Labels             []Label      `json:"labels,omitempty"`
-	Assignees          []string     `json:"assignees,omitempty"` // Parsed assignees
+	Assignees          []string     `json:"assignees,omitzero"` // Parsed assignees
 }
 
 type IssueEvent struct {

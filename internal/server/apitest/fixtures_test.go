@@ -119,6 +119,14 @@ func withSeedPRHeadSHA(headSHA string) seedPROpt {
 	return func(pr *db.MergeRequest) { pr.PlatformHeadSHA = headSHA }
 }
 
+func withSeedPRAssigneesJSON(assigneesJSON string) seedPROpt {
+	return func(pr *db.MergeRequest) { pr.AssigneesJSON = assigneesJSON }
+}
+
+func withSeedPRReviewersJSON(reviewersJSON string) seedPROpt {
+	return func(pr *db.MergeRequest) { pr.ReviewersJSON = reviewersJSON }
+}
+
 func withSeedPRState(state db.MergeRequestState) seedPROpt {
 	return func(pr *db.MergeRequest) {
 		pr.State = state

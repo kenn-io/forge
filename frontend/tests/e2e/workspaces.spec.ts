@@ -204,10 +204,12 @@ test("workspace row context menu escapes the clipped sidebar", async ({ page }) 
   await expect(row).toBeVisible();
   const rowBox = await row.boundingBox();
   expect(rowBox).not.toBeNull();
+  // Near the right edge so the menu overflows the sidebar, but clear of the
+  // sidebar resize handle's grab margin, which covers the last pixels.
   await row.click({
     button: "right",
     position: {
-      x: Math.max(1, rowBox!.width - 4),
+      x: Math.max(1, rowBox!.width - 8),
       y: Math.max(1, rowBox!.height / 2),
     },
   });

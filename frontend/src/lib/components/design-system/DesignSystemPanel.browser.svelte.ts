@@ -76,10 +76,10 @@ describe("design system tabbed panel demo (browser)", () => {
     // The grab target reaches past the visible line on both sides, so the
     // pointer does not have to land on the line itself to start a resize.
     const midY = dividerRect.top + dividerRect.height / 2;
-    assert(document.elementFromPoint(dividerRect.left - 3, midY)).toBe(divider);
-    assert(document.elementFromPoint(dividerRect.right + 3, midY)).toBe(divider);
-    assert(document.elementFromPoint(dividerRect.left - 6, midY)).not.toBe(divider);
-    assert(document.elementFromPoint(dividerRect.right + 6, midY)).not.toBe(divider);
+    assert(document.elementFromPoint(dividerRect.left - 1, midY)).toBe(divider);
+    assert(document.elementFromPoint(dividerRect.right + 1, midY)).toBe(divider);
+    assert(document.elementFromPoint(dividerRect.left - 4, midY)).not.toBe(divider);
+    assert(document.elementFromPoint(dividerRect.right + 4, midY)).not.toBe(divider);
     assert(`${dividerStyle.paddingLeft}/${dividerStyle.paddingRight}`).toBe("0px/0px");
     assert(firstLeafStyle.borderTopWidth).toBe("0px");
     assert(firstLeafStyle.borderRightWidth).toBe("0px");

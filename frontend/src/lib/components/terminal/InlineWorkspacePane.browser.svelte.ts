@@ -131,12 +131,12 @@ describe("inline workspace pane focus", () => {
       // The harness is wider than the test viewport; probe inside what is visible.
       const x = rect.left + 20;
 
-      // Three pixels into either pane still starts a resize: the visible line
+      // A pixel into either pane still starts a resize: the visible line
       // alone is too thin to hit reliably between the detail and workspace.
-      expect(document.elementFromPoint(x, rect.top - 3)).toBe(divider);
-      expect(document.elementFromPoint(x, rect.bottom + 3)).toBe(divider);
-      expect(document.elementFromPoint(x, rect.top - 6)).not.toBe(divider);
-      expect(document.elementFromPoint(x, rect.bottom + 6)).not.toBe(divider);
+      expect(document.elementFromPoint(x, rect.top - 1)).toBe(divider);
+      expect(document.elementFromPoint(x, rect.bottom + 1)).toBe(divider);
+      expect(document.elementFromPoint(x, rect.top - 4)).not.toBe(divider);
+      expect(document.elementFromPoint(x, rect.bottom + 4)).not.toBe(divider);
     } finally {
       dispose();
     }

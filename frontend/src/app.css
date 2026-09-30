@@ -14,11 +14,13 @@
 }
 
 /* kit's SplitResizeHandle is only as thick as its visible line, which is too
-   thin to grab reliably. Extend its pointer target past both edges with a
+   thin to grab reliably. Extend its pointer target 2px past both edges with a
    transparent pseudo-element (part of the button for hit testing, paints
-   nothing). The z-index keeps that margin above neighboring panes, including
-   xterm's canvas layers (up to 11), and below kit popovers. :where() leaves
-   component overrides such as the docked terminal's absolute resizer intact. */
+   nothing). Keep the margin narrow: it covers the edge of the neighboring
+   content, such as the right end of sidebar rows. The z-index keeps that
+   margin above neighboring panes, including xterm's canvas layers (up to 11),
+   and below kit popovers. :where() leaves component overrides such as the
+   docked terminal's absolute resizer intact. */
 :where(.kit-split-resize-handle) {
   position: relative;
   z-index: 12;
@@ -28,15 +30,15 @@
   content: "";
   position: absolute;
   top: 0;
-  right: -4px;
+  right: -2px;
   bottom: 0;
-  left: -4px;
+  left: -2px;
 }
 
 :where(.kit-split-resize-handle--vertical)::after {
-  top: -4px;
+  top: -2px;
   right: 0;
-  bottom: -4px;
+  bottom: -2px;
   left: 0;
 }
 

@@ -3578,7 +3578,7 @@ test.describe("workspace launch home", () => {
         splitterBackgroundVisible: dividerStyles.backgroundColor !== "rgba(0, 0, 0, 0)",
         splitterWidth: Math.round(dividerRect.width),
         // The grab margin must reach over the xterm canvases on both sides.
-        splitterGrabsBesideLine: [dividerRect.left - 3, dividerRect.right + 3].every(
+        splitterGrabsBesideLine: [dividerRect.left - 1, dividerRect.right + 1].every(
           (x) => document.elementFromPoint(x, dividerRect.top + dividerRect.height / 2) === divider,
         ),
         treePadding: [treeStyles.paddingTop, treeStyles.paddingRight, treeStyles.paddingBottom, treeStyles.paddingLeft],

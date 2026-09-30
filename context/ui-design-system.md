@@ -355,8 +355,9 @@ tree topology, ratio/size bounds, state, and persistence; the shared handle owns
 pointer/keyboard interaction and separator semantics. Pass a specific label
 such as `Resize Activity rail`. Do not override the handle's thickness per
 consumer: every splitter keeps kit's size, and one shared `app.css` rule gives
-all kit handles a transparent grab margin stacked above xterm's layers
-(`frontend/src/app.css`, `.kit-split-resize-handle`).
+all kit handles a transparent 2px grab margin stacked above xterm's layers. A
+wider margin steals clicks from the edge of neighboring content such as sidebar
+rows (`frontend/src/app.css`, `.kit-split-resize-handle`).
 
 Use kit-ui `BottomDock` for resizable inline bottom panels. The app owns whether
 the dock is open plus its domain header/body/footer content; the shared dock

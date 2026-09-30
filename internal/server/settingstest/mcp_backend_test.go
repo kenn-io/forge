@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/platform"
 )
 
 func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
@@ -19,8 +20,8 @@ func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
 
 	_, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
 		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1002,
-		Owner:          "acme", Name: "widget", Number: 42,
+		RepoKey: platform.RepositoryIDKey(1002),
+		Owner:   "acme", Name: "widget", Number: 42,
 	})
 
 	var backendErr *mcpserver.Error
@@ -44,7 +45,7 @@ func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
 	repo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	identity := mcpserver.RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+		Provider: "github", PlatformHost: "github.com", Key: repo.Key,
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}
 	rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{Repository: identity, State: "open", Limit: 26})
@@ -58,7 +59,7 @@ func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
 	require.Len(rows[0].Checks, 1)
 	assert.Equal("success", rows[0].Checks[0].Conclusion)
 	detail, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+		Type: "pr", Provider: "github", PlatformHost: "github.com", RepoKey: repo.Key,
 		Owner: "acme", Name: "widget", Number: 42,
 	})
 	require.NoError(err)
@@ -66,7 +67,7 @@ func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
 	assert.Equal(rows[0].MergeableState, detail.Pull.MergeableState)
 	assert.Equal(rows[0].ReviewDecision, detail.Pull.ReviewDecision)
 	assert.Equal(rows[0].Checks, detail.Checks)
-	identity.PlatformRepoID = 1002
+	identity.Key = platform.RepositoryIDKey(1002)
 	_, err = srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{Repository: identity, State: "open"})
 	var backendErr *mcpserver.Error
 	require.ErrorAs(err, &backendErr)
@@ -86,7 +87,7 @@ func TestMCPBackendFiltersPullLabelsBeforePagination(t *testing.T) {
 	repo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	identity := mcpserver.RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+		Provider: "github", PlatformHost: "github.com", Key: repo.Key,
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	}
 	var numbers []int
@@ -104,7 +105,7 @@ func TestMCPBackendFiltersPullLabelsBeforePagination(t *testing.T) {
 	require.NoError(err)
 	assert.Empty(rows)
 	detail, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+		Type: "pr", Provider: "github", PlatformHost: "github.com", RepoKey: repo.Key,
 		Owner: "acme", Name: "widget", Number: 1,
 	})
 	require.NoError(err)
@@ -127,7 +128,7 @@ func TestMCPBackendListsPullsWithMalformedCachedChecks(t *testing.T) {
 	require.NoError(err)
 	rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{
 		Repository: mcpserver.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+			Provider: "github", PlatformHost: "github.com", Key: repo.Key,
 			Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 		}, State: "open", Limit: 25,
 	})
@@ -165,8 +166,8 @@ func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.
 	backend := srv.MCPBackend()
 	repository := mcpserver.RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: repo.PlatformRepoID,
-		RepoPath:       "acme/widget", Owner: "acme", Name: "widget",
+		Key:      repo.Key,
+		RepoPath: "acme/widget", Owner: "acme", Name: "widget",
 	}
 
 	page, err := backend.ListWorkflowStates(ctx, mcpserver.WorkflowQuery{
@@ -176,12 +177,12 @@ func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.
 	require.NoError(err)
 	require.Len(page.Items, 1)
 	assert.Equal(2, page.Items[0].Identity.Number)
-	assert.Equal(repo.PlatformRepoID, page.Items[0].Identity.PlatformRepoID)
+	assert.Equal(repo.Key, page.Items[0].Identity.RepoKey)
 
 	_, err = backend.SetWorkflowState(ctx, mcpserver.ItemIdentity{
 		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: repo.PlatformRepoID,
-		Owner:          "acme", Name: "widget", Number: 1,
+		RepoKey: repo.Key,
+		Owner:   "acme", Name: "widget", Number: 1,
 	}, mcpserver.WorkflowUpdate{
 		Status: "reviewing", ExpectedStatus: "new", Source: "mcp",
 	})

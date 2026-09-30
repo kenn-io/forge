@@ -59,7 +59,7 @@ func seedRepo(
 ) int64 {
 	t.Helper()
 	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = testRepoID(owner, name)
+	identity.Key = platform.RepositoryIDKey(testRepoID(owner, name))
 	id, err := reposeed.Seed(
 		t.Context(), d, identity,
 	)
@@ -132,7 +132,7 @@ func pullLaunchSpecForWorkspace(
 		Version: WorkspaceLaunchSpecVersion,
 		Repository: WorkspaceLaunchRepository{
 			Provider: ws.Platform, PlatformHost: ws.PlatformHost,
-			PlatformRepoID: 1023, Owner: firstNonEmpty(ws.RepoOwner, "acme"),
+			Key: platform.RepositoryIDKey(1023), Owner: firstNonEmpty(ws.RepoOwner, "acme"),
 			Name: firstNonEmpty(ws.RepoName, "widget"),
 			CloneURL: "https://" + ws.PlatformHost + "/" +
 				firstNonEmpty(ws.RepoOwner, "acme") + "/" +
@@ -469,11 +469,11 @@ func TestRefreshWorkspaceHeadRepoFollowsStableRepositoryAfterRename(
 	ctx := t.Context()
 	providerRepoID := int64(1002)
 	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: providerRepoID,
-		Owner:          "old-group",
-		Name:           "old-name",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Key:          platform.RepositoryIDKey(providerRepoID),
+		Owner:        "old-group",
+		Name:         "old-name",
 	})
 	require.NoError(err)
 	oldSameRepoURL := "https://gitlab.com/old-group/old-name.git"
@@ -493,11 +493,11 @@ func TestRefreshWorkspaceHeadRepoFollowsStableRepositoryAfterRename(
 	require.NoError(d.InsertWorkspace(ctx, ws))
 
 	_, err = d.ObserveRepository(ctx, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: providerRepoID,
-		Owner:          "new-group",
-		Name:           "new-name",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Key:          platform.RepositoryIDKey(providerRepoID),
+		Owner:        "new-group",
+		Name:         "new-name",
 	})
 	require.NoError(err)
 
@@ -525,7 +525,7 @@ func TestRefreshWorkspaceHeadRepoRejectsReplacementAtInactiveRepositoryRoute(
 	original, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1020, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1020), Owner: "acme", Name: "widget",
 		},
 	)
 	require.NoError(err)
@@ -544,14 +544,14 @@ func TestRefreshWorkspaceHeadRepoRejectsReplacementAtInactiveRepositoryRoute(
 	require.Equal(original.Repository.ID, workspace.RepoID)
 	_, err = database.DeactivateRepository(
 		t.Context(), platform.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1020,
+			Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1020),
 		},
 	)
 	require.NoError(err)
 	replacement, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1022, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1022), Owner: "acme", Name: "widget",
 		},
 	)
 	require.NoError(err)
@@ -1199,7 +1199,7 @@ func TestCreateIssueRecoveryRejectsManagedCloneWithWrongOrigin(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")}),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testRepoID("acme", "widget"))}),
 		"github", host, owner, name,
 	)
 	require.NoError(err)
@@ -1259,7 +1259,7 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")}),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testRepoID("acme", "widget"))}),
 		"github", host, owner, name,
 	)
 	require.NoError(err)
@@ -1310,7 +1310,7 @@ func TestSetupReusesIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
 
 	spec := launchSpecForTest()
 	spec.Repository.PlatformHost = platformHost
-	spec.Repository.PlatformRepoID = testRepoID("acme", "widget")
+	spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
 	spec.Repository.CloneURL = oldRemoteURL
 	manager := NewManager(database, worktreeRoot)
 	manager.SetTmuxCommand([]string{"/usr/bin/true"})
@@ -1320,7 +1320,7 @@ func TestSetupReusesIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneCtx := gitclone.WithRepositoryIdentity(
-		t.Context(), platform.RepositoryIdentity{PlatformRepoID: spec.Repository.PlatformRepoID},
+		t.Context(), platform.RepositoryIdentity{Key: spec.Repository.Key},
 	)
 	require.NoError(clones.EnsureClone(
 		cloneCtx, "github", platformHost, "acme", "widget", oldRemoteURL,
@@ -1338,8 +1338,8 @@ func TestSetupReusesIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
 	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: platformHost,
-			PlatformRepoID: spec.Repository.PlatformRepoID,
-			Owner:          "acme", Name: "renamed",
+			Key:   spec.Repository.Key,
+			Owner: "acme", Name: "renamed",
 		},
 	)
 	require.NoError(err)
@@ -1382,7 +1382,7 @@ func TestManagedClonePathsIncludeEveryCloneInIdentityNamespace(t *testing.T) {
 	database := openTestDB(t)
 	entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1020, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1020), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NotNil(entry)
@@ -1394,11 +1394,11 @@ func TestManagedClonePathsIncludeEveryCloneInIdentityNamespace(t *testing.T) {
 		runWorkspaceTestGit(t, t.TempDir(), "init", "--bare", path)
 		return path
 	}
-	ownCtx := gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: 1020})
+	ownCtx := gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(1020)})
 	earlierRoute := initBare(ownCtx, "acme", "widget-original")
 	transferredRoute := initBare(ownCtx, "other-org", "widget")
 	otherRepository := initBare(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: 1022}), "acme", "widget",
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(1022)}), "acme", "widget",
 	)
 	routeKeyed := initBare(t.Context(), "acme", "widget")
 
@@ -1860,7 +1860,7 @@ func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
 			))
 
 			clones := gitclone.New(t.TempDir(), nil)
-			cloneCtx := gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")})
+			cloneCtx := gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testRepoID("acme", "widget"))})
 			require.NoError(clones.EnsureClone(
 				cloneCtx, "github", platformHost, "acme", "widget", remote,
 			))
@@ -2985,19 +2985,19 @@ func TestCreateIssueUsesProviderQualifiedRepo(t *testing.T) {
 	ctx := t.Context()
 
 	_, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "forge.example.com",
-		PlatformRepoID: 1015,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "forge.example.com",
+		Key:          platform.RepositoryIDKey(1015),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "forge.example.com",
-		PlatformRepoID: 1017,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "gitlab",
+		PlatformHost: "forge.example.com",
+		Key:          platform.RepositoryIDKey(1017),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	seedIssue(t, d, gitlabRepoID, 7, "GitLab issue")
@@ -3023,11 +3023,11 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 	)
 
 	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 1016,
-		Owner:          "group",
-		Name:           "project",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(1016),
+		Owner:        "group",
+		Name:         "project",
 	})
 	require.NoError(err)
 	require.NoError(d.UpdateRepoProviderObservation(
@@ -3051,7 +3051,7 @@ func TestCreateIssueUsesProviderCloneURLForNamespacedManagedClone(t *testing.T) 
 	require.NotNil(ws)
 	assert.Equal("gitlab", ws.Platform)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: 1016}),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: platform.RepositoryIDKey(1016)}),
 		"gitlab", "gitlab.example.com", "group", "project",
 	)
 	require.NoError(err)
@@ -3075,11 +3075,11 @@ func TestCreateIssueClonesExplicitlyAllowedGiteaHTTPRemote(t *testing.T) {
 	cloneURL := "http://" + platformHost + "/acme/widget.git"
 
 	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "gitea",
-		PlatformHost:   platformHost,
-		PlatformRepoID: 1014,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "gitea",
+		PlatformHost: platformHost,
+		Key:          platform.RepositoryIDKey(1014),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	require.NoError(d.UpdateRepoProviderObservation(
@@ -3103,7 +3103,7 @@ func TestCreateIssueClonesExplicitlyAllowedGiteaHTTPRemote(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(ws)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: 1014}),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: platform.RepositoryIDKey(1014)}),
 		"gitea", platformHost, "acme", "widget",
 	)
 	require.NoError(err)
@@ -3129,7 +3129,7 @@ func TestBranchInspectionPartitionsManagedCloneByProviderIdentity(t *testing.T) 
 
 	repo := workspaceRepoRef{
 		ID: repoID, Platform: "github", PlatformHost: platformHost,
-		ProviderID: 1007, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1007), Owner: "acme", Name: "widget",
 		RemoteURL: remote,
 	}
 	firstDir, ok, localBase, err := mgr.branchInspectionDir(ctx, repo)
@@ -3137,7 +3137,7 @@ func TestBranchInspectionPartitionsManagedCloneByProviderIdentity(t *testing.T) 
 	require.True(ok)
 	assert.False(localBase)
 
-	repo.ProviderID = 1008
+	repo.Key = platform.RepositoryIDKey(1008)
 	secondDir, ok, localBase, err := mgr.branchInspectionDir(ctx, repo)
 	require.NoError(err)
 	require.True(ok)
@@ -3177,7 +3177,7 @@ func TestWorkspaceBranchInspectionDoesNotRefreshExistingClone(t *testing.T) {
 	require.NoError(err)
 	require.Positive(requests.Load())
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")}),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testRepoID("acme", "widget"))}),
 		"github", parsed.Host, "acme", "widget",
 	)
 	require.NoError(err)
@@ -3210,19 +3210,19 @@ func TestCreateUsesProviderQualifiedRepo(t *testing.T) {
 	worktreeDir := t.TempDir()
 
 	_, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "forge.example.com",
-		PlatformRepoID: 1015,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "forge.example.com",
+		Key:          platform.RepositoryIDKey(1015),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "forge.example.com",
-		PlatformRepoID: 1017,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "gitlab",
+		PlatformHost: "forge.example.com",
+		Key:          platform.RepositoryIDKey(1017),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	seedMR(t, d, gitlabRepoID, 42, "feature/gitlab")
@@ -3269,7 +3269,7 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 	)
 	clones := gitclone.New(cloneBaseDir, nil)
 	cloneDir, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testRepoID("acme", "widget")}),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testRepoID("acme", "widget"))}),
 		"github", host, owner, name,
 	)
 	require.NoError(err)
@@ -3758,7 +3758,7 @@ func TestCleanupFindsMissingIdentityManagedWorktreeAfterRepositoryRename(t *test
 	database := openTestDB(t)
 	identity := db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: testRepoID("acme", "widget"), Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(testRepoID("acme", "widget")), Owner: "acme", Name: "widget",
 	}
 	entry, err := database.ObserveRepository(
 		t.Context(), identity,
@@ -3768,7 +3768,7 @@ func TestCleanupFindsMissingIdentityManagedWorktreeAfterRepositoryRename(t *test
 
 	clones := gitclone.New(t.TempDir(), nil)
 	cloneCtx := gitclone.WithRepositoryIdentity(
-		t.Context(), platform.RepositoryIdentity{PlatformRepoID: identity.PlatformRepoID},
+		t.Context(), platform.RepositoryIdentity{Key: identity.Key},
 	)
 	oldClone, err := clones.ClonePathForContext(
 		cloneCtx, identity.Platform, identity.PlatformHost,
@@ -8110,8 +8110,8 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 	d := openTestDB(t)
 	_, err := d.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1004,
-		Owner:          "acme", Name: "widget",
+		Key:   platform.RepositoryIDKey(1004),
+		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	ws := &Workspace{
@@ -8130,7 +8130,7 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 		Version: WorkspaceLaunchSpecVersion,
 		Repository: WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1004, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1004), Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: ws.ItemType, ItemNumber: ws.ItemNumber,
@@ -8143,8 +8143,8 @@ func TestSetupFailsClosedWhenRepositoryRouteReused(t *testing.T) {
 	}))
 	_, err = d.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1003,
-		Owner:          "acme", Name: "widget",
+		Key:   platform.RepositoryIDKey(1003),
+		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 

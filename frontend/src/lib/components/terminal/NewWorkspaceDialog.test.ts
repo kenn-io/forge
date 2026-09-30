@@ -80,6 +80,15 @@ function repoFixture(
   };
 }
 
+const cloudRepositoryUUID = "0f5d2a4e-3b1c-4d7e-9a8b-1c2d3e4f5a6b";
+
+function cloudRepoFixture(owner: string, name: string) {
+  return {
+    ...repoFixture(owner, name, 0, "bitbucket.org", "bitbucket"),
+    BitbucketRepositoryUUID: `{${cloudRepositoryUUID}}`,
+  };
+}
+
 async function renderDialog(props: Record<string, unknown> = {}) {
   const view = render(NewWorkspaceDialog, {
     props: { open: true, onClose: vi.fn(), ...props },
@@ -309,12 +318,75 @@ describe("NewWorkspaceDialog", () => {
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: 1001,
+        repositoryKey: { kind: "id", id: 1001 },
         owner: "acme",
         name: "widget",
       },
     });
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+  });
+
+  it("restores a last-used repository saved with the integer identity format", async () => {
+    localStorage.setItem("kenn-forge:workspace:new_repo", "github|github.com|id|1002");
+    await renderDialog();
+
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/gadget"));
+  });
+
+  it("creates a Bitbucket Cloud workspace by repository UUID", async () => {
+    mockGet.mockResolvedValue({
+      data: [repoFixture("acme", "widget", 1001), cloudRepoFixture("team", "cloud-app")],
+    });
+    await renderDialog();
+    await pickRepo("team/cloud-app");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost).toHaveBeenCalledWith(
+      "/repo/{provider}/{owner}/{name}/workspaces",
+      expect.objectContaining({
+        params: { path: { provider: "bitbucket", owner: "team", name: "cloud-app" } },
+        body: { bitbucket_repository_uuid: cloudRepositoryUUID },
+      }),
+    );
+  });
+
+  it("restores and seeds a Bitbucket Cloud repository by UUID", async () => {
+    mockGet.mockResolvedValue({
+      data: [repoFixture("acme", "widget", 1001), cloudRepoFixture("team", "cloud-app")],
+    });
+    await renderDialog();
+    await pickRepo("team/cloud-app");
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new"));
+    cleanup();
+    await Effect.runPromise(runtimeCapture.current!.disposeEffect);
+    runtimeCapture.current = makeAppRuntime();
+    mockGet.mockResolvedValue({
+      data: [repoFixture("acme", "widget", 1001), cloudRepoFixture("team", "cloud-app-next")],
+    });
+
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("team/cloud-app-next"));
+    cleanup();
+
+    localStorage.clear();
+    await renderDialog({
+      seedRepo: {
+        provider: "bitbucket",
+        platformHost: "bitbucket.org",
+        repositoryKey: { kind: "uuid", uuid: cloudRepositoryUUID },
+        owner: "team",
+        name: "cloud-app",
+      },
+    });
+    await waitFor(() => expect(repoPicker().textContent).toContain("team/cloud-app-next"));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    expect(mockPost).toHaveBeenLastCalledWith(
+      "/repo/{provider}/{owner}/{name}/workspaces",
+      expect.objectContaining({ body: { bitbucket_repository_uuid: cloudRepositoryUUID } }),
+    );
   });
 
   it("requires a new choice for a saved preference without a stable repository ID", async () => {
@@ -334,7 +406,7 @@ describe("NewWorkspaceDialog", () => {
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: 1002,
+        repositoryKey: { kind: "id", id: 1002 },
         owner: "acme",
         name: "gadget",
       },
@@ -351,7 +423,7 @@ describe("NewWorkspaceDialog", () => {
       seedRepo: {
         provider: "gh",
         platformHost: "github.com",
-        platformRepoId: 1002,
+        repositoryKey: { kind: "id", id: 1002 },
         owner: "acme",
         name: "gadget",
       },
@@ -379,7 +451,7 @@ describe("NewWorkspaceDialog", () => {
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: 1005,
+        repositoryKey: { kind: "id", id: 1005 },
         owner: "acme",
         name: "concealed",
       },
@@ -397,7 +469,7 @@ describe("NewWorkspaceDialog", () => {
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: 1006,
+        repositoryKey: { kind: "id", id: 1006 },
         owner: "acme",
         name: "widget",
       },
@@ -449,7 +521,7 @@ describe("NewWorkspaceDialog", () => {
       seedRepo: {
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: 1005,
+        repositoryKey: { kind: "id", id: 1005 },
         owner: "acme",
         name: "concealed",
       },

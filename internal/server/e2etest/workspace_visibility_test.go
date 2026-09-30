@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 func TestWorkspaceAPIHidesRemovedAssociatedPullRequestE2E(t *testing.T) {
@@ -19,7 +20,7 @@ func TestWorkspaceAPIHidesRemovedAssociatedPullRequestE2E(t *testing.T) {
 	ts, database := bootFleetServer(t, nil)
 
 	repoIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	repoIdentity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoIdentity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
 	repoID, err := reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -83,7 +84,7 @@ func TestWorkspaceAPIRetainsProviderMetadataAcrossReusedRouteE2E(t *testing.T) {
 
 	original, err := database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 		RepoPath: "acme/widget",
 	})
 	require.NoError(err)
@@ -114,13 +115,13 @@ func TestWorkspaceAPIRetainsProviderMetadataAcrossReusedRouteE2E(t *testing.T) {
 
 	_, err = database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "renamed-widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "renamed-widget",
 		RepoPath: "acme/renamed-widget",
 	})
 	require.NoError(err)
 	_, err = database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1002), Owner: "acme", Name: "widget",
 		RepoPath: "acme/widget",
 	})
 	require.NoError(err)

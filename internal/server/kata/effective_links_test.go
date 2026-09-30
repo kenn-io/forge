@@ -381,7 +381,7 @@ func TestKataEffectiveWorkspaceLinksMergeIntrinsicDirectAndInheritedProvenance(t
 
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: string(platform.KindGitHub), PlatformHost: platform.DefaultGitHubHost,
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -470,7 +470,7 @@ func TestKataWorkspaceLinksDoNotInheritAcrossReusedRepositoryRoute(t *testing.T)
 	now := time.Now().UTC().Truncate(time.Second)
 
 	originalRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
@@ -488,12 +488,12 @@ func TestKataWorkspaceLinksDoNotInheritAcrossReusedRepositoryRoute(t *testing.T)
 	}))
 
 	_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 		Owner: "acme", Name: "widget-renamed",
 	})
 	require.NoError(err)
 	replacementRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002),
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)

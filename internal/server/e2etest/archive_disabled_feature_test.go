@@ -139,7 +139,7 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformID: 1,
+		Key: platform.RepositoryIDKey(1),
 	}
 	quotaRegistry := ghclient.NewQuotaRegistry()
 	identity := ghclient.IdentityKey{Host: "github.com", Principal: "user:7"}
@@ -186,7 +186,7 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	repo := ghclient.RepoRef{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
+		Key: ref.Key,
 	}
 	require.NoError(syncer.SetReposWithContext(ctx, []ghclient.RepoRef{repo}, false))
 

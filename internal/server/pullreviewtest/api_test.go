@@ -1357,7 +1357,7 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -1395,15 +1395,15 @@ func TestAPIGitLabDirectSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          ref.Owner,
-		Name:           ref.Name,
-		PlatformHost:   ref.Host,
-		RepoPath:       ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
-		WebURL:         ref.WebURL,
-		CloneURL:       ref.CloneURL,
-		DefaultBranch:  ref.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		Owner:         ref.Owner,
+		Name:          ref.Name,
+		PlatformHost:  ref.Host,
+		RepoPath:      ref.RepoPath,
+		Key:           ref.Key,
+		WebURL:        ref.WebURL,
+		CloneURL:      ref.CloneURL,
+		DefaultBranch: ref.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -1451,7 +1451,7 @@ func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *te
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -1489,15 +1489,15 @@ func TestAPIGitLabDirectSyncDoesNotDuplicateMergedActorAfterClosedFallback(t *te
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          ref.Owner,
-		Name:           ref.Name,
-		PlatformHost:   ref.Host,
-		RepoPath:       ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
-		WebURL:         ref.WebURL,
-		CloneURL:       ref.CloneURL,
-		DefaultBranch:  ref.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		Owner:         ref.Owner,
+		Name:          ref.Name,
+		PlatformHost:  ref.Host,
+		RepoPath:      ref.RepoPath,
+		Key:           ref.Key,
+		WebURL:        ref.WebURL,
+		CloneURL:      ref.CloneURL,
+		DefaultBranch: ref.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -2841,15 +2841,15 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	registry, err := platform.NewRegistry(client)
 	require.NoError(err)
 	repoRef := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		PlatformHost:   "gitlab.example.com",
-		Owner:          "group",
-		Name:           "project",
-		RepoPath:       "group/project",
-		PlatformRepoID: 4242,
-		WebURL:         "https://gitlab.example.com/group/project",
-		CloneURL:       "https://gitlab.example.com/group/project.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		PlatformHost:  "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repoRef}, time.Minute, nil, nil,
@@ -2859,12 +2859,12 @@ func TestAPIGitLabPublishReviewDraftSurfacesCleanupFailureAsPartial(t *testing.T
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 4242,
-		Owner:          "group",
-		Name:           "project",
-		RepoPath:       "group/project",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(4242),
+		Owner:        "group",
+		Name:         "project",
+		RepoPath:     "group/project",
 	})
 	require.NoError(err)
 	require.NoError(database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
@@ -3959,7 +3959,7 @@ func setupGitHubCapabilityServerWithProvider(
 		Owner:         "acme",
 		Name:          "widget",
 		RepoPath:      "acme/widget",
-		PlatformID:    6262,
+		Key:           platform.RepositoryIDKey(6262),
 		WebURL:        "https://github.example.com/acme/widget",
 		CloneURL:      "https://github.example.com/acme/widget.git",
 		DefaultBranch: "main",
@@ -3990,15 +3990,15 @@ func setupGitHubCapabilityServerWithProvider(
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitHub,
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "github.example.com",
-		RepoPath:       "acme/widget",
-		PlatformRepoID: 6262,
-		WebURL:         "https://github.example.com/acme/widget",
-		CloneURL:       "https://github.example.com/acme/widget.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitHub,
+		Owner:         "acme",
+		Name:          "widget",
+		PlatformHost:  "github.example.com",
+		RepoPath:      "acme/widget",
+		Key:           platform.RepositoryIDKey(6262),
+		WebURL:        "https://github.example.com/acme/widget",
+		CloneURL:      "https://github.example.com/acme/widget.git",
+		DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -4028,7 +4028,7 @@ func setupForgejoCapabilityServerWithProvider(
 		Owner:         "acme",
 		Name:          "widgets",
 		RepoPath:      "acme/widgets",
-		PlatformID:    5252,
+		Key:           platform.RepositoryIDKey(5252),
 		WebURL:        "https://codeberg.org/acme/widgets",
 		CloneURL:      "https://codeberg.org/acme/widgets.git",
 		DefaultBranch: "main",
@@ -4058,15 +4058,15 @@ func setupForgejoCapabilityServerWithProvider(
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindForgejo,
-		Owner:          "acme",
-		Name:           "widgets",
-		PlatformHost:   "codeberg.org",
-		RepoPath:       "acme/widgets",
-		PlatformRepoID: 5252,
-		WebURL:         "https://codeberg.org/acme/widgets",
-		CloneURL:       "https://codeberg.org/acme/widgets.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindForgejo,
+		Owner:         "acme",
+		Name:          "widgets",
+		PlatformHost:  "codeberg.org",
+		RepoPath:      "acme/widgets",
+		Key:           platform.RepositoryIDKey(5252),
+		WebURL:        "https://codeberg.org/acme/widgets",
+		CloneURL:      "https://codeberg.org/acme/widgets.git",
+		DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,

@@ -17,7 +17,7 @@ func TestClonePathPartitionsBitbucketCloudRouteReuseByUUID(t *testing.T) {
 	cloud := func(id string) providerplatform.RepositoryIdentity {
 		return providerplatform.RepositoryIdentity{
 			Provider: "bitbucket", PlatformHost: "bitbucket.org",
-			BitbucketRepositoryUUID: uuid.MustParse(id),
+			Key: providerplatform.RepositoryUUIDKey(uuid.MustParse(id)),
 		}
 	}
 	pathFor := func(identity providerplatform.RepositoryIdentity) string {
@@ -47,7 +47,7 @@ func TestClonePathKeepsIntegerIdentityLayout(t *testing.T) {
 
 	path, err := mgr.ClonePathForContext(
 		WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+			Provider: "github", PlatformHost: "github.com", Key: providerplatform.RepositoryIDKey(1001),
 		}),
 		"github", "github.com", "acme", "widgets",
 	)

@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 )
 
 func TestConfigReloadPublishesExternalContextSources(t *testing.T) {
@@ -72,14 +73,14 @@ func TestExternalContextUsesHubSyncedPull(t *testing.T) {
 		}, nil
 	})}
 	input := itemapi.RepoNumberInput{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget", Number: 42}
-	pull, err := srv.externalContextPull(t.Context(), input, 7001)
+	pull, err := srv.externalContextPull(t.Context(), input, platform.RepositoryIDKey(7001))
 	require.NoError(err)
 	assert.Equal(externalcontext.PullRequest{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 7001, RepoPath: "acme/widget",
+		Provider: "github", PlatformHost: "github.com", RepoKey: platform.RepositoryIDKey(7001), RepoPath: "acme/widget",
 		Number: 42, URL: "https://github.com/acme/widget/pull/42", State: "merged", HeadSHA: "hub-synced-head", BaseSHA: "hub-synced-base",
 	}, pull)
 
-	_, err = srv.externalContextPull(t.Context(), input, 7002)
+	_, err = srv.externalContextPull(t.Context(), input, platform.RepositoryIDKey(7002))
 	var problem *httpapi.ProblemError
 	require.ErrorAs(err, &problem)
 	assert.Equal(http.StatusConflict, problem.Status)

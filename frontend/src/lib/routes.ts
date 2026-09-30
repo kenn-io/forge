@@ -1,9 +1,10 @@
 import { providerRouteParams, type ProviderRouteRef as APIProviderRouteRef } from "./api/provider-routes.js";
+import type { RepositoryKey } from "./api/repository-key.js";
 
 export type RepositoryRouteRef = {
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: number | undefined;
+  repositoryKey?: RepositoryKey | undefined;
   owner: string;
   name: string;
   repoPath: string;

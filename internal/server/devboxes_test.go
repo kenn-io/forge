@@ -31,6 +31,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 )
 
 func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
@@ -39,7 +40,7 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 	serverfake.SeedPR(t, database, "acme", "widget", 7)
 	platformRepoID := testutil.FixtureRepoID("acme", "widget")
 	entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: platformRepoID, Owner: "acme", Name: "widgets",
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(platformRepoID), Owner: "acme", Name: "widgets",
 	})
 	require.NoError(err)
 	require.NoError(database.UpdateRepoProviderObservation(t.Context(), entry.Repository.ID, db.RepoProviderMetadata{
@@ -56,7 +57,7 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 			if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
 				return
 			}
-			assert.Equal(platformRepoID, request.Repository.PlatformRepoID)
+			assert.Equal(platform.RepositoryIDKey(platformRepoID), request.Repository.Key)
 			assert.Equal("widgets", request.Repository.Name)
 			assert.Equal("https://github.com/acme/widgets.git", request.Repository.CloneURL)
 			creations.Add(1)
@@ -69,7 +70,7 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 			if !assert.NoError(json.UnmarshalRead(r.Body, &spec)) {
 				return
 			}
-			assert.Equal(platformRepoID, spec.Repository.PlatformRepoID)
+			assert.Equal(platform.RepositoryIDKey(platformRepoID), spec.Repository.Key)
 			assert.Equal("widgets", spec.Repository.Name)
 			contextRefreshes.Add(1)
 			w.WriteHeader(http.StatusNoContent)
@@ -103,7 +104,7 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 	}
 	assert.Equal(int32(3), creations.Load())
 	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	response := testutil.DoJSON(t, controller, http.MethodPost, "/api/v1/devboxes/compute-a/workspaces/original-workspace/runtime/sessions", map[string]any{
@@ -119,13 +120,13 @@ func TestDevboxCreationRejectsCachedRepositoryRouteReplacement(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
 			database := dbtest.Open(t)
 			original := db.RepoIdentity{
-				Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+				Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 				Owner: "example-org", Name: "project",
 			}
 			_, err := database.ObserveRepository(t.Context(), original)
 			require.NoError(err)
 			replacement := original
-			replacement.PlatformRepoID = 1002
+			replacement.Key = platform.RepositoryIDKey(1002)
 			entry, err := database.ObserveRepository(t.Context(), replacement)
 			require.NoError(err)
 			if itemField == "mr_number" {

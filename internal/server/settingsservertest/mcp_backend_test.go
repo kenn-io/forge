@@ -47,7 +47,7 @@ func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
 	require.NotEmpty(page.Items)
 	for _, item := range page.Items {
 		assert.Equal("pr", item.ItemType)
-		assert.Equal(repo.PlatformRepoID, item.Repository.PlatformRepoID)
+		assert.Equal(repo.Key, item.Repository.Key)
 	}
 	assert.False(page.Capped)
 }

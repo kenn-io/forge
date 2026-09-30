@@ -37,7 +37,7 @@ func TestProviderGetRepositoryWithPinnedIDFollowsRenameAndUsesRESTID(t *testing.
 
 	repo, err := provider.GetRepository(t.Context(), platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
-		Owner: "old-owner", Name: "old-name", PlatformID: 1001,
+		Owner: "old-owner", Name: "old-name", Key: platform.RepositoryIDKey(1001),
 	})
 	require.NoError(err)
 
@@ -45,5 +45,5 @@ func TestProviderGetRepositoryWithPinnedIDFollowsRenameAndUsesRESTID(t *testing.
 	assert.Equal("new-owner", repo.Ref.Owner)
 	assert.Equal("new-name", repo.Ref.Name)
 	assert.Equal("new-owner/new-name", repo.Ref.RepoPath)
-	assert.Equal(int64(1001), repo.Ref.PlatformID)
+	assert.Equal(platform.RepositoryIDKey(1001), repo.Ref.Key)
 }

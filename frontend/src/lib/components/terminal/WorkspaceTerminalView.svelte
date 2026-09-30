@@ -173,6 +173,7 @@
     type WorkspaceRuntimeMutationState,
     type WorkspaceRuntimeTarget,
   } from "./workspace-runtime-workflow.js";
+  import { repositoryKeyFromStored, repositoryKeyFromWire, repositoryKeyToStored } from "../../api/repository-key.js";
 
   type Workspace = WorkspaceDetail;
 
@@ -638,6 +639,7 @@
     provider: Schema.NonEmptyString,
     platformHost: Schema.NonEmptyString,
     platformRepoId: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
+    bitbucketRepositoryUUID: Schema.optional(Schema.NonEmptyString),
     owner: Schema.NonEmptyString,
     name: Schema.NonEmptyString,
     repoPath: Schema.NonEmptyString,
@@ -647,8 +649,22 @@
     pr: Schema.NullOr(ViewedItem),
     issue: Schema.NullOr(ViewedItem),
   }));
+  type StoredViewedItem = typeof ViewedItem.Type;
+  function viewedItemFromStorage(stored: StoredViewedItem | null): NumberedRouteItemRef | null {
+    if (!stored) return null;
+    const { platformRepoId: _id, bitbucketRepositoryUUID: _uuid, ...route } = stored;
+    return { ...route, repositoryKey: repositoryKeyFromStored(stored) };
+  }
+  function viewedItemToStorage(item: NumberedRouteItemRef | null) {
+    if (!item) return null;
+    const { repositoryKey, ...route } = item;
+    return { ...route, ...repositoryKeyToStored(repositoryKey) };
+  }
   let viewedItems: { pr: NumberedRouteItemRef | null; issue: NumberedRouteItemRef | null } = $derived(
-    Option.getOrElse(Schema.decodeUnknownOption(ViewedItems)(readLocalStorage(itemSelectionStorageKey)), () => ({ pr: null, issue: null })),
+    Option.match(Schema.decodeUnknownOption(ViewedItems)(readLocalStorage(itemSelectionStorageKey)), {
+      onNone: () => ({ pr: null, issue: null }),
+      onSome: (stored) => ({ pr: viewedItemFromStorage(stored.pr), issue: viewedItemFromStorage(stored.issue) }),
+    }),
   );
   let preferredRightSidebarWidth = $state(loadSidebarWidth());
   let workspaceListWidth = $state(loadWorkspaceListWidth());
@@ -2325,7 +2341,10 @@
   function selectWorkspaceItem(itemType: "pr" | "issue", item: NumberedRouteItemRef | null): void {
     if (!workspace || actionsBlocked) return;
     viewedItems = { ...viewedItems, [itemType]: item };
-    writeLocalStorage(itemSelectionStorageKey, JSON.stringify(viewedItems));
+    writeLocalStorage(
+      itemSelectionStorageKey,
+      JSON.stringify({ pr: viewedItemToStorage(viewedItems.pr), issue: viewedItemToStorage(viewedItems.issue) }),
+    );
     if (isSidebarTabSupported(workspace, itemType)) {
       setSidebarTab(itemType);
       sidebarExpanded = true;
@@ -4961,7 +4980,7 @@
                   {workspaceHostKey}
                   provider={workspace.repo.provider}
                   platformHost={workspace.repo.platform_host}
-                  platformRepoId={workspace.repo.platform_repo_id}
+                  repositoryKey={repositoryKeyFromWire(workspace.repo)}
                   repoOwner={workspace.repo.owner}
                   repoName={workspace.repo.name}
                   repoPath={workspace.repo.repo_path}

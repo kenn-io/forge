@@ -244,13 +244,13 @@ repository_selection = "all"
 
 	database := dbtest.Open(t)
 	ref := ghclient.RepoRef{
-		Platform:       platform.KindGitHub,
-		Owner:          "kenn-io",
-		Name:           "kenn-forge",
-		RepoPath:       "kenn-io/kenn-forge",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 4242001,
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitHub,
+		Owner:         "kenn-io",
+		Name:          "kenn-forge",
+		RepoPath:      "kenn-io/kenn-forge",
+		PlatformHost:  "github.com",
+		Key:           platform.RepositoryIDKey(4242001),
+		DefaultBranch: "main",
 	}
 	repoID, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
 		Platform:      platform.KindGitHub,
@@ -258,7 +258,7 @@ repository_selection = "all"
 		Owner:         "kenn-io",
 		Name:          "kenn-forge",
 		RepoPath:      "kenn-io/kenn-forge",
-		PlatformID:    4242001,
+		Key:           platform.RepositoryIDKey(4242001),
 		DefaultBranch: "main",
 	}))
 	require.NoError(err)
@@ -814,13 +814,13 @@ repository_selection = "all"
 
 	database := dbtest.Open(t)
 	ref := ghclient.RepoRef{
-		Platform:       platform.KindGitHub,
-		Owner:          "kenn-io",
-		Name:           "kenn-forge",
-		RepoPath:       "kenn-io/kenn-forge",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 4242001,
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitHub,
+		Owner:         "kenn-io",
+		Name:          "kenn-forge",
+		RepoPath:      "kenn-io/kenn-forge",
+		PlatformHost:  "github.com",
+		Key:           platform.RepositoryIDKey(4242001),
+		DefaultBranch: "main",
 	}
 	repoID, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
 		Platform:      platform.KindGitHub,
@@ -828,7 +828,7 @@ repository_selection = "all"
 		Owner:         "kenn-io",
 		Name:          "kenn-forge",
 		RepoPath:      "kenn-io/kenn-forge",
-		PlatformID:    4242001,
+		Key:           platform.RepositoryIDKey(4242001),
 		DefaultBranch: "main",
 	}))
 	require.NoError(err)

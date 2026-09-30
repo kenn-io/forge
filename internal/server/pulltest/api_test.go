@@ -930,7 +930,7 @@ func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    42,
+		Key:           platform.RepositoryIDKey(42),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -938,15 +938,15 @@ func TestAPIGitLabSyncReadsTokenFileAfterRotation(t *testing.T) {
 	repoID, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          ref.Owner,
-		Name:           ref.Name,
-		PlatformHost:   ref.Host,
-		RepoPath:       ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
-		WebURL:         ref.WebURL,
-		CloneURL:       ref.CloneURL,
-		DefaultBranch:  ref.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		Owner:         ref.Owner,
+		Name:          ref.Name,
+		PlatformHost:  ref.Host,
+		RepoPath:      ref.RepoPath,
+		Key:           ref.Key,
+		WebURL:        ref.WebURL,
+		CloneURL:      ref.CloneURL,
+		DefaultBranch: ref.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -1183,7 +1183,7 @@ func TestAPICIRefreshWarnsAndPreservesCIWhenProviderFails(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &serverfake.ApiTestGitLabProvider{
@@ -1272,7 +1272,7 @@ func TestAPISyncRefreshesStaleCachedChecksWhenAggregateCIChanges(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &serverfake.ApiTestGitLabProvider{
@@ -1387,7 +1387,7 @@ func TestAPISyncRefreshesCachedPendingChecksThroughDetailDrain(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4343,
+		Key:           platform.RepositoryIDKey(4343),
 		DefaultBranch: "main",
 	}
 	provider := &serverfake.ApiTestGitLabProvider{
@@ -2135,19 +2135,19 @@ func TestAPIListPullsAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	ctx := t.Context()
 
 	githubRepo, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1101,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1101),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	giteaRepo, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitea",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1102,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1102),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	serverfake.SeedPRForRepo(t, database, githubRepo, "github.com", "acme", "widget", 1)
@@ -2269,12 +2269,12 @@ func TestProviderPullRouteResolvesEscapedGitLabRepoPath(t *testing.T) {
 
 	repoPath := "Group/SubGroup/SubGroup 2/My_Project.v2"
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com:8443",
-		PlatformRepoID: 12000,
-		Owner:          "Group/SubGroup/SubGroup 2",
-		Name:           "My_Project.v2",
-		RepoPath:       repoPath,
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com:8443",
+		Key:          platform.RepositoryIDKey(12000),
+		Owner:        "Group/SubGroup/SubGroup 2",
+		Name:         "My_Project.v2",
+		RepoPath:     repoPath,
 	})
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -2646,7 +2646,7 @@ func TestAPIGetFilesAndDiffMarkGeneratedFilesE2E(t *testing.T) {
 	bareDir := filepath.Join(dir, "clones")
 	clones := gitclone.New(bareDir, nil)
 	bare, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, testutil.FixtureRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)
@@ -3020,7 +3020,7 @@ func TestAPIGetDiff_RootCommit(t *testing.T) {
 	require.NoError(os.MkdirAll(bareDir, 0o755))
 	clones := gitclone.New(bareDir, nil)
 	bare, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), testutil.FixtureRepoID("acme", "rootrepo")),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "rootrepo"))}),
 		"github", "github.com", "acme", "rootrepo",
 	)
 	require.NoError(err)
@@ -3279,7 +3279,7 @@ func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -3318,15 +3318,15 @@ func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{{
-			Platform:       platform.KindGitLab,
-			Owner:          "group",
-			Name:           "project",
-			PlatformHost:   "gitlab.example.com",
-			RepoPath:       "group/project",
-			PlatformRepoID: 4242,
-			WebURL:         "https://gitlab.example.com/group/project",
-			CloneURL:       repoRef.CloneURL,
-			DefaultBranch:  "main",
+			Platform:      platform.KindGitLab,
+			Owner:         "group",
+			Name:          "project",
+			PlatformHost:  "gitlab.example.com",
+			RepoPath:      "group/project",
+			Key:           platform.RepositoryIDKey(4242),
+			WebURL:        "https://gitlab.example.com/group/project",
+			CloneURL:      repoRef.CloneURL,
+			DefaultBranch: "main",
 		}}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)

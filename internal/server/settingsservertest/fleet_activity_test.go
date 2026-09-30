@@ -8,11 +8,12 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/platform"
 )
 
 func TestFleetActivityWorkspaceMatching(t *testing.T) {
 	repo := itemapi.ActivityRepoRefResponse{
-		Provider: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: 42,
+		Provider: "gitlab", PlatformHost: "git.example.test", Key: platform.RepositoryIDKey(42),
 		Owner: "acme", Name: "renamed",
 	}
 	workspace := fleet.WorkspaceSummary{
@@ -20,7 +21,7 @@ func TestFleetActivityWorkspaceMatching(t *testing.T) {
 		SourceItemVisible: true, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
 		AssociatedPRNumber: new(8),
 		Repo: fleet.WorkspaceRepositorySummary{
-			Provider: repo.Provider, PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformRepoID,
+			Provider: repo.Provider, PlatformHost: repo.PlatformHost, Key: repo.Key,
 			Owner: "acme", Name: "original",
 		},
 	}
@@ -39,9 +40,9 @@ func TestFleetActivityWorkspaceMatching(t *testing.T) {
 		{"different item type", repo, "pr", 7, nil, nil},
 		{"different number", repo, "issue", 9, nil, nil},
 		{"local takes precedence", repo, "issue", 7, local, local},
-		{"reused route", itemapi.ActivityRepoRefResponse{Provider: repo.Provider, PlatformHost: repo.PlatformHost, PlatformRepoID: 43, Owner: repo.Owner, Name: repo.Name}, "issue", 7, nil, nil},
-		{"different provider", itemapi.ActivityRepoRefResponse{Provider: "gitea", PlatformHost: repo.PlatformHost, PlatformRepoID: 42}, "issue", 7, nil, nil},
-		{"different host", itemapi.ActivityRepoRefResponse{Provider: repo.Provider, PlatformHost: "other.example.test", PlatformRepoID: 42}, "issue", 7, nil, nil},
+		{"reused route", itemapi.ActivityRepoRefResponse{Provider: repo.Provider, PlatformHost: repo.PlatformHost, Key: platform.RepositoryIDKey(43), Owner: repo.Owner, Name: repo.Name}, "issue", 7, nil, nil},
+		{"different provider", itemapi.ActivityRepoRefResponse{Provider: "gitea", PlatformHost: repo.PlatformHost, Key: platform.RepositoryIDKey(42)}, "issue", 7, nil, nil},
+		{"different host", itemapi.ActivityRepoRefResponse{Provider: repo.Provider, PlatformHost: "other.example.test", Key: platform.RepositoryIDKey(42)}, "issue", 7, nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response := itemapi.ActivityResponse{

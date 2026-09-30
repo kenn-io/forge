@@ -31,12 +31,12 @@ func TestGetRepositoryWithPinnedIDFetchesByIDAndReturnsRenamedRoute(t *testing.T
 
 	repo, err := client.GetRepository(t.Context(), platform.RepoRef{
 		Platform: platform.KindGitea, Host: "gitea.example.com",
-		Owner: "old-owner", Name: "old-name", PlatformID: 1001,
+		Owner: "old-owner", Name: "old-name", Key: platform.RepositoryIDKey(1001),
 	})
 	require.NoError(err)
 
 	assert.Equal([]string{"/api/v1/repositories/1001"}, paths)
 	assert.Equal("new-owner", repo.Ref.Owner)
 	assert.Equal("new-name", repo.Ref.Name)
-	assert.Equal(int64(1001), repo.Ref.PlatformID)
+	assert.Equal(platform.RepositoryIDKey(1001), repo.Ref.Key)
 }

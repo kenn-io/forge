@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"uuid"
 
 	"go.kenn.io/forge/platform"
 )
@@ -36,11 +35,11 @@ func (e RepositoryCatalogEntry) ActiveRepo() (*ActiveRepo, error) {
 }
 
 type RepositoryCatalogFilter struct {
-	Platform       string
-	PlatformHost   string
-	PlatformRepoID int64
-	RepoPath       string
-	Lifecycle      RepositoryLifecycleState
+	Platform     string
+	PlatformHost string
+	RepoKey      platform.RepositoryKey
+	RepoPath     string
+	Lifecycle    RepositoryLifecycleState
 }
 
 // PullDiffProviderSnapshot binds a repository to the complete set of pull SHA
@@ -66,12 +65,8 @@ func providerIdentityMatch(alias string, identity platform.RepositoryIdentity) (
 		prefix = alias + "."
 	}
 	args := []any{canonicalRepoPlatform(identity.Provider), identity.PlatformHost}
-	if identity.BitbucketRepositoryUUID != uuid.Nil() {
-		return prefix + "platform = ? AND " + prefix + "platform_host = ? AND " + prefix + "bitbucket_repository_uuid = ?",
-			append(args, identity.BitbucketRepositoryUUID.String())
-	}
-	return prefix + "platform = ? AND " + prefix + "platform_host = ? AND " + prefix + "platform_repo_id = ?",
-		append(args, identity.PlatformRepoID)
+	return prefix + "platform = ? AND " + prefix + "platform_host = ? AND " +
+		repositoryKeyCondition(alias, identity.Key, &args), args
 }
 
 func validateRepositoryObservation(identity RepoIdentity) error {
@@ -202,7 +197,7 @@ func (d *DB) ListRepositoryCatalog(
 	filter.Platform = strings.TrimSpace(filter.Platform)
 	filter.PlatformHost = strings.TrimSpace(filter.PlatformHost)
 	filter.RepoPath = strings.TrimSpace(filter.RepoPath)
-	if filter.PlatformRepoID != 0 &&
+	if !filter.RepoKey.IsZero() &&
 		(filter.Platform == "" || filter.PlatformHost == "") {
 		return nil, errors.New(
 			"repository provider id filter requires platform and host",
@@ -226,9 +221,8 @@ func (d *DB) ListRepositoryCatalog(
 		clauses = append(clauses, `r.platform_host = ?`)
 		args = append(args, strings.ToLower(filter.PlatformHost))
 	}
-	if filter.PlatformRepoID != 0 {
-		clauses = append(clauses, `r.platform_repo_id = ?`)
-		args = append(args, filter.PlatformRepoID)
+	if !filter.RepoKey.IsZero() {
+		clauses = append(clauses, repositoryKeyCondition("r", filter.RepoKey, &args))
 	}
 	if filter.RepoPath != "" {
 		clauses = append(clauses, `r.repo_path_key = ?`)
@@ -331,7 +325,7 @@ func (d *DB) ObserveRepository(
 				}
 			}
 		}
-		uuidText := bitbucketRepositoryUUIDText(observed.BitbucketRepositoryUUID)
+		keyID, keyUUID := repositoryKeyArgs(observed.Key)
 		insert := `
 			INSERT INTO forge_repos (
 				platform, platform_host, platform_repo_id,
@@ -350,7 +344,7 @@ func (d *DB) ObserveRepository(
 				name_key = excluded.name_key,
 				repo_path_key = excluded.repo_path_key,
 				lifecycle_state = 'active'`
-		if uuidText != "" {
+		if observed.Key.IsUUID() {
 			insert = `
 			INSERT INTO forge_repos (
 				platform, platform_host, platform_repo_id,
@@ -371,8 +365,7 @@ func (d *DB) ObserveRepository(
 				lifecycle_state = 'active'`
 		}
 		_, err = tx.ExecContext(ctx, insert,
-			observed.Platform, observed.PlatformHost, observed.PlatformRepoID,
-			uuidText,
+			observed.Platform, observed.PlatformHost, keyID, keyUUID,
 			observed.Owner, observed.Name, observed.RepoPath,
 			observed.OwnerKey, observed.NameKey, observed.RepoPathKey,
 		)
@@ -399,17 +392,13 @@ func (d *DB) ObserveRepository(
 func activeRouteOccupantsTx(
 	ctx context.Context, tx *sql.Tx, observed RepoIdentity,
 ) ([]int64, error) {
+	occupantArgs := []any{observed.Platform, observed.PlatformHost, observed.RepoPathKey}
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id FROM forge_repos
 		WHERE lifecycle_state = 'active'
 		  AND platform = ? AND platform_host = ? AND repo_path_key = ?
-		  AND NOT (
-		    (platform_repo_id > 0 AND platform_repo_id = ?)
-		    OR (bitbucket_repository_uuid <> '' AND bitbucket_repository_uuid = ?)
-		  )`,
-		observed.Platform, observed.PlatformHost, observed.RepoPathKey,
-		observed.PlatformRepoID,
-		bitbucketRepositoryUUIDText(observed.BitbucketRepositoryUUID),
+		  AND NOT (`+repositoryKeyCondition("", observed.Key, &occupantArgs)+`)`,
+		occupantArgs...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find route occupant: %w", err)
@@ -595,7 +584,7 @@ func (d *DB) CompleteGitHubRepositoryConversion(
 		}
 		// Migration 60 zeroed the node IDs launch specifications embedded;
 		// the workspace's repository row says which ones this ID replaces.
-		for _, path := range []string{"$.repository.platform_repo_id", "$.pull.base_repo_id"} {
+		for _, path := range []string{"$.repository.platform_repo_id"} {
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE forge_workspace_launch_specs
 				SET spec_json = json_set(spec_json, '`+path+`', ?)
@@ -777,12 +766,12 @@ func scanRepositoryCatalogEntry(
 	entry *RepositoryCatalogEntry,
 ) error {
 	r := &entry.Repository
+	keyID, keyUUID := repositoryKeyColumns(&r.Key)
 	if err := scanner.Scan(
 		&r.ID,
 		&r.Platform,
 		&r.PlatformHost,
-		&r.PlatformRepoID,
-		bitbucketUUIDScanner{&r.BitbucketRepositoryUUID},
+		keyID, keyUUID,
 		&r.Owner,
 		&r.Name,
 		&r.RepoPath,

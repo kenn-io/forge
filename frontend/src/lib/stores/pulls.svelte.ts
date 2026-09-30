@@ -26,6 +26,7 @@ import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter
 import { repoIdentityKey } from "../utils/repo-label.js";
 
 import { groupPullStacks, type PullSidebarRow } from "../utils/pull-stack-tree.js";
+import { repositoryKeyFromWire } from "../api/repository-key.js";
 
 export type { FetchPullResult } from "./pulls-workflow.js";
 
@@ -169,7 +170,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return repoIdentityKey({
       provider: pr.repo.provider,
       platformHost: pr.repo.platform_host,
-      platformRepoId: pr.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(pr.repo),
       owner: pr.repo.owner,
       name: pr.repo.name,
       repoPath: pr.repo.repo_path,

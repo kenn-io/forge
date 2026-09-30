@@ -52,12 +52,12 @@ func setupGitHubHeadPinServerWithDiff(
 
 	database := dbtest.Open(t)
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 

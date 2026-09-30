@@ -171,23 +171,23 @@ func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.
 	require.NoError(err)
 	database := dbtest.Open(t)
 	_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       string(platform.KindForgejo),
-		PlatformHost:   platform.DefaultForgejoHost,
-		PlatformRepoID: 1,
-		Owner:          "owner",
-		Name:           "repo",
-		RepoPath:       "owner/repo",
+		Platform:     string(platform.KindForgejo),
+		PlatformHost: platform.DefaultForgejoHost,
+		Key:          platform.RepositoryIDKey(1),
+		Owner:        "owner",
+		Name:         "repo",
+		RepoPath:     "owner/repo",
 	})
 	require.NoError(err)
 	clones := gitclone.New(t.TempDir(), nil)
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindForgejo,
-		PlatformHost:   platform.DefaultForgejoHost,
-		PlatformRepoID: 1,
-		Owner:          "owner",
-		Name:           "repo",
-		RepoPath:       "owner/repo",
-		CloneURL:       origin,
+		Platform:     platform.KindForgejo,
+		PlatformHost: platform.DefaultForgejoHost,
+		Key:          platform.RepositoryIDKey(1),
+		Owner:        "owner",
+		Name:         "repo",
+		RepoPath:     "owner/repo",
+		CloneURL:     origin,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, clones, []ghclient.RepoRef{repo}, time.Minute, nil, nil,

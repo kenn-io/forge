@@ -54,7 +54,7 @@ func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
 
 	fixture := setupWorkspaceServerFixture(t, nil)
 	replacementBare, err := fixture.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: 2002}),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(2002)}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)
@@ -71,11 +71,11 @@ func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
 	current, err := fixture.database.ObserveRepository(
 		t.Context(),
 		db.RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: 2002,
-			Owner:          "acme",
-			Name:           "widget",
+			Platform:     "github",
+			PlatformHost: "github.com",
+			Key:          platform.RepositoryIDKey(2002),
+			Owner:        "acme",
+			Name:         "widget",
 		},
 	)
 	require.NoError(err)
@@ -123,7 +123,7 @@ func TestCreateAdHocWorkspaceFollowsCachedRepositoryRename(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
 	_, err := fixture.database.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 3609862021,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(3609862021),
 		Owner: "acme", Name: "widgets",
 	})
 	require.NoError(err)
@@ -131,7 +131,7 @@ func TestCreateAdHocWorkspaceFollowsCachedRepositoryRename(t *testing.T) {
 		CloneURL: "https://github.com/acme/widgets.git", DefaultBranch: "main",
 	}, nil, nil))
 	renamedBare, err := fixture.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: 3609862021}), "github", "github.com", "acme", "widgets",
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(3609862021)}), "github", "github.com", "acme", "widgets",
 	)
 	require.NoError(err)
 	gitfixture.Run(t, t.TempDir(), "clone", "--bare", fixture.remote, renamedBare)
@@ -164,7 +164,7 @@ func TestCreateAdHocWorkspaceFollowsCachedRepositoryRename(t *testing.T) {
 
 	// Displacing the original from its new route makes its stable ID inactive.
 	_, err = fixture.database.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(2002),
 		Owner: "acme", Name: "widgets",
 	})
 	require.NoError(err)
@@ -214,6 +214,9 @@ func TestCreateAdHocWorkspaceReusesWorkspaceForSameBranch(t *testing.T) {
 	require.NotNil(second.JSON202)
 	assert.Equal(first.JSON202.ID, second.JSON202.ID)
 	assert.Nil(second.JSON202.Created)
+	// Let background setup finish its clone before cleanup removes the
+	// clone directory out from under it.
+	waitForWorkspaceReady(t, t.Context(), fixture.client, first.JSON202.ID)
 
 	listResp, err := fixture.client.HTTP.ListWorkspacesWithResponse(t.Context())
 	require.NoError(err)

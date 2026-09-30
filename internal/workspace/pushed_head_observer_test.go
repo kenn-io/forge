@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 )
 
 type fakeRemoteHeadReader struct {
@@ -196,7 +197,7 @@ func TestLaunchSpecPushedHeadObserverUsesHubCandidatesWithoutProviderItemRows(
 			Version: WorkspaceLaunchSpecVersion,
 			Repository: WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: testRepoID("acme", "widget"), Owner: "acme", Name: "widget",
+				Key: platform.RepositoryIDKey(testRepoID("acme", "widget")), Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,

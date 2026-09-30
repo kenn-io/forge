@@ -227,7 +227,7 @@ func seedServerWorkspaceLaunchSpec(
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: repo.Platform, PlatformHost: repo.PlatformHost,
-			PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
+			Key: repo.Key, Owner: repo.Owner, Name: repo.Name,
 			CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch,
 		},
 		ItemType: ws.ItemType, ItemNumber: ws.ItemNumber,

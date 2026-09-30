@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 func TestMCPToolsUseTheInProcessForgeBackend(t *testing.T) {
@@ -363,7 +364,7 @@ func callTool[T any](t *testing.T, session *mcp.ClientSession, name string, args
 func seedPull(t *testing.T, database *db.DB, number int, title string) (int64, int64) {
 	t.Helper()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widgets")
+	identity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widgets"))
 	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -382,7 +383,7 @@ func seedPull(t *testing.T, database *db.DB, number int, title string) (int64, i
 func seedIssue(t *testing.T, database *db.DB, number int, title string) int64 {
 	t.Helper()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widgets")
+	identity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widgets"))
 	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)

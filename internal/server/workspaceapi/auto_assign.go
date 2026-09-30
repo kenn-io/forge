@@ -138,7 +138,7 @@ func (s *Handler) AutoAssignProviderWorkspaceItem(
 	}
 	repo, err := s.db.GetActiveRepoByProviderID(ctx, platform.RepositoryIdentity{
 		Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost,
-		PlatformRepoID: request.PlatformRepoID,
+		Key: request.RepoKey,
 	})
 	if err != nil {
 		return providerRouteLookupError(err)

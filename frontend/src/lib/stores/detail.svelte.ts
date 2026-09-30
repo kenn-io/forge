@@ -53,6 +53,13 @@ import {
 } from "./ordered-mutations.js";
 import { normalizeKanbanStatus } from "./workflow.svelte.js";
 import { createRecentDetails } from "./recent-details.js";
+import {
+  repositoryKeyAllows,
+  repositoryKeyFromWire,
+  repositoryKeyString,
+  sameRepositoryKey,
+  type RepositoryKey,
+} from "../api/repository-key.js";
 
 export type DetailSyncMode = boolean | "background";
 
@@ -61,7 +68,7 @@ export interface DetailRequestOptions {
   workflowApprovalSync?: boolean;
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: number | undefined;
+  repositoryKey?: RepositoryKey | undefined;
   repoPath: string;
 }
 
@@ -71,7 +78,7 @@ type DetailRequestRef = {
   number: number;
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: number | undefined;
+  repositoryKey?: RepositoryKey | undefined;
   repoPath: string;
 };
 
@@ -255,7 +262,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   type UnsavedTarget = {
     provider: string;
     platformHost: string | undefined;
-    platformRepoId: number | undefined;
+    repositoryKey: RepositoryKey | undefined;
     owner: string;
     name: string;
     number: number;
@@ -342,7 +349,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         number: ref.number,
       }),
       ref.repoPath,
-      ref.platformRepoId ?? null,
+      ref.repositoryKey ? repositoryKeyString(ref.repositoryKey) : null,
     ]);
   }
 
@@ -358,7 +365,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       number,
       provider: options.provider,
       platformHost: options.platformHost,
-      platformRepoId: options.platformRepoId,
+      repositoryKey: options.repositoryKey,
       repoPath: options.repoPath,
     };
   }
@@ -386,7 +393,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
     ) {
       return next;
     }
-    if (!unsavedLocalBody.platformRepoId || unsavedLocalBody.platformRepoId !== next.repo.platform_repo_id) {
+    if (
+      !unsavedLocalBody.repositoryKey ||
+      !sameRepositoryKey(unsavedLocalBody.repositoryKey, repositoryKeyFromWire(next.repo))
+    ) {
       unsavedLocalBody = null;
       return next;
     }
@@ -409,7 +419,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   function withHiddenDeletedComments(next: PullDetail): PullDetail {
     if (Object.keys(hiddenDeletedCommentIDs).length === 0) return next;
     const key = prKey({
-      platformRepoId: next.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(next.repo),
       repoPath: next.repo.repo_path,
       provider: next.repo.provider,
       platformHost: resolvedPlatformHost(next.repo.provider, next.repo.platform_host),
@@ -477,7 +487,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       detail.merge_request.Number === ref.number &&
       sameBodyTarget(detail.repo?.provider, detail.repo?.platform_host, ref.provider, ref.platformHost) &&
       detail.repo?.repo_path === ref.repoPath &&
-      (!ref.platformRepoId || detail.repo?.platform_repo_id === ref.platformRepoId)
+      repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(detail.repo))
     );
   }
 
@@ -488,7 +498,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return detailRequestRef(owner, name, number, {
       provider: detail.repo.provider,
       platformHost: detail.repo.platform_host,
-      platformRepoId: detail.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(detail.repo),
       repoPath: detail.repo.repo_path,
     });
   }
@@ -563,7 +573,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function rebasePullMutations(ref: DetailRequestRef, authoritative: PullDetail, installEnvelope: () => boolean) {
-    if (ref.platformRepoId && authoritative.repo.platform_repo_id !== ref.platformRepoId) return Effect.succeed(false);
+    if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo)))
+      return Effect.succeed(false);
     return Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
       const labels = authoritative.merge_request.labels ?? [];
@@ -836,12 +847,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function mergeKey(ref: ProviderRouteRef, number: number): string | undefined {
-    const platformRepoId = ref.platformRepoId;
-    if (!platformRepoId || platformRepoId <= 0) return undefined;
+    const repositoryKey = ref.repositoryKey;
+    if (!repositoryKey) return undefined;
     return JSON.stringify([
       canonicalProvider(ref.provider),
       resolvedPlatformHost(ref.provider, ref.platformHost),
-      platformRepoId,
+      repositoryKeyString(repositoryKey),
       number,
     ]);
   }
@@ -954,8 +965,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
   function applyDetailAvailability(next: PullDetail): void {
     const sameItem =
       detail !== null &&
-      !!next.repo.platform_repo_id &&
-      detail.repo.platform_repo_id === next.repo.platform_repo_id &&
+      !!repositoryKeyFromWire(next.repo) &&
+      sameRepositoryKey(repositoryKeyFromWire(detail.repo), repositoryKeyFromWire(next.repo)) &&
       detail.repo.provider === next.repo.provider &&
       detail.repo.platform_host === next.repo.platform_host &&
       detail.merge_request.Number === next.merge_request.Number;
@@ -1014,9 +1025,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
   function rememberDetail(): void {
     if (!detail) return;
     const ref = currentDetailRef(detail.repo_owner, detail.repo_name, detail.merge_request.Number);
-    if (!ref.platformRepoId) return;
-    if (activeSelectionKey !== prKey(ref) && activeSelectionKey !== prKey({ ...ref, platformRepoId: undefined }))
-      return;
+    if (!ref.repositoryKey) return;
+    if (activeSelectionKey !== prKey(ref) && activeSelectionKey !== prKey({ ...ref, repositoryKey: undefined })) return;
     recentDetails.remember(JSON.stringify([prKey(ref), ref.repoPath]), {
       detail,
       envelopeTick: detailEnvelopeTick,
@@ -1076,7 +1086,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const key = prKey(requestRef);
     if (activeSelectionKey !== key) {
       rememberDetail();
-      const previous = requestRef.platformRepoId
+      const previous = requestRef.repositoryKey
         ? recentDetails.get(JSON.stringify([key, requestRef.repoPath]))
         : undefined;
       detailCacheTick = previous ? nextWorkspaceLifecycleTick() : 0;
@@ -1085,7 +1095,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         detail = previous.detail;
         detailEnvelopeTick = previous.envelopeTick;
         detailLoaded = previous.loaded;
-      } else if (isDetailShowingRef({ ...requestRef, platformRepoId: undefined })) {
+      } else if (isDetailShowingRef({ ...requestRef, repositoryKey: undefined })) {
         detail = null;
         detailLoaded = false;
         unsavedLocalBody = null;
@@ -1311,10 +1321,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
   function refreshRequest(owner: string, name: string, number: number, identity: DetailRequestOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
     if (!isDetailShowingRef(ref)) return { ref, key: prKey(ref) };
-    const verified = { ...ref, platformRepoId: ref.platformRepoId ?? detail?.repo.platform_repo_id };
+    const verified = { ...ref, repositoryKey: ref.repositoryKey ?? repositoryKeyFromWire(detail?.repo) };
     const verifiedKey = prKey(verified);
     if (activeSelectionKey === verifiedKey) return { ref: verified, key: verifiedKey };
-    const routeKey = prKey({ ...verified, platformRepoId: undefined });
+    const routeKey = prKey({ ...verified, repositoryKey: undefined });
     // A mutation can know the repository ID even when the selection began from a direct URL.
     // Keep the original selection key without dropping the mutation's verified ID.
     return { ref, key: activeSelectionKey === routeKey ? routeKey : prKey(ref) };
@@ -1911,7 +1921,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
   ): PreparedPRContentUpdate | undefined {
     const requestedRef = detailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
     const visibleDetail = isDetailShowingRef(requestedRef) ? detail : null;
-    const ref = visibleDetail ? { ...requestedRef, platformRepoId: visibleDetail.repo.platform_repo_id } : requestedRef;
+    const ref = visibleDetail
+      ? { ...requestedRef, repositoryKey: repositoryKeyFromWire(visibleDetail.repo) }
+      : requestedRef;
     if (requireVisible && visibleDetail === null) return undefined;
     const baseline: PRContentProjection = {
       ...(fields.title !== undefined && { title: visibleDetail?.merge_request.Title ?? fields.title }),
@@ -1925,7 +1937,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         const projectedBody =
           projection.body !== undefined &&
           unsavedLocalBody !== null &&
-          unsavedLocalBody.platformRepoId === ref.platformRepoId &&
+          sameRepositoryKey(unsavedLocalBody.repositoryKey, ref.repositoryKey) &&
           sameBodyTarget(unsavedLocalBody.provider, unsavedLocalBody.platformHost, ref.provider, ref.platformHost) &&
           unsavedLocalBody.owner === ref.owner &&
           unsavedLocalBody.name === ref.name &&
@@ -1970,8 +1982,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
                 fields.body !== undefined &&
                 unsavedLocalBody !== null &&
                 unsavedLocalBody.body === fields.body &&
-                unsavedLocalBody.platformRepoId === ref.platformRepoId &&
-                unsavedLocalBody.platformRepoId === response.repo.platform_repo_id &&
+                sameRepositoryKey(unsavedLocalBody.repositoryKey, ref.repositoryKey) &&
+                sameRepositoryKey(unsavedLocalBody.repositoryKey, repositoryKeyFromWire(response.repo)) &&
                 sameBodyTarget(
                   unsavedLocalBody.provider,
                   unsavedLocalBody.platformHost,
@@ -2067,7 +2079,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         : Effect.gen(function* () {
             if (
               unsavedLocalBody !== null &&
-              unsavedLocalBody.platformRepoId === update.ref.platformRepoId &&
+              sameRepositoryKey(unsavedLocalBody.repositoryKey, update.ref.repositoryKey) &&
               sameBodyTarget(
                 unsavedLocalBody.provider,
                 unsavedLocalBody.platformHost,
@@ -2139,7 +2151,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     unsavedLocalBody = {
       provider,
       platformHost,
-      platformRepoId: detail.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(detail.repo),
       owner,
       name,
       number,

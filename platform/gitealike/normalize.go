@@ -31,7 +31,7 @@ func NormalizeRepository(
 		Owner:         owner,
 		Name:          name,
 		RepoPath:      repoPath,
-		PlatformID:    repo.ID,
+		Key:           platform.RepositoryIDKey(repo.ID),
 		WebURL:        repo.HTMLURL,
 		CloneURL:      repo.CloneURL,
 		DefaultBranch: repo.DefaultBranch,

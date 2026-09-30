@@ -110,7 +110,7 @@ describe("MobileWorkspaceList", () => {
     const ref = {
       provider: "github",
       platformHost: "github.com",
-      platformRepoId: 7101,
+      repositoryKey: { kind: "id", id: 7101 },
       owner: "acme",
       name: "renamed-widgets",
       repoPath: "acme/renamed-widgets",

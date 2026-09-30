@@ -71,7 +71,7 @@ func syncTestClonePath(
 ) string {
 	t.Helper()
 	path, err := mgr.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testRepoID(owner, name)}),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testRepoID(owner, name))}),
 		"github", "github.com", owner, name,
 	)
 	require.NoError(t, err)
@@ -606,8 +606,8 @@ func TestIntegrationSyncClosedMROnProviderRepairsDiffFromStableIdentityClone(t *
 		map[string]Client{"github.com": client}, database, mgr,
 		[]RepoRef{{
 			Platform: platform.KindGitHub, PlatformHost: "github.com",
-			PlatformRepoID: testRepoID("owner", "repo"),
-			Owner:          "owner", Name: "repo", RepoPath: "owner/repo",
+			Key:   platform.RepositoryIDKey(testRepoID("owner", "repo")),
+			Owner: "owner", Name: "repo", RepoPath: "owner/repo",
 		}},
 		time.Minute, nil, testBudget(100),
 	)

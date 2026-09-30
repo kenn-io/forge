@@ -305,7 +305,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 		Owner:         "Group/SubGroup",
 		Name:          "Project.Special",
 		RepoPath:      "Group/SubGroup/Project.Special",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com:8443/Group/SubGroup/Project.Special",
 		CloneURL:      "https://gitlab.example.com:8443/Group/SubGroup/Project.Special.git",
 		DefaultBranch: "main",
@@ -422,15 +422,15 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          ref.Owner,
-		Name:           ref.Name,
-		PlatformHost:   ref.Host,
-		RepoPath:       ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
-		WebURL:         ref.WebURL,
-		CloneURL:       ref.CloneURL,
-		DefaultBranch:  ref.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		Owner:         ref.Owner,
+		Name:          ref.Name,
+		PlatformHost:  ref.Host,
+		RepoPath:      ref.RepoPath,
+		Key:           ref.Key,
+		WebURL:        ref.WebURL,
+		CloneURL:      ref.CloneURL,
+		DefaultBranch: ref.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -645,7 +645,7 @@ func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    7301,
+		Key:           platform.RepositoryIDKey(7301),
 		CloneURL:      remote,
 		DefaultBranch: "main",
 	}
@@ -653,14 +653,14 @@ func TestAPIListActivityReflectsConfiguredDefaultBranchCommitCap(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	tracked := []ghclient.RepoRef{{
-		Platform:       platform.KindGitLab,
-		PlatformHost:   repoRef.Host,
-		Owner:          repoRef.Owner,
-		Name:           repoRef.Name,
-		RepoPath:       repoRef.RepoPath,
-		PlatformRepoID: repoRef.PlatformID,
-		CloneURL:       repoRef.CloneURL,
-		DefaultBranch:  repoRef.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		PlatformHost:  repoRef.Host,
+		Owner:         repoRef.Owner,
+		Name:          repoRef.Name,
+		RepoPath:      repoRef.RepoPath,
+		Key:           repoRef.Key,
+		CloneURL:      repoRef.CloneURL,
+		DefaultBranch: repoRef.DefaultBranch,
 	}}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, clones, tracked, time.Minute, nil, nil,
@@ -727,33 +727,33 @@ func TestAPIListActivityReturnsProviderCompareURLsForDefaultBranchForcePushes(t 
 		{
 			name: "forgejo",
 			identity: db.RepoIdentity{
-				Platform:       "forgejo",
-				PlatformHost:   "codeberg.org",
-				PlatformRepoID: 1103,
-				Owner:          "acme",
-				Name:           "forgejo-widget",
+				Platform:     "forgejo",
+				PlatformHost: "codeberg.org",
+				Key:          platform.RepositoryIDKey(1103),
+				Owner:        "acme",
+				Name:         "forgejo-widget",
 			},
 			wantURL: "https://codeberg.org/acme/forgejo-widget/compare/" + beforeSHA + "..." + afterSHA,
 		},
 		{
 			name: "gitea",
 			identity: db.RepoIdentity{
-				Platform:       "gitea",
-				PlatformHost:   "gitea.com",
-				PlatformRepoID: 1102,
-				Owner:          "acme",
-				Name:           "gitea-widget",
+				Platform:     "gitea",
+				PlatformHost: "gitea.com",
+				Key:          platform.RepositoryIDKey(1102),
+				Owner:        "acme",
+				Name:         "gitea-widget",
 			},
 			wantURL: "https://gitea.com/acme/gitea-widget/compare/" + beforeSHA + "..." + afterSHA,
 		},
 		{
 			name: "gitlab",
 			identity: db.RepoIdentity{
-				Platform:       "gitlab",
-				PlatformHost:   "gitlab.com",
-				PlatformRepoID: 1104,
-				Owner:          "acme/platform",
-				Name:           "gitlab-widget",
+				Platform:     "gitlab",
+				PlatformHost: "gitlab.com",
+				Key:          platform.RepositoryIDKey(1104),
+				Owner:        "acme/platform",
+				Name:         "gitlab-widget",
 			},
 			wantURL: "https://gitlab.com/acme/platform/gitlab-widget/-/compare/" + beforeSHA + "..." + afterSHA,
 		},
@@ -853,19 +853,19 @@ func TestAPIListActivityAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	ctx := t.Context()
 
 	githubRepo, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1101,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1101),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	giteaRepo, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitea",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1102,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1102),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	serverfake.SeedPRForRepo(t, database, githubRepo, "github.com", "acme", "widget", 1)
@@ -896,11 +896,11 @@ func TestAPIListActivityKeepsProviderNamedHostsProviderQualified(t *testing.T) {
 	ctx := t.Context()
 
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "gitea",
-		PlatformRepoID: 1101,
-		Owner:          "acme/team",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "gitea",
+		Key:          platform.RepositoryIDKey(1101),
+		Owner:        "acme/team",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	serverfake.SeedPRForRepo(t, database, repoID, "gitea", "acme/team", "widget", 1)

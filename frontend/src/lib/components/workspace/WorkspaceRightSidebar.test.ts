@@ -244,7 +244,7 @@ describe("WorkspaceRightSidebar", () => {
         worktreePath: "/tmp/worktrees/ws-a",
         provider: "github",
         platformHost: "github.com",
-        platformRepoId: 1001,
+        repositoryKey: { kind: "id", id: 1001 },
         repoOwner: "acme",
         repoName: "widgets",
         repoPath: "acme/widgets",

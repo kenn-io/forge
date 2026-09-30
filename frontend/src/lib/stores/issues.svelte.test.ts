@@ -225,13 +225,14 @@ describe("createIssuesStore", () => {
     await loadIssueDetail(store, "acme", "widget", 7, {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1002,
+      repositoryKey: { kind: "id", id: 1002 },
       sync: false,
     });
     expect(store.getIssueDetail()).toBeNull();
   });
 
   it.each([1002, undefined])("does not restore an issue snapshot for repository %s", async (platformRepoId) => {
+    const repositoryKey = platformRepoId === undefined ? undefined : { kind: "id" as const, id: platformRepoId };
     const failedRead = Promise.withResolvers<{ error: { code: "forbidden"; detail: string } }>();
     const original = issueDetail();
     original.repo.platform_repo_id = 1001;
@@ -240,12 +241,12 @@ describe("createIssuesStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false,
     } as const;
     await loadIssueDetail(store, "acme", "widget", 7, options);
     store.clearIssueDetail();
-    store.loadIssueDetail("acme", "widget", 7, { ...options, platformRepoId });
+    store.loadIssueDetail("acme", "widget", 7, { ...options, repositoryKey });
     expect(store.getIssueDetail()).toBeNull();
     failedRead.resolve({ error: { code: "forbidden", detail: "Cannot refresh" } });
     await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
@@ -262,12 +263,12 @@ describe("createIssuesStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false,
     } as const;
     store.loadIssueDetail("acme", "widget", 7, options);
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
-    store.loadIssueDetail("acme", "widget", 7, { ...options, platformRepoId: 1002 });
+    store.loadIssueDetail("acme", "widget", 7, { ...options, repositoryKey: { kind: "id", id: 1002 } });
     oldRead.resolve({ data: original });
     await vi.waitFor(() => expect(store.isIssueDetailLoading()).toBe(false));
     expect(store.getIssueDetail()?.repo.platform_repo_id).toBe(1002);
@@ -285,7 +286,7 @@ describe("createIssuesStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false,
     } as const;
     await loadIssueDetail(store, "acme", "widget", 7, options);
@@ -326,7 +327,7 @@ describe("createIssuesStore", () => {
       owner: "acme",
       name: "widget",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
     };
     await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
     store.setLocalIssueBody("github", "github.com", "acme", "widget", 7, "local edit");

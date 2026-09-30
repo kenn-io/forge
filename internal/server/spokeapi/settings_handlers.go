@@ -144,9 +144,8 @@ func (s *SettingsResponse) ApplyProviderSettings(provider SettingsResponse) {
 	s.Repos = provider.Repos
 	for i := range s.Repos {
 		for _, local := range localRepos {
-			if s.Repos[i].PlatformRepoID != 0 &&
-				local.PlatformRepoID != 0 &&
-				s.Repos[i].PlatformRepoID == local.PlatformRepoID &&
+			if !s.Repos[i].Key.IsZero() &&
+				s.Repos[i].Key == local.Key &&
 				strings.EqualFold(s.Repos[i].Provider, local.Provider) &&
 				SamePlatformHost(s.Repos[i].PlatformHost, local.PlatformHost) {
 				s.Repos[i].WorktreeBasePath = local.WorktreeBasePath

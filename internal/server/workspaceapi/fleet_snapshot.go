@@ -70,8 +70,8 @@ func rawWorkspaceFromSummary(
 		ID: summary.ID,
 		Repository: fleet.RepositoryIdentity{
 			Provider: summary.Platform, PlatformHost: summary.PlatformHost,
-			PlatformRepoID: summary.RepoPlatformID,
-			Owner:          summary.RepoOwner, Name: summary.RepoName,
+			Key:   summary.RepoKey,
+			Owner: summary.RepoOwner, Name: summary.RepoName,
 		},
 		ItemType: summary.ItemType, ItemNumber: summary.ItemNumber,
 		SourceItemVisible: summary.SourceItemVisible,

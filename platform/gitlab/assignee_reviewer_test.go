@@ -50,7 +50,7 @@ func TestSetMergeRequestAssigneesResolvesAndCachesUserIDs(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(42)}
 
 	assignees, err := client.SetMergeRequestAssignees(t.Context(), ref, 7, []string{"alice", "bob"})
 	require.NoError(err)
@@ -88,7 +88,7 @@ func TestSetIssueAssigneesUpdatesAssigneeIDs(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(42)}
 
 	assignees, err := client.SetIssueAssignees(t.Context(), ref, 3, []string{"dana"})
 	require.NoError(err)
@@ -133,7 +133,7 @@ func TestRequestAndRemoveMergeRequestReviewersDiffAgainstCurrentSet(t *testing.T
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(42)}
 
 	requested, err := client.RequestMergeRequestReviewers(t.Context(), ref, 7, []string{"alice"})
 	require.NoError(err)
@@ -170,7 +170,7 @@ func TestRequestMergeRequestReviewersWithEmptyListReadsWithoutMutating(t *testin
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(42)}
 
 	// The ReviewerMutator contract treats an empty request as a read of
 	// the current requested-reviewer set.
@@ -198,7 +198,7 @@ func TestRequestMergeRequestReviewersSkipsUpdateWhenAlreadyRequested(t *testing.
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(42)}
 
 	requested, err := client.RequestMergeRequestReviewers(t.Context(), ref, 7, []string{"carol"})
 	require.NoError(t, err)
@@ -220,7 +220,7 @@ func TestLookupUserIDReturnsNotFoundForUnknownUsername(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(42)}
 
 	_, err := client.SetMergeRequestAssignees(t.Context(), ref, 7, []string{"ghost"})
 	var platformErr *platform.Error

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,7 +56,7 @@ func launchSpecForTest() WorkspaceLaunchSpec {
 		Version: WorkspaceLaunchSpecVersion,
 		Repository: WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1009, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1009), Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
@@ -75,8 +76,8 @@ func seedLaunchSpecRepository(
 	t.Helper()
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
-		PlatformRepoID: spec.Repository.PlatformRepoID,
-		Owner:          spec.Repository.Owner, Name: spec.Repository.Name,
+		Key:   spec.Repository.Key,
+		Owner: spec.Repository.Owner, Name: spec.Repository.Name,
 	})
 	require.NoError(t, err)
 	return repoID
@@ -95,7 +96,7 @@ func TestWorkspaceLaunchSpecValidatesHeadRepositorySemantics(t *testing.T) {
 		edit func(*WorkspaceLaunchSpec)
 	}{
 		{name: "wrong version", edit: func(spec *WorkspaceLaunchSpec) { spec.Version++ }},
-		{name: "missing stable repository id", edit: func(spec *WorkspaceLaunchSpec) { spec.Repository.PlatformRepoID = 0 }},
+		{name: "missing stable repository id", edit: func(spec *WorkspaceLaunchSpec) { spec.Repository.Key = platform.RepositoryKey{} }},
 		{name: "fork without clone url", edit: func(spec *WorkspaceLaunchSpec) { spec.Pull.HeadRepoKind = "fork" }},
 		{name: "same repository with clone url", edit: func(spec *WorkspaceLaunchSpec) { spec.Pull.HeadRepoCloneURL = "https://example.test/fork.git" }},
 		{name: "wrong lease", edit: func(spec *WorkspaceLaunchSpec) { spec.SourceVisibleUntil = spec.SourceVisibleUntil.Add(time.Second) }},
@@ -263,8 +264,8 @@ func TestRefreshWorkspaceLaunchSpecAdoptsVerifiedRepositoryRename(t *testing.T) 
 	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
-			PlatformRepoID: current.Repository.PlatformRepoID,
-			Owner:          current.Repository.Owner, Name: current.Repository.Name,
+			Key:   current.Repository.Key,
+			Owner: current.Repository.Owner, Name: current.Repository.Name,
 		},
 	)
 	require.NoError(err)
@@ -290,8 +291,8 @@ func TestRefreshWorkspaceLaunchSpecAdoptsVerifiedRepositoryRename(t *testing.T) 
 	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: refreshed.Repository.Provider, PlatformHost: refreshed.Repository.PlatformHost,
-			PlatformRepoID: refreshed.Repository.PlatformRepoID,
-			Owner:          refreshed.Repository.Owner, Name: refreshed.Repository.Name,
+			Key:   refreshed.Repository.Key,
+			Owner: refreshed.Repository.Owner, Name: refreshed.Repository.Name,
 		},
 	)
 	require.NoError(err)
@@ -333,8 +334,8 @@ func TestRequireWorkspaceLaunchSpecRefreshesVerifiedRepositoryRename(t *testing.
 			_, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
-					PlatformRepoID: current.Repository.PlatformRepoID,
-					Owner:          current.Repository.Owner, Name: current.Repository.Name,
+					Key:   current.Repository.Key,
+					Owner: current.Repository.Owner, Name: current.Repository.Name,
 				},
 			)
 			require.NoError(err)
@@ -364,8 +365,8 @@ func TestRequireWorkspaceLaunchSpecRefreshesVerifiedRepositoryRename(t *testing.
 			_, err = database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: refreshed.Repository.Provider, PlatformHost: refreshed.Repository.PlatformHost,
-					PlatformRepoID: refreshed.Repository.PlatformRepoID,
-					Owner:          refreshed.Repository.Owner, Name: refreshed.Repository.Name,
+					Key:   refreshed.Repository.Key,
+					Owner: refreshed.Repository.Owner, Name: refreshed.Repository.Name,
 				},
 			)
 			require.NoError(err)
@@ -397,8 +398,8 @@ func TestCreateFromLaunchSpecDedupesRenamedRepositoryByStableIdentity(t *testing
 	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
-			PlatformRepoID: original.Repository.PlatformRepoID,
-			Owner:          original.Repository.Owner, Name: original.Repository.Name,
+			Key:   original.Repository.Key,
+			Owner: original.Repository.Owner, Name: original.Repository.Name,
 		},
 	)
 	require.NoError(err)
@@ -419,8 +420,8 @@ func TestCreateFromLaunchSpecDedupesRenamedRepositoryByStableIdentity(t *testing
 	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: renamed.Repository.Provider, PlatformHost: renamed.Repository.PlatformHost,
-			PlatformRepoID: renamed.Repository.PlatformRepoID,
-			Owner:          renamed.Repository.Owner, Name: renamed.Repository.Name,
+			Key:   renamed.Repository.Key,
+			Owner: renamed.Repository.Owner, Name: renamed.Repository.Name,
 		},
 	)
 	require.NoError(err)
@@ -454,8 +455,8 @@ func TestProviderWorkspaceCreationKeepsDisplacedRouteOwner(t *testing.T) {
 			originalEntry, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
-					PlatformRepoID: original.Repository.PlatformRepoID,
-					Owner:          original.Repository.Owner, Name: original.Repository.Name,
+					Key:   original.Repository.Key,
+					Owner: original.Repository.Owner, Name: original.Repository.Name,
 				},
 			)
 			require.NoError(err)
@@ -476,20 +477,20 @@ func TestProviderWorkspaceCreationKeepsDisplacedRouteOwner(t *testing.T) {
 			_, err = database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
-					PlatformRepoID: original.Repository.PlatformRepoID,
-					Owner:          original.Repository.Owner, Name: "moved-away",
+					Key:   original.Repository.Key,
+					Owner: original.Repository.Owner, Name: "moved-away",
 				},
 			)
 			require.NoError(err)
 			replacement := original
-			replacement.Repository.PlatformRepoID = 1022
+			replacement.Repository.Key = platform.RepositoryIDKey(1022)
 			replacement.IssuedAt = original.IssuedAt.Add(time.Minute)
 			replacement.SourceVisibleUntil = replacement.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
 			replacementEntry, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: replacement.Repository.Provider, PlatformHost: replacement.Repository.PlatformHost,
-					PlatformRepoID: replacement.Repository.PlatformRepoID,
-					Owner:          replacement.Repository.Owner, Name: replacement.Repository.Name,
+					Key:   replacement.Repository.Key,
+					Owner: replacement.Repository.Owner, Name: replacement.Repository.Name,
 				},
 			)
 			require.NoError(err)
@@ -534,8 +535,8 @@ func TestRequireWorkspaceLaunchSpecRefreshesCurrentRouteAfterRepositoryRename(t 
 	entry, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
-			PlatformRepoID: original.Repository.PlatformRepoID,
-			Owner:          original.Repository.Owner, Name: original.Repository.Name,
+			Key:   original.Repository.Key,
+			Owner: original.Repository.Owner, Name: original.Repository.Name,
 		},
 	)
 	require.NoError(err)
@@ -555,8 +556,8 @@ func TestRequireWorkspaceLaunchSpecRefreshesCurrentRouteAfterRepositoryRename(t 
 	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: renamed.Repository.Provider, PlatformHost: renamed.Repository.PlatformHost,
-			PlatformRepoID: renamed.Repository.PlatformRepoID,
-			Owner:          renamed.Repository.Owner, Name: renamed.Repository.Name,
+			Key:   renamed.Repository.Key,
+			Owner: renamed.Repository.Owner, Name: renamed.Repository.Name,
 		},
 	)
 	require.NoError(err)
@@ -593,7 +594,7 @@ func TestProviderWorkspaceCreationAllowsCurrentRepositoryOnReusedRoute(t *testin
 			_, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
-					PlatformRepoID: 1001, Owner: spec.Repository.Owner,
+					Key: platform.RepositoryIDKey(1001), Owner: spec.Repository.Owner,
 					Name: spec.Repository.Name,
 				},
 			)
@@ -601,7 +602,7 @@ func TestProviderWorkspaceCreationAllowsCurrentRepositoryOnReusedRoute(t *testin
 			_, err = database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
-					PlatformRepoID: 1001, Owner: "acme",
+					Key: platform.RepositoryIDKey(1001), Owner: "acme",
 					Name: "moved-away",
 				},
 			)
@@ -609,7 +610,7 @@ func TestProviderWorkspaceCreationAllowsCurrentRepositoryOnReusedRoute(t *testin
 			current, err := database.ObserveRepository(
 				t.Context(), db.RepoIdentity{
 					Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
-					PlatformRepoID: spec.Repository.PlatformRepoID, Owner: spec.Repository.Owner,
+					Key: spec.Repository.Key, Owner: spec.Repository.Owner,
 					Name: spec.Repository.Name,
 				},
 			)
@@ -642,13 +643,13 @@ func TestRefreshWorkspaceLaunchSpecAcceptsVerifiedIdentityAtReusedRoute(t *testi
 	for _, identity := range []db.RepoIdentity{
 		{
 			Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
-			PlatformRepoID: current.Repository.PlatformRepoID,
-			Owner:          current.Repository.Owner, Name: current.Repository.Name,
+			Key:   current.Repository.Key,
+			Owner: current.Repository.Owner, Name: current.Repository.Name,
 		},
 		{
 			Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
-			PlatformRepoID: 1021,
-			Owner:          "acme", Name: "renamed-target",
+			Key:   platform.RepositoryIDKey(1021),
+			Owner: "acme", Name: "renamed-target",
 		},
 	} {
 		_, err := database.ObserveRepository(
@@ -671,8 +672,8 @@ func TestRefreshWorkspaceLaunchSpecAcceptsVerifiedIdentityAtReusedRoute(t *testi
 	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
-			PlatformRepoID: 1021,
-			Owner:          "acme", Name: "moved-away",
+			Key:   platform.RepositoryIDKey(1021),
+			Owner: "acme", Name: "moved-away",
 		},
 	)
 	require.NoError(err)
@@ -685,8 +686,8 @@ func TestRefreshWorkspaceLaunchSpecAcceptsVerifiedIdentityAtReusedRoute(t *testi
 	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: refreshed.Repository.Provider, PlatformHost: refreshed.Repository.PlatformHost,
-			PlatformRepoID: refreshed.Repository.PlatformRepoID,
-			Owner:          refreshed.Repository.Owner, Name: refreshed.Repository.Name,
+			Key:   refreshed.Repository.Key,
+			Owner: refreshed.Repository.Owner, Name: refreshed.Repository.Name,
 		},
 	)
 	require.NoError(err)

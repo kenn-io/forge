@@ -1,11 +1,21 @@
 import type { RepoPreset } from "../api/types.js";
 import type { RepoPresetRepository as GeneratedRepoPresetRepository } from "../api/generated/models/index.js";
+import {
+  repositoryKeyFromWire,
+  repositoryKeyToRequiredWire,
+  sameRepositoryKey,
+  type RepositoryKey,
+} from "../api/repository-key.js";
 import { parseRepoFilterValue, serializeRepoFilterValue } from "./filter.svelte.js";
 
 export type RepoPresetRepository = GeneratedRepoPresetRepository;
 
-export interface RepoPresetCatalogEntry extends RepoPresetRepository {
+export interface RepoPresetCatalogEntry {
   value: string;
+  provider: string;
+  platform_host: string;
+  repo_path: string;
+  repositoryKey: RepositoryKey | undefined;
 }
 
 function selectionKey(repos: readonly string[]): string {
@@ -33,11 +43,13 @@ export function projectRepoPresetSelection(
   availableRepos: readonly RepoPresetCatalogEntry[],
 ): string | undefined {
   const values = preset.repos.flatMap((repo) => {
+    const key = repositoryKeyFromWire(repo);
+    if (!key) return [];
     const match = availableRepos.find(
       (candidate) =>
         candidate.provider === repo.provider &&
         candidate.platform_host === repo.platform_host &&
-        candidate.platform_repo_id === repo.platform_repo_id,
+        sameRepositoryKey(candidate.repositoryKey, key),
     );
     return match ? [match.value] : [];
   });
@@ -51,13 +63,13 @@ export function repoPresetRepositoriesForSelection(
 ): RepoPresetRepository[] | undefined {
   const values = parseRepoFilterValue(selected);
   const repos = values.map((value) => availableRepos.find((repo) => repo.value === value));
-  if (repos.some((repo) => !repo?.platform_repo_id)) return undefined;
+  if (repos.some((repo) => !repo?.repositoryKey)) return undefined;
   return repos.map((repo) => {
-    if (!repo) throw new Error("repository catalog changed during preset save");
+    if (!repo?.repositoryKey) throw new Error("repository catalog changed during preset save");
     return {
       provider: repo.provider,
       platform_host: repo.platform_host,
-      platform_repo_id: repo.platform_repo_id,
+      ...repositoryKeyToRequiredWire(repo.repositoryKey),
       repo_path: repo.repo_path,
     };
   });

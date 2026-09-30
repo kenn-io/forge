@@ -18,9 +18,11 @@ require user authorization and are outside this MCP server's capabilities.
 Recommended flow:
 
 1. Call `kenn_forge_list_repos` first to discover valid repo filters,
-   `platform_repo_id` values (the provider's integer repository ID), and sync
-   freshness. Copy that integer ID into every later repository or item
-   reference; do not reconstruct references from routes.
+   repository keys, and sync freshness. The key is `platform_repo_id` (the
+   provider's integer repository ID), or `bitbucket_repository_uuid` for
+   Bitbucket Cloud repositories, which have no integer ID. Copy that key into
+   every later repository or item reference; do not reconstruct references
+   from routes.
 2. For all open PRs in a repository, use `kenn_forge_list_pull_contexts` with
    the repository filter. Use `kenn_forge_find_review_candidates` for recent PR
    and issue activity instead.
@@ -69,7 +71,8 @@ Repository-wide PR scans:
   A clean merge state or green review check alone does not prove approval,
   resolved bot findings, satisfied branch protection, or permission to merge.
 - When calling a single-item tool, copy only its declared identity fields:
-  `type`, `provider`, `platform_host`, `platform_repo_id`, `owner`, `name`, and
+  `type`, `provider`, `platform_host`, `platform_repo_id` (or
+  `bitbucket_repository_uuid` for Bitbucket Cloud), `owner`, `name`, and
   `number`. Passing the entire returned item, including title or state, fails
   input validation.
 

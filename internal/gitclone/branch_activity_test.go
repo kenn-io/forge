@@ -230,7 +230,7 @@ func TestResolveDefaultBranchFallsBackToOriginHEAD(t *testing.T) {
 
 	cloneDir, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
 	require.NoError(err)
-	identityCtx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
+	identityCtx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
 	branch, ref, err = mgr.ResolveDefaultBranchInDir(identityCtx, cloneDir, "stale")
 	require.NoError(err)
 	assert.Equal("main", branch)

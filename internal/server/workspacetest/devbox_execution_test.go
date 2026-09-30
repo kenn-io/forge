@@ -59,7 +59,7 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	credentials := devbox.NewBrokerClient(socket)
 	t.Cleanup(credentials.Close)
 	clones := gitclone.New(filepath.Join(directory, "clones"), credentials)
-	bare, err := clones.ClonePathForContext(gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: repositoryID}), "github", "github.com", "example-org", "project")
+	bare, err := clones.ClonePathForContext(gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: platform.RepositoryIDKey(repositoryID)}), "github", "github.com", "example-org", "project")
 	require.NoError(err)
 	work := gitfixture.DivergenceWorktree(t)
 	remote := filepath.Join(filepath.Dir(work), "remote.git")
@@ -101,7 +101,7 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	t.Cleanup(connections.Close)
 	controllerDB := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "example-org", "project")
-	identity.PlatformRepoID = repositoryID
+	identity.Key = platform.RepositoryIDKey(repositoryID)
 	_, err = reposeed.Seed(ctx, controllerDB, identity)
 	require.NoError(err)
 	controller := server.New(controllerDB, nil, nil, "/", &config.Config{DataDir: controllerDir, Host: "127.0.0.1", Port: 8092, BasePath: "/", Tmux: config.Tmux{Command: workspaceTestTmuxCommand}}, server.ServerOptions{

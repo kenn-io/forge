@@ -221,7 +221,7 @@ name = "widget"
 	}
 
 	oldRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
@@ -249,7 +249,7 @@ name = "widget"
 	})
 	require.NoError(err)
 	require.NotNil(active)
-	assert.Equal(int64(1002), active.PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(1002), active.Key)
 	assert.NotEqual(oldRepoID, active.ID)
 	repoResp, err := client.HTTP.GetRepoWithResponse(ctx, &generated.GetRepoRequestOptions{PathParams: &generated.GetRepoPath{Provider: "github", Owner: "acme", Name: "widget"}})
 	require.NoError(err)
@@ -502,7 +502,7 @@ name = "widget"
 	require.NoError(err)
 
 	entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
@@ -527,7 +527,7 @@ name = "widget"
 	require.ElementsMatch([]int64{notificationID}, doneResp.JSON200.Queued)
 
 	_, err = database.ObserveRepository(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 		Owner: "acme", Name: "renamed",
 	})
 	require.NoError(err)

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -43,27 +42,26 @@ func (s *Handlers) ConfiguredRepoProjection(
 	ctx context.Context,
 	raw config.Repo,
 	tracked []ghclient.RepoRef,
-) (int64, string, error) {
+) (platform.RepositoryKey, string, error) {
 	if raw.HasNameGlob() {
-		return 0, "", nil
+		return platform.RepositoryKey{}, "", nil
 	}
-	platformRepoID := raw.PlatformRepoID
-	if platformRepoID != 0 {
+	if pinned := raw.RepositoryKey(); !pinned.IsZero() {
 		if s.Db != nil {
 			entry, err := s.Db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
 				Provider: raw.PlatformOrDefault(), PlatformHost: raw.PlatformHostOrDefault(),
-				PlatformRepoID: platformRepoID,
+				Key: pinned,
 			})
 			if err != nil {
-				return 0, "", fmt.Errorf(
+				return platform.RepositoryKey{}, "", fmt.Errorf(
 					"resolve configured repo %s: %w", ConfigRepoPath(raw), err,
 				)
 			}
 			if entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive {
-				return platformRepoID, entry.Repository.RepoPath, nil
+				return pinned, entry.Repository.RepoPath, nil
 			}
 		}
-		return platformRepoID, ConfigRepoPath(raw), nil
+		return pinned, ConfigRepoPath(raw), nil
 	}
 	if s.Db != nil {
 		// An unpinned entry names a route; only the repository that holds it
@@ -73,16 +71,16 @@ func (s *Handlers) ConfiguredRepoProjection(
 			RepoPath: ConfigRepoPath(raw), Lifecycle: db.RepositoryLifecycleActive,
 		})
 		if err != nil {
-			return 0, "", fmt.Errorf(
+			return platform.RepositoryKey{}, "", fmt.Errorf(
 				"resolve configured repo %s: %w", ConfigRepoPath(raw), err,
 			)
 		}
-		if len(entries) == 1 && entries[0].Repository.PlatformRepoID != 0 {
-			return entries[0].Repository.PlatformRepoID,
+		if len(entries) == 1 && !entries[0].Repository.Key.IsZero() {
+			return entries[0].Repository.Key,
 				entries[0].Repository.RepoPath, nil
 		}
 	}
-	return trackedPlatformRepoIDForConfig(raw, tracked),
+	return trackedRepoKeyForConfig(raw, tracked),
 		trackedPathForConfig(raw, tracked), nil
 }
 
@@ -117,9 +115,9 @@ func (s *Handlers) HiddenRepoCorrelationSet(
 	for _, repo := range hidden {
 		set.ids[repo.ID] = struct{}{}
 		key := trackedRepoIdentityKey(ghclient.RepoRef{
-			Platform:       httpapi.ProviderKind(repo),
-			PlatformHost:   httpapi.ProviderHost(repo),
-			PlatformRepoID: repo.PlatformRepoID,
+			Platform:     httpapi.ProviderKind(repo),
+			PlatformHost: httpapi.ProviderHost(repo),
+			Key:          repo.Key,
 		})
 		if key == "" {
 			continue
@@ -190,18 +188,18 @@ func trackedPathForConfig(
 	return ""
 }
 
-func trackedPlatformRepoIDForConfig(
+func trackedRepoKeyForConfig(
 	raw config.Repo, tracked []ghclient.RepoRef,
-) int64 {
+) platform.RepositoryKey {
 	if raw.HasNameGlob() {
-		return 0
+		return platform.RepositoryKey{}
 	}
 	for _, repo := range tracked {
 		if repoMatchesConfig(repo, raw) {
-			return repo.PlatformRepoID
+			return repo.Key
 		}
 	}
-	return 0
+	return platform.RepositoryKey{}
 }
 
 func MatchedRepoCount(
@@ -358,14 +356,14 @@ func (s *Handlers) WorktreeBasePathForRepo(
 ) (string, bool, error) {
 	target := config.Repo{
 		Platform: repo.Platform, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
-		Owner:          repo.Owner, Name: repo.Name,
+		Owner: repo.Owner, Name: repo.Name,
 	}
+	target.SetRepositoryKey(repo.Key)
 	if (*s.Cfg) != nil {
 		s.CfgMu.Lock()
 		configuredRepos := slices.Clone((*s.Cfg).Repos)
 		s.CfgMu.Unlock()
-		targetID, _, err := s.ConfiguredRepoProjection(ctx, target, nil)
+		targetKey, _, err := s.ConfiguredRepoProjection(ctx, target, nil)
 		if err != nil {
 			return "", false, err
 		}
@@ -373,14 +371,14 @@ func (s *Handlers) WorktreeBasePathForRepo(
 			if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
 				continue
 			}
-			repoID, _, err := s.ConfiguredRepoProjection(ctx, repo, nil)
+			repoKey, _, err := s.ConfiguredRepoProjection(ctx, repo, nil)
 			if err != nil {
 				return "", false, err
 			}
-			stableMatch := targetID != 0 && repoID == targetID &&
+			stableMatch := !targetKey.IsZero() && repoKey == targetKey &&
 				strings.EqualFold(repo.PlatformOrDefault(), target.PlatformOrDefault()) &&
 				spokeapi.SamePlatformHost(repo.PlatformHostOrDefault(), target.PlatformHostOrDefault())
-			routeMatch := targetID == 0 && SameConfiguredRepo(repo, target)
+			routeMatch := targetKey.IsZero() && SameConfiguredRepo(repo, target)
 			if stableMatch || routeMatch {
 				return repo.WorktreeBasePath, true, nil
 			}
@@ -399,9 +397,8 @@ func (s *Handlers) WorktreeBasePathForRepo(
 		if project.IsStale || identity == nil {
 			continue
 		}
-		stableMatch := repo.PlatformRepoID != 0 &&
-			identity.PlatformRepoID == repo.PlatformRepoID
-		routeMatch := repo.PlatformRepoID == 0 &&
+		stableMatch := !repo.Key.IsZero() && identity.Key == repo.Key
+		routeMatch := repo.Key.IsZero() &&
 			strings.EqualFold(identity.Owner, repo.Owner) &&
 			strings.EqualFold(identity.Name, repo.Name)
 		if !strings.EqualFold(identity.Platform, repo.Platform) ||
@@ -480,8 +477,8 @@ func ConfigRepoPath(raw config.Repo) string {
 // provenance came from, so route-keyed recovery can refuse to hand it to a
 // different repository that merely reuses the route.
 type trackedProvenanceEntry struct {
-	path       string
-	providerID int64
+	path        string
+	identityKey string
 }
 
 // trackedRepoProvenance captures config-entry provenance from the tracked
@@ -496,11 +493,11 @@ func trackedRepoProvenance(refs []ghclient.RepoRef) map[string]trackedProvenance
 			continue
 		}
 		entry := trackedProvenanceEntry{
-			path:       repo.ConfiguredRepoPath,
-			providerID: repo.PlatformRepoID,
+			path:        repo.ConfiguredRepoPath,
+			identityKey: trackedRepoIdentityKey(repo),
 		}
-		if key := trackedRepoIdentityKey(repo); key != "" {
-			provenance["id\x00"+key] = entry
+		if entry.identityKey != "" {
+			provenance["id\x00"+entry.identityKey] = entry
 		}
 		provenance["route\x00"+spokeapi.TrackedRepoKey(repo)] = entry
 	}
@@ -527,9 +524,9 @@ func withTrackedProvenance(
 	// by another repository, not a rename of the same one: provenance stays
 	// with the identity it was resolved for. Provider ids are opaque and
 	// case-sensitive — compared exactly, like identity keys.
-	incomingID := repo.PlatformRepoID
-	if entry.providerID != 0 && incomingID != 0 &&
-		entry.providerID != incomingID {
+	incomingKey := trackedRepoIdentityKey(repo)
+	if entry.identityKey != "" && incomingKey != "" &&
+		entry.identityKey != incomingKey {
 		return repo
 	}
 	repo.ConfiguredRepoPath = entry.path
@@ -537,11 +534,11 @@ func withTrackedProvenance(
 }
 
 func trackedRepoIdentityKey(repo ghclient.RepoRef) string {
-	if repo.PlatformRepoID == 0 {
+	if repo.Key.IsZero() {
 		return ""
 	}
 	return spokeapi.RepoProvider(repo) + "\x00" +
-		spokeapi.TrackedRepoHost(repo) + "\x00" + strconv.FormatInt(repo.PlatformRepoID, 10)
+		spokeapi.TrackedRepoHost(repo) + "\x00" + repo.Key.String()
 }
 
 // trackedRepoIndex locates repo in current, matching by stable provider id
@@ -581,18 +578,18 @@ func (s *Handlers) PersistResolvedRepos(
 	repos []ghclient.RepoRef,
 ) error {
 	for _, repo := range repos {
-		if repo.PlatformRepoID == 0 {
+		if repo.Key.IsZero() {
 			// Not yet resolved by the provider; sync records it once it is.
 			continue
 		}
 		if _, err := s.Db.ObserveRepository(
 			ctx, db.RepoIdentity{
-				Platform:       spokeapi.RepoProvider(repo),
-				PlatformHost:   repo.PlatformHost,
-				PlatformRepoID: repo.PlatformRepoID,
-				Owner:          repo.Owner,
-				Name:           repo.Name,
-				RepoPath:       repo.RepoPath,
+				Platform:     spokeapi.RepoProvider(repo),
+				PlatformHost: repo.PlatformHost,
+				Key:          repo.Key,
+				Owner:        repo.Owner,
+				Name:         repo.Name,
+				RepoPath:     repo.RepoPath,
 			},
 		); err != nil {
 			return fmt.Errorf(
@@ -653,15 +650,14 @@ func (s *Handlers) ObserveProviderSettingsRepositories(
 	}
 	changed := false
 	for _, observation := range observations {
-		platformRepoID := observation.PlatformRepoID
-		if platformRepoID == 0 {
+		if observation.Key.IsZero() {
 			continue
 		}
 		repoPath := strings.Trim(strings.TrimSpace(observation.RepoPath), "/")
 		owner, name := strings.TrimSpace(observation.Owner), strings.TrimSpace(observation.Name)
 		current, err := s.Db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
 			Provider: observation.Provider, PlatformHost: observation.PlatformHost,
-			PlatformRepoID: platformRepoID,
+			Key: observation.Key,
 		})
 		if err != nil {
 			return false, fmt.Errorf("read provider settings repository: %w", err)
@@ -671,7 +667,7 @@ func (s *Handlers) ObserveProviderSettingsRepositories(
 			strings.EqualFold(current.Repository.Name, name)
 		if _, err := s.Db.ObserveRepository(ctx, db.RepoIdentity{
 			Platform: observation.Provider, PlatformHost: observation.PlatformHost,
-			PlatformRepoID: platformRepoID, Owner: owner, Name: name,
+			Key: observation.Key, Owner: owner, Name: name,
 			RepoPath: repoPath,
 		}); err != nil {
 			return false, fmt.Errorf("observe provider settings repository: %w", err)
@@ -798,16 +794,17 @@ func WorktreeBaseMutationTarget(
 			!strings.EqualFold(candidate.Name, target.Name) {
 			continue
 		}
-		if candidate.PlatformRepoID == 0 {
+		if candidate.Key.IsZero() {
 			return config.Repo{}, spokeapi.InvalidHubDescriptor(
 				errors.New("hub repository settings omitted stable identity"),
 			)
 		}
-		return config.Repo{
+		resolved := config.Repo{
 			Platform: candidate.Provider, PlatformHost: candidate.PlatformHost,
-			PlatformRepoID: candidate.PlatformRepoID,
-			Owner:          candidate.Owner, Name: candidate.Name, RepoPath: candidate.RepoPath,
-		}, nil
+			Owner: candidate.Owner, Name: candidate.Name, RepoPath: candidate.RepoPath,
+		}
+		resolved.SetRepositoryKey(candidate.Key)
+		return resolved, nil
 	}
 	return config.Repo{}, httpapi.NotFound(
 		httpapi.CodeRepoNotFound, target.Owner+"/"+target.Name+" is not configured", nil,
@@ -818,21 +815,22 @@ func (s *Handlers) WorktreeBaseRepoIndexLocked(
 	ctx context.Context, target config.Repo,
 ) (int, error) {
 	for i, repo := range (*s.Cfg).Repos {
-		if target.PlatformRepoID == 0 {
+		targetKey := target.RepositoryKey()
+		if targetKey.IsZero() {
 			if SameConfiguredRepo(repo, target) {
 				return i, nil
 			}
 			continue
 		}
-		platformRepoID := repo.PlatformRepoID
-		if platformRepoID == 0 && !repo.HasNameGlob() {
+		repoKey := repo.RepositoryKey()
+		if repoKey.IsZero() && !repo.HasNameGlob() {
 			var err error
-			platformRepoID, _, err = s.ConfiguredRepoProjection(ctx, repo, nil)
+			repoKey, _, err = s.ConfiguredRepoProjection(ctx, repo, nil)
 			if err != nil {
 				return -1, err
 			}
 		}
-		if platformRepoID == target.PlatformRepoID &&
+		if repoKey == targetKey &&
 			strings.EqualFold(repo.PlatformOrDefault(), target.PlatformOrDefault()) &&
 			spokeapi.SamePlatformHost(repo.PlatformHostOrDefault(), target.PlatformHostOrDefault()) {
 			return i, nil
@@ -870,7 +868,7 @@ func (s *Handlers) ApplyVisibilityUnderReconciliationRead(
 func (s *Handlers) resolveVisibilityRepoLocked(
 	ctx context.Context, identity db.RepoIdentity,
 ) (*db.Repo, error) {
-	if identity.PlatformRepoID == 0 {
+	if identity.Key.IsZero() {
 		repo, err := s.Db.GetRepoByIdentity(ctx, identity)
 		if err != nil || repo == nil {
 			return nil, err
@@ -879,7 +877,7 @@ func (s *Handlers) resolveVisibilityRepoLocked(
 	}
 	entry, err := s.Db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
 		Provider: identity.Platform, PlatformHost: identity.PlatformHost,
-		PlatformRepoID: identity.PlatformRepoID,
+		Key: identity.Key,
 	})
 	if err != nil {
 		return nil, err
@@ -909,12 +907,12 @@ func (s *Handlers) VisibilityLookupIdentity(raw config.Repo) db.RepoIdentity {
 			continue
 		}
 		return db.RepoIdentity{
-			Platform:       spokeapi.RepoProvider(repo),
-			PlatformHost:   spokeapi.TrackedRepoHost(repo),
-			PlatformRepoID: repo.PlatformRepoID,
-			Owner:          repo.Owner,
-			Name:           repo.Name,
-			RepoPath:       repo.RepoPath,
+			Platform:     spokeapi.RepoProvider(repo),
+			PlatformHost: spokeapi.TrackedRepoHost(repo),
+			Key:          repo.Key,
+			Owner:        repo.Owner,
+			Name:         repo.Name,
+			RepoPath:     repo.RepoPath,
 		}
 	}
 	return db.RepoIdentity{
@@ -1059,7 +1057,7 @@ func (s *Handlers) ReconcileOrphanedRepoVisibility(ctx context.Context) error {
 func (s *Handlers) lookupRepoForVisibilityRelease(
 	ctx context.Context, identity db.RepoIdentity,
 ) (*db.Repo, error) {
-	if identity.PlatformRepoID == 0 {
+	if identity.Key.IsZero() {
 		repo, err := s.Db.GetRepoByIdentity(ctx, identity)
 		if err != nil || repo == nil {
 			return nil, err
@@ -1068,7 +1066,7 @@ func (s *Handlers) lookupRepoForVisibilityRelease(
 	}
 	entry, err := s.Db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
 		Provider: identity.Platform, PlatformHost: identity.PlatformHost,
-		PlatformRepoID: identity.PlatformRepoID,
+		Key: identity.Key,
 	})
 	if err != nil {
 		return nil, err

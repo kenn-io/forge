@@ -50,7 +50,7 @@ func providerHandoffServerFixture(
 	t.Cleanup(ts.Close)
 	return ts, credentials, db.ProviderStateRepository{
 		Provider: identity.Platform, PlatformHost: identity.PlatformHost,
-		PlatformRepoID: identity.PlatformRepoID, Owner: identity.Owner, Name: identity.Name,
+		Key: identity.Key, Owner: identity.Owner, Name: identity.Name,
 	}
 }
 

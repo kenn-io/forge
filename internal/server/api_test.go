@@ -214,20 +214,20 @@ func setupTestServerWithReposAndOptions(
 	repos = append([]ghclient.RepoRef(nil), repos...)
 	for i := range repos {
 		repo := &repos[i]
-		if repo.PlatformRepoID == 0 {
-			repo.PlatformRepoID = testutil.FixtureRepoID(repo.Owner, repo.Name)
+		if repo.Key.IsZero() {
+			repo.Key = platform.RepositoryIDKey(testutil.FixtureRepoID(repo.Owner, repo.Name))
 		}
-		if mock != nil {
-			mock.KnowRoute(repo.PlatformRepoID, repo.Owner, repo.Name)
+		if id, ok := repo.Key.ID(); ok && mock != nil {
+			mock.KnowRoute(id, repo.Owner, repo.Name)
 		}
 		_, err := reposeed.Seed(
 			t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
-				Platform:   platform.Kind(cmp.Or(string(repo.Platform), "github")),
-				Host:       cmp.Or(repo.PlatformHost, "github.com"),
-				Owner:      repo.Owner,
-				Name:       repo.Name,
-				RepoPath:   repo.RepoPath,
-				PlatformID: repo.PlatformRepoID,
+				Platform: platform.Kind(cmp.Or(string(repo.Platform), "github")),
+				Host:     cmp.Or(repo.PlatformHost, "github.com"),
+				Owner:    repo.Owner,
+				Name:     repo.Name,
+				RepoPath: repo.RepoPath,
+				Key:      repo.Key,
 			}),
 		)
 		require.NoError(t, err)
@@ -508,7 +508,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 		Owner:         "group/subgroup",
 		Name:          "project",
 		RepoPath:      "group/subgroup/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/subgroup/project",
 		CloneURL:      "https://gitlab.example.com/group/subgroup/project.git",
 		DefaultBranch: "main",
@@ -556,7 +556,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 		Name:               "project",
 		PlatformHost:       "gitlab.example.com",
 		RepoPath:           "group/subgroup/project",
-		PlatformRepoID:     4242,
+		Key:                platform.RepositoryIDKey(4242),
 		WebURL:             "https://gitlab.example.com/group/subgroup/project",
 		CloneURL:           "https://gitlab.example.com/group/subgroup/project.git",
 		DefaultBranch:      "main",
@@ -620,7 +620,7 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -658,15 +658,15 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          ref.Owner,
-		Name:           ref.Name,
-		PlatformHost:   ref.Host,
-		RepoPath:       ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
-		WebURL:         ref.WebURL,
-		CloneURL:       ref.CloneURL,
-		DefaultBranch:  ref.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		Owner:         ref.Owner,
+		Name:          ref.Name,
+		PlatformHost:  ref.Host,
+		RepoPath:      ref.RepoPath,
+		Key:           ref.Key,
+		WebURL:        ref.WebURL,
+		CloneURL:      ref.CloneURL,
+		DefaultBranch: ref.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -713,7 +713,7 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -764,15 +764,15 @@ func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          ref.Owner,
-		Name:           ref.Name,
-		PlatformHost:   ref.Host,
-		RepoPath:       ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
-		WebURL:         ref.WebURL,
-		CloneURL:       ref.CloneURL,
-		DefaultBranch:  ref.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		Owner:         ref.Owner,
+		Name:          ref.Name,
+		PlatformHost:  ref.Host,
+		RepoPath:      ref.RepoPath,
+		Key:           ref.Key,
+		WebURL:        ref.WebURL,
+		CloneURL:      ref.CloneURL,
+		DefaultBranch: ref.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -912,7 +912,7 @@ func TestAPIForgejoHostCloneFetchFollowsReloadedToken(t *testing.T) {
 		Owner:         "acme",
 		Name:          "widget",
 		RepoPath:      "acme/widget",
-		PlatformID:    42,
+		Key:           platform.RepositoryIDKey(42),
 		WebURL:        "https://code.example.com/acme/widget",
 		CloneURL:      cloneURL,
 		DefaultBranch: "main",
@@ -927,14 +927,14 @@ func TestAPIForgejoHostCloneFetchFollowsReloadedToken(t *testing.T) {
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, clones,
 		[]ghclient.RepoRef{{
-			Platform:       platform.KindForgejo,
-			Owner:          "acme",
-			Name:           "widget",
-			PlatformHost:   "code.example.com",
-			RepoPath:       "acme/widget",
-			PlatformRepoID: 42,
-			CloneURL:       cloneURL,
-			DefaultBranch:  "main",
+			Platform:      platform.KindForgejo,
+			Owner:         "acme",
+			Name:          "widget",
+			PlatformHost:  "code.example.com",
+			RepoPath:      "acme/widget",
+			Key:           platform.RepositoryIDKey(42),
+			CloneURL:      cloneURL,
+			DefaultBranch: "main",
 		}},
 		time.Minute, nil, nil,
 	)
@@ -3826,7 +3826,7 @@ func setupGitLabCapabilityServerWithProvider(
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -3871,15 +3871,15 @@ func setupGitLabCapabilityServerWithProvider(
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "group",
-		Name:           "project",
-		PlatformHost:   "gitlab.example.com",
-		RepoPath:       "group/project",
-		PlatformRepoID: 4242,
-		WebURL:         "https://gitlab.example.com/group/project",
-		CloneURL:       "https://gitlab.example.com/group/project.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "group",
+		Name:          "project",
+		PlatformHost:  "gitlab.example.com",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -3980,7 +3980,7 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	clones := gitclone.New(bareDir, nil)
 	bare, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), testutil.FixtureRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(t, err)
@@ -4037,7 +4037,7 @@ func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
 
 	_, _, _, _, _, srv := setupTestServerWithClonesAndServer(t)
 	clonePath, err := srv.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), testutil.FixtureRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)
@@ -4307,7 +4307,7 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	require.NoError(err)
 
 	renamed := db.GitHubRepoIdentity("github.com", "acme", "gadget")
-	renamed.PlatformRepoID = repo.PlatformRepoID
+	renamed.Key = repo.Key
 	_, err = database.ObserveRepository(ctx, renamed)
 	require.NoError(err)
 
@@ -4321,9 +4321,9 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	require.NoError(json.Unmarshal(feed.Body.Bytes(), &feedBody))
 	require.Len(feedBody.Items, 1)
 	assert.Equal("gadget", feedBody.Items[0].RepoName)
-	assert.Equal(repo.PlatformRepoID, feedBody.Items[0].Repo.PlatformRepoID)
+	assert.Equal(repo.Key, feedBody.Items[0].Repo.Key)
 	require.Len(feedBody.ItemActivity, 1)
-	assert.Equal(repo.PlatformRepoID, feedBody.ItemActivity[0].Repo.PlatformRepoID)
+	assert.Equal(repo.Key, feedBody.ItemActivity[0].Repo.Key)
 
 	candidates := testutil.DoJSON(
 		t, srv, http.MethodGet,
@@ -4606,7 +4606,7 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	clones := gitclone.New(bareDir, nil)
 	bare, err := clones.ClonePathForContext(
 		gitclone.WithRepositoryIdentity(
-			t.Context(), serverfake.VerifiedGitHubRepoIdentity(platformHost, "acme", "widget").PlatformRepoID,
+			t.Context(), platform.RepositoryIdentity{Key: serverfake.VerifiedGitHubRepoIdentity(platformHost, "acme", "widget").Key},
 		),
 		"github", platformHost, "acme", "widget",
 	)
@@ -8329,11 +8329,11 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 	fixture := setupWorkspaceServerFixtureWithHost(t, nil, platformHost)
 	ctx := t.Context()
 	repoID, err := reposeed.Seed(ctx, fixture.database, db.RepoIdentity{
-		Platform:       string(platform.KindGitLab),
-		PlatformHost:   platformHost,
-		PlatformRepoID: 57,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     string(platform.KindGitLab),
+		PlatformHost: platformHost,
+		Key:          platform.RepositoryIDKey(57),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	require.NoError(fixture.database.UpdateRepoProviderObservation(

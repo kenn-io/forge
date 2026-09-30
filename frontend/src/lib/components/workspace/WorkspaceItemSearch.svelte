@@ -10,6 +10,7 @@
   import { getStores } from "../../context.js";
   import type { NumberedRouteItemRef } from "../../routes.js";
   import { repoIdentityKey } from "../../utils/repo-label.js";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   type ItemType = "pr" | "issue";
   type SearchOption = {
@@ -72,7 +73,7 @@
     const item: NumberedRouteItemRef = {
       provider: result.repo.provider,
       platformHost: result.repo.platform_host,
-      platformRepoId: result.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(result.repo),
       owner: result.repo.owner,
       name: result.repo.name,
       repoPath: result.repo.repo_path,

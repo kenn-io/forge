@@ -10,6 +10,7 @@
     isCommentSubmitPending,
     setCommentDraft,
   } from "./comment-drafts.svelte.js";
+  import type { RepositoryKey } from "../../api/repository-key.js";
 
   const { detail } = getStores();
 
@@ -19,7 +20,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: number | undefined;
+    repositoryKey?: RepositoryKey | undefined;
     repoPath: string;
     disabled?: boolean;
     editorDisabled?: boolean;
@@ -34,7 +35,7 @@
     number,
     provider,
     platformHost,
-    platformRepoId,
+    repositoryKey,
     repoPath,
     disabled = false,
     editorDisabled = disabled,
@@ -42,7 +43,7 @@
   }: Props = $props();
 
   const currentDraftKey = $derived(
-    getCommentDraftKey("pull", { provider, platformHost: platformHost ?? "", platformRepoId, repoPath, owner, name, number }),
+    getCommentDraftKey("pull", { provider, platformHost: platformHost ?? "", repositoryKey, repoPath, owner, name, number }),
   );
   const body = $derived(
     getCommentDraft(currentDraftKey),

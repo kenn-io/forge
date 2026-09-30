@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+	"uuid"
 
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/kit/atomicfile"
@@ -97,15 +98,19 @@ const (
 )
 
 type Repo struct {
-	Owner            string `toml:"owner" json:"owner"`
-	Name             string `toml:"name" json:"name"`
-	RepoPath         string `toml:"repo_path,omitempty" json:"repo_path,omitempty"`
-	Platform         string `toml:"platform,omitempty" json:"platform,omitempty"`
-	PlatformHost     string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
-	PlatformRepoID   int64  `toml:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
-	TokenEnv         string `toml:"token_env,omitempty" json:"token_env,omitempty"`
-	TokenFile        string `toml:"token_file,omitempty" json:"token_file,omitempty"`
-	WorktreeBasePath string `toml:"worktree_base_path,omitempty" json:"worktree_base_path,omitempty"`
+	Owner        string `toml:"owner" json:"owner"`
+	Name         string `toml:"name" json:"name"`
+	RepoPath     string `toml:"repo_path,omitempty" json:"repo_path,omitempty"`
+	Platform     string `toml:"platform,omitempty" json:"platform,omitempty"`
+	PlatformHost string `toml:"platform_host,omitempty" json:"platform_host,omitempty"`
+	// PlatformRepoID and BitbucketRepositoryUUID are the file encoding of
+	// the entry's pinned repository key; read and write them only through
+	// RepositoryKey and SetRepositoryKey.
+	PlatformRepoID          int64  `toml:"platform_repo_id,omitempty" json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID string `toml:"bitbucket_repository_uuid,omitempty" json:"bitbucket_repository_uuid,omitempty"`
+	TokenEnv                string `toml:"token_env,omitempty" json:"token_env,omitempty"`
+	TokenFile               string `toml:"token_file,omitempty" json:"token_file,omitempty"`
+	WorktreeBasePath        string `toml:"worktree_base_path,omitempty" json:"worktree_base_path,omitempty"`
 }
 
 type KataProjectRepoMapping struct {
@@ -125,11 +130,68 @@ type RepoPreset struct {
 
 // RepoPresetRepository stores provider-verified identity alongside the
 // last-known route used for display.
+//
+// PlatformRepoID and BitbucketRepositoryUUID are the file encoding of the
+// member's repository key; read and write them only through RepositoryKey
+// and SetRepositoryKey.
 type RepoPresetRepository struct {
-	Provider       string `toml:"provider" json:"provider"`
-	PlatformHost   string `toml:"platform_host" json:"platform_host"`
-	PlatformRepoID int64  `toml:"platform_repo_id" json:"platform_repo_id"`
-	RepoPath       string `toml:"repo_path" json:"repo_path"`
+	Provider                string `toml:"provider" json:"provider"`
+	PlatformHost            string `toml:"platform_host" json:"platform_host"`
+	PlatformRepoID          int64  `toml:"platform_repo_id" json:"platform_repo_id"`
+	BitbucketRepositoryUUID string `toml:"bitbucket_repository_uuid,omitempty" json:"bitbucket_repository_uuid,omitempty"`
+	RepoPath                string `toml:"repo_path" json:"repo_path"`
+}
+
+// RepositoryKey returns the member's repository key. Load validation
+// guarantees it decodes.
+func (r *RepoPresetRepository) RepositoryKey() platformpkg.RepositoryKey {
+	key, _ := repositoryKeyFromConfig(r.PlatformRepoID, r.BitbucketRepositoryUUID)
+	return key
+}
+
+// SetRepositoryKey stores key in the member's file encoding.
+func (r *RepoPresetRepository) SetRepositoryKey(key platformpkg.RepositoryKey) {
+	r.PlatformRepoID, r.BitbucketRepositoryUUID = repositoryKeyToConfig(key)
+}
+
+// RepositoryKey returns the entry's pinned repository key, zero when the
+// entry pins none. Load validation guarantees it decodes.
+func (r *Repo) RepositoryKey() platformpkg.RepositoryKey {
+	key, _ := repositoryKeyFromConfig(r.PlatformRepoID, r.BitbucketRepositoryUUID)
+	return key
+}
+
+// SetRepositoryKey stores key in the entry's file encoding.
+func (r *Repo) SetRepositoryKey(key platformpkg.RepositoryKey) {
+	r.PlatformRepoID, r.BitbucketRepositoryUUID = repositoryKeyToConfig(key)
+}
+
+// repositoryKeyFromConfig decodes an entry's key fields, naming the field to
+// fix in each error.
+func repositoryKeyFromConfig(id int64, repositoryUUID string) (platformpkg.RepositoryKey, error) {
+	if id < 0 {
+		return platformpkg.RepositoryKey{}, errors.New(
+			"platform_repo_id must be the provider's positive integer repository ID",
+		)
+	}
+	parsed, err := platformpkg.ParseRepositoryUUID(repositoryUUID)
+	if err != nil {
+		return platformpkg.RepositoryKey{}, fmt.Errorf("bitbucket_repository_uuid: %w", err)
+	}
+	if id > 0 && parsed != uuid.Nil() {
+		return platformpkg.RepositoryKey{}, errors.New(
+			"set platform_repo_id or bitbucket_repository_uuid, not both",
+		)
+	}
+	return platformpkg.RepositoryKeyFromWire(id, parsed)
+}
+
+func repositoryKeyToConfig(key platformpkg.RepositoryKey) (int64, string) {
+	id, repositoryUUID := key.Wire()
+	if repositoryUUID == uuid.Nil() {
+		return id, ""
+	}
+	return id, repositoryUUID.String()
 }
 
 func cloneRepoPresets(presets []RepoPreset) []RepoPreset {
@@ -180,11 +242,13 @@ func normalizeRepoPresets(presets []RepoPreset) error {
 			}
 			host := strings.TrimSpace(raw.PlatformHost)
 			repoPath := cleanPath(strings.TrimSpace(raw.RepoPath))
-			platformRepoID := raw.PlatformRepoID
-			if platformRepoID <= 0 {
-				return fmt.Errorf(
-					"repo_presets[%d].repos[%d]: platform_repo_id is required", i, j,
-				)
+			// A negative ID is no key at all; the required-key check below
+			// reports it. Other decode errors name their own field.
+			key := platformpkg.RepositoryKey{}
+			if raw.PlatformRepoID >= 0 {
+				if key, err = repositoryKeyFromConfig(raw.PlatformRepoID, raw.BitbucketRepositoryUUID); err != nil {
+					return fmt.Errorf("repo_presets[%d].repos[%d]: %w", i, j, err)
+				}
 			}
 			host, err = normalizePlatformHost(provider, host)
 			if err != nil {
@@ -201,15 +265,23 @@ func normalizeRepoPresets(presets []RepoPreset) error {
 					"repo_presets[%d].repos[%d]: repository identity must be provider|platform_host/repo_path", i, j,
 				)
 			}
-			canonical := provider + "|" + host + "|" + strconv.FormatInt(platformRepoID, 10)
+			if !(platformpkg.RepositoryIdentity{Provider: provider, PlatformHost: host, Key: key}).Valid() {
+				field := "platform_repo_id"
+				if platformpkg.IsBitbucketCloud(provider, host) {
+					field = "bitbucket_repository_uuid"
+				}
+				return fmt.Errorf("repo_presets[%d].repos[%d]: %s is required", i, j, field)
+			}
+			canonical := provider + "|" + host + "|" + key.String()
 			if _, exists := seenRepos[canonical]; exists {
 				continue
 			}
 			seenRepos[canonical] = struct{}{}
-			repos = append(repos, RepoPresetRepository{
-				Provider: provider, PlatformHost: host,
-				PlatformRepoID: platformRepoID, RepoPath: repoPath,
-			})
+			member := RepoPresetRepository{
+				Provider: provider, PlatformHost: host, RepoPath: repoPath,
+			}
+			member.SetRepositoryKey(key)
+			repos = append(repos, member)
 		}
 		if len(repos) == 0 {
 			return fmt.Errorf("repo_presets[%d]: at least one repository is required", i)
@@ -377,9 +449,11 @@ func (r *Repo) normalize(defaultGitHubHost string) error {
 	if r.Owner == "" || r.Name == "" {
 		return errors.New("must have owner and name")
 	}
-	if r.PlatformRepoID < 0 {
-		return errors.New("platform_repo_id must be the provider's positive integer repository ID")
+	key, err := repositoryKeyFromConfig(r.PlatformRepoID, r.BitbucketRepositoryUUID)
+	if err != nil {
+		return err
 	}
+	r.SetRepositoryKey(key)
 	r.WorktreeBasePath = strings.TrimSpace(r.WorktreeBasePath)
 	if r.WorktreeBasePath != "" && r.HasNameGlob() {
 		return errors.New("worktree_base_path is only supported for exact repositories")

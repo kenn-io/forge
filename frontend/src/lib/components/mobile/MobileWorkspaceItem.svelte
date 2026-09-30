@@ -15,6 +15,7 @@
   import type { WorkspaceDetail } from "../terminal/workspace-detail.js";
   import { loadMobileWorkspaceDetail, mobileWorkspaceLinkedItem } from "./mobile-workspace-detail.js";
   import { loadMobileWorkspaceSession } from "./mobile-workspace-session.js";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   interface Props {
     workspaceId: string;
@@ -66,7 +67,7 @@
     return {
       provider: workspace.repo.provider,
       platformHost: workspace.repo.platform_host,
-      platformRepoId: workspace.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(workspace.repo),
       owner: workspace.repo.owner,
       name: workspace.repo.name,
       repoPath: workspace.repo.repo_path,

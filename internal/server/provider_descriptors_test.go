@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -57,7 +56,7 @@ func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
 	hubDB := dbtest.Open(t)
 	serverfake.SeedPR(t, hubDB, "acme", "widget", 42)
 	renamed, err := hubDB.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 		Owner: "acme", Name: "widgets",
 	})
 	require.NoError(err)
@@ -102,13 +101,13 @@ func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
 	identity, err := nodeDB.GetRepoByID(t.Context(), stored.RepoID)
 	require.NoError(err)
 	require.NotNil(identity)
-	assert.Equal(testutil.FixtureRepoID("acme", "widget"), identity.PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), identity.Key)
 	assert.Equal("widgets", stored.RepoName)
 	assert.Equal("https://github.com/acme/widgets.git", identity.CloneURL)
 
 	// A new owner at the cached route must not redirect that same selection.
 	_, err = hubDB.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(2002),
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
@@ -121,7 +120,7 @@ func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
 func TestRepositorySelectionRejectsDifferentHubIdentity(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	descriptor, err := providerplane.BuildRepositoryDescriptor(providerplane.RepositorySnapshot{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
+		Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(2002),
 		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		ObservedAt: time.Now().UTC(),
 	})
@@ -139,7 +138,7 @@ func TestRepositorySelectionRejectsDifferentHubIdentity(t *testing.T) {
 	})}
 	_, err = source.ResolveRepositoryRoute(t.Context(), providerplane.RepositoryRoute{
 		Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
-	}, 1001)
+	}, platform.RepositoryIDKey(1001))
 	require.Error(err)
 	problem, ok := errors.AsType[*httpapi.ProblemError](err)
 	require.True(ok)
@@ -174,8 +173,8 @@ func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {
 	renamed, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: current.Repository.PlatformRepoID,
-			Owner:          "acme-renamed", Name: "widget-renamed",
+			Key:   current.Repository.Key,
+			Owner: "acme-renamed", Name: "widget-renamed",
 		},
 	)
 	require.NoError(err)
@@ -187,14 +186,14 @@ func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {
 	))
 	server.now = func() time.Time { return renameTime.Add(time.Minute) }
 	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(2002),
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 
 	refreshed, err := server.RefreshWorkspaceLaunchSpec(t.Context(), current)
 	require.NoError(err)
-	assert.Equal(current.Repository.PlatformRepoID, refreshed.Repository.PlatformRepoID)
+	assert.Equal(current.Repository.Key, refreshed.Repository.Key)
 	assert.Equal("acme-renamed", refreshed.Repository.Owner)
 	assert.Equal("widget-renamed", refreshed.Repository.Name)
 }
@@ -220,8 +219,8 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 	hubDB := dbtest.Open(t)
 	repoID, err := reposeed.Seed(t.Context(), hubDB, db.RepoIdentity{
 		Platform: "gitlab", PlatformHost: platformHost,
-		PlatformRepoID: 7,
-		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+		Key:   platform.RepositoryIDKey(7),
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(err)
 	serverfake.SeedPRForRepo(
@@ -374,7 +373,7 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 
 	observed, err := nodeDB.GetRepositoryByProviderID(
 		t.Context(), platform.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID,
+			Provider: "github", PlatformHost: "github.com", Key: repo.Key,
 		},
 	)
 	require.NoError(err)
@@ -394,7 +393,7 @@ func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
 	hubDB := dbtest.Open(t)
 	repoID, err := reposeed.Seed(t.Context(), hubDB, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NoError(hubDB.UpdateRepoProviderObservation(
@@ -454,7 +453,7 @@ func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
 	require.Equal(http.StatusAccepted, response.Code, response.Body.String())
 	observed, err := spokeDB.GetRepositoryByProviderID(
 		t.Context(), platform.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+			Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 		},
 	)
 	require.NoError(err)
@@ -530,12 +529,12 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 		},
 	)
 	require.NoError(err)
-	assert.Equal(testutil.FixtureRepoID("acme", "widgets"), spec.Repository.PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widgets")), spec.Repository.Key)
 	assert.Equal(issuedAt, spec.IssuedAt)
 
 	observed, err := nodeDB.GetRepositoryByProviderID(
 		t.Context(), platform.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widgets"),
+			Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widgets")),
 		},
 	)
 	require.NoError(err)
@@ -577,13 +576,13 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	require.NoError(err)
 	const hostedCloneURL = "https://github.com/acme/widgets.git"
 	sourceClone, err := diffRepo.Manager.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID}),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: diffRepo.Key}),
 		"github", "github.com", "acme", "widgets",
 	)
 	require.NoError(err)
 	repository, err := hubDB.GetRepositoryByProviderID(
 		t.Context(), platform.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: diffRepo.PlatformRepoID,
+			Provider: "github", PlatformHost: "github.com", Key: diffRepo.Key,
 		},
 	)
 	require.NoError(err)
@@ -636,7 +635,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 		descriptorCloneRoutes{source: serverfake.TestTokenSource("spoke-git-token")},
 	)
 	nodeClone, err := nodeClones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID}),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: diffRepo.Key}),
 		"github", "github.com", "acme", "widgets",
 	)
 	require.NoError(err)
@@ -667,7 +666,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 		require.NoError(runErr, string(stderr))
 	}
 	seedNodeClone(nodeClone)
-	browserNamespaceInput := "github\x00github.com\x00acme/widgets\x00" + strconv.FormatInt(diffRepo.PlatformRepoID, 10)
+	browserNamespaceInput := "github\x00github.com\x00acme/widgets\x00" + diffRepo.Key.String()
 	browserNamespaceSum := sha256.Sum256([]byte(browserNamespaceInput))
 	browserClone, err := nodeClones.ClonePathInNamespace(
 		"repo-browser-"+hex.EncodeToString(browserNamespaceSum[:8]),
@@ -698,7 +697,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 
 	observed, err := nodeDB.GetRepositoryByProviderID(
 		t.Context(), platform.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com", PlatformRepoID: diffRepo.PlatformRepoID,
+			Provider: "github", PlatformHost: "github.com", Key: diffRepo.Key,
 		},
 	)
 	require.NoError(err)
@@ -759,7 +758,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	assert.Equal(httpapi.CodeHubUnavailable, problem.Code)
 
 	localCtx := gitclone.WithRepositoryIdentity(
-		t.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID},
+		t.Context(), platform.RepositoryIdentity{Key: diffRepo.Key},
 	)
 	localDiff, err := nodeClones.Diff(
 		localCtx, "github", "github.com", "acme", "widgets",

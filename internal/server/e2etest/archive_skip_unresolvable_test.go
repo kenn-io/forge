@@ -72,7 +72,7 @@ func TestArchiveWorkerSkipsUnresolvableTrackedRepoE2E(t *testing.T) {
 	healthy := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformID: 1,
+		Key: platform.RepositoryIDKey(1),
 	}
 	ghost := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
@@ -84,8 +84,8 @@ func TestArchiveWorkerSkipsUnresolvableTrackedRepoE2E(t *testing.T) {
 			{
 				Platform: healthy.Platform, PlatformHost: healthy.Host,
 				Owner: healthy.Owner, Name: healthy.Name,
-				RepoPath:       healthy.RepoPath,
-				PlatformRepoID: healthy.PlatformID,
+				RepoPath: healthy.RepoPath,
+				Key:      healthy.Key,
 			},
 			{
 				Platform: ghost.Platform, PlatformHost: ghost.Host,

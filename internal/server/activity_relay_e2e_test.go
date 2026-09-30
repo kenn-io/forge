@@ -37,6 +37,7 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 func TestActivityRelayEndToEnd(t *testing.T) {
@@ -153,8 +154,8 @@ func TestActivityRelayEndToEnd(t *testing.T) {
 	}))
 	t.Cleanup(provider.Close)
 	database := dbtest.OpenWithMigrationsAt(t, filepath.Join(dir, "forge.db"))
-	repo := ghclient.RepoRef{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 12345, Owner: "team", Name: "project"}
-	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 12345, Owner: "team", Name: "project"})
+	repo := ghclient.RepoRef{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(12345), Owner: "team", Name: "project"}
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(12345), Owner: "team", Name: "project"})
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID: repoID, Number: 8, PlatformID: 800, PlatformExternalID: "PR_test_8", Title: "Unrelated",

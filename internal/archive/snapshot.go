@@ -84,7 +84,9 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			if len(selected) > 0 {
 				continue
 			}
-			result.Repositories = append(result.Repositories, snapshot.SnapshotRepository{ID: "unresolved:" + string(ref.Platform) + ":" + ref.Host + ":" + ref.RepoPath, Provider: string(ref.Platform), Host: ref.Host, ProviderID: ref.PlatformID, Path: ref.RepoPath, SyncError: "Configured repository has no active cached identity"})
+			unresolved := snapshot.SnapshotRepository{ID: "unresolved:" + string(ref.Platform) + ":" + ref.Host + ":" + ref.RepoPath, Provider: string(ref.Platform), Host: ref.Host, Path: ref.RepoPath, SyncError: "Configured repository has no active cached identity"}
+			unresolved.ProviderID, unresolved.BitbucketRepositoryUUID = ref.Key.Wire()
+			result.Repositories = append(result.Repositories, unresolved)
 			continue
 		}
 		if len(selected) > 0 {
@@ -98,7 +100,8 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		repos[repo.ID] = *repo
 		repoIDs = append(repoIDs, repo.ID)
-		record := snapshot.SnapshotRepository{ID: snapshotRepositoryID(*repo), Provider: repo.Platform, Host: repo.PlatformHost, ProviderID: repo.PlatformRepoID, Path: repo.RepoPath, DefaultBranch: repo.DefaultBranch, LastSyncAt: repo.LastSyncCompletedAt, SyncError: repo.LastSyncError}
+		record := snapshot.SnapshotRepository{ID: snapshotRepositoryID(*repo), Provider: repo.Platform, Host: repo.PlatformHost, Path: repo.RepoPath, DefaultBranch: repo.DefaultBranch, LastSyncAt: repo.LastSyncCompletedAt, SyncError: repo.LastSyncError}
+		record.ProviderID, record.BitbucketRepositoryUUID = repo.Key.Wire()
 		if row, ok := coverageByID[repo.ID]; ok {
 			value := snapshot.SnapshotCoverage(reportCoverage(row))
 			record.Coverage = &value
@@ -207,7 +210,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 }
 
 func snapshotRepositoryID(repo db.Repo) string {
-	return strings.Join([]string{url.QueryEscape(repo.Platform), url.QueryEscape(repo.PlatformHost), strconv.FormatInt(repo.PlatformRepoID, 10)}, ":")
+	return strings.Join([]string{url.QueryEscape(repo.Platform), url.QueryEscape(repo.PlatformHost), url.QueryEscape(repo.Key.String())}, ":")
 }
 
 func snapshotText(value string, limit int) (string, bool) {

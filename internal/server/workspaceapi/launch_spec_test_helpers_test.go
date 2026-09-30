@@ -9,6 +9,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 type stubLaunchSpecResolver struct {
@@ -70,10 +71,10 @@ func workspaceLaunchSpecForRequest(
 		Repository: db.WorkspaceLaunchRepository{
 			Provider:     request.Repository.Provider,
 			PlatformHost: request.Repository.PlatformHost,
-			PlatformRepoID: reposeed.SyntheticID(db.RepoIdentity{
+			Key: platform.RepositoryIDKey(reposeed.SyntheticID(db.RepoIdentity{
 				Platform: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost,
 				Owner: request.Repository.Owner, Name: request.Repository.Name,
-			}),
+			})),
 			Owner: request.Repository.Owner, Name: request.Repository.Name,
 			CloneURL: "https://" + request.Repository.PlatformHost + "/" +
 				request.Repository.Owner + "/" + request.Repository.Name + ".git",

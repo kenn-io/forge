@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 // transferSyncMockGH overrides the issue read surface of the shared mockGH so
@@ -78,8 +79,8 @@ func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
 	database := dbtest.Open(t)
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+		Key:   platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{

@@ -3,6 +3,7 @@
  */
 
 export interface WorkspaceRepositorySummary {
+  bitbucket_repository_uuid?: string;
   name: string;
   owner: string;
   platform_host: string;

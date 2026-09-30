@@ -1,6 +1,7 @@
 import type { WorkspaceListItem } from "../components/terminal/workspace-list-schema.js";
 import type { RepoPresetCatalogEntry } from "./repo-presets.js";
 import { canonicalRepoFilterValue } from "../utils/repo-filter-values.js";
+import { repositoryKeyFromWire } from "../api/repository-key.js";
 
 let entries = $state.raw<readonly RepoPresetCatalogEntry[]>([]);
 let ready = $state(false);
@@ -40,7 +41,7 @@ export function setWorkspaceRepoCatalog(workspaces: readonly WorkspaceListItem[]
       value,
       provider: identity.repo.provider,
       platform_host: identity.repo.platform_host,
-      platform_repo_id: identity.repo.platform_repo_id ?? 0,
+      repositoryKey: repositoryKeyFromWire(identity.repo),
       repo_path: identity.repo.repo_path,
     };
     const existing = next.findIndex((candidate) => candidate.value === value);

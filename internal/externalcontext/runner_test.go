@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/platform"
 )
 
 // The fixture consumes the actual command protocol and records invocations.
@@ -94,7 +95,7 @@ func fixtureSource(t *testing.T, mode string, extra ...string) (config.ExternalC
 }
 
 func fixturePull() PullRequest {
-	return PullRequest{Provider: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: 123, RepoPath: "group/subgroup/project", Number: 42, URL: "https://git.example.test/group/subgroup/project/-/merge_requests/42", State: "open", HeadSHA: "head-one", BaseSHA: "base-one"}
+	return PullRequest{Provider: "gitlab", PlatformHost: "git.example.test", RepoKey: platform.RepositoryIDKey(123), RepoPath: "group/subgroup/project", Number: 42, URL: "https://git.example.test/group/subgroup/project/-/merge_requests/42", State: "open", HeadSHA: "head-one", BaseSHA: "base-one"}
 }
 
 func invocations(t *testing.T, dir string) []os.DirEntry {
@@ -273,7 +274,7 @@ func TestReadCacheUsesCompletePullSnapshot(t *testing.T) {
 		func(*PullRequest) {},
 		func(p *PullRequest) { p.Provider = "forgejo" },
 		func(p *PullRequest) { p.PlatformHost = "other.example.test" },
-		func(p *PullRequest) { p.PlatformRepoID = 456 },
+		func(p *PullRequest) { p.RepoKey = platform.RepositoryIDKey(456) },
 		func(p *PullRequest) { p.RepoPath = "renamed/project" },
 		func(p *PullRequest) { p.Number = 43 },
 		func(p *PullRequest) { p.URL = "https://example.test/pull/42" },

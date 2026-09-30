@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/platform"
 )
 
 type fakeBackend struct {
@@ -201,15 +203,15 @@ func newMCPTestServer(t *testing.T, backend Backend) *Server {
 func testRepository() RepositoryIdentity {
 	return RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001,
-		RepoPath:       "acme/widget", Owner: "acme", Name: "widget",
+		Key:      platform.RepositoryIDKey(1001),
+		RepoPath: "acme/widget", Owner: "acme", Name: "widget",
 	}
 }
 
 func testItemIdentity(itemType string, number int) ItemIdentity {
 	return ItemIdentity{
 		Type: itemType, Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001,
-		Owner:          "acme", Name: "widget", Number: number,
+		RepoKey: platform.RepositoryIDKey(1001),
+		Owner:   "acme", Name: "widget", Number: number,
 	}
 }

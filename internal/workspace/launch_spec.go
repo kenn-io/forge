@@ -310,7 +310,7 @@ func launchRequest(
 
 func launchSpecSummary(workspace Workspace, spec WorkspaceLaunchSpec) WorkspaceSummary {
 	summary := WorkspaceSummary{Workspace: workspace}
-	summary.RepoPlatformID = spec.Repository.PlatformRepoID
+	summary.RepoKey = spec.Repository.Key
 	summary.SourceItemVisible = spec.SourceVisible
 	if spec.SourceTitle != "" {
 		summary.SourceTitle = &spec.SourceTitle

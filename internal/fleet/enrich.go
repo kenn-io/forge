@@ -429,9 +429,9 @@ func buildWorkspaceSummaries(
 			ID: workspace.ID,
 			Repo: WorkspaceRepositorySummary{
 				Provider: repository.Provider, PlatformHost: repository.PlatformHost,
-				PlatformRepoID: repository.PlatformRepoID,
-				RepoPath:       repository.Owner + "/" + repository.Name,
-				Owner:          repository.Owner, Name: repository.Name,
+				Key:      repository.Key,
+				RepoPath: repository.Owner + "/" + repository.Name,
+				Owner:    repository.Owner, Name: repository.Name,
 			},
 			PlatformHost: repository.PlatformHost,
 			RepoOwner:    repository.Owner, RepoName: repository.Name,

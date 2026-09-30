@@ -37,7 +37,7 @@ func TestResolveConfiguredRepoCanonicalizesClientHosts(t *testing.T) {
 				config.Repo{PlatformHost: tc.repoHost, Owner: "acme", Name: "widgets"})
 			require.NoError(err)
 			require.Len(repos, 1)
-			require.Equal(int64(42), repos[0].PlatformRepoID)
+			require.Equal(platform.RepositoryIDKey(42), repos[0].Key)
 			require.Equal(tc.repoHost, repos[0].PlatformHost)
 		})
 	}
@@ -143,7 +143,7 @@ func TestExpandedRepoSetPrefersResolvedOverFallbackDuplicates(t *testing.T) {
 	resolved := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "frozen",
 		PlatformHost: "github.com", RepoPath: "acme/frozen",
-		PlatformRepoID: 1003, Archived: true,
+		Key: platform.RepositoryIDKey(1003), Archived: true,
 	}
 
 	set := NewExpandedRepoSet()
@@ -178,12 +178,12 @@ func TestExpandedRepoSetReconcilesRenamedRouteByProviderIdentity(t *testing.T) {
 	fallback := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "old-name",
 		PlatformHost: "github.com", RepoPath: "acme/old-name",
-		PlatformRepoID: 1004,
+		Key: platform.RepositoryIDKey(1004),
 	}
 	resolved := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "new-name",
 		PlatformHost: "github.com", RepoPath: "acme/new-name",
-		PlatformRepoID: 1004, Archived: true,
+		Key: platform.RepositoryIDKey(1004), Archived: true,
 	}
 
 	set := NewExpandedRepoSet()
@@ -211,15 +211,15 @@ func TestExpandedRepoSetMergesExactProvenanceAcrossDuplicates(t *testing.T) {
 	exactFallback := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID:     1005,
+		Key:                platform.RepositoryIDKey(1005),
 		ConfiguredRepoPath: "acme/tools", Archived: true,
 	}
 	resolvedGlob := RepoRef{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1005,
-		WebURL:         "https://github.com/acme/tools-new",
-		Archived:       true,
+		Key:      platform.RepositoryIDKey(1005),
+		WebURL:   "https://github.com/acme/tools-new",
+		Archived: true,
 	}
 
 	set := NewExpandedRepoSet()
@@ -601,7 +601,7 @@ func TestFallbackConfiguredRepoRefsHonorsPinnedIdentity(t *testing.T) {
 			verified := RepoRef{
 				Platform: tt.provider, PlatformHost: tt.host,
 				Owner: "acme", Name: "widget-next", RepoPath: "acme/widget-next",
-				ConfiguredRepoPath: "acme/widget", PlatformRepoID: tt.id,
+				ConfiguredRepoPath: "acme/widget", Key: platform.RepositoryIDKey(tt.id),
 				Archived: true,
 			}
 			if tt.fromGlob {
@@ -635,8 +635,8 @@ func TestRepoRefFromRepositoryStampsConfiguredRepoPath(t *testing.T) {
 		platform.Repository{
 			Ref: platform.RepoRef{
 				Owner: "acme", Name: "tools-new",
-				RepoPath:   "acme/tools-new",
-				PlatformID: 1005,
+				RepoPath: "acme/tools-new",
+				Key:      platform.RepositoryIDKey(1005),
 			},
 		},
 	)
@@ -654,7 +654,7 @@ func TestFallbackConfiguredRepoRefsMatchesRenamedRouteByConfiguredPath(t *testin
 		Owner:              "acme",
 		Name:               "tools-new",
 		RepoPath:           "acme/tools-new",
-		PlatformRepoID:     1005,
+		Key:                platform.RepositoryIDKey(1005),
 		ConfiguredRepoPath: "acme/tools",
 		Archived:           true,
 	}

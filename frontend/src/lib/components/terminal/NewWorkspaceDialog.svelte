@@ -22,6 +22,7 @@
   } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { RepositoryReads } from "../../api/repository-reads.js";
+  import { repositoryKeyFromCatalog, repositoryKeyToWire, type RepositoryKey } from "../../api/repository-key.js";
   import { executeOpaqueGeneratedApiRequest } from "../../api/generated-api.js";
   import { FleetSnapshotReads, type HostSummary } from "../../api/fleet-snapshot.js";
   import { devboxRepositoryUnavailableReason, workspaceTargetUnavailableReason } from "../../stores/workspace-target.svelte.js";
@@ -82,7 +83,7 @@
     key: string;
     provider: string;
     platformHost: string;
-    platformRepoId: number;
+    repositoryKey: RepositoryKey | undefined;
     owner: string;
     name: string;
     label: string;
@@ -188,7 +189,7 @@
       key: `${provider}/${repo.PlatformHost}/${repo.Owner}/${repo.Name}`,
       provider,
       platformHost: repo.PlatformHost,
-      platformRepoId: repo.PlatformRepoID,
+      repositoryKey: repositoryKeyFromCatalog(repo),
       owner: repo.Owner,
       name: repo.Name,
       label: `${repo.Owner}/${repo.Name}`,
@@ -211,13 +212,13 @@
   // use the first repository only when there is no remembered choice.
   function defaultRepoSelection(): string {
     if (seedRepo) {
-      if (!seedRepo.platformRepoId) return "";
+      if (!seedRepo.repositoryKey) return "";
       const seededIdentity = repoIdentityKey({ ...seedRepo, provider: canonicalProvider(seedRepo.provider) });
-      return repos.find((repo) => repo.platformRepoId && repoIdentityKey(repo) === seededIdentity)?.key ?? "";
+      return repos.find((repo) => repo.repositoryKey && repoIdentityKey(repo) === seededIdentity)?.key ?? "";
     }
     const lastUsed = getLastUsedNewWorkspaceRepoKey();
     if (lastUsed) {
-      return repos.find((repo) => repo.platformRepoId && repoIdentityKey(repo) === lastUsed)?.key ?? "";
+      return repos.find((repo) => repo.repositoryKey && repoIdentityKey(repo) === lastUsed)?.key ?? "";
     }
     return repos[0]?.key ?? "";
   }
@@ -242,7 +243,7 @@
           // Follow the selected identity across renames. A replacement at its
           // old route must never become the selection.
           selectedKey = previous
-            ? repos.find((repo) => repo.platformRepoId && repoIdentityKey(repo) === repoIdentityKey(previous))?.key ?? ""
+            ? repos.find((repo) => repo.repositoryKey && repoIdentityKey(repo) === repoIdentityKey(previous))?.key ?? ""
             : defaultRepoSelection();
         });
       }),
@@ -429,7 +430,7 @@
 
   const canSubmit = $derived(
     source === "repository"
-      ? !!selected?.platformRepoId && workspaceTargetReason === ""
+      ? !!selected?.repositoryKey && workspaceTargetReason === ""
       : selectedKataReference !== null && selectedDaemonUsable,
   );
 
@@ -499,7 +500,7 @@
       error = workspaceTargetReason;
       return;
     }
-    if (requestedSource === "repository" && !repo?.platformRepoId) {
+    if (requestedSource === "repository" && !repo?.repositoryKey) {
       error = "Pick a repository.";
       return;
     }
@@ -541,7 +542,7 @@
             repoPath: `${repo.owner}/${repo.name}`,
           };
           const routeParams = providerRouteParams(ref);
-          const body = { platform_repo_id: repo.platformRepoId, ...(requested ? { branch: requested } : {}) };
+          const body = { ...repositoryKeyToWire(repo.repositoryKey), ...(requested ? { branch: requested } : {}) };
           if (remoteWorkspaceHostKey?.startsWith("devbox:")) {
             return executeGeneratedApiRequest("create devbox workspace", (client, signal) =>
               client.DevboxesService.createDevboxWorkspace(

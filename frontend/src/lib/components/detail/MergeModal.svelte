@@ -14,6 +14,7 @@
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
+  import type { RepositoryKey } from "../../api/repository-key.js";
 
   const { detail } = getStores();
 
@@ -25,7 +26,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: number | undefined;
+    repositoryKey?: RepositoryKey | undefined;
     repoPath: string;
     prTitle: string;
     prBody: string;
@@ -65,7 +66,7 @@
   }
 
   const {
-    owner, name, number, provider, platformHost, platformRepoId, repoPath, prTitle, prBody,
+    owner, name, number, provider, platformHost, repositoryKey, repoPath, prTitle, prBody,
     prAuthor, prAuthorDisplayName,
     allowSquash, allowMerge, allowRebase,
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
@@ -148,7 +149,7 @@
         reason,
         isProblem(problem) ? problemConflictContext(problem) : undefined,
         pinnedHeadShaAtOpen,
-        { provider, platformHost, platformRepoId, owner, name, repoPath },
+        { provider, platformHost, repositoryKey, owner, name, repoPath },
         number,
         routeGenerationAtOpen,
       );
@@ -159,7 +160,7 @@
     if (headPinMissing) return;
     const params = mergeParams();
     const target = `${repoPath} #${number}`;
-    detail.mergePull({ provider, platformHost, platformRepoId, owner, name, repoPath }, number, params, deferred, {
+    detail.mergePull({ provider, platformHost, repositoryKey, owner, name, repoPath }, number, params, deferred, {
       onProblem: handleMergeProblem,
       onFailure: (message) => showFlash(`${target}: ${message}`, { tone: "danger" }),
     });

@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/server/spokeapi"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/platform"
 )
 
 type descriptorCloneRoutes struct {
@@ -45,7 +46,7 @@ func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,

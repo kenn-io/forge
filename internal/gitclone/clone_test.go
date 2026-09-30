@@ -245,8 +245,8 @@ func TestIntegrationEnsureClonePartitionsConcurrentRouteReuseByProviderIdentity(
 	shaB := commitAndPush(t, workB, "replacement.go", "package replacement\n", "replacement")
 
 	mgr := New(t.TempDir(), nil)
-	ctxA := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
-	ctxB := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1002})
+	ctxA := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
+	ctxB := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1002)})
 	start := make(chan struct{})
 	errs := make(chan error, 2)
 	var ready sync.WaitGroup
@@ -279,7 +279,7 @@ func TestIntegrationEnsureClonePartitionsConcurrentRouteReuseByProviderIdentity(
 func TestIntegrationEnsureCloneValidatedRemovesCloneAfterRouteChange(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	mgr := New(t.TempDir(), nil)
-	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
+	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
 	validationErr := errors.New("repository route changed")
 	var validations atomic.Int64
 
@@ -308,7 +308,7 @@ func TestIntegrationEnsureCloneValidatedRestoresExistingCloneAfterRouteChange(
 ) {
 	remote, work := setupTestRepo(t)
 	mgr := New(t.TempDir(), nil)
-	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
+	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
 	require.NoError(t, mgr.EnsureClone(
 		ctx, "github", "github.com", "acme", "widget", remote,
 	))
@@ -366,7 +366,7 @@ func TestIntegrationEnsureCloneValidatedRejectsStaleCallerBeforeUnvalidatedFetch
 		release: make(chan struct{}),
 	}
 	mgr := New(t.TempDir(), routes)
-	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
+	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
 	leaderDone := make(chan error, 1)
 	go func() {
 		leaderDone <- mgr.EnsureClone(
@@ -403,7 +403,7 @@ func TestIntegrationEnsureCloneValidatedRejectsStaleCallerBeforeUnvalidatedFetch
 func TestIntegrationEnsureCloneValidatedStaleFollowerKeepsValidatedClone(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	mgr := New(t.TempDir(), nil)
-	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
+	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
 
 	leaderValidationStarted := make(chan struct{})
 	releaseLeaderValidation := make(chan struct{})
@@ -477,7 +477,7 @@ func TestIntegrationEnsureCloneValidatedStaleFollowerKeepsValidatedClone(t *test
 func TestIntegrationEnsureCloneValidatedRejectsStaleCallerWhileCurrentCallerValidates(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	mgr := New(t.TempDir(), nil)
-	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
+	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
 	require.NoError(t, mgr.EnsureClone(
 		ctx, "github", "github.com", "acme", "widget", remote,
 	))
@@ -554,7 +554,7 @@ func TestIntegrationEnsureCloneValidatedRejectsStaleCallerWhileCurrentCallerVali
 func TestIntegrationEnsureCloneValidatedFollowerRetriesAfterStarterInvalidation(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	mgr := New(t.TempDir(), nil)
-	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
+	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
 
 	followerJoined := make(chan struct{})
 	staleErr := errors.New("repository route changed")
@@ -617,7 +617,7 @@ func TestIntegrationEnsureCloneValidatedFollowerRetriesAfterStarterInvalidation(
 func TestIntegrationEnsureCloneValidatedCleanupFailureIsNotRetryable(t *testing.T) {
 	remote, _ := setupTestRepo(t)
 	mgr := New(t.TempDir(), nil)
-	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
+	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
 
 	cleanupErr := errors.New("remove invalidated clone failed")
 	var cleanupCalls atomic.Int64
@@ -1189,8 +1189,8 @@ func TestIntegrationClonesForContextListsEveryRouteOfOneIdentity(t *testing.T) {
 	assert := assert.New(t)
 	remote, _ := setupTestRepo(t)
 	mgr := New(t.TempDir(), nil)
-	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1001})
-	otherCtx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1002})
+	ctx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1001)})
+	otherCtx := WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1002)})
 
 	require.NoError(mgr.EnsureClone(
 		ctx, "gitlab", "gitlab.example.com", "platform/tools", "widget", remote,
@@ -1230,7 +1230,7 @@ func TestIntegrationClonesForContextListsEveryRouteOfOneIdentity(t *testing.T) {
 	require.NoError(err)
 	assert.Nil(unscoped, "route-keyed storage cannot be enumerated per repository")
 
-	missing, err := mgr.ClonesForContext(WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{PlatformRepoID: 1003}), "gitlab")
+	missing, err := mgr.ClonesForContext(WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1003)}), "gitlab")
 	require.NoError(err)
 	assert.Empty(missing)
 }

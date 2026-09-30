@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/platform"
 )
 
 func archiveTestTime() time.Time {
@@ -118,7 +119,7 @@ func TestQueueArchivePromptByIdentityTargetsCurrentRouteOccupant(t *testing.T) {
 	now := archiveTestTime()
 	oldEntry, err := database.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NoError(database.EnsureDiscoveryArchives(
@@ -130,7 +131,7 @@ func TestQueueArchivePromptByIdentityTargetsCurrentRouteOccupant(t *testing.T) {
 
 	newEntry, err := database.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1002), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NoError(database.ReconcileDiscoveryArchives(

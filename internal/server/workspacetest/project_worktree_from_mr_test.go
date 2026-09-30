@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/platform"
 )
 
 // registerIdentifiedProject registers localPath as a project carrying the
@@ -425,7 +426,7 @@ func TestCreateWorktreeFromMergeRequestRouteSyncsOnDemand(t *testing.T) {
 	database := dbtest.Open(t)
 	ref := ghclient.RepoRef{
 		Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+		Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 	}
 	_, err := reposeed.Seed(
 		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
@@ -516,7 +517,7 @@ func TestCreateWorktreeFromMergeRequestRouteDoesNotSyncRemovedItem(t *testing.T)
 		map[string]ghclient.Client{"github.com": mock}, database, nil,
 		[]ghclient.RepoRef{{
 			Platform: "github", PlatformHost: "github.com",
-			Owner: "acme", Name: "widget", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+			Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 		}},
 		time.Minute, nil, nil,
 	)

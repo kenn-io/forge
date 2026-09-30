@@ -43,7 +43,7 @@ func TestRepositoryRecoversMovedIDAndObservesWritePermission(t *testing.T) {
 	repo, err := c.GetRepository(t.Context(), ref)
 	require.NoError(t, err)
 	assert.Equal(t, "NEW/renamed", repo.Ref.RepoPath)
-	assert.Equal(t, int64(42), repo.Ref.PlatformID)
+	assert.Equal(t, platform.RepositoryIDKey(42), repo.Ref.Key)
 	assert.True(t, repo.Archived)
 	require.NotNil(t, repo.ViewerCanMerge)
 	assert.True(t, *repo.ViewerCanMerge)

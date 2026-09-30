@@ -4,6 +4,7 @@ package snapshot
 import (
 	"errors"
 	"time"
+	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/archive/report"
@@ -30,15 +31,18 @@ type ArchiveSnapshot struct {
 }
 
 type SnapshotRepository struct {
-	ID            string            `json:"id"`
-	Provider      string            `json:"provider"`
-	Host          string            `json:"host"`
-	ProviderID    int64             `json:"provider_id"`
-	Path          string            `json:"path"`
-	DefaultBranch string            `json:"default_branch"`
-	LastSyncAt    *time.Time        `json:"last_sync_at"`
-	SyncError     string            `json:"sync_error"`
-	Coverage      *SnapshotCoverage `json:"coverage"`
+	ID         string `json:"id"`
+	Provider   string `json:"provider"`
+	Host       string `json:"host"`
+	ProviderID int64  `json:"provider_id"`
+	// BitbucketRepositoryUUID is Bitbucket Cloud's repository key; Cloud
+	// repositories have ProviderID 0.
+	BitbucketRepositoryUUID uuid.UUID         `json:"bitbucket_repository_uuid,omitzero"`
+	Path                    string            `json:"path"`
+	DefaultBranch           string            `json:"default_branch"`
+	LastSyncAt              *time.Time        `json:"last_sync_at"`
+	SyncError               string            `json:"sync_error"`
+	Coverage                *SnapshotCoverage `json:"coverage"`
 }
 
 type SnapshotItem struct {

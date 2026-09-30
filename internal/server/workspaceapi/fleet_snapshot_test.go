@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
@@ -21,7 +22,7 @@ func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
 	database := dbtest.Open(t)
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "octo", Name: "repo",
+		Key: platform.RepositoryIDKey(1001), Owner: "octo", Name: "repo",
 	})
 	require.NoError(err)
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
@@ -50,7 +51,7 @@ func TestFleetSnapshotUsesWorkspaceOwnedSummaryContract(t *testing.T) {
 	require.Len(snapshot.Workspaces, 1)
 	workspace := snapshot.Workspaces[0]
 	assert.Equal("ws-fleet", workspace.ID)
-	assert.Equal(int64(1001), workspace.Repository.PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(1001), workspace.Repository.Key)
 	assert.True(workspace.SourceItemVisible)
 	assert.Nil(workspace.MRTitle, "spoke raw state must omit provider title")
 	assert.Nil(workspace.MRState, "spoke raw state must omit provider state")

@@ -63,12 +63,12 @@ func seedProviderRepo(
 ) int64 {
 	t.Helper()
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
-		Platform:       string(kind),
-		PlatformHost:   host,
-		PlatformRepoID: 42,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     string(kind),
+		PlatformHost: host,
+		Key:          platform.RepositoryIDKey(42),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(t, err)
 	return repoID
@@ -142,12 +142,12 @@ func newLabelTestServer(
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil,
 		[]ghclient.RepoRef{{
-			Platform:       kind,
-			PlatformHost:   host,
-			PlatformRepoID: 42,
-			Owner:          "acme",
-			Name:           "widget",
-			RepoPath:       "acme/widget",
+			Platform:     kind,
+			PlatformHost: host,
+			Key:          platform.RepositoryIDKey(42),
+			Owner:        "acme",
+			Name:         "widget",
+			RepoPath:     "acme/widget",
 		}},
 		time.Minute, nil, nil,
 	)

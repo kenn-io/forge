@@ -3,6 +3,7 @@
  */
 
 export interface RepositoryIdentity {
+  bitbucketRepositoryUUID?: string;
   name?: string;
   owner?: string;
   platformHost: string;

@@ -102,7 +102,7 @@ func (s *Handler) toCachedWorkspaceResponse(
 	defer s.applyAgentActivity(&resp, summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
-		summary.RepoPlatformID,
+		summary.RepoKey,
 	)
 	if s.workspaceEnrichmentDisabled {
 		return
@@ -135,7 +135,7 @@ func (s *Handler) workspaceResponseFromEnrichmentCacheEntry(
 	resp := toWorkspaceResponse(summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
-		summary.RepoPlatformID,
+		summary.RepoKey,
 	)
 	resp.EnrichmentStatus = workspaceEnrichmentPending
 	if entry == nil {

@@ -14,12 +14,12 @@ import (
 
 func gitlabLabelTestRef() platform.RepoRef {
 	return platform.RepoRef{
-		Platform:   platform.KindGitLab,
-		Host:       "gitlab.example.com",
-		Owner:      "acme",
-		Name:       "widget",
-		RepoPath:   "acme/widget",
-		PlatformID: 42,
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		Owner:    "acme",
+		Name:     "widget",
+		RepoPath: "acme/widget",
+		Key:      platform.RepositoryIDKey(42),
 	}
 }
 

@@ -73,7 +73,8 @@ func (c *Client) repositoryPermissions(ctx context.Context, workspace string) (m
 // Repository permission is a user grant, not proof of token scopes or branch
 // restrictions. Bitbucket remains authoritative when the merge is attempted.
 func (c *Client) observeMerge(ctx context.Context, repo *platform.Repository, grants map[uuid.UUID]bool) error {
-	repo.ViewerCanMerge = new(grants[repo.Ref.BitbucketRepositoryUUID])
+	id, _ := repo.Ref.Key.UUID()
+	repo.ViewerCanMerge = new(grants[id])
 	if grants == nil {
 		return nil
 	}

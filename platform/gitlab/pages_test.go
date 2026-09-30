@@ -18,7 +18,7 @@ import (
 func gitLabPagesTestRef() platform.RepoRef {
 	return platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.example.com",
-		Owner: "group", Name: "project", RepoPath: "group/project", PlatformID: 42,
+		Owner: "group", Name: "project", RepoPath: "group/project", Key: platform.RepositoryIDKey(42),
 		WebURL: "https://gitlab.example.com/group/project",
 	}
 }
@@ -97,7 +97,7 @@ func TestGitLabUpdatedInventoryBindsCursorToQueryShape(t *testing.T) {
 	otherRepo := ref
 	otherRepo.Name = "other"
 	otherRepo.RepoPath = "group/other"
-	otherRepo.PlatformID = 43
+	otherRepo.Key = platform.RepositoryIDKey(43)
 	_, err = client.ListIssuesPage(t.Context(), otherRepo, query(watermark, issues.NextCursor))
 	require.ErrorIs(err, platform.ErrProviderContract)
 	// Ref hydration pins every read to the client's own host, so cross-host

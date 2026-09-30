@@ -44,6 +44,7 @@
     workflowDispatchPresentation,
   } from "./workflow-dispatch-presentation.js";
   import WorkflowRunList from "./WorkflowRunList.svelte";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   const runtime = getAppRuntime();
   const { workflowActions, events } = getStores();
@@ -162,17 +163,17 @@
 
   function supportsWorkflowActions(summary: RepoSummaryCard): boolean {
     const capabilities = summary.repo.capabilities;
-    return !!summary.repo.platform_repo_id
+    return !!repositoryKeyFromWire(summary.repo)
       && capabilities.read_workflows
       && capabilities.read_workflow_runs
       && capabilities.workflow_dispatch;
   }
 
   function workflowRef(summary: RepoSummaryCard): WorkflowRepositoryRef | null {
-    const platformRepoId = summary.repo.platform_repo_id;
-    if (!platformRepoId) return null;
+    const repositoryKey = repositoryKeyFromWire(summary.repo);
+    if (!repositoryKey) return null;
     return {
-      platformRepoId,
+      repositoryKey,
       provider: summary.repo.provider,
       platformHost: summary.repo.platform_host,
       owner: summary.repo.owner,
@@ -269,7 +270,7 @@
         const identity = {
           provider: event.payload.provider,
           platformHost: event.payload.platform_host,
-          platformRepoId: event.payload.platform_repo_id,
+          repositoryKey: repositoryKeyFromWire(event.payload),
         };
         if (workflowRepositoryKey(identity) === workflowRepositoryKey(ref)) workflowActions.refreshRuns(ref);
       });

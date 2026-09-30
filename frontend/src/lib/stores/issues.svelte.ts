@@ -44,6 +44,13 @@ import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter
 import { readIssuePRReferenceFilter, writeIssuePRReferenceFilter } from "./issue-pr-reference-filter.js";
 import { createRecentDetails } from "./recent-details.js";
 import { repoIdentityKey } from "../utils/repo-label.js";
+import {
+  repositoryKeyAllows,
+  repositoryKeyFromWire,
+  repositoryKeyString,
+  sameRepositoryKey,
+  type RepositoryKey,
+} from "../api/repository-key.js";
 
 export type { IssueDetailSyncMode } from "./issues-workflow.js";
 
@@ -60,7 +67,7 @@ export interface IssueDetailRequestOptions {
   sync?: IssueDetailSyncMode;
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: number | undefined;
+  repositoryKey?: RepositoryKey | undefined;
   repoPath: string;
 }
 
@@ -70,7 +77,7 @@ type IssueDetailRequestRef = {
   number: number;
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: number | undefined;
+  repositoryKey?: RepositoryKey | undefined;
   repoPath: string;
 };
 
@@ -182,7 +189,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   type UnsavedIssueTarget = {
     provider: string;
     platformHost: string | undefined;
-    platformRepoId: number | undefined;
+    repositoryKey: RepositoryKey | undefined;
     owner: string;
     name: string;
     number: number;
@@ -266,7 +273,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return repoIdentityKey({
       provider: issue.repo.provider,
       platformHost: issue.repo.platform_host,
-      platformRepoId: issue.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(issue.repo),
       owner: issue.repo.owner,
       name: issue.repo.name,
       repoPath: issue.repo.repo_path,
@@ -533,7 +540,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     ) {
       return next;
     }
-    if (!unsavedLocalBody.platformRepoId || unsavedLocalBody.platformRepoId !== next.repo.platform_repo_id) {
+    if (
+      !unsavedLocalBody.repositoryKey ||
+      !sameRepositoryKey(unsavedLocalBody.repositoryKey, repositoryKeyFromWire(next.repo))
+    ) {
       unsavedLocalBody = null;
       return next;
     }
@@ -613,7 +623,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       issueDetail.issue.Number === ref.number &&
       sameBodyTarget(issueDetail.repo?.provider, issueDetail.repo?.platform_host, ref.provider, ref.platformHost) &&
       issueDetail.repo?.repo_path === ref.repoPath &&
-      (!ref.platformRepoId || issueDetail.repo?.platform_repo_id === ref.platformRepoId)
+      repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(issueDetail.repo))
     );
   }
 
@@ -626,7 +636,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return issueDetailRequestRef(owner, name, number, {
       provider,
       platformHost: issueDetail?.repo?.platform_host ?? selectedIssue?.platformHost,
-      platformRepoId: issueDetail?.repo?.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(issueDetail?.repo),
       repoPath,
     });
   }
@@ -643,7 +653,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       number,
       provider: options.provider,
       platformHost: options.platformHost,
-      platformRepoId: options.platformRepoId,
+      repositoryKey: options.repositoryKey,
       repoPath: options.repoPath,
     };
   }
@@ -712,7 +722,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     authoritative: IssueDetail,
     installEnvelope: () => boolean,
   ) {
-    if (ref.platformRepoId && authoritative.repo.platform_repo_id !== ref.platformRepoId) return Effect.succeed(false);
+    if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo)))
+      return Effect.succeed(false);
     return Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
       const labels = authoritative.issue.labels ?? [];
@@ -766,7 +777,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       if (!isIssueDetailShowingRef(ref) || issueDetail === null) return;
       const projectedBody =
         unsavedLocalBody !== null &&
-        unsavedLocalBody.platformRepoId === issueDetail.repo.platform_repo_id &&
+        sameRepositoryKey(unsavedLocalBody.repositoryKey, repositoryKeyFromWire(issueDetail.repo)) &&
         sameBodyTarget(unsavedLocalBody.provider, unsavedLocalBody.platformHost, ref.provider, ref.platformHost) &&
         unsavedLocalBody.owner === ref.owner &&
         unsavedLocalBody.name === ref.name &&
@@ -809,7 +820,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         number: ref.number,
       }),
       ref.repoPath,
-      ref.platformRepoId ?? null,
+      ref.repositoryKey ? repositoryKeyString(ref.repositoryKey) : null,
     ]);
   }
 
@@ -966,7 +977,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const key = issueDetailKey(ref);
     if (activeIssueSelectionKey !== key) {
       rememberIssueDetail();
-      const previous = ref.platformRepoId
+      const previous = ref.repositoryKey
         ? recentDetails.get(JSON.stringify([issueDetailKey(ref), ref.repoPath]))
         : undefined;
       issueDetailCacheTick = previous ? nextWorkspaceLifecycleTick() : 0;
@@ -975,7 +986,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         issueDetail = previous.detail;
         issueDetailEnvelopeTick = previous.envelopeTick;
         issueDetailLoaded = previous.loaded;
-      } else if (isIssueDetailShowingRef({ ...ref, platformRepoId: undefined })) {
+      } else if (isIssueDetailShowingRef({ ...ref, repositoryKey: undefined })) {
         issueDetail = null;
         issueDetailLoaded = false;
         unsavedLocalBody = null;
@@ -1070,11 +1081,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
 
   function rememberIssueDetail(): void {
-    if (!issueDetail?.repo.platform_repo_id) return;
+    if (!issueDetail || !repositoryKeyFromWire(issueDetail.repo)) return;
     const ref = issueDetailRequestRef(issueDetail.repo_owner, issueDetail.repo_name, issueDetail.issue.Number, {
       provider: issueDetail.repo.provider,
       platformHost: issueDetail.repo.platform_host,
-      platformRepoId: issueDetail.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(issueDetail.repo),
       repoPath: issueDetail.repo.repo_path,
     });
     recentDetails.remember(JSON.stringify([issueDetailKey(ref), ref.repoPath]), {
@@ -1614,7 +1625,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     unsavedLocalBody = {
       provider,
       platformHost,
-      platformRepoId: issueDetail.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(issueDetail.repo),
       owner,
       name,
       number,
@@ -1642,7 +1653,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   } {
     const requestedRef = issueDetailRequestRef(owner, name, number, routeRef);
     const visibleDetail = isIssueDetailShowingRef(requestedRef) ? issueDetail : null;
-    const ref = visibleDetail ? { ...requestedRef, platformRepoId: visibleDetail.repo.platform_repo_id } : requestedRef;
+    const ref = visibleDetail
+      ? { ...requestedRef, repositoryKey: repositoryKeyFromWire(visibleDetail.repo) }
+      : requestedRef;
     const baseline = visibleDetail?.issue.Body ?? body;
     let confirmed: { readonly detail: IssueDetail; readonly envelopeTick: number } | undefined;
     let acknowledgedUnsavedTarget: UnsavedIssueTarget | null = null;
@@ -1670,8 +1683,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               if (
                 unsavedLocalBody !== null &&
                 unsavedLocalBody.body === body &&
-                unsavedLocalBody.platformRepoId === ref.platformRepoId &&
-                unsavedLocalBody.platformRepoId === detail.repo.platform_repo_id &&
+                sameRepositoryKey(unsavedLocalBody.repositoryKey, ref.repositoryKey) &&
+                sameRepositoryKey(unsavedLocalBody.repositoryKey, repositoryKeyFromWire(detail.repo)) &&
                 sameBodyTarget(
                   unsavedLocalBody.provider,
                   unsavedLocalBody.platformHost,

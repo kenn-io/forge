@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 type staticRepositoryDescriptorSource struct {
@@ -29,8 +30,8 @@ func TestRepoBrowserRejectsDescriptorForDifferentStableRepository(t *testing.T) 
 	database := dbtest.Open(t)
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1002,
-		Owner:          "acme", Name: "widget", RepoPath: "acme/widget",
+		Key:   platform.RepositoryIDKey(1002),
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(t, err)
 	require.NoError(t, database.UpdateRepoProviderObservation(
@@ -47,8 +48,8 @@ func TestRepoBrowserRejectsDescriptorForDifferentStableRepository(t *testing.T) 
 		DescriptorSource: staticRepositoryDescriptorSource{descriptor: providerplane.RepositoryDescriptor{
 			ProtocolVersion: federation.ProtocolVersion,
 			Provider:        "github", PlatformHost: "github.com",
-			PlatformRepoID: 1001,
-			Owner:          "acme", Name: "widget",
+			Key:   platform.RepositoryIDKey(1001),
+			Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			ObservedAt: time.Now().UTC(),
 		}},

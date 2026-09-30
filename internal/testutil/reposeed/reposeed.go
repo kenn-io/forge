@@ -8,14 +8,15 @@ import (
 	"strings"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 )
 
 // Seed records identity as an observed repository and returns its row ID.
 // When identity names only a route, it gets SyntheticID for that route, so
 // seeding the same route twice returns the same row.
 func Seed(ctx context.Context, d *db.DB, identity db.RepoIdentity) (int64, error) {
-	if identity.PlatformRepoID == 0 {
-		identity.PlatformRepoID = SyntheticID(identity)
+	if identity.Key.IsZero() {
+		identity.Key = platform.RepositoryIDKey(SyntheticID(identity))
 	}
 	entry, err := d.ObserveRepository(ctx, identity)
 	if err != nil {

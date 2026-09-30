@@ -13,6 +13,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
@@ -1353,11 +1354,11 @@ func upsertFixtureRepo(ctx context.Context, d *db.DB, identity db.RepoIdentity) 
 
 func fixtureRepoIdentity(owner, name string) db.RepoIdentity {
 	return db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: FixtureRepoID(owner, name),
-		Owner:          owner,
-		Name:           name,
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(FixtureRepoID(owner, name)),
+		Owner:        owner,
+		Name:         name,
 	}
 }
 

@@ -2,10 +2,12 @@
 // app shell so both entry points — the Workspaces sidebar button and the
 // command palette, which can fire from any page — drive the same instance.
 
+import type { RepositoryKey } from "../api/repository-key.js";
+
 export type NewWorkspaceRepoSeed = {
   provider: string;
   platformHost: string;
-  platformRepoId?: number | undefined;
+  repositoryKey?: RepositoryKey | undefined;
   owner: string;
   name: string;
 };

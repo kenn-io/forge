@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 )
 
 func workspaceLaunchResponseForTest() (WorkspaceLaunchRequest, db.WorkspaceLaunchSpec) {
@@ -23,7 +24,7 @@ func workspaceLaunchResponseForTest() (WorkspaceLaunchRequest, db.WorkspaceLaunc
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
@@ -104,14 +105,14 @@ func TestWorkspaceLaunchResponseValidatesExactGitIdentity(t *testing.T) {
 
 func TestWorkspaceLaunchRefreshAcceptsRenamedStableRepository(t *testing.T) {
 	request, spec := workspaceLaunchResponseForTest()
-	request.PlatformRepoID = spec.Repository.PlatformRepoID
+	request.RepoKey = spec.Repository.Key
 	spec.Repository.Owner = "acme-renamed"
 	spec.Repository.Name = "widget-renamed"
 	spec.Repository.CloneURL = "https://github.com/acme-renamed/widget-renamed.git"
 
 	require.NoError(t, ValidateFederationWorkspaceLaunchSpecResponse(request, spec))
 
-	spec.Repository.PlatformRepoID = 1002
+	spec.Repository.Key = platform.RepositoryIDKey(1002)
 	require.ErrorContains(
 		t, ValidateFederationWorkspaceLaunchSpecResponse(request, spec),
 		"repository identity",

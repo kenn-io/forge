@@ -123,11 +123,11 @@ func TestAPIListReposDoesNotWaitForWriteCredentials(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	identities := []db.RepoIdentity{
-		{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
-		{Platform: "gitlab", PlatformHost: "gitlab.example.com", PlatformRepoID: 202, Owner: "group/subgroup", Name: "widget", RepoPath: "group/subgroup/widget"},
-		{Platform: "forgejo", PlatformHost: "forge.example.com", PlatformRepoID: 303, Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
-		{Platform: "gitea", PlatformHost: "forge.example.com", PlatformRepoID: 404, Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
-		{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 505, Owner: "acme", Name: "hidden", RepoPath: "acme/hidden"},
+		{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(101), Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
+		{Platform: "gitlab", PlatformHost: "gitlab.example.com", Key: platform.RepositoryIDKey(202), Owner: "group/subgroup", Name: "widget", RepoPath: "group/subgroup/widget"},
+		{Platform: "forgejo", PlatformHost: "forge.example.com", Key: platform.RepositoryIDKey(303), Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
+		{Platform: "gitea", PlatformHost: "forge.example.com", Key: platform.RepositoryIDKey(404), Owner: "acme", Name: "widget", RepoPath: "acme/widget"},
+		{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(505), Owner: "acme", Name: "hidden", RepoPath: "acme/hidden"},
 	}
 	tracked := make([]ghclient.RepoRef, 0, len(identities))
 	cfg := &config.Config{}
@@ -141,10 +141,12 @@ func TestAPIListReposDoesNotWaitForWriteCredentials(t *testing.T) {
 			Platform: platform.Kind(identity.Platform), PlatformHost: identity.PlatformHost,
 			Owner: identity.Owner, Name: identity.Name, RepoPath: identity.RepoPath,
 		})
-		cfg.Repos = append(cfg.Repos, config.Repo{
+		configured := config.Repo{
 			Platform: identity.Platform, PlatformHost: identity.PlatformHost,
-			Owner: identity.Owner, Name: identity.Name, PlatformRepoID: identity.PlatformRepoID,
-		})
+			Owner: identity.Owner, Name: identity.Name,
+		}
+		configured.SetRepositoryKey(identity.Key)
+		cfg.Repos = append(cfg.Repos, configured)
 	}
 	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "untracked"))
 	require.NoError(err)
@@ -551,12 +553,12 @@ func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 	repoPath := "Team One/Sub Team/project+#1"
 	number := int64(7)
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       provider,
-		PlatformHost:   host,
-		PlatformRepoID: 7000,
-		Owner:          "Team One/Sub Team",
-		Name:           "project+#1",
-		RepoPath:       repoPath,
+		Platform:     provider,
+		PlatformHost: host,
+		Key:          platform.RepositoryIDKey(7000),
+		Owner:        "Team One/Sub Team",
+		Name:         "project+#1",
+		RepoPath:     repoPath,
 	})
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{
@@ -594,12 +596,12 @@ func TestProviderIssueRouteHandlesNestedGitLabRepoPathOverHTTP(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "git.example.com",
-		PlatformRepoID: 7007,
-		Owner:          "group/subgroup",
-		Name:           "project",
-		RepoPath:       "group/subgroup/project",
+		Platform:     "gitlab",
+		PlatformHost: "git.example.com",
+		Key:          platform.RepositoryIDKey(7007),
+		Owner:        "group/subgroup",
+		Name:         "project",
+		RepoPath:     "group/subgroup/project",
 	})
 	require.NoError(err)
 	_, err = database.UpsertIssue(ctx, &db.Issue{

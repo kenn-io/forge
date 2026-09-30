@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 )
 
 func TestCreateAdHocGeneratesBranchWhenUnnamed(t *testing.T) {
@@ -60,12 +61,12 @@ func TestCreateAdHocRejectsChangedRepositoryIdentity(t *testing.T) {
 	seedRepo(t, database, "github.com", "acme", "widget")
 	manager := NewManager(database, t.TempDir())
 	ws, err := manager.CreateAdHoc(t.Context(), "github", "github.com", "acme", "widget",
-		CreateAdHocOptions{PlatformRepoID: 2002, BranchName: "spike/stale-picker"})
+		CreateAdHocOptions{RepoKey: platform.RepositoryIDKey(2002), BranchName: "spike/stale-picker"})
 	require.ErrorIs(err, db.ErrRepositoryIdentityChanged)
 	require.Nil(ws)
 
 	ws, err = manager.CreateAdHoc(t.Context(), "github", "github.com", "acme", "widget",
-		CreateAdHocOptions{PlatformRepoID: testRepoID("acme", "widget"), BranchName: "spike/stale-picker"})
+		CreateAdHocOptions{RepoKey: platform.RepositoryIDKey(testRepoID("acme", "widget")), BranchName: "spike/stale-picker"})
 	require.NoError(err)
 	require.Equal("spike/stale-picker", ws.GitHeadRef)
 }
@@ -554,11 +555,11 @@ func TestSetupFailsClosedWhenRouteReplacedMidSetup(t *testing.T) {
 	mgr.beforeSetupRouteRevalidation = func() {
 		_, replaceErr := d.ObserveRepository(
 			t.Context(), db.RepoIdentity{
-				Platform:       "github",
-				PlatformHost:   platformHost,
-				PlatformRepoID: 1012,
-				Owner:          "acme",
-				Name:           "widget",
+				Platform:     "github",
+				PlatformHost: platformHost,
+				Key:          platform.RepositoryIDKey(1012),
+				Owner:        "acme",
+				Name:         "widget",
 			},
 		)
 		require.NoError(replaceErr)
@@ -580,19 +581,19 @@ func TestSetupUsesCurrentRepositoryAfterRouteReuse(t *testing.T) {
 		t, "feature/other",
 	)
 	_, err := d.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   platformHost,
-		PlatformRepoID: 1020,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: platformHost,
+		Key:          platform.RepositoryIDKey(1020),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	current, err := d.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   platformHost,
-		PlatformRepoID: 1013,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: platformHost,
+		Key:          platform.RepositoryIDKey(1013),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	require.NotNil(current)

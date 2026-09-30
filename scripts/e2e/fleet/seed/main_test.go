@@ -8,6 +8,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/platform"
 )
 
 func TestRunProviderOnlySeedsLaunchSpecSourceWithoutWorkspace(t *testing.T) {
@@ -29,7 +30,7 @@ func TestRunProviderOnlySeedsLaunchSpecSourceWithoutWorkspace(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NotNil(repo)
-	require.Equal(int64(fleetWidgetRepoID), repo.PlatformRepoID)
+	require.Equal(platform.RepositoryIDKey(fleetWidgetRepoID), repo.Key)
 	require.Equal("https://github.com/acme/fleet-widget", repo.WebURL)
 	require.Equal(cloneURL, repo.CloneURL)
 	require.Equal("main", repo.DefaultBranch)

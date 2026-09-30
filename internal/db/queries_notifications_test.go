@@ -115,7 +115,7 @@ func TestLatestOpenPRNotificationActivityFollowsLinkedRepositoryRename(t *testin
 
 	entry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NotNil(entry)
@@ -133,7 +133,7 @@ func TestLatestOpenPRNotificationActivityFollowsLinkedRepositoryRename(t *testin
 
 	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "gadget",
 	})
 	require.NoError(err)
 
@@ -153,7 +153,7 @@ func TestLatestOpenPRNotificationActivityKeepsLinkedIdentityAcrossRouteReuse(t *
 
 	oldEntry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NotNil(oldEntry)
@@ -170,12 +170,12 @@ func TestLatestOpenPRNotificationActivityKeepsLinkedIdentityAcrossRouteReuse(t *
 
 	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "gadget",
 	})
 	require.NoError(err)
 	newEntry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1002), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NotNil(newEntry)
@@ -460,7 +460,7 @@ func TestSpokePreparationCountsUndeliverableNotificationAcks(t *testing.T) {
 	require.NotNil(repo)
 	_, err = database.DeactivateRepository(t.Context(), platform.RepositoryIdentity{
 		Provider: repo.Platform, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
+		Key: repo.Key,
 	})
 	require.NoError(err)
 
@@ -1098,7 +1098,7 @@ func TestNotificationsRouteFilterFollowsRepositoryRename(t *testing.T) {
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	_, err := d.ObserveRepository(t.Context(), RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertNotifications(t.Context(), []Notification{
@@ -1107,7 +1107,7 @@ func TestNotificationsRouteFilterFollowsRepositoryRename(t *testing.T) {
 
 	_, err = d.ObserveRepository(t.Context(), RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "gadget",
 	})
 	require.NoError(err)
 
@@ -1134,7 +1134,7 @@ func TestNotificationSummaryGroupsByCurrentRoute(t *testing.T) {
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	_, err := d.ObserveRepository(t.Context(), RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertNotifications(t.Context(), []Notification{
@@ -1142,7 +1142,7 @@ func TestNotificationSummaryGroupsByCurrentRoute(t *testing.T) {
 	}))
 	_, err = d.ObserveRepository(t.Context(), RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "gadget",
 	})
 	require.NoError(err)
 
@@ -1166,7 +1166,7 @@ func TestListQueuedNotificationAcksFollowsRenamedRepositoryRoute(t *testing.T) {
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	entry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	repoID := entry.Repository.ID
@@ -1188,7 +1188,7 @@ func TestListQueuedNotificationAcksFollowsRenamedRepositoryRoute(t *testing.T) {
 
 	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "renamed",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "renamed",
 	})
 	require.NoError(err)
 
@@ -1210,7 +1210,7 @@ func TestListQueuedNotificationAcksDoesNotLetUnroutableLinkedRowsConsumeLimit(t 
 
 	stale, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	staleNotification := notificationFixture("stale-thread", "mention", now)
@@ -1230,13 +1230,13 @@ func TestListQueuedNotificationAcksDoesNotLetUnroutableLinkedRowsConsumeLimit(t 
 	// acknowledgement linked by stable ID, but without a current route.
 	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1002), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 
 	current, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1003, Owner: "acme", Name: "gadget",
+		Key: platform.RepositoryIDKey(1003), Owner: "acme", Name: "gadget",
 	})
 	require.NoError(err)
 	currentNotification := notificationFixture(
@@ -1280,7 +1280,7 @@ func TestDeferQueuedNotificationAcksUsesStableRepoIDAfterRename(t *testing.T) {
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	entry, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	repoID := entry.Repository.ID
@@ -1296,7 +1296,7 @@ func TestDeferQueuedNotificationAcksUsesStableRepoIDAfterRename(t *testing.T) {
 
 	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "renamed",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "renamed",
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertNotifications(ctx, []Notification{{

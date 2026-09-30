@@ -828,7 +828,7 @@ func (s *Handlers) resolveReposForReload(
 		kind := platform.Kind(raw.PlatformOrDefault())
 		if _, err := (*s.Syncer).RepositoryReader(kind, host); err != nil {
 			for _, repo := range ghclient.FallbackConfiguredRepoRefs(previous, raw) {
-				if repo.PlatformRepoID != 0 || slices.Contains(previous, repo) {
+				if !repo.Key.IsZero() || slices.Contains(previous, repo) {
 					set.Add(repo, false)
 				}
 			}

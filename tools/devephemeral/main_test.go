@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 	_ "modernc.org/sqlite"
 )
 
@@ -463,7 +464,7 @@ func TestDevEphemeralDefaultStartsWithoutProviderAccess(t *testing.T) {
 	require.NoError(sourceConfig.Save(sourcePath))
 	database := dbtest.OpenAt(t, filepath.Join(sourceDataDir, "forge.db"))
 	_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
-		Platform: "github", PlatformHost: providerHost, PlatformRepoID: 42,
+		Platform: "github", PlatformHost: providerHost, Key: platform.RepositoryIDKey(42),
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
 	})
 	require.NoError(err)

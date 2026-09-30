@@ -365,11 +365,11 @@ func TestAPIAssigneeAndReviewerMutationsAreCapabilityGated(t *testing.T) {
 	})
 
 	_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
-		Platform:       "forgejo",
-		PlatformHost:   "codeberg.org",
-		PlatformRepoID: 1001,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "forgejo",
+		PlatformHost: "codeberg.org",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 

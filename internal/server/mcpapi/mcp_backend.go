@@ -39,10 +39,10 @@ func ValidateMCPRepositoryIdentity(identity mcpserver.RepositoryIdentity) error 
 			Message: "provider is required",
 		}
 	}
-	if identity.PlatformRepoID <= 0 {
+	if identity.Key.IsZero() {
 		return &mcpserver.Error{
 			Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
-			Message: "platform_repo_id is required",
+			Message: "platform_repo_id or bitbucket_repository_uuid is required",
 		}
 	}
 	return nil
@@ -53,11 +53,11 @@ func McpRepositoryStableIdentityMatches(
 ) bool {
 	actual := platform.RepositoryIdentity{
 		Provider: repo.Platform, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
+		Key: repo.Key,
 	}.Canonical()
 	expected := platform.RepositoryIdentity{
 		Provider: identity.Provider, PlatformHost: identity.PlatformHost,
-		PlatformRepoID: identity.PlatformRepoID,
+		Key: identity.Key,
 	}.Canonical()
 	return actual.Valid() && actual == expected
 }
@@ -79,8 +79,8 @@ func ItemAtResolvedRoute(item mcpserver.ItemIdentity, repo *db.Repo) mcpserver.I
 func ItemRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIdentity {
 	return mcpserver.RepositoryIdentity{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
-		PlatformRepoID: item.PlatformRepoID,
-		Owner:          item.Owner, Name: item.Name,
+		Key:   item.RepoKey,
+		Owner: item.Owner, Name: item.Name,
 	}
 }
 
@@ -151,8 +151,8 @@ func NormalizeMCPWorkflowStatus(status string) db.KanbanStatus {
 func RepositoryIdentityFromResponse(repo httpapi.RepoRefResponse) mcpserver.RepositoryIdentity {
 	return mcpserver.RepositoryIdentity{
 		Provider: repo.Provider, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
-		RepoPath:       repo.RepoPath, Owner: repo.Owner, Name: repo.Name,
+		Key:      repo.Key,
+		RepoPath: repo.RepoPath, Owner: repo.Owner, Name: repo.Name,
 	}
 }
 
@@ -173,8 +173,8 @@ func McpRepoFilters(repo mcpserver.RepositoryIdentity) []db.RepoFilter {
 	}
 	return []db.RepoFilter{{
 		Platform: repo.Provider, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
-		RepoPath:       repo.RepoPath, RepoOwner: repo.Owner, RepoName: repo.Name,
+		RepoKey:  repo.Key,
+		RepoPath: repo.RepoPath, RepoOwner: repo.Owner, RepoName: repo.Name,
 	}}
 }
 

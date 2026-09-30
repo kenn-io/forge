@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 func TestBuildLocalRawCorrelatesRenamedRepositoryByStableIdentity(t *testing.T) {
@@ -22,7 +23,7 @@ func TestBuildLocalRawCorrelatesRenamedRepositoryByStableIdentity(t *testing.T) 
 	database := dbtest.Open(t)
 	ctx := t.Context()
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 		Owner: "acme", Name: "widget-renamed", RepoPath: "acme/widget-renamed",
 	})
 	require.NoError(err)
@@ -38,8 +39,8 @@ func TestBuildLocalRawCorrelatesRenamedRepositoryByStableIdentity(t *testing.T) 
 			ID: "ws-renamed",
 			Repository: fleet.RepositoryIdentity{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: 1001,
-				Owner:          "acme", Name: "widget",
+				Key:   platform.RepositoryIDKey(1001),
+				Owner: "acme", Name: "widget",
 			},
 			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7, ItemKey: "7",
 			WorktreePath: filepath.Join(t.TempDir(), "workspace"),
@@ -110,7 +111,7 @@ func TestBuildLocalRawSynthesizedProjectFillsDefaultBranchFromSyncedRepo(t *test
 	ctx := t.Context()
 
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002),
 		Owner: "o", Name: "synced", RepoPath: "o/synced",
 	})
 	require.NoError(err)
@@ -149,7 +150,7 @@ func TestBuildLocalRawOverlaysWorkspaceOntoProjectWorktree(t *testing.T) {
 	})
 	require.NoError(err)
 	_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1003,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1003),
 		Owner: "o", Name: "app", RepoPath: "o/app",
 	})
 	require.NoError(err)

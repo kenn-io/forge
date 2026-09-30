@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 )
 
 func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
@@ -32,7 +33,7 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 			serverfake.SeedPR(t, database, "acme", "widget", 43)
 			serverfake.SeedIssue(t, database, "acme", "widget", 43, "open")
 			renamed, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
-				Platform: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+				Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 				Owner: "acme", Name: "widgets",
 			})
 			require.NoError(err)
@@ -96,12 +97,12 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 				spec, err := workspaceDB.GetWorkspaceLaunchSpec(t.Context(), created.ID)
 				require.NoError(err)
 				require.NotNil(spec)
-				assert.Equal(testutil.FixtureRepoID("acme", "widget"), spec.Repository.PlatformRepoID)
+				assert.Equal(platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), spec.Repository.Key)
 				assert.Equal("widgets", spec.Repository.Name)
 			}
 
 			_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
-				Platform: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
+				Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(2002),
 				Owner: "acme", Name: "widget",
 			})
 			require.NoError(err)
@@ -118,11 +119,11 @@ func TestItemWorkspaceCreationValidatesCachedRepositorySelection(t *testing.T) {
 				// Spoke preparation uses this same read-only endpoint for an
 				// existing workspace, whose stable identity survives route reuse.
 				spec, err := server.providerSource.ResolveWorkspaceLaunchSpec(t.Context(), providerplane.WorkspaceLaunchRequest{
-					Repository:     providerplane.RepositoryRoute{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget"},
-					PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+					Repository: providerplane.RepositoryRoute{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget"},
+					RepoKey:    platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
 				})
 				require.NoError(err)
-				assert.Equal(testutil.FixtureRepoID("acme", "widget"), spec.Repository.PlatformRepoID)
+				assert.Equal(platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), spec.Repository.Key)
 				assert.Equal("widgets", spec.Repository.Name)
 			}
 		})

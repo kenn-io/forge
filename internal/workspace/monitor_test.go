@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,7 +126,7 @@ func seedIssue(
 func replaceMonitorRepoRoute(t *testing.T, d *db.DB) int64 {
 	t.Helper()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = 1012
+	identity.Key = platform.RepositoryIDKey(1012)
 	replacement, err := d.ObserveRepository(
 		t.Context(), identity,
 	)
@@ -255,7 +256,7 @@ func TestLaunchSpecMonitorUsesHubCandidatesWithoutProviderItemRows(t *testing.T)
 			Version: WorkspaceLaunchSpecVersion,
 			Repository: WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: testRepoID("acme", "widget"), Owner: "acme", Name: "widget",
+				Key: platform.RepositoryIDKey(testRepoID("acme", "widget")), Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
@@ -378,12 +379,12 @@ func TestPRMonitorRunOnceFallsBackToLocalHeadSHAWhenUpstreamRepoMetadataMissing(
 	ctx := t.Context()
 
 	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: 1002,
-		Owner:          "Group/SubGroup",
-		Name:           "Project",
-		RepoPath:       "Group/SubGroup/Project",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Key:          platform.RepositoryIDKey(1002),
+		Owner:        "Group/SubGroup",
+		Name:         "Project",
+		RepoPath:     "Group/SubGroup/Project",
 	})
 	require.NoError(err)
 	seedIssue(t, d, repoID, 7, "Track workspace association")
@@ -704,19 +705,19 @@ func TestPRMonitorRunOnceScopesCandidatesByWorkspaceProvider(t *testing.T) {
 	ctx := t.Context()
 
 	githubRepoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "git.example.com",
-		PlatformRepoID: 1015,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "git.example.com",
+		Key:          platform.RepositoryIDKey(1015),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "git.example.com",
-		PlatformRepoID: 1017,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "gitlab",
+		PlatformHost: "git.example.com",
+		Key:          platform.RepositoryIDKey(1017),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	seedIssue(t, d, gitlabRepoID, 7, "Track workspace association")

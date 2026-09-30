@@ -3,7 +3,6 @@ package platform
 import (
 	"fmt"
 	"time"
-	"uuid"
 )
 
 type Kind string
@@ -30,15 +29,12 @@ type RepoRef struct {
 	Owner    string
 	Name     string
 	RepoPath string
-	// PlatformID is the provider's integer repository ID for every provider
-	// except Bitbucket Cloud. It is stable across renames and transfers and
-	// unique per host. Bitbucket Cloud leaves it 0 and sets
-	// BitbucketRepositoryUUID instead.
-	PlatformID              int64
-	BitbucketRepositoryUUID uuid.UUID
-	WebURL                  string
-	CloneURL                string
-	DefaultBranch           string
+	// Key is the provider's stable repository key; zero until the provider
+	// has resolved the reference.
+	Key           RepositoryKey
+	WebURL        string
+	CloneURL      string
+	DefaultBranch string
 }
 
 func (r RepoRef) DisplayName() string {

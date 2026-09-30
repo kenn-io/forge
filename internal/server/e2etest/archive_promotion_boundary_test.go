@@ -151,14 +151,14 @@ func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformID: 1,
+		Key: platform.RepositoryIDKey(1),
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil,
 		[]ghclient.RepoRef{{
 			Platform: ref.Platform, PlatformHost: ref.Host,
 			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-			PlatformRepoID: ref.PlatformID,
+			Key: ref.Key,
 		}},
 		time.Hour, nil, nil,
 	)

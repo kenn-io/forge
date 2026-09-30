@@ -128,9 +128,8 @@ func (s *HubProviderSource) observeWorkspaceLaunchSpec(
 	}
 	entry, err := s.Db.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
-		PlatformRepoID:          spec.Repository.PlatformRepoID,
-		BitbucketRepositoryUUID: spec.Repository.BitbucketRepositoryUUID,
-		Owner:                   spec.Repository.Owner, Name: spec.Repository.Name,
+		Key:   spec.Repository.Key,
+		Owner: spec.Repository.Owner, Name: spec.Repository.Name,
 		RepoPath: spec.Repository.Owner + "/" + spec.Repository.Name,
 	})
 	if err != nil {
@@ -159,15 +158,15 @@ func (s *HubProviderSource) RefreshWorkspaceLaunchSpec(
 				Owner:        current.Repository.Owner,
 				Name:         current.Repository.Name,
 			},
-			PlatformRepoID: current.Repository.PlatformRepoID,
-			ItemType:       current.ItemType, ItemNumber: current.ItemNumber,
+			RepoKey:  current.Repository.Key,
+			ItemType: current.ItemType, ItemNumber: current.ItemNumber,
 			ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
 		}, true,
 		federationauth.ScopeProviderWrite)
 	if err != nil {
 		return db.WorkspaceLaunchSpec{}, err
 	}
-	if refreshed.Repository.PlatformRepoID != current.Repository.PlatformRepoID ||
+	if refreshed.Repository.Key != current.Repository.Key ||
 		refreshed.GitHeadRef != current.GitHeadRef {
 		return db.WorkspaceLaunchSpec{}, InvalidHubDescriptor(
 			errors.New("refreshed workspace launch specification changed durable identity"),
@@ -213,11 +212,11 @@ func workspaceProviderName(local workspace.Workspace) string {
 func (s *HubProviderSource) GetRepositoryDescriptor(
 	ctx context.Context, route providerplane.RepositoryRoute,
 ) (providerplane.RepositoryDescriptor, error) {
-	return s.getRepositoryDescriptor(ctx, route, 0)
+	return s.getRepositoryDescriptor(ctx, route, platform.RepositoryKey{})
 }
 
 func (s *HubProviderSource) getRepositoryDescriptor(
-	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID int64,
+	ctx context.Context, route providerplane.RepositoryRoute, repoKey platform.RepositoryKey,
 ) (providerplane.RepositoryDescriptor, error) {
 	route, err := providerplane.CanonicalRepositoryRoute(route)
 	if err != nil {
@@ -226,17 +225,17 @@ func (s *HubProviderSource) getRepositoryDescriptor(
 		)
 	}
 	var descriptor providerplane.RepositoryDescriptor
-	httpRequest, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name, PlatformRepoID: optionalProviderQuery(platformRepoID)}})
+	httpRequest, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name, PlatformRepoID: optionalProviderQuery(wireRepoID(repoKey)), BitbucketRepositoryUUID: wireRepoUUID(repoKey)}})
 	if err != nil {
 		return providerplane.RepositoryDescriptor{}, err
 	}
 	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &descriptor); err != nil {
 		return providerplane.RepositoryDescriptor{}, err
 	}
-	if platformRepoID == 0 {
+	if repoKey.IsZero() {
 		err = descriptor.ValidateRoute(route)
 	} else if err = descriptor.Validate(); err == nil && descriptor.Identity() != (platform.RepositoryIdentity{
-		Provider: route.Provider, PlatformHost: route.PlatformHost, PlatformRepoID: platformRepoID,
+		Provider: route.Provider, PlatformHost: route.PlatformHost, Key: repoKey,
 	}).Canonical() {
 		err = errors.New("repository descriptor does not match selected repository")
 	}
@@ -250,9 +249,9 @@ func (s *HubProviderSource) getRepositoryDescriptor(
 }
 
 func (s *HubProviderSource) ResolveRepositoryRoute(
-	ctx context.Context, route providerplane.RepositoryRoute, platformRepoID int64,
+	ctx context.Context, route providerplane.RepositoryRoute, repoKey platform.RepositoryKey,
 ) (*db.Repo, error) {
-	descriptor, err := s.getRepositoryDescriptor(ctx, route, platformRepoID)
+	descriptor, err := s.getRepositoryDescriptor(ctx, route, repoKey)
 	if err != nil {
 		return nil, err
 	}
@@ -318,8 +317,8 @@ func observeRepositoryDescriptor(
 	}
 	entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: descriptor.Provider, PlatformHost: descriptor.PlatformHost,
-		PlatformRepoID: descriptor.PlatformRepoID,
-		Owner:          descriptor.Owner, Name: descriptor.Name,
+		Key:   descriptor.Key,
+		Owner: descriptor.Owner, Name: descriptor.Name,
 		RepoPath: descriptor.Owner + "/" + descriptor.Name,
 	})
 	if err != nil {
@@ -378,7 +377,7 @@ func (s *HubProviderSource) AutoAssignWorkspaceItem(
 	ctx context.Context, request workspaceapi.ProviderWorkspaceItemRequest,
 ) error {
 	var response struct{}
-	httpRequest, err := generated.NewFederationAutoAssignWorkspaceItemRequest(ctx, "/api/v1", &generated.FederationAutoAssignWorkspaceItemRequestOptions{Body: &generated.FederationAutoAssignWorkspaceItemBody{Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, PlatformRepoID: request.PlatformRepoID, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber)}})
+	httpRequest, err := generated.NewFederationAutoAssignWorkspaceItemRequest(ctx, "/api/v1", &generated.FederationAutoAssignWorkspaceItemRequestOptions{Body: &generated.FederationAutoAssignWorkspaceItemBody{Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, PlatformRepoID: wireRepoID(request.RepoKey), BitbucketRepositoryUUID: wireRepoUUID(request.RepoKey), ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber)}})
 	if err != nil {
 		return err
 	}
@@ -389,7 +388,7 @@ func (s *HubProviderSource) ListWorkflowStates(
 	ctx context.Context, query mcpserver.WorkflowQuery,
 ) (mcpserver.WorkflowPage, error) {
 	var response FederationWorkflowPage
-	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: query.Repository.PlatformRepoID, RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
+	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: wireRepoID(query.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(query.Repository.Key), RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
 	if err != nil {
 		return mcpserver.WorkflowPage{}, err
 	}
@@ -405,7 +404,7 @@ func (s *HubProviderSource) SetWorkflowState(
 	update mcpserver.WorkflowUpdate,
 ) (mcpserver.WorkflowMutation, error) {
 	var response FederationWorkflowMutation
-	httpRequest, err := generated.NewFederationSetWorkflowStateRequest(ctx, "/api/v1", &generated.FederationSetWorkflowStateRequestOptions{Body: &generated.FederationSetWorkflowStateBody{Item: generated.FederationWorkflowItemIdentity{Type: item.Type, Provider: item.Provider, PlatformHost: item.PlatformHost, PlatformRepoID: item.PlatformRepoID, Owner: item.Owner, Name: item.Name, Number: int64(item.Number)}, Update: generated.FederationWorkflowUpdate{Status: update.Status, ExpectedStatus: update.ExpectedStatus, Force: update.Force, Source: update.Source, Actor: update.Actor, Reason: update.Reason}}})
+	httpRequest, err := generated.NewFederationSetWorkflowStateRequest(ctx, "/api/v1", &generated.FederationSetWorkflowStateRequestOptions{Body: &generated.FederationSetWorkflowStateBody{Item: generated.FederationWorkflowItemIdentity{Type: item.Type, Provider: item.Provider, PlatformHost: item.PlatformHost, PlatformRepoID: wireRepoID(item.RepoKey), BitbucketRepositoryUUID: wireRepoUUID(item.RepoKey), Owner: item.Owner, Name: item.Name, Number: int64(item.Number)}, Update: generated.FederationWorkflowUpdate{Status: update.Status, ExpectedStatus: update.ExpectedStatus, Force: update.Force, Source: update.Source, Actor: update.Actor, Reason: update.Reason}}})
 	if err != nil {
 		return mcpserver.WorkflowMutation{}, err
 	}
@@ -446,10 +445,14 @@ func (s *HubProviderSource) ResolveRepository(
 	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 		return nil, err
 	}
+	key, err := platform.RepositoryKeyFromWire(response.PlatformRepoID, response.BitbucketRepositoryUUID)
+	if err != nil {
+		return nil, InvalidHubDescriptor(err)
+	}
 	return &db.Repo{
 		Platform: response.Platform, PlatformHost: response.PlatformHost,
-		PlatformRepoID: response.PlatformRepoID,
-		Owner:          response.Owner, Name: response.Name,
+		Key:   key,
+		Owner: response.Owner, Name: response.Name,
 		RepoPath: response.Owner + "/" + response.Name,
 	}, nil
 }
@@ -630,7 +633,7 @@ func (s *HubProviderSource) FilterUnassignedActivitySubjects(
 		requestSubjects := make([]generated.FederationActivitySubjectIdentity, 0, end-start)
 		for _, subject := range subjects[start:end] {
 			requestSubjects = append(
-				requestSubjects, generated.FederationActivitySubjectIdentity{Repository: generated.FederationActivityRepositoryIdentity{Provider: subject.Repository.Provider, PlatformHost: subject.Repository.PlatformHost, PlatformRepoID: subject.Repository.PlatformRepoID}, ItemType: subject.ItemType, ItemNumber: int64(subject.ItemNumber)},
+				requestSubjects, generated.FederationActivitySubjectIdentity{Repository: generated.FederationActivityRepositoryIdentity{Provider: subject.Repository.Provider, PlatformHost: subject.Repository.PlatformHost, PlatformRepoID: wireRepoID(subject.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(subject.Repository.Key)}, ItemType: subject.ItemType, ItemNumber: int64(subject.ItemNumber)},
 			)
 		}
 		body := &generated.FederationFilterUnassignedActivitySubjectsBody{Subjects: requestSubjects}
@@ -688,15 +691,16 @@ func (s *HubProviderSource) WorkspaceProviderState(
 	out := append([]fleet.RawWorkspace(nil), workspaces...)
 	subjects := make([]generated.FederationWorkspaceProviderSubject, 0, len(workspaces))
 	for _, workspace := range workspaces {
-		if workspace.Repository.PlatformRepoID == 0 {
+		if workspace.Repository.Key.IsZero() {
 			continue
 		}
 		subject := generated.FederationWorkspaceProviderSubject{
 			ID: workspace.ID,
 			Repository: generated.FederationActivityRepositoryIdentity{
-				Provider:       workspace.Repository.Provider,
-				PlatformHost:   workspace.Repository.PlatformHost,
-				PlatformRepoID: workspace.Repository.PlatformRepoID,
+				Provider:                workspace.Repository.Provider,
+				PlatformHost:            workspace.Repository.PlatformHost,
+				PlatformRepoID:          wireRepoID(workspace.Repository.Key),
+				BitbucketRepositoryUUID: wireRepoUUID(workspace.Repository.Key),
 			},
 			ItemType: workspace.ItemType, ItemNumber: int64(workspace.ItemNumber),
 		}
@@ -837,6 +841,21 @@ func hubProviderProblem(err error) error {
 	)
 }
 
+// wireRepoID and wireRepoUUID are a key's flat encoding for generated
+// federation request bodies.
+func wireRepoID(key platform.RepositoryKey) int64 {
+	id, _ := key.Wire()
+	return id
+}
+
+func wireRepoUUID(key platform.RepositoryKey) *string {
+	repositoryUUID, ok := key.UUID()
+	if !ok {
+		return nil
+	}
+	return new(repositoryUUID.String())
+}
+
 func optionalProviderQuery[T comparable](value T) *T {
 	var zero T
 	if value == zero {
@@ -849,7 +868,7 @@ func providerLaunchRequestBody(request providerplane.WorkspaceLaunchRequest) *ge
 	return &generated.WorkspaceLaunchRequest{
 		Repository: generated.RepositoryRoute{Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost, Owner: request.Repository.Owner, Name: request.Repository.Name}, ItemType: request.ItemType, ItemNumber: int64(request.ItemNumber),
 		ItemKey: optionalProviderQuery(request.ItemKey), GitHeadRef: optionalProviderQuery(request.GitHeadRef),
-		PlatformRepoID: optionalProviderQuery(request.PlatformRepoID), IssueBranchSlug: optionalProviderQuery(request.IssueBranchSlug),
+		PlatformRepoID: optionalProviderQuery(wireRepoID(request.RepoKey)), BitbucketRepositoryUUID: wireRepoUUID(request.RepoKey), IssueBranchSlug: optionalProviderQuery(request.IssueBranchSlug),
 		ForCreation: optionalProviderQuery(request.ForCreation),
 	}
 }

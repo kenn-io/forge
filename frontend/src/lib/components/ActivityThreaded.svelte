@@ -38,6 +38,7 @@
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+  import { repositoryKeyFromWire, type RepositoryKey } from "../api/repository-key.js";
 
   interface Props {
     items: ActivityItem[];
@@ -114,7 +115,7 @@
     kind: "branch";
     row: ActivityRow;
     provider: string;
-    platformRepoId?: number | undefined;
+    repositoryKey?: RepositoryKey | undefined;
     repoOwner: string;
     repoName: string;
     repoPath: string;
@@ -162,7 +163,7 @@
       const itemKey = activityItemKey({
         provider: item.repo?.provider ?? "",
         platformHost: item.platform_host ?? "",
-        platformRepoId: item.repo?.platform_repo_id,
+        repositoryKey: repositoryKeyFromWire(item.repo),
         owner: item.repo_owner,
         name: item.repo_name,
         itemType: item.item_type,
@@ -218,7 +219,7 @@
       const itemKey = activityItemKey({
         provider: subject.repo.provider,
         platformHost: subject.repo.platform_host,
-        platformRepoId: subject.repo.platform_repo_id,
+        repositoryKey: repositoryKeyFromWire(subject.repo),
         owner: subject.repo.owner,
         name: subject.repo.name,
         repoPath: subject.repo.repo_path,
@@ -271,7 +272,7 @@
       const itemKey = activityItemKey({
         provider: subject.repo.provider,
         platformHost: subject.repo.platform_host,
-        platformRepoId: subject.repo.platform_repo_id,
+        repositoryKey: repositoryKeyFromWire(subject.repo),
         owner: subject.repo.owner,
         name: subject.repo.name,
         repoPath: subject.repo.repo_path,
@@ -422,7 +423,7 @@
       kind: "branch",
       row,
       provider: item.repo.provider,
-      platformRepoId: item.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(item.repo),
       repoOwner: item.repo.owner,
       repoName: item.repo.name,
       repoPath: item.repo.repo_path,
@@ -491,7 +492,7 @@
     return activityItemKey({
       provider: g.provider,
       platformHost: g.platformHost,
-      platformRepoId: g.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(g.repo),
       owner: g.repoOwner,
       name: g.repoName,
       itemType: g.itemType,
@@ -505,7 +506,7 @@
     return `${activityRepoKey({
       provider: entry.provider,
       platformHost: entry.platformHost,
-      platformRepoId: entry.platformRepoId,
+      repositoryKey: entry.repositoryKey,
       owner: entry.repoOwner,
       name: entry.repoName,
     })}:branch-activity:${entry.row.id}`;
@@ -678,7 +679,7 @@
     return {
       provider: item.repo?.provider ?? "",
       platformHost: item.repo?.platform_host ?? item.platform_host,
-      platformRepoId: item.repo?.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(item.repo),
       owner: item.repo?.owner ?? item.repo_owner,
       name: item.repo?.name ?? item.repo_name,
       repoPath: item.repo?.repo_path,
@@ -689,7 +690,7 @@
     return {
       provider: subject.repo.provider,
       platformHost: subject.repo.platform_host,
-      platformRepoId: subject.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(subject.repo),
       owner: subject.repo.owner,
       name: subject.repo.name,
       repoPath: subject.repo.repo_path,
@@ -700,7 +701,7 @@
     return {
       provider: subject.repo.provider,
       platformHost: subject.repo.platform_host,
-      platformRepoId: subject.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(subject.repo),
       owner: subject.repo.owner,
       name: subject.repo.name,
       repoPath: subject.repo.repo_path,
@@ -711,7 +712,7 @@
     return {
       provider: entry.kind === "item" ? entry.group.provider : entry.provider,
       platformHost: entryPlatformHost(entry),
-      platformRepoId: entry.kind === "item" ? entry.group.repo.platform_repo_id : entry.platformRepoId,
+      repositoryKey: entry.kind === "item" ? repositoryKeyFromWire(entry.group.repo) : entry.repositoryKey,
       owner: entryRepoOwner(entry),
       name: entryRepoName(entry),
       repoPath: entryRepoPath(entry),

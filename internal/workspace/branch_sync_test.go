@@ -412,8 +412,8 @@ func TestLaunchSpecBranchSyncUsesRefreshedRepositoryRoute(t *testing.T) {
 	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: original.Repository.Provider, PlatformHost: original.Repository.PlatformHost,
-			PlatformRepoID: original.Repository.PlatformRepoID,
-			Owner:          original.Repository.Owner, Name: original.Repository.Name,
+			Key:   original.Repository.Key,
+			Owner: original.Repository.Owner, Name: original.Repository.Name,
 		},
 	)
 	require.NoError(err)
@@ -438,8 +438,8 @@ func TestLaunchSpecBranchSyncUsesRefreshedRepositoryRoute(t *testing.T) {
 	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: renamed.Repository.Provider, PlatformHost: renamed.Repository.PlatformHost,
-			PlatformRepoID: renamed.Repository.PlatformRepoID,
-			Owner:          renamed.Repository.Owner, Name: renamed.Repository.Name,
+			Key:   renamed.Repository.Key,
+			Owner: renamed.Repository.Owner, Name: renamed.Repository.Name,
 		},
 	)
 	require.NoError(err)

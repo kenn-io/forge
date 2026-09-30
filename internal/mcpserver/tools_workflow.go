@@ -39,7 +39,8 @@ func (s *Server) setItemWorkflowState(
 	ctx context.Context,
 	in setWorkflowInput,
 ) (setWorkflowOutput, error) {
-	if err := validateItemRef(in.Item); err != nil {
+	item, err := in.Item.itemIdentity()
+	if err != nil {
 		return setWorkflowOutput{}, err
 	}
 	status := strings.TrimSpace(in.Status)
@@ -67,7 +68,7 @@ func (s *Server) setItemWorkflowState(
 			Message: "force cannot be true when expected_status is provided",
 		}
 	}
-	mutation, err := s.backend.SetWorkflowState(ctx, itemIdentity(in.Item), WorkflowUpdate{
+	mutation, err := s.backend.SetWorkflowState(ctx, item, WorkflowUpdate{
 		Status: status, ExpectedStatus: expected, Force: in.Force, Source: "mcp",
 		Actor: in.Actor, Reason: in.Reason,
 	})

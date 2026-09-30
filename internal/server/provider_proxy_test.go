@@ -218,7 +218,7 @@ func TestHubWorkflowMutationTransportFailureIsAmbiguous(t *testing.T) {
 	_, err := server.MCPBackend().SetWorkflowState(
 		t.Context(), mcpserver.ItemIdentity{
 			Type: "pr", Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget", Number: 42,
+			RepoKey: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), Owner: "acme", Name: "widget", Number: 42,
 		},
 		mcpserver.WorkflowUpdate{Status: "reviewing", ExpectedStatus: "new"},
 	)
@@ -249,7 +249,7 @@ func TestHubWorkspaceAutoAssignmentPreservesRepositoryIdentity(t *testing.T) {
 		Repository: providerplane.RepositoryRoute{
 			Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
 		},
-		PlatformRepoID: 1001, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+		RepoKey: platform.RepositoryIDKey(1001), ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
 	})
 
 	require.NoError(err)
@@ -281,7 +281,7 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
 			Subject: db.WorkspaceSubjectMetadata{
 				Key: key, Platform: repo.Platform, PlatformHost: repo.PlatformHost,
-				PlatformRepoID: repo.PlatformRepoID, RepoOwner: repo.Owner, RepoName: repo.Name,
+				RepoKey: repo.Key, RepoOwner: repo.Owner, RepoName: repo.Name,
 				RepoPath: repo.RepoPath, Title: "Local workspace", State: "open",
 				URL: "https://github.com/acme/widget/pull/1", Author: "author",
 			},
@@ -365,14 +365,14 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 				{
 					Repo: itemapi.ActivityRepoRefResponse{
 						Provider: "github", PlatformHost: "github.com",
-						PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+						Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 					},
 					ItemType: "issue", ItemNumber: 7,
 				},
 				{
 					Repo: itemapi.ActivityRepoRefResponse{
 						Provider: "github", PlatformHost: "github.com",
-						PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+						Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 					},
 					ItemType: "issue", ItemNumber: 8,
 				},
@@ -630,7 +630,7 @@ func TestFederatedWorkflowHasOneHubOwner(t *testing.T) {
 	)
 	item := mcpserver.ItemIdentity{
 		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: repo.PlatformRepoID, Owner: "acme", Name: "widget", Number: 42,
+		RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: 42,
 	}
 	mutation, err := nodeA.MCPBackend().SetWorkflowState(t.Context(), item, mcpserver.WorkflowUpdate{
 		Status: "reviewing", ExpectedStatus: "new", Source: "mcp", Actor: "spoke-a",
@@ -641,7 +641,7 @@ func TestFederatedWorkflowHasOneHubOwner(t *testing.T) {
 	page, err := nodeB.MCPBackend().ListWorkflowStates(t.Context(), mcpserver.WorkflowQuery{
 		Repository: mcpserver.RepositoryIdentity{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: repo.PlatformRepoID, Owner: "acme", Name: "widget",
+			Key: repo.Key, Owner: "acme", Name: "widget",
 		},
 		ItemTypes: []string{"pr"},
 	})

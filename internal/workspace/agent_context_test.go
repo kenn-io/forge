@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 )
 
 func TestBuildAgentContext(t *testing.T) {
@@ -534,7 +535,7 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 			Version: WorkspaceLaunchSpecVersion,
 			Repository: WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: testRepoID("acme", "widget"), Owner: "acme", Name: "widget",
+				Key: platform.RepositoryIDKey(testRepoID("acme", "widget")), Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 42,

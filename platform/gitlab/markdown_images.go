@@ -40,7 +40,8 @@ func (c *Client) GetMarkdownImage(
 	if err != nil {
 		return platform.MarkdownImage{}, err
 	}
-	if ref.PlatformID <= 0 {
+	projectID, ok := ref.Key.ID()
+	if !ok {
 		return platform.MarkdownImage{}, &platform.Error{
 			Code: platform.ErrCodeInvalidRepoRef, Provider: platform.KindGitLab,
 			PlatformHost: c.host, Field: "platform_id", Err: errors.New("missing GitLab project ID"),
@@ -48,7 +49,7 @@ func (c *Client) GetMarkdownImage(
 	}
 
 	endpoint := strings.TrimRight(c.baseURL, "/") + "/projects/" +
-		strconv.FormatInt(ref.PlatformID, 10) + "/uploads/" +
+		strconv.FormatInt(projectID, 10) + "/uploads/" +
 		url.PathEscape(secret) + "/" + url.PathEscape(filename)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -110,8 +111,8 @@ func (c *Client) markdownUploadParts(ref platform.RepoRef, source string) (strin
 		return "", "", c.invalidMarkdownImageSource()
 	}
 	prefixes := []string{"/" + escapePath(ref.RepoPath) + "/uploads/"}
-	if ref.PlatformID > 0 {
-		prefixes = append(prefixes, "/-/project/"+strconv.FormatInt(ref.PlatformID, 10)+"/uploads/")
+	if projectID, ok := ref.Key.ID(); ok {
+		prefixes = append(prefixes, "/-/project/"+strconv.FormatInt(projectID, 10)+"/uploads/")
 	}
 	prefix := ""
 	for _, candidate := range prefixes {

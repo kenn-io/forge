@@ -56,7 +56,8 @@ func (c *Client) observeMerge(ctx context.Context, repo *platform.Repository, wr
 	if writable == nil {
 		return nil
 	}
-	_, canMerge := writable[repo.Ref.PlatformID]
+	id, _ := repo.Ref.Key.ID()
+	_, canMerge := writable[id]
 	repo.ViewerCanMerge = new(canMerge)
 	path, err := c.repoPath(repo.Ref)
 	if err != nil {

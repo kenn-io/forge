@@ -394,8 +394,8 @@ func (p *Provider) GetRepository(
 	ctx context.Context,
 	ref platform.RepoRef,
 ) (platform.Repository, error) {
-	if ref.PlatformID != 0 {
-		repo, err := p.client.GetRepositoryByID(ctx, ref.Owner, ref.PlatformID)
+	if id, ok := ref.Key.ID(); ok {
+		repo, err := p.client.GetRepositoryByID(ctx, ref.Owner, id)
 		if err != nil {
 			return platform.Repository{}, err
 		}
@@ -434,7 +434,7 @@ func GitHubPlatformRepository(
 			Owner:         strings.ToLower(owner),
 			Name:          strings.ToLower(repo.GetName()),
 			RepoPath:      strings.ToLower(owner) + "/" + strings.ToLower(repo.GetName()),
-			PlatformID:    repo.GetID(),
+			Key:           platform.RepositoryIDKey(repo.GetID()),
 			WebURL:        repo.GetHTMLURL(),
 			CloneURL:      repo.GetCloneURL(),
 			DefaultBranch: repo.GetDefaultBranch(),
@@ -483,7 +483,7 @@ func (p *Provider) ListRepositories(
 				Owner:         strings.ToLower(repoOwner),
 				Name:          strings.ToLower(repoName),
 				RepoPath:      strings.ToLower(repoOwner) + "/" + strings.ToLower(repoName),
-				PlatformID:    repo.GetID(),
+				Key:           platform.RepositoryIDKey(repo.GetID()),
 				WebURL:        repo.GetHTMLURL(),
 				CloneURL:      repo.GetCloneURL(),
 				DefaultBranch: repo.GetDefaultBranch(),

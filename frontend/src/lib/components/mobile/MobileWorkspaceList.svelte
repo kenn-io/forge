@@ -56,6 +56,7 @@
     sortMobileWorkspaces,
     workspaceMatchesMobileSearch,
   } from "./mobile-workspace-list.js";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   type HostSummary = GeneratedHostSummary;
 
@@ -218,7 +219,7 @@
     return number > 0 && detail.isPullMerging({
       provider: workspace.repo.provider,
       platformHost: workspace.repo.platform_host,
-      platformRepoId: workspace.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(workspace.repo),
       owner: workspace.repo.owner,
       name: workspace.repo.name,
       repoPath: workspace.repo.repo_path,

@@ -7,9 +7,13 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+	"uuid"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/platform"
 )
 
 func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
@@ -24,7 +28,7 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 					Number: 42, Title: "Retry budget", State: "open", Author: "alice",
 					URL: "https://git.example.test/group/project/pulls/42", Body: "full body",
 					WorkflowStatus: "reviewing", Repository: RepositoryIdentity{
-						Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
+						Provider: "gitlab", Key: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
 						RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 					},
 					LastActivityAt: time.Date(2026, 7, 1, 16, 0, 0, 0, time.UTC),
@@ -44,11 +48,11 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 		listWorkflowStatesFn: func(context.Context, WorkflowQuery) (WorkflowPage, error) {
 			return WorkflowPage{Items: []WorkflowItem{{
 				Identity: ItemIdentity{
-					Type: "pr", Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
+					Type: "pr", Provider: "gitlab", RepoKey: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
 					Owner: "group/sub", Name: "project", Number: 42,
 				},
 				Repository: RepositoryIdentity{
-					Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
+					Provider: "gitlab", Key: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
 					RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 				},
 				Workflow: WorkflowState{Status: "reviewing", UpdatedSource: "mcp"},
@@ -64,7 +68,9 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 	out, err := s.getItemContext(t.Context(), getItemContextInput{Item: inputItem, EventLimit: 2})
 
 	require.NoError(err)
-	assert.Equal(itemIdentity(inputItem), got)
+	wantItem, err := inputItem.itemIdentity()
+	require.NoError(err)
+	assert.Equal(wantItem, got)
 	assert.Equal("full body", out.Body)
 	require.NotNil(out.PullStatus)
 	assert.Equal("dirty", out.PullStatus.MergeableState)
@@ -123,11 +129,11 @@ func TestListItemsByWorkflowStateForwardsTypedQuery(t *testing.T) {
 		return WorkflowPage{
 			Items: []WorkflowItem{{
 				Identity: ItemIdentity{
-					Type: "pr", Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
+					Type: "pr", Provider: "gitlab", RepoKey: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
 					Owner: "group/sub", Name: "project", Number: 42,
 				},
 				Repository: RepositoryIdentity{
-					Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
+					Provider: "gitlab", Key: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
 					RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 				},
 				Title: "Retry budget", State: "open", LastActivityAt: "2026-07-01T16:00:00Z",
@@ -149,7 +155,7 @@ func TestListItemsByWorkflowStateForwardsTypedQuery(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(WorkflowQuery{
 		Repository: RepositoryIdentity{
-			Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test",
+			Provider: "gitlab", Key: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
 			RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 		},
 		ItemTypes: []string{"pr", "issue"}, States: []string{"reviewing", "waiting"},
@@ -178,4 +184,43 @@ func TestTruncateBytesPreservesUTF8(t *testing.T) {
 	assert.True(t, utf8.ValidString(got))
 	assert.LessOrEqual(t, len(got), 500)
 	assert.Equal(t, strings.Repeat("a", 499), got)
+}
+
+func TestGetItemContextPassesBitbucketCloudUUIDToBackendAsKey(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	repositoryUUID := uuid.MustParse("5f0c6a1e-2b7d-4c3a-9e8f-0a1b2c3d4e5f")
+	var got ItemIdentity
+	backend := &fakeBackend{getPullFn: func(_ context.Context, item ItemIdentity) (PullDetail, error) {
+		got = item
+		return PullDetail{Pull: &Pull{
+			Number: 42, State: "open",
+			Repository: RepositoryIdentity{
+				Provider: "bitbucket", PlatformHost: "bitbucket.org", Key: item.RepoKey,
+				RepoPath: "acme/widget", Owner: "acme", Name: "widget",
+			},
+		}}, nil
+	}}
+	client := connectMCPTestSession(t, newMCPTestServer(t, backend))
+
+	result, err := client.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "kenn_forge_get_item_context",
+		Arguments: map[string]any{"item": map[string]any{
+			"type": "pr", "provider": "bitbucket", "platform_host": "bitbucket.org",
+			"bitbucket_repository_uuid": "{5F0C6A1E-2B7D-4C3A-9E8F-0A1B2C3D4E5F}",
+			"owner":                     "acme", "name": "widget", "number": 42,
+		}},
+	})
+
+	require.NoError(err)
+	require.False(result.IsError, "%v", result.Content)
+	assert.Equal(platform.RepositoryUUIDKey(repositoryUUID), got.RepoKey)
+	encoded, err := json.Marshal(result.StructuredContent)
+	require.NoError(err)
+	var out struct {
+		Item map[string]any `json:"item"`
+	}
+	require.NoError(json.Unmarshal(encoded, &out))
+	assert.Equal("5f0c6a1e-2b7d-4c3a-9e8f-0a1b2c3d4e5f", out.Item["bitbucket_repository_uuid"])
+	assert.InDelta(0, out.Item["platform_repo_id"], 0)
 }

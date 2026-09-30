@@ -78,7 +78,7 @@ token_env = "KENN_FORGE_ARCHIVE_E2E_TOKEN"
 	database := dbtest.OpenAt(t, filepath.Join(dataDir, "forge.db"))
 	ref := platform.RepoRef{
 		Platform: platform.KindGitLab, Host: host, Owner: "owner",
-		Name: "archive", RepoPath: "owner/archive", PlatformID: 1,
+		Name: "archive", RepoPath: "owner/archive", Key: platform.RepositoryIDKey(1),
 	}
 	repoID, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)

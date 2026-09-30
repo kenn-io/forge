@@ -78,11 +78,11 @@ func TestAdmitWorkerRepositoryUsesIntegerRepositoryID(t *testing.T) {
 
 			credential, err := handler.admitWorkerRepository(t.Context(), db.WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: tt.suppliedRepoID, Owner: "acme", Name: "widget",
+				Key: platform.RepositoryIDKey(tt.suppliedRepoID), Owner: "acme", Name: "widget",
 			})
 
 			entry, lookupErr := database.GetRepositoryByProviderID(t.Context(), platform.RepositoryIdentity{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: 4242,
+				Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(4242),
 			})
 			require.NoError(lookupErr)
 			if !tt.wantAdmitted {

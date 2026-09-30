@@ -82,6 +82,7 @@
   } from "../../utils/repo-filter-values.js";
   import { setWorkspaceRepoCatalog } from "../../stores/workspace-repo-catalog.svelte.js";
   import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   type Workspace = WorkspaceListItem;
 
@@ -638,7 +639,7 @@
     return number > 0 && detail.isPullMerging({
       provider: ws.repo.provider,
       platformHost: ws.repo.platform_host,
-      platformRepoId: ws.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(ws.repo),
       owner: ws.repo.owner,
       name: ws.repo.name,
       repoPath: ws.repo.repo_path,
@@ -1188,7 +1189,7 @@
     return {
       provider,
       platformHost: current.platform_host,
-      platformRepoId: current.repo?.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(current.repo),
       owner: current.repo_owner,
       name: current.repo_name,
     };

@@ -19,19 +19,19 @@ func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
 	ctx := t.Context()
 
 	_, err := reposeed.Seed(ctx, d, realdb.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "code.example.com",
-		PlatformRepoID: 1001,
-		Owner:          "org",
-		Name:           "repo",
+		Platform:     "github",
+		PlatformHost: "code.example.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "org",
+		Name:         "repo",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := reposeed.Seed(ctx, d, realdb.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "code.example.com",
-		PlatformRepoID: 1002,
-		Owner:          "org",
-		Name:           "repo",
+		Platform:     "gitlab",
+		PlatformHost: "code.example.com",
+		Key:          platform.RepositoryIDKey(1002),
+		Owner:        "org",
+		Name:         "repo",
 	})
 	require.NoError(err)
 	require.NoError(d.UpdateRepoProviderObservation(ctx, gitlabRepoID, realdb.RepoProviderMetadata{
@@ -112,11 +112,11 @@ func TestSyncCompletedHookDistinguishesPartialScopeFailures(t *testing.T) {
 			ctx := t.Context()
 
 			repoID, err := reposeed.Seed(ctx, d, realdb.RepoIdentity{
-				Platform:       "github",
-				PlatformHost:   "github.com",
-				PlatformRepoID: 1001,
-				Owner:          "org",
-				Name:           "repo",
+				Platform:     "github",
+				PlatformHost: "github.com",
+				Key:          platform.RepositoryIDKey(1001),
+				Owner:        "org",
+				Name:         "repo",
 			})
 			require.NoError(err)
 			require.NoError(d.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{

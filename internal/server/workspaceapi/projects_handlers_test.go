@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 func TestRegisterProjectUsesHubRepositoryIdentity(t *testing.T) {
@@ -38,12 +39,12 @@ func TestRegisterProjectUsesHubRepositoryIdentity(t *testing.T) {
 	handler := New(Deps{
 		DB: database,
 		ResolveRepository: func(
-			ctx context.Context, route providerplane.RepositoryRoute, _ int64,
+			ctx context.Context, route providerplane.RepositoryRoute, _ platform.RepositoryKey,
 		) (*db.Repo, error) {
 			entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 				Platform: route.Provider, PlatformHost: route.PlatformHost,
-				PlatformRepoID: 1001,
-				Owner:          route.Owner, Name: route.Name,
+				Key:   platform.RepositoryIDKey(1001),
+				Owner: route.Owner, Name: route.Name,
 			})
 			if err != nil {
 				return nil, err
@@ -92,7 +93,7 @@ func TestRegisterProjectWithoutHubLinksOnlyTrackedRepository(t *testing.T) {
 				var err error
 				trackedRepoID, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
 					Platform: "github", PlatformHost: "github.com",
-					PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+					Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 				})
 				require.NoError(err)
 			}

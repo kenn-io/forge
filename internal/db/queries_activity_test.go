@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/platform"
 )
 
 func TestListActivity(t *testing.T) {
@@ -184,19 +185,19 @@ func TestListActivity(t *testing.T) {
 		base := baseTime()
 
 		githubRepo, err := seedTestRepo(ctx, d, RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: 1001,
-			Owner:          "acme",
-			Name:           "widgets",
+			Platform:     "github",
+			PlatformHost: "github.com",
+			Key:          platform.RepositoryIDKey(1001),
+			Owner:        "acme",
+			Name:         "widgets",
 		})
 		require.NoError(err)
 		giteaRepo, err := seedTestRepo(ctx, d, RepoIdentity{
-			Platform:       "gitea",
-			PlatformHost:   "github.com",
-			PlatformRepoID: 1002,
-			Owner:          "acme",
-			Name:           "widgets",
+			Platform:     "gitea",
+			PlatformHost: "github.com",
+			Key:          platform.RepositoryIDKey(1002),
+			Owner:        "acme",
+			Name:         "widgets",
 		})
 		require.NoError(err)
 		insertTestMR(t, d, githubRepo, 1, "github provider", base)
@@ -2236,7 +2237,7 @@ func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
 
 	_, err := d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertNotifications(ctx, []Notification{{
@@ -2258,7 +2259,7 @@ func TestListActivityNotificationRepoFilterFollowsRename(t *testing.T) {
 	}}))
 	_, err = d.ObserveRepository(ctx, RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "gadget",
 	})
 	require.NoError(err)
 
@@ -2338,7 +2339,7 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 
 			entry, err := d.ObserveRepository(ctx, RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+				Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 			})
 			require.NoError(err)
 			require.NoError(d.UpsertNotifications(ctx, []Notification{{
@@ -2360,7 +2361,7 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 			}}))
 			_, err = d.ObserveRepository(ctx, RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+				Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "gadget",
 			})
 			require.NoError(err)
 			tc.insertParent(t, d, entry.Repository.ID, number, tc.currentURL)

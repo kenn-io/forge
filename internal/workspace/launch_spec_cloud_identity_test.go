@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 )
 
 func TestValidateWorkspaceLaunchSpecRejectsOtherBitbucketCloudUUID(t *testing.T) {
@@ -15,7 +16,7 @@ func TestValidateWorkspaceLaunchSpecRejectsOtherBitbucketCloudUUID(t *testing.T)
 	repoUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
 	observed, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "bitbucket", PlatformHost: "bitbucket.org",
-		BitbucketRepositoryUUID: repoUUID, Owner: "team", Name: "widgets",
+		Key: platform.RepositoryUUIDKey(repoUUID), Owner: "team", Name: "widgets",
 	})
 	require.NoError(err)
 	manager := NewManager(database, t.TempDir())
@@ -30,8 +31,8 @@ func TestValidateWorkspaceLaunchSpecRejectsOtherBitbucketCloudUUID(t *testing.T)
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: "bitbucket", PlatformHost: "bitbucket.org",
-			BitbucketRepositoryUUID: uuid.MustParse("22222222-2222-4222-8222-222222222222"),
-			Owner:                   "team", Name: "widgets",
+			Key:   platform.RepositoryUUIDKey(uuid.MustParse("22222222-2222-4222-8222-222222222222")),
+			Owner: "team", Name: "widgets",
 			CloneURL: "https://bitbucket.org/team/widgets.git", DefaultBranch: "main",
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
@@ -46,7 +47,7 @@ func TestValidateWorkspaceLaunchSpecRejectsOtherBitbucketCloudUUID(t *testing.T)
 	_, err = manager.validateWorkspaceLaunchSpec(t.Context(), workspace, spec)
 	require.ErrorIs(err, db.ErrRepositoryIdentityChanged)
 
-	spec.Repository.BitbucketRepositoryUUID = repoUUID
+	spec.Repository.Key = platform.RepositoryUUIDKey(repoUUID)
 	_, err = manager.validateWorkspaceLaunchSpec(t.Context(), workspace, spec)
 	require.NoError(err)
 }

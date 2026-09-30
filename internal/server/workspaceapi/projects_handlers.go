@@ -28,6 +28,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
 )
 
 type platformIdentityPayload struct {
@@ -385,11 +386,11 @@ func (s *Handler) registerProjectAtPath(
 			repository, resolveErr := s.resolveRepository(ctx, providerplane.RepositoryRoute{
 				Provider: identity.Platform, PlatformHost: identity.Host,
 				Owner: identity.Owner, Name: identity.Name,
-			}, 0)
+			}, platform.RepositoryKey{})
 			if resolveErr != nil {
 				return nil, resolveErr
 			}
-			if repository == nil || repository.PlatformRepoID == 0 {
+			if repository == nil || repository.Key.IsZero() {
 				return nil, httpapi.Internal("hub returned an incomplete repository identity")
 			}
 			id = repository.ID

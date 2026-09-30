@@ -38,7 +38,7 @@ func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
 			database := dbtest.Open(t)
 			entry, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+				Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 			})
 			require.NoError(err)
 			ws := &db.Workspace{
@@ -65,7 +65,7 @@ func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
 			summary, err := manager.GetSummary(t.Context(), ws.ID)
 			require.NoError(err)
 			require.NotNil(summary)
-			require.Equal(int64(1001), summary.RepoPlatformID)
+			require.Equal(platform.RepositoryIDKey(1001), summary.RepoKey)
 			if itemType == db.WorkspaceItemTypeAdHoc {
 				require.True(summary.AssociatedPRVisible)
 			}
@@ -78,7 +78,7 @@ func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
 				"full enrichment":        handler.Response(t.Context(), summary),
 				"tmux enrichment":        handler.workspaceResponseWithTmuxEnrichment(t.Context(), summary).response,
 			} {
-				assert.Equal(int64(1001), response.Repo.PlatformRepoID, name)
+				assert.Equal(platform.RepositoryIDKey(1001), response.Repo.Key, name)
 			}
 		})
 	}
@@ -97,7 +97,7 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 		}),
 		Workspaces: manager,
 		ResolveRepository: func(
-			ctx context.Context, route providerplane.RepositoryRoute, _ int64,
+			ctx context.Context, route providerplane.RepositoryRoute, _ platform.RepositoryKey,
 		) (*db.Repo, error) {
 			resolved = true
 			assert.Equal(providerplane.RepositoryRoute{
@@ -106,8 +106,8 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 			}, route)
 			entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
 				Platform: route.Provider, PlatformHost: route.PlatformHost,
-				PlatformRepoID: 1003,
-				Owner:          route.Owner, Name: route.Name,
+				Key:   platform.RepositoryIDKey(1003),
+				Owner: route.Owner, Name: route.Name,
 			})
 			if err != nil {
 				return nil, err
@@ -134,7 +134,7 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 	assert.True(resolved)
 	assert.NotEmpty(result.Workspace.ID)
 	entry, err := database.GetRepositoryByProviderID(t.Context(), platform.RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1003,
+		Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1003),
 	})
 	require.NoError(err)
 	require.NotNil(entry)
@@ -220,7 +220,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	base := t.TempDir()
 	oldIdentity := db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1002), Owner: "acme", Name: "widget",
 	}
 	oldRepo, err := database.ObserveRepository(
 		t.Context(), oldIdentity,
@@ -400,7 +400,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 			go func() { created <- test.create(handler) }()
 			select {
 			case request := <-automation.requests:
-				assert.Equal(int64(3609862021), request.PlatformRepoID)
+				assert.Equal(platform.RepositoryIDKey(3609862021), request.RepoKey)
 				assert.Equal(test.itemType, request.ItemType)
 				assert.Equal(test.number, request.ItemNumber)
 			case <-time.After(5 * time.Second):

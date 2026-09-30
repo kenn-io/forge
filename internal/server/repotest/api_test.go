@@ -136,7 +136,7 @@ func TestAPIRouteReuseServesOnlyCurrentRepository(t *testing.T) {
 
 	oldEntry, err := database.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
 		Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+		Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 	})
 	require.NoError(err)
 	require.NotNil(oldEntry)
@@ -151,11 +151,11 @@ func TestAPIRouteReuseServesOnlyCurrentRepository(t *testing.T) {
 	)
 
 	newEntry, err := database.ObserveRepository(ctx, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1002,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1002),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	require.NotNil(newEntry)
@@ -220,7 +220,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 		Owner:         "Group/SubGroup",
 		Name:          "Project.Special",
 		RepoPath:      "Group/SubGroup/Project.Special",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com:8443/Group/SubGroup/Project.Special",
 		CloneURL:      "https://gitlab.example.com:8443/Group/SubGroup/Project.Special.git",
 		DefaultBranch: "main",
@@ -348,15 +348,15 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          ref.Owner,
-		Name:           ref.Name,
-		PlatformHost:   ref.Host,
-		RepoPath:       ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
-		WebURL:         ref.WebURL,
-		CloneURL:       ref.CloneURL,
-		DefaultBranch:  ref.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		Owner:         ref.Owner,
+		Name:          ref.Name,
+		PlatformHost:  ref.Host,
+		RepoPath:      ref.RepoPath,
+		Key:           ref.Key,
+		WebURL:        ref.WebURL,
+		CloneURL:      ref.CloneURL,
+		DefaultBranch: ref.DefaultBranch,
 	}
 	_, err = reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
@@ -431,7 +431,7 @@ func TestGitLabSyncUsesTagsForRepoOverviewWhenReleasesAreAbsent(t *testing.T) {
 		Owner:         "team",
 		Name:          "service",
 		RepoPath:      "team/service",
-		PlatformID:    5150,
+		Key:           platform.RepositoryIDKey(5150),
 		WebURL:        "https://gitlab-tags.example.com/team/service",
 		CloneURL:      "https://gitlab-tags.example.com/team/service.git",
 		DefaultBranch: "main",
@@ -453,15 +453,15 @@ func TestGitLabSyncUsesTagsForRepoOverviewWhenReleasesAreAbsent(t *testing.T) {
 		database,
 		nil,
 		[]ghclient.RepoRef{{
-			Platform:       platform.KindGitLab,
-			Owner:          ref.Owner,
-			Name:           ref.Name,
-			PlatformHost:   ref.Host,
-			RepoPath:       ref.RepoPath,
-			PlatformRepoID: ref.PlatformID,
-			WebURL:         ref.WebURL,
-			CloneURL:       ref.CloneURL,
-			DefaultBranch:  ref.DefaultBranch,
+			Platform:      platform.KindGitLab,
+			Owner:         ref.Owner,
+			Name:          ref.Name,
+			PlatformHost:  ref.Host,
+			RepoPath:      ref.RepoPath,
+			Key:           ref.Key,
+			WebURL:        ref.WebURL,
+			CloneURL:      ref.CloneURL,
+			DefaultBranch: ref.DefaultBranch,
 		}},
 		time.Minute,
 		nil,
@@ -525,7 +525,7 @@ func TestAPIListRepoSummariesIncludesSyncedReleaseTimeline(t *testing.T) {
 
 	clones := gitclone.New(filepath.Join(dir, "clones"), nil)
 	clonePath, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, testutil.FixtureRepoID("acme", "widgets")),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widgets"))}),
 		"github", "github.com", "acme", "widgets",
 	)
 	require.NoError(err)
@@ -1620,7 +1620,7 @@ func TestAPIMovedLookupProblemCarriesDestination(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -1671,15 +1671,15 @@ func TestAPIMovedLookupProblemCarriesDestination(t *testing.T) {
 	require.NoError(t, err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "group",
-		Name:           "project",
-		PlatformHost:   "gitlab.example.com",
-		RepoPath:       "group/project",
-		PlatformRepoID: 4242,
-		WebURL:         "https://gitlab.example.com/group/project",
-		CloneURL:       "https://gitlab.example.com/group/project.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "group",
+		Name:          "project",
+		PlatformHost:  "gitlab.example.com",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -2437,7 +2437,7 @@ func TestAPILocalReadEndpointsServeDuringTokenRotationE2E(t *testing.T) {
 
 	bareDir := filepath.Join(dir, "clones")
 	bare, err := gitclone.New(bareDir, nil).ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, testutil.FixtureRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)

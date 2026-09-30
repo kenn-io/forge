@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/platform"
 
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
@@ -26,11 +27,11 @@ func TestHandleUpdateRepoUIVisibilityHidesAndShows(t *testing.T) {
 	srv, database, _ := setupTestServerWithConfig(t)
 
 	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.Equal([]string{"widget"}, servertest.ListRepoNames(t, srv))
 
@@ -74,22 +75,22 @@ func TestServerStartupClearsOrphanedVisibility(t *testing.T) {
 	database := dbtest.Open(t)
 	widget, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-			Owner:          "acme",
-			Name:           "widget",
+			Platform:     "github",
+			PlatformHost: "github.com",
+			Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+			Owner:        "acme",
+			Name:         "widget",
 		},
 	)
 	require.NoError(err)
 	require.NotNil(widget)
 	gadget, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: testutil.FixtureRepoID("acme", "gadget"),
-			Owner:          "acme",
-			Name:           "gadget",
+			Platform:     "github",
+			PlatformHost: "github.com",
+			Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "gadget")),
+			Owner:        "acme",
+			Name:         "gadget",
 		},
 	)
 	require.NoError(err)
@@ -128,14 +129,14 @@ name = "gadget"
 				Owner:              "acme",
 				Name:               "widget",
 				PlatformHost:       "github.com",
-				PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
+				Key:                platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 				ConfiguredRepoPath: "acme/wid*",
 			},
 			{
 				Owner:              "acme",
 				Name:               "gadget",
 				PlatformHost:       "github.com",
-				PlatformRepoID:     testutil.FixtureRepoID("acme", "gadget"),
+				Key:                platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "gadget")),
 				ConfiguredRepoPath: "acme/gadget",
 			},
 		}, time.Minute, nil, nil,
@@ -149,11 +150,11 @@ name = "gadget"
 
 	hidden, err := database.HiddenRepos(t.Context())
 	require.NoError(err)
-	hiddenIDs := make([]int64, 0, len(hidden))
+	hiddenKeys := make([]platform.RepositoryKey, 0, len(hidden))
 	for _, repo := range hidden {
-		hiddenIDs = append(hiddenIDs, repo.PlatformRepoID)
+		hiddenKeys = append(hiddenKeys, repo.Key)
 	}
-	assert.Equal([]int64{testutil.FixtureRepoID("acme", "gadget")}, hiddenIDs,
+	assert.Equal([]platform.RepositoryKey{platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "gadget"))}, hiddenKeys,
 		"startup clears glob-only hidden state but keeps exact-owned state")
 }
 
@@ -166,11 +167,11 @@ func TestHandleUpdateRepoUIVisibilityWithoutSyncer(t *testing.T) {
 	// the client without the saved state.
 	database := dbtest.Open(t)
 	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
@@ -204,7 +205,7 @@ name = "widget"
 	hidden, err := database.HiddenRepos(t.Context())
 	require.NoError(err)
 	require.Len(hidden, 1)
-	assert.Equal(testutil.FixtureRepoID("acme", "widget"), hidden[0].PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), hidden[0].Key)
 }
 
 func TestStartupVisibilitySweepToleratesNilSyncer(t *testing.T) {
@@ -217,22 +218,22 @@ func TestStartupVisibilitySweepToleratesNilSyncer(t *testing.T) {
 	database := dbtest.Open(t)
 	widget, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-			Owner:          "acme",
-			Name:           "widget",
+			Platform:     "github",
+			PlatformHost: "github.com",
+			Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+			Owner:        "acme",
+			Name:         "widget",
 		},
 	)
 	require.NoError(err)
 	require.NotNil(widget)
 	gadget, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: testutil.FixtureRepoID("acme", "gadget"),
-			Owner:          "acme",
-			Name:           "gadget",
+			Platform:     "github",
+			PlatformHost: "github.com",
+			Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "gadget")),
+			Owner:        "acme",
+			Name:         "gadget",
 		},
 	)
 	require.NoError(err)
@@ -266,11 +267,11 @@ name = "widget"
 
 	hidden, err := database.HiddenRepos(t.Context())
 	require.NoError(err)
-	hiddenIDs := make([]int64, 0, len(hidden))
+	hiddenKeys := make([]platform.RepositoryKey, 0, len(hidden))
 	for _, repo := range hidden {
-		hiddenIDs = append(hiddenIDs, repo.PlatformRepoID)
+		hiddenKeys = append(hiddenKeys, repo.Key)
 	}
-	assert.Equal([]int64{testutil.FixtureRepoID("acme", "widget")}, hiddenIDs,
+	assert.Equal([]platform.RepositoryKey{platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))}, hiddenKeys,
 		"the configured route keeps its preference; the unconfigured repo is swept")
 }
 

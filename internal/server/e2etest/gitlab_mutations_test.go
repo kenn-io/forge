@@ -309,12 +309,12 @@ func setupGitLabMutationServer(
 
 	database := dbtest.Open(t)
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: 4242,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Key:          platform.RepositoryIDKey(4242),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 
@@ -375,12 +375,12 @@ func setupGitLabMutationServer(
 	}}))
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "gitlab.com",
-		RepoPath:       "acme/widget",
-		PlatformRepoID: 4242,
+		Platform:     platform.KindGitLab,
+		Owner:        "acme",
+		Name:         "widget",
+		PlatformHost: "gitlab.com",
+		RepoPath:     "acme/widget",
+		Key:          platform.RepositoryIDKey(4242),
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,

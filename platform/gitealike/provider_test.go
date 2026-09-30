@@ -304,7 +304,7 @@ func TestProviderGetRepositoryLooksUpPinnedIDAndReturnsRenamedRoute(t *testing.T
 	}{
 		{
 			name:        "pinned id follows rename",
-			ref:         platform.RepoRef{Owner: "old-owner", Name: "old-name", PlatformID: 1001},
+			ref:         platform.RepoRef{Owner: "old-owner", Name: "old-name", Key: platform.RepositoryIDKey(1001)},
 			wantIDCalls: []int64{1001},
 		},
 		{
@@ -332,7 +332,7 @@ func TestProviderGetRepositoryLooksUpPinnedIDAndReturnsRenamedRoute(t *testing.T
 			assert.Equal(tt.wantRouteCall, transport.repoByRouteCalls)
 			assert.Equal("new-owner", repo.Ref.Owner)
 			assert.Equal("new-name", repo.Ref.Name)
-			assert.Equal(int64(1001), repo.Ref.PlatformID)
+			assert.Equal(platform.RepositoryIDKey(1001), repo.Ref.Key)
 		})
 	}
 }

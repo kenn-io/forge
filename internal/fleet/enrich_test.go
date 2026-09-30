@@ -10,6 +10,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 const SchemaVersion = 2
@@ -236,12 +237,12 @@ func TestHubEnrichesWorkspaceByStableProviderIdentity(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	repository := RepositoryIdentity{
-		Provider: "gitlab", PlatformHost: "gitlab.example", PlatformRepoID: 42,
+		Provider: "gitlab", PlatformHost: "gitlab.example", Key: platform.RepositoryIDKey(42),
 		Owner: "group/subgroup", Name: "widget",
 	}
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: repository.Provider, PlatformHost: repository.PlatformHost,
-		PlatformRepoID: repository.PlatformRepoID, Owner: repository.Owner, Name: repository.Name,
+		Key: repository.Key, Owner: repository.Owner, Name: repository.Name,
 	})
 	require.NoError(err)
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
@@ -282,12 +283,12 @@ func TestHubEnrichesAdHocWorkspaceFromAssociatedPull(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	repository := RepositoryIdentity{
-		Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 		Owner: "acme", Name: "widget",
 	}
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: repository.Provider, PlatformHost: repository.PlatformHost,
-		PlatformRepoID: repository.PlatformRepoID, Owner: repository.Owner, Name: repository.Name,
+		Key: repository.Key, Owner: repository.Owner, Name: repository.Name,
 	})
 	require.NoError(err)
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)

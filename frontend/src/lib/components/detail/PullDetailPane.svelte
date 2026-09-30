@@ -114,7 +114,7 @@
     number={pr.number}
     provider={pr.provider}
     platformHost={pr.platformHost}
-    platformRepoId={pr.platformRepoId}
+    repositoryKey={pr.repositoryKey}
     repoPath={pr.repoPath}
     {autoSync}
     {workflowApprovalSync}

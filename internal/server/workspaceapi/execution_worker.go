@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 // WorkspaceContextExpiredReason identifies reads the controller can renew and retry.
@@ -43,7 +44,7 @@ func (s *Handler) admitWorkerRepository(ctx context.Context, repository db.Works
 		return nil, httpapi.Forbidden(err.Error(), nil)
 	}
 	if credential.GitHubUserID != s.executionWorker.GitHubUserID ||
-		(repository.PlatformRepoID != 0 && repository.PlatformRepoID != credential.RepositoryID) {
+		(!repository.Key.IsZero() && repository.Key != platform.RepositoryIDKey(credential.RepositoryID)) {
 		return nil, httpapi.Validation("repository", "broker identity differs from the worker or supplied repository")
 	}
 	cloneURL := "https://github.com/" + repository.Owner + "/" + repository.Name + ".git"
@@ -51,7 +52,7 @@ func (s *Handler) admitWorkerRepository(ctx context.Context, repository db.Works
 		return nil, httpapi.Validation("repository.clone_url", "clone URL must match the admitted GitHub repository")
 	}
 	entry, err := s.db.ObserveRepository(ctx, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: credential.RepositoryID,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(credential.RepositoryID),
 		Owner: repository.Owner, Name: repository.Name,
 	})
 	if err != nil {
@@ -85,8 +86,8 @@ func (s *Handler) createWorkerWorkspace(ctx context.Context, input *struct{ Body
 		}
 		result, err := s.CreateAdHocWorkspaceService(ctx, CreateAdHocWorkspaceRequest{
 			Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost,
-			PlatformRepoID: request.Repository.PlatformRepoID,
-			Owner:          request.Repository.Owner, Name: request.Repository.Name,
+			RepoKey: request.Repository.Key,
+			Owner:   request.Repository.Owner, Name: request.Repository.Name,
 			Branch: &request.Branch, ReuseExistingBranch: request.ReuseExistingBranch,
 		})
 		if err != nil {

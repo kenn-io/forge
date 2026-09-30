@@ -4,6 +4,8 @@ import (
 	"context"
 	"hash/fnv"
 	"strings"
+
+	"go.kenn.io/forge/platform"
 )
 
 // seedTestRepo records identity as an observed repository and returns its row
@@ -12,8 +14,8 @@ import (
 // twice returns the same row.
 func seedTestRepo(ctx context.Context, d *DB, identity RepoIdentity) (int64, error) {
 	identity = canonicalRepoIdentity(identity)
-	if identity.PlatformRepoID == 0 {
-		identity.PlatformRepoID = syntheticTestRepoID(identity)
+	if identity.Key.IsZero() {
+		identity.Key = platform.RepositoryIDKey(syntheticTestRepoID(identity))
 	}
 	entry, err := d.ObserveRepository(ctx, identity)
 	if err != nil {

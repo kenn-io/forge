@@ -397,7 +397,7 @@ func TestResolveProviderReposAirplaneModeUsesCachedCatalog(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = 1001
+	identity.Key = platform.RepositoryIDKey(1001)
 	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	require.NoError(database.UpdateRepoProviderObservation(t.Context(), repoID, db.RepoProviderMetadata{
@@ -414,7 +414,7 @@ func TestResolveProviderReposAirplaneModeUsesCachedCatalog(t *testing.T) {
 		AirplaneMode: true,
 		Repos: []config.Repo{
 			{Owner: "acme", Name: "*"},
-			{Owner: "acme", Name: "widget", PlatformRepoID: identity.PlatformRepoID},
+			{Owner: "acme", Name: "widget", PlatformRepoID: 1001},
 		},
 	}, mustProviderRegistry(t, map[string]ghclient.Client{"github.com": client}), database, nil)
 	require.False(called)
@@ -424,7 +424,7 @@ func TestResolveProviderReposAirplaneModeUsesCachedCatalog(t *testing.T) {
 		Owner:              "acme",
 		Name:               "widget",
 		RepoPath:           "acme/widget",
-		PlatformRepoID:     1001,
+		Key:                platform.RepositoryIDKey(1001),
 		WebURL:             "https://github.com/acme/widget",
 		CloneURL:           "https://github.com/acme/widget.git",
 		DefaultBranch:      "main",
@@ -566,7 +566,7 @@ func TestResolveProviderReposPrefersResolvedOverFallbackDuplicates(t *testing.T)
 		Name:               "archived",
 		PlatformHost:       "github.com",
 		RepoPath:           "acme/archived",
-		PlatformRepoID:     1001,
+		Key:                platform.RepositoryIDKey(1001),
 		Archived:           true,
 		ConfiguredRepoPath: "acme/archived",
 	}}, repos)
@@ -600,16 +600,16 @@ func TestResolveProviderReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	renamed := db.GitHubRepoIdentity("github.com", "acme", "tools-renamed")
-	renamed.PlatformRepoID = 1001
+	renamed.Key = platform.RepositoryIDKey(1001)
 	_, err := database.ObserveRepository(t.Context(), renamed)
 	require.NoError(err)
 	replacement := db.GitHubRepoIdentity("github.com", "acme", "tools")
-	replacement.PlatformRepoID = 1002
+	replacement.Key = platform.RepositoryIDKey(1002)
 	_, err = database.ObserveRepository(t.Context(), replacement)
 	require.NoError(err)
 
 	cfg := &config.Config{Repos: []config.Repo{{
-		Owner: "acme", Name: "tools", PlatformRepoID: renamed.PlatformRepoID,
+		Owner: "acme", Name: "tools", PlatformRepoID: 1001,
 	}}}
 	client := getRepoFailingClient{&testutil.FixtureClient{}}
 	repos := resolveProviderRepos(
@@ -619,7 +619,7 @@ func TestResolveProviderReposUsesStableIdentityAfterRouteReuse(t *testing.T) {
 	)
 
 	require.Len(repos, 1)
-	require.Equal(renamed.PlatformRepoID, repos[0].PlatformRepoID)
+	require.Equal(renamed.Key, repos[0].Key)
 	require.Equal("acme/tools-renamed", repos[0].RepoPath)
 
 	withoutCatalog := resolveProviderRepos(
@@ -634,7 +634,7 @@ func TestResolveProviderReposRegistersCredentialAliasForCatalogFallback(t *testi
 	require := require.New(t)
 	database := dbtest.Open(t)
 	renamed := db.GitHubRepoIdentity("github.com", "acme", "tools-new")
-	renamed.PlatformRepoID = 1001
+	renamed.Key = platform.RepositoryIDKey(1001)
 	_, err := database.ObserveRepository(t.Context(), renamed)
 	require.NoError(err)
 
@@ -645,7 +645,7 @@ func TestResolveProviderReposRegistersCredentialAliasForCatalogFallback(t *testi
 	})
 	require.NoError(err)
 	cfg := &config.Config{Repos: []config.Repo{{
-		Owner: "acme", Name: "tools", PlatformRepoID: renamed.PlatformRepoID,
+		Owner: "acme", Name: "tools", PlatformRepoID: 1001,
 	}}}
 
 	repos := resolveProviderRepos(
@@ -674,11 +674,11 @@ func TestResolveProviderReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 
 	ctx := t.Context()
 	widgets := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	widgets.PlatformRepoID = 1001
+	widgets.Key = platform.RepositoryIDKey(1001)
 	_, err := reposeed.Seed(ctx, database, widgets)
 	require.NoError(err)
 	tools := db.GitHubRepoIdentity("github.com", "acme", "tools")
-	tools.PlatformRepoID = 1002
+	tools.Key = platform.RepositoryIDKey(1002)
 	_, err = reposeed.Seed(ctx, database, tools)
 	require.NoError(err)
 
@@ -692,20 +692,20 @@ func TestResolveProviderReposFallsBackToDBForOfflineGlobs(t *testing.T) {
 
 	assert.ElementsMatch([]ghclient.RepoRef{
 		{
-			Platform:       platform.KindGitHub,
-			Owner:          "acme",
-			Name:           "widgets",
-			PlatformHost:   "github.com",
-			RepoPath:       "acme/widgets",
-			PlatformRepoID: 1001,
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "widgets",
+			PlatformHost: "github.com",
+			RepoPath:     "acme/widgets",
+			Key:          platform.RepositoryIDKey(1001),
 		},
 		{
-			Platform:       platform.KindGitHub,
-			Owner:          "acme",
-			Name:           "tools",
-			PlatformHost:   "github.com",
-			RepoPath:       "acme/tools",
-			PlatformRepoID: 1002,
+			Platform:     platform.KindGitHub,
+			Owner:        "acme",
+			Name:         "tools",
+			PlatformHost: "github.com",
+			RepoPath:     "acme/tools",
+			Key:          platform.RepositoryIDKey(1002),
 		},
 	}, repos)
 }
@@ -1048,11 +1048,11 @@ func TestStartupFallbackKeepsPersistedGlobMatchesInAPIs(t *testing.T) {
 	database := dbtest.Open(t)
 
 	forge := db.GitHubRepoIdentity("github.com", "roborev-dev", "kenn-forge")
-	forge.PlatformRepoID = 1001
+	forge.Key = platform.RepositoryIDKey(1001)
 	_, err := reposeed.Seed(t.Context(), database, forge)
 	require.NoError(err)
 	worker := db.GitHubRepoIdentity("github.com", "roborev-dev", "worker")
-	worker.PlatformRepoID = 1002
+	worker.Key = platform.RepositoryIDKey(1002)
 	_, err = reposeed.Seed(t.Context(), database, worker)
 	require.NoError(err)
 
@@ -1603,14 +1603,14 @@ func TestResolveStartupReposDoesNotContactProvider(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = 1001
+	identity.Key = platform.RepositoryIDKey(1001)
 	_, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	repos := resolveStartupRepos(t.Context(), &config.Config{
 		Repos: []config.Repo{{Owner: "acme", Name: "*"}},
 	}, database, nil)
 	require.Len(repos, 1)
-	require.Equal(int64(1001), repos[0].PlatformRepoID)
+	require.Equal(platform.RepositoryIDKey(1001), repos[0].Key)
 }
 
 func TestResolveStartupReposPreservesProviderIdentities(t *testing.T) {
@@ -1618,7 +1618,7 @@ func TestResolveStartupReposPreservesProviderIdentities(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			require := require.New(t)
 			database := dbtest.Open(t)
-			identity := db.RepoIdentity{Platform: provider, PlatformHost: "forge.example", PlatformRepoID: 12345, Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
+			identity := db.RepoIdentity{Platform: provider, PlatformHost: "forge.example", Key: platform.RepositoryIDKey(12345), Owner: "acme", Name: "widget", RepoPath: "acme/widget"}
 			_, err := reposeed.Seed(t.Context(), database, identity)
 			require.NoError(err)
 			cfg := &config.Config{Repos: []config.Repo{
@@ -1628,7 +1628,7 @@ func TestResolveStartupReposPreservesProviderIdentities(t *testing.T) {
 			}}
 			repos := resolveStartupRepos(t.Context(), cfg, database, nil)
 			require.Len(repos, 1, "uncached configurations await background discovery")
-			require.Equal(int64(12345), repos[0].PlatformRepoID)
+			require.Equal(platform.RepositoryIDKey(12345), repos[0].Key)
 			require.Equal(platform.Kind(provider), repos[0].Platform)
 		})
 	}

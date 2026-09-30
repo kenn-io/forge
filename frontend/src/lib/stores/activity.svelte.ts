@@ -19,6 +19,7 @@ import { showFlash } from "./flash.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
+import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
@@ -641,12 +642,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function stableParentKey(item: ActivityItem | ActivitySubject): string | undefined {
     const repo = item.repo;
     if (!repo) return undefined;
-    const platformRepoId = repo.platform_repo_id;
-    if (!platformRepoId || (item.item_type !== "pr" && item.item_type !== "issue")) return undefined;
+    const repositoryKey = repositoryKeyFromWire(repo);
+    if (!repositoryKey || (item.item_type !== "pr" && item.item_type !== "issue")) return undefined;
     return activityItemKey({
       provider: repo.provider,
       platformHost: repo.platform_host,
-      platformRepoId,
+      repositoryKey,
       owner: repo.owner,
       name: repo.name,
       repoPath: repo.repo_path,
@@ -893,8 +894,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function loadThreadEvents(key: string, loadAllPages = true): void {
     if (loadedThreadKeys.has(key) || loadingThreadKeys.has(key)) return;
     const subject = itemActivity.find((candidate) => stableParentKey(candidate) === key);
-    const platformRepoID = subject?.repo.platform_repo_id;
-    if (!subject || !platformRepoID || (subject.item_type !== "pr" && subject.item_type !== "issue")) return;
+    const repositoryKey = repositoryKeyFromWire(subject?.repo);
+    if (!subject || !repositoryKey || (subject.item_type !== "pr" && subject.item_type !== "issue")) return;
     const itemType: "pr" | "issue" = subject.item_type === "pr" ? "pr" : "issue";
 
     const requestGeneration = pagedActivityGeneration;
@@ -909,7 +910,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const baseQuery = {
       provider: subject.repo.provider,
       platform_host: subject.repo.platform_host,
-      platform_repo_id: platformRepoID,
+      ...repositoryKeyToWire(repositoryKey),
       item_type: itemType,
       item_number: subject.item_number,
       since: computeSince(),

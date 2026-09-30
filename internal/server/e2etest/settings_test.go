@@ -18,6 +18,7 @@ import (
 
 	apiruntime "github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/platform"
 
 	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/assert"
@@ -750,11 +751,11 @@ func TestRepoConfigAPIE2EUpdatesUIVisibility(t *testing.T) {
 
 	entry, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
-			Platform:       "github",
-			PlatformHost:   "github.com",
-			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-			Owner:          "acme",
-			Name:           "widget",
+			Platform:     "github",
+			PlatformHost: "github.com",
+			Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+			Owner:        "acme",
+			Name:         "widget",
 		},
 	)
 	require.NoError(err)
@@ -882,7 +883,7 @@ name = "widget"
 
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity(platformHost, "acme", "widget")
-	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	identity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
 	repoID, err := reposeed.Seed(
 		t.Context(), database, identity,
 	)

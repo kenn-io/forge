@@ -103,6 +103,7 @@ export class WorkflowRunsChangedEvent extends Schema.Class<WorkflowRunsChangedEv
   provider: Schema.String,
   platform_host: Schema.String,
   platform_repo_id: Schema.Number,
+  bitbucket_repository_uuid: Schema.optionalKey(Schema.String),
 }) {}
 
 export class WorkflowDispatchProgressEvent extends Schema.Class<WorkflowDispatchProgressEvent>(
@@ -110,6 +111,7 @@ export class WorkflowDispatchProgressEvent extends Schema.Class<WorkflowDispatch
 )({
   provider: Schema.String,
   platform_repo_id: Schema.Number,
+  bitbucket_repository_uuid: Schema.optionalKey(Schema.String),
   platform_host: Schema.String,
   repo_path: Schema.String,
   owner: Schema.String,

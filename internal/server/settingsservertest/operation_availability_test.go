@@ -571,12 +571,12 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 		_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
-			Platform:       "gitlab",
-			PlatformHost:   "gitlab.example.com",
-			PlatformRepoID: 42,
-			Owner:          "group",
-			Name:           "project",
-			RepoPath:       "group/project",
+			Platform:     "gitlab",
+			PlatformHost: "gitlab.example.com",
+			Key:          platform.RepositoryIDKey(42),
+			Owner:        "group",
+			Name:         "project",
+			RepoPath:     "group/project",
 		})
 		require.NoError(err)
 		gqlRT.UpdateFromRate(platform.Rate{Limit: 5000, Remaining: 0, Reset: resetAt})
@@ -638,12 +638,12 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 		t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 		_, err = reposeed.Seed(t.Context(), database, db.RepoIdentity{
-			Platform:       "gitlab",
-			PlatformHost:   "gitlab.example.com",
-			PlatformRepoID: 42,
-			Owner:          "group",
-			Name:           "project",
-			RepoPath:       "group/project",
+			Platform:     "gitlab",
+			PlatformHost: "gitlab.example.com",
+			Key:          platform.RepositoryIDKey(42),
+			Owner:        "group",
+			Name:         "project",
+			RepoPath:     "group/project",
 		})
 		require.NoError(err)
 

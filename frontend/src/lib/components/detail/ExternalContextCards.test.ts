@@ -10,7 +10,7 @@ vi.mock("../../app/runtime-context.js", () => ({ getAppRuntime: () => runtimeCap
 
 const props = {
   ref: { provider: "github", owner: "example", name: "project", repoPath: "example/project" },
-  platformRepoId: 123,
+  repositoryKey: { kind: "id", id: 123 },
   number: 42,
   headSha: "a".repeat(40),
 };

@@ -12,11 +12,12 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	"go.kenn.io/forge/platform"
 )
 
 // DiffRepoResult holds the SHAs from the test repo for use in assertions.
 type DiffRepoResult struct {
-	PlatformRepoID int64
+	Key            platform.RepositoryKey
 	BaseSHA        string // merge-base / base branch tip
 	HeadSHA        string // PR head commit
 	AltHeadSHA     string // newer PR head commit used by E2E refresh tests
@@ -45,7 +46,7 @@ func SetupDiffRepo(
 	workDir := filepath.Join(tmpDir, "workrepo")
 	cloneBase := filepath.Join(tmpDir, "clones")
 	repoIdentity := db.GitHubRepoIdentity("github.com", "acme", "widgets")
-	repoIdentity.PlatformRepoID = FixtureRepoID("acme", "widgets")
+	repoIdentity.Key = platform.RepositoryIDKey(FixtureRepoID("acme", "widgets"))
 	mgr := gitclone.New(cloneBase, nil)
 	barePath, err := mgr.ClonePathForContext(
 		gitclone.WithRepositoryIdentity(ctx, repoIdentity.ProviderIdentity()),
@@ -257,7 +258,7 @@ func SetupDiffRepo(
 	}
 
 	return &DiffRepoResult{
-		PlatformRepoID: repoIdentity.PlatformRepoID,
+		Key:            repoIdentity.Key,
 		BaseSHA:        baseSHA,
 		HeadSHA:        headSHA,
 		AltHeadSHA:     altHeadSHA,

@@ -7,21 +7,52 @@ provider interfaces, and the checklist for adding a new provider, read
 
 ## Identity
 
-Repository identity is `(platform, platform_host, platform_repo_id)` except
-for Bitbucket Cloud, which has no integer ID. Cloud's key is
-`bitbucket_repository_uuid` and its `platform_repo_id` stays 0; every other
-provider, including Bitbucket Data Center, uses a positive integer and an
-empty UUID. Exactly one key is set
-(`platform/repository_identity.go::RepositoryIdentity.Valid`). GitHub's
+Repository identity is `(platform, platform_host, key)`. The key is one
+`platform.RepositoryKey`: a positive integer repository ID for every provider,
+including Bitbucket Data Center, or the repository UUID for Bitbucket Cloud,
+which has no integer ID (`platform/repository_key.go::RepositoryKey`,
+`platform/repository_identity.go::RepositoryIdentity.Valid`). GitHub's
 `node_id` is never identity. Owner, name, and `repo_path` are the current route.
 
+- Every Go value that identifies a repository holds a `platform.RepositoryKey`
+  (`Key` on repository types, `RepoKey` on types that carry other data too);
+  never a bare integer ID or a separate UUID field. Compare keys with `==`,
+  test verification with `IsZero`, and format them with `String`; the key's
+  fields are unexported so no code can check half of it (maintainer decision).
+- Flat `platform_repo_id` and `bitbucket_repository_uuid` values exist only in
+  encodings: SQL columns (`internal/db/repository_key.go`), JSON bodies,
+  federation payloads, and the config file. Decode with
+  `platform.RepositoryKeyFromWire` where the value enters and encode with
+  `RepositoryKey.Wire`. A JSON-encoded type keeps its key field, tagged
+  `json:"-" repokey:"<id member>,<uuid member>[,omitempty]"`, and its JSON
+  methods call `platform.MarshalKeyedJSON`/`UnmarshalKeyedJSON`, which derive
+  the flat wire form from the type itself; never add a parallel JSON struct
+  that copies fields (maintainer decision). API schemas document these types
+  by that derived form, so OpenAPI names and shapes do not change
+  (`platform/repository_key_json.go`,
+  `internal/server/activityapi/repository_key_schemas.go::repositoryKeyAPITypes`); a huma
+  API serving those types must be built with `WithRepositoryKeyWireSchemas`,
+  or its validator rejects the flat key members. An
+  outbound DTO whose Go use is only encoding may hold the flat fields instead,
+  set only from `Wire`; a type embedded in another DTO must not define
+  `MarshalJSON`, because the method is promoted and drops the outer fields.
+  Tool schemas the MCP SDK reflects from struct fields stay flat for the same
+  reason and decode to a key where the input enters. Config entries expose
+  only `RepositoryKey`/`SetRepositoryKey`
+  (`internal/config/config.go::Repo.RepositoryKey`).
+- Provider adapters read their own key kind with `RepositoryKey.ID` or
+  `RepositoryKey.UUID`; nothing else does.
+- The frontend mirrors the key as one `RepositoryKey` type: decode API data
+  with `repositoryKeyFromWire`, send it with `repositoryKeyToWire`, compare with
+  `sameRepositoryKey`, and key maps and persisted state with
+  `repositoryKeyString`, whose `id|<n>` form keeps stored integer keys valid
+  (`frontend/src/lib/api/repository-key.ts`).
 - Owner/name is edge input. Resolve it to a repository once where it enters
   (HTTP params, MCP args, config entries, URLs) and key everything below by the
   repository. A request that carries a provider ID resolves by that ID
   (`internal/db/queries.go::DB.GetRepoByIdentity`,
   `internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
-- Carry `platform.RepoRef.PlatformID` or, for Cloud, `BitbucketRepositoryUUID`.
-  Never hash the UUID into the integer
+- Carry `platform.RepoRef.Key`. Never hash the UUID into an integer
   (`internal/server/httpapi/repository_resolver.go::PlatformRepoRef`).
   `GetRepository` reads by that key once the ref carries one, so renames
   resolve to the current route
@@ -33,8 +64,7 @@ empty UUID. Exactly one key is set
   next pass (`internal/db/repository_catalog.go::DB.ObserveRepository`).
 - Every repository row has a verified provider key; nothing creates route-only
   rows. An absent Cloud UUID is stored as empty text, never the nil UUID's
-  canonical string
-  (`internal/db/bitbucket_repository_uuid.go::bitbucketRepositoryUUIDText`).
+  canonical string (`internal/db/repository_key.go::repositoryKeyArgs`).
   Callers holding only a route look up the active occupant or leave the link
   unset (`internal/server/workspaceapi/projects_handlers.go`).
 - GitHub rows stored before migration 60 hold `github_node_id` until a sync pass
@@ -49,14 +79,12 @@ empty UUID. Exactly one key is set
   held merges into that row, whose copy wins item conflicts. Every column holding
   a `forge_repos` id must be in `repositoryOwnedColumns`
   (`internal/db/repository_catalog.go::mergeDuplicateRepositoryTx`).
-- Config presets, federation descriptors, fleet and MCP identities, archive
-  snapshot IDs, and activity rows still key only the integer. A catalogued
-  Cloud repository cannot be named there yet; do not invent an integer to
-  unblock them (`internal/config/config.go::normalizeRepoPresets`).
-- Clone partitions key the Cloud UUID or the integer; integer partitions keep
-  their existing on-disk paths (`internal/gitclone/clone.go::repositoryPartitionKey`).
+- Clone partitions, cooldown and credential-alias keys, archive snapshot IDs,
+  and provider-state source keys use `RepositoryKey.String`, which formats an
+  integer key as its decimal ID, so integer-keyed state keeps its existing
+  names (`internal/gitclone/clone.go::WithRepositoryIdentity`).
 - Keep provider calls route-based where the provider API is; the integer ID
-  confirms which repository answered and keys local state. Do not rewrite
+  key confirms which repository answered and keys local state. Do not rewrite
   owner/name reads into ID reads (maintainer decision).
 - Saved repository-filter presets resolve by stable identity and use `repo_path` only for display; reject unverified members and never fall back to a new occupant of the stored route (`internal/config/config.go::RepoPresetRepository`, `frontend/src/lib/stores/repo-presets.ts`).
 - `platform` is the provider kind named in the canonical provider list in

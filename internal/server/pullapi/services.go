@@ -181,7 +181,7 @@ func (s *Handler) overlayLocalPullDetail(
 	identity := providerplane.ItemIdentity{
 		Repository: platform.RepositoryIdentity{
 			Provider: detail.Repo.Provider, PlatformHost: detail.Repo.PlatformHost,
-			PlatformRepoID: detail.Repo.PlatformRepoID,
+			Key: detail.Repo.Key,
 		},
 		ItemType: "pr", ItemNumber: detail.MergeRequest.Number,
 	}.Canonical()
@@ -202,9 +202,9 @@ func pullWorkspaceOverlays(
 		}
 		identity := providerplane.ItemIdentity{
 			Repository: platform.RepositoryIdentity{
-				Provider:       activity.Subject.Platform,
-				PlatformHost:   activity.Subject.PlatformHost,
-				PlatformRepoID: activity.Subject.PlatformRepoID,
+				Provider:     activity.Subject.Platform,
+				PlatformHost: activity.Subject.PlatformHost,
+				Key:          activity.Subject.RepoKey,
 			},
 			ItemType: "pr", ItemNumber: key.ItemNumber,
 		}.Canonical()
@@ -219,7 +219,7 @@ func pullResponseIdentity(row MergeRequestResponse) providerplane.ItemIdentity {
 	return providerplane.ItemIdentity{
 		Repository: platform.RepositoryIdentity{
 			Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost,
-			PlatformRepoID: row.Repo.PlatformRepoID,
+			Key: row.Repo.Key,
 		},
 		ItemType: "pr", ItemNumber: row.Number,
 	}.Canonical()

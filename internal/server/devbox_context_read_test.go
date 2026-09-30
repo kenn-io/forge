@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/devbox"
+	"go.kenn.io/forge/internal/server/activityapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -27,6 +28,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
@@ -38,14 +40,14 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	worktree := gitfixture.DivergenceWorktree(t)
 	commit := gitfixture.SHA(t, worktree, "HEAD")
 	identity := db.GitHubRepoIdentity("github.com", "example-org", "project")
-	identity.PlatformRepoID = 1001
+	identity.Key = platform.RepositoryIDKey(1001)
 	_, err := reposeed.Seed(ctx, database, identity)
 	require.NoError(err)
 	issuedAt := time.Now().UTC().Truncate(time.Second)
 	ws := &db.Workspace{ID: "work-a", Platform: "github", PlatformHost: "github.com", RepoOwner: "example-org", RepoName: "project", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7, ItemKey: "7", GitHeadRef: "feature", WorkspaceBranch: "feature", WorktreePath: worktree, Status: "ready"}
 	spec := db.WorkspaceLaunchSpec{
 		Version:    db.WorkspaceLaunchSpecVersion,
-		Repository: db.WorkspaceLaunchRepository{Provider: "github", PlatformHost: "github.com", PlatformRepoID: identity.PlatformRepoID, Owner: "example-org", Name: "project", CloneURL: "https://github.com/example-org/project.git", DefaultBranch: "main"},
+		Repository: db.WorkspaceLaunchRepository{Provider: "github", PlatformHost: "github.com", Key: identity.Key, Owner: "example-org", Name: "project", CloneURL: "https://github.com/example-org/project.git", DefaultBranch: "main"},
 		ItemType:   db.WorkspaceItemTypePullRequest, ItemNumber: 7, ItemKey: "7", GitHeadRef: "feature",
 		Pull:          &db.WorkspaceLaunchPull{HeadBranch: "feature", BaseBranch: "main", HeadRepoKind: "same_repo", SnapshotRevision: 1},
 		SourceVisible: true, IssuedAt: issuedAt, SourceVisibleUntil: issuedAt.Add(db.WorkspaceLaunchSpecVisibilityLease),
@@ -65,7 +67,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 		if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
 			return
 		}
-		repositoryID := identity.PlatformRepoID
+		repositoryID, _ := identity.Key.ID()
 		if routeReused.Load() {
 			if request.Repository == "example-org/project" {
 				repositoryID = 1002
@@ -92,7 +94,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	})
 	t.Cleanup(func() { require.NoError(worker.Shutdown(context.Background())) })
 	workerMux := http.NewServeMux()
-	workerAPI := humago.NewWithPrefix(workerMux, "/api/v1", huma.DefaultConfig("worker", "1"))
+	workerAPI := humago.NewWithPrefix(workerMux, "/api/v1", activityapi.WithRepositoryKeyWireSchemas(huma.DefaultConfig("worker", "1")))
 	worker.RegisterExecution(workerAPI)
 	worker.RegisterWorker(workerAPI)
 	var reads, renewals atomic.Int64
@@ -212,14 +214,14 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	// The controller has observed a rename and reuse of the old route, while
 	// the worker still has the original repository's expired context.
 	renamed := db.GitHubRepoIdentity("github.com", "moved-org", "project")
-	renamed.PlatformRepoID = identity.PlatformRepoID
+	renamed.Key = identity.Key
 	_, err = controllerDB.ObserveRepository(ctx, renamed)
 	require.NoError(err)
 	require.NoError(controllerDB.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
 		CloneURL: "https://github.com/moved-org/project.git", DefaultBranch: "main",
 	}, nil, nil))
 	replacement := identity
-	replacement.PlatformRepoID = 1002
+	replacement.Key = platform.RepositoryIDKey(1002)
 	entry, err := controllerDB.ObserveRepository(ctx, replacement)
 	require.NoError(err)
 	serverfake.SeedPRForRepo(t, controllerDB, entry.Repository.ID, "github.com", "example-org", "project", 7)
@@ -233,6 +235,6 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	stored, err = database.GetWorkspaceLaunchSpec(ctx, ws.ID)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Equal(int64(1001), stored.Repository.PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(1001), stored.Repository.Key)
 	assert.Equal("moved-org", stored.Repository.Owner)
 }

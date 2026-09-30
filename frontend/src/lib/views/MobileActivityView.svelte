@@ -56,6 +56,7 @@
     createRepoLabelFormatter,
     type RepoLabelIdentity,
   } from "../utils/repo-label.js";
+  import { repositoryKeyFromWire } from "../api/repository-key.js";
 
   const { activity, settings, sync, grouping } = getStores();
   const runtime = getAppRuntime();
@@ -203,7 +204,7 @@
         ? activityBranchKey({
             provider: item.repo.provider,
             platformHost: item.repo.platform_host,
-            platformRepoId: item.repo.platform_repo_id,
+            repositoryKey: repositoryKeyFromWire(item.repo),
             owner: item.repo.owner,
             name: item.repo.name,
             repoPath: item.repo.repo_path,
@@ -212,7 +213,7 @@
         : activityItemKey({
             provider: item.repo.provider,
             platformHost: item.repo.platform_host,
-            platformRepoId: item.repo.platform_repo_id,
+            repositoryKey: repositoryKeyFromWire(item.repo),
             owner: item.repo.owner,
             name: item.repo.name,
             repoPath: item.repo.repo_path,
@@ -250,7 +251,7 @@
       const key = activityItemKey({
         provider: subject.repo.provider,
         platformHost: subject.repo.platform_host,
-        platformRepoId: subject.repo.platform_repo_id,
+        repositoryKey: repositoryKeyFromWire(subject.repo),
         owner: subject.repo.owner,
         name: subject.repo.name,
         repoPath: subject.repo.repo_path,
@@ -294,7 +295,7 @@
       const key = activityItemKey({
         provider: subject.repo.provider,
         platformHost: subject.repo.platform_host,
-        platformRepoId: subject.repo.platform_repo_id,
+        repositoryKey: repositoryKeyFromWire(subject.repo),
         owner: subject.repo.owner,
         name: subject.repo.name,
         repoPath: subject.repo.repo_path,
@@ -608,7 +609,7 @@
     const id = `${activityType}:${activityItemKey({
       provider: subject.repo.provider,
       platformHost: subject.repo.platform_host,
-      platformRepoId: subject.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(subject.repo),
       owner: subject.repo.owner,
       name: subject.repo.name,
       repoPath: subject.repo.repo_path,
@@ -707,7 +708,7 @@
     return {
       provider: item.repo.provider,
       platformHost: item.repo.platform_host,
-      platformRepoId: item.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(item.repo),
       owner: item.repo.owner,
       name: item.repo.name,
       repoPath: item.repo.repo_path,
@@ -718,7 +719,7 @@
     return {
       provider: subject.repo.provider,
       platformHost: subject.repo.platform_host,
-      platformRepoId: subject.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(subject.repo),
       owner: subject.repo.owner,
       name: subject.repo.name,
       repoPath: subject.repo.repo_path,

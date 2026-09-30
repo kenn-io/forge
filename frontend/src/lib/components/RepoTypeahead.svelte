@@ -55,6 +55,7 @@
   import { registerCheatsheetEntries } from "../stores/keyboard/registry.svelte.js";
   import { showFlash } from "../stores/flash.svelte.js";
   import { repoSelectorLabel, type RepoSelectorLabel } from "./repo-selector-label.js";
+  import { repositoryKeyFromCatalog, repositoryKeyFromWire, sameRepositoryKey } from "../api/repository-key.js";
 
   interface Props {
     selected: string | undefined;
@@ -178,7 +179,7 @@
       provider: canonicalProvider(repo.Platform),
       platformHost: repo.PlatformHost,
       platform_host: repo.PlatformHost,
-      platform_repo_id: repo.PlatformRepoID,
+      repositoryKey: repositoryKeyFromCatalog(repo),
       repoPath,
       repo_path: repoPath,
     };
@@ -195,7 +196,7 @@
       provider: canonicalProvider(repo.provider),
       platformHost: repo.platform_host,
       platform_host: repo.platform_host,
-      platform_repo_id: repo.platform_repo_id ?? 0,
+      repositoryKey: repositoryKeyFromWire(repo),
       repoPath: path,
       repo_path: path,
     };
@@ -214,8 +215,9 @@
         || repo.platform_host !== option.platformHost
       ) return false;
 
-      if (repo.platform_repo_id && option.platform_repo_id) {
-        return repo.platform_repo_id === option.platform_repo_id;
+      const hiddenKey = repositoryKeyFromWire(repo);
+      if (hiddenKey && option.repositoryKey) {
+        return sameRepositoryKey(hiddenKey, option.repositoryKey);
       }
 
       return [repo.tracked_repo_path, repo.repo_path, `${repo.owner}/${repo.name}`]
@@ -229,7 +231,7 @@
       );
       if (existingIndex >= 0) {
         const existing = merged[existingIndex]!;
-        if (!existing.platform_repo_id && option.platform_repo_id) merged[existingIndex] = option;
+        if (!existing.repositoryKey && option.repositoryKey) merged[existingIndex] = option;
         return;
       }
       merged.push(option);

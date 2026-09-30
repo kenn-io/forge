@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strconv"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -285,11 +284,11 @@ func (s *Handler) syncedRepoDefaultBranch(ctx context.Context, sum fleet.RawWork
 		return ""
 	}
 	repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:       sum.Repository.Provider,
-		PlatformHost:   sum.Repository.PlatformHost,
-		PlatformRepoID: sum.Repository.PlatformRepoID,
-		Owner:          sum.Repository.Owner,
-		Name:           sum.Repository.Name,
+		Platform:     sum.Repository.Provider,
+		PlatformHost: sum.Repository.PlatformHost,
+		Key:          sum.Repository.Key,
+		Owner:        sum.Repository.Owner,
+		Name:         sum.Repository.Name,
 	})
 	if err != nil || repo == nil {
 		return ""
@@ -316,7 +315,7 @@ func (s *Handler) projectRepositoryIdentity(
 		return fleet.RepositoryIdentity{}, err
 	}
 	if repository != nil {
-		out.PlatformRepoID = repository.PlatformRepoID
+		out.Key = repository.Key
 	}
 	return out, nil
 }
@@ -597,11 +596,11 @@ func normPath(p string) string {
 }
 
 func stableIdentityKey(identity fleet.RepositoryIdentity) string {
-	if identity.PlatformRepoID == 0 {
+	if identity.Key.IsZero() {
 		return ""
 	}
 	return identity.Provider + "\x00" + identity.PlatformHost + "\x00" +
-		strconv.FormatInt(identity.PlatformRepoID, 10)
+		identity.Key.String()
 }
 
 func routeIdentityKey(identity fleet.RepositoryIdentity) string {

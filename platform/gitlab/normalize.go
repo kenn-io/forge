@@ -40,7 +40,7 @@ func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, erro
 		Owner:         owner,
 		Name:          name,
 		RepoPath:      repoPath,
-		PlatformID:    p.ID,
+		Key:           platform.RepositoryIDKey(p.ID),
 		WebURL:        p.WebURL,
 		CloneURL:      p.HTTPURLToRepo,
 		DefaultBranch: p.DefaultBranch,

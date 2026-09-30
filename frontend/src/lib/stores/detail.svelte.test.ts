@@ -167,13 +167,34 @@ describe("createDetailStore", () => {
     await loadDetail(store, "acme", "widget", 7, {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1002,
+      repositoryKey: { kind: "id", id: 1002 },
       sync: false,
     });
     expect(store.getDetail()).toBeNull();
   });
 
+  it("installs a Bitbucket Cloud pull only for its repository UUID", async () => {
+    const uuid = "0f5d2a4e-3b1c-4d7e-9a8b-1c2d3e4f5a6b";
+    const cloud = pullDetail("cloud-head");
+    cloud.repo.provider = "bitbucket";
+    cloud.repo.platform_host = "bitbucket.org";
+    cloud.repo.platform_repo_id = 0;
+    cloud.repo.bitbucket_repository_uuid = uuid;
+    const store = createDetailStore({ client: mockClient({ GET: vi.fn().mockResolvedValue({ data: cloud }) }) });
+    const options = { provider: "bitbucket", repoPath: "acme/widget", sync: false } as const;
+
+    await loadDetail(store, "acme", "widget", 7, {
+      ...options,
+      repositoryKey: { kind: "uuid", uuid: "11111111-2222-4333-8444-555555555555" },
+    });
+    expect(store.getDetail()).toBeNull();
+
+    await loadDetail(store, "acme", "widget", 7, { ...options, repositoryKey: { kind: "uuid", uuid } });
+    expect(store.getDetail()?.repo.bitbucket_repository_uuid).toBe(uuid);
+  });
+
   it.each([1002, undefined])("does not restore a pull snapshot for repository %s", async (platformRepoId) => {
+    const repositoryKey = platformRepoId === undefined ? undefined : { kind: "id" as const, id: platformRepoId };
     const failedRead = deferred<{ error: ProblemBody }>();
     const get = vi
       .fn()
@@ -183,12 +204,12 @@ describe("createDetailStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false,
     } as const;
     await loadDetail(store, "acme", "widget", 7, options);
     store.clearDetail();
-    store.loadDetail("acme", "widget", 7, { ...options, platformRepoId });
+    store.loadDetail("acme", "widget", 7, { ...options, repositoryKey });
     expect(store.getDetail()).toBeNull();
     failedRead.resolve({ error: { code: ProblemCodes.forbidden, title: "Unavailable", detail: "Cannot refresh" } });
     await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
@@ -204,12 +225,12 @@ describe("createDetailStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false,
     } as const;
     store.loadDetail("acme", "widget", 7, options);
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
-    store.loadDetail("acme", "widget", 7, { ...options, platformRepoId: 1002 });
+    store.loadDetail("acme", "widget", 7, { ...options, repositoryKey: { kind: "id", id: 1002 } });
     oldRead.resolve({ data: pullDetail("old-head") });
     await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
     expect(store.getDetail()?.repo.platform_repo_id).toBe(1002);
@@ -226,7 +247,7 @@ describe("createDetailStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false,
     } as const;
     await loadDetail(store, "acme", "widget", 7, options);
@@ -259,7 +280,7 @@ describe("createDetailStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false,
     } as const;
     await loadDetail(store, "acme", "widget", 7, options);
@@ -291,7 +312,7 @@ describe("createDetailStore", () => {
       owner: "acme",
       name: "widget",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
     };
     await loadDetail(store, "acme", "widget", 7, { ...ref, sync: false });
     store.toggleDetailPRStar(ref, 7, false);
@@ -315,7 +336,7 @@ describe("createDetailStore", () => {
     const options = {
       provider: "github",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false,
     } as const;
     await loadDetail(store, "acme", "widget", 7, options);
@@ -343,7 +364,7 @@ describe("createDetailStore", () => {
       owner: "acme",
       name: "widget",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
     };
     await loadDetail(store, "acme", "widget", 7, { ...ref, sync: false });
     store.setLocalPRBody("github", "github.com", "acme", "widget", 7, "local edit");
@@ -465,7 +486,7 @@ describe("createDetailStore", () => {
       provider: "github",
       platformHost: "github.com",
       repoPath: "acme/widget",
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false as const,
     };
     const incomplete = { ...pullDetail("head"), detail_loaded: false };
@@ -538,7 +559,7 @@ describe("createDetailStore", () => {
     });
     await loadDetail(store, "acme", "widget", 7, {
       ...routeIdentity,
-      platformRepoId: 1001,
+      repositoryKey: { kind: "id", id: 1001 },
       sync: false,
     });
     const displayed = store.getDetail();

@@ -31,7 +31,7 @@ func TestGetMarkdownImageUsesAuthenticatedProjectUploadAPI(t *testing.T) {
 	require.NoError(t, err)
 	image, err := client.GetMarkdownImage(t.Context(), platform.RepoRef{
 		Platform: platform.KindGitLab, Host: server.Listener.Addr().String(),
-		RepoPath: "group/project", PlatformID: 42,
+		RepoPath: "group/project", Key: platform.RepositoryIDKey(42),
 	}, server.URL+"/-/project/42/uploads/0123456789abcdef/private-image.png")
 	require.NoError(t, err)
 	assert.Equal("image/png", image.ContentType)
@@ -52,7 +52,7 @@ func TestGetMarkdownImageUsesForegroundTimeout(t *testing.T) {
 		WithForegroundTimeoutForTesting(time.Nanosecond), WithTransport(http.DefaultTransport))
 	require.NoError(t, err)
 	_, err = client.GetMarkdownImage(t.Context(), platform.RepoRef{
-		Platform: platform.KindGitLab, RepoPath: "group/project", PlatformID: 42,
+		Platform: platform.KindGitLab, RepoPath: "group/project", Key: platform.RepositoryIDKey(42),
 	}, server.URL+"/group/project/uploads/secret/private.png")
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -82,7 +82,7 @@ func TestGetMarkdownImageRejectsUntrustedSourcesAndActiveContent(t *testing.T) {
 				WithBaseURLForTesting(server.URL+"/api/v4"), WithTransport(http.DefaultTransport))
 			require.NoError(err)
 			_, err = client.GetMarkdownImage(t.Context(), platform.RepoRef{
-				Platform: platform.KindGitLab, RepoPath: "group/project", PlatformID: 42,
+				Platform: platform.KindGitLab, RepoPath: "group/project", Key: platform.RepositoryIDKey(42),
 			}, server.URL+tc.source)
 			require.Error(err)
 			var platformErr *platform.Error

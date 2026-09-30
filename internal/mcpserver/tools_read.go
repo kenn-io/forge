@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,16 +18,17 @@ type listReposInput struct {
 }
 
 type repoRow struct {
-	Provider            string `json:"provider"`
-	PlatformHost        string `json:"platform_host"`
-	PlatformRepoID      int64  `json:"platform_repo_id"`
-	Owner               string `json:"owner"`
-	Name                string `json:"name"`
-	RepoPath            string `json:"repo_path"`
-	OpenPRCount         int    `json:"open_pr_count"`
-	OpenIssueCount      int    `json:"open_issue_count"`
-	LastSyncCompletedAt string `json:"last_sync_completed_at,omitempty"`
-	LastSyncError       string `json:"last_sync_error,omitempty"`
+	Provider                string `json:"provider"`
+	PlatformHost            string `json:"platform_host"`
+	PlatformRepoID          int64  `json:"platform_repo_id"`
+	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty" jsonschema:"Bitbucket Cloud repository UUID; set instead of a nonzero platform_repo_id for Bitbucket Cloud repositories"`
+	Owner                   string `json:"owner"`
+	Name                    string `json:"name"`
+	RepoPath                string `json:"repo_path"`
+	OpenPRCount             int    `json:"open_pr_count"`
+	OpenIssueCount          int    `json:"open_issue_count"`
+	LastSyncCompletedAt     string `json:"last_sync_completed_at,omitempty"`
+	LastSyncError           string `json:"last_sync_error,omitempty"`
 }
 
 type listReposOutput struct {
@@ -74,6 +74,8 @@ type searchResult struct {
 	Item           itemRef `json:"item"`
 	WorkflowStatus string  `json:"workflow_status"`
 	LastActivityAt string  `json:"last_activity_at"`
+	// key orders results; it is not part of the tool output.
+	key candidateKey
 }
 
 type searchItemsOutput struct {
@@ -159,17 +161,19 @@ func (s *Server) listRepos(ctx context.Context, in listReposInput) (listReposOut
 	out := listReposOutput{Repos: make([]repoRow, 0, len(rows))}
 	for _, row := range rows {
 		repo := row.Repository
+		platformRepoID, repositoryUUID := repositoryKeyFields(repo.Key)
 		out.Repos = append(out.Repos, repoRow{
-			Provider:            repo.Provider,
-			PlatformHost:        repo.PlatformHost,
-			PlatformRepoID:      repo.PlatformRepoID,
-			Owner:               repo.Owner,
-			Name:                repo.Name,
-			RepoPath:            repositoryPath(repo),
-			OpenPRCount:         row.OpenPRCount,
-			OpenIssueCount:      row.OpenIssueCount,
-			LastSyncCompletedAt: row.LastSyncCompletedAt,
-			LastSyncError:       row.LastSyncError,
+			Provider:                repo.Provider,
+			PlatformHost:            repo.PlatformHost,
+			PlatformRepoID:          platformRepoID,
+			BitbucketRepositoryUUID: repositoryUUID,
+			Owner:                   repo.Owner,
+			Name:                    repo.Name,
+			RepoPath:                repositoryPath(repo),
+			OpenPRCount:             row.OpenPRCount,
+			OpenIssueCount:          row.OpenIssueCount,
+			LastSyncCompletedAt:     row.LastSyncCompletedAt,
+			LastSyncError:           row.LastSyncError,
 		})
 	}
 	return out, nil
@@ -284,6 +288,7 @@ func (s *Server) searchPulls(
 				Item:           row.itemRef(),
 				WorkflowStatus: workflowStatusOrNew(row.WorkflowStatus),
 				LastActivityAt: formatMCPTime(row.LastActivityAt),
+				key:            row.itemKey(),
 			})
 			if len(out) > limit {
 				return out, true, nil
@@ -333,6 +338,7 @@ func (s *Server) searchIssues(
 			Item:           row.itemRef(),
 			WorkflowStatus: workflowStatusOrNew(row.WorkflowStatus),
 			LastActivityAt: formatMCPTime(row.LastActivityAt),
+			key:            row.itemKey(),
 		})
 	}
 	return out, len(out) > limit, nil
@@ -366,19 +372,8 @@ func sortSearchResults(results []searchResult) {
 		if results[i].LastActivityAt != results[j].LastActivityAt {
 			return results[i].LastActivityAt > results[j].LastActivityAt
 		}
-		return itemSortKey(results[i].Item) < itemSortKey(results[j].Item)
+		return results[i].key.sortKey() < results[j].key.sortKey()
 	})
-}
-
-func itemSortKey(item itemRef) string {
-	return strings.Join([]string{
-		item.Provider,
-		item.PlatformHost,
-		strconv.FormatInt(item.PlatformRepoID, 10),
-		item.RepoPath,
-		item.Type,
-		fmt.Sprintf("%08d", item.Number),
-	}, "\x1f")
 }
 
 func sinceToRFC3339(raw string) string {

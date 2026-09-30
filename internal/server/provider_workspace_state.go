@@ -71,9 +71,9 @@ func (s *Server) federationQueryWorkspaceProviderState(
 		workspaces = append(workspaces, fleet.RawWorkspace{
 			ID: subject.ID,
 			Repository: fleet.RepositoryIdentity{
-				Provider:       subject.Repository.Provider,
-				PlatformHost:   subject.Repository.PlatformHost,
-				PlatformRepoID: subject.Repository.PlatformRepoID,
+				Provider:     subject.Repository.Provider,
+				PlatformHost: subject.Repository.PlatformHost,
+				Key:          subject.Repository.Key,
 			},
 			ItemType: subject.ItemType, ItemNumber: subject.ItemNumber,
 			AssociatedPRNumber: subject.AssociatedPRNumber,

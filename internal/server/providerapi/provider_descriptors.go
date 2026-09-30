@@ -120,7 +120,7 @@ func (s *Handlers) FederationRepositoryDescriptor(
 	observedAt := (*s.Now)().UTC()
 	repo, err := s.RepoResolver.LookupSelection(
 		ctx, input.Body.Provider, input.Body.PlatformHost,
-		input.Body.Owner, input.Body.Name, input.Body.PlatformRepoID,
+		input.Body.Owner, input.Body.Name, input.Body.Key,
 	)
 	if errors.Is(err, httpapi.ErrRepoNotFound) {
 		return nil, httpapi.NotFound(
@@ -216,8 +216,8 @@ func repositoryDescriptorSnapshot(
 func providerRepositorySnapshot(repo db.Repo) providerplane.RepositorySnapshot {
 	return providerplane.RepositorySnapshot{
 		Provider: repo.Platform, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
-		Owner:          repo.Owner, Name: repo.Name,
+		Key:   repo.Key,
+		Owner: repo.Owner, Name: repo.Name,
 		CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch,
 		Stale: strings.TrimSpace(repo.LastSyncError) != "",
 	}

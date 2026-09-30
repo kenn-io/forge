@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 )
 
 func TestWorkspaceReferencesUseStableRepositoryIdentityAcrossRenameAndRouteReuse(t *testing.T) {
@@ -18,20 +19,20 @@ func TestWorkspaceReferencesUseStableRepositoryIdentityAcrossRenameAndRouteReuse
 	now := time.Now().UTC().Truncate(time.Second)
 
 	oldIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	oldIdentity.PlatformRepoID = 1001
+	oldIdentity.Key = platform.RepositoryIDKey(1001)
 	oldRepo, err := database.ObserveRepository(ctx, oldIdentity)
 	require.NoError(err)
 	seedWorkspaceIdentitySubjects(t, database, oldRepo.Repository.ID, "acme", "widget", "old", now)
 
 	renamedIdentity := db.GitHubRepoIdentity("github.com", "acme", "gadget")
-	renamedIdentity.PlatformRepoID = oldIdentity.PlatformRepoID
+	renamedIdentity.Key = oldIdentity.Key
 	_, err = database.ObserveRepository(ctx, renamedIdentity)
 	require.NoError(err)
 
 	assertWorkspaceIdentitySurfaces(t, client.HTTP, "gadget", true)
 
 	replacementIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	replacementIdentity.PlatformRepoID = 1002
+	replacementIdentity.Key = platform.RepositoryIDKey(1002)
 	replacement, err := database.ObserveRepository(ctx, replacementIdentity)
 	require.NoError(err)
 	seedWorkspaceIdentitySubjects(

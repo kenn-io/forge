@@ -3,6 +3,7 @@ package spokeapi
 import (
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/platform"
 )
 
 type ProviderSettingsResponse struct {
@@ -18,12 +19,22 @@ type ProviderSettingsResponse struct {
 }
 
 type ProviderRepositoryObservation struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Owner          string `json:"owner"`
-	Name           string `json:"name"`
-	RepoPath       string `json:"repo_path"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid"`
+	Owner        string                 `json:"owner"`
+	Name         string                 `json:"name"`
+	RepoPath     string                 `json:"repo_path"`
+}
+
+func (o ProviderRepositoryObservation) MarshalJSON() ([]byte, error) {
+	type plain ProviderRepositoryObservation
+	return platform.MarshalKeyedJSON(plain(o))
+}
+
+func (o *ProviderRepositoryObservation) UnmarshalJSON(data []byte) error {
+	type plain ProviderRepositoryObservation
+	return platform.UnmarshalKeyedJSON(data, (*plain)(o))
 }
 
 type ProviderSettingsProjection struct {

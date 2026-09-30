@@ -12,6 +12,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 func TestRelayWorkflowActivitySignalsOnlyActions(t *testing.T) {
@@ -21,7 +22,7 @@ func TestRelayWorkflowActivitySignalsOnlyActions(t *testing.T) {
 	srv := newTestServer(t)
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	repoID, err := reposeed.Seed(t.Context(), srv.db, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "team", Name: "project",
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001), Owner: "team", Name: "project",
 	})
 	require.NoError(err)
 	srv.syncevents.BroadcastRelayRefresh(t.Context(), repoID, "workflow_runs", 0)

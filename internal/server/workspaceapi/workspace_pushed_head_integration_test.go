@@ -327,7 +327,7 @@ func TestLookupPushedHeadMRDoesNotFollowReusedRepositoryRoute(t *testing.T) {
 	fixture := newPushedHeadIntegrationFixture(t, newPushedHeadProvider(nil))
 	repoID := seedPushedHeadIntegrationPR(t, fixture.database, "old-head")
 	replacementIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	replacementIdentity.PlatformRepoID = 1002
+	replacementIdentity.Key = platform.RepositoryIDKey(1002)
 	replacement, err := fixture.database.ObserveRepository(
 		t.Context(), replacementIdentity,
 	)
@@ -364,13 +364,14 @@ func TestWorkspacePushedHeadQueuedRefreshStopsWhenRouteIsReusedDuringSync(t *tes
 		ctx context.Context, owner, name string,
 	) (*gh.Repository, error) {
 		replacementIdentity := db.GitHubRepoIdentity("github.com", owner, name)
-		replacementIdentity.PlatformRepoID = 1002
+		replacementIdentity.Key = platform.RepositoryIDKey(1002)
 		_, err := fixture.database.ObserveRepository(
 			ctx, replacementIdentity,
 		)
 		require.NoError(err)
 		allowed := true
-		repositoryID := replacementIdentity.PlatformRepoID
+		repositoryID, ok := replacementIdentity.Key.ID()
+		require.True(ok)
 		return &gh.Repository{
 			Name: &name, ID: &repositoryID, Owner: &gh.User{Login: &owner},
 			AllowSquashMerge: &allowed, AllowMergeCommit: &allowed,

@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/platform"
 )
 
 func TestGetItemDiffSummaryUsesBackendWithoutReturningPatches(t *testing.T) {
@@ -38,7 +40,7 @@ func TestGetItemDiffSummaryUsesBackendWithoutReturningPatches(t *testing.T) {
 	})
 
 	require.NoError(err)
-	assert.Equal(ItemIdentity{Type: "pr", Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget", Number: 42}, got)
+	assert.Equal(ItemIdentity{Type: "pr", Provider: "github", RepoKey: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget", Number: 42}, got)
 	assert.False(includePatches)
 	assert.True(out.Stale)
 	assert.Equal(8, out.TotalAdditions)
@@ -217,31 +219,31 @@ func TestGetItemDiffRejectsFileLargerThanConfiguredCache(t *testing.T) {
 
 func TestDiffFileNameCanonicalizesAndSeparatesIdentities(t *testing.T) {
 	assert := assert.New(t)
-	omittedHost := diffFileName(itemRefInput{
-		Type: "pr", Provider: "gh", PlatformRepoID: 1001,
+	omittedHost := diffFileName(ItemIdentity{
+		Type: "pr", Provider: "gh", RepoKey: platform.RepositoryIDKey(1001),
 		Owner: "Acme", Name: "Widget", Number: 7,
 	})
-	explicitHost := diffFileName(itemRefInput{
-		Type: "pr", Provider: "github", PlatformRepoID: 1001, PlatformHost: "GITHUB.COM",
+	explicitHost := diffFileName(ItemIdentity{
+		Type: "pr", Provider: "github", RepoKey: platform.RepositoryIDKey(1001), PlatformHost: "GITHUB.COM",
 		Owner: "acme", Name: "widget", Number: 7,
 	})
-	collisionCandidate := diffFileName(itemRefInput{
-		Type: "pr", Provider: "github", PlatformRepoID: 1001, Owner: "acme_widget", Name: "x", Number: 7,
+	collisionCandidate := diffFileName(ItemIdentity{
+		Type: "pr", Provider: "github", RepoKey: platform.RepositoryIDKey(1001), Owner: "acme_widget", Name: "x", Number: 7,
 	})
-	forgejoUpper := diffFileName(itemRefInput{
-		Type: "pr", Provider: "forgejo", PlatformRepoID: 3001, PlatformHost: "forge.example.test",
+	forgejoUpper := diffFileName(ItemIdentity{
+		Type: "pr", Provider: "forgejo", RepoKey: platform.RepositoryIDKey(3001), PlatformHost: "forge.example.test",
 		Owner: "Team", Name: "Widget", Number: 7,
 	})
-	forgejoLower := diffFileName(itemRefInput{
-		Type: "pr", Provider: "forgejo", PlatformRepoID: 3001, PlatformHost: "forge.example.test",
+	forgejoLower := diffFileName(ItemIdentity{
+		Type: "pr", Provider: "forgejo", RepoKey: platform.RepositoryIDKey(3001), PlatformHost: "forge.example.test",
 		Owner: "team", Name: "widget", Number: 7,
 	})
-	giteaUpper := diffFileName(itemRefInput{
-		Type: "pr", Provider: "gitea", PlatformRepoID: 4001, PlatformHost: "git.example.test",
+	giteaUpper := diffFileName(ItemIdentity{
+		Type: "pr", Provider: "gitea", RepoKey: platform.RepositoryIDKey(4001), PlatformHost: "git.example.test",
 		Owner: "Team", Name: "Widget", Number: 7,
 	})
-	giteaLower := diffFileName(itemRefInput{
-		Type: "pr", Provider: "gitea", PlatformRepoID: 4001, PlatformHost: "git.example.test",
+	giteaLower := diffFileName(ItemIdentity{
+		Type: "pr", Provider: "gitea", RepoKey: platform.RepositoryIDKey(4001), PlatformHost: "git.example.test",
 		Owner: "team", Name: "widget", Number: 7,
 	})
 	assert.Equal(omittedHost, explicitHost)

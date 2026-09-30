@@ -15,7 +15,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"uuid"
 
 	"github.com/cenkalti/backoff/v7"
 	"go.kenn.io/forge/internal/platformdb"
@@ -533,16 +532,12 @@ type RepoRef struct {
 	Name         string
 	PlatformHost string
 	RepoPath     string
-	// PlatformRepoID is the provider's integer repository ID, the
-	// repository's identity. Zero until the provider has resolved the ref,
-	// and always zero for Bitbucket Cloud.
-	PlatformRepoID int64
-	// BitbucketRepositoryUUID is Bitbucket Cloud's repository identity in
-	// place of PlatformRepoID. Nil for every other provider.
-	BitbucketRepositoryUUID uuid.UUID
-	WebURL                  string
-	CloneURL                string
-	DefaultBranch           string
+	// Key is the provider's stable repository key, the repository's
+	// identity. Zero until the provider has resolved the ref.
+	Key           platform.RepositoryKey
+	WebURL        string
+	CloneURL      string
+	DefaultBranch string
 	// Archived marks a provider-archived repository: configured for archive
 	// collection only, skipped by live sync.
 	Archived bool
@@ -1305,9 +1300,8 @@ func (s *Syncer) ConfiguredRepositories(context.Context) ([]platform.RepoRef, er
 		host := repoHost(repo)
 		refs = append(refs, platform.RepoRef{
 			Platform: kind, Host: host, Owner: repo.Owner, Name: repo.Name,
-			RepoPath:                repo.Owner + "/" + repo.Name,
-			PlatformID:              repo.PlatformRepoID,
-			BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
+			RepoPath: repo.Owner + "/" + repo.Name,
+			Key:      repo.Key,
 		})
 	}
 	return refs, nil
@@ -1331,8 +1325,7 @@ func (s *Syncer) Admit(
 	repo := RepoRef{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-		PlatformRepoID:          ref.PlatformID,
-		BitbucketRepositoryUUID: ref.BitbucketRepositoryUUID,
+		Key: ref.Key,
 	}
 	if archive.InventoryProbeRequested(ctx) {
 		ctx = withRepositoryFeatureCooldownBypass(
@@ -1353,13 +1346,12 @@ func (s *Syncer) Admit(
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "normal sync is active"}, nil
 	}
 	keyRepo := RepoRef{
-		Platform:                ref.Platform,
-		PlatformHost:            ref.Host,
-		Owner:                   ref.Owner,
-		Name:                    ref.Name,
-		RepoPath:                ref.RepoPath,
-		PlatformRepoID:          ref.PlatformID,
-		BitbucketRepositoryUUID: ref.BitbucketRepositoryUUID,
+		Platform:     ref.Platform,
+		PlatformHost: ref.Host,
+		Owner:        ref.Owner,
+		Name:         ref.Name,
+		RepoPath:     ref.RepoPath,
+		Key:          ref.Key,
 	}
 	identity, err := s.archiveIdentityForRepo(keyRepo)
 	if err != nil {
@@ -2250,37 +2242,8 @@ func (s *Syncer) launchClaimedRun(
 // Identity returns the ref's canonical identity; see platform.RepoRef.Identity.
 func (r RepoRef) Identity() platform.RepositoryIdentity {
 	return platform.RepositoryIdentity{
-		Provider: string(repoPlatform(r)), PlatformHost: repoHost(r),
-		PlatformRepoID:          r.PlatformRepoID,
-		BitbucketRepositoryUUID: r.BitbucketRepositoryUUID,
+		Provider: string(repoPlatform(r)), PlatformHost: repoHost(r), Key: r.Key,
 	}.Canonical()
-}
-
-// repoProviderKey is the stable provider key part of a repository identity:
-// an integer ID, or a Bitbucket Cloud UUID. The zero value means the ref has
-// not been provider-verified.
-type repoProviderKey struct {
-	id   int64
-	uuid uuid.UUID
-}
-
-func (k repoProviderKey) isZero() bool {
-	return k == repoProviderKey{}
-}
-
-func (r RepoRef) providerKey() repoProviderKey {
-	return repoProviderKey{id: r.PlatformRepoID, uuid: r.BitbucketRepositoryUUID}
-}
-
-func storedRepoProviderKey(stored db.Repo) repoProviderKey {
-	return repoProviderKey{id: stored.PlatformRepoID, uuid: stored.BitbucketRepositoryUUID}
-}
-
-func (k repoProviderKey) String() string {
-	if k.uuid != uuid.Nil() {
-		return "{" + k.uuid.String() + "}"
-	}
-	return fmt.Sprint(k.id)
 }
 
 func repoPlatform(repo RepoRef) platform.Kind {
@@ -2502,16 +2465,15 @@ func platformRepoRef(repo RepoRef) platform.RepoRef {
 		repoPath = repo.Owner + "/" + repo.Name
 	}
 	return platform.RepoRef{
-		Platform:                repoPlatform(repo),
-		Host:                    repoHost(repo),
-		Owner:                   repo.Owner,
-		Name:                    repo.Name,
-		RepoPath:                repoPath,
-		PlatformID:              repo.PlatformRepoID,
-		WebURL:                  repo.WebURL,
-		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
-		CloneURL:                repo.CloneURL,
-		DefaultBranch:           repo.DefaultBranch,
+		Platform:      repoPlatform(repo),
+		Host:          repoHost(repo),
+		Owner:         repo.Owner,
+		Name:          repo.Name,
+		RepoPath:      repoPath,
+		Key:           repo.Key,
+		WebURL:        repo.WebURL,
+		CloneURL:      repo.CloneURL,
+		DefaultBranch: repo.DefaultBranch,
 	}
 }
 
@@ -2923,22 +2885,15 @@ func (s *Syncer) trackedRepoByIdentity(
 	return RepoRef{}, false
 }
 
-func (s *Syncer) trackedRepoByProviderID(
-	kind platform.Kind,
-	host string, providerID int64,
-) (RepoRef, bool) {
-	return s.trackedRepoByProviderKey(kind, host, repoProviderKey{id: providerID})
-}
-
 func (s *Syncer) trackedRepoByProviderKey(
 	kind platform.Kind,
-	host string, key repoProviderKey,
+	host string, key platform.RepositoryKey,
 ) (RepoRef, bool) {
 	if kind == "" {
 		kind = platform.KindGitHub
 	}
 	host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
-	if key.isZero() {
+	if key.IsZero() {
 		return RepoRef{}, false
 	}
 	s.reposMu.Lock()
@@ -2946,7 +2901,7 @@ func (s *Syncer) trackedRepoByProviderKey(
 	for _, repo := range s.repos {
 		if repoPlatform(repo) == kind &&
 			strings.EqualFold(repoHost(repo), host) &&
-			repo.providerKey() == key {
+			repo.Key == key {
 			return repo, true
 		}
 	}
@@ -4982,9 +4937,9 @@ func sameRepoIntent(a, b RepoRef) bool {
 		!strings.EqualFold(repoHost(a), repoHost(b)) {
 		return false
 	}
-	aKey := a.providerKey()
-	bKey := b.providerKey()
-	if !aKey.isZero() && !bKey.isZero() {
+	aKey := a.Key
+	bKey := b.Key
+	if !aKey.IsZero() && !bKey.IsZero() {
 		return aKey == bKey
 	}
 	aRoute := repoPriorityKey(a)
@@ -5019,7 +4974,7 @@ func (s *Syncer) syncRepoIdentity(
 	identity := platformdb.DBRepoIdentity(platformRepoRef(repo))
 	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
 	if err != nil {
-		if !repo.providerKey().isZero() && errors.Is(err, platform.ErrUnsupportedCapability) {
+		if !repo.Key.IsZero() && errors.Is(err, platform.ErrUnsupportedCapability) {
 			return identity, nil, nil
 		}
 		return db.RepoIdentity{}, nil, err
@@ -5112,26 +5067,24 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 
 func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Repository) RepoRef {
 	repo := RepoRef{
-		Platform:                platform.Kind(stored.Platform),
-		RepoID:                  stored.ID,
-		Owner:                   stored.Owner,
-		Name:                    stored.Name,
-		PlatformHost:            stored.PlatformHost,
-		RepoPath:                stored.RepoPath,
-		PlatformRepoID:          stored.PlatformRepoID,
-		WebURL:                  stored.WebURL,
-		CloneURL:                stored.CloneURL,
-		DefaultBranch:           stored.DefaultBranch,
-		BitbucketRepositoryUUID: stored.BitbucketRepositoryUUID,
+		Platform:      platform.Kind(stored.Platform),
+		RepoID:        stored.ID,
+		Owner:         stored.Owner,
+		Name:          stored.Name,
+		PlatformHost:  stored.PlatformHost,
+		RepoPath:      stored.RepoPath,
+		Key:           stored.Key,
+		WebURL:        stored.WebURL,
+		CloneURL:      stored.CloneURL,
+		DefaultBranch: stored.DefaultBranch,
 		// The repo catalog does not record archived state or config-entry
 		// provenance; without a fresh provider resolve, the previously
 		// tracked values stand.
 		Archived:           previous.Archived,
 		ConfiguredRepoPath: previous.ConfiguredRepoPath,
 	}
-	if repo.providerKey().isZero() {
-		repo.PlatformRepoID = previous.PlatformRepoID
-		repo.BitbucketRepositoryUUID = previous.BitbucketRepositoryUUID
+	if repo.Key.IsZero() {
+		repo.Key = previous.Key
 	}
 	if repo.WebURL == "" {
 		repo.WebURL = previous.WebURL
@@ -5146,8 +5099,7 @@ func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Rep
 		return repo
 	}
 	repo.Archived = resolved.Archived
-	repo.PlatformRepoID = resolved.Ref.PlatformID
-	repo.BitbucketRepositoryUUID = resolved.Ref.BitbucketRepositoryUUID
+	repo.Key = resolved.Ref.Key
 	if resolved.WebURL != "" {
 		repo.WebURL = resolved.WebURL
 	} else if resolved.Ref.WebURL != "" {
@@ -5185,14 +5137,14 @@ func (s *Syncer) publishResolvedRepository(
 	// nothing about it. A conflicting slot id is cross-identity even
 	// when the snapshot carries no id: the slot's occupant is not the
 	// repository the provider response describes.
-	slotID := s.repos[i].providerKey()
-	previousID := previous.providerKey()
-	resolvedID := resolved.providerKey()
-	crossIdentity := !resolvedID.isZero() &&
-		((!previousID.isZero() && resolvedID != previousID) ||
-			(!slotID.isZero() && resolvedID != slotID))
+	slotID := s.repos[i].Key
+	previousID := previous.Key
+	resolvedID := resolved.Key
+	crossIdentity := !resolvedID.IsZero() &&
+		((!previousID.IsZero() && resolvedID != previousID) ||
+			(!slotID.IsZero() && resolvedID != slotID))
 	sameIdentity := !crossIdentity &&
-		(slotID.isZero() || previousID.isZero() || slotID == previousID)
+		(slotID.IsZero() || previousID.IsZero() || slotID == previousID)
 	if sameIdentity && s.repos[i].Archived != previous.Archived {
 		// A concurrent resolution flipped archived state after this
 		// operation snapshotted the ref. The in-flight provider
@@ -5223,17 +5175,17 @@ func (s *Syncer) publishResolvedRepository(
 // keyed by a reused route lands on the successor, never on the repository
 // the snapshot named. Callers hold reposMu.
 func (s *Syncer) trackedRepoSlotLocked(previous, resolved RepoRef) (int, bool) {
-	previousID := previous.providerKey()
-	resolvedID := resolved.providerKey()
+	previousID := previous.Key
+	resolvedID := resolved.Key
 	lookupID := resolvedID
-	if lookupID.isZero() {
+	if lookupID.IsZero() {
 		lookupID = previousID
 	}
-	if !lookupID.isZero() {
+	if !lookupID.IsZero() {
 		for i := range s.repos {
 			if repoPlatform(s.repos[i]) == repoPlatform(previous) &&
 				strings.EqualFold(repoHost(s.repos[i]), repoHost(previous)) &&
-				s.repos[i].providerKey() == lookupID {
+				s.repos[i].Key == lookupID {
 				return i, true
 			}
 		}
@@ -5248,8 +5200,8 @@ func (s *Syncer) trackedRepoSlotLocked(previous, resolved RepoRef) (int, bool) {
 		if repoPriorityKey(s.repos[i]) != repoPriorityKey(previous) {
 			continue
 		}
-		trackedID := s.repos[i].providerKey()
-		if !trackedID.isZero() && !previousID.isZero() && trackedID != previousID {
+		trackedID := s.repos[i].Key
+		if !trackedID.IsZero() && !previousID.IsZero() && trackedID != previousID {
 			continue
 		}
 		return i, true
@@ -5277,7 +5229,7 @@ func (s *Syncer) aliasRenamedCredentialRoute(previous, resolved RepoRef) {
 		Host:  repoHost(previous),
 		Owner: previous.Owner,
 		Name:  previous.Name,
-	}, resolved.PlatformRepoID)
+	}, resolved.Key)
 }
 
 // clearDisplacedCredentialAlias drops a credential alias for the resolved
@@ -5293,7 +5245,7 @@ func (s *Syncer) clearDisplacedCredentialAlias(resolved RepoRef) {
 		return
 	}
 	router.ClearDisplacedRepoCredentialAlias(
-		resolved.Owner, resolved.Name, resolved.PlatformRepoID,
+		resolved.Owner, resolved.Name, resolved.Key,
 	)
 }
 
@@ -5756,16 +5708,15 @@ func (s *Syncer) syncRepoLabelCatalog(ctx context.Context, repo RepoRef, repoID 
 
 func (s *Syncer) RefreshRepoLabelCatalog(ctx context.Context, repo db.Repo) error {
 	ref := RepoRef{
-		Platform:                platform.Kind(repo.Platform),
-		PlatformHost:            repoProviderHostFromDB(repo),
-		Owner:                   repo.Owner,
-		Name:                    repo.Name,
-		RepoPath:                repo.RepoPath,
-		PlatformRepoID:          repo.PlatformRepoID,
-		CloneURL:                repo.CloneURL,
-		WebURL:                  repo.WebURL,
-		DefaultBranch:           repo.DefaultBranch,
-		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
+		Platform:      platform.Kind(repo.Platform),
+		PlatformHost:  repoProviderHostFromDB(repo),
+		Owner:         repo.Owner,
+		Name:          repo.Name,
+		RepoPath:      repo.RepoPath,
+		Key:           repo.Key,
+		CloneURL:      repo.CloneURL,
+		WebURL:        repo.WebURL,
+		DefaultBranch: repo.DefaultBranch,
 	}
 	checkedAt := time.Now().UTC()
 	reader, err := s.labelReaderFor(ref)
@@ -6755,8 +6706,8 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 		return false, fmt.Errorf("repo %d is not known for merged-actor backfill", repoID)
 	}
 	kind := platform.Kind(stored.Platform)
-	providerID := storedRepoProviderKey(*stored)
-	if providerID.isZero() {
+	providerID := stored.Key
+	if providerID.IsZero() {
 		return false, fmt.Errorf(
 			"repo %d has no stable provider ID for merged-actor backfill", repoID,
 		)
@@ -6773,7 +6724,7 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 				ErrRepoNotTracked,
 			)
 		}
-		if routedID := routed.providerKey(); !routedID.isZero() {
+		if routedID := routed.Key; !routedID.IsZero() {
 			return false, fmt.Errorf(
 				"tracked repo %s/%s provider ID %s does not match stored provider ID %s",
 				stored.Owner, stored.Name, routedID, providerID,
@@ -6801,8 +6752,7 @@ func repoRefFromStoredIdentity(tracked RepoRef, stored db.Repo) RepoRef {
 	repo.Platform = platform.Kind(stored.Platform)
 	repo.PlatformHost = stored.PlatformHost
 	repo.RepoID = stored.ID
-	repo.PlatformRepoID = stored.PlatformRepoID
-	repo.BitbucketRepositoryUUID = stored.BitbucketRepositoryUUID
+	repo.Key = stored.Key
 	if repo.WebURL == "" {
 		repo.WebURL = stored.WebURL
 	}
@@ -6861,7 +6811,7 @@ func (s *Syncer) backfillMergedActorEvent(
 		return false, fmt.Errorf("repo %d disappeared during merged-actor backfill", repoID)
 	}
 	if err := s.verifyMergedActorBackfillIdentity(
-		ctx, repo, storedRepoProviderKey(*storedRepo),
+		ctx, repo, storedRepo.Key,
 	); err != nil {
 		return false, err
 	}
@@ -6879,9 +6829,9 @@ func (s *Syncer) backfillMergedActorEvent(
 func (s *Syncer) verifyMergedActorBackfillIdentity(
 	ctx context.Context,
 	repo RepoRef,
-	expectedProviderID repoProviderKey,
+	expectedProviderID platform.RepositoryKey,
 ) error {
-	if expectedProviderID.isZero() {
+	if expectedProviderID.IsZero() {
 		return errors.New("merged-actor backfill requires a stable provider ID")
 	}
 	reader, err := s.clients.RepositoryReader(repoPlatform(repo), repoHost(repo))
@@ -6891,18 +6841,15 @@ func (s *Syncer) verifyMergedActorBackfillIdentity(
 	// The merge request was fetched by route, so the check resolves that
 	// route: a lookup by ID would always report the expected repository.
 	routeRef := platformRepoRef(repo)
-	routeRef.PlatformID = 0
-	routeRef.BitbucketRepositoryUUID = uuid.Nil()
+	routeRef.Key = platform.RepositoryKey{}
 	observed, err := reader.GetRepository(ctx, routeRef)
 	if err != nil {
 		return fmt.Errorf(
 			"verify repository identity before merged-actor persistence: %w", err,
 		)
 	}
-	observedProviderID := repoProviderKey{
-		id: observed.Ref.PlatformID, uuid: observed.Ref.BitbucketRepositoryUUID,
-	}
-	if observedProviderID.isZero() {
+	observedProviderID := observed.Ref.Key
+	if observedProviderID.IsZero() {
 		return errors.New("provider returned no repository ID during merged-actor identity check")
 	}
 	if observedProviderID != expectedProviderID {
@@ -10876,7 +10823,7 @@ func (s *Syncer) SyncClosedMROnProvider(
 	}
 	kind := platform.Kind(stored.Platform)
 	repo, ok := s.trackedRepoByProviderKey(
-		kind, stored.PlatformHost, storedRepoProviderKey(*stored),
+		kind, stored.PlatformHost, stored.Key,
 	)
 	if !ok {
 		routed, routeOK := s.trackedRepoByIdentity(
@@ -10888,11 +10835,11 @@ func (s *Syncer) SyncClosedMROnProvider(
 				stored.Owner, stored.Name, stored.Platform, stored.PlatformHost, ErrRepoNotTracked,
 			)
 		}
-		if routedID := routed.providerKey(); !routedID.isZero() &&
-			routedID != storedRepoProviderKey(*stored) {
+		if routedID := routed.Key; !routedID.IsZero() &&
+			routedID != stored.Key {
 			return fmt.Errorf(
 				"tracked repo %s/%s provider ID %s does not match stored provider ID %s",
-				stored.Owner, stored.Name, routedID, storedRepoProviderKey(*stored),
+				stored.Owner, stored.Name, routedID, stored.Key,
 			)
 		}
 		repo = routed
@@ -11894,8 +11841,7 @@ func (s *Syncer) FinalizeArchiveItemSync(
 	s.reclassifyWorkspaceHeadRepoTrust(ctx, RepoRef{
 		Platform: platform.Kind(stored.Platform), PlatformHost: stored.PlatformHost,
 		Owner: stored.Owner, Name: stored.Name, RepoPath: stored.RepoPath,
-		PlatformRepoID:          stored.PlatformRepoID,
-		BitbucketRepositoryUUID: stored.BitbucketRepositoryUUID,
+		Key: stored.Key,
 	}, repoID, number)
 }
 

@@ -275,7 +275,7 @@ func testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformID: 1,
+		Key: platform.RepositoryIDKey(1),
 	}
 	var hydrationCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +319,7 @@ func testArchiveHydrationMissingGitHubIssueBecomesTerminalInSQLite(
 		[]RepoRef{{
 			Platform: ref.Platform, PlatformHost: ref.Host,
 			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-			PlatformRepoID: ref.PlatformID,
+			Key: ref.Key,
 		}},
 		time.Hour, nil, nil,
 	)
@@ -443,7 +443,7 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformID: 1001,
+		Key: platform.RepositoryIDKey(1001),
 	}
 	_, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
@@ -462,7 +462,7 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
+		Key: ref.Key,
 	}}, time.Hour, map[string]*RateTracker{key: tracker}, map[string]*SyncBudget{key: budget})
 	syncer.now = func() time.Time { return now }
 
@@ -821,7 +821,7 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformID: 1001,
+		Key: platform.RepositoryIDKey(1001),
 	}
 	_, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
@@ -831,7 +831,7 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-		PlatformRepoID: ref.PlatformID,
+		Key: ref.Key,
 	}}, time.Hour, nil, nil)
 	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
 	require.NoError(err)
@@ -903,7 +903,7 @@ func TestSetReposSeedsActiveArchiveForArchivedRepo(t *testing.T) {
 	ref := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.test",
 		Owner: "acme", Name: "frozen", RepoPath: "acme/frozen",
-		PlatformRepoID: 1003, Archived: true,
+		Key: platform.RepositoryIDKey(1003), Archived: true,
 	}
 	_, err = reposeed.Seed(
 		t.Context(), database, platformdb.DBRepoIdentity(platformRepoRef(ref)),
@@ -956,7 +956,7 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	configured := RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
 		Owner: "group", Name: "project", RepoPath: "group/project",
-		PlatformRepoID: 1001,
+		Key: platform.RepositoryIDKey(1001),
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
@@ -966,7 +966,7 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 			Ref: platform.RepoRef{
 				Platform: platform.KindGitLab, Host: "gitlab.test",
 				Owner: "group", Name: "project", RepoPath: "group/project",
-				PlatformID: 1001,
+				Key: platform.RepositoryIDKey(1001),
 			},
 		},
 	}
@@ -983,16 +983,16 @@ func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	)
 	require.NoError(err)
 	oldEntry, err := database.GetRepositoryByProviderID(
-		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", PlatformRepoID: 1001},
+		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", Key: platform.RepositoryIDKey(1001)},
 	)
 	require.NoError(err)
 	require.NotNil(oldEntry)
 
-	provider.repository.Ref.PlatformID = 1002
+	provider.repository.Ref.Key = platform.RepositoryIDKey(1002)
 	require.NoError(syncer.syncRepo(ctx, configured))
 
 	newEntry, err := database.GetRepositoryByProviderID(
-		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", PlatformRepoID: 1002},
+		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", Key: platform.RepositoryIDKey(1002)},
 	)
 	require.NoError(err)
 	require.NotNil(newEntry)
@@ -1030,20 +1030,22 @@ func TestSyncStaleRouteSnapshotFollowsRepositoryIDKeepsBothReposTracked(t *testi
 	renamed := RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
 		Owner: "group", Name: "project-moved", RepoPath: "group/project-moved",
-		PlatformRepoID: 1001,
+		Key: platform.RepositoryIDKey(1001),
 	}
 	successor := RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
 		Owner: "group", Name: "project", RepoPath: "group/project",
-		PlatformRepoID: 1002,
+		Key: platform.RepositoryIDKey(1002),
 	}
-	providerRepos := map[int64]RepoRef{1001: renamed, 1002: successor}
+	providerRepos := map[platform.RepositoryKey]RepoRef{
+		platform.RepositoryIDKey(1001): renamed, platform.RepositoryIDKey(1002): successor,
+	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
 			kind: platform.KindGitLab, host: "gitlab.test",
 		},
 		getRepositoryFn: func(_ context.Context, ref platform.RepoRef) (platform.Repository, error) {
-			repo, ok := providerRepos[ref.PlatformID]
+			repo, ok := providerRepos[ref.Key]
 			if !ok {
 				return platform.Repository{}, platform.ErrNotFound
 			}
@@ -1064,26 +1066,26 @@ func TestSyncStaleRouteSnapshotFollowsRepositoryIDKeepsBothReposTracked(t *testi
 	require.NoError(err)
 
 	stale := successor
-	stale.PlatformRepoID = renamed.PlatformRepoID
+	stale.Key = renamed.Key
 	require.NoError(syncer.syncRepo(ctx, stale))
 
 	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 2, "neither repository may be lost or duplicated")
-	byID := map[int64]RepoRef{}
+	byID := map[platform.RepositoryKey]RepoRef{}
 	for _, repo := range tracked {
-		byID[repo.PlatformRepoID] = repo
+		byID[repo.Key] = repo
 	}
-	assert.Equal("project-moved", byID[1001].Name,
+	assert.Equal("project-moved", byID[platform.RepositoryIDKey(1001)].Name,
 		"the renamed repository keeps its tracked entry")
-	assert.Equal("project", byID[1002].Name)
+	assert.Equal("project", byID[platform.RepositoryIDKey(1002)].Name)
 
 	oldEntry, err := database.GetRepositoryByProviderID(
-		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", PlatformRepoID: 1001},
+		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", Key: platform.RepositoryIDKey(1001)},
 	)
 	require.NoError(err)
 	require.NotNil(oldEntry)
 	newEntry, err := database.GetRepositoryByProviderID(
-		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", PlatformRepoID: 1002},
+		ctx, platform.RepositoryIdentity{Provider: "gitlab", PlatformHost: "gitlab.test", Key: platform.RepositoryIDKey(1002)},
 	)
 	require.NoError(err)
 	require.NotNil(newEntry)
@@ -1103,7 +1105,7 @@ func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
 	displaced := RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
 		Owner: "group", Name: "project", RepoPath: "group/project",
-		PlatformRepoID: 1001, Archived: true,
+		Key: platform.RepositoryIDKey(1001), Archived: true,
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
@@ -1113,7 +1115,7 @@ func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
 			Ref: platform.RepoRef{
 				Platform: platform.KindGitLab, Host: "gitlab.test",
 				Owner: "group", Name: "project", RepoPath: "group/project",
-				PlatformID: 1002,
+				Key: platform.RepositoryIDKey(1002),
 			},
 			Archived: false,
 		},
@@ -1137,7 +1139,7 @@ func TestSyncRouteReplacementIgnoresDisplacedArchivedFlipE2E(t *testing.T) {
 
 	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
-	assert.Equal(int64(1002), tracked[0].PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(1002), tracked[0].Key)
 	assert.False(tracked[0].Archived,
 		"the replacement keeps its authoritative unarchived state")
 }
@@ -1661,7 +1663,7 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.test",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformID: 1001,
+		Key: platform.RepositoryIDKey(1001),
 	}
 	provider := &blockingPriorityProvider{
 		kind: ref.Platform, host: ref.Host,
@@ -1674,7 +1676,7 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	require.NoError(err)
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform: string(ref.Platform), PlatformHost: ref.Host,
-		PlatformRepoID: 1001, Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
+		Key: platform.RepositoryIDKey(1001), Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 	})
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -1686,7 +1688,7 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	key := RateBucketKey(string(ref.Platform), ref.Host, "host")
 	syncer := NewSyncerWithRegistry(
 		registry, database, nil, []RepoRef{{
-			Platform: ref.Platform, PlatformHost: ref.Host, PlatformRepoID: 1001,
+			Platform: ref.Platform, PlatformHost: ref.Host, Key: platform.RepositoryIDKey(1001),
 			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 		}}, time.Hour, nil, map[string]*SyncBudget{key: NewSyncBudget(10)},
 	)
@@ -1758,7 +1760,7 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 			ref := platform.RepoRef{
 				Platform: platform.KindGitLab, Host: "gitlab.test",
 				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-				PlatformID: 1001,
+				Key: platform.RepositoryIDKey(1001),
 			}
 			provider := &blockingPriorityProvider{
 				kind: ref.Platform, host: ref.Host,
@@ -1897,7 +1899,7 @@ func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *tes
 	require.NoError(err)
 	router.RegisterRepoCredentialAlias("acme", "widget", RouteKey{
 		Host: "github.com", Owner: "legacy",
-	}, 1001)
+	}, platform.RepositoryIDKey(1001))
 	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
 
 	oldReadBucket := RateBucketKey("github", "github.com", "installation:11")
@@ -2074,7 +2076,7 @@ func TestArchiveAdmitNotDeferredByDisplacedRepositoryCooldown(t *testing.T) {
 	syncer.now = func() time.Time { return now }
 	displaced := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.test",
-		Owner: "acme", Name: "widget", PlatformRepoID: 1001,
+		Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(1001),
 	}
 	syncer.featureCooldowns.deferUntil(
 		displaced, platform.RepositoryFeatureIssues, now.Add(time.Hour),
@@ -2082,7 +2084,7 @@ func TestArchiveAdmitNotDeferredByDisplacedRepositoryCooldown(t *testing.T) {
 
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test",
-		Owner: "acme", Name: "widget", PlatformID: 1002,
+		Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(1002),
 	}
 	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
@@ -2098,14 +2100,14 @@ func TestConfiguredRepositoriesCarryStableProviderIdentity(t *testing.T) {
 	syncer := NewSyncer(
 		nil, database, nil, []RepoRef{{
 			Platform: platform.KindGitHub, PlatformHost: "github.test",
-			Owner: "acme", Name: "widget", PlatformRepoID: 1001,
+			Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(1001),
 		}}, time.Minute, nil, nil,
 	)
 
 	refs, err := syncer.ConfiguredRepositories(t.Context())
 	require.NoError(err)
 	require.Len(refs, 1)
-	require.Equal(int64(1001), refs[0].PlatformID,
+	require.Equal(platform.RepositoryIDKey(1001), refs[0].Key,
 		"archive scheduling needs the stable provider identity for cooldown keys")
 }
 

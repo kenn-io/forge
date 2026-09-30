@@ -25,6 +25,7 @@
   } from "../routes.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
+  import { repositoryKeyFromWire } from "../api/repository-key.js";
 
   type StackMemberNavigate = (ref: PullRequestRouteRef) => boolean | void;
 
@@ -82,15 +83,15 @@
     workspacePaneControls = undefined,
   }: Props = $props();
 
-  const selectedPlatformRepoId = $derived.by(() => {
-    if (!routeSelection || routeSelection.platformRepoId) return routeSelection?.platformRepoId;
+  const selectedRepositoryKey = $derived.by(() => {
+    if (!routeSelection || routeSelection.repositoryKey) return routeSelection?.repositoryKey;
     const item = pulls.getPulls().find((item) =>
       item.Number === routeSelection.number && repoIdentityMatches(item, routeSelection),
     );
-    return item?.repo.platform_repo_id;
+    return repositoryKeyFromWire(item?.repo);
   });
   const selectedPR = $derived(
-    routeSelection ? { ...routeSelection, platformRepoId: selectedPlatformRepoId } : null,
+    routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,
   );
   const paneLayoutStore = getPaneLayoutStore("prs");
   const paneLayout = $derived<PaneLayoutStore | null>(detailPresentation === "panes" ? paneLayoutStore : null);
@@ -182,7 +183,7 @@
       sync: false,
       provider: ref.provider,
       platformHost: ref.platformHost,
-      platformRepoId: ref.platformRepoId,
+      repositoryKey: ref.repositoryKey,
       repoPath: ref.repoPath,
     });
   }

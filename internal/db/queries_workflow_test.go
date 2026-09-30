@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/platform"
 )
 
 func TestItemWorkflowStateCRUD(t *testing.T) {
@@ -316,21 +317,21 @@ func TestListItemWorkflowStatesRepoFiltersUseCasefoldKeys(t *testing.T) {
 	base := baseTime()
 
 	firstRepo, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 1001,
-		Owner:          "Group/SubGroup",
-		Name:           "Project.Special",
-		RepoPath:       "Group/SubGroup/Project.Special",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "Group/SubGroup",
+		Name:         "Project.Special",
+		RepoPath:     "Group/SubGroup/Project.Special",
 	})
 	require.NoError(err)
 	secondRepo, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 1002,
-		Owner:          "Other/SubGroup",
-		Name:           "Project.Special",
-		RepoPath:       "Other/SubGroup/Project.Special",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(1002),
+		Owner:        "Other/SubGroup",
+		Name:         "Project.Special",
+		RepoPath:     "Other/SubGroup/Project.Special",
 	})
 	require.NoError(err)
 	insertTestIssue(t, d, firstRepo, 1, "matched issue", base.Add(time.Hour))

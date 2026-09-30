@@ -22,7 +22,7 @@ const baseProps = {
   number: 1,
   provider: "github",
   platformHost: "github.com",
-  platformRepoId: 7001,
+  repositoryKey: { kind: "id", id: 7001 },
   repoPath: "octo/repo",
   prTitle: "Add feature",
   prBody: "Body",
@@ -98,7 +98,7 @@ describe("MergeModal acknowledged merge commands", () => {
 
     await confirmMerge();
 
-    expect(mockMergePull.mock.calls[0]?.[0]).toMatchObject({ platformRepoId: 7001 });
+    expect(mockMergePull.mock.calls[0]?.[0]).toMatchObject({ repositoryKey: { kind: "id", id: 7001 } });
     expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({
       expected_head_sha: "abc123",
       method: "squash",
@@ -189,7 +189,7 @@ describe("MergeModal acknowledged merge commands", () => {
         {
           provider: "github",
           platformHost: "github.com",
-          platformRepoId: 7001,
+          repositoryKey: { kind: "id", id: 7001 },
           owner: "octo",
           name: "repo",
           repoPath: "octo/repo",

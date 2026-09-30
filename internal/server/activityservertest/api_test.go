@@ -84,20 +84,22 @@ func setupTestServerWithReposAndOptions(
 	repos = append([]ghclient.RepoRef(nil), repos...)
 	for i := range repos {
 		repo := &repos[i]
-		if repo.PlatformRepoID == 0 {
-			repo.PlatformRepoID = testutil.FixtureRepoID(repo.Owner, repo.Name)
+		if repo.Key.IsZero() {
+			repo.Key = platform.RepositoryIDKey(testutil.FixtureRepoID(repo.Owner, repo.Name))
 		}
 		if mock != nil {
-			mock.KnowRoute(repo.PlatformRepoID, repo.Owner, repo.Name)
+			repoID, ok := repo.Key.ID()
+			require.True(t, ok, "GitHub fixture repositories use integer keys")
+			mock.KnowRoute(repoID, repo.Owner, repo.Name)
 		}
 		_, err := reposeed.Seed(
 			t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
-				Platform:   platform.Kind(cmp.Or(string(repo.Platform), "github")),
-				Host:       cmp.Or(repo.PlatformHost, "github.com"),
-				Owner:      repo.Owner,
-				Name:       repo.Name,
-				RepoPath:   repo.RepoPath,
-				PlatformID: repo.PlatformRepoID,
+				Platform: platform.Kind(cmp.Or(string(repo.Platform), "github")),
+				Host:     cmp.Or(repo.PlatformHost, "github.com"),
+				Owner:    repo.Owner,
+				Name:     repo.Name,
+				RepoPath: repo.RepoPath,
+				Key:      repo.Key,
 			}),
 		)
 		require.NoError(t, err)

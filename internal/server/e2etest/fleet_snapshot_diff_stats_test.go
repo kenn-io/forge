@@ -105,12 +105,12 @@ func TestFleetSnapshotDetachedWorktreeDiffForSyncedRepoE2E(t *testing.T) {
 	// A tracked repository already carries its provider ID, so sync resolves
 	// it by ID and must still persist the provider default branch.
 	repoRef := ghclient.RepoRef{
-		Platform:       platform.KindGitHub,
-		PlatformHost:   "github.com",
-		Owner:          "acme",
-		Name:           "widgets",
-		RepoPath:       "acme/widgets",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widgets"),
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+		Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widgets")),
 	}
 	client := repoMetadataClient{Client: testutil.NewFixtureClient()}
 	syncer := ghclient.NewSyncer(

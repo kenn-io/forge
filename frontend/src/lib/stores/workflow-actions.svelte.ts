@@ -18,6 +18,7 @@ import {
 } from "../api/provider-routes.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import type { WorkflowDispatchProgressEvent } from "./provider-events-workflow.js";
+import { repositoryKeyFromWire, repositoryKeyString, type RepositoryKey } from "../api/repository-key.js";
 
 export type WorkflowCatalog = WorkflowCatalogResponse;
 export type WorkflowDefinition = WorkflowDefinitionResponse;
@@ -26,7 +27,7 @@ export type WorkflowRun = WorkflowRunResponse;
 export type WorkflowRunJob = WorkflowRunJobResponse;
 export type WorkflowActionsError = ApiProblemError | TransientTransportError;
 
-export type WorkflowRepositoryRef = ProviderRouteRef & { readonly platformRepoId: number };
+export type WorkflowRepositoryRef = ProviderRouteRef & { readonly repositoryKey: RepositoryKey };
 
 export interface WorkflowDispatchInput {
   readonly ref: WorkflowRepositoryRef;
@@ -111,10 +112,11 @@ const runsPageSize = 50;
 const notLoading: WorkflowActionsLoading = { catalog: false, runs: false, jobs: [] };
 
 export function workflowRepositoryKey(
-  ref: Pick<WorkflowRepositoryRef, "provider" | "platformHost" | "platformRepoId">,
+  ref: Pick<WorkflowRepositoryRef, "provider" | "platformHost"> & { readonly repositoryKey: RepositoryKey | undefined },
 ): string {
   const provider = canonicalProvider(ref.provider);
-  return [provider, resolvedPlatformHost(provider, ref.platformHost).toLowerCase(), ref.platformRepoId]
+  const key = ref.repositoryKey ? repositoryKeyString(ref.repositoryKey) : "";
+  return [provider, resolvedPlatformHost(provider, ref.platformHost).toLowerCase(), key]
     .map(encodeURIComponent)
     .join("|");
 }
@@ -125,11 +127,11 @@ function verifyRepository<A extends { readonly repo: RepoRefResponse }>(
 ): Effect.Effect<A, ApiProblemError> {
   const repository = response.repo;
   if (
-    repository.platform_repo_id &&
+    repositoryKeyFromWire(repository) &&
     workflowRepositoryKey({
       provider: repository.provider,
       platformHost: repository.platform_host,
-      platformRepoId: repository.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(repository),
     }) === workflowRepositoryKey(ref)
   )
     return Effect.succeed(response);
@@ -539,7 +541,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     const key = workflowRepositoryKey({
       provider: event.provider,
       platformHost: event.platform_host,
-      platformRepoId: event.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(event),
     });
     const snapshot = snapshots[key];
     if (!snapshot) return;

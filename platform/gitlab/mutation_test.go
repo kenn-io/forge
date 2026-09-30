@@ -20,7 +20,7 @@ func projectRef() platform.RepoRef {
 		RepoPath: "group/project",
 		WebURL:   "https://gitlab.example.com/group/project",
 		// Non-zero so projectScopedArg skips the lookup round trip.
-		PlatformID: 42,
+		Key: platform.RepositoryIDKey(42),
 	}
 }
 

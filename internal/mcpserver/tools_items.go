@@ -10,13 +10,14 @@ import (
 )
 
 type itemRefInput struct {
-	Type           string `json:"type" jsonschema:"item type: pr or issue"`
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host,omitempty"`
-	PlatformRepoID int64  `json:"platform_repo_id" jsonschema:"provider's integer repository ID from kenn_forge_list_repos"`
-	Owner          string `json:"owner"`
-	Name           string `json:"name"`
-	Number         int    `json:"number"`
+	Type                    string `json:"type" jsonschema:"item type: pr or issue"`
+	Provider                string `json:"provider"`
+	PlatformHost            string `json:"platform_host,omitempty"`
+	PlatformRepoID          int64  `json:"platform_repo_id,omitempty" jsonschema:"provider's integer repository ID from kenn_forge_list_repos; required unless bitbucket_repository_uuid is set"`
+	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty" jsonschema:"Bitbucket Cloud repository UUID from kenn_forge_list_repos; set instead of platform_repo_id for Bitbucket Cloud repositories"`
+	Owner                   string `json:"owner"`
+	Name                    string `json:"name"`
+	Number                  int    `json:"number"`
 }
 
 type getItemContextInput struct {
@@ -109,21 +110,24 @@ func (s *Server) registerItemTools() {
 }
 
 func (s *Server) getItemContext(ctx context.Context, in getItemContextInput) (getItemContextOutput, error) {
-	if err := validateItemRef(in.Item); err != nil {
+	item, err := in.Item.itemIdentity()
+	if err != nil {
 		return getItemContextOutput{}, err
 	}
-	switch in.Item.Type {
+	switch item.Type {
 	case "pr":
-		return s.getPullContext(ctx, in)
+		return s.getPullContext(ctx, item, in)
 	case "issue":
-		return s.getIssueContext(ctx, in)
+		return s.getIssueContext(ctx, item, in)
 	default:
 		return getItemContextOutput{}, errors.New("item.type must be pr or issue")
 	}
 }
 
-func (s *Server) getPullContext(ctx context.Context, in getItemContextInput) (getItemContextOutput, error) {
-	detail, err := s.backend.GetPull(ctx, itemIdentity(in.Item))
+func (s *Server) getPullContext(
+	ctx context.Context, item ItemIdentity, in getItemContextInput,
+) (getItemContextOutput, error) {
+	detail, err := s.backend.GetPull(ctx, item)
 	if err != nil {
 		return getItemContextOutput{}, err
 	}
@@ -132,7 +136,7 @@ func (s *Server) getPullContext(ctx context.Context, in getItemContextInput) (ge
 	}
 	pull := *detail.Pull
 	out := pullContext(detail, in)
-	workflowKey := candidateKeyFromItem(out.Item)
+	workflowKey := pull.itemKey()
 	workflows, err := s.workflowStatesForKeys(ctx, map[candidateKey]bool{workflowKey: true})
 	if err != nil {
 		return getItemContextOutput{}, err
@@ -174,8 +178,10 @@ func pullContext(detail PullDetail, in getItemContextInput) getItemContextOutput
 	return out
 }
 
-func (s *Server) getIssueContext(ctx context.Context, in getItemContextInput) (getItemContextOutput, error) {
-	detail, err := s.backend.GetIssue(ctx, itemIdentity(in.Item))
+func (s *Server) getIssueContext(
+	ctx context.Context, item ItemIdentity, in getItemContextInput,
+) (getItemContextOutput, error) {
+	detail, err := s.backend.GetIssue(ctx, item)
 	if err != nil {
 		return getItemContextOutput{}, err
 	}
@@ -239,26 +245,32 @@ func (s *Server) listItemsByWorkflowState(
 	return out, nil
 }
 
-func validateItemRef(ref itemRefInput) error {
+// itemIdentity validates an item reference from tool input and decodes its
+// flat repository key. Tool handlers call it once where the input enters.
+func (ref itemRefInput) itemIdentity() (ItemIdentity, error) {
 	if ref.Type != "pr" && ref.Type != "issue" {
-		return errors.New("item.type must be pr or issue")
+		return ItemIdentity{}, errors.New("item.type must be pr or issue")
 	}
 	if ref.Provider == "" {
-		return errors.New("item.provider is required")
+		return ItemIdentity{}, errors.New("item.provider is required")
 	}
-	if ref.PlatformRepoID <= 0 {
-		return errors.New("item.platform_repo_id is required")
+	key, err := repositoryKeyFromInput("item.", ref.PlatformRepoID, ref.BitbucketRepositoryUUID)
+	if err != nil {
+		return ItemIdentity{}, err
 	}
 	if ref.Owner == "" {
-		return errors.New("item.owner is required")
+		return ItemIdentity{}, errors.New("item.owner is required")
 	}
 	if ref.Name == "" {
-		return errors.New("item.name is required")
+		return ItemIdentity{}, errors.New("item.name is required")
 	}
 	if ref.Number <= 0 {
-		return errors.New("item.number must be greater than zero")
+		return ItemIdentity{}, errors.New("item.number must be greater than zero")
 	}
-	return nil
+	return ItemIdentity{
+		Type: ref.Type, Provider: ref.Provider, PlatformHost: ref.PlatformHost, RepoKey: key,
+		Owner: ref.Owner, Name: ref.Name, Number: ref.Number,
+	}, nil
 }
 
 func contextEvents(events []DetailEvent, limit int) []contextEvent {
@@ -285,14 +297,14 @@ func contextEvents(events []DetailEvent, limit int) []contextEvent {
 }
 
 func (row WorkflowItem) itemRef() itemRef {
-	return itemRef{
-		Type: row.Identity.Type, Provider: row.Identity.Provider,
-		PlatformHost: row.Identity.PlatformHost, PlatformRepoID: row.Identity.PlatformRepoID,
-		Owner: row.Identity.Owner,
-		Name:  row.Identity.Name, RepoPath: repositoryPath(row.Repository),
-		Number: row.Identity.Number, Title: row.Title, URL: row.URL,
-		State: row.State, Author: row.Author, IsDraft: row.IsDraft,
-	}
+	ref := candidateKey{
+		provider: row.Identity.Provider, platformHost: row.Identity.PlatformHost,
+		repoKey: row.Identity.RepoKey, repoPath: repositoryPath(row.Repository),
+		owner: row.Identity.Owner, name: row.Identity.Name,
+		itemType: row.Identity.Type, number: row.Identity.Number,
+	}.itemRef()
+	ref.Title, ref.URL, ref.State, ref.Author, ref.IsDraft = row.Title, row.URL, row.State, row.Author, row.IsDraft
+	return ref
 }
 
 func candidateWorkflowFromState(state WorkflowState) candidateWorkflow {

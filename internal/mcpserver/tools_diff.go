@@ -56,17 +56,18 @@ func (s *Server) registerDiffTools() {
 }
 
 func (s *Server) getItemDiff(ctx context.Context, in getItemDiffInput) (getItemDiffOutput, error) {
-	if err := validateItemRef(in.Item); err != nil {
+	item, err := in.Item.itemIdentity()
+	if err != nil {
 		return getItemDiffOutput{}, err
 	}
-	if in.Item.Type != "pr" {
+	if item.Type != "pr" {
 		return getItemDiffOutput{}, &Error{
 			Kind:    "invalid_request",
 			Message: "diff is only available for prs",
 		}
 	}
 
-	diff, err := s.backend.GetPullDiff(ctx, itemIdentity(in.Item), in.EmitDiffFile)
+	diff, err := s.backend.GetPullDiff(ctx, item, in.EmitDiffFile)
 	if err != nil {
 		return getItemDiffOutput{}, diffRouteError(err)
 	}
@@ -82,7 +83,7 @@ func (s *Server) getItemDiff(ctx context.Context, in getItemDiffInput) (getItemD
 	if err != nil {
 		return getItemDiffOutput{}, &Error{Kind: "internal_error", Message: "create diff temp store: " + err.Error()}
 	}
-	path, size, err := store.write(diffFileName(in.Item), data)
+	path, size, err := store.write(diffFileName(item), data)
 	if errors.Is(err, errDiffCacheFileTooLarge) {
 		return getItemDiffOutput{}, &Error{
 			Kind: "diff_too_large",
@@ -242,13 +243,13 @@ func isDiffIdentityNotFound(derr *Error, msg string) bool {
 		strings.Contains(msg, "repository not found")
 }
 
-func diffFileName(ref itemRefInput) string {
+func diffFileName(ref ItemIdentity) string {
 	ref = canonicalDiffFileRef(ref)
 	identity := fmt.Sprintf(
-		"%s\x00%s\x00%d\x00%s\x00%s\x00%d",
+		"%s\x00%s\x00%s\x00%s\x00%s\x00%d",
 		ref.Provider,
 		ref.PlatformHost,
-		ref.PlatformRepoID,
+		ref.RepoKey.String(),
 		ref.Owner,
 		ref.Name,
 		ref.Number,
@@ -265,7 +266,7 @@ func diffFileName(ref itemRefInput) string {
 	return prefix + suffix
 }
 
-func canonicalDiffFileRef(ref itemRefInput) itemRefInput {
+func canonicalDiffFileRef(ref ItemIdentity) ItemIdentity {
 	ref.Provider = strings.TrimSpace(ref.Provider)
 	ref.PlatformHost = strings.TrimSpace(ref.PlatformHost)
 	ref.Owner = strings.Trim(strings.TrimSpace(ref.Owner), "/")

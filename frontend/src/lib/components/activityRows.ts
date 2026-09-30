@@ -1,6 +1,7 @@
 import type { ActivityItem } from "../api/types.js";
 import { repoIdentityKey } from "../utils/repo-label.js";
 import type { RepoLabelIdentity } from "../utils/repo-label.js";
+import { repositoryKeyFromWire } from "../api/repository-key.js";
 
 export interface CollapsedActivityRun {
   kind: "collapsed";
@@ -94,7 +95,7 @@ function repoKeyForItem(item: ActivityItem): string {
   return activityRepoKey({
     provider: item.repo?.provider ?? "",
     platformHost: item.platform_host ?? item.repo?.platform_host ?? "",
-    platformRepoId: item.repo?.platform_repo_id,
+    repositoryKey: repositoryKeyFromWire(item.repo),
     owner: item.repo_owner,
     name: item.repo_name,
   });

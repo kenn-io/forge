@@ -144,7 +144,7 @@ func (s *Syncer) receiveRelayHint(hint activityrelay.Hint, id int64, queue *rela
 	if !s.SyncEnabled() {
 		return
 	}
-	repo, ok := s.trackedRepoByProviderID(platform.KindGitHub, hint.Host, hint.RepositoryID)
+	repo, ok := s.trackedRepoByProviderKey(platform.KindGitHub, hint.Host, platform.RepositoryIDKey(hint.RepositoryID))
 	if !ok || repo.Archived {
 		return
 	}
@@ -223,7 +223,7 @@ func (s *Syncer) drainRelayQueue(ctx context.Context, queue *relayQueue) {
 // served now, because budget, cooldown, or catalog state forbids it, is
 // dropped: ordinary syncing covers it later.
 func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) error {
-	repo, tracked := s.trackedRepoByProviderID(platform.KindGitHub, hint.Host, hint.RepositoryID)
+	repo, tracked := s.trackedRepoByProviderKey(platform.KindGitHub, hint.Host, platform.RepositoryIDKey(hint.RepositoryID))
 	if !tracked || repo.Archived {
 		return nil
 	}

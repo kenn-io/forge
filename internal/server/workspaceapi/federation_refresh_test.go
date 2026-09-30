@@ -56,8 +56,8 @@ func TestRefreshProviderWorkspaceFactsSyncsOnlyRequestedItem(t *testing.T) {
 			database := dbtest.Open(t)
 			repoIdentity := db.RepoIdentity{
 				Platform: string(platform.KindGitLab), PlatformHost: "git.example.test",
-				PlatformRepoID: 1001,
-				Owner:          test.currentOwner, Name: test.currentName,
+				Key:   platform.RepositoryIDKey(1001),
+				Owner: test.currentOwner, Name: test.currentName,
 			}
 			repoID, err := reposeed.Seed(t.Context(), database, repoIdentity)
 			require.NoError(err)
@@ -65,7 +65,7 @@ func TestRefreshProviderWorkspaceFactsSyncsOnlyRequestedItem(t *testing.T) {
 			providerRef := platform.RepoRef{
 				Platform: platform.KindGitLab, Host: "git.example.test",
 				Owner: test.currentOwner, Name: test.currentName,
-				PlatformID: 1001,
+				Key: platform.RepositoryIDKey(1001),
 			}
 			provider := &autoAssignProvider{
 				pull: platform.MergeRequest{
@@ -87,8 +87,8 @@ func TestRefreshProviderWorkspaceFactsSyncsOnlyRequestedItem(t *testing.T) {
 				registry, database, nil, []ghclient.RepoRef{{
 					Platform: platform.KindGitLab, RepoID: repoID,
 					Owner: test.currentOwner, Name: test.currentName,
-					PlatformHost:   "git.example.test",
-					PlatformRepoID: 1001,
+					PlatformHost: "git.example.test",
+					Key:          platform.RepositoryIDKey(1001),
 				}}, time.Hour, nil, nil,
 			)
 			t.Cleanup(syncer.Stop)
@@ -102,8 +102,8 @@ func TestRefreshProviderWorkspaceFactsSyncsOnlyRequestedItem(t *testing.T) {
 					Provider: string(platform.KindGitLab), PlatformHost: "git.example.test",
 					Owner: test.requestOwner, Name: test.requestName,
 				},
-				PlatformRepoID: test.platformRepoID,
-				ItemType:       test.itemType, ItemNumber: test.number,
+				RepoKey:  platform.RepositoryIDKey(test.platformRepoID),
+				ItemType: test.itemType, ItemNumber: test.number,
 			})
 
 			require.NoError(err)

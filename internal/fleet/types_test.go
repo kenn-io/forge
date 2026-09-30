@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/platform"
 )
 
 func TestRawSnapshotCarriesDetachedLocalWorkspacesOnly(t *testing.T) {
@@ -24,7 +25,7 @@ func TestRawSnapshotCarriesDetachedLocalWorkspacesOnly(t *testing.T) {
 		Workspaces: []RawWorkspace{{
 			ID: "ws-local", Status: "ready", ItemType: "pull_request", ItemNumber: 42,
 			Repository: RepositoryIdentity{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+				Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 			},
 		}},
 	}

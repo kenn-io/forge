@@ -117,7 +117,7 @@ func workflowFixtureWithRuntime(t *testing.T, provider *workflowTestProvider, op
 	t.Helper()
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity(platform.DefaultGitHubHost, "acme", "widget")
-	identity.PlatformRepoID = 1001
+	identity.Key = platform.RepositoryIDKey(1001)
 	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
 	require.NoError(t, database.UpdateRepoProviderObservation(t.Context(), repoID, db.RepoProviderMetadata{
@@ -716,7 +716,7 @@ func TestWorkflowDispatchFollowThroughProviderOutage(t *testing.T) {
 				}}
 				handler := New(Deps{Runtime: &workflowTestRuntime{}})
 				handler.followDispatch(ctx, dispatchFollow{
-					repo:   db.Repo{PlatformRepoID: 1001},
+					repo:   db.Repo{Key: platform.RepositoryIDKey(1001)},
 					reader: provider, result: platform.WorkflowDispatchResult{Run: &run}, dispatchID: "dispatch-1",
 				})
 				events := publishedDispatchEvents(handler)

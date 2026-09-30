@@ -120,7 +120,7 @@ func TestRepositoryFeatureError(t *testing.T) {
 			client := newTestClient(t, server.URL)
 			ref := platform.RepoRef{
 				Platform: platform.KindGitLab, Host: "gitlab.example.com",
-				Owner: "group", Name: "project", RepoPath: "group/project", PlatformID: 42,
+				Owner: "group", Name: "project", RepoPath: "group/project", Key: platform.RepositoryIDKey(42),
 			}
 
 			classified := client.repositoryFeatureError(
@@ -169,7 +169,7 @@ func TestClientItemLookupReusesFeatureMetadataConfirmation(t *testing.T) {
 	client := newTestClient(t, server.URL)
 	ref := platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.example.com",
-		Owner: "group", Name: "project", RepoPath: "group/project", PlatformID: 42,
+		Owner: "group", Name: "project", RepoPath: "group/project", Key: platform.RepositoryIDKey(42),
 	}
 
 	_, err := client.GetIssue(t.Context(), ref, 7)
@@ -301,7 +301,7 @@ func TestClientClassifiesDisabledFeatureReads(t *testing.T) {
 			client := newTestClient(t, server.URL)
 			ref := platform.RepoRef{
 				Platform: platform.KindGitLab, Host: "gitlab.example.com",
-				Owner: "group", Name: "project", RepoPath: "group/project", PlatformID: 42,
+				Owner: "group", Name: "project", RepoPath: "group/project", Key: platform.RepositoryIDKey(42),
 			}
 
 			err := tt.read(t.Context(), client, ref)

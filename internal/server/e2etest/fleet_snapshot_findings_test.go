@@ -17,6 +17,7 @@ import (
 	dbpkg "go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 func putJSON(
@@ -68,8 +69,8 @@ func seedLinkedProject(
 }
 
 func verifiedRepoIdentity(identity dbpkg.RepoIdentity) dbpkg.RepoIdentity {
-	if identity.PlatformRepoID == 0 {
-		identity.PlatformRepoID = reposeed.SyntheticID(identity)
+	if identity.Key.IsZero() {
+		identity.Key = platform.RepositoryIDKey(reposeed.SyntheticID(identity))
 	}
 	return identity
 }

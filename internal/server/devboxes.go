@@ -141,7 +141,11 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *devboxapi.Cre
 		return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 	}
 	body := input.Body
-	repo, err := s.repoResolver.LookupSelection(ctx, body.Provider, body.PlatformHost, body.Owner, body.Name, body.PlatformRepoID)
+	repoKey, err := httpapi.RequestRepositoryKey("body.platform_repo_id", body.PlatformRepoID, body.BitbucketRepositoryUUID)
+	if err != nil {
+		return nil, err
+	}
+	repo, err := s.repoResolver.LookupSelection(ctx, body.Provider, body.PlatformHost, body.Owner, body.Name, repoKey)
 	if err != nil {
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
@@ -156,7 +160,7 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *devboxapi.Cre
 		body.Branch = "work-" + hex.EncodeToString(entropy[:])
 	}
 	request := workspaceapi.WorkerCreateRequest{
-		Repository: db.WorkspaceLaunchRepository{Provider: repo.Platform, PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformRepoID, BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID, Owner: repo.Owner, Name: repo.Name, CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch},
+		Repository: db.WorkspaceLaunchRepository{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Key: repo.Key, Owner: repo.Owner, Name: repo.Name, CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch},
 		Branch:     body.Branch, ReuseExistingBranch: body.ReuseExistingBranch,
 	}
 	if body.MRNumber != 0 || body.IssueNumber != 0 {
@@ -165,10 +169,10 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *devboxapi.Cre
 			kind, number = db.WorkspaceItemTypeIssue, body.IssueNumber
 		}
 		spec, err := s.ResolveWorkspaceLaunchSpec(ctx, providerplane.WorkspaceLaunchRequest{
-			Repository:     providerplane.RepositoryRoute{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name},
-			PlatformRepoID: repo.PlatformRepoID,
-			ForCreation:    true,
-			ItemType:       kind, ItemNumber: number, GitHeadRef: body.Branch,
+			Repository:  providerplane.RepositoryRoute{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name},
+			RepoKey:     repo.Key,
+			ForCreation: true,
+			ItemType:    kind, ItemNumber: number, GitHeadRef: body.Branch,
 		})
 		if err != nil {
 			return nil, err
@@ -327,9 +331,9 @@ func (s *Server) refreshDevboxContext(ctx context.Context, connections *devbox.C
 		return nil
 	}
 	spec, err := s.ResolveWorkspaceLaunchSpec(ctx, providerplane.WorkspaceLaunchRequest{
-		Repository:     providerplane.RepositoryRoute{Provider: current.Repo.Provider, PlatformHost: current.PlatformHost, Owner: current.RepoOwner, Name: current.RepoName},
-		PlatformRepoID: current.Repo.PlatformRepoID,
-		ItemType:       current.ItemType, ItemNumber: current.ItemNumber, ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
+		Repository: providerplane.RepositoryRoute{Provider: current.Repo.Provider, PlatformHost: current.PlatformHost, Owner: current.RepoOwner, Name: current.RepoName},
+		RepoKey:    current.Repo.Key,
+		ItemType:   current.ItemType, ItemNumber: current.ItemNumber, ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
 	})
 	if err != nil {
 		return err

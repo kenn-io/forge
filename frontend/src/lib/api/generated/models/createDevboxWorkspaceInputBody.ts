@@ -5,6 +5,7 @@
 export interface CreateDevboxWorkspaceInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  bitbucket_repository_uuid?: string;
   branch?: string;
   issue_number?: number;
   mr_number?: number;

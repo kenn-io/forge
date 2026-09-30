@@ -276,7 +276,7 @@ func listActivityWithQueryer(
 		notificationUnion = `
 			UNION ALL
 			SELECT 'notification', 'ntf', n.id, r.id,
-			       r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
+			       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       n.item_type, COALESCE(n.item_number, 0),
 			       COALESCE(NULLIF(mr.title, ''), NULLIF(iss.title, ''), n.subject_title),
@@ -325,7 +325,7 @@ func listActivityWithQueryer(
 	query := fmt.Sprintf(`
 		WITH page AS MATERIALIZED (
 		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
-		       platform_repo_id, repo_path, repo_owner, repo_name,
+		       platform_repo_id, bitbucket_repository_uuid, repo_path, repo_owner, repo_name,
 		       item_type, item_number, item_title,
 		       item_url, item_state, author, item_author,
 		       created_at, parent_id, body_preview,
@@ -337,7 +337,7 @@ func listActivityWithQueryer(
 			SELECT 'new_pr' AS activity_type,
 			       'pr' AS source, p.id AS source_id,
 			       r.id AS repo_id,
-			       r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
+			       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.repo_path,
 			       r.owner AS repo_owner, r.name AS repo_name, r.repo_path_key,
 			       'pr' AS item_type, p.number AS item_number,
 			       p.title AS item_title,
@@ -362,7 +362,7 @@ func listActivityWithQueryer(
 			)
 			UNION ALL
 			SELECT 'new_issue', 'issue', i.id, r.id,
-			       r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
+			       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title,
 			       i.url, i.state,
@@ -391,7 +391,7 @@ func listActivityWithQueryer(
 			       END,
 			       'pre', e.id,
 			       r.id,
-			       r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
+			       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       'pr', p.number, p.title,
 			       p.url, p.state,
@@ -418,7 +418,7 @@ func listActivityWithQueryer(
 			  )
 			UNION ALL
 			SELECT 'comment', 'ise', e.id, r.id,
-			       r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
+			       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title,
 			       i.url, i.state,
@@ -444,7 +444,7 @@ func listActivityWithQueryer(
 			  )
 			UNION ALL
 			SELECT 'default_branch_commit', 'bc', bc.id, r.id,
-			       r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
+			       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       '', 0, '',
 			       '', '',
@@ -463,7 +463,7 @@ func listActivityWithQueryer(
 			JOIN forge_repos r ON bc.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
 			SELECT 'default_branch_force_push', 'bfp', bfp.id, r.id,
-			       r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
+			       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       '', 0, '',
 			       '', '',
@@ -485,7 +485,7 @@ func listActivityWithQueryer(
 		LIMIT ?
 		)
 		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
-		       platform_repo_id, repo_path, repo_owner, repo_name,
+		       platform_repo_id, bitbucket_repository_uuid, repo_path, repo_owner, repo_name,
 		       item_type, item_number, item_title,
 		       item_url, item_state, author, item_author,
 		       created_at,
@@ -521,10 +521,11 @@ func listActivityWithQueryer(
 		var itemLastActivityAtStr sql.NullString
 		var authoredAtStr sql.NullString
 		var committedAtStr sql.NullString
+		keyID, keyUUID := repositoryKeyColumns(&it.RepoKey)
 		if err := rows.Scan(
 			&it.ActivityType, &it.Source, &it.SourceID,
 			&it.RepoID,
-			&it.Platform, &it.PlatformHost, &it.PlatformRepoID, &it.RepoPath,
+			&it.Platform, &it.PlatformHost, keyID, keyUUID, &it.RepoPath,
 			&it.RepoOwner, &it.RepoName,
 			&it.ItemType, &it.ItemNumber, &it.ItemTitle,
 			&it.ItemURL, &it.ItemState, &it.Author, &it.ItemAuthor,
@@ -701,13 +702,13 @@ func listActivitySubjectsWithQueryer(
 		where = "WHERE " + strings.Join(whereClauses, " AND ")
 	}
 	query := `
-		SELECT repo_id, platform, platform_host, platform_repo_id, repo_path,
+		SELECT repo_id, platform, platform_host, platform_repo_id, bitbucket_repository_uuid, repo_path,
 		       repo_owner, repo_name,
 		       item_type, item_number, item_title, item_url, item_state,
 		       item_author, activity_at, event_ledger_revision
 		FROM (
 			SELECT r.id AS repo_id, r.platform, r.platform_host,
-			       r.platform_repo_id, r.repo_path,
+			       r.platform_repo_id, r.bitbucket_repository_uuid, r.repo_path,
 			       r.owner AS repo_owner, r.name AS repo_name, r.repo_path_key,
 			       'pr' AS item_type, p.number AS item_number, p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state, p.author AS item_author,
@@ -723,7 +724,7 @@ func listActivitySubjectsWithQueryer(
 			      AND ai.lifecycle_state = 'removed_upstream'
 			)
 			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.platform_repo_id, r.repo_path,
+			SELECT r.id, r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.repo_path,
 			       r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title, i.url, i.state, i.author,
 			       ` + issueActivitySubjectAtExpr("i", opts.ExcludeNotificationRecency) + `,
@@ -753,11 +754,12 @@ func listActivitySubjectsWithQueryer(
 	for rows.Next() {
 		var subject ActivitySubject
 		var activityAt string
+		keyID, keyUUID := repositoryKeyColumns(&subject.Subject.RepoKey)
 		if err := rows.Scan(
 			&subject.Subject.Key.RepoID,
 			&subject.Subject.Platform,
 			&subject.Subject.PlatformHost,
-			&subject.Subject.PlatformRepoID,
+			keyID, keyUUID,
 			&subject.Subject.RepoPath,
 			&subject.Subject.RepoOwner,
 			&subject.Subject.RepoName,

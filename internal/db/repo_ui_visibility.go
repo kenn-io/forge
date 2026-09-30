@@ -53,9 +53,9 @@ func (d *DB) HiddenRepos(ctx context.Context) ([]Repo, error) {
 	var repos []Repo
 	for rows.Next() {
 		var r Repo
+		keyID, keyUUID := repositoryKeyColumns(&r.Key)
 		if err := rows.Scan(
-			&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
-			bitbucketUUIDScanner{&r.BitbucketRepositoryUUID},
+			&r.ID, &r.Platform, &r.PlatformHost, keyID, keyUUID,
 			&r.Owner, &r.Name, &r.RepoPath,
 		); err != nil {
 			return nil, fmt.Errorf("scan hidden repo: %w", err)

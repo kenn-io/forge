@@ -136,11 +136,13 @@ func TestWorkerRepositoriesCacheFollowsRepositoryTakingOverRoute(t *testing.T) {
 	// its old route; sync reports the new provider ID for the same route.
 	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: string(original.Platform), PlatformHost: original.Host,
-		PlatformRepoID: original.PlatformID, Owner: original.Owner, Name: "repo-old",
+		Key: original.Key, Owner: original.Owner, Name: "repo-old",
 	})
 	require.NoError(err)
 	replacement := original
-	replacement.PlatformID = original.PlatformID + 1
+	originalProviderID, ok := original.Key.ID()
+	require.True(ok)
+	replacement.Key = platform.RepositoryIDKey(originalProviderID + 1)
 	replacementID := archiveServiceSeedRepo(t, database, replacement)
 	source.refs = []platform.RepoRef{replacement}
 

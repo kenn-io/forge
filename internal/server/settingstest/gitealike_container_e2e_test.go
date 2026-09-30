@@ -177,15 +177,15 @@ func assertGiteaLikeContainerSync(
 	registry, err := platform.NewRegistry(client)
 	require.NoError(err)
 	repo := ghclient.RepoRef{
-		Platform:       kind,
-		PlatformHost:   manifest.Host,
-		Owner:          manifest.Owner,
-		Name:           manifest.Name,
-		RepoPath:       manifest.RepoPath,
-		PlatformRepoID: manifest.RepositoryID,
-		WebURL:         manifest.WebURL,
-		CloneURL:       manifest.CloneURL,
-		DefaultBranch:  manifest.DefaultBranch,
+		Platform:      kind,
+		PlatformHost:  manifest.Host,
+		Owner:         manifest.Owner,
+		Name:          manifest.Name,
+		RepoPath:      manifest.RepoPath,
+		Key:           platform.RepositoryIDKey(manifest.RepositoryID),
+		WebURL:        manifest.WebURL,
+		CloneURL:      manifest.CloneURL,
+		DefaultBranch: manifest.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute,
@@ -205,12 +205,12 @@ func assertGiteaLikeContainerSync(
 	require.NoError(syncer.SyncIssueOnProvider(ctx, kind, manifest.Host, manifest.Owner, manifest.Name, manifest.IssueIndex))
 
 	repoRow, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:       string(kind),
-		PlatformHost:   manifest.Host,
-		PlatformRepoID: manifest.RepositoryID,
-		Owner:          manifest.Owner,
-		Name:           manifest.Name,
-		RepoPath:       manifest.RepoPath,
+		Platform:     string(kind),
+		PlatformHost: manifest.Host,
+		Key:          platform.RepositoryIDKey(manifest.RepositoryID),
+		Owner:        manifest.Owner,
+		Name:         manifest.Name,
+		RepoPath:     manifest.RepoPath,
 	})
 	require.NoError(err)
 	require.NotNil(repoRow)

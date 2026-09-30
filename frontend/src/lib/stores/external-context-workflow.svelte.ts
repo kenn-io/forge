@@ -12,10 +12,11 @@ import {
   type ProviderRouteRef,
 } from "../api/provider-routes.js";
 import { apiErrorMessage } from "../api/runtime.js";
+import { repositoryKeyString, repositoryKeyToWire, type RepositoryKey } from "../api/repository-key.js";
 
 export interface ExternalContextPull {
   readonly ref: ProviderRouteRef;
-  readonly platformRepoId: number;
+  readonly repositoryKey: RepositoryKey;
   readonly number: number;
   readonly headSha: string;
 }
@@ -25,7 +26,7 @@ export function externalContextKey(pull: ExternalContextPull): string {
   return JSON.stringify([
     canonicalProvider(ref.provider),
     resolvedPlatformHost(ref.provider, ref.platformHost),
-    pull.platformRepoId,
+    repositoryKeyString(pull.repositoryKey),
     ref.repoPath,
     ref.owner,
     ref.name,
@@ -89,7 +90,7 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
       if (entry.pendingAction !== null) return;
       const generation = ++entry.generation;
       entry.loading = true;
-      const query = { platform_repo_id: pull.platformRepoId, refresh };
+      const query = { ...repositoryKeyToWire(pull.repositoryKey), refresh };
       yield* api
         .execute("load external context", (signal) =>
           providerUsesHostRoute(pull.ref)
@@ -137,7 +138,7 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
       entry.loading = false;
       entry.pendingAction = actionId;
       entry.error = null;
-      const body = { platform_repo_id: pull.platformRepoId, head_sha: pull.headSha };
+      const body = { ...repositoryKeyToWire(pull.repositoryKey), head_sha: pull.headSha };
       yield* api
         .execute("run external context action", (signal) =>
           providerUsesHostRoute(pull.ref)

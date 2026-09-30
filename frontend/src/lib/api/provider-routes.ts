@@ -1,9 +1,10 @@
+import type { RepositoryKey } from "./repository-key.js";
 import { configuredAPIPath } from "./runtime-base.js";
 
 export type ProviderRouteRef = {
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: number | undefined;
+  repositoryKey?: RepositoryKey | undefined;
   owner: string;
   name: string;
   repoPath: string;

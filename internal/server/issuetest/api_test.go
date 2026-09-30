@@ -651,9 +651,9 @@ func TestAPIGitLabDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T
 	ref := ghclient.RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.test",
 		Owner: "group", Name: "project", RepoPath: "group/project",
-		PlatformRepoID: 42,
-		WebURL:         "https://gitlab.test/group/project",
-		CloneURL:       "https://gitlab.test/group/project.git", DefaultBranch: "main",
+		Key:      platform.RepositoryIDKey(42),
+		WebURL:   "https://gitlab.test/group/project",
+		CloneURL: "https://gitlab.test/group/project.git", DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
@@ -740,9 +740,9 @@ func TestAPIGiteaDisabledIssueCooldownPersistsThroughHTTPAndSQLite(t *testing.T)
 	ref := ghclient.RepoRef{
 		Platform: platform.KindGitea, PlatformHost: "gitea.test",
 		Owner: "tea", Name: "kettle", RepoPath: "tea/kettle",
-		PlatformRepoID: 101,
-		WebURL:         "https://gitea.test/tea/kettle",
-		CloneURL:       "https://gitea.test/tea/kettle.git", DefaultBranch: "main",
+		Key:      platform.RepositoryIDKey(101),
+		WebURL:   "https://gitea.test/tea/kettle",
+		CloneURL: "https://gitea.test/tea/kettle.git", DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{ref}, time.Minute, nil, nil,
@@ -1118,19 +1118,19 @@ func TestAPIListIssuesAcceptsProviderQualifiedRepoFilter(t *testing.T) {
 	ctx := t.Context()
 
 	githubRepo, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1101,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1101),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	giteaRepo, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitea",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1102,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1102),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	serverfake.SeedIssueForRepo(t, database, githubRepo, "github.com", "acme", "widget", 1, "open", "GitHub issue")
@@ -1251,8 +1251,12 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	}
 	ghesClient := &serverfake.MockGH{
 		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			repoID, ok := serverfake.VerifiedGitHubRepoIdentity("ghe.example.com", owner, repo).Key.ID()
+			if !ok {
+				return nil, fmt.Errorf("fixture repository %s/%s has no integer key", owner, repo)
+			}
 			return &gh.Repository{
-				ID:    new(serverfake.VerifiedGitHubRepoIdentity("ghe.example.com", owner, repo).PlatformRepoID),
+				ID:    &repoID,
 				Name:  &repo,
 				Owner: &gh.User{Login: &owner}, Archived: new(false),
 			}, nil

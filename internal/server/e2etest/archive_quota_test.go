@@ -106,12 +106,12 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	syncRef := ghclient.RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+		Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 	}
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformID: testutil.FixtureRepoID("acme", "widget"),
+		Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,
@@ -252,12 +252,12 @@ func TestArchiveAPIDefersHydrationAtLargerPoolReserveE2E(t *testing.T) {
 	syncRef := ghclient.RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+		Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 	}
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformID: testutil.FixtureRepoID("acme", "widget"),
+		Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry,

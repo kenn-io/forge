@@ -27,9 +27,9 @@ func federationActivitySubjectIdentityFromProvider(
 ) spokeapi.FederationActivitySubjectIdentity {
 	return spokeapi.FederationActivitySubjectIdentity{
 		Repository: spokeapi.FederationActivityRepositoryIdentity{
-			Provider:       identity.Repository.Provider,
-			PlatformHost:   identity.Repository.PlatformHost,
-			PlatformRepoID: identity.Repository.PlatformRepoID,
+			Provider:     identity.Repository.Provider,
+			PlatformHost: identity.Repository.PlatformHost,
+			Key:          identity.Repository.Key,
 		},
 		ItemType: identity.ItemType, ItemNumber: identity.ItemNumber,
 	}
@@ -76,7 +76,7 @@ func (s *Handlers) federationFilterUnassignedActivitySubjects(
 		if !resolved {
 			repository, lookupErr := s.Db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
 				Provider: repositoryIdentity.Provider, PlatformHost: repositoryIdentity.PlatformHost,
-				PlatformRepoID: repositoryIdentity.PlatformRepoID,
+				Key: repositoryIdentity.Key,
 			})
 			if lookupErr != nil {
 				return nil, httpapi.Internal("filter activity subjects failed")
@@ -123,9 +123,9 @@ func (s *Handlers) WorkspaceActivityRepositoryIdentities(
 	repositories := make(map[int64]platform.RepositoryIdentity, len(snapshot.Subjects))
 	for key, activity := range snapshot.Subjects {
 		repositories[key.RepoID] = platform.RepositoryIdentity{
-			Provider:       activity.Subject.Platform,
-			PlatformHost:   activity.Subject.PlatformHost,
-			PlatformRepoID: activity.Subject.PlatformRepoID,
+			Provider:     activity.Subject.Platform,
+			PlatformHost: activity.Subject.PlatformHost,
+			Key:          activity.Subject.RepoKey,
 		}.Canonical()
 	}
 	for key := range snapshot.OwnReferences {
@@ -140,9 +140,9 @@ func (s *Handlers) WorkspaceActivityRepositoryIdentities(
 			continue
 		}
 		repositories[key.RepoID] = platform.RepositoryIdentity{
-			Provider:       repository.Platform,
-			PlatformHost:   repository.PlatformHost,
-			PlatformRepoID: repository.PlatformRepoID,
+			Provider:     repository.Platform,
+			PlatformHost: repository.PlatformHost,
+			Key:          repository.Key,
 		}.Canonical()
 	}
 	return repositories, nil

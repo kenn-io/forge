@@ -84,10 +84,10 @@ func (s *Handlers) RefreshSpokePreparationLaunchSpecs(
 			},
 			ItemType: workspace.ItemType, ItemNumber: workspace.ItemNumber,
 			ItemKey: workspace.ItemKey, GitHeadRef: workspace.GitHeadRef,
-			PlatformRepoID: item.PlatformRepoID,
+			RepoKey: item.RepoKey,
 		}
 		if current != nil {
-			body.PlatformRepoID = current.Repository.PlatformRepoID
+			body.RepoKey = current.Repository.Key
 		}
 		var spec db.WorkspaceLaunchSpec
 		httpRequest, requestErr := generated.NewFederationResolveWorkspaceLaunchSpecRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationResolveWorkspaceLaunchSpecRequestOptions{Body: providerLaunchRequestBody(body)})
@@ -241,7 +241,7 @@ func providerStateImportRequest(ctx context.Context, record db.ProviderStateReco
 		var body *generated.FederationImportReviewDraftBody
 		if draft := record.ReviewDraft; draft != nil {
 			body = &generated.FederationImportReviewDraftBody{
-				Repository: generated.ProviderStateRepository{Provider: draft.Repository.Provider, PlatformHost: draft.Repository.PlatformHost, PlatformRepoID: draft.Repository.PlatformRepoID, Owner: draft.Repository.Owner, Name: draft.Repository.Name}, PullNumber: int64(draft.PullNumber), Body: draft.Body, Action: draft.Action,
+				Repository: generated.ProviderStateRepository{Provider: draft.Repository.Provider, PlatformHost: draft.Repository.PlatformHost, PlatformRepoID: wireRepoID(draft.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(draft.Repository.Key), Owner: draft.Repository.Owner, Name: draft.Repository.Name}, PullNumber: int64(draft.PullNumber), Body: draft.Body, Action: draft.Action,
 				Comments: make([]generated.ProviderStateReviewComment, 0, len(draft.Comments)),
 			}
 			for _, comment := range draft.Comments {
@@ -267,7 +267,7 @@ func providerStateImportRequest(ctx context.Context, record db.ProviderStateReco
 	var body *generated.FederationImportWorkflowStateBody
 	if state := record.WorkflowState; state != nil {
 		body = &generated.FederationImportWorkflowStateBody{
-			Repository: generated.ProviderStateRepository{Provider: state.Repository.Provider, PlatformHost: state.Repository.PlatformHost, PlatformRepoID: state.Repository.PlatformRepoID, Owner: state.Repository.Owner, Name: state.Repository.Name}, ItemType: generated.ProviderStateWorkflowPayloadItemType(state.ItemType),
+			Repository: generated.ProviderStateRepository{Provider: state.Repository.Provider, PlatformHost: state.Repository.PlatformHost, PlatformRepoID: wireRepoID(state.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(state.Repository.Key), Owner: state.Repository.Owner, Name: state.Repository.Name}, ItemType: generated.ProviderStateWorkflowPayloadItemType(state.ItemType),
 			ItemNumber: int64(state.ItemNumber), Status: state.Status,
 			UpdatedSource: optionalProviderQuery(state.UpdatedSource), UpdatedActor: optionalProviderQuery(state.UpdatedActor), UpdatedReason: optionalProviderQuery(state.UpdatedReason),
 		}

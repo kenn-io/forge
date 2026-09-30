@@ -3,6 +3,7 @@ package syncevents
 import (
 	"context"
 	"log/slog"
+	"uuid"
 
 	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/server/itemapi"
@@ -15,11 +16,13 @@ func (s *Handlers) BroadcastRelayRefresh(ctx context.Context, repoID int64, targ
 		if err != nil || repo == nil {
 			return
 		}
+		wireID, repositoryUUID := repo.Key.Wire()
 		(*s.Hub).Broadcast(Event{Type: "workflow_runs_changed", Data: struct {
-			Provider       string `json:"provider"`
-			PlatformHost   string `json:"platform_host"`
-			PlatformRepoID int64  `json:"platform_repo_id"`
-		}{repo.Platform, repo.PlatformHost, repo.PlatformRepoID}})
+			Provider                string    `json:"provider"`
+			PlatformHost            string    `json:"platform_host"`
+			PlatformRepoID          int64     `json:"platform_repo_id"`
+			BitbucketRepositoryUUID uuid.UUID `json:"bitbucket_repository_uuid,omitzero"`
+		}{repo.Platform, repo.PlatformHost, wireID, repositoryUUID}})
 		return
 	}
 	(*s.Hub).Broadcast(Event{Type: "data_changed", Data: struct{}{}})

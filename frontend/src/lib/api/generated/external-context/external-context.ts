@@ -50,7 +50,7 @@ export const listExternalContextSources = async (
 
 export const getGetPullExternalContextOnHostUrl = (
   { platformHost, provider, owner, name, number, sourceId }: GetPullExternalContextOnHostPathParameters,
-  params: GetPullExternalContextOnHostParams,
+  params?: GetPullExternalContextOnHostParams,
 ) => {
   const normalizedParams = new URLSearchParams();
 
@@ -72,7 +72,7 @@ export const getGetPullExternalContextOnHostUrl = (
  */
 export const getPullExternalContextOnHost = async (
   { platformHost, provider, owner, name, number, sourceId }: GetPullExternalContextOnHostPathParameters,
-  params: GetPullExternalContextOnHostParams,
+  params?: GetPullExternalContextOnHostParams,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<ExternalContextResult> => {
   return orvalFetch<ExternalContextResult>(
@@ -123,7 +123,7 @@ export const runPullExternalContextActionOnHost = async (
 
 export const getGetPullExternalContextUrl = (
   { provider, owner, name, number, sourceId }: GetPullExternalContextPathParameters,
-  params: GetPullExternalContextParams,
+  params?: GetPullExternalContextParams,
 ) => {
   const normalizedParams = new URLSearchParams();
 
@@ -145,7 +145,7 @@ export const getGetPullExternalContextUrl = (
  */
 export const getPullExternalContext = async (
   { provider, owner, name, number, sourceId }: GetPullExternalContextPathParameters,
-  params: GetPullExternalContextParams,
+  params?: GetPullExternalContextParams,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<ExternalContextResult> => {
   return orvalFetch<ExternalContextResult>(

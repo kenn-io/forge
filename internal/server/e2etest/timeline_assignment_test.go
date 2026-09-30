@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 type timelineDetailResponse struct {
@@ -162,7 +163,7 @@ func seedAssignmentTimelineItems(t *testing.T, database *db.DB) (int64, int64) {
 	t.Helper()
 	ctx := t.Context()
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	identity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
 	repoID, err := reposeed.Seed(ctx, database, identity)
 	require.NoError(t, err)
 

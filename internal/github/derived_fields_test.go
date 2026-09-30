@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 // TestCarryMergeRequestDerivedFieldsPersistence proves the carry semantics on
@@ -44,7 +45,7 @@ func TestCarryMergeRequestDerivedFieldsPersistence(t *testing.T) {
 			now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
 			repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 				Platform: "github", PlatformHost: "github.com",
-				PlatformRepoID: 1, Owner: "owner", Name: "repo",
+				Key: platform.RepositoryIDKey(1), Owner: "owner", Name: "repo",
 				RepoPath: "owner/repo",
 			})
 			require.NoError(err)

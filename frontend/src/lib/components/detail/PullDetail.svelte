@@ -131,6 +131,14 @@
     resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
   import type { WorkflowDefinition, WorkflowRepositoryRef } from "../../stores/workflow-actions.svelte.js";
+  import {
+    repositoryKeyAllows,
+    repositoryKeyFromWire,
+    repositoryKeyString,
+    repositoryKeyToWire,
+    sameRepositoryKey,
+    type RepositoryKey,
+  } from "../../api/repository-key.js";
 
   type ChipTrailing = ComponentProps<typeof Chip>["trailing"];
 
@@ -174,7 +182,7 @@
       owner,
       name,
       number,
-      { provider, platformHost, platformRepoId, repoPath },
+      { provider, platformHost, repositoryKey, repoPath },
       {
         onFailure: (message) => {
           if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
@@ -237,7 +245,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: number | undefined;
+    repositoryKey?: RepositoryKey | undefined;
     repoPath: string;
     hideTabs?: boolean;
     hideWorkspaceAction?: boolean;
@@ -262,7 +270,7 @@
     number,
     provider,
     platformHost,
-    platformRepoId,
+    repositoryKey,
     repoPath,
     hideTabs = false,
     hideWorkspaceAction = false,
@@ -280,7 +288,7 @@
   const routeRef = $derived({
     provider,
     platformHost,
-    platformRepoId,
+    repositoryKey,
     owner,
     name,
     repoPath,
@@ -577,7 +585,7 @@
       resolvedPlatformHost(provider, d.repo?.platform_host) !==
         resolvedPlatformHost(provider, platformHost) ||
       d.repo?.repo_path !== repoPath ||
-      (!!platformRepoId && d.repo?.platform_repo_id !== platformRepoId)
+      !repositoryKeyAllows(repositoryKey, repositoryKeyFromWire(d.repo))
     );
   });
 
@@ -586,7 +594,7 @@
   // URLs may omit the repository ID; the matching detail supplies its verified identity.
   const mutationRef = $derived({
     ...routeRef,
-    platformRepoId: platformRepoId ?? (detailMismatch ? undefined : detailStore.getDetail()?.repo.platform_repo_id),
+    repositoryKey: repositoryKey ?? (detailMismatch ? undefined : repositoryKeyFromWire(detailStore.getDetail()?.repo)),
   });
 
   // Same comparison shape as PRListView's detailMatchesSelected, but
@@ -606,7 +614,7 @@
       resolvedPlatformHost(identity.provider, detail.repo?.platform_host) ===
         resolvedPlatformHost(identity.provider, identity.platformHost) &&
       detail.repo?.repo_path === identity.repoPath &&
-      (!platformRepoId || detail.repo?.platform_repo_id === platformRepoId)
+      repositoryKeyAllows(repositoryKey, repositoryKeyFromWire(detail.repo))
     );
   }
 
@@ -629,7 +637,7 @@
             detailStore.refreshPendingCI(owner, name, number, {
               provider,
               platformHost,
-              platformRepoId,
+              repositoryKey,
               repoPath,
               workflowApprovalSync,
             });
@@ -648,7 +656,7 @@
   });
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
-  let lastDetailLoadPlatformRepoId: number | undefined;
+  let lastDetailLoadRepositoryKey: RepositoryKey | undefined;
   let lastDetailLoadAutoSync: DetailSyncMode | undefined;
   let lastDetailLoadWorkflowApprovalSync: boolean | undefined;
 
@@ -658,7 +666,7 @@
     const requestNumber = number;
     const requestProvider = provider;
     const requestPlatformHost = platformHost;
-    const requestPlatformRepoId = platformRepoId;
+    const requestRepositoryKey = repositoryKey;
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     const requestWorkflowApprovalSync = workflowApprovalSync;
@@ -666,12 +674,12 @@
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)
-      || lastDetailLoadPlatformRepoId !== requestPlatformRepoId
+      || !sameRepositoryKey(lastDetailLoadRepositoryKey, requestRepositoryKey)
       || lastDetailLoadAutoSync !== requestAutoSync
       || lastDetailLoadWorkflowApprovalSync !== requestWorkflowApprovalSync;
     if (shouldLoad) {
       lastDetailLoadIdentity = requestIdentity;
-      lastDetailLoadPlatformRepoId = requestPlatformRepoId;
+      lastDetailLoadRepositoryKey = requestRepositoryKey;
       lastDetailLoadAutoSync = requestAutoSync;
       lastDetailLoadWorkflowApprovalSync = requestWorkflowApprovalSync;
     }
@@ -686,7 +694,7 @@
             workflowApprovalSync: requestWorkflowApprovalSync,
             provider: requestProvider,
             platformHost: requestPlatformHost,
-            platformRepoId: requestPlatformRepoId,
+            repositoryKey: requestRepositoryKey,
             repoPath: requestRepoPath,
           },
         );
@@ -698,7 +706,7 @@
         {
           provider: requestProvider,
           platformHost: requestPlatformHost,
-          platformRepoId: requestPlatformRepoId,
+          repositoryKey: requestRepositoryKey,
           repoPath: requestRepoPath,
         },
       );
@@ -741,20 +749,20 @@
   // would discard an in-flight create's success and re-enable the button
   // for a duplicate request.
   let lastResetIdentity: WorkspaceItemIdentity | null = null;
-  let lastResetPlatformRepoId: number | undefined;
+  let lastResetRepositoryKey: RepositoryKey | undefined;
   $effect(() => {
     // Reset for another provider/host/item or a replacement repository at the same route.
     const current = $state.snapshot(itemIdentity);
-    const currentPlatformRepoId = mutationRef.platformRepoId;
+    const currentRepositoryKey = mutationRef.repositoryKey;
     if (lastResetIdentity !== null && identityEquals(lastResetIdentity, current)
-      && (currentPlatformRepoId === undefined || lastResetPlatformRepoId === undefined
-        || lastResetPlatformRepoId === currentPlatformRepoId)) {
+      && (currentRepositoryKey === undefined || lastResetRepositoryKey === undefined
+        || sameRepositoryKey(lastResetRepositoryKey, currentRepositoryKey))) {
       // Detail hydration and reload gaps do not replace a verified repository.
-      lastResetPlatformRepoId = currentPlatformRepoId ?? lastResetPlatformRepoId;
+      lastResetRepositoryKey = currentRepositoryKey ?? lastResetRepositoryKey;
       return;
     }
     lastResetIdentity = current;
-    lastResetPlatformRepoId = currentPlatformRepoId;
+    lastResetRepositoryKey = currentRepositoryKey;
     manualRefreshGeneration += 1;
     manualRefreshPending = false;
     mutationRouteGeneration = untrack(() => mutationRouteGeneration) + 1;
@@ -1032,7 +1040,7 @@
       || failedRef.owner !== routeRef.owner
       || failedRef.name !== routeRef.name
       || failedRef.repoPath !== routeRef.repoPath
-      || failedRef.platformRepoId !== mutationRef.platformRepoId
+      || !sameRepositoryKey(failedRef.repositoryKey, mutationRef.repositoryKey)
     ) return false;
     conflictReviewedHead = failedHeadSha ?? detailHeadSha;
     stateConflict = reason;
@@ -1070,12 +1078,12 @@
     const reason = stateConflict;
     if (!reason || conflictRefreshBusy) return;
     const requestID = ++conflictRefreshRequestID;
-    const routeKey = `${provider}\n${platformHost}\n${repoPath}\n${owner}\n${name}\n${number}\n${mutationRef.platformRepoId}`;
+    const routeKey = `${provider}\n${platformHost}\n${repoPath}\n${owner}\n${name}\n${number}\n${mutationRef.repositoryKey ? repositoryKeyString(mutationRef.repositoryKey) : ""}`;
     const reviewedHeadAtConflict = conflictReviewedHead;
     conflictRefreshBusy = true;
     conflictRefreshError = null;
     const finish = (refreshed: boolean): void => {
-      const currentRouteKey = `${provider}\n${platformHost}\n${repoPath}\n${owner}\n${name}\n${number}\n${mutationRef.platformRepoId}`;
+      const currentRouteKey = `${provider}\n${platformHost}\n${repoPath}\n${owner}\n${name}\n${number}\n${mutationRef.repositoryKey ? repositoryKeyString(mutationRef.repositoryKey) : ""}`;
       if (requestID !== conflictRefreshRequestID || routeKey !== currentRouteKey) return;
       if (stateConflict !== reason) {
         conflictRefreshBusy = false;
@@ -1369,11 +1377,11 @@
       if (actionMenuTriggerEl === button) actionMenuTriggerEl = undefined;
     };
   };
-  const workflowPlatformRepoId = $derived(
-    !stalePR ? detailStore.getDetail()?.repo.platform_repo_id : undefined,
+  const workflowRepositoryKey = $derived(
+    !stalePR ? repositoryKeyFromWire(detailStore.getDetail()?.repo) : undefined,
   );
   const workflowRef = $derived<WorkflowRepositoryRef | null>(
-    workflowPlatformRepoId ? { ...routeRef, platformRepoId: workflowPlatformRepoId } : null,
+    workflowRepositoryKey ? { ...routeRef, repositoryKey: workflowRepositoryKey } : null,
   );
   const workflowCatalogDemandEnabled = $derived(
     workflowRef !== null
@@ -1771,7 +1779,7 @@
     detailStore.refreshDetailOnly(owner, name, number, {
       provider,
       platformHost,
-      platformRepoId,
+      repositoryKey,
       repoPath,
     });
   }
@@ -1797,7 +1805,7 @@
     const requestBody = {
       provider: requestIdentity.provider,
       platform_host: detail.platform_host,
-      ...(detail.repo.platform_repo_id ? { platform_repo_id: detail.repo.platform_repo_id } : {}),
+      ...repositoryKeyToWire(repositoryKeyFromWire(detail.repo)),
       owner: detail.repo_owner,
       name: detail.repo_name,
       mr_number: detail.merge_request.Number,
@@ -2182,6 +2190,7 @@
   {@const detailLoadError = detailStore.getDetailError() !== null}
   {#if detail !== null}
     {@const pr = detail.merge_request}
+    {@const detailRepositoryKey = repositoryKeyFromWire(detail.repo)}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     {@const canReadyAction = pr.State === "open" && pr.IsDraft && capabilities.ready_for_review}
     {@const canApproveAction = pr.State === "open" && capabilities.review_mutation}
@@ -2629,7 +2638,7 @@
           {number}
           {provider}
           {platformHost}
-          platformRepoId={mutationRef.platformRepoId}
+          repositoryKey={mutationRef.repositoryKey}
           {repoPath}
           size="sm"
           disabled={stalePR || headActionsBlocked || approveGate.unavailable}
@@ -3268,7 +3277,7 @@
           {number}
           {provider}
           {platformHost}
-          platformRepoId={d.repo.platform_repo_id}
+          repositoryKey={repositoryKeyFromWire(d.repo)}
           {repoPath}
           prTitle={p.Title}
           prBody={p.Body}
@@ -3292,8 +3301,8 @@
         />
       {/if}
 
-      {#if detail.repo?.platform_repo_id}
-        <ExternalContextCards ref={routeRef} platformRepoId={detail.repo.platform_repo_id} {number} headSha={detail.platform_head_sha} />
+      {#if detailRepositoryKey}
+        <ExternalContextCards ref={routeRef} repositoryKey={detailRepositoryKey} {number} headSha={detail.platform_head_sha} />
       {/if}
 
       <!-- PR body -->
@@ -3406,7 +3415,7 @@
           {number}
           provider={detail.repo.provider}
           platformHost={detail.platform_host}
-          platformRepoId={detail.repo.platform_repo_id}
+          repositoryKey={repositoryKeyFromWire(detail.repo)}
           repoPath={detail.repo.repo_path}
           disabled={stalePR || !capabilities.comment_mutation || addCommentGate.unavailable}
           editorDisabled={detailMismatch || !capabilities.comment_mutation || addCommentGate.unavailable}
@@ -3441,7 +3450,7 @@
             orderingEvents={timelineEvents}
             {provider}
             {platformHost}
-            {platformRepoId}
+            {repositoryKey}
             repoOwner={owner}
             repoName={name}
             {repoPath}

@@ -52,7 +52,7 @@ func (r repository) normalize() (platform.Repository, error) {
 	if !ok || owner == "" || name == "" || err != nil || id == uuid.Nil() {
 		return platform.Repository{}, missing("repository identity")
 	}
-	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: platform.DefaultBitbucketHost, Owner: owner, Name: name, RepoPath: r.FullName, BitbucketRepositoryUUID: id, WebURL: r.Links.HTML.Href, DefaultBranch: r.MainBranch.Name, CloneURL: r.cloneURL()}
+	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: platform.DefaultBitbucketHost, Owner: owner, Name: name, RepoPath: r.FullName, Key: platform.RepositoryUUIDKey(id), WebURL: r.Links.HTML.Href, DefaultBranch: r.MainBranch.Name, CloneURL: r.cloneURL()}
 	return platform.Repository{Ref: ref, Description: r.Description, Private: r.Private, DefaultBranch: ref.DefaultBranch, WebURL: ref.WebURL, CloneURL: ref.CloneURL, CreatedAt: r.Created.UTC(), UpdatedAt: r.Updated.UTC(), Features: platform.RepositoryFeatures{IssuesEnabled: new(r.HasIssues), MergeRequestsEnabled: new(true)}}, nil
 }
 

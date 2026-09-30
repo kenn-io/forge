@@ -488,6 +488,53 @@ describe("activity store collapse state", () => {
     ]);
   });
 
+  it("loads a Bitbucket Cloud thread by repository UUID", async () => {
+    const uuid = "0f5d2a4e-3b1c-4d7e-9a8b-1c2d3e4f5a6b";
+    const subject = {
+      ...itemActivity(7),
+      repo: {
+        provider: "bitbucket",
+        platform_host: "bitbucket.org",
+        platform_repo_id: 0,
+        bitbucket_repository_uuid: uuid,
+        repo_path: "team/cloud-app",
+        owner: "team",
+        name: "cloud-app",
+        host: "bitbucket.org",
+      },
+    } satisfies ActivitySubject;
+    const threadQueries: Array<Record<string, unknown>> = [];
+    const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
+      if (path === "/activity/thread-events") threadQueries.push(options.params?.query ?? {});
+      return {
+        data: {
+          items: [],
+          item_activity: path === "/activity/thread-events" ? [] : [subject],
+          workspace_activity: [],
+          capped: false,
+          event_cursor: "hidden:9",
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    store.toggleThreadItem(`bitbucket|bitbucket.org|uuid|${uuid}:pr:7`);
+    await vi.waitFor(() => expect(threadQueries).toHaveLength(1));
+
+    expect(threadQueries[0]).toMatchObject({
+      provider: "bitbucket",
+      platform_host: "bitbucket.org",
+      bitbucket_repository_uuid: uuid,
+      item_type: "pr",
+      item_number: 7,
+    });
+    expect(threadQueries[0]).not.toHaveProperty("platform_repo_id");
+  });
+
   it("reloads expanded threads after a foreground collapsed-scope reload", async () => {
     const repo = {
       provider: "github",

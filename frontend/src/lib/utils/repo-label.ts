@@ -1,7 +1,9 @@
+import { repositoryKeyString, type RepositoryKey } from "../api/repository-key.js";
+
 export interface RepoLabelIdentity {
   provider: string;
   platformHost: string;
-  platformRepoId?: number | undefined;
+  repositoryKey?: RepositoryKey | undefined;
   owner: string;
   name: string;
   repoPath?: string | undefined;
@@ -90,8 +92,8 @@ export function repoPath(repo: RepoLabelIdentity): string {
 
 export function repoIdentityKey(repo: RepoLabelIdentity): string {
   const prefix = [repo.provider.trim(), repo.platformHost.trim()];
-  return repo.platformRepoId
-    ? [...prefix, "id", String(repo.platformRepoId)].join("|")
+  return repo.repositoryKey
+    ? [...prefix, repositoryKeyString(repo.repositoryKey)].join("|")
     : [...prefix, repoPath(repo)].join("|");
 }
 

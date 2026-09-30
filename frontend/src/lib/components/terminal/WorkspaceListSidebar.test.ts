@@ -17,6 +17,7 @@ import {
   isWorkspaceRepoCatalogReady,
   setWorkspaceRepoCatalog,
 } from "../../stores/workspace-repo-catalog.svelte.js";
+import { repositoryKeyToWire, type RepositoryKey } from "../../api/repository-key.js";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -59,7 +60,7 @@ interface WorkspaceFixtureOptions {
   id: string;
   provider: string;
   platformHost: string;
-  platformRepoId?: number;
+  repositoryKey?: RepositoryKey | undefined;
   owner: string;
   name: string;
   number: number;
@@ -100,7 +101,7 @@ function workspaceFixture({
   id,
   provider,
   platformHost,
-  platformRepoId,
+  repositoryKey,
   owner,
   name,
   number,
@@ -135,7 +136,7 @@ function workspaceFixture({
     repo: {
       provider,
       platform_host: platformHost,
-      platform_repo_id: platformRepoId,
+      ...repositoryKeyToWire(repositoryKey),
       owner,
       name,
       repo_path: `${owner}/${name}`,
@@ -271,7 +272,7 @@ describe("WorkspaceListSidebar", () => {
     const ref = {
       provider: "github",
       platformHost: "github.com",
-      platformRepoId: 7001,
+      repositoryKey: { kind: "id", id: 7001 },
       owner: "acme",
       name: "api",
       repoPath: "acme/api",
@@ -305,14 +306,14 @@ describe("WorkspaceListSidebar", () => {
       workspaceFixture({
         ...ref,
         id: "replacement-repo",
-        platformRepoId: 7999,
+        repositoryKey: { kind: "id", id: 7999 },
         number: 1,
         title: "Replacement repository",
       }),
       workspaceFixture({
         ...ref,
         id: "unverified-repo",
-        platformRepoId: undefined,
+        repositoryKey: undefined,
         number: 1,
         title: "Unverified repository",
       }),

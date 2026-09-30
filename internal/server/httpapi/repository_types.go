@@ -76,25 +76,45 @@ type RepoOperations struct {
 	ApplyReviewSuggestion OperationAvailability `json:"apply_review_suggestion"`
 }
 
+// RepoRefResponse describes a repository in API responses. Its JSON
+// encoding is RepoRefResponseJSON.
 type RepoRefResponse struct {
-	Provider                string                       `json:"provider"`
-	PlatformHost            string                       `json:"platform_host"`
-	PlatformRepoID          int64                        `json:"platform_repo_id,omitempty"`
-	BitbucketRepositoryUUID uuid.UUID                    `json:"bitbucket_repository_uuid,omitzero"`
-	RepoPath                string                       `json:"repo_path"`
-	Owner                   string                       `json:"owner"`
-	Name                    string                       `json:"name"`
-	DefaultBranch           string                       `json:"default_branch,omitempty"`
-	Capabilities            ProviderCapabilitiesResponse `json:"capabilities"`
-	Operations              *RepoOperations              `json:"operations,omitempty"`
+	Provider      string                       `json:"provider"`
+	PlatformHost  string                       `json:"platform_host"`
+	Key           platform.RepositoryKey       `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+	RepoPath      string                       `json:"repo_path"`
+	Owner         string                       `json:"owner"`
+	Name          string                       `json:"name"`
+	DefaultBranch string                       `json:"default_branch,omitempty"`
+	Capabilities  ProviderCapabilitiesResponse `json:"capabilities"`
+	Operations    *RepoOperations              `json:"operations,omitempty"`
+}
+
+func (r RepoRefResponse) MarshalJSON() ([]byte, error) {
+	type plain RepoRefResponse
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *RepoRefResponse) UnmarshalJSON(data []byte) error {
+	type plain RepoRefResponse
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 // Identity returns the response's canonical repository identity. It is
-// incomplete when the response carries no provider repository ID.
+// incomplete when the response carries no provider repository key.
 func (r RepoRefResponse) Identity() platform.RepositoryIdentity {
 	return platform.RepositoryIdentity{
-		Provider: r.Provider, PlatformHost: r.PlatformHost,
-		PlatformRepoID:          r.PlatformRepoID,
-		BitbucketRepositoryUUID: r.BitbucketRepositoryUUID,
+		Provider: r.Provider, PlatformHost: r.PlatformHost, Key: r.Key,
 	}.Canonical()
+}
+
+// RequestRepositoryKey decodes a request's flat platform_repo_id and
+// bitbucket_repository_uuid values into a repository key, reporting a
+// malformed pair as a validation error on field.
+func RequestRepositoryKey(field string, id int64, repositoryUUID uuid.UUID) (platform.RepositoryKey, error) {
+	key, err := platform.RepositoryKeyFromWire(id, repositoryUUID)
+	if err != nil {
+		return platform.RepositoryKey{}, Validation(field, err.Error())
+	}
+	return key, nil
 }

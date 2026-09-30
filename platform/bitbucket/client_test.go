@@ -23,7 +23,7 @@ func (credential) Invalidate(string)                       {}
 
 var cloudRepositoryUUID = uuid.MustParse("11111111-1111-4111-8111-111111111111")
 
-var ref = platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.org", Owner: "team", Name: "widgets", BitbucketRepositoryUUID: cloudRepositoryUUID}
+var ref = platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.org", Owner: "team", Name: "widgets", Key: platform.RepositoryUUIDKey(cloudRepositoryUUID)}
 
 func client(t *testing.T, token string, handle func(*http.Request) (int, string)) *bitbucket.Client {
 	assert := assert.New(t)
@@ -59,7 +59,7 @@ func TestRepositoryIdentityAndAuthentication(t *testing.T) {
 			})
 			r, err := c.GetRepository(t.Context(), ref)
 			require.NoError(t, err)
-			assert.Equal(cloudRepositoryUUID, r.Ref.BitbucketRepositoryUUID)
+			assert.Equal(platform.RepositoryUUIDKey(cloudRepositoryUUID), r.Ref.Key)
 			assert.Equal("new-team/renamed", r.Ref.RepoPath)
 			assert.Equal("https://bitbucket.org/new-team/renamed.git", r.CloneURL)
 			assert.Equal("main", r.DefaultBranch)
@@ -69,14 +69,14 @@ func TestRepositoryIdentityAndAuthentication(t *testing.T) {
 
 func TestRepositoryLookupWithoutSavedIdentity(t *testing.T) {
 	lookup := ref
-	lookup.BitbucketRepositoryUUID = uuid.Nil()
+	lookup.Key = platform.RepositoryKey{}
 	c := client(t, "secret", func(r *http.Request) (int, string) {
 		assert.Equal(t, "/2.0/repositories/team/widgets", r.URL.Path)
 		return 200, `{"uuid":"{11111111-1111-4111-8111-111111111111}","full_name":"team/widgets"}`
 	})
 	repo, err := c.GetRepository(t.Context(), lookup)
 	require.NoError(t, err)
-	assert.Equal(t, cloudRepositoryUUID, repo.Ref.BitbucketRepositoryUUID)
+	assert.Equal(t, platform.RepositoryUUIDKey(cloudRepositoryUUID), repo.Ref.Key)
 }
 
 func TestRepositoryLookupRejectsDifferentIdentity(t *testing.T) {
@@ -86,7 +86,7 @@ func TestRepositoryLookupRejectsDifferentIdentity(t *testing.T) {
 	})
 	repo, err := c.GetRepository(t.Context(), ref)
 	require.ErrorIs(t, err, platform.ErrProviderContract)
-	assert.Equal(t, uuid.Nil(), repo.Ref.BitbucketRepositoryUUID)
+	assert.Equal(t, platform.RepositoryKey{}, repo.Ref.Key)
 }
 
 func TestPullPaginationAndNormalization(t *testing.T) {

@@ -18,22 +18,22 @@ func TestSyncRepoFollowsBitbucketCloudRenameByUUID(t *testing.T) {
 	d := openTestDB(t)
 	repositoryUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
 	original, err := d.ObserveRepository(ctx, db.RepoIdentity{
-		Platform:                "bitbucket",
-		PlatformHost:            platform.DefaultBitbucketHost,
-		BitbucketRepositoryUUID: repositoryUUID,
-		Owner:                   "team",
-		Name:                    "widgets",
-		RepoPath:                "team/widgets",
+		Platform:     "bitbucket",
+		PlatformHost: platform.DefaultBitbucketHost,
+		Key:          platform.RepositoryUUIDKey(repositoryUUID),
+		Owner:        "team",
+		Name:         "widgets",
+		RepoPath:     "team/widgets",
 	})
 	require.NoError(err)
 	originalID := original.Repository.ID
 	repo := RepoRef{
-		Platform:                platform.KindBitbucket,
-		PlatformHost:            platform.DefaultBitbucketHost,
-		Owner:                   "team",
-		Name:                    "widgets",
-		RepoPath:                "team/widgets",
-		BitbucketRepositoryUUID: repositoryUUID,
+		Platform:     platform.KindBitbucket,
+		PlatformHost: platform.DefaultBitbucketHost,
+		Owner:        "team",
+		Name:         "widgets",
+		RepoPath:     "team/widgets",
+		Key:          platform.RepositoryUUIDKey(repositoryUUID),
 	}
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{
@@ -41,12 +41,12 @@ func TestSyncRepoFollowsBitbucketCloudRenameByUUID(t *testing.T) {
 			host: platform.DefaultBitbucketHost,
 		},
 		repository: platform.Repository{Ref: platform.RepoRef{
-			Platform:                platform.KindBitbucket,
-			Host:                    platform.DefaultBitbucketHost,
-			Owner:                   "team",
-			Name:                    "gadgets",
-			RepoPath:                "team/gadgets",
-			BitbucketRepositoryUUID: repositoryUUID,
+			Platform: platform.KindBitbucket,
+			Host:     platform.DefaultBitbucketHost,
+			Owner:    "team",
+			Name:     "gadgets",
+			RepoPath: "team/gadgets",
+			Key:      platform.RepositoryUUIDKey(repositoryUUID),
 		}},
 	}
 	registry, err := platform.NewRegistry(provider)
@@ -60,10 +60,9 @@ func TestSyncRepoFollowsBitbucketCloudRenameByUUID(t *testing.T) {
 	require.Len(repos, 1)
 	assert.Equal(originalID, repos[0].ID)
 	assert.Equal("gadgets", repos[0].Name)
-	assert.Equal(int64(0), repos[0].PlatformRepoID)
-	assert.Equal(repositoryUUID, repos[0].BitbucketRepositoryUUID)
+	assert.Equal(platform.RepositoryUUIDKey(repositoryUUID), repos[0].Key)
 	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	assert.Equal("gadgets", tracked[0].Name)
-	assert.Equal(repositoryUUID, tracked[0].BitbucketRepositoryUUID)
+	assert.Equal(platform.RepositoryUUIDKey(repositoryUUID), tracked[0].Key)
 }

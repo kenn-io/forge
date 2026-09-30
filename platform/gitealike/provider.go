@@ -130,8 +130,8 @@ func (p *Provider) GetRepository(
 ) (platform.Repository, error) {
 	var repo RepositoryDTO
 	var err error
-	if ref.PlatformID != 0 {
-		repo, err = p.transport.GetRepositoryByID(ctx, ref.PlatformID)
+	if id, ok := ref.Key.ID(); ok {
+		repo, err = p.transport.GetRepositoryByID(ctx, id)
 	} else {
 		repo, err = p.transport.GetRepository(ctx, ref.Owner, ref.Name)
 	}

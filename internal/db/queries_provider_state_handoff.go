@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/platform"
 )
 
 const (
@@ -18,12 +20,25 @@ const (
 	ProviderStateWorkflowState = "workflow_state"
 )
 
+// ProviderStateRepository names the repository a handed-off provider state
+// record belongs to. Its JSON encoding is ProviderStateRepositoryJSON; the
+// content digest hashes that encoding, so integer keys keep their digests.
 type ProviderStateRepository struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Owner          string `json:"owner"`
-	Name           string `json:"name"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid"`
+	Owner        string                 `json:"owner"`
+	Name         string                 `json:"name"`
+}
+
+func (r ProviderStateRepository) MarshalJSON() ([]byte, error) {
+	type plain ProviderStateRepository
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *ProviderStateRepository) UnmarshalJSON(data []byte) error {
+	type plain ProviderStateRepository
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 type ProviderStateReviewComment struct {
@@ -90,8 +105,8 @@ func (repository ProviderStateRepository) validate() error {
 		{name: "owner", value: repository.Owner},
 		{name: "name", value: repository.Name},
 	}
-	if repository.PlatformRepoID <= 0 {
-		return errors.New("provider state repository platform_repo_id is required")
+	if repository.Key.IsZero() {
+		return errors.New("provider state repository key is required")
 	}
 	for _, field := range fields {
 		if strings.TrimSpace(field.value) == "" {
@@ -171,14 +186,14 @@ func providerStateCanonicalDigest(value any) (string, error) {
 func providerStateRepositoryKey(repository ProviderStateRepository) string {
 	return strings.ToLower(strings.TrimSpace(repository.Provider)) + "\x00" +
 		strings.ToLower(strings.TrimSpace(repository.PlatformHost)) + "\x00" +
-		strconv.FormatInt(repository.PlatformRepoID, 10)
+		repository.Key.String()
 }
 
 func canonicalProviderStateDigestRepository(repository ProviderStateRepository) ProviderStateRepository {
 	return ProviderStateRepository{
-		Provider:       strings.ToLower(strings.TrimSpace(repository.Provider)),
-		PlatformHost:   strings.ToLower(strings.TrimSpace(repository.PlatformHost)),
-		PlatformRepoID: repository.PlatformRepoID,
+		Provider:     strings.ToLower(strings.TrimSpace(repository.Provider)),
+		PlatformHost: strings.ToLower(strings.TrimSpace(repository.PlatformHost)),
+		Key:          repository.Key,
 	}
 }
 
@@ -219,10 +234,10 @@ func (payload ProviderStateWorkflowPayload) Record() (ProviderStateRecord, error
 }
 
 func providerStateRepositoryFromRow(
-	provider, host string, platformRepoID int64, owner, name string,
+	provider, host string, key platform.RepositoryKey, owner, name string,
 ) ProviderStateRepository {
 	return ProviderStateRepository{
-		Provider: provider, PlatformHost: host, PlatformRepoID: platformRepoID,
+		Provider: provider, PlatformHost: host, Key: key,
 		Owner: owner, Name: name,
 	}
 }
@@ -247,12 +262,14 @@ func (d *DB) listReviewDraftStateForHandoff(
 ) ([]ProviderStateRecord, error) {
 	rows, err := d.roQueryContext(ctx, `
 		SELECT draft.id, r.platform, r.platform_host, r.platform_repo_id,
+		       r.bitbucket_repository_uuid,
 		       r.owner, r.name, mr.number, draft.body, draft.action
 		FROM forge_mr_review_drafts draft
 		JOIN forge_merge_requests mr ON mr.id = draft.merge_request_id
 		JOIN forge_repos r ON r.id = mr.repo_id
-		WHERE r.platform_repo_id > 0
-		ORDER BY r.platform, r.platform_host, r.platform_repo_id, mr.number`)
+		WHERE (r.platform_repo_id > 0 OR r.bitbucket_repository_uuid <> '')
+		ORDER BY r.platform, r.platform_host, r.platform_repo_id,
+		         r.bitbucket_repository_uuid, mr.number`)
 	if err != nil {
 		return nil, fmt.Errorf("list review drafts for provider state handoff: %w", err)
 	}
@@ -261,15 +278,16 @@ func (d *DB) listReviewDraftStateForHandoff(
 	for rows.Next() {
 		var draftID int64
 		var provider, host, owner, name string
-		var repoID int64
+		var repoKey platform.RepositoryKey
 		var payload ProviderStateReviewDraftPayload
+		keyID, keyUUID := repositoryKeyColumns(&repoKey)
 		if err := rows.Scan(
-			&draftID, &provider, &host, &repoID, &owner, &name,
+			&draftID, &provider, &host, keyID, keyUUID, &owner, &name,
 			&payload.PullNumber, &payload.Body, &payload.Action,
 		); err != nil {
 			return nil, err
 		}
-		payload.Repository = providerStateRepositoryFromRow(provider, host, repoID, owner, name)
+		payload.Repository = providerStateRepositoryFromRow(provider, host, repoKey, owner, name)
 		comments, err := d.ListMRReviewDraftComments(ctx, draftID)
 		if err != nil {
 			return nil, err
@@ -299,16 +317,17 @@ func (d *DB) listWorkflowStateForHandoff(
 ) ([]ProviderStateRecord, error) {
 	rows, err := d.roQueryContext(ctx, `
 		SELECT r.platform, r.platform_host, r.platform_repo_id,
+		       r.bitbucket_repository_uuid,
 		       r.owner, r.name, state.item_type, state.item_number,
 		       state.status, state.updated_source, state.updated_actor,
 		       state.updated_reason
 		FROM forge_item_workflow_state state
 		JOIN forge_repos r ON r.id = state.repo_id
-		WHERE r.platform_repo_id > 0
+		WHERE (r.platform_repo_id > 0 OR r.bitbucket_repository_uuid <> '')
 		  AND (state.status <> 'new' OR trim(state.updated_source) <> ''
 		       OR trim(state.updated_actor) <> '' OR trim(state.updated_reason) <> '')
 		ORDER BY r.platform, r.platform_host, r.platform_repo_id,
-		         state.item_type, state.item_number`)
+		         r.bitbucket_repository_uuid, state.item_type, state.item_number`)
 	if err != nil {
 		return nil, fmt.Errorf("list workflow state for provider state handoff: %w", err)
 	}
@@ -316,16 +335,17 @@ func (d *DB) listWorkflowStateForHandoff(
 	var records []ProviderStateRecord
 	for rows.Next() {
 		var provider, host, owner, name string
-		var repoID int64
+		var repoKey platform.RepositoryKey
 		var payload ProviderStateWorkflowPayload
+		keyID, keyUUID := repositoryKeyColumns(&repoKey)
 		if err := rows.Scan(
-			&provider, &host, &repoID, &owner, &name,
+			&provider, &host, keyID, keyUUID, &owner, &name,
 			&payload.ItemType, &payload.ItemNumber, &payload.Status,
 			&payload.UpdatedSource, &payload.UpdatedActor, &payload.UpdatedReason,
 		); err != nil {
 			return nil, err
 		}
-		payload.Repository = providerStateRepositoryFromRow(provider, host, repoID, owner, name)
+		payload.Repository = providerStateRepositoryFromRow(provider, host, repoKey, owner, name)
 		record, err := payload.Record()
 		if err != nil {
 			return nil, fmt.Errorf("canonicalize workflow state for provider state handoff: %w", err)
@@ -353,13 +373,16 @@ func lookupProviderStateRepoTx(
 	repository ProviderStateRepository,
 ) (int64, error) {
 	var repoID int64
-	err := tx.QueryRowContext(ctx, `
-		SELECT id FROM forge_repos
-		WHERE platform = ? AND platform_host = ? AND platform_repo_id = ?
-		  AND lifecycle_state = 'active'`,
+	args := []any{
 		strings.ToLower(strings.TrimSpace(repository.Provider)),
 		strings.ToLower(strings.TrimSpace(repository.PlatformHost)),
-		repository.PlatformRepoID,
+	}
+	err := tx.QueryRowContext(ctx, `
+		SELECT id FROM forge_repos
+		WHERE platform = ? AND platform_host = ? AND `+
+		repositoryKeyCondition("", repository.Key, &args)+`
+		  AND lifecycle_state = 'active'`,
+		args...,
 	).Scan(&repoID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, errors.New("provider state repository is not present on the hub")

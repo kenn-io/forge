@@ -283,7 +283,7 @@ command = ["codex", "--full-auto"]
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
 	assert.Equal("acme", resp.Repos[0].Owner)
-	assert.Equal(testutil.FixtureRepoID("acme", "widget"), resp.Repos[0].PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), resp.Repos[0].Key)
 	assert.Equal(1, resp.Repos[0].MatchedRepoCount)
 	assert.True(resp.Repos[0].IssuePRReferences)
 	assert.Equal("threaded", resp.Activity.ViewMode)
@@ -944,7 +944,7 @@ name = "*"
 	for i, name := range []string{"widget", "tools"} {
 		repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: testutil.FixtureRepoID("acme", name), Owner: "acme", Name: name,
+			Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", name)), Owner: "acme", Name: name,
 		})
 		require.NoError(err)
 		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -1455,12 +1455,12 @@ name = "*"
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 			PlatformHost: "github.com", RepoPath: "acme/tools-new",
-			PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
+			Key: platform.RepositoryIDKey(1001), ConfiguredRepoPath: "acme/tools",
 		},
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "widgets",
 			PlatformHost: "github.com", RepoPath: "acme/widgets",
-			PlatformRepoID: 1003,
+			Key: platform.RepositoryIDKey(1003),
 		},
 	})
 
@@ -1511,7 +1511,7 @@ name = "*"
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
+		Key: platform.RepositoryIDKey(1001), ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// Removing the exact entry keeps the repo through the glob, but its
@@ -1569,7 +1569,7 @@ platform_host = "ghe.example.com"
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
+		Key: platform.RepositoryIDKey(1001), ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// The remaining acme/tools entry lives on a different host; it cannot
@@ -1627,7 +1627,7 @@ name = "tools"
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
+		Key: platform.RepositoryIDKey(1001), ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// The remaining acme/tools entry shares the host but belongs to a
@@ -2482,7 +2482,7 @@ func TestHandleBulkAddReposPersistsGitLabProviderIdentity(t *testing.T) {
 		Owner:         "Group/Subgroup",
 		Name:          "Project",
 		RepoPath:      "Group/Subgroup/Project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/Group/Subgroup/Project",
 		CloneURL:      "https://gitlab.example.com/Group/Subgroup/Project.git",
 		DefaultBranch: "main",
@@ -2547,23 +2547,23 @@ func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) 
 	local := spokeapi.SettingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
 		{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 			WorktreeBasePath: "/work/widget",
 		},
 		{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1002, Owner: "acme", Name: "reused",
+			Key: platform.RepositoryIDKey(1002), Owner: "acme", Name: "reused",
 			WorktreeBasePath: "/work/old",
 		},
 	}}
 	provider := spokeapi.SettingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
 		{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1001, Owner: "acme-renamed", Name: "widget-renamed",
+			Key: platform.RepositoryIDKey(1001), Owner: "acme-renamed", Name: "widget-renamed",
 		},
 		{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1003, Owner: "acme", Name: "reused",
+			Key: platform.RepositoryIDKey(1003), Owner: "acme", Name: "reused",
 		},
 	}}
 
@@ -2630,12 +2630,12 @@ port = 8091
 	assert.True(syncer.IsTrackedRepoOnHost("Team", "Service", "gitea.example.com"))
 
 	ref := platform.RepoRef{
-		Platform:   platform.KindGitea,
-		Host:       "gitea.example.com",
-		Owner:      "Team",
-		Name:       "Service",
-		RepoPath:   "Team/Service",
-		PlatformID: 6262,
+		Platform: platform.KindGitea,
+		Host:     "gitea.example.com",
+		Owner:    "Team",
+		Name:     "Service",
+		RepoPath: "Team/Service",
+		Key:      platform.RepositoryIDKey(6262),
 	}
 	dbRepo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)

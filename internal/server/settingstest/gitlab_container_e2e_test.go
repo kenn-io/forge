@@ -175,7 +175,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 	assert.GreaterOrEqual(anonymousResp.StatusCode, 400)
 	markdownImage, err := client.GetMarkdownImage(ctx, platform.RepoRef{
 		Platform: platform.KindGitLab, Host: manifest.Host,
-		RepoPath: manifest.RepoPath, PlatformID: manifest.ProjectID,
+		RepoPath: manifest.RepoPath, Key: platform.RepositoryIDKey(manifest.ProjectID),
 	}, attachmentURL)
 	require.NoError(err)
 	assert.Equal("image/png", markdownImage.ContentType)
@@ -186,15 +186,15 @@ func TestGitLabContainerE2E(t *testing.T) {
 
 	database := dbtest.Open(t)
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		PlatformHost:   manifest.Host,
-		Owner:          manifest.Owner,
-		Name:           manifest.Name,
-		RepoPath:       manifest.RepoPath,
-		PlatformRepoID: manifest.ProjectID,
-		WebURL:         manifest.WebURL,
-		CloneURL:       manifest.CloneURL,
-		DefaultBranch:  manifest.DefaultBranch,
+		Platform:      platform.KindGitLab,
+		PlatformHost:  manifest.Host,
+		Owner:         manifest.Owner,
+		Name:          manifest.Name,
+		RepoPath:      manifest.RepoPath,
+		Key:           platform.RepositoryIDKey(manifest.ProjectID),
+		WebURL:        manifest.WebURL,
+		CloneURL:      manifest.CloneURL,
+		DefaultBranch: manifest.DefaultBranch,
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -206,12 +206,12 @@ func TestGitLabContainerE2E(t *testing.T) {
 	require.NoError(syncer.SyncIssue(ctx, manifest.Owner, manifest.Name, manifest.IssueIID))
 
 	repoRow, err := database.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   manifest.Host,
-		PlatformRepoID: manifest.ProjectID,
-		Owner:          manifest.Owner,
-		Name:           manifest.Name,
-		RepoPath:       manifest.RepoPath,
+		Platform:     "gitlab",
+		PlatformHost: manifest.Host,
+		Key:          platform.RepositoryIDKey(manifest.ProjectID),
+		Owner:        manifest.Owner,
+		Name:         manifest.Name,
+		RepoPath:     manifest.RepoPath,
 	})
 	require.NoError(err)
 	require.NotNil(repoRow)

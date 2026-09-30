@@ -1085,8 +1085,8 @@ func TestProductionStartupRoutesTwoOwnersThroughSyncAndMutationAPI(t *testing.T)
 	}, caps.Archive)
 
 	repos := []github.RepoRef{
-		{Platform: "github", PlatformHost: host, PlatformRepoID: 101, Owner: "org-a", Name: "one"},
-		{Platform: "github", PlatformHost: host, PlatformRepoID: 202, Owner: "org-b", Name: "two"},
+		{Platform: "github", PlatformHost: host, Key: platform.RepositoryIDKey(101), Owner: "org-a", Name: "one"},
+		{Platform: "github", PlatformHost: host, Key: platform.RepositoryIDKey(202), Owner: "org-b", Name: "two"},
 	}
 	syncer := github.NewSyncerWithRegistry(
 		startup.registry, database, nil, repos, time.Minute,
@@ -1203,14 +1203,14 @@ func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {
 	assert.Equal("user:123", uncoveredRoute.writeIdentity.Principal)
 
 	repos := []github.RepoRef{
-		{Owner: "acme", Name: "covered", PlatformHost: "github.com", PlatformRepoID: 1001},
-		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com", PlatformRepoID: 1002},
+		{Owner: "acme", Name: "covered", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001)},
+		{Owner: "acme", Name: "uncovered", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002)},
 	}
 	for _, repo := range repos {
 		_, err := reposeed.Seed(
 			t.Context(), database, db.RepoIdentity{
 				Platform: "github", PlatformHost: repo.PlatformHost,
-				PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
+				Key: repo.Key, Owner: repo.Owner, Name: repo.Name,
 			},
 		)
 		require.NoError(err)

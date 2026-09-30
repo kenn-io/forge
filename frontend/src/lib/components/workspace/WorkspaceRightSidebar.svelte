@@ -7,6 +7,7 @@
   import WorkspaceReviewsPanel from "./WorkspaceReviewsPanel.svelte";
   import KataLinksPanel from "../kata/KataLinksPanel.svelte";
   import { defaultWorkspaceDiffBase, type WorkspaceDiffGitState } from "./workspace-diff-default.js";
+  import type { RepositoryKey } from "../../api/repository-key.js";
 
   interface Props {
     activeTab: "diff" | "pr" | "issue" | "reviews" | "kata";
@@ -15,7 +16,7 @@
     workspaceHostKey?: string | undefined;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: number | undefined;
+    repositoryKey?: RepositoryKey | undefined;
     repoOwner: string;
     repoName: string;
     repoPath: string;
@@ -40,7 +41,7 @@
     workspaceHostKey = undefined,
     provider,
     platformHost,
-    platformRepoId,
+    repositoryKey,
     repoOwner,
     repoName,
     repoPath,
@@ -72,7 +73,7 @@
     ownerItemNumber > 0 &&
     hasRepo
   );
-  const workspaceRepo = $derived({ provider, platformHost, platformRepoId, owner: repoOwner, name: repoName, repoPath });
+  const workspaceRepo = $derived({ provider, platformHost, repositoryKey, owner: repoOwner, name: repoName, repoPath });
   const displayedPR = $derived(viewedPR ?? (hasPR && associatedPRNumber !== null ? { ...workspaceRepo, number: associatedPRNumber } : null));
   const displayedIssue = $derived(viewedIssue ?? (hasIssue ? { ...workspaceRepo, number: ownerItemNumber } : null));
   const hasMergeTarget = $derived(

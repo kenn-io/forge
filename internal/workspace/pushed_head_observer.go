@@ -298,7 +298,7 @@ func (o *PushedHeadObserver) workspaceRepository(
 			return nil, err
 		}
 		if launchSpec != nil {
-			if repo.PlatformRepoID != launchSpec.Repository.PlatformRepoID {
+			if repo.Key != launchSpec.Repository.Key {
 				return nil, errors.New("workspace launch repository identity changed")
 			}
 			repo.Platform = launchSpec.Repository.Provider
@@ -313,14 +313,14 @@ func (o *PushedHeadObserver) workspaceRepository(
 	}
 	if launchSpec != nil {
 		return &db.Repo{
-			Platform:       launchSpec.Repository.Provider,
-			PlatformHost:   launchSpec.Repository.PlatformHost,
-			PlatformRepoID: launchSpec.Repository.PlatformRepoID,
-			Owner:          launchSpec.Repository.Owner,
-			Name:           launchSpec.Repository.Name,
-			RepoPath:       launchSpec.Repository.Owner + "/" + launchSpec.Repository.Name,
-			CloneURL:       launchSpec.Repository.CloneURL,
-			DefaultBranch:  launchSpec.Repository.DefaultBranch,
+			Platform:      launchSpec.Repository.Provider,
+			PlatformHost:  launchSpec.Repository.PlatformHost,
+			Key:           launchSpec.Repository.Key,
+			Owner:         launchSpec.Repository.Owner,
+			Name:          launchSpec.Repository.Name,
+			RepoPath:      launchSpec.Repository.Owner + "/" + launchSpec.Repository.Name,
+			CloneURL:      launchSpec.Repository.CloneURL,
+			DefaultBranch: launchSpec.Repository.DefaultBranch,
 		}, nil
 	}
 	repo, err := o.db.GetRepoByIdentity(ctx, db.RepoIdentity{

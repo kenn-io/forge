@@ -53,7 +53,7 @@ func (h *Handler) SeedRefreshRepos(ctx context.Context) {
 		return
 	}
 	for _, repo := range repos {
-		if h.descriptors != nil && repo.PlatformRepoID == 0 {
+		if h.descriptors != nil && repo.Key.IsZero() {
 			continue
 		}
 		if strings.TrimSpace(repo.CloneURL) == "" {

@@ -2,11 +2,35 @@ package spokeapi
 
 import (
 	"go.kenn.io/forge/internal/mcpserver"
+	"go.kenn.io/forge/platform"
 )
 
 type FederationWorkflowRepositoryIdentity mcpserver.RepositoryIdentity
 
 type FederationWorkflowItemIdentity mcpserver.ItemIdentity
+
+// The federation workflow identities are defined types, which do not inherit
+// the MCP types' JSON methods; each flattens its repository key the same way.
+
+func (r FederationWorkflowRepositoryIdentity) MarshalJSON() ([]byte, error) {
+	type plain FederationWorkflowRepositoryIdentity
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *FederationWorkflowRepositoryIdentity) UnmarshalJSON(data []byte) error {
+	type plain FederationWorkflowRepositoryIdentity
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
+}
+
+func (i FederationWorkflowItemIdentity) MarshalJSON() ([]byte, error) {
+	type plain FederationWorkflowItemIdentity
+	return platform.MarshalKeyedJSON(plain(i))
+}
+
+func (i *FederationWorkflowItemIdentity) UnmarshalJSON(data []byte) error {
+	type plain FederationWorkflowItemIdentity
+	return platform.UnmarshalKeyedJSON(data, (*plain)(i))
+}
 
 type FederationWorkflowState mcpserver.WorkflowState
 

@@ -7,6 +7,7 @@ export type ListActivityThreadEventsParams = {
   provider?: string;
   platform_host?: string;
   platform_repo_id?: number;
+  bitbucket_repository_uuid?: string;
   item_type?: ListActivityThreadEventsItemType;
   /**
    * @minimum 1

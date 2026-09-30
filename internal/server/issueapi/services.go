@@ -151,7 +151,7 @@ func (s *Handler) overlayLocalIssueDetail(
 	identity := providerplane.ItemIdentity{
 		Repository: platform.RepositoryIdentity{
 			Provider: detail.Repo.Provider, PlatformHost: detail.Repo.PlatformHost,
-			PlatformRepoID: detail.Repo.PlatformRepoID,
+			Key: detail.Repo.Key,
 		},
 		ItemType: "issue", ItemNumber: detail.Issue.Number,
 	}.Canonical()
@@ -176,9 +176,9 @@ func issueWorkspaceOverlays(
 		}
 		identity := providerplane.ItemIdentity{
 			Repository: platform.RepositoryIdentity{
-				Provider:       activity.Subject.Platform,
-				PlatformHost:   activity.Subject.PlatformHost,
-				PlatformRepoID: activity.Subject.PlatformRepoID,
+				Provider:     activity.Subject.Platform,
+				PlatformHost: activity.Subject.PlatformHost,
+				Key:          activity.Subject.RepoKey,
 			},
 			ItemType: "issue", ItemNumber: key.ItemNumber,
 		}.Canonical()
@@ -194,7 +194,7 @@ func issueResponseIdentity(row IssueResponse) providerplane.ItemIdentity {
 	return providerplane.ItemIdentity{
 		Repository: platform.RepositoryIdentity{
 			Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost,
-			PlatformRepoID: row.Repo.PlatformRepoID,
+			Key: row.Repo.Key,
 		},
 		ItemType: "issue", ItemNumber: row.Number,
 	}.Canonical()

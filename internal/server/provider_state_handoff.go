@@ -90,15 +90,14 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 	var repo *db.ActiveRepo
 	if request.ForCreation {
 		repo, err = s.repoResolver.LookupSelection(
-			ctx, route.Provider, route.PlatformHost, route.Owner, route.Name, request.PlatformRepoID,
+			ctx, route.Provider, route.PlatformHost, route.Owner, route.Name, request.RepoKey,
 		)
 		if err != nil {
 			return db.WorkspaceLaunchSpec{}, httpapi.ProviderRouteLookupError(err)
 		}
-	} else if platformRepoID := request.PlatformRepoID; platformRepoID != 0 {
+	} else if !request.RepoKey.IsZero() {
 		entry, lookupErr := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
-			Provider: route.Provider, PlatformHost: route.PlatformHost,
-			PlatformRepoID: platformRepoID,
+			Provider: route.Provider, PlatformHost: route.PlatformHost, Key: request.RepoKey,
 		})
 		if lookupErr != nil {
 			return db.WorkspaceLaunchSpec{}, httpapi.ProviderRouteLookupError(lookupErr)
@@ -128,7 +127,7 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: repo.Platform, PlatformHost: repo.PlatformHost,
-			PlatformRepoID: repo.PlatformRepoID, BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
+			Key:   repo.Key,
 			Owner: repo.Owner, Name: repo.Name,
 			CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch,
 		},
@@ -165,8 +164,8 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 		)
 		launchPull := &db.WorkspaceLaunchPull{
 			HeadBranch: pull.HeadBranch, SnapshotRevision: pull.SnapshotRevision,
-			BaseRepoID: repo.PlatformRepoID, BaseBranch: pull.BaseBranch,
-			BaseOID: pull.PlatformBaseSHA, HeadOID: pull.PlatformHeadSHA,
+			BaseBranch: pull.BaseBranch,
+			BaseOID:    pull.PlatformBaseSHA, HeadOID: pull.PlatformHeadSHA,
 		}
 		switch {
 		case headRepo == nil:
@@ -221,15 +220,15 @@ func (s *Server) RefreshWorkspaceLaunchSpec(
 			Owner:        current.Repository.Owner,
 			Name:         current.Repository.Name,
 		},
-		PlatformRepoID: current.Repository.PlatformRepoID,
-		ItemType:       current.ItemType, ItemNumber: current.ItemNumber,
+		RepoKey:  current.Repository.Key,
+		ItemType: current.ItemType, ItemNumber: current.ItemNumber,
 		ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
 	})
 	if err != nil {
 		return db.WorkspaceLaunchSpec{}, err
 	}
-	if current.Repository.PlatformRepoID != 0 &&
-		refreshed.Repository.PlatformRepoID != current.Repository.PlatformRepoID {
+	if !current.Repository.Key.IsZero() &&
+		refreshed.Repository.Key != current.Repository.Key {
 		return db.WorkspaceLaunchSpec{}, httpapi.Conflict(
 			httpapi.CodeConflict,
 			"workspace repository identity changed while refreshing launch facts",

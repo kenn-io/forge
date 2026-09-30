@@ -172,7 +172,7 @@ func cloneResult(result ExternalContextResult) ExternalContextResult {
 
 func (r *Runner) invalidate(sourceID string, pull PullRequest) {
 	matches := func(key readKey) bool {
-		return key.sourceID == sourceID && key.pull.Provider == pull.Provider && key.pull.PlatformHost == pull.PlatformHost && key.pull.PlatformRepoID == pull.PlatformRepoID && key.pull.Number == pull.Number
+		return key.sourceID == sourceID && key.pull.Provider == pull.Provider && key.pull.PlatformHost == pull.PlatformHost && key.pull.RepoKey == pull.RepoKey && key.pull.Number == pull.Number
 	}
 	for key := range r.cache {
 		if matches(key) {

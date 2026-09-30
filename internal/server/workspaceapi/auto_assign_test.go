@@ -195,8 +195,8 @@ func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
 				Provider: string(platform.KindGitLab), PlatformHost: "git.example.test",
 				Owner: "acme", Name: "widget",
 			},
-			PlatformRepoID: repo.PlatformRepoID,
-			ItemType:       db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+			RepoKey:  repo.Key,
+			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
 		},
 	))
 	assert.Equal([]string{"reviewer", "maintainer"}, provider.pullAssigned)
@@ -237,7 +237,7 @@ func TestAutoAssignmentPreservesRepositoryIdentityAfterRouteReuse(t *testing.T) 
 				database := dbtest.Open(t)
 				now := time.Now().UTC()
 				original := db.RepoIdentity{
-					Platform: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: 101,
+					Platform: "gitlab", PlatformHost: "git.example.test", Key: platform.RepositoryIDKey(101),
 					Owner: "acme", Name: "widget",
 				}
 				entry, err := database.ObserveRepository(t.Context(), original)
@@ -245,8 +245,8 @@ func TestAutoAssignmentPreservesRepositoryIdentityAfterRouteReuse(t *testing.T) 
 				require.NotNil(entry)
 				originalID := entry.Repository.ID
 				request := ProviderWorkspaceItemRequest{
-					Repository:     providerplane.RepositoryRoute{Provider: "gitlab", PlatformHost: "git.example.test", Owner: "acme", Name: "widget"},
-					PlatformRepoID: 101, ItemType: itemType, ItemNumber: 7,
+					Repository: providerplane.RepositoryRoute{Provider: "gitlab", PlatformHost: "git.example.test", Owner: "acme", Name: "widget"},
+					RepoKey:    platform.RepositoryIDKey(101), ItemType: itemType, ItemNumber: 7,
 				}
 				if renamed {
 					original.Name = "renamed"
@@ -254,7 +254,7 @@ func TestAutoAssignmentPreservesRepositoryIdentityAfterRouteReuse(t *testing.T) 
 					require.NoError(err)
 				}
 				replacement, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
-					Platform: "gitlab", PlatformHost: "git.example.test", PlatformRepoID: 202, Owner: "acme", Name: "widget",
+					Platform: "gitlab", PlatformHost: "git.example.test", Key: platform.RepositoryIDKey(202), Owner: "acme", Name: "widget",
 				})
 				require.NoError(err)
 				require.NotNil(replacement)
@@ -292,7 +292,7 @@ func TestAutoAssignmentPreservesRepositoryIdentityAfterRouteReuse(t *testing.T) 
 
 				if renamed {
 					require.NoError(err)
-					assert.Equal(int64(101), provider.assignedRepo.PlatformID)
+					assert.Equal(platform.RepositoryIDKey(101), provider.assignedRepo.Key)
 					assert.Equal("acme/renamed", provider.assignedRepo.RepoPath)
 				} else {
 					require.Error(err)

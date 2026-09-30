@@ -5,11 +5,11 @@
 export interface ExternalContextActionRequest {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  bitbucket_repository_uuid?: string;
   /**
    * @minLength 1
    * @maxLength 128
    */
   head_sha: string;
-  /** @minimum 1 */
-  platform_repo_id: number;
+  platform_repo_id?: number;
 }

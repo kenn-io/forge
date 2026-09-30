@@ -61,6 +61,13 @@
     recordWorkspaceCreated,
     resolveControllerlessWorkspaceRef,
   } from "../../stores/workspace-create-pending.svelte.js";
+  import {
+    repositoryKeyAllows,
+    repositoryKeyFromWire,
+    repositoryKeyToWire,
+    sameRepositoryKey,
+    type RepositoryKey,
+  } from "../../api/repository-key.js";
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
@@ -93,7 +100,7 @@
       owner,
       name,
       number,
-      { provider, platformHost, platformRepoId, repoPath },
+      { provider, platformHost, repositoryKey, repoPath },
       {
         onFailure: (message) => {
           if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
@@ -156,7 +163,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: number | undefined;
+    repositoryKey?: RepositoryKey | undefined;
     repoPath: string;
     hideStaleWhileLoading?: boolean;
     autoSync?: IssueDetailSyncMode;
@@ -171,7 +178,7 @@
     number,
     provider,
     platformHost,
-    platformRepoId,
+    repositoryKey,
     repoPath,
     hideStaleWhileLoading = false,
     autoSync = "background",
@@ -183,7 +190,7 @@
   const routeRef = $derived({
     provider,
     platformHost,
-    platformRepoId,
+    repositoryKey,
     owner,
     name,
     repoPath,
@@ -231,7 +238,7 @@
     // detail that is in fact current.
     return canonicalProvider(d.repo?.provider ?? "") !== canonicalProvider(provider)
       || d.repo?.repo_path !== repoPath
-      || (!!platformRepoId && d.repo?.platform_repo_id !== platformRepoId)
+      || !repositoryKeyAllows(repositoryKey, repositoryKeyFromWire(d.repo))
       || resolvedPlatformHost(provider, d.repo?.platform_host)
         !== resolvedPlatformHost(provider, platformHost);
   });
@@ -256,7 +263,7 @@
       resolvedPlatformHost(identity.provider, detail.repo?.platform_host) ===
         resolvedPlatformHost(identity.provider, identity.platformHost) &&
       detail.repo?.repo_path === identity.repoPath &&
-      (!platformRepoId || detail.repo?.platform_repo_id === platformRepoId)
+      repositoryKeyAllows(repositoryKey, repositoryKeyFromWire(detail.repo))
     );
   }
 
@@ -287,7 +294,7 @@
   }
 
   let lastDetailLoadIdentity: WorkspaceItemIdentity | null = null;
-  let lastDetailLoadPlatformRepoId: number | undefined;
+  let lastDetailLoadRepositoryKey: RepositoryKey | undefined;
   let lastDetailLoadAutoSync: IssueDetailSyncMode | undefined;
 
   $effect(() => {
@@ -296,18 +303,18 @@
     const requestNumber = number;
     const requestProvider = provider;
     const requestPlatformHost = platformHost;
-    const requestPlatformRepoId = platformRepoId;
+    const requestRepositoryKey = repositoryKey;
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     const requestIdentity = $state.snapshot(itemIdentity);
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)
-      || lastDetailLoadPlatformRepoId !== requestPlatformRepoId
+      || !sameRepositoryKey(lastDetailLoadRepositoryKey, requestRepositoryKey)
       || lastDetailLoadAutoSync !== requestAutoSync;
     if (shouldLoad) {
       lastDetailLoadIdentity = requestIdentity;
-      lastDetailLoadPlatformRepoId = requestPlatformRepoId;
+      lastDetailLoadRepositoryKey = requestRepositoryKey;
       lastDetailLoadAutoSync = requestAutoSync;
     }
     untrack(() => {
@@ -320,7 +327,7 @@
             sync: requestAutoSync,
             provider: requestProvider,
             platformHost: requestPlatformHost,
-            platformRepoId: requestPlatformRepoId,
+            repositoryKey: requestRepositoryKey,
             repoPath: requestRepoPath,
           },
         );
@@ -332,7 +339,7 @@
         {
           provider: requestProvider,
           platformHost: requestPlatformHost,
-          platformRepoId: requestPlatformRepoId,
+          repositoryKey: requestRepositoryKey,
           repoPath: requestRepoPath,
         },
       );
@@ -788,7 +795,7 @@
     issues.loadIssueDetail(owner, name, number, {
       provider,
       platformHost,
-      platformRepoId,
+      repositoryKey,
       repoPath,
     });
   }
@@ -840,7 +847,7 @@
       repoPath: requestIdentity.repoPath,
     };
     const requestBody = {
-      ...(detail.repo.platform_repo_id ? { platform_repo_id: detail.repo.platform_repo_id } : {}),
+      ...repositoryKeyToWire(repositoryKeyFromWire(detail.repo)),
       ...(options.gitHeadRef ? { git_head_ref: options.gitHeadRef.trim() } : {}),
       ...(options.reuseExistingBranch ? { reuse_existing_branch: true } : {}),
       ...(options.reuseExistingDirectory ? { reuse_existing_directory: true } : {}),
@@ -859,7 +866,7 @@
             {
               provider: requestIdentity.provider,
               platform_host: requestIdentity.platformHost ?? "github.com",
-              ...(detail.repo.platform_repo_id ? { platform_repo_id: detail.repo.platform_repo_id } : {}),
+              ...repositoryKeyToWire(repositoryKeyFromWire(detail.repo)),
               owner: requestIdentity.owner,
               name: requestIdentity.name,
               issue_number: requestIdentity.number,
@@ -1568,7 +1575,7 @@
           {number}
           provider={detail.repo.provider}
           platformHost={detail.platform_host}
-          platformRepoId={detail.repo.platform_repo_id}
+          repositoryKey={repositoryKeyFromWire(detail.repo)}
           repoPath={detail.repo.repo_path}
           disabled={staleIssue || !capabilities.comment_mutation || addCommentGate.unavailable}
           editorDisabled={detailMismatch || !capabilities.comment_mutation || addCommentGate.unavailable}
@@ -1597,7 +1604,7 @@
             events={detail.events ?? []}
             {provider}
             {platformHost}
-            {platformRepoId}
+            {repositoryKey}
             repoOwner={owner}
             repoName={name}
             {repoPath}

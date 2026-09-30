@@ -146,6 +146,7 @@
   import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
   import type { PRDetailActionInput } from "./lib/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
+  import { repositoryKeyFromWire } from "./lib/api/repository-key.js";
 
   type DocsRouteState = {
     mode: "docs";
@@ -981,7 +982,7 @@
       itemType,
       provider: item.repo.provider,
       platformHost: item.repo.platform_host,
-      platformRepoId: item.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(item.repo),
       repoPath: item.repo.repo_path,
       owner: item.repo.owner,
       name: item.repo.name,
@@ -1182,7 +1183,7 @@
         appStores.detail.loadDetail(sel.owner, sel.name, sel.number, {
           provider: sel.provider,
           platformHost: sel.platformHost,
-          platformRepoId: detail.repo.platform_repo_id,
+          repositoryKey: repositoryKeyFromWire(detail.repo),
           repoPath: sel.repoPath,
         });
       },

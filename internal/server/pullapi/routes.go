@@ -2366,7 +2366,7 @@ func (s *Handler) resolvePullCloneSnapshot(
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
-	if repo.PlatformRepoID != repository.PlatformRepoID {
+	if repo.Key != repository.Key {
 		return nil, httpapi.Upstream(
 			"hub descriptor did not resolve to its stable repository",
 			repository.Provider, repository.PlatformHost,

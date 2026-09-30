@@ -42,15 +42,18 @@ type ArchiveSnapshotReference struct {
 func LoadArchiveSnapshotRepository(ctx context.Context, tx *sql.Tx, identity RepoIdentity) (*Repo, error) {
 	identity = canonicalRepoIdentity(identity)
 	var repo Repo
-	uuidText := bitbucketRepositoryUUIDText(identity.BitbucketRepositoryUUID)
+	args := []any{identity.Platform, identity.PlatformHost}
+	match := "repo_path_key=?"
+	if identity.Key.IsZero() {
+		args = append(args, identity.RepoPathKey)
+	} else {
+		match = repositoryKeyCondition("", identity.Key, &args)
+	}
+	keyID, keyUUID := repositoryKeyColumns(&repo.Key)
 	err := tx.QueryRowContext(ctx, `SELECT id,platform,platform_host,platform_repo_id,bitbucket_repository_uuid,owner,name,repo_path,web_url,clone_url,default_branch,last_sync_completed_at,COALESCE(last_sync_error,'')
- FROM forge_repos WHERE lifecycle_state='active' AND platform=? AND platform_host=?
- AND ((? > 0 AND platform_repo_id=?) OR (? <> '' AND bitbucket_repository_uuid=?) OR (? = 0 AND ? = '' AND repo_path_key=?))`,
-		identity.Platform, identity.PlatformHost,
-		identity.PlatformRepoID, identity.PlatformRepoID,
-		uuidText, uuidText,
-		identity.PlatformRepoID, uuidText, identity.RepoPathKey,
-	).Scan(&repo.ID, &repo.Platform, &repo.PlatformHost, &repo.PlatformRepoID, bitbucketUUIDScanner{&repo.BitbucketRepositoryUUID}, &repo.Owner, &repo.Name, &repo.RepoPath, &repo.WebURL, &repo.CloneURL, &repo.DefaultBranch, &repo.LastSyncCompletedAt, &repo.LastSyncError)
+ FROM forge_repos WHERE lifecycle_state='active' AND platform=? AND platform_host=? AND `+match,
+		args...,
+	).Scan(&repo.ID, &repo.Platform, &repo.PlatformHost, keyID, keyUUID, &repo.Owner, &repo.Name, &repo.RepoPath, &repo.WebURL, &repo.CloneURL, &repo.DefaultBranch, &repo.LastSyncCompletedAt, &repo.LastSyncError)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

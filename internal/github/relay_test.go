@@ -57,9 +57,9 @@ func TestRelaySubscriptionStatusAndRecentActivity(t *testing.T) {
 	budget := NewSyncBudget(1)
 	budget.Spend(1) // Received events must be visible even while refreshes wait for budget.
 	repos := []RepoRef{
-		{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "team", Name: "project"},
-		{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformRepoID: 1003, Archived: true},
-		{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", PlatformRepoID: 123},
+		{Platform: platform.KindGitHub, PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001), Owner: "team", Name: "project"},
+		{Platform: platform.KindGitHub, PlatformHost: "github.com", Key: platform.RepositoryIDKey(1003), Archived: true},
+		{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Key: platform.RepositoryIDKey(123)},
 	}
 	syncer := NewSyncer(nil, database, nil, repos, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 	assert.Nil(syncer.Status().Relay)
@@ -173,7 +173,7 @@ func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {
 	database := openTestDB(t)
 	ctx := t.Context()
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002, Owner: "team", Name: "project",
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002), Owner: "team", Name: "project",
 	})
 	require.NoError(err)
 	for _, number := range []int{7, 8} {
@@ -190,7 +190,7 @@ func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {
 	}
 	budget := NewSyncBudget(100)
 	// A cached catalog ref need not carry GitHub's numeric REST ID.
-	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformRepoID: 1002, Owner: "team", Name: "project"}
+	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002), Owner: "team", Name: "project"}
 	syncer := NewSyncer(map[string]Client{"github.com": provider}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 	syncer.SetAirplaneMode(true)
 	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: 1002, Target: activityrelay.PullRequestChecks, Number: 7}
@@ -234,9 +234,9 @@ func TestRelayWorkflowNotificationBypassesBackgroundReserve(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := openTestDB(t)
-	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "team", Name: "project"}
+	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001), Owner: "team", Name: "project"}
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
-		Platform: "github", PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
+		Platform: "github", PlatformHost: repo.PlatformHost, Key: repo.Key, Owner: repo.Owner, Name: repo.Name,
 	})
 	require.NoError(err)
 	quota := NewQuotaRegistry()
@@ -253,7 +253,7 @@ func TestRelayWorkflowNotificationBypassesBackgroundReserve(t *testing.T) {
 	})
 	for _, target := range []string{activityrelay.RepositoryRefs, activityrelay.WorkflowRuns} {
 		require.NoError(syncer.refreshRelayHint(WithSyncBudget(t.Context()), activityrelay.Hint{
-			Provider: "github", Host: repo.PlatformHost, RepositoryID: repo.PlatformRepoID, Target: target,
+			Provider: "github", Host: repo.PlatformHost, RepositoryID: 1001, Target: target,
 		}))
 	}
 	assert.Equal([]string{activityrelay.WorkflowRuns}, notified, "only the notification bypasses the background quota gate")
@@ -267,8 +267,8 @@ func TestRelayChecksRefreshImmediatelyAndKeepEventsDuringRefresh(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		database := openTestDB(t)
-		repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "team", Name: "project"}
-		repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "team", Name: "project"})
+		repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001), Owner: "team", Name: "project"}
+		repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001), Owner: "team", Name: "project"})
 		require.NoError(err)
 		_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
 			RepoID: repoID, Number: 7, PlatformID: 7, PlatformExternalID: "pr-7", State: "open", PlatformHeadSHA: "abcdef", CIStatus: "pending",
@@ -334,7 +334,7 @@ func TestRelayQueueCoalescesAndSkipsDisabledSync(t *testing.T) {
 	assert.Equal([]activityrelay.Hint{hint, other}, []activityrelay.Hint{first, second})
 
 	database := openTestDB(t)
-	syncer := NewSyncer(nil, database, nil, []RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformRepoID: 1002, Owner: "team", Name: "project"}}, time.Minute, nil, nil)
+	syncer := NewSyncer(nil, database, nil, []RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002), Owner: "team", Name: "project"}}, time.Minute, nil, nil)
 	syncer.DisableSync()
 	syncer.receiveRelayHint(hint, 1, queue)
 	_, ok = queue.pop()
@@ -380,9 +380,9 @@ func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {
 			assert := assert.New(t)
 			ctx := WithSyncBudget(t.Context())
 			database := openTestDB(t)
-			repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", PlatformRepoID: 1002, Owner: "team", Name: "project"}
+			repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002), Owner: "team", Name: "project"}
 			_, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-				Platform: "github", PlatformHost: "github.com", PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
+				Platform: "github", PlatformHost: "github.com", Key: repo.Key, Owner: repo.Owner, Name: repo.Name,
 			})
 			require.NoError(err)
 			budget := NewSyncBudgetWithEssentialReserve(100)
@@ -402,7 +402,7 @@ func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {
 			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 			var refreshed int
 			syncer.SetOnRelayRefresh(func(context.Context, int64, string, int) { refreshed++ })
-			hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: repo.PlatformRepoID, Target: target}
+			hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: 1002, Target: target}
 
 			// Both the reserve alone and less than the conservative refresh cost
 			// must leave the hint to ordinary syncing, without any provider I/O.
@@ -430,7 +430,7 @@ func TestRelayDisabledIssueRespectsCooldown(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
-	ref := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "team", Name: "project", PlatformRepoID: testRepoID("team", "project")}
+	ref := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "team", Name: "project", Key: platform.RepositoryIDKey(testRepoID("team", "project"))}
 	_, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", ref.Owner, ref.Name))
 	require.NoError(err)
 	provider := &partialFailureMock{}
@@ -442,7 +442,7 @@ func TestRelayDisabledIssueRespectsCooldown(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": provider}, database, nil, []RepoRef{ref}, time.Minute, nil, testBudget(1000))
 	now := time.Now().UTC()
 	syncer.now = func() time.Time { return now }
-	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: ref.PlatformRepoID, Target: activityrelay.Issue, Number: 9}
+	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: testRepoID("team", "project"), Target: activityrelay.Issue, Number: 9}
 	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
 	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
 	assert.Equal(1, calls, "disabled features must not be retried for every hint")

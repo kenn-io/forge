@@ -87,7 +87,7 @@ func (s *Handlers) getMarkdownImageFor(
 // previous occupant's private bytes.
 func markdownImageCacheKey(ref platform.RepoRef, source string) string {
 	return string(ref.Platform) + "\x00" + ref.Host + "\x00" +
-		strconv.FormatInt(ref.PlatformID, 10) + "\x00" + source
+		ref.Key.String() + "\x00" + source
 }
 
 func markdownImageCacheControl(image platform.MarkdownImage) string {

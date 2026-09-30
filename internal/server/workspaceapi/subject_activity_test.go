@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 func TestWorkspaceSubjectSnapshotKeepsReferenceAndCachedActivity(t *testing.T) {
@@ -136,7 +137,7 @@ func TestWorkspaceSubjectSnapshotUsesStableRepositoryIdentityAfterRename(t *test
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return now }
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = 1001
+	identity.Key = platform.RepositoryIDKey(1001)
 	repository, err := h.db.ObserveRepository(t.Context(), identity)
 	require.NoError(err)
 	repoID := repository.Repository.ID
@@ -153,7 +154,7 @@ func TestWorkspaceSubjectSnapshotUsesStableRepositoryIdentityAfterRename(t *test
 		WorktreePath: t.TempDir(), TmuxSession: "ws-renamed", Status: "ready",
 	}))
 	renamedIdentity := db.GitHubRepoIdentity("github.com", "acme", "gadget")
-	renamedIdentity.PlatformRepoID = identity.PlatformRepoID
+	renamedIdentity.Key = identity.Key
 	_, err = h.db.ObserveRepository(
 		t.Context(), renamedIdentity,
 	)
@@ -174,7 +175,7 @@ func TestWorkspaceSubjectSnapshotKeepsStableIdentityAcrossReusedRoute(t *testing
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return now }
 	oldIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	oldIdentity.PlatformRepoID = 1002
+	oldIdentity.Key = platform.RepositoryIDKey(1002)
 	oldRepo, err := h.db.ObserveRepository(t.Context(), oldIdentity)
 	require.NoError(err)
 	_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -191,11 +192,11 @@ func TestWorkspaceSubjectSnapshotKeepsStableIdentityAcrossReusedRoute(t *testing
 	}))
 
 	renamedIdentity := db.GitHubRepoIdentity("github.com", "acme", "gadget")
-	renamedIdentity.PlatformRepoID = oldIdentity.PlatformRepoID
+	renamedIdentity.Key = oldIdentity.Key
 	_, err = h.db.ObserveRepository(t.Context(), renamedIdentity)
 	require.NoError(err)
 	replacementIdentity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	replacementIdentity.PlatformRepoID = 1003
+	replacementIdentity.Key = platform.RepositoryIDKey(1003)
 	replacement, err := h.db.ObserveRepository(
 		t.Context(), replacementIdentity,
 	)

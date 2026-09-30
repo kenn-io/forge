@@ -74,17 +74,31 @@ type WriteAdmitter interface {
 // hub to issue an immutable workspace launch specification. The
 // provider facts themselves are returned in the specification and are never
 // supplied by a spoke.
+//
+// RepoKey, when set, pins the request to that repository: the hub resolves
+// by key and rejects a route now held by a different repository. Its JSON
+// encoding is WorkspaceLaunchRequestJSON.
 type WorkspaceLaunchRequest struct {
-	Repository      RepositoryRoute `json:"repository"`
-	PlatformRepoID  int64           `json:"platform_repo_id,omitempty"`
-	ItemType        string          `json:"item_type"`
-	ItemNumber      int             `json:"item_number"`
-	ItemKey         string          `json:"item_key,omitempty"`
-	GitHeadRef      string          `json:"git_head_ref,omitempty"`
-	IssueBranchSlug bool            `json:"issue_branch_slug,omitempty"`
+	Repository      RepositoryRoute        `json:"repository"`
+	RepoKey         platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+	ItemType        string                 `json:"item_type"`
+	ItemNumber      int                    `json:"item_number"`
+	ItemKey         string                 `json:"item_key,omitempty"`
+	GitHeadRef      string                 `json:"git_head_ref,omitempty"`
+	IssueBranchSlug bool                   `json:"issue_branch_slug,omitempty"`
 	// ForCreation checks the selected route before creating or reusing a workspace.
 	// Existing workspace refreshes follow their durable repository identity instead.
 	ForCreation bool `json:"for_creation,omitempty"`
+}
+
+func (r WorkspaceLaunchRequest) MarshalJSON() ([]byte, error) {
+	type plain WorkspaceLaunchRequest
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *WorkspaceLaunchRequest) UnmarshalJSON(data []byte) error {
+	type plain WorkspaceLaunchRequest
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 // WorkspaceLaunchSpecResolver is the single authority used to resolve initial
@@ -125,14 +139,14 @@ func ValidateWorkspaceLaunchSpecResponse(
 	if specRoute != canonicalSpecRoute {
 		return errors.New("workspace launch repository route is not canonical")
 	}
-	if request.PlatformRepoID != 0 && spec.Repository.PlatformRepoID != request.PlatformRepoID {
+	if !request.RepoKey.IsZero() && spec.Repository.Key != request.RepoKey {
 		return errors.New("workspace launch repository identity does not match the request")
 	}
 	if canonicalSpecRoute.Provider != requestedRoute.Provider ||
 		canonicalSpecRoute.PlatformHost != requestedRoute.PlatformHost {
 		return errors.New("workspace launch repository route does not match the request")
 	}
-	if (request.PlatformRepoID == 0 &&
+	if (request.RepoKey.IsZero() &&
 		(canonicalSpecRoute.Owner != requestedRoute.Owner ||
 			canonicalSpecRoute.Name != requestedRoute.Name)) ||
 		spec.ItemType != request.ItemType ||

@@ -100,7 +100,7 @@ func SetupGitLabIssueMutatorServer(t *testing.T, createIssueErr error) *server.S
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -139,15 +139,15 @@ func SetupGitLabIssueMutatorServer(t *testing.T, createIssueErr error) *server.S
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "group",
-		Name:           "project",
-		PlatformHost:   "gitlab.example.com",
-		RepoPath:       "group/project",
-		PlatformRepoID: 4242,
-		WebURL:         "https://gitlab.example.com/group/project",
-		CloneURL:       "https://gitlab.example.com/group/project.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "group",
+		Name:          "project",
+		PlatformHost:  "gitlab.example.com",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -245,7 +245,7 @@ func SetupTestServerWithClonesAndServer(t *testing.T) (
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	clones := gitclone.New(bareDir, nil)
 	bare, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), testutil.FixtureRepoID("acme", "widget")),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(t, err)
@@ -366,11 +366,13 @@ func SetupTestServerWithReposAndOptions(
 	repos = append([]ghclient.RepoRef(nil), repos...)
 	for i := range repos {
 		repo := &repos[i]
-		if repo.PlatformRepoID == 0 {
-			repo.PlatformRepoID = testutil.FixtureRepoID(repo.Owner, repo.Name)
+		if repo.Key.IsZero() {
+			repo.Key = platform.RepositoryIDKey(testutil.FixtureRepoID(repo.Owner, repo.Name))
 		}
 		if mock != nil {
-			mock.KnowRoute(repo.PlatformRepoID, repo.Owner, repo.Name)
+			// The GitHub mock serves integer repository IDs.
+			githubID, _ := repo.Key.ID()
+			mock.KnowRoute(githubID, repo.Owner, repo.Name)
 		}
 		platformName := string(repo.Platform)
 		if platformName == "" {
@@ -382,12 +384,12 @@ func SetupTestServerWithReposAndOptions(
 		}
 		_, err := reposeed.Seed(
 			t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
-				Platform:   platform.Kind(platformName),
-				Host:       host,
-				Owner:      repo.Owner,
-				Name:       repo.Name,
-				RepoPath:   repo.RepoPath,
-				PlatformID: repo.PlatformRepoID,
+				Platform: platform.Kind(platformName),
+				Host:     host,
+				Owner:    repo.Owner,
+				Name:     repo.Name,
+				RepoPath: repo.RepoPath,
+				Key:      repo.Key,
 			}),
 		)
 		require.NoError(t, err)

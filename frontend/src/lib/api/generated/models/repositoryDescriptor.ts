@@ -5,6 +5,7 @@
 export interface RepositoryDescriptor {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  bitbucket_repository_uuid?: string;
   clone_url: string;
   default_branch: string;
   name: string;

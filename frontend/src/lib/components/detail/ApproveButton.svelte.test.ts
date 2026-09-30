@@ -194,7 +194,7 @@ describe("ApproveButton", () => {
         repoPath: "acme/widget",
         expectedHeadSha: "reviewed-sha",
         supportedReviewActions: ["comment", "request_changes"],
-        platformRepoId: 7101,
+        repositoryKey: { kind: "id", id: 7101 },
         onheadconflict,
       },
       context: new Map<symbol, unknown>([[STORES_KEY, { detail: detailActions(post), pulls: { loadPulls: vi.fn() } }]]),
@@ -205,7 +205,7 @@ describe("ApproveButton", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
 
     await waitFor(() => expect(onheadconflict).toHaveBeenCalledTimes(1));
-    expect(onheadconflict.mock.calls[0]?.[3]).toMatchObject({ platformRepoId: 7101 });
+    expect(onheadconflict.mock.calls[0]?.[3]).toMatchObject({ repositoryKey: { kind: "id", id: 7101 } });
     expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
     expect(showFlash).not.toHaveBeenCalled();
   });

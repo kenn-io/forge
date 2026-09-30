@@ -50,7 +50,7 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 			DetailLoaded: pull.DetailLoaded, DetailFetchedAt: pull.DetailFetchedAt,
 		}
 		if in.IncludeEvents {
-			detail, err = s.backend.GetPull(ctx, itemIdentityFromRef(pull.itemRef()))
+			detail, err = s.backend.GetPull(ctx, pull.itemKey().itemIdentity())
 			if err != nil {
 				return listPullContextsOutput{}, fmt.Errorf("PR %d context: %w", pull.Number, err)
 			}

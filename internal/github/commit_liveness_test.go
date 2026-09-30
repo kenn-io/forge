@@ -107,13 +107,13 @@ func setupCommitLivenessFixture(t *testing.T) commitLivenessFixture {
 	history := setupLivenessTestHistory(t)
 	database := openTestDB(t)
 	repo := RepoRef{
-		Platform:       platform.KindGitHub,
-		PlatformHost:   "github.com",
-		PlatformRepoID: testRepoID("owner", "repo"),
-		Owner:          "owner",
-		Name:           "repo",
-		RepoPath:       "owner/repo",
-		CloneURL:       history.sourceDir,
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(testRepoID("owner", "repo")),
+		Owner:        "owner",
+		Name:         "repo",
+		RepoPath:     "owner/repo",
+		CloneURL:     history.sourceDir,
 	}
 	repoID, err := reposeed.Seed(t.Context(), database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(t, err)
@@ -963,13 +963,13 @@ func TestCommitLivenessViaFetchProviderMRDetail(t *testing.T) {
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	providerRepo := RepoRef{
-		Platform:       platform.KindForgejo,
-		PlatformHost:   platform.DefaultForgejoHost,
-		PlatformRepoID: 1001,
-		Owner:          "owner",
-		Name:           "repo",
-		RepoPath:       "owner/repo",
-		CloneURL:       h.sourceDir,
+		Platform:     platform.KindForgejo,
+		PlatformHost: platform.DefaultForgejoHost,
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "owner",
+		Name:         "repo",
+		RepoPath:     "owner/repo",
+		CloneURL:     h.sourceDir,
 	}
 	barePath, err := h.manager.ClonePath(
 		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
@@ -1081,16 +1081,16 @@ func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
 	fixture := setupCommitLivenessFixture(t)
 	h := fixture.history
 	providerRepo := RepoRef{
-		Platform:       platform.KindForgejo,
-		PlatformHost:   platform.DefaultForgejoHost,
-		PlatformRepoID: 1001,
-		Owner:          "owner",
-		Name:           "repo",
-		RepoPath:       "owner/repo",
-		CloneURL:       h.sourceDir,
+		Platform:     platform.KindForgejo,
+		PlatformHost: platform.DefaultForgejoHost,
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "owner",
+		Name:         "repo",
+		RepoPath:     "owner/repo",
+		CloneURL:     h.sourceDir,
 	}
 	barePath, err := h.manager.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: providerRepo.PlatformRepoID}),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: providerRepo.Key}),
 		string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
 	)
 	require.NoError(err)

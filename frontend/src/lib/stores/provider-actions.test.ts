@@ -25,7 +25,7 @@ afterEach(async () => {
 const routeRef = {
   provider: "github",
   platformHost: "github.com",
-  platformRepoId: 7001,
+  repositoryKey: { kind: "id", id: 7001 },
   owner: "octo",
   name: "repo",
   repoPath: "octo/repo",
@@ -89,7 +89,7 @@ describe("provider action mutations", () => {
     await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
     const input = { commit_message: "", commit_title: "Merge pull request", method: "squash" as const };
     const onFailure = vi.fn();
-    store.mergePull({ ...routeRef, platformRepoId: undefined }, 1, input, false, { onFailure });
+    store.mergePull({ ...routeRef, repositoryKey: undefined }, 1, input, false, { onFailure });
     expect(onFailure).toHaveBeenCalledWith("Refresh the pull request to verify its repository before merging.");
     const settled = Promise.withResolvers<void>();
     store.mergePull(routeRef, 1, input, false, { onSettled: settled.resolve });
@@ -98,8 +98,8 @@ describe("provider action mutations", () => {
     store.mergePull(renamed, 1, input, false);
     expect(store.isPullMerging(routeRef, 1)).toBe(true);
     expect(store.isPullMerging(renamed, 1)).toBe(true);
-    expect(store.isPullMerging({ ...routeRef, platformRepoId: 7999 }, 1)).toBe(false);
-    expect(store.isPullMerging({ ...routeRef, platformRepoId: undefined }, 1)).toBe(false);
+    expect(store.isPullMerging({ ...routeRef, repositoryKey: { kind: "id", id: 7999 } }, 1)).toBe(false);
+    expect(store.isPullMerging({ ...routeRef, repositoryKey: undefined }, 1)).toBe(false);
     expect(store.isPullMerging({ ...routeRef, platformHost: "git.example.com" }, 1)).toBe(false);
 
     store.loadDetail("octo", "repo", 2, { ...routeRef, sync: false });

@@ -33,11 +33,11 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 	previousSyncCompletedAt := previousSyncStartedAt.Add(time.Minute)
 
 	sourceID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: providerID,
-		Owner:          "acme",
-		Name:           "old-widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(providerID),
+		Owner:        "acme",
+		Name:         "old-widget",
 	})
 	require.NoError(err)
 	require.NoError(database.UpdateRepoSettings(ctx, sourceID, true, false, false, true))
@@ -68,11 +68,11 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 	require.NoError(err)
 
 	destinationID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1003,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1003),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	require.NotEqual(sourceID, destinationID)
@@ -193,11 +193,11 @@ func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
 	previousSyncCompletedAt := previousSyncStartedAt.Add(time.Minute)
 
 	displacedID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: displacedProviderID,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(displacedProviderID),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	require.NoError(database.UpdateRepoProviderObservation(ctx, displacedID, db.RepoProviderMetadata{
@@ -271,7 +271,7 @@ func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
 	require.Equal(http.StatusAccepted, status, body)
 	newRepo := waitForRepoSynced(t, database, "acme", "widget", &previousSyncCompletedAt)
 	assert.NotEqual(displacedID, newRepo.ID)
-	assert.Equal(incomingProviderID, newRepo.PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(incomingProviderID), newRepo.Key)
 	assert.Empty(newRepo.WebURL)
 	assert.Empty(newRepo.CloneURL)
 	assert.Empty(newRepo.DefaultBranch)
@@ -316,7 +316,7 @@ func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	identity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
 	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	// Keep merge permission available so this fixture isolates the rate-limit

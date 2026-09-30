@@ -44,7 +44,9 @@ func TestSnapshotReadsConfiguredCachedWork(t *testing.T) {
 	require.NoError(err)
 	assert.Len(provider.calls, before)
 	require.Len(result.Repositories, 1)
-	assert.Equal(ref.PlatformID, result.Repositories[0].ProviderID)
+	wantProviderID, ok := ref.Key.ID()
+	require.True(ok)
+	assert.Equal(wantProviderID, result.Repositories[0].ProviderID)
 	require.Len(result.PullRequests, 1)
 	pr := result.PullRequests[0]
 	assert.True(pr.Draft)
@@ -217,7 +219,9 @@ func TestSnapshotRetainsStableIdentityAndOneReadView(t *testing.T) {
 			assert.Len(third.Issues, 2)
 
 			replacement := ref
-			replacement.PlatformID = ref.PlatformID + 1
+			refID, ok := ref.Key.ID()
+			require.True(ok)
+			replacement.Key = platform.RepositoryIDKey(refID + 1)
 			entry, err = database.ObserveRepository(t.Context(), platformdb.DBRepoIdentity(replacement))
 			require.NoError(err)
 			_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: entry.Repository.ID, Number: 1, Title: "Different repository", State: db.MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now})

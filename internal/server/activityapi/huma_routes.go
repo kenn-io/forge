@@ -68,21 +68,24 @@ type listRepoSummariesOutput = httpapi.BodyOutput[[]itemapi.RepoSummaryResponse]
 type syncStatusOutput = httpapi.BodyOutput[*ghclient.SyncStatus]
 
 type listActivityThreadEventsInput struct {
-	Provider          string   `query:"provider"`
-	PlatformHost      string   `query:"platform_host"`
-	PlatformRepoID    int64    `query:"platform_repo_id"`
-	ItemType          string   `query:"item_type" enum:"pr,issue"`
-	ItemNumber        int      `query:"item_number" minimum:"1"`
-	Types             []string `query:"types"`
-	Search            string   `query:"search"`
-	Unassigned        bool     `query:"unassigned" doc:"Only include activity for pull requests and issues with no assignees."`
-	Since             string   `query:"since"`
-	Before            string   `query:"before"`
-	AtOrBefore        string   `query:"at_or_before"`
-	Limit             int      `query:"limit" minimum:"10" maximum:"250" default:"100"`
-	HideClosedMerged  bool     `query:"hide_closed_merged"`
-	HideBots          bool     `query:"hide_bots"`
-	HideDefaultBranch bool     `query:"hide_default_branch"`
+	Provider       string `query:"provider"`
+	PlatformHost   string `query:"platform_host"`
+	PlatformRepoID int64  `query:"platform_repo_id"`
+	// BitbucketRepositoryUUID names a Bitbucket Cloud repository in place of
+	// platform_repo_id.
+	BitbucketRepositoryUUID string   `query:"bitbucket_repository_uuid"`
+	ItemType                string   `query:"item_type" enum:"pr,issue"`
+	ItemNumber              int      `query:"item_number" minimum:"1"`
+	Types                   []string `query:"types"`
+	Search                  string   `query:"search"`
+	Unassigned              bool     `query:"unassigned" doc:"Only include activity for pull requests and issues with no assignees."`
+	Since                   string   `query:"since"`
+	Before                  string   `query:"before"`
+	AtOrBefore              string   `query:"at_or_before"`
+	Limit                   int      `query:"limit" minimum:"10" maximum:"250" default:"100"`
+	HideClosedMerged        bool     `query:"hide_closed_merged"`
+	HideBots                bool     `query:"hide_bots"`
+	HideDefaultBranch       bool     `query:"hide_default_branch"`
 }
 
 type triggerSyncInput struct {
@@ -102,7 +105,7 @@ func ApiConfig(basePath string) huma.Config {
 	config.Servers = []*huma.Server{{
 		URL: strings.TrimSuffix(basePath, "/") + "/api/v1",
 	}}
-	return config
+	return WithRepositoryKeyWireSchemas(config)
 }
 
 func (s *Handlers) GetRepoCommitDiff(
@@ -121,7 +124,7 @@ func (s *Handlers) GetRepoCommitDiff(
 	}
 
 	host := httpapi.ProviderHost(repo.Repo)
-	ctx = gitclone.WithRepositoryIdentity(ctx, repo.PlatformRepoID)
+	ctx = gitclone.WithRepositoryIdentity(ctx, repo.Identity())
 	if !isFullGitObjectID(input.SHA) {
 		return nil, httpapi.Validation("path.sha", "commit SHA must be a full object ID")
 	}
@@ -497,15 +500,15 @@ func (s *Handlers) SyncPRCI(ctx context.Context, input *itemapi.RepoNumberInput)
 	warnings, err := (*s.Syncer).RefreshMRCIStatusOnProvider(
 		ctx,
 		ghclient.RepoRef{
-			Platform:       httpapi.ProviderKind(repo.Repo),
-			Owner:          repo.Owner,
-			Name:           repo.Name,
-			PlatformHost:   httpapi.ProviderHost(repo.Repo),
-			RepoPath:       repo.RepoPath,
-			PlatformRepoID: repo.PlatformRepoID,
-			WebURL:         repo.WebURL,
-			CloneURL:       repo.CloneURL,
-			DefaultBranch:  repo.DefaultBranch,
+			Platform:      httpapi.ProviderKind(repo.Repo),
+			Owner:         repo.Owner,
+			Name:          repo.Name,
+			PlatformHost:  httpapi.ProviderHost(repo.Repo),
+			RepoPath:      repo.RepoPath,
+			Key:           repo.Key,
+			WebURL:        repo.WebURL,
+			CloneURL:      repo.CloneURL,
+			DefaultBranch: repo.DefaultBranch,
 		},
 		repo.ID,
 		input.Number,
@@ -839,9 +842,9 @@ func activityWorkspaceOverlays(
 		}
 		identity := providerplane.ItemIdentity{
 			Repository: platform.RepositoryIdentity{
-				Provider:       activity.Subject.Platform,
-				PlatformHost:   activity.Subject.PlatformHost,
-				PlatformRepoID: activity.Subject.PlatformRepoID,
+				Provider:     activity.Subject.Platform,
+				PlatformHost: activity.Subject.PlatformHost,
+				Key:          activity.Subject.RepoKey,
 			},
 			ItemType: itemType, ItemNumber: key.ItemNumber,
 		}.Canonical()
@@ -962,10 +965,10 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			return nil, httpapi.Internal("load tracked activity repos failed")
 		}
 	}
-	if input.ParentPlatformRepoID != 0 {
+	if !input.ParentRepoKey.IsZero() {
 		repository, lookupErr := s.Db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
 			Provider: input.ParentProvider, PlatformHost: input.ParentPlatformHost,
-			PlatformRepoID: input.ParentPlatformRepoID,
+			Key: input.ParentRepoKey,
 		})
 		if lookupErr != nil {
 			return nil, httpapi.Internal("resolve activity thread repository failed")
@@ -1139,7 +1142,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			ActivityType: it.ActivityType,
 			Repo: itemapi.ActivityRepoRef(s.RepoResolver.Ref(db.Repo{
 				Platform: it.Platform, PlatformHost: it.PlatformHost,
-				PlatformRepoID: it.PlatformRepoID, Owner: it.RepoOwner,
+				Key: it.RepoKey, Owner: it.RepoOwner,
 				Name: it.RepoName, RepoPath: it.RepoPath,
 			})),
 			PlatformHost: it.PlatformHost,
@@ -1189,7 +1192,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		itemActivityOut[i] = itemapi.ActivitySubjectResponse{
 			Repo: itemapi.ActivityRepoRef(s.RepoResolver.Ref(db.Repo{
 				Platform: subject.Platform, PlatformHost: subject.PlatformHost,
-				PlatformRepoID: subject.PlatformRepoID, Owner: subject.RepoOwner,
+				Key: subject.RepoKey, Owner: subject.RepoOwner,
 				Name: subject.RepoName, RepoPath: subject.RepoPath,
 			})),
 			PlatformHost:        subject.PlatformHost,
@@ -1297,7 +1300,15 @@ func (s *Handlers) ListActivityThreadEvents(
 	if strings.TrimSpace(input.PlatformHost) == "" {
 		return nil, httpapi.Validation("query.platform_host", "platform host is required")
 	}
-	if input.PlatformRepoID == 0 {
+	repositoryUUID, err := platform.ParseRepositoryUUID(input.BitbucketRepositoryUUID)
+	if err != nil {
+		return nil, httpapi.Validation("query.bitbucket_repository_uuid", err.Error())
+	}
+	repoKey, err := httpapi.RequestRepositoryKey("query.platform_repo_id", input.PlatformRepoID, repositoryUUID)
+	if err != nil {
+		return nil, err
+	}
+	if repoKey.IsZero() {
 		return nil, httpapi.Validation("query.platform_repo_id", "platform repository id is required")
 	}
 	if input.ItemType != "pr" && input.ItemType != "issue" {
@@ -1307,22 +1318,22 @@ func (s *Handlers) ListActivityThreadEvents(
 		return nil, httpapi.Validation("query.item_number", "item number must be positive")
 	}
 	return s.ListActivity(ctx, &itemapi.ListActivityInput{
-		Types:                input.Types,
-		Search:               input.Search,
-		Unassigned:           input.Unassigned,
-		Since:                input.Since,
-		Before:               input.Before,
-		AtOrBefore:           input.AtOrBefore,
-		Projection:           "events",
-		Limit:                input.Limit,
-		HideClosedMerged:     input.HideClosedMerged,
-		HideBots:             input.HideBots,
-		HideDefaultBranch:    input.HideDefaultBranch,
-		ParentProvider:       input.Provider,
-		ParentPlatformHost:   input.PlatformHost,
-		ParentPlatformRepoID: input.PlatformRepoID,
-		ParentItemType:       input.ItemType,
-		ParentItemNumber:     input.ItemNumber,
+		Types:              input.Types,
+		Search:             input.Search,
+		Unassigned:         input.Unassigned,
+		Since:              input.Since,
+		Before:             input.Before,
+		AtOrBefore:         input.AtOrBefore,
+		Projection:         "events",
+		Limit:              input.Limit,
+		HideClosedMerged:   input.HideClosedMerged,
+		HideBots:           input.HideBots,
+		HideDefaultBranch:  input.HideDefaultBranch,
+		ParentProvider:     input.Provider,
+		ParentPlatformHost: input.PlatformHost,
+		ParentRepoKey:      repoKey,
+		ParentItemType:     input.ItemType,
+		ParentItemNumber:   input.ItemNumber,
 	})
 }
 
@@ -1431,12 +1442,12 @@ func (s *Handlers) trackedActivityRepoIDs(
 		repoID := repo.RepoID
 		if repoID == 0 {
 			resolved, err := s.Db.GetRepoByIdentity(ctx, db.RepoIdentity{
-				Platform:       string(repo.Platform),
-				PlatformHost:   repo.PlatformHost,
-				PlatformRepoID: repo.PlatformRepoID,
-				Owner:          repo.Owner,
-				Name:           repo.Name,
-				RepoPath:       repo.RepoPath,
+				Platform:     string(repo.Platform),
+				PlatformHost: repo.PlatformHost,
+				Key:          repo.Key,
+				Owner:        repo.Owner,
+				Name:         repo.Name,
+				RepoPath:     repo.RepoPath,
 			})
 			if err != nil {
 				return nil, err

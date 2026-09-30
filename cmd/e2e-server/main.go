@@ -746,7 +746,7 @@ func activityIdentityRepoRef(repo db.Repo, configuredRepoPath string) ghclient.R
 		Name:               repo.Name,
 		PlatformHost:       repo.PlatformHost,
 		RepoPath:           repo.RepoPath,
-		PlatformRepoID:     repo.PlatformRepoID,
+		Key:                repo.Key,
 		WebURL:             repo.WebURL,
 		CloneURL:           repo.CloneURL,
 		DefaultBranch:      repo.DefaultBranch,
@@ -1017,12 +1017,12 @@ func seedGitLabReadOnlyCapabilityFixture(
 	issue, events := gitLabReadOnlyIssueFixture(now, cloneURL)
 	repoID, err := e2eObserveRepo(
 		ctx, database, db.RepoIdentity{
-			Platform:       "gitlab",
-			PlatformHost:   "gitlab.example.com",
-			PlatformRepoID: 7001,
-			Owner:          issue.Repo.Owner,
-			Name:           issue.Repo.Name,
-			RepoPath:       issue.Repo.RepoPath,
+			Platform:     "gitlab",
+			PlatformHost: "gitlab.example.com",
+			Key:          platform.RepositoryIDKey(7001),
+			Owner:        issue.Repo.Owner,
+			Name:         issue.Repo.Name,
+			RepoPath:     issue.Repo.RepoPath,
 		})
 	if err != nil {
 		return fmt.Errorf("upsert gitlab repo: %w", err)
@@ -1077,7 +1077,7 @@ func giteaProviderCollisionIssue(now time.Time) platform.Issue {
 			Owner:         "acme",
 			Name:          "widgets",
 			RepoPath:      "acme/widgets",
-			PlatformID:    9100,
+			Key:           platform.RepositoryIDKey(9100),
 			WebURL:        "https://github.com/acme/widgets",
 			CloneURL:      "https://github.com/acme/widgets.git",
 			DefaultBranch: "main",
@@ -1104,12 +1104,12 @@ func seedGiteaProviderCollisionFixture(
 ) error {
 	repoID, err := e2eObserveRepo(
 		ctx, database, db.RepoIdentity{
-			Platform:       string(issue.Repo.Platform),
-			PlatformHost:   issue.Repo.Host,
-			PlatformRepoID: issue.Repo.PlatformID,
-			Owner:          issue.Repo.Owner,
-			Name:           issue.Repo.Name,
-			RepoPath:       issue.Repo.RepoPath,
+			Platform:     string(issue.Repo.Platform),
+			PlatformHost: issue.Repo.Host,
+			Key:          issue.Repo.Key,
+			Owner:        issue.Repo.Owner,
+			Name:         issue.Repo.Name,
+			RepoPath:     issue.Repo.RepoPath,
 		})
 	if err != nil {
 		return fmt.Errorf("upsert gitea collision repo: %w", err)
@@ -1906,12 +1906,12 @@ func buildAppState(
 	for _, repo := range startupResolved.Expanded {
 		if _, err := e2eObserveRepo(
 			ctx, database, db.RepoIdentity{
-				Platform:       string(repo.Platform),
-				PlatformHost:   repo.PlatformHost,
-				PlatformRepoID: repo.PlatformRepoID,
-				Owner:          repo.Owner,
-				Name:           repo.Name,
-				RepoPath:       repo.RepoPath,
+				Platform:     string(repo.Platform),
+				PlatformHost: repo.PlatformHost,
+				Key:          repo.Key,
+				Owner:        repo.Owner,
+				Name:         repo.Name,
+				RepoPath:     repo.RepoPath,
 			},
 		); err != nil {
 			return nil, fmt.Errorf("seed startup repo %s/%s: %w", repo.Owner, repo.Name, err)
@@ -1920,12 +1920,12 @@ func buildAppState(
 	if !strings.EqualFold(defaultPlatformHost, "github.com") {
 		if _, err := e2eObserveRepo(
 			ctx, database, db.RepoIdentity{
-				Platform:       "github",
-				PlatformHost:   defaultPlatformHost,
-				PlatformRepoID: 7201,
-				Owner:          "enterprise",
-				Name:           "service",
-				RepoPath:       "enterprise/service",
+				Platform:     "github",
+				PlatformHost: defaultPlatformHost,
+				Key:          platform.RepositoryIDKey(7201),
+				Owner:        "enterprise",
+				Name:         "service",
+				RepoPath:     "enterprise/service",
 			},
 		); err != nil {
 			return nil, fmt.Errorf("seed default-host repo: %w", err)
@@ -1985,12 +1985,12 @@ func buildAppState(
 			},
 			repos: []platform.Repository{{
 				Ref: platform.RepoRef{
-					Platform:   platform.KindGitea,
-					Host:       "github.com",
-					Owner:      "acme",
-					Name:       "widgets",
-					RepoPath:   "acme/widgets",
-					PlatformID: 9100,
+					Platform: platform.KindGitea,
+					Host:     "github.com",
+					Owner:    "acme",
+					Name:     "widgets",
+					RepoPath: "acme/widgets",
+					Key:      platform.RepositoryIDKey(9100),
 				},
 				Description:   "Gitea provider collision repo",
 				Private:       false,
@@ -2016,12 +2016,12 @@ func buildAppState(
 				repos: []platform.Repository{
 					{
 						Ref: platform.RepoRef{
-							Platform:   platform.KindForgejo,
-							Host:       "codeberg.org",
-							Owner:      "forge-lab",
-							Name:       "service",
-							RepoPath:   "forge-lab/service",
-							PlatformID: 8101,
+							Platform: platform.KindForgejo,
+							Host:     "codeberg.org",
+							Owner:    "forge-lab",
+							Name:     "service",
+							RepoPath: "forge-lab/service",
+							Key:      platform.RepositoryIDKey(8101),
 						},
 						Description:   "Forgejo service",
 						Private:       false,
@@ -2032,12 +2032,12 @@ func buildAppState(
 					},
 					{
 						Ref: platform.RepoRef{
-							Platform:   platform.KindForgejo,
-							Host:       "codeberg.org",
-							Owner:      "forge-lab",
-							Name:       "archived",
-							RepoPath:   "forge-lab/archived",
-							PlatformID: 8102,
+							Platform: platform.KindForgejo,
+							Host:     "codeberg.org",
+							Owner:    "forge-lab",
+							Name:     "archived",
+							RepoPath: "forge-lab/archived",
+							Key:      platform.RepositoryIDKey(8102),
 						},
 						Archived: true,
 					},
@@ -2052,12 +2052,12 @@ func buildAppState(
 				repos: []platform.Repository{
 					{
 						Ref: platform.RepoRef{
-							Platform:   platform.KindGitea,
-							Host:       "gitea.com",
-							Owner:      "gitea-team",
-							Name:       "service",
-							RepoPath:   "gitea-team/service",
-							PlatformID: 8201,
+							Platform: platform.KindGitea,
+							Host:     "gitea.com",
+							Owner:    "gitea-team",
+							Name:     "service",
+							RepoPath: "gitea-team/service",
+							Key:      platform.RepositoryIDKey(8201),
 						},
 						Description:   "Gitea service",
 						Private:       false,
@@ -2068,12 +2068,12 @@ func buildAppState(
 					},
 					{
 						Ref: platform.RepoRef{
-							Platform:   platform.KindGitea,
-							Host:       "gitea.com",
-							Owner:      "gitea-team",
-							Name:       "private-service",
-							RepoPath:   "gitea-team/private-service",
-							PlatformID: 8202,
+							Platform: platform.KindGitea,
+							Host:     "gitea.com",
+							Owner:    "gitea-team",
+							Name:     "private-service",
+							RepoPath: "gitea-team/private-service",
+							Key:      platform.RepositoryIDKey(8202),
 						},
 						Description: "Private Gitea service",
 						Private:     true,
@@ -2081,12 +2081,12 @@ func buildAppState(
 					},
 					{
 						Ref: platform.RepoRef{
-							Platform:   platform.KindGitea,
-							Host:       "gitea.com",
-							Owner:      "gitea-team",
-							Name:       "archived",
-							RepoPath:   "gitea-team/archived",
-							PlatformID: 8203,
+							Platform: platform.KindGitea,
+							Host:     "gitea.com",
+							Owner:    "gitea-team",
+							Name:     "archived",
+							RepoPath: "gitea-team/archived",
+							Key:      platform.RepositoryIDKey(8203),
 						},
 						Archived: true,
 					},
@@ -2204,7 +2204,7 @@ func buildAppState(
 		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/issue-workspace/reused-branch" {
 			identityClonePath, err := diffRepo.Manager.ClonePathForContext(
-				gitclone.WithRepositoryIdentity(r.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID}),
+				gitclone.WithRepositoryIdentity(r.Context(), platform.RepositoryIdentity{Key: diffRepo.Key}),
 				"github", "github.com", "acme", "widgets",
 			)
 			if err != nil {
@@ -2252,7 +2252,7 @@ func buildAppState(
 			forkSnapshot := *mr
 			forkSnapshot.UpdatedAt = time.Now().UTC()
 			clonePath, err := diffRepo.Manager.ClonePathForContext(
-				gitclone.WithRepositoryIdentity(r.Context(), platform.RepositoryIdentity{PlatformRepoID: diffRepo.PlatformRepoID}),
+				gitclone.WithRepositoryIdentity(r.Context(), platform.RepositoryIdentity{Key: diffRepo.Key}),
 				"github", "github.com", "acme", "widgets",
 			)
 			if err != nil {
@@ -2741,14 +2741,15 @@ func buildAppState(
 				}
 				// The fixture still serves this ID at its seeded route, and a
 				// sync pass observing that would undo the rename.
-				fc.ForgetRepository(original.PlatformRepoID)
+				originalID, _ := original.Key.ID()
+				fc.ForgetRepository(originalID)
 				entry, err = database.ObserveRepository(r.Context(), db.RepoIdentity{
-					Platform:       original.Platform,
-					PlatformHost:   original.PlatformHost,
-					PlatformRepoID: original.PlatformRepoID,
-					Owner:          "acme",
-					Name:           "widgets-renamed",
-					RepoPath:       renamedRepoPath,
+					Platform:     original.Platform,
+					PlatformHost: original.PlatformHost,
+					Key:          original.Key,
+					Owner:        "acme",
+					Name:         "widgets-renamed",
+					RepoPath:     renamedRepoPath,
 				})
 				if err == nil && entry != nil {
 					_, err = database.WriteDB().ExecContext(r.Context(), `
@@ -2760,12 +2761,12 @@ func buildAppState(
 				}
 			case "reuse":
 				entry, err = database.ObserveRepository(r.Context(), db.RepoIdentity{
-					Platform:       "github",
-					PlatformHost:   "github.com",
-					PlatformRepoID: replacementProvider,
-					Owner:          "acme",
-					Name:           "widgets",
-					RepoPath:       originalRepoPath,
+					Platform:     "github",
+					PlatformHost: "github.com",
+					Key:          platform.RepositoryIDKey(replacementProvider),
+					Owner:        "acme",
+					Name:         "widgets",
+					RepoPath:     originalRepoPath,
 				})
 				if err == nil && entry != nil {
 					now := time.Now().UTC().Truncate(time.Second)
@@ -2795,10 +2796,15 @@ func buildAppState(
 				activityIdentityRepoRef(entry.Repository, originalRepoPath),
 			})
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.MarshalWrite(w, map[string]any{
-				"platform_repo_id": entry.Repository.PlatformRepoID,
+			repoID, _ := entry.Repository.Key.Wire()
+			body := map[string]any{
+				"platform_repo_id": repoID,
 				"repo_path":        entry.Repository.RepoPath,
-			}); err != nil {
+			}
+			if repositoryUUID, ok := entry.Repository.Key.UUID(); ok {
+				body["bitbucket_repository_uuid"] = repositoryUUID
+			}
+			if err := json.MarshalWrite(w, body); err != nil {
 				slog.Warn("write repository identity fixture response", "err", err)
 			}
 			return

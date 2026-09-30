@@ -50,12 +50,12 @@ func (s *Handlers) BuildProviderSettingsProjection(
 	}
 	seen := make(map[platform.RepositoryIdentity]struct{})
 	for _, configured := range settings.Repos {
-		if configured.PlatformRepoID == 0 || configured.IsGlob {
+		if configured.Key.IsZero() || configured.IsGlob {
 			continue
 		}
 		identity := platform.RepositoryIdentity{
 			Provider: configured.Provider, PlatformHost: configured.PlatformHost,
-			PlatformRepoID: configured.PlatformRepoID,
+			Key: configured.Key,
 		}.Canonical()
 		if _, ok := seen[identity]; ok {
 			continue
@@ -72,8 +72,8 @@ func (s *Handlers) BuildProviderSettingsProjection(
 			projection.RepositoryObservations,
 			spokeapi.ProviderRepositoryObservation{
 				Provider: entry.Repository.Platform, PlatformHost: entry.Repository.PlatformHost,
-				PlatformRepoID: entry.Repository.PlatformRepoID,
-				Owner:          entry.Repository.Owner, Name: entry.Repository.Name,
+				Key:   entry.Repository.Key,
+				Owner: entry.Repository.Owner, Name: entry.Repository.Name,
 				RepoPath: entry.Repository.RepoPath,
 			},
 		)

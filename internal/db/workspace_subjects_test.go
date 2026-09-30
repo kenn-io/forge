@@ -59,7 +59,7 @@ func TestListWorkspaceSubjectMetadataUsesLaunchSpecWithoutProviderReplica(t *tes
 	require.Contains(got, key)
 	assert.Equal("github", got[key].Platform)
 	assert.Equal("github.com", got[key].PlatformHost)
-	assert.Equal(spec.Repository.PlatformRepoID, got[key].PlatformRepoID)
+	assert.Equal(spec.Repository.Key, got[key].RepoKey)
 	assert.Empty(got[key].Title, "provider details stay hub-owned")
 }
 
@@ -80,8 +80,8 @@ func TestListWorkspaceSubjectMetadataUsesStableRepositoryAfterRename(t *testing.
 	_, err = database.ObserveRepository(
 		t.Context(), RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: spec.Repository.PlatformRepoID,
-			Owner:          "acme-renamed", Name: "widget-renamed",
+			Key:   spec.Repository.Key,
+			Owner: "acme-renamed", Name: "widget-renamed",
 		},
 	)
 	require.NoError(err)

@@ -509,7 +509,11 @@ describe("PullDetail provider workflow actions", () => {
     document.querySelector<HTMLButtonElement>("button[type='submit']")!.click();
     expect(workflowActions.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        ref: expect.objectContaining({ name: "gadgets", repoPath: "acme/gadgets", platformRepoId: 1006 }),
+        ref: expect.objectContaining({
+          name: "gadgets",
+          repoPath: "acme/gadgets",
+          repositoryKey: { kind: "id", id: 1006 },
+        }),
         dispatchRef: "feature/gadgets",
       }),
     );
@@ -545,7 +549,9 @@ describe("PullDetail provider workflow actions", () => {
     state.detail = { ...state.detail, repo: { ...state.detail.repo, platform_repo_id: 1002 } };
     await tick();
     expect(document.querySelector("input[aria-label='Git ref']")).toBeNull();
-    expect(workflowActions.loadCatalog).toHaveBeenLastCalledWith(expect.objectContaining({ platformRepoId: 1002 }));
+    expect(workflowActions.loadCatalog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ repositoryKey: { kind: "id", id: 1002 } }),
+    );
     visibleButton("Run workflow")!.click();
     await vi.waitFor(() => expect(visibleButton("Release")).not.toBeNull(), WAIT);
     visibleButton("Release")!.click();
@@ -559,7 +565,7 @@ describe("PullDetail provider workflow actions", () => {
     document.querySelector<HTMLButtonElement>("button[type='submit']")!.click();
     expect(workflowActions.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        ref: expect.objectContaining({ platformRepoId: 1002 }),
+        ref: expect.objectContaining({ repositoryKey: { kind: "id", id: 1002 } }),
         dispatchRef: "feature/workflow-actions",
       }),
     );

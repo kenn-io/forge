@@ -85,14 +85,3 @@ func TestAPIPullDetailOperationsSkipViewerLookupWhenSubmitReviewUnavailable(t *t
 	assert.Zero(mock.AuthenticatedViewerCalls,
 		"viewer lookup must not run when the write credential already blocks review submission")
 }
-
-func TestIssueStateAvailabilityRequiresStateMutation(t *testing.T) {
-	caps := httpapi.ProviderCapabilitiesResponse{IssueMutation: true}
-	for _, op := range []operationDescriptor{descCloseIssue, descReopenIssue} {
-		got := deriveOperationAvailabilityWithContext(op, caps, db.Repo{}, rateLimitAvailability{}, writeCredentialGate{}, operationAvailabilityContext{})
-		assert.False(t, got.Available)
-		assert.Equal(t, capabilityStateMutation, got.RequiredCapability)
-	}
-	got := deriveOperationAvailabilityWithContext(descCreateIssue, caps, db.Repo{}, rateLimitAvailability{}, writeCredentialGate{}, operationAvailabilityContext{})
-	assert.True(t, got.Available)
-}

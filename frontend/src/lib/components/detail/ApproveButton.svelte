@@ -10,6 +10,7 @@
   import type { ProviderRouteRef } from "../../api/provider-routes.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
+  import type { RepositoryKey } from "../../api/repository-key.js";
 
   const { detail } = getStores();
   const runtime = getAppRuntime();
@@ -20,7 +21,7 @@
     number: number;
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: number | undefined;
+    repositoryKey?: RepositoryKey | undefined;
     repoPath: string;
     size?: "sm" | "md";
     disabled?: boolean;
@@ -51,7 +52,7 @@
     number,
     provider,
     platformHost,
-    platformRepoId,
+    repositoryKey,
     repoPath,
     size = "md",
     disabled = false,
@@ -94,7 +95,7 @@
   $effect(() => {
     void provider;
     void platformHost;
-    void platformRepoId;
+    void repositoryKey;
     void repoPath;
     void owner;
     void name;
@@ -133,7 +134,7 @@
         State: "open", IsDraft: false, MergeableState: "",
         platform_head_sha: pinAtOpen,
       },
-      ref: { provider, platformHost, platformRepoId, owner, name, repoPath },
+      ref: { provider, platformHost, repositoryKey, owner, name, repoPath },
       number,
       viewerCan: {
         approve: true, merge: false, markReady: false,
@@ -203,7 +204,7 @@
     submitting = true;
     submittingAction = "request_changes";
     let handledHeadConflict = false;
-    const ref = { provider, platformHost, platformRepoId, owner, name, repoPath };
+    const ref = { provider, platformHost, repositoryKey, owner, name, repoPath };
     detail.requestPullChanges(
       ref,
       number,

@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/platform"
 )
 
 // The executable fixture consumes real stdin and records invocations, so a
@@ -84,7 +85,8 @@ command = [%q, "-test.run=^TestExternalContextAdapterProcess$", "--", "--context
 	t.Cleanup(syncer.Stop)
 	srv := servertest.NewWithConfig(t, database, syncer, nil, nil, cfg, configPath, server.ServerOptions{})
 	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	widgetID := verifiedGitHubRepoIdentity("github.com", "acme", "widget").PlatformRepoID
+	widgetID, ok := verifiedGitHubRepoIdentity("github.com", "acme", "widget").Key.ID()
+	require.True(ok)
 
 	client := setupTestClient(t, srv)
 	sources, err := client.HTTP.ListExternalContextSourcesWithResponse(t.Context())
@@ -95,7 +97,7 @@ command = [%q, "-test.run=^TestExternalContextAdapterProcess$", "--", "--context
 	assert.NotContains(string(sources.Body), executable)
 	read, err := client.HTTP.GetPullExternalContextWithResponse(t.Context(), &generated.GetPullExternalContextRequestOptions{
 		PathParams: &generated.GetPullExternalContextPath{Provider: "github", Owner: "acme", Name: "widget", Number: 1, SourceID: "checks"},
-		Query:      &generated.GetPullExternalContextQuery{PlatformRepoID: widgetID},
+		Query:      &generated.GetPullExternalContextQuery{PlatformRepoID: &widgetID},
 	})
 	require.NoError(err)
 	require.NotNil(read.JSON200)
@@ -103,8 +105,8 @@ command = [%q, "-test.run=^TestExternalContextAdapterProcess$", "--", "--context
 	require.NotNil(read.JSON200.Card.Markdown)
 	assert.JSONEq(fmt.Sprintf(`{"version":1,"operation":"read","action_id":"","pull_request":{"provider":"github","platform_host":"github.com","platform_repo_id":%d,"repo_path":"acme/widget","number":1,"url":"https://github.com/acme/widget/pull/1","state":"open","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","base_sha":""}}`, widgetID), *read.JSON200.Card.Markdown)
 	for _, body := range []generated.ExternalContextActionRequest{
-		{PlatformRepoID: widgetID, HeadSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-		{PlatformRepoID: widgetID + 1, HeadSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{PlatformRepoID: &widgetID, HeadSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+		{PlatformRepoID: new(widgetID + 1), HeadSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 	} {
 		response, err := client.HTTP.RunPullExternalContextActionWithResponse(t.Context(), &generated.RunPullExternalContextActionRequestOptions{
 			PathParams: &generated.RunPullExternalContextActionPath{Provider: "github", Owner: "acme", Name: "widget", Number: 1, SourceID: "checks", ActionID: "request-run"}, Body: &body,
@@ -114,7 +116,7 @@ command = [%q, "-test.run=^TestExternalContextAdapterProcess$", "--", "--context
 	}
 	action, err := client.HTTP.RunPullExternalContextActionWithResponse(t.Context(), &generated.RunPullExternalContextActionRequestOptions{
 		PathParams: &generated.RunPullExternalContextActionPath{Provider: "github", Owner: "acme", Name: "widget", Number: 1, SourceID: "checks", ActionID: "request-run"},
-		Body:       &generated.ExternalContextActionRequest{PlatformRepoID: widgetID, HeadSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		Body:       &generated.ExternalContextActionRequest{PlatformRepoID: &widgetID, HeadSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 	})
 	require.NoError(err)
 	require.Equal(http.StatusOK, action.StatusCode)
@@ -127,14 +129,14 @@ command = [%q, "-test.run=^TestExternalContextAdapterProcess$", "--", "--context
 	assert.Contains(lines[1], `"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`)
 
 	{
-		repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{Platform: "gitlab", PlatformHost: "git.example.com", PlatformRepoID: 9101, Owner: "group/subgroup", Name: "project", RepoPath: "group/subgroup/project"})
+		repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{Platform: "gitlab", PlatformHost: "git.example.com", Key: platform.RepositoryIDKey(9101), Owner: "group/subgroup", Name: "project", RepoPath: "group/subgroup/project"})
 		require.NoError(err)
 		now := time.Now().UTC()
 		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 42, Number: 42, URL: "https://git.example.com/group/subgroup/project/-/merge_requests/42", Title: "Synthetic pull", Author: "user-a", State: db.MergeRequestStateClosed, PlatformHeadSHA: "cccccccccccccccccccccccccccccccccccccccc", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
 		require.NoError(err)
 		response, err := client.HTTP.GetPullExternalContextOnHostWithResponse(t.Context(), &generated.GetPullExternalContextOnHostRequestOptions{
 			PathParams: &generated.GetPullExternalContextOnHostPath{PlatformHost: "git.example.com", Provider: "gitlab", Owner: "group/subgroup", Name: "project", Number: 42, SourceID: "checks"},
-			Query:      &generated.GetPullExternalContextOnHostQuery{PlatformRepoID: 9101},
+			Query:      &generated.GetPullExternalContextOnHostQuery{PlatformRepoID: new(int64(9101))},
 		})
 		require.NoError(err)
 		require.NotNil(response.JSON200)

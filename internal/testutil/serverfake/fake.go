@@ -1914,7 +1914,7 @@ func SeedRepoLaunchMetadata(t *testing.T, database *db.DB, repoID int64) {
 	repo, err := database.GetRepoByID(ctx, repoID)
 	require.NoError(t, err)
 	require.NotNil(t, repo)
-	require.NotZero(t, repo.PlatformRepoID)
+	require.False(t, repo.Key.IsZero())
 
 	cloneURL := strings.TrimSpace(repo.CloneURL)
 	if cloneURL == "" {
@@ -2126,7 +2126,7 @@ func UpsertComment(comments []gitealike.CommentDTO, comment gitealike.CommentDTO
 
 func VerifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = reposeed.SyntheticID(identity)
+	identity.Key = platform.RepositoryIDKey(reposeed.SyntheticID(identity))
 	return identity
 }
 

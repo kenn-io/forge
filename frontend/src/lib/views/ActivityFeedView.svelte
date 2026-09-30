@@ -18,6 +18,7 @@
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
   import type { ActivityCommitSelection } from "../utils/activitySelection.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
+  import { repositoryKeyFromWire, type RepositoryKey } from "../api/repository-key.js";
 
   type ActivityDetailTab = "conversation" | "files";
 
@@ -30,7 +31,7 @@
     itemType: "pr" | "issue";
     provider: string;
     platformHost?: string | undefined;
-    platformRepoId?: number | undefined;
+    repositoryKey?: RepositoryKey | undefined;
     repoPath: string;
     owner: string;
     name: string;
@@ -210,7 +211,7 @@
           number: activeDrawer.number,
           provider: activeDrawer.provider,
           platformHost: activeDrawer.platformHost,
-          platformRepoId: activeDrawer.platformRepoId,
+          repositoryKey: activeDrawer.repositoryKey,
           repoPath: activeDrawer.repoPath,
         }
       : null,
@@ -223,7 +224,7 @@
           number: activeDrawer.number,
           provider: activeDrawer.provider,
           platformHost: activeDrawer.platformHost,
-          platformRepoId: activeDrawer.platformRepoId,
+          repositoryKey: activeDrawer.repositoryKey,
           repoPath: activeDrawer.repoPath,
         }
       : null,
@@ -271,7 +272,7 @@
         sync: false,
         provider: ref.provider,
         platformHost: ref.platformHost,
-        platformRepoId: ref.platformRepoId,
+        repositoryKey: ref.repositoryKey,
         repoPath: ref.repoPath,
       });
       return;
@@ -282,7 +283,7 @@
         sync: false,
         provider: ref.provider,
         platformHost: ref.platformHost,
-        platformRepoId: ref.platformRepoId,
+        repositoryKey: ref.repositoryKey,
         repoPath: ref.repoPath,
       });
     }
@@ -404,7 +405,7 @@
       itemType,
       provider: item.repo.provider,
       platformHost: item.repo.platform_host,
-      platformRepoId: item.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(item.repo),
       repoPath: item.repo.repo_path,
       owner: item.repo.owner,
       name: item.repo.name,
@@ -630,7 +631,7 @@
               number={drawerIssueSelection.number}
               provider={drawerIssueSelection.provider}
               platformHost={drawerIssueSelection.platformHost}
-              platformRepoId={drawerIssueSelection.platformRepoId}
+              repositoryKey={drawerIssueSelection.repositoryKey}
               repoPath={drawerIssueSelection.repoPath}
               autoSync="background"
               hideStaleWhileLoading={true}

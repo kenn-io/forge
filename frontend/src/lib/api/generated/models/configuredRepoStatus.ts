@@ -3,6 +3,7 @@
  */
 
 export interface ConfiguredRepoStatus {
+  bitbucket_repository_uuid?: string;
   hidden_from_ui: boolean;
   is_glob: boolean;
   issue_pr_references: boolean;

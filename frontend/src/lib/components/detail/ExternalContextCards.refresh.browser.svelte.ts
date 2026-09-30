@@ -37,7 +37,7 @@ it("keeps the PR layout steady while an external source determines it is not app
     const props = {
       component: ExternalContextCards as Component,
       ref: { provider: "github", owner: "example", name: "project", repoPath: "example/project" },
-      platformRepoId: 123,
+      repositoryKey: { kind: "id", id: 123 },
       number: 42,
       headSha: "a".repeat(40),
     };

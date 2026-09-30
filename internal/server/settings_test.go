@@ -164,12 +164,12 @@ owner = "acme"
 name = "widget"
 `, &serverfake.MockGH{})
 	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1002,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002),
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
@@ -180,7 +180,7 @@ name = "widget"
 	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	require.Len(resp.Repos, 1)
-	assert.Equal(t, int64(1002), resp.Repos[0].PlatformRepoID)
+	assert.Equal(t, platform.RepositoryIDKey(1002), resp.Repos[0].Key)
 }
 
 func TestHandleGetSettingsReportsMCPDesiredAndActiveState(t *testing.T) {
@@ -576,7 +576,7 @@ func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T)
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "old-name",
 		PlatformHost: "github.com", RepoPath: "acme/old-name",
-		PlatformRepoID: 1001,
+		Key: platform.RepositoryIDKey(1001),
 	}})
 
 	// The same stable provider id resolves under a renamed route: the
@@ -584,7 +584,7 @@ func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T)
 	srv.settingsapi.MergeTrackedRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "new-name",
 		PlatformHost: "github.com", RepoPath: "acme/new-name",
-		PlatformRepoID: 1001, Archived: true,
+		Key: platform.RepositoryIDKey(1001), Archived: true,
 	}})
 
 	tracked := syncer.TrackedRepos()
@@ -600,7 +600,7 @@ func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
+		Key: platform.RepositoryIDKey(1001), ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// A settings-resolved duplicate (glob refresh, API add) carries no
@@ -609,7 +609,7 @@ func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 	srv.settingsapi.MergeTrackedRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1001, Archived: true,
+		Key: platform.RepositoryIDKey(1001), Archived: true,
 	}})
 
 	tracked := syncer.TrackedRepos()
@@ -625,7 +625,7 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
 		PlatformHost: "github.com", RepoPath: "acme/tools",
-		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
+		Key: platform.RepositoryIDKey(1001), ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// The tracked repo was renamed away and its old route reused by a
@@ -637,12 +637,12 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 			PlatformHost: "github.com", RepoPath: "acme/tools-new",
-			PlatformRepoID: 1001,
+			Key: platform.RepositoryIDKey(1001),
 		},
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "tools",
 			PlatformHost: "github.com", RepoPath: "acme/tools",
-			PlatformRepoID: 1002,
+			Key: platform.RepositoryIDKey(1002),
 		},
 	})
 
@@ -665,14 +665,14 @@ func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
+		Key: platform.RepositoryIDKey(1001), ConfiguredRepoPath: "acme/tools",
 	}})
 
 	glob := config.Repo{Owner: "acme", Name: "*"}
 	srv.settingsapi.ReplaceGlobRepos(glob, []ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1001, Archived: true,
+		Key: platform.RepositoryIDKey(1001), Archived: true,
 	}}, []config.Repo{{Owner: "acme", Name: "tools"}, glob})
 
 	tracked := syncer.TrackedRepos()
@@ -716,7 +716,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 	got, ok, err := srv.settingsapi.WorktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "gitlab", PlatformHost: "forge.example.com",
-			PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1002), Owner: "acme", Name: "widget",
 		},
 	)
 
@@ -727,7 +727,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 	_, ok, err = srv.settingsapi.WorktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "gitlab", PlatformHost: "forge.example.com",
-			PlatformRepoID: 1003, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1003), Owner: "acme", Name: "widget",
 		},
 	)
 	require.NoError(err)
@@ -740,7 +740,7 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 	database := dbtest.Open(t)
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1004, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1004), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	_, err = database.CreateProject(t.Context(), db.CreateProjectInput{
@@ -753,7 +753,7 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 	got, ok, err := srv.settingsapi.WorktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1004, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1004), Owner: "acme", Name: "widget",
 		},
 	)
 	require.NoError(err)
@@ -763,7 +763,7 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 	_, ok, err = srv.settingsapi.WorktreeBasePathForRepo(
 		t.Context(), workspace.WorktreeBaseRepository{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1003, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1003), Owner: "acme", Name: "widget",
 		},
 	)
 	require.NoError(err)
@@ -776,7 +776,7 @@ func TestProviderSettingsProjectionCarriesCatalogObservation(t *testing.T) {
 	_, err := database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1001, Owner: "acme-renamed", Name: "widget-renamed",
+			Key: platform.RepositoryIDKey(1001), Owner: "acme-renamed", Name: "widget-renamed",
 			RepoPath: "acme-renamed/widget-renamed",
 		},
 	)
@@ -786,7 +786,7 @@ func TestProviderSettingsProjectionCarriesCatalogObservation(t *testing.T) {
 	projection, err := srv.syncevents.BuildProviderSettingsProjection(
 		t.Context(), spokeapi.SettingsResponse{Repos: []ghclient.ConfiguredRepoStatus{{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 			RepoPath: "acme/widget", TrackedRepoPath: "acme/widget",
 		}}},
 	)
@@ -794,7 +794,7 @@ func TestProviderSettingsProjectionCarriesCatalogObservation(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(t, []spokeapi.ProviderRepositoryObservation{{
 		Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme-renamed", Name: "widget-renamed",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme-renamed", Name: "widget-renamed",
 		RepoPath: "acme-renamed/widget-renamed",
 	}}, projection.RepositoryObservations)
 }
@@ -980,12 +980,12 @@ port = 8091
 	projection := spokeapi.ProviderSettingsResponse{
 		Repos: []ghclient.ConfiguredRepoStatus{{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1005, Owner: "acme", Name: "late",
+			Key: platform.RepositoryIDKey(1005), Owner: "acme", Name: "late",
 			RepoPath: "acme/late", TrackedRepoPath: "acme/late",
 		}},
 		RepositoryObservations: []spokeapi.ProviderRepositoryObservation{{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1005, Owner: "acme", Name: "late",
+			Key: platform.RepositoryIDKey(1005), Owner: "acme", Name: "late",
 			RepoPath: "acme/late",
 		}},
 		RepoPresets: []config.RepoPreset{},
@@ -1053,7 +1053,7 @@ port = 8091
 	var settings spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	require.Len(settings.Repos, 1)
-	assert.Equal(int64(1005), settings.Repos[0].PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(1005), settings.Repos[0].Key)
 	assert.Empty(settings.Repos[0].WorktreeBasePath)
 	assert.True(settings.ProviderSettingsLoaded)
 }

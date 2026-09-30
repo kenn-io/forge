@@ -5,6 +5,8 @@
 export interface CreateWorkspaceInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud */
+  bitbucket_repository_uuid?: string;
   mr_number: number;
   name: string;
   owner: string;

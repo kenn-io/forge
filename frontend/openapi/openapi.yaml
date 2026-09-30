@@ -1457,6 +1457,8 @@ components:
     ConfiguredRepoStatus:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         hidden_from_ui:
           type: boolean
         is_glob:
@@ -1583,6 +1585,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        bitbucket_repository_uuid:
+          description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          type: string
         branch:
           description: Branch for the new worktree; generated when empty
           type: string
@@ -1603,6 +1608,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        bitbucket_repository_uuid:
+          description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          type: string
         branch:
           description: Branch for the new worktree; generated when empty
           type: string
@@ -1622,6 +1630,8 @@ components:
             - /api/v1/schemas/CreateDevboxWorkspaceInputBody.json
           format: uri
           readOnly: true
+          type: string
+        bitbucket_repository_uuid:
           type: string
         branch:
           type: string
@@ -1789,6 +1799,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        bitbucket_repository_uuid:
+          description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          type: string
         git_head_ref:
           type: string
         platform_repo_id:
@@ -1811,6 +1824,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        bitbucket_repository_uuid:
+          description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          type: string
         git_head_ref:
           type: string
         platform_repo_id:
@@ -1832,6 +1848,9 @@ components:
             - /api/v1/schemas/CreateWorkspaceInputBody.json
           format: uri
           readOnly: true
+          type: string
+        bitbucket_repository_uuid:
+          description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
           type: string
         mr_number:
           format: int64
@@ -2795,16 +2814,16 @@ components:
           format: uri
           readOnly: true
           type: string
+        bitbucket_repository_uuid:
+          type: string
         head_sha:
           maxLength: 128
           minLength: 1
           type: string
         platform_repo_id:
           format: int64
-          minimum: 1
           type: integer
       required:
-        - platform_repo_id
         - head_sha
       type: object
     ExternalContextCard:
@@ -2902,6 +2921,8 @@ components:
     FederationActivityRepositoryIdentity:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         platform_host:
           type: string
         platform_repo_id:
@@ -3055,6 +3076,8 @@ components:
     FederationWorkflowItemIdentity:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         name:
           type: string
         number:
@@ -3156,6 +3179,8 @@ components:
     FederationWorkflowRepositoryIdentity:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         name:
           type: string
         owner:
@@ -6548,6 +6573,8 @@ components:
     ProviderRepositoryObservation:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         name:
           type: string
         owner:
@@ -6674,6 +6701,8 @@ components:
     ProviderStateRepository:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         name:
           type: string
         owner:
@@ -6806,6 +6835,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        bitbucket_repository_uuid:
+          type: string
         item_number:
           format: int64
           type: integer
@@ -6813,7 +6844,6 @@ components:
           type: string
         platform_repo_id:
           format: int64
-          minimum: 1
           type: integer
         repository:
           $ref: "#/components/schemas/RepositoryRoute"
@@ -8075,6 +8105,8 @@ components:
     RepoPresetRepository:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         platform_host:
           type: string
         platform_repo_id:
@@ -8476,6 +8508,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        bitbucket_repository_uuid:
+          type: string
         clone_url:
           type: string
         default_branch:
@@ -8521,6 +8555,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        bitbucket_repository_uuid:
+          type: string
         name:
           type: string
         owner:
@@ -8541,6 +8577,8 @@ components:
     RepositoryIdentity:
       additionalProperties: false
       properties:
+        bitbucketRepositoryUUID:
+          type: string
         name:
           type: string
         owner:
@@ -9493,6 +9531,8 @@ components:
     SnapshotRepository:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         coverage:
           $ref: "#/components/schemas/SnapshotCoverage"
         default_branch:
@@ -10904,9 +10944,6 @@ components:
           type: string
         base_oid:
           type: string
-        base_repo_id:
-          format: int64
-          type: integer
         head_branch:
           type: string
         head_oid:
@@ -10967,6 +11004,8 @@ components:
             - /api/v1/schemas/WorkspaceLaunchRequest.json
           format: uri
           readOnly: true
+          type: string
+        bitbucket_repository_uuid:
           type: string
         for_creation:
           type: boolean
@@ -11069,6 +11108,8 @@ components:
     WorkspaceRepositorySummary:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         name:
           type: string
         owner:
@@ -11985,6 +12026,11 @@ paths:
           schema:
             format: int64
             type: integer
+        - explode: false
+          in: query
+          name: bitbucket_repository_uuid
+          schema:
+            type: string
         - explode: false
           in: query
           name: item_type
@@ -18108,11 +18154,14 @@ paths:
         - explode: false
           in: query
           name: platform_repo_id
-          required: true
           schema:
             format: int64
-            minimum: 1
             type: integer
+        - explode: false
+          in: query
+          name: bitbucket_repository_uuid
+          schema:
+            type: string
         - explode: false
           in: query
           name: refresh
@@ -23116,11 +23165,14 @@ paths:
         - explode: false
           in: query
           name: platform_repo_id
-          required: true
           schema:
             format: int64
-            minimum: 1
             type: integer
+        - explode: false
+          in: query
+          name: bitbucket_repository_uuid
+          schema:
+            type: string
         - explode: false
           in: query
           name: refresh

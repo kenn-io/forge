@@ -3,9 +3,7 @@
  */
 
 export type GetPullExternalContextParams = {
-  /**
-   * @minimum 1
-   */
-  platform_repo_id: number;
+  platform_repo_id?: number;
+  bitbucket_repository_uuid?: string;
   refresh?: boolean;
 };

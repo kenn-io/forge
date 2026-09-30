@@ -38,6 +38,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/platform"
 )
 
 const (
@@ -194,7 +195,7 @@ func TestFleetSnapshotLocalE2E(t *testing.T) {
 	})
 	require.NoError(err)
 	repoIdentity := dbpkg.GitHubRepoIdentity("github.com", "acme", "widget")
-	repoIdentity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoIdentity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
 	_, err = reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	require.NoError(database.InsertWorkspace(ctx, &dbpkg.Workspace{
@@ -307,7 +308,7 @@ func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {
 	ctx := t.Context()
 
 	repoIdentity := dbpkg.GitHubRepoIdentity("github.com", "acme", "widget")
-	repoIdentity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	repoIdentity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
 	repoID, err := reposeed.Seed(ctx, database, repoIdentity)
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -1080,11 +1081,11 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 	ctx := t.Context()
 
 	repoID, err := reposeed.Seed(ctx, database, dbpkg.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: 7007,
-		Owner:          "group/subgroup",
-		Name:           "widget",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Key:          platform.RepositoryIDKey(7007),
+		Owner:        "group/subgroup",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	now := time.Now().UTC().Truncate(time.Second)

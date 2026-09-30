@@ -92,8 +92,8 @@ type HostRouter struct {
 // route whose credential it should use, recording which repository (by
 // stable provider ID) created the mapping.
 type repoCredentialAlias struct {
-	configured     RouteKey
-	providerRepoID int64
+	configured RouteKey
+	repoKey    platform.RepositoryKey
 }
 
 func NewHostRouter(host string, routes ...*Route) (*HostRouter, error) {
@@ -1255,11 +1255,11 @@ func (c *RoutedClient) ListIssueTimelineEvents(ctx context.Context, owner, repo 
 // provider-resolved owner/name onto the configured repository identity it
 // replaced. Provider APIs keep receiving the resolved names; only credential
 // selection follows the configured route. Alias chains flatten, so repeated
-// renames still resolve to the original configured identity. providerRepoID
+// renames still resolve to the original configured identity. repoKey
 // records which repository the alias belongs to, so a replacement repository
 // reusing the route can displace it.
 func (r *HostRouter) RegisterRepoCredentialAlias(
-	owner, name string, configured RouteKey, providerRepoID int64,
+	owner, name string, configured RouteKey, repoKey platform.RepositoryKey,
 ) {
 	if r == nil {
 		return
@@ -1277,8 +1277,8 @@ func (r *HostRouter) RegisterRepoCredentialAlias(
 		r.repoAliases = make(map[string]repoCredentialAlias)
 	}
 	r.repoAliases[key] = repoCredentialAlias{
-		configured:     configured,
-		providerRepoID: providerRepoID,
+		configured: configured,
+		repoKey:    repoKey,
 	}
 }
 
@@ -1287,16 +1287,16 @@ func (r *HostRouter) RegisterRepoCredentialAlias(
 // replacement repository cannot inherit the displaced repository's
 // credential. An unknown occupant identity leaves the alias untouched.
 func (r *HostRouter) ClearDisplacedRepoCredentialAlias(
-	owner, name string, providerRepoID int64,
+	owner, name string, repoKey platform.RepositoryKey,
 ) {
-	if r == nil || providerRepoID == 0 {
+	if r == nil || repoKey.IsZero() {
 		return
 	}
 	key := repoRouteMapKey(owner, name)
 	r.aliasMu.Lock()
 	defer r.aliasMu.Unlock()
 	alias, ok := r.repoAliases[key]
-	if !ok || alias.providerRepoID == providerRepoID {
+	if !ok || alias.repoKey == repoKey {
 		return
 	}
 	delete(r.repoAliases, key)

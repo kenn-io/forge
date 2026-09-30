@@ -20,12 +20,13 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/platform"
 )
 
 var defaultTestRepos = []ghclient.RepoRef{
 	{
 		Platform: "github", Owner: "acme", Name: "widget",
-		PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+		PlatformHost: "github.com", Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 	},
 }
 
@@ -303,6 +304,6 @@ func markArchiveItemLifecycle(
 
 func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 	identity := db.GitHubRepoIdentity(host, owner, name)
-	identity.PlatformRepoID = reposeed.SyntheticID(identity)
+	identity.Key = platform.RepositoryIDKey(reposeed.SyntheticID(identity))
 	return identity
 }

@@ -64,12 +64,12 @@ func TestRepositoryResolverBuildsCanonicalRef(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 1001,
-		Owner:          "group/subgroup",
-		Name:           "widget",
-		RepoPath:       "group/subgroup/widget",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "group/subgroup",
+		Name:         "widget",
+		RepoPath:     "group/subgroup/widget",
 	})
 	require.NoError(err)
 	require.Positive(repoID)
@@ -103,12 +103,12 @@ func TestPlatformRepoRefCarriesProviderIdentityAndIntegerID(t *testing.T) {
 		{
 			name: "gitlab nested path",
 			repo: db.Repo{
-				Platform:       string(platform.KindGitLab),
-				PlatformHost:   "gitlab.example.com",
-				PlatformRepoID: 4242,
-				Owner:          "group",
-				Name:           "project",
-				RepoPath:       "group/project",
+				Platform:     string(platform.KindGitLab),
+				PlatformHost: "gitlab.example.com",
+				Key:          platform.RepositoryIDKey(4242),
+				Owner:        "group",
+				Name:         "project",
+				RepoPath:     "group/project",
 			},
 			wantKind: platform.KindGitLab,
 			wantHost: "gitlab.example.com",
@@ -117,9 +117,9 @@ func TestPlatformRepoRefCarriesProviderIdentityAndIntegerID(t *testing.T) {
 		{
 			name: "github defaults",
 			repo: db.Repo{
-				PlatformRepoID: 4242,
-				Owner:          "acme",
-				Name:           "widget",
+				Key:   platform.RepositoryIDKey(4242),
+				Owner: "acme",
+				Name:  "widget",
 			},
 			wantKind: platform.KindGitHub,
 			wantHost: platform.DefaultGitHubHost,
@@ -135,8 +135,8 @@ func TestPlatformRepoRefCarriesProviderIdentityAndIntegerID(t *testing.T) {
 			assert.Equal(tt.wantKind, ref.Platform)
 			assert.Equal(tt.wantHost, ref.Host)
 			assert.Equal(tt.wantPath, ref.RepoPath)
-			assert.Equal(int64(4242), ref.PlatformID)
-			assert.Equal(uuid.Nil(), ref.BitbucketRepositoryUUID)
+			assert.Equal(platform.RepositoryIDKey(4242), ref.Key)
+			assert.False(ref.Key.IsUUID())
 		})
 	}
 }
@@ -144,29 +144,28 @@ func TestPlatformRepoRefCarriesProviderIdentityAndIntegerID(t *testing.T) {
 func TestPlatformRepoRefCarriesBitbucketCloudUUID(t *testing.T) {
 	repositoryUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
 	ref := PlatformRepoRef(db.Repo{
-		Platform:                string(platform.KindBitbucket),
-		PlatformHost:            "bitbucket.org",
-		BitbucketRepositoryUUID: repositoryUUID,
-		Owner:                   "team",
-		Name:                    "widgets",
-		RepoPath:                "team/widgets",
+		Platform:     string(platform.KindBitbucket),
+		PlatformHost: "bitbucket.org",
+		Key:          platform.RepositoryUUIDKey(repositoryUUID),
+		Owner:        "team",
+		Name:         "widgets",
+		RepoPath:     "team/widgets",
 	})
 	assert.Equal(t, platform.KindBitbucket, ref.Platform)
 	assert.Equal(t, "bitbucket.org", ref.Host)
-	assert.Equal(t, repositoryUUID, ref.BitbucketRepositoryUUID)
-	assert.Equal(t, int64(0), ref.PlatformID)
+	assert.Equal(t, platform.RepositoryUUIDKey(repositoryUUID), ref.Key)
 }
 
 func TestRepositoryResolverRequireRouteCapabilityUsesCanonicalContract(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 1002,
-		Owner:          "group",
-		Name:           "project",
-		RepoPath:       "group/project",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(1002),
+		Owner:        "group",
+		Name:         "project",
+		RepoPath:     "group/project",
 	})
 	require.NoError(err)
 	resolver := NewRepositoryResolver(RepositoryResolverDeps{

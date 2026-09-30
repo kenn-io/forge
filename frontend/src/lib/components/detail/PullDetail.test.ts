@@ -91,6 +91,7 @@ vi.mock("../../utils/markdown.js", async (importOriginal) => {
 import PullDetailComponent from "./PullDetail.svelte";
 import PullDetailTestHarness from "./PullDetailTestHarness.svelte";
 import { getCommentDraftKey, setCommentDraft } from "./comment-drafts.svelte.js";
+import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
 const capabilities = {
   read_repositories: true,
@@ -1002,7 +1003,7 @@ describe("PullDetail provider workflow actions", () => {
         owner: "acme",
         name: "widget",
         repoPath: "acme/widget",
-        platformRepoId: 1001,
+        repositoryKey: { kind: "id", id: 1001 },
       },
       "release.yml",
     );
@@ -1046,7 +1047,7 @@ describe("PullDetail activity refresh", () => {
       name: "widget",
       repoPath: "acme/widget",
       number,
-      platformRepoId: detail.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(detail.repo),
     });
     setCommentDraft(draftKey, "Draft while refreshing");
     onTestFinished(() => setCommentDraft(draftKey, ""));
@@ -2590,10 +2591,10 @@ describe("PullDetail approvals", () => {
         unmount();
       } else if (navigation.startsWith("repository replacement")) {
         detail.repo.platform_repo_id = 7999;
-        await rerender({ platformRepoId: 7999 });
+        await rerender({ repositoryKey: { kind: "id", id: 7999 } });
         if (navigation === "repository replacement cycle") {
           detail.repo.platform_repo_id = 7101;
-          await rerender({ platformRepoId: 7101 });
+          await rerender({ repositoryKey: { kind: "id", id: 7101 } });
         }
       } else {
         await rerender({
@@ -2659,7 +2660,7 @@ describe("PullDetail approvals", () => {
     const store = createDetailStore({ runtime: detailRuntime });
     const { rerender } = renderPullDetail(current, repoSettings, undefined, {
       store,
-      detailProps: { autoSync: false, platformRepoId: current.repo.platform_repo_id },
+      detailProps: { autoSync: false, repositoryKey: repositoryKeyFromWire(current.repo) },
     });
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
     await fireEvent.click(
@@ -2670,7 +2671,7 @@ describe("PullDetail approvals", () => {
     await screen.findByText("Merging");
 
     reloading = true;
-    await rerender({ platformRepoId: undefined });
+    await rerender({ repositoryKey: undefined });
     await waitFor(() => expect(store.getDetail()).toBeNull());
     refreshedDetail.resolve({ data: current });
     await waitFor(() => expect(store.getDetail()?.repo.platform_repo_id).toBe(current.repo.platform_repo_id));

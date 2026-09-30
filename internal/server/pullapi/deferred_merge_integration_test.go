@@ -332,12 +332,12 @@ func newDeferredMergeRouteServer(
 		database,
 		nil,
 		[]ghclient.RepoRef{{
-			Platform:       platform.KindGitLab,
-			PlatformHost:   ref.Host,
-			Owner:          ref.Owner,
-			Name:           ref.Name,
-			RepoPath:       ref.RepoPath,
-			PlatformRepoID: ref.PlatformID,
+			Platform:     platform.KindGitLab,
+			PlatformHost: ref.Host,
+			Owner:        ref.Owner,
+			Name:         ref.Name,
+			RepoPath:     ref.RepoPath,
+			Key:          ref.Key,
 		}},
 		time.Minute,
 		nil,
@@ -371,7 +371,7 @@ func TestDeferMergeEndpointQueuesMergeAndBroadcastsCompletion(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -540,7 +540,7 @@ func TestPullDetailReportsDeferredMergePendingWhileQueued(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -592,7 +592,7 @@ func TestImmediateMergeSupersedesQueuedDeferredMerge(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -680,7 +680,7 @@ func TestImmediateUnmergedResponsePreservesQueueUntilDeferredProviderRejects(t *
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
@@ -793,7 +793,7 @@ func TestDeferMergeEndpointRejectsInvalidMergeMethodBeforeQueueing(t *testing.T)
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -826,7 +826,7 @@ func TestDeferMergeEndpointRejectsWithoutPendingChecks(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -869,7 +869,7 @@ func TestDeferMergeEndpointRejectsMissingBaseSHA(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -925,7 +925,7 @@ func TestDeferMergeEndpointRejectsFailedAggregateCIWithPassingRows(t *testing.T)
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -968,7 +968,7 @@ func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *tes
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -1038,7 +1038,7 @@ func TestDeferMergeEndpointFailsWhenGranularPendingRefreshHasUnknownAggregate(t 
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -1107,7 +1107,7 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -1149,7 +1149,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCIRefreshWarns(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -1204,7 +1204,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenCurrentChecksFail(t *testing.T) 
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -1263,7 +1263,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenHeadChangesWhileWaiting(t *testi
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
@@ -1357,7 +1357,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderBaseChangesBeforeMerge(t
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
@@ -1447,7 +1447,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -1520,7 +1520,7 @@ func TestDeferMergeEndpointRejectsClosedPullRequest(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{
@@ -1579,7 +1579,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *test
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
@@ -1675,7 +1675,7 @@ func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *tes
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
@@ -1763,7 +1763,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenProviderClosedBeforeMerge(t *tes
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	ciStarted := make(chan struct{})
@@ -1863,7 +1863,7 @@ func TestImmediateMergeRecordsMergedActor(t *testing.T) {
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	mergedAt := now.Add(time.Minute)

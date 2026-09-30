@@ -23,12 +23,12 @@ func (r databaseLaunchSpecResolver) ResolveWorkspaceLaunchSpec(
 ) (db.WorkspaceLaunchSpec, error) {
 	var repo *db.Repo
 	var err error
-	if request.PlatformRepoID != 0 {
+	if !request.RepoKey.IsZero() {
 		entry, lookupErr := r.db.GetRepositoryByProviderID(
 			ctx, platform.RepositoryIdentity{
-				Provider:       request.Repository.Provider,
-				PlatformHost:   request.Repository.PlatformHost,
-				PlatformRepoID: request.PlatformRepoID,
+				Provider:     request.Repository.Provider,
+				PlatformHost: request.Repository.PlatformHost,
+				Key:          request.RepoKey,
 			},
 		)
 		err = lookupErr
@@ -68,7 +68,7 @@ func (r databaseLaunchSpecResolver) ResolveWorkspaceLaunchSpec(
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: repo.Platform, PlatformHost: repo.PlatformHost,
-			PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
+			Key: repo.Key, Owner: repo.Owner, Name: repo.Name,
 			CloneURL: cloneURL, DefaultBranch: defaultBranch,
 		},
 		ItemType: request.ItemType, ItemNumber: request.ItemNumber,
@@ -143,8 +143,8 @@ func (r databaseLaunchSpecResolver) RefreshWorkspaceLaunchSpec(
 			Provider: current.Repository.Provider, PlatformHost: current.Repository.PlatformHost,
 			Owner: current.Repository.Owner, Name: current.Repository.Name,
 		},
-		PlatformRepoID: current.Repository.PlatformRepoID,
-		ItemType:       current.ItemType, ItemNumber: current.ItemNumber,
+		RepoKey:  current.Repository.Key,
+		ItemType: current.ItemType, ItemNumber: current.ItemNumber,
 		ItemKey: current.ItemKey, GitHeadRef: current.GitHeadRef,
 	})
 }

@@ -117,7 +117,7 @@ func TestKataLinkCreateKeepsResolvedSubjectAcrossRouteReuse(t *testing.T) {
 	)
 	oldRepo, err := database.GetRepoByID(t.Context(), oldRepoID)
 	require.NoError(err)
-	oldRepoProviderID := oldRepo.PlatformRepoID
+	oldRepoProviderID := oldRepo.Key
 
 	body := bytes.NewBufferString(`{"daemon_id":"primary","project_uid":"project-a","issue_uid":"issue-a"}`)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/issues/github/acme/widget/42/kata-links", body)
@@ -136,20 +136,20 @@ func TestKataLinkCreateKeepsResolvedSubjectAcrossRouteReuse(t *testing.T) {
 	}
 	observedAt := time.Now().UTC().Add(time.Hour)
 	renamed, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform:       string(platform.KindGitHub),
-		PlatformHost:   platform.DefaultGitHubHost,
-		PlatformRepoID: oldRepoProviderID,
-		Owner:          "acme",
-		Name:           "widget-renamed",
+		Platform:     string(platform.KindGitHub),
+		PlatformHost: platform.DefaultGitHubHost,
+		Key:          oldRepoProviderID,
+		Owner:        "acme",
+		Name:         "widget-renamed",
 	})
 	require.NoError(err)
 	require.Equal(oldRepoID, renamed.Repository.ID)
 	replacement, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform:       string(platform.KindGitHub),
-		PlatformHost:   platform.DefaultGitHubHost,
-		PlatformRepoID: 2002,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     string(platform.KindGitHub),
+		PlatformHost: platform.DefaultGitHubHost,
+		Key:          platform.RepositoryIDKey(2002),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	_, err = database.UpsertIssue(t.Context(), &db.Issue{

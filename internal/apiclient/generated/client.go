@@ -12661,21 +12661,22 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
-		"before":              {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
-		"item_number":         {Style: "form", Explode: &[]bool{false}[0]},
-		"item_type":           {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
-		"platform_host":       {Style: "form", Explode: &[]bool{false}[0]},
-		"platform_repo_id":    {Style: "form", Explode: &[]bool{false}[0]},
-		"provider":            {Style: "form", Explode: &[]bool{false}[0]},
-		"search":              {Style: "form", Explode: &[]bool{false}[0]},
-		"since":               {Style: "form", Explode: &[]bool{false}[0]},
-		"types":               {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"before":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
+		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
+		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"search":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"since":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"types":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":                {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/activity/thread-events",
@@ -21053,8 +21054,9 @@ func (c *Client) GetPullExternalContextOnHostWithResponse(ctx context.Context, o
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
-		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":                   {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
@@ -27247,8 +27249,9 @@ func (c *Client) GetPullExternalContextWithResponse(ctx context.Context, options
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
-		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":                   {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
@@ -33755,21 +33758,22 @@ func (c *Client) ListActivityAuthorsRaw(ctx context.Context, httpClient *http.Cl
 func (c *Client) ListActivityThreadEventsRaw(ctx context.Context, httpClient *http.Client, options *ListActivityThreadEventsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
-		"before":              {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
-		"item_number":         {Style: "form", Explode: &[]bool{false}[0]},
-		"item_type":           {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
-		"platform_host":       {Style: "form", Explode: &[]bool{false}[0]},
-		"platform_repo_id":    {Style: "form", Explode: &[]bool{false}[0]},
-		"provider":            {Style: "form", Explode: &[]bool{false}[0]},
-		"search":              {Style: "form", Explode: &[]bool{false}[0]},
-		"since":               {Style: "form", Explode: &[]bool{false}[0]},
-		"types":               {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"before":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
+		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
+		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"search":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"since":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"types":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":                {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/activity/thread-events",
@@ -36506,8 +36510,9 @@ func (c *Client) ResolveDiscussionOnHostRaw(ctx context.Context, httpClient *htt
 func (c *Client) GetPullExternalContextOnHostRaw(ctx context.Context, httpClient *http.Client, options *GetPullExternalContextOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
-		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":                   {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
@@ -38372,8 +38377,9 @@ func (c *Client) ResolveDiscussionRaw(ctx context.Context, httpClient *http.Clie
 func (c *Client) GetPullExternalContextRaw(ctx context.Context, httpClient *http.Client, options *GetPullExternalContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
-		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":                   {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
@@ -40416,21 +40422,22 @@ func NewListActivityThreadEventsRequest(ctx context.Context, baseURL string, opt
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
-		"before":              {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
-		"item_number":         {Style: "form", Explode: &[]bool{false}[0]},
-		"item_type":           {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
-		"platform_host":       {Style: "form", Explode: &[]bool{false}[0]},
-		"platform_repo_id":    {Style: "form", Explode: &[]bool{false}[0]},
-		"provider":            {Style: "form", Explode: &[]bool{false}[0]},
-		"search":              {Style: "form", Explode: &[]bool{false}[0]},
-		"since":               {Style: "form", Explode: &[]bool{false}[0]},
-		"types":               {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"before":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
+		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
+		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"search":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"since":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"types":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":                {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/activity/thread-events",
@@ -43337,8 +43344,9 @@ func NewGetPullExternalContextOnHostRequest(ctx context.Context, baseURL string,
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
-		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":                   {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
@@ -45315,8 +45323,9 @@ func NewGetPullExternalContextRequest(ctx context.Context, baseURL string, optio
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"platform_repo_id": {Style: "form", Explode: &[]bool{false}[0]},
-		"refresh":          {Style: "form", Explode: &[]bool{false}[0]},
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+		"refresh":                   {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/external-context/{source_id}",
@@ -50182,13 +50191,14 @@ type ListActivityAuthorsQuery struct {
 }
 
 type ListActivityThreadEventsQuery struct {
-	Provider       *string                                `json:"provider,omitempty"`
-	PlatformHost   *string                                `json:"platform_host,omitempty"`
-	PlatformRepoID *int64                                 `json:"platform_repo_id,omitempty"`
-	ItemType       *ListActivityThreadEventsQueryItemType `json:"item_type,omitempty"`
-	ItemNumber     *int64                                 `json:"item_number,omitempty"`
-	Types          []string                               `json:"types,omitempty"`
-	Search         *string                                `json:"search,omitempty"`
+	Provider                *string                                `json:"provider,omitempty"`
+	PlatformHost            *string                                `json:"platform_host,omitempty"`
+	PlatformRepoID          *int64                                 `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID *string                                `json:"bitbucket_repository_uuid,omitempty"`
+	ItemType                *ListActivityThreadEventsQueryItemType `json:"item_type,omitempty"`
+	ItemNumber              *int64                                 `json:"item_number,omitempty"`
+	Types                   []string                               `json:"types,omitempty"`
+	Search                  *string                                `json:"search,omitempty"`
 
 	// Unassigned Only include activity for pull requests and issues with no assignees.
 	Unassigned        *bool   `json:"unassigned,omitempty"`
@@ -50467,8 +50477,9 @@ type GetPullDiffOnHostQuery struct {
 }
 
 type GetPullExternalContextOnHostQuery struct {
-	PlatformRepoID int64 `json:"platform_repo_id"`
-	Refresh        *bool `json:"refresh,omitempty"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Refresh                 *bool   `json:"refresh,omitempty"`
 }
 
 type GetPullFilePreviewOnHostQuery struct {
@@ -50645,8 +50656,9 @@ type GetPullDiffQuery struct {
 }
 
 type GetPullExternalContextQuery struct {
-	PlatformRepoID int64 `json:"platform_repo_id"`
-	Refresh        *bool `json:"refresh,omitempty"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Refresh                 *bool   `json:"refresh,omitempty"`
 }
 
 type GetPullFilePreviewQuery struct {
@@ -55924,18 +55936,19 @@ type CommitsResponse struct {
 }
 
 type ConfiguredRepoStatus struct {
-	HiddenFromUI      bool    `json:"hidden_from_ui"`
-	IsGlob            bool    `json:"is_glob"`
-	IssuePrReferences bool    `json:"issue_pr_references"`
-	MatchedRepoCount  int64   `json:"matched_repo_count"`
-	Name              string  `json:"name"`
-	Owner             string  `json:"owner"`
-	PlatformHost      string  `json:"platform_host"`
-	PlatformRepoID    *int64  `json:"platform_repo_id,omitempty"`
-	Provider          string  `json:"provider"`
-	RepoPath          string  `json:"repo_path"`
-	TrackedRepoPath   *string `json:"tracked_repo_path,omitempty"`
-	WorktreeBasePath  *string `json:"worktree_base_path,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	HiddenFromUI            bool    `json:"hidden_from_ui"`
+	IsGlob                  bool    `json:"is_glob"`
+	IssuePrReferences       bool    `json:"issue_pr_references"`
+	MatchedRepoCount        int64   `json:"matched_repo_count"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	Provider                string  `json:"provider"`
+	RepoPath                string  `json:"repo_path"`
+	TrackedRepoPath         *string `json:"tracked_repo_path,omitempty"`
+	WorktreeBasePath        *string `json:"worktree_base_path,omitempty"`
 }
 
 type ConnectDevboxRequest struct {
@@ -55969,6 +55982,9 @@ type CreateAdHocWorkspaceHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 
+	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+
 	// Branch Branch for the new worktree; generated when empty
 	Branch *string `json:"branch,omitempty"`
 
@@ -55981,6 +55997,9 @@ type CreateAdHocWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 
+	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+
 	// Branch Branch for the new worktree; generated when empty
 	Branch *string `json:"branch,omitempty"`
 
@@ -55991,16 +56010,17 @@ type CreateAdHocWorkspaceInputBody struct {
 
 type CreateDevboxWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string `json:"$schema,omitempty"`
-	Branch              *string `json:"branch,omitempty"`
-	IssueNumber         *int64  `json:"issue_number,omitempty"`
-	MrNumber            *int64  `json:"mr_number,omitempty"`
-	Name                string  `json:"name"`
-	Owner               string  `json:"owner"`
-	PlatformHost        string  `json:"platform_host"`
-	PlatformRepoID      *int64  `json:"platform_repo_id,omitempty"`
-	Provider            string  `json:"provider"`
-	ReuseExistingBranch *bool   `json:"reuse_existing_branch,omitempty"`
+	Schema                  *string `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Branch                  *string `json:"branch,omitempty"`
+	IssueNumber             *int64  `json:"issue_number,omitempty"`
+	MrNumber                *int64  `json:"mr_number,omitempty"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	Provider                string  `json:"provider"`
+	ReuseExistingBranch     *bool   `json:"reuse_existing_branch,omitempty"`
 }
 
 type CreateDiffReviewDraftCommentHostInputBody struct {
@@ -56056,34 +56076,43 @@ type CreateIssueInputBody struct {
 
 type CreateIssueWorkspaceHostInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                 *string `json:"$schema,omitempty"`
-	GitHeadRef             *string `json:"git_head_ref,omitempty"`
-	PlatformRepoID         *int64  `json:"platform_repo_id,omitempty"`
-	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
-	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
-	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	GitHeadRef              *string `json:"git_head_ref,omitempty"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch     *bool   `json:"reuse_existing_branch,omitempty"`
+	ReuseExistingDirectory  *bool   `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign      *bool   `json:"suppress_auto_assign,omitempty"`
 }
 
 type CreateIssueWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                 *string `json:"$schema,omitempty"`
-	GitHeadRef             *string `json:"git_head_ref,omitempty"`
-	PlatformRepoID         *int64  `json:"platform_repo_id,omitempty"`
-	ReuseExistingBranch    *bool   `json:"reuse_existing_branch,omitempty"`
-	ReuseExistingDirectory *bool   `json:"reuse_existing_directory,omitempty"`
-	SuppressAutoAssign     *bool   `json:"suppress_auto_assign,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	GitHeadRef              *string `json:"git_head_ref,omitempty"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch     *bool   `json:"reuse_existing_branch,omitempty"`
+	ReuseExistingDirectory  *bool   `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign      *bool   `json:"suppress_auto_assign,omitempty"`
 }
 
 type CreateWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema             *string `json:"$schema,omitempty"`
-	MrNumber           int64   `json:"mr_number"`
-	Name               string  `json:"name"`
-	Owner              string  `json:"owner"`
-	PlatformHost       string  `json:"platform_host"`
-	PlatformRepoID     *int64  `json:"platform_repo_id,omitempty"`
-	Provider           string  `json:"provider"`
-	SuppressAutoAssign *bool   `json:"suppress_auto_assign,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	MrNumber                int64   `json:"mr_number"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	Provider                string  `json:"provider"`
+	SuppressAutoAssign      *bool   `json:"suppress_auto_assign,omitempty"`
 }
 
 type CreateWorktreeFromMergeRequestInputBody struct {
@@ -56453,9 +56482,10 @@ type ExternalContextAction struct {
 
 type ExternalContextActionRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema         *string `json:"$schema,omitempty"`
-	HeadSha        string  `json:"head_sha"`
-	PlatformRepoID int64   `json:"platform_repo_id"`
+	Schema                  *string `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	HeadSha                 string  `json:"head_sha"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
 }
 
 type ExternalContextCard struct {
@@ -56493,9 +56523,10 @@ type FeatureCapabilities struct {
 }
 
 type FederationActivityRepositoryIdentity struct {
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Provider       string `json:"provider"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          int64   `json:"platform_repo_id"`
+	Provider                string  `json:"provider"`
 }
 
 type FederationActivitySubjectIdentity struct {
@@ -56550,13 +56581,14 @@ type FederationWorkflowItem struct {
 }
 
 type FederationWorkflowItemIdentity struct {
-	Name           string `json:"name"`
-	Number         int64  `json:"number"`
-	Owner          string `json:"owner"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Provider       string `json:"provider"`
-	Type           string `json:"type"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string  `json:"name"`
+	Number                  int64   `json:"number"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          int64   `json:"platform_repo_id"`
+	Provider                string  `json:"provider"`
+	Type                    string  `json:"type"`
 }
 
 type FederationWorkflowMutation struct {
@@ -56585,12 +56617,13 @@ type FederationWorkflowQuery struct {
 }
 
 type FederationWorkflowRepositoryIdentity struct {
-	Name           string `json:"name"`
-	Owner          string `json:"owner"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Provider       string `json:"provider"`
-	RepoPath       string `json:"repo_path"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          int64   `json:"platform_repo_id"`
+	Provider                string  `json:"provider"`
+	RepoPath                string  `json:"repo_path"`
 }
 
 type FederationWorkflowState struct {
@@ -57931,12 +57964,13 @@ type ProviderCapabilitiesResponse struct {
 }
 
 type ProviderRepositoryObservation struct {
-	Name           string `json:"name"`
-	Owner          string `json:"owner"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Provider       string `json:"provider"`
-	RepoPath       string `json:"repo_path"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          int64   `json:"platform_repo_id"`
+	Provider                string  `json:"provider"`
+	RepoPath                string  `json:"repo_path"`
 }
 
 type ProviderSettingsResponse struct {
@@ -57979,11 +58013,12 @@ type ProviderStateImportResult struct {
 }
 
 type ProviderStateRepository struct {
-	Name           string `json:"name"`
-	Owner          string `json:"owner"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Provider       string `json:"provider"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          int64   `json:"platform_repo_id"`
+	Provider                string  `json:"provider"`
 }
 
 type ProviderStateReviewComment struct {
@@ -58025,11 +58060,12 @@ type ProviderStateWorkflowPayload struct {
 
 type ProviderWorkspaceItemRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema         *string         `json:"$schema,omitempty"`
-	ItemNumber     int64           `json:"item_number"`
-	ItemType       string          `json:"item_type"`
-	PlatformRepoID int64           `json:"platform_repo_id"`
-	Repository     RepositoryRoute `json:"repository"`
+	Schema                  *string         `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *string         `json:"bitbucket_repository_uuid,omitempty"`
+	ItemNumber              int64           `json:"item_number"`
+	ItemType                string          `json:"item_type"`
+	PlatformRepoID          int64           `json:"platform_repo_id"`
+	Repository              RepositoryRoute `json:"repository"`
 }
 
 type PublishChange struct {
@@ -58520,10 +58556,11 @@ type RepoPreset struct {
 }
 
 type RepoPresetRepository struct {
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Provider       string `json:"provider"`
-	RepoPath       string `json:"repo_path"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          int64   `json:"platform_repo_id"`
+	Provider                string  `json:"provider"`
+	RepoPath                string  `json:"repo_path"`
 }
 
 type RepoPreviewRequest struct {
@@ -58662,35 +58699,38 @@ type RepoWorktreeBaseRequest struct {
 
 type RepositoryDescriptor struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string   `json:"$schema,omitempty"`
-	CloneURL        string    `json:"clone_url"`
-	DefaultBranch   string    `json:"default_branch"`
-	Name            string    `json:"name"`
-	ObservedAt      time.Time `json:"observed_at"`
-	Owner           string    `json:"owner"`
-	PlatformHost    string    `json:"platform_host"`
-	PlatformRepoID  int64     `json:"platform_repo_id"`
-	ProtocolVersion int64     `json:"protocol_version"`
-	Provider        string    `json:"provider"`
-	Stale           bool      `json:"stale"`
+	Schema                  *string   `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *string   `json:"bitbucket_repository_uuid,omitempty"`
+	CloneURL                string    `json:"clone_url"`
+	DefaultBranch           string    `json:"default_branch"`
+	Name                    string    `json:"name"`
+	ObservedAt              time.Time `json:"observed_at"`
+	Owner                   string    `json:"owner"`
+	PlatformHost            string    `json:"platform_host"`
+	PlatformRepoID          int64     `json:"platform_repo_id"`
+	ProtocolVersion         int64     `json:"protocol_version"`
+	Provider                string    `json:"provider"`
+	Stale                   bool      `json:"stale"`
 }
 
 type RepositoryDescriptorRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema         *string `json:"$schema,omitempty"`
-	Name           string  `json:"name"`
-	Owner          string  `json:"owner"`
-	PlatformHost   string  `json:"platform_host"`
-	PlatformRepoID *int64  `json:"platform_repo_id,omitempty"`
-	Provider       string  `json:"provider"`
+	Schema                  *string `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	Provider                string  `json:"provider"`
 }
 
 type RepositoryIdentity struct {
-	Name           *string `json:"name,omitempty"`
-	Owner          *string `json:"owner,omitempty"`
-	PlatformHost   string  `json:"platformHost"`
-	PlatformRepoID int64   `json:"platformRepoID"`
-	Provider       string  `json:"provider"`
+	BitbucketRepositoryUUID *string `json:"bitbucketRepositoryUUID,omitempty"`
+	Name                    *string `json:"name,omitempty"`
+	Owner                   *string `json:"owner,omitempty"`
+	PlatformHost            string  `json:"platformHost"`
+	PlatformRepoID          int64   `json:"platformRepoID"`
+	Provider                string  `json:"provider"`
 }
 
 type RepositoryRoute struct {
@@ -59024,15 +59064,16 @@ type SnapshotRelation struct {
 }
 
 type SnapshotRepository struct {
-	Coverage      *SnapshotCoverage `json:"coverage,omitempty"`
-	DefaultBranch string            `json:"default_branch"`
-	Host          string            `json:"host"`
-	ID            string            `json:"id"`
-	LastSyncAt    *time.Time        `json:"last_sync_at,omitempty"`
-	Path          string            `json:"path"`
-	Provider      string            `json:"provider"`
-	ProviderID    int64             `json:"provider_id"`
-	SyncError     string            `json:"sync_error"`
+	BitbucketRepositoryUUID *string           `json:"bitbucket_repository_uuid,omitempty"`
+	Coverage                *SnapshotCoverage `json:"coverage,omitempty"`
+	DefaultBranch           string            `json:"default_branch"`
+	Host                    string            `json:"host"`
+	ID                      string            `json:"id"`
+	LastSyncAt              *time.Time        `json:"last_sync_at,omitempty"`
+	Path                    string            `json:"path"`
+	Provider                string            `json:"provider"`
+	ProviderID              int64             `json:"provider_id"`
+	SyncError               string            `json:"sync_error"`
 }
 
 type SnapshotReview struct {
@@ -59550,7 +59591,6 @@ type WorkspaceKataSummary struct {
 type WorkspaceLaunchPull struct {
 	BaseBranch       *string                         `json:"base_branch,omitempty"`
 	BaseOid          *string                         `json:"base_oid,omitempty"`
-	BaseRepoID       *int64                          `json:"base_repo_id,omitempty"`
 	HeadBranch       string                          `json:"head_branch"`
 	HeadOid          *string                         `json:"head_oid,omitempty"`
 	HeadRepoCloneURL string                          `json:"head_repo_clone_url"`
@@ -59571,15 +59611,16 @@ type WorkspaceLaunchRepository struct {
 
 type WorkspaceLaunchRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string         `json:"$schema,omitempty"`
-	ForCreation     *bool           `json:"for_creation,omitempty"`
-	GitHeadRef      *string         `json:"git_head_ref,omitempty"`
-	IssueBranchSlug *bool           `json:"issue_branch_slug,omitempty"`
-	ItemKey         *string         `json:"item_key,omitempty"`
-	ItemNumber      int64           `json:"item_number"`
-	ItemType        string          `json:"item_type"`
-	PlatformRepoID  *int64          `json:"platform_repo_id,omitempty"`
-	Repository      RepositoryRoute `json:"repository"`
+	Schema                  *string         `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *string         `json:"bitbucket_repository_uuid,omitempty"`
+	ForCreation             *bool           `json:"for_creation,omitempty"`
+	GitHeadRef              *string         `json:"git_head_ref,omitempty"`
+	IssueBranchSlug         *bool           `json:"issue_branch_slug,omitempty"`
+	ItemKey                 *string         `json:"item_key,omitempty"`
+	ItemNumber              int64           `json:"item_number"`
+	ItemType                string          `json:"item_type"`
+	PlatformRepoID          *int64          `json:"platform_repo_id,omitempty"`
+	Repository              RepositoryRoute `json:"repository"`
 }
 
 type WorkspaceLaunchSpec struct {
@@ -59607,12 +59648,13 @@ type WorkspaceRef struct {
 }
 
 type WorkspaceRepositorySummary struct {
-	Name           string `json:"name"`
-	Owner          string `json:"owner"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID *int64 `json:"platform_repo_id,omitempty"`
-	Provider       string `json:"provider"`
-	RepoPath       string `json:"repo_path"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	Provider                string  `json:"provider"`
+	RepoPath                string  `json:"repo_path"`
 }
 
 type WorkspaceResponse struct {

@@ -6,34 +6,39 @@ import {
   repoPresetRepositoriesForSelection,
   type RepoPresetCatalogEntry,
 } from "./repo-presets.js";
+import { repositoryKeyToRequiredWire } from "../api/repository-key.js";
 
 const catalog: RepoPresetCatalogEntry[] = [
   {
     value: "github|github.com/acme/widgets",
     provider: "github",
     platform_host: "github.com",
-    platform_repo_id: 1102,
+    repositoryKey: { kind: "id", id: 1102 },
     repo_path: "acme/widgets",
   },
   {
     value: "gitlab|git.example.com/group/project",
     provider: "gitlab",
     platform_host: "git.example.com",
-    platform_repo_id: 42,
+    repositoryKey: { kind: "id", id: 42 },
     repo_path: "group/project",
   },
   {
     value: "github|github.com/acme/docs",
     provider: "github",
     platform_host: "github.com",
-    platform_repo_id: 1108,
+    repositoryKey: { kind: "id", id: 1108 },
     repo_path: "acme/docs",
   },
 ];
 
 function persisted(entry: RepoPresetCatalogEntry) {
-  const { value: _, ...repo } = entry;
-  return repo;
+  return {
+    provider: entry.provider,
+    platform_host: entry.platform_host,
+    repo_path: entry.repo_path,
+    ...repositoryKeyToRequiredWire(entry.repositoryKey!),
+  };
 }
 
 const presets = [
@@ -85,9 +90,34 @@ describe("repository presets", () => {
     );
   });
 
+  it("saves and resolves a Bitbucket Cloud repository by UUID", () => {
+    const uuid = "0f5d2a4e-3b1c-4d7e-9a8b-1c2d3e4f5a6b";
+    const cloud: RepoPresetCatalogEntry = {
+      value: "bitbucket|bitbucket.org/team/cloud-app",
+      provider: "bitbucket",
+      platform_host: "bitbucket.org",
+      repo_path: "team/cloud-app",
+      repositoryKey: { kind: "uuid", uuid },
+    };
+    const saved = repoPresetRepositoriesForSelection(cloud.value, [cloud]);
+    expect(saved).toEqual([
+      {
+        provider: "bitbucket",
+        platform_host: "bitbucket.org",
+        platform_repo_id: 0,
+        bitbucket_repository_uuid: uuid,
+        repo_path: "team/cloud-app",
+      },
+    ]);
+    const renamed = { ...cloud, value: "bitbucket|bitbucket.org/team/renamed", repo_path: "team/renamed" };
+    expect(projectRepoPresetSelection({ name: "Cloud", repos: saved! }, [renamed])).toBe(renamed.value);
+  });
+
   it("refuses to save a selection without provider-verified identity", () => {
     expect(
-      repoPresetRepositoriesForSelection("github|github.com/acme/widgets", [{ ...catalog[0]!, platform_repo_id: 0 }]),
+      repoPresetRepositoriesForSelection("github|github.com/acme/widgets", [
+        { ...catalog[0]!, repositoryKey: undefined },
+      ]),
     ).toBeUndefined();
   });
 });

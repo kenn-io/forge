@@ -4,6 +4,7 @@
 import type { SnapshotCoverage } from "./snapshotCoverage.ts";
 
 export interface SnapshotRepository {
+  bitbucket_repository_uuid?: string;
   coverage: SnapshotCoverage | null;
   default_branch: string;
   host: string;

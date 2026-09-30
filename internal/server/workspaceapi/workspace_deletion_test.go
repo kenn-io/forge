@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 func TestDeleteWorkspaceRejectsConcurrentSetup(t *testing.T) {
@@ -195,7 +196,7 @@ func TestPRMonitorPreservesDirtyUnresolvedWorkspace(t *testing.T) {
 	)
 	original := db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	}
 	_, err := database.ObserveRepository(
 		t.Context(), original,
@@ -209,7 +210,7 @@ func TestPRMonitorPreservesDirtyUnresolvedWorkspace(t *testing.T) {
 	_, err = database.ObserveRepository(
 		t.Context(), db.RepoIdentity{
 			Platform: "github", PlatformHost: "github.com",
-			PlatformRepoID: 1002, Owner: "acme", Name: "widget",
+			Key: platform.RepositoryIDKey(1002), Owner: "acme", Name: "widget",
 		},
 	)
 	require.NoError(err)

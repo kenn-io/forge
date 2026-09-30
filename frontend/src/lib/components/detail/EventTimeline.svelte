@@ -56,13 +56,14 @@
     reviewThreadLineLabel,
     type ReviewThread,
   } from "../diff/review-thread-context.js";
+  import type { RepositoryKey } from "../../api/repository-key.js";
 
   interface Props {
     events: Array<PREvent | IssueEvent>;
     orderingEvents?: Array<PREvent | IssueEvent> | undefined;
     provider?: string | undefined;
     platformHost?: string | undefined;
-    platformRepoId?: number | undefined;
+    repositoryKey?: RepositoryKey | undefined;
     repoOwner?: string;
     repoName?: string;
     repoPath?: string | undefined;
@@ -112,7 +113,7 @@
     orderingEvents = events,
     provider,
     platformHost,
-    platformRepoId,
+    repositoryKey,
     repoOwner,
     repoName,
     repoPath,
@@ -1081,7 +1082,7 @@
     detailStore?.loadDetail(repoOwner, repoName, number, {
       provider,
       platformHost,
-      platformRepoId,
+      repositoryKey,
       repoPath,
       sync: false,
     });

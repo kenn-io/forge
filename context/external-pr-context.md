@@ -41,15 +41,19 @@ Requests contain `version: 1`, `operation` (`read` or `action`), and
 `pull_request`. Actions also contain `action_id`. Adapters reject unsupported
 versions. The PR object contains `provider`, `platform_host`,
 `platform_repo_id`, `repo_path`, `number`, `url`, `state` (`open`, `merged`,
-`closed`), `head_sha`, and `base_sha`. All metadata is last-synced; comments,
-body text, and diffs are excluded (`internal/externalcontext/types.go::PullRequest`).
+`closed`), `head_sha`, and `base_sha`, plus `bitbucket_repository_uuid` for
+Bitbucket Cloud, whose `platform_repo_id` is 0. All metadata is last-synced;
+comments, body text, and diffs are excluded
+(`internal/externalcontext/types.go::PullRequestJSON`).
 
-For the same resolved repository, `pull_request.platform_repo_id` and the archive
-snapshot's `repositories[].provider_id` carry the same `repo.PlatformRepoID` value
-(`internal/server/external_context.go::Server.externalContextPull`, `internal/archive/snapshot.go::Service.snapshot`).
-Match across contracts using provider, host, and this ID: the provider's
-integer repository ID (GitHub's numeric `id`, never `node_id`), sent as a JSON
-integer (`platform/repository_identity.go::RepositoryIdentity`).
+For the same resolved repository, `pull_request` and the archive snapshot's
+`repositories[]` carry the same repository key: `platform_repo_id` /
+`provider_id` hold the provider's integer repository ID (GitHub's numeric `id`,
+never `node_id`) as a JSON integer, and Bitbucket Cloud sets
+`bitbucket_repository_uuid` instead
+(`internal/server/external_context.go::Server.externalContextPull`,
+`internal/archive/snapshot.go::Service.snapshot`,
+`platform/repository_key.go::RepositoryKey`).
 
 Responses contain `card`, with null meaning not applicable. A card has
 `status` (`neutral`, `pending`, `success`, `warning`, `error`) and `summary`.

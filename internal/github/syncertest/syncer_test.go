@@ -907,17 +907,17 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 			database := openTestDB(t)
 			ctx := t.Context()
 			repos := []ghclient.RepoRef{{
-				Owner:          "o",
-				Name:           "r",
-				PlatformHost:   "github.com",
-				PlatformRepoID: 1001,
+				Owner:        "o",
+				Name:         "r",
+				PlatformHost: "github.com",
+				Key:          platform.RepositoryIDKey(1001),
 			}}
 			repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-				Platform:       "github",
-				PlatformHost:   "github.com",
-				PlatformRepoID: 1001,
-				Owner:          "o",
-				Name:           "r",
+				Platform:     "github",
+				PlatformHost: "github.com",
+				Key:          platform.RepositoryIDKey(1001),
+				Owner:        "o",
+				Name:         "r",
 			})
 			require.NoError(err)
 

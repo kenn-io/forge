@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
@@ -579,7 +580,7 @@ func TestNotificationsAPIRouteFieldsFollowRepositoryRename(t *testing.T) {
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	_, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	number := 42
@@ -603,7 +604,7 @@ func TestNotificationsAPIRouteFieldsFollowRepositoryRename(t *testing.T) {
 	}}))
 	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
+		Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "gadget",
 	})
 	require.NoError(err)
 

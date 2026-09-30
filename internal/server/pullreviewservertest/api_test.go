@@ -77,20 +77,22 @@ func setupTestServerWithReposAndOptions(
 	repos = append([]ghclient.RepoRef(nil), repos...)
 	for i := range repos {
 		repo := &repos[i]
-		if repo.PlatformRepoID == 0 {
-			repo.PlatformRepoID = testutil.FixtureRepoID(repo.Owner, repo.Name)
+		if repo.Key.IsZero() {
+			repo.Key = platform.RepositoryIDKey(testutil.FixtureRepoID(repo.Owner, repo.Name))
 		}
 		if mock != nil {
-			mock.KnowRoute(repo.PlatformRepoID, repo.Owner, repo.Name)
+			repoID, ok := repo.Key.ID()
+			require.True(t, ok, "GitHub fixture repositories use integer keys")
+			mock.KnowRoute(repoID, repo.Owner, repo.Name)
 		}
 		_, err := reposeed.Seed(
 			t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
-				Platform:   platform.Kind(cmp.Or(string(repo.Platform), "github")),
-				Host:       cmp.Or(repo.PlatformHost, "github.com"),
-				Owner:      repo.Owner,
-				Name:       repo.Name,
-				RepoPath:   repo.RepoPath,
-				PlatformID: repo.PlatformRepoID,
+				Platform: platform.Kind(cmp.Or(string(repo.Platform), "github")),
+				Host:     cmp.Or(repo.PlatformHost, "github.com"),
+				Owner:    repo.Owner,
+				Name:     repo.Name,
+				RepoPath: repo.RepoPath,
+				Key:      repo.Key,
 			}),
 		)
 		require.NoError(t, err)
@@ -310,11 +312,11 @@ func TestAPICommentAutocomplete(t *testing.T) {
 	assert.Equal(http.StatusBadRequest, bangRR.Code, bangRR.Body.String())
 
 	gitlabRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 42,
-		Owner:          "group",
-		Name:           "project",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(42),
+		Owner:        "group",
+		Name:         "project",
 	})
 	require.NoError(err)
 	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
@@ -431,21 +433,21 @@ func TestAPICommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 
 	githubRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1101,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1101),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 	giteaRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitea",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1102,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1102),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 
@@ -498,21 +500,21 @@ func TestAPICommentAutocompleteGitLabMergeRequestReferencesScopesByProvider(t *t
 	now := time.Now().UTC().Truncate(time.Second)
 
 	giteaRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitea",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 1102,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "gitea",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(1102),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 1104,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(1104),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 
@@ -1556,15 +1558,15 @@ func setupActualGitLabReviewServer(
 	registry, err := platform.NewRegistry(client)
 	require.NoError(err)
 	repoRef := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		PlatformHost:   "gitlab.example.com",
-		Owner:          "group",
-		Name:           "project",
-		RepoPath:       "group/project",
-		PlatformRepoID: 4242,
-		WebURL:         "https://gitlab.example.com/group/project",
-		CloneURL:       "https://gitlab.example.com/group/project.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		PlatformHost:  "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repoRef}, time.Minute, nil, nil,
@@ -1574,12 +1576,12 @@ func setupActualGitLabReviewServer(
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 4242,
-		Owner:          "group",
-		Name:           "project",
-		RepoPath:       "group/project",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(4242),
+		Owner:        "group",
+		Name:         "project",
+		RepoPath:     "group/project",
 	})
 	require.NoError(err)
 	require.NoError(database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
@@ -1707,7 +1709,7 @@ func setupGitLabCapabilityServerWithProvider(
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -1752,15 +1754,15 @@ func setupGitLabCapabilityServerWithProvider(
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "group",
-		Name:           "project",
-		PlatformHost:   "gitlab.example.com",
-		RepoPath:       "group/project",
-		PlatformRepoID: 4242,
-		WebURL:         "https://gitlab.example.com/group/project",
-		CloneURL:       "https://gitlab.example.com/group/project.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "group",
+		Name:          "project",
+		PlatformHost:  "gitlab.example.com",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
 		registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
@@ -1896,11 +1898,11 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 	}
 	srv, database, syncer := setupTestServerWithMock(t, mock)
 	_, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	// PR 900 is merged, so the stale native chain shows PR 101 following a

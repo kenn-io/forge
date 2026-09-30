@@ -1006,7 +1006,7 @@ func TestExpiredIssueCommentProbeRenewsDisabledCooldown(t *testing.T) {
 	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
 	repo := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "acme", Name: "widget", PlatformRepoID: testRepoID("acme", "widget"),
+		Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(testRepoID("acme", "widget")),
 	}
 	repoID, err := reposeed.Seed(ctx, database, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
@@ -1109,12 +1109,12 @@ func TestFeatureCooldownNotInheritedAcrossRouteReplacement(t *testing.T) {
 	oldRepo := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		PlatformRepoID: 1001,
+		Key: platform.RepositoryIDKey(1001),
 	}
 	c.deferUntil(oldRepo, "issues", now.Add(24*time.Hour))
 
 	replacement := oldRepo
-	replacement.PlatformRepoID = 1002
+	replacement.Key = platform.RepositoryIDKey(1002)
 	_, due := c.beginProbe(
 		replacement, "issues", now.Add(time.Minute),
 		repositoryFeatureCooldownBypass{}, false,

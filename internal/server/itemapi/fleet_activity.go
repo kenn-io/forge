@@ -17,7 +17,7 @@ func OverlayFleetActivityWorkspaces(response *ActivityResponse, workspaces []fle
 		identity := providerplane.ItemIdentity{
 			Repository: platform.RepositoryIdentity{
 				Provider: workspace.Repo.Provider, PlatformHost: workspace.Repo.PlatformHost,
-				PlatformRepoID: workspace.Repo.PlatformRepoID,
+				Key: workspace.Repo.Key,
 			},
 			ItemType: workspace.ItemType, ItemNumber: workspace.ItemNumber,
 		}.Canonical()

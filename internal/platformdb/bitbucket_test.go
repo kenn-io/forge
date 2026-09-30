@@ -18,8 +18,8 @@ func TestBitbucketUUIDSurvivesRepositoryRename(t *testing.T) {
 	repositoryUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
 	ref := platform.RepoRef{
 		Platform: platform.KindBitbucket, Host: "bitbucket.org",
-		BitbucketRepositoryUUID: repositoryUUID,
-		Owner:                   "team", Name: "widgets", RepoPath: "team/widgets",
+		Key:   platform.RepositoryUUIDKey(repositoryUUID),
+		Owner: "team", Name: "widgets", RepoPath: "team/widgets",
 	}
 	first, err := d.ObserveRepository(t.Context(), DBRepoIdentity(ref))
 	require.NoError(err)
@@ -30,7 +30,6 @@ func TestBitbucketUUIDSurvivesRepositoryRename(t *testing.T) {
 	stored, err := d.GetRepoByID(t.Context(), first.Repository.ID)
 	require.NoError(err)
 	require.NotNil(stored)
-	assert.Equal(repositoryUUID, stored.BitbucketRepositoryUUID)
-	assert.Equal(int64(0), stored.PlatformRepoID)
+	assert.Equal(platform.RepositoryUUIDKey(repositoryUUID), stored.Key)
 	assert.Equal("new-team/renamed", stored.RepoPath)
 }

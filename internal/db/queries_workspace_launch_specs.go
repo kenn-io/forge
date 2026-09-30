@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"go.kenn.io/forge/platform"
 )
 
 func canonicalWorkspaceLaunchSpec(spec WorkspaceLaunchSpec) WorkspaceLaunchSpec {
@@ -154,7 +156,7 @@ func (d *DB) GetWorkspaceByLaunchSpecIdentity(
 	if !identity.Valid() || itemType == "" || itemKey == "" {
 		return nil, nil
 	}
-	uuidText := bitbucketRepositoryUUIDText(identity.BitbucketRepositoryUUID)
+	keyID, keyUUID := repositoryKeyArgs(identity.Key)
 	workspace, err := d.scanWorkspace(ctx, d.roQueryRowContext(ctx, `
 		SELECT w.id, w.platform, w.platform_host, w.repo_owner, w.repo_name,
 		       w.repo_id,
@@ -166,17 +168,14 @@ func (d *DB) GetWorkspaceByLaunchSpecIdentity(
 		JOIN forge_workspace_launch_specs launch ON launch.workspace_id = w.id
 		WHERE lower(json_extract(launch.spec_json, '$.repository.provider')) = ?
 		  AND lower(json_extract(launch.spec_json, '$.repository.platform_host')) = ?
-		  AND (
-		    (? > 0 AND json_extract(launch.spec_json, '$.repository.platform_repo_id') = ?)
-		    OR (? <> '' AND json_extract(launch.spec_json, '$.repository.bitbucket_repository_uuid') = ?)
-		  )
+		  AND json_extract(launch.spec_json, '$.repository.platform_repo_id') = ?
+		  AND COALESCE(json_extract(launch.spec_json, '$.repository.bitbucket_repository_uuid'), '') = ?
 		  AND json_extract(launch.spec_json, '$.item_type') = ?
 		  AND json_extract(launch.spec_json, '$.item_key') = ?
 		ORDER BY w.created_at, w.id
 		LIMIT 1`,
 		identity.Provider, identity.PlatformHost,
-		identity.PlatformRepoID, identity.PlatformRepoID,
-		uuidText, uuidText,
+		keyID, keyUUID,
 		itemType, itemKey,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -407,21 +406,21 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 			reason = "launchSpecMismatch"
 		}
 		if reason != "" {
-			var platformRepoID int64
+			var repoKey platform.RepositoryKey
 			if spec != nil {
-				platformRepoID = spec.Repository.PlatformRepoID
+				repoKey = spec.Repository.Key
 			} else if workspace.RepoID != 0 {
 				repo, err := d.GetActiveRepoByID(ctx, workspace.RepoID)
 				if err != nil {
 					return nil, err
 				}
 				if repo != nil {
-					platformRepoID = repo.PlatformRepoID
+					repoKey = repo.Key
 				}
 			}
 			unprepared = append(unprepared, UnpreparedWorkspace{
 				Workspace: *workspace, Reason: reason,
-				PlatformRepoID: platformRepoID,
+				RepoKey: repoKey,
 			})
 		}
 	}

@@ -30,7 +30,7 @@ func newMidStackMergeFixture(
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    4242,
+		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
 	provider := &deferredMergeTestProvider{

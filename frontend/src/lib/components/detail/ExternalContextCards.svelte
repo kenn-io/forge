@@ -14,17 +14,18 @@
     type ExternalContextWorkflowService,
   } from "../../stores/external-context-workflow.svelte.js";
   import ExternalContextCard from "./ExternalContextCard.svelte";
+  import type { RepositoryKey } from "../../api/repository-key.js";
 
   interface Props {
     ref: ProviderRouteRef;
-    platformRepoId: number;
+    repositoryKey: RepositoryKey;
     number: number;
     headSha: string;
   }
 
-  const { ref, platformRepoId, number, headSha }: Props = $props();
+  const { ref, repositoryKey, number, headSha }: Props = $props();
   const runtime = getAppRuntime();
-  const pull = $derived({ ref, platformRepoId, number, headSha });
+  const pull = $derived({ ref, repositoryKey, number, headSha });
   const key = $derived(externalContextKey(pull));
   let workflow = $state.raw<ExternalContextWorkflowService | null>(null);
   let view = $state.raw<{

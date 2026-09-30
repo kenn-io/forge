@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 
 	"go.kenn.io/forge/internal/db"
 
@@ -69,17 +70,17 @@ name = "wid*"
 	defer stream.Close()
 
 	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
+		Key:                platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -126,17 +127,17 @@ name = "wid*"
 `, &serverfake.MockGH{})
 
 	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
+		Key:                platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -196,17 +197,17 @@ name = "wid*"
 `, mock)
 
 	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
+		Key:                platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 
@@ -260,17 +261,17 @@ name = "wid*"
 `, &serverfake.MockGH{})
 
 	serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Owner:              "acme",
 		Name:               "widget",
 		PlatformHost:       "github.com",
-		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
+		Key:                platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 		ConfiguredRepoPath: "acme/widget",
 	}})
 

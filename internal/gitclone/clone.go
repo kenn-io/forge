@@ -15,11 +15,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"uuid"
 
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -128,22 +126,10 @@ type (
 func WithRepositoryIdentity(
 	ctx context.Context, identity providerplatform.RepositoryIdentity,
 ) context.Context {
-	return context.WithValue(ctx, repositoryIdentityContextKey{}, repositoryPartitionKey(identity))
-}
-
-// repositoryPartitionKey is the stable provider key that names a clone
-// partition: the integer repository ID, or the Bitbucket Cloud UUID. The
-// clone namespace already carries the platform and the path carries the
-// host, so neither is part of the key; integer keys keep the on-disk layout
-// they had before Cloud UUIDs existed. Empty means no verified identity.
-func repositoryPartitionKey(identity providerplatform.RepositoryIdentity) string {
-	if identity.BitbucketRepositoryUUID != uuid.Nil() {
-		return "bitbucket-uuid:" + identity.BitbucketRepositoryUUID.String()
-	}
-	if identity.PlatformRepoID > 0 {
-		return strconv.FormatInt(identity.PlatformRepoID, 10)
-	}
-	return ""
+	// The partition is named by the key alone: the clone namespace already
+	// carries the platform and the path carries the host. Integer keys
+	// format as the decimal ID, so their on-disk layout is unchanged.
+	return context.WithValue(ctx, repositoryIdentityContextKey{}, identity.Key.String())
 }
 
 // WithRequiredCredential makes every networked Git command in ctx fail closed

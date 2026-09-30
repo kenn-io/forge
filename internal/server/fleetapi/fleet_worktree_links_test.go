@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 // fakeWatchedMRSetter records every watched-MR set the recompute applies so
@@ -30,7 +31,7 @@ func (f *fakeWatchedMRSetter) SetWatchedMRs(mrs []ghclient.WatchedMR) {
 func seedActiveLinkRepo(t *testing.T, d *realdb.DB) int64 {
 	t.Helper()
 	identity := realdb.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = 1001
+	identity.Key = platform.RepositoryIDKey(1001)
 	repoID, err := reposeed.Seed(t.Context(), d, identity)
 	require.NoError(t, err)
 	return repoID

@@ -301,9 +301,9 @@ func newFederatedDaemonServer(
 			nil, daemon.Database, nil, []ghclient.RepoRef{{
 				Platform: platform.KindGitHub, PlatformHost: "github.com",
 				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-				PlatformRepoID: verifiedRepoIdentity(db.GitHubRepoIdentity(
+				Key: verifiedRepoIdentity(db.GitHubRepoIdentity(
 					"github.com", "acme", "widget",
-				)).PlatformRepoID,
+				)).Key,
 			}}, time.Minute, nil, nil,
 		)
 		t.Cleanup(syncer.Stop)
@@ -361,9 +361,9 @@ func seedFederatedWorkspace(
 			Version: db.WorkspaceLaunchSpecVersion,
 			Repository: db.WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: verifiedRepoIdentity(db.GitHubRepoIdentity(
+				Key: verifiedRepoIdentity(db.GitHubRepoIdentity(
 					"github.com", "acme", "widget",
-				)).PlatformRepoID,
+				)).Key,
 				Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
@@ -524,9 +524,9 @@ func TestFederatedForgesE2E(t *testing.T) {
 	}
 	item := mcpserver.ItemIdentity{
 		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		PlatformRepoID: verifiedRepoIdentity(db.GitHubRepoIdentity(
+		RepoKey: verifiedRepoIdentity(db.GitHubRepoIdentity(
 			"github.com", "acme", "widget",
-		)).PlatformRepoID,
+		)).Key,
 		Owner: "acme", Name: "widget", Number: 1,
 	}
 	mutation, err := fixture.NodeA.Server.MCPBackend().SetWorkflowState(
@@ -618,7 +618,7 @@ func TestFederatedForgesE2E(t *testing.T) {
 func mcpRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIdentity {
 	return mcpserver.RepositoryIdentity{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
-		PlatformRepoID: item.PlatformRepoID, Owner: item.Owner, Name: item.Name,
+		Key: item.RepoKey, Owner: item.Owner, Name: item.Name,
 	}
 }
 

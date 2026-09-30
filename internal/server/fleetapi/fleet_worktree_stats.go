@@ -309,11 +309,11 @@ func (s *fleetWorktreeStatsSampler) workspaceDefaultBranch(
 	ctx context.Context, sum fleet.RawWorkspace,
 ) string {
 	repo, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-		Platform:       sum.Repository.Provider,
-		PlatformHost:   sum.Repository.PlatformHost,
-		PlatformRepoID: sum.Repository.PlatformRepoID,
-		Owner:          sum.Repository.Owner,
-		Name:           sum.Repository.Name,
+		Platform:     sum.Repository.Provider,
+		PlatformHost: sum.Repository.PlatformHost,
+		Key:          sum.Repository.Key,
+		Owner:        sum.Repository.Owner,
+		Name:         sum.Repository.Name,
 	})
 	if err != nil || repo == nil {
 		return ""

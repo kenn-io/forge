@@ -12,9 +12,19 @@ type FederationUnassignedActivitySubjectsResponse struct {
 }
 
 type FederationActivityRepositoryIdentity struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid"`
+}
+
+func (r FederationActivityRepositoryIdentity) MarshalJSON() ([]byte, error) {
+	type plain FederationActivityRepositoryIdentity
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *FederationActivityRepositoryIdentity) UnmarshalJSON(data []byte) error {
+	type plain FederationActivityRepositoryIdentity
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 type FederationActivitySubjectIdentity struct {
@@ -26,9 +36,9 @@ type FederationActivitySubjectIdentity struct {
 func (identity FederationActivitySubjectIdentity) Provider() providerplane.ItemIdentity {
 	return providerplane.ItemIdentity{
 		Repository: platform.RepositoryIdentity{
-			Provider:       identity.Repository.Provider,
-			PlatformHost:   identity.Repository.PlatformHost,
-			PlatformRepoID: identity.Repository.PlatformRepoID,
+			Provider:     identity.Repository.Provider,
+			PlatformHost: identity.Repository.PlatformHost,
+			Key:          identity.Repository.Key,
 		},
 		ItemType: identity.ItemType, ItemNumber: identity.ItemNumber,
 	}

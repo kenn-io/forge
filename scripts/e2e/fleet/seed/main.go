@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/platform"
 )
 
 func main() {
@@ -150,12 +151,12 @@ func seedProviderState(
 	pullState db.MergeRequestState,
 ) error {
 	entry, err := database.ObserveRepository(ctx, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   platformHost,
-		PlatformRepoID: fleetWidgetRepoID,
-		Owner:          "acme",
-		Name:           "fleet-widget",
-		RepoPath:       "acme/fleet-widget",
+		Platform:     "github",
+		PlatformHost: platformHost,
+		Key:          platform.RepositoryIDKey(fleetWidgetRepoID),
+		Owner:        "acme",
+		Name:         "fleet-widget",
+		RepoPath:     "acme/fleet-widget",
 	})
 	if err != nil {
 		return fmt.Errorf("upsert repo: %w", err)

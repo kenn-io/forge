@@ -22,7 +22,7 @@ func TestItemWorkspaceCreationRejectsReplacedRepositoryIdentity(t *testing.T) {
 	require := require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
 	current, err := fixture.database.ObserveRepository(t.Context(), db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com", PlatformRepoID: 2002,
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(2002),
 		Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
@@ -31,7 +31,7 @@ func TestItemWorkspaceCreationRejectsReplacedRepositoryIdentity(t *testing.T) {
 		CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 	}, nil, nil))
 	bare, err := fixture.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: 2002}), "github", "github.com", "acme", "widget",
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(2002)}), "github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)
 	gitfixture.Run(t, t.TempDir(), "clone", "--bare", fixture.remote, bare)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/platform"
 )
 
 func TestStartWorkspaceRetryTransitionsOnlyOneConcurrentCaller(t *testing.T) {
@@ -133,11 +134,11 @@ func insertTestRepoWithHost(
 	return id
 }
 
-func verifiedTestRepoIdentity(platform, host, owner, name string) RepoIdentity {
+func verifiedTestRepoIdentity(provider, host, owner, name string) RepoIdentity {
 	identity := RepoIdentity{
-		Platform: platform, PlatformHost: host, Owner: owner, Name: name,
+		Platform: provider, PlatformHost: host, Owner: owner, Name: name,
 	}
-	identity.PlatformRepoID = syntheticTestRepoID(identity)
+	identity.Key = platform.RepositoryIDKey(syntheticTestRepoID(identity))
 	return identity
 }
 
@@ -1125,7 +1126,7 @@ func TestObserveRepositoryDefaultsToGitHubIdentity(t *testing.T) {
 	assert.Equal("alice", repo.OwnerKey)
 	assert.Equal("alpha", repo.NameKey)
 	assert.Equal("alice/alpha", repo.RepoPathKey)
-	assert.Equal(syntheticTestRepoID(GitHubRepoIdentity("github.com", "alice", "alpha")), repo.PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(syntheticTestRepoID(GitHubRepoIdentity("github.com", "alice", "alpha"))), repo.Key)
 	assert.Empty(repo.WebURL)
 	assert.Empty(repo.CloneURL)
 	assert.Empty(repo.DefaultBranch)
@@ -1138,19 +1139,19 @@ func TestObserveRepositorySupportsProviderIdentity(t *testing.T) {
 	ctx := t.Context()
 
 	githubID, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "example.com",
-		PlatformRepoID: 1001,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "example.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	gitlabID, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "example.com",
-		PlatformRepoID: 1002,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "gitlab",
+		PlatformHost: "example.com",
+		Key:          platform.RepositoryIDKey(1002),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 
@@ -1203,12 +1204,12 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	ctx := t.Context()
 
 	repoID, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 1001,
-		Owner:          "Group/SubGroup",
-		Name:           "ProjectName",
-		RepoPath:       "Group/SubGroup/ProjectName",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "Group/SubGroup",
+		Name:         "ProjectName",
+		RepoPath:     "Group/SubGroup/ProjectName",
 	})
 	require.NoError(err)
 	mrID := insertTestMRWithOptions(t, d, testMR(repoID, 7, withMRTitle("GitLab PR")))
@@ -1327,7 +1328,7 @@ func TestUpdateRepoProviderObservationPreservesIdentity(t *testing.T) {
 	assert.Equal("acme", repo.Owner)
 	assert.Equal("widget", repo.Name)
 	assert.Equal("acme/widget", repo.RepoPath)
-	assert.Equal(syntheticTestRepoID(GitHubRepoIdentity("github.com", "acme", "widget")), repo.PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(syntheticTestRepoID(GitHubRepoIdentity("github.com", "acme", "widget"))), repo.Key)
 	assert.Equal("https://github.com/acme/widget", repo.WebURL)
 	assert.Equal("https://github.com/acme/widget.git", repo.CloneURL)
 	assert.Equal("main", repo.DefaultBranch)
@@ -1628,11 +1629,11 @@ func TestUpdateRepoSync(t *testing.T) {
 	ctx := t.Context()
 
 	id, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1001,
-		Owner:          "o",
-		Name:           "r",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "o",
+		Name:         "r",
 	})
 	require.NoError(err)
 	now := baseTime()
@@ -3921,12 +3922,12 @@ func TestListCommentAutocompleteUsersScopesByProvider(t *testing.T) {
 
 	githubRepoID := insertTestRepo(t, d, "acme", "widget")
 	giteaRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "gitea",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1001,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 
@@ -4082,12 +4083,12 @@ func TestListCommentAutocompleteReferencesScopesByProvider(t *testing.T) {
 
 	githubRepoID := insertTestRepo(t, d, "acme", "widget")
 	giteaRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "gitea",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1001,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "gitea",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 
@@ -4386,7 +4387,7 @@ func TestListWorkspacesUsesOneReadConnection(t *testing.T) {
 	d := openTestDB(t)
 
 	identity := GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = 1001
+	identity.Key = platform.RepositoryIDKey(1001)
 	repo, err := d.ObserveRepository(t.Context(), identity)
 	require.NoError(err)
 	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
@@ -4397,7 +4398,7 @@ func TestListWorkspacesUsesOneReadConnection(t *testing.T) {
 	}))
 
 	renamed := GitHubRepoIdentity("github.com", "acme", "gadget")
-	renamed.PlatformRepoID = identity.PlatformRepoID
+	renamed.Key = identity.Key
 	_, err = d.ObserveRepository(t.Context(), renamed)
 	require.NoError(err)
 
@@ -5107,11 +5108,11 @@ func workspaceLinkageTestDB(t *testing.T) *DB {
 	t.Helper()
 	d := openTestDB(t)
 	_, err := seedTestRepo(t.Context(), d, RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: 1001,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(t, err)
 	return d
@@ -5343,12 +5344,12 @@ func TestWorkspaceCanonicalizationPreservesGitLabRepoDisplay(t *testing.T) {
 	ctx := t.Context()
 
 	_, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.example.com",
-		PlatformRepoID: 1001,
-		Owner:          "Group/SubGroup",
-		Name:           "ProjectName",
-		RepoPath:       "Group/SubGroup/ProjectName",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.example.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "Group/SubGroup",
+		Name:         "ProjectName",
+		RepoPath:     "Group/SubGroup/ProjectName",
 	})
 	require.NoError(err)
 
@@ -5535,19 +5536,19 @@ func TestWorkspaceSummariesDoNotJoinAcrossProviders(t *testing.T) {
 	ctx := t.Context()
 
 	githubRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "code.example.com",
-		PlatformRepoID: 1001,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "github",
+		PlatformHost: "code.example.com",
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	gitlabRepoID, err := seedTestRepo(ctx, d, RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "code.example.com",
-		PlatformRepoID: 1002,
-		Owner:          "acme",
-		Name:           "widget",
+		Platform:     "gitlab",
+		PlatformHost: "code.example.com",
+		Key:          platform.RepositoryIDKey(1002),
+		Owner:        "acme",
+		Name:         "widget",
 	})
 	require.NoError(err)
 	insertTestMRWithOptions(t, d, testMR(githubRepoID, 7, withMRTitle("github PR")))

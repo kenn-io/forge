@@ -108,15 +108,15 @@ token_file = %q
 
 	database := dbtest.Open(t)
 	ref := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "group",
-		Name:           "project",
-		PlatformHost:   "gitlab.example.com",
-		RepoPath:       "group/project",
-		PlatformRepoID: 42,
-		WebURL:         "https://gitlab.example.com/group/project",
-		CloneURL:       "https://gitlab.example.com/group/project.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "group",
+		Name:          "project",
+		PlatformHost:  "gitlab.example.com",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(42),
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}
 	repoID, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(platform.RepoRef{
 		Platform:      platform.KindGitLab,
@@ -124,7 +124,7 @@ token_file = %q
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    42,
+		Key:           platform.RepositoryIDKey(42),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -784,7 +784,7 @@ func startGitLabTokenSyncServer(
 		Owner:         "group",
 		Name:          "project",
 		RepoPath:      "group/project",
-		PlatformID:    42,
+		Key:           platform.RepositoryIDKey(42),
 		WebURL:        "https://gitlab.example.com/group/project",
 		CloneURL:      "https://gitlab.example.com/group/project.git",
 		DefaultBranch: "main",
@@ -806,15 +806,15 @@ func startGitLabTokenSyncServer(
 
 func gitLabTokenRepoRef() ghclient.RepoRef {
 	return ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "group",
-		Name:           "project",
-		PlatformHost:   "gitlab.example.com",
-		RepoPath:       "group/project",
-		PlatformRepoID: 42,
-		WebURL:         "https://gitlab.example.com/group/project",
-		CloneURL:       "https://gitlab.example.com/group/project.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "group",
+		Name:          "project",
+		PlatformHost:  "gitlab.example.com",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(42),
+		WebURL:        "https://gitlab.example.com/group/project",
+		CloneURL:      "https://gitlab.example.com/group/project.git",
+		DefaultBranch: "main",
 	}
 }
 
@@ -992,7 +992,7 @@ func seedReadyRuntimeWorkspace(t *testing.T, database *db.DB, worktreePath strin
 	now := time.Now().UTC().Truncate(time.Second)
 	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), Owner: "acme", Name: "widget",
 	})
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(worktreePath, 0o755))
@@ -1021,7 +1021,7 @@ func seedReadyRuntimeWorkspace(t *testing.T, database *db.DB, worktreePath strin
 			Version: db.WorkspaceLaunchSpecVersion,
 			Repository: db.WorkspaceLaunchRepository{
 				Provider: "github", PlatformHost: "github.com",
-				PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
+				Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), Owner: "acme", Name: "widget",
 				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 			},
 			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1,

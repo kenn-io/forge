@@ -16,6 +16,7 @@
   import { repoIdentityMatches, issueDetailMatchesRef } from "../components/detail/detail-match.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
+  import { repositoryKeyFromWire } from "../api/repository-key.js";
 
   const { toggleSidebar } = getSidebar();
   const { issues } = getStores();
@@ -58,15 +59,15 @@
     workspacePaneControls = undefined,
   }: Props = $props();
 
-  const selectedPlatformRepoId = $derived.by(() => {
-    if (!routeSelection || routeSelection.platformRepoId) return routeSelection?.platformRepoId;
+  const selectedRepositoryKey = $derived.by(() => {
+    if (!routeSelection || routeSelection.repositoryKey) return routeSelection?.repositoryKey;
     const item = issues.getIssues().find((item) =>
       item.Number === routeSelection.number && repoIdentityMatches(item, routeSelection),
     );
-    return item?.repo.platform_repo_id;
+    return repositoryKeyFromWire(item?.repo);
   });
   const selectedIssue = $derived(
-    routeSelection ? { ...routeSelection, platformRepoId: selectedPlatformRepoId } : null,
+    routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,
   );
 
   function refreshSelectedDetail(): void {
@@ -76,7 +77,7 @@
       sync: false,
       provider: ref.provider,
       platformHost: ref.platformHost,
-      platformRepoId: ref.platformRepoId,
+      repositoryKey: ref.repositoryKey,
       repoPath: ref.repoPath,
     });
   }
@@ -163,7 +164,7 @@
           number={selectedIssue.number}
           provider={selectedIssue.provider}
           platformHost={selectedIssue.platformHost}
-          platformRepoId={selectedIssue.platformRepoId}
+          repositoryKey={selectedIssue.repositoryKey}
           repoPath={selectedIssue.repoPath}
           autoSync={autoSyncDetail}
           hideStaleWhileLoading={hideStaleDetailWhileLoading}
@@ -188,7 +189,7 @@
               number={selectedIssue.number}
               provider={selectedIssue.provider}
               platformHost={selectedIssue.platformHost}
-              platformRepoId={selectedIssue.platformRepoId}
+              repositoryKey={selectedIssue.repositoryKey}
               repoPath={selectedIssue.repoPath}
               autoSync={autoSyncDetail}
               hideStaleWhileLoading={hideStaleDetailWhileLoading}

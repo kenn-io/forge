@@ -20,7 +20,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"uuid"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -87,11 +86,11 @@ type Manager struct {
 // WorktreeBaseRepository identifies a tracked remote repository when resolving
 // a user-configured checkout for new git worktrees.
 type WorktreeBaseRepository struct {
-	Platform       string
-	PlatformHost   string
-	PlatformRepoID int64
-	Owner          string
-	Name           string
+	Platform     string
+	PlatformHost string
+	Key          platform.RepositoryKey
+	Owner        string
+	Name         string
 }
 
 // WorktreeBasePathResolver resolves a tracked remote repository to a
@@ -118,7 +117,8 @@ type CreateIssueOptions struct {
 // An empty BranchName generates one; a name that already exists locally is
 // reused when requested or automatically suffixed with a short random hash.
 type CreateAdHocOptions struct {
-	PlatformRepoID      int64
+	// RepoKey, when set, rejects a route now held by a different repository.
+	RepoKey             platform.RepositoryKey
 	BranchName          string
 	ReuseExistingBranch bool
 }
@@ -672,10 +672,9 @@ func (m *Manager) CreateIssueFromLaunchSpec(
 	if !opts.ReuseExistingDirectory {
 		branchDir, ok, localBase, err := m.branchInspectionDir(ctx, workspaceRepoRef{
 			ID: repo.ID, Platform: spec.Repository.Provider,
-			PlatformHost:            spec.Repository.PlatformHost,
-			ProviderID:              spec.Repository.PlatformRepoID,
-			BitbucketRepositoryUUID: spec.Repository.BitbucketRepositoryUUID,
-			Owner:                   spec.Repository.Owner, Name: spec.Repository.Name,
+			PlatformHost: spec.Repository.PlatformHost,
+			Key:          spec.Repository.Key,
+			Owner:        spec.Repository.Owner, Name: spec.Repository.Name,
 			RemoteURL: spec.Repository.CloneURL,
 		})
 		if err != nil {
@@ -889,7 +888,7 @@ func (m *Manager) CreateAdHoc(
 	if repo == nil {
 		return nil, fmt.Errorf("%w: repository not tracked", ErrWorkspaceNotFound)
 	}
-	if opts.PlatformRepoID != 0 && opts.PlatformRepoID != repo.PlatformRepoID {
+	if !opts.RepoKey.IsZero() && opts.RepoKey != repo.Key {
 		return nil, fmt.Errorf("%w: workspace repository identity changed for route: %s/%s",
 			db.ErrRepositoryIdentityChanged, owner, name)
 	}
@@ -912,9 +911,8 @@ func (m *Manager) CreateAdHoc(
 	nextHashAttempt := 0
 	repoRef := workspaceRepoRef{
 		ID: repo.ID, Platform: repo.Platform, PlatformHost: platformHost,
-		ProviderID: repo.PlatformRepoID, Owner: owner, Name: name,
-		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
-		RemoteURL:               workspaceCloneRemoteURL(repo.Row(), platformHost, owner, name),
+		Key: repo.Key, Owner: owner, Name: name,
+		RemoteURL: workspaceCloneRemoteURL(repo.Row(), platformHost, owner, name),
 	}
 	repoDir, err := m.workspaceRepoDir(ctx, repoRef)
 	if err != nil {
@@ -1158,20 +1156,15 @@ type workspaceRepoRef struct {
 	ID           int64
 	Platform     string
 	PlatformHost string
-	ProviderID   int64
-	// BitbucketRepositoryUUID is Bitbucket Cloud's identity; ProviderID is 0
-	// for Cloud.
-	BitbucketRepositoryUUID uuid.UUID
-	Owner                   string
-	Name                    string
-	RemoteURL               string
+	Key          platform.RepositoryKey
+	Owner        string
+	Name         string
+	RemoteURL    string
 }
 
 func (r workspaceRepoRef) providerIdentity() platform.RepositoryIdentity {
 	return platform.RepositoryIdentity{
-		Provider: r.Platform, PlatformHost: r.PlatformHost,
-		PlatformRepoID:          r.ProviderID,
-		BitbucketRepositoryUUID: r.BitbucketRepositoryUUID,
+		Provider: r.Platform, PlatformHost: r.PlatformHost, Key: r.Key,
 	}.Canonical()
 }
 
@@ -2322,8 +2315,7 @@ func (m *Manager) workspaceSetupGitDir(
 		return workspaceGitDir{}, err
 	}
 	if launchSpec != nil {
-		repo.ProviderID = launchSpec.Repository.PlatformRepoID
-		repo.BitbucketRepositoryUUID = launchSpec.Repository.BitbucketRepositoryUUID
+		repo.Key = launchSpec.Repository.Key
 	}
 	if ws.MRHeadRepo == nil {
 		if strings.TrimSpace(worktreeBasePath) != "" {
@@ -2396,11 +2388,11 @@ func (m *Manager) localWorktreeBaseDir(
 		return WorktreeBase{}, false, nil
 	}
 	raw, ok, err := m.worktreeBaseResolver(ctx, WorktreeBaseRepository{
-		Platform:       repo.Platform,
-		PlatformHost:   repo.PlatformHost,
-		PlatformRepoID: repo.ProviderID,
-		Owner:          repo.Owner,
-		Name:           repo.Name,
+		Platform:     repo.Platform,
+		PlatformHost: repo.PlatformHost,
+		Key:          repo.Key,
+		Owner:        repo.Owner,
+		Name:         repo.Name,
 	})
 	if err != nil {
 		return WorktreeBase{}, false, err
@@ -2441,8 +2433,7 @@ func (m *Manager) workspaceRepositoryRef(
 			"%w: workspace repository not found", ErrWorkspaceNotFound,
 		)
 	}
-	repoRef.ProviderID = repo.PlatformRepoID
-	repoRef.BitbucketRepositoryUUID = repo.BitbucketRepositoryUUID
+	repoRef.Key = repo.Key
 	return repoRef, nil
 }
 

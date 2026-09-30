@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 	"errors"
+	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/externalcontext"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/platform"
 )
 
 type externalContextSourcesResponse struct {
@@ -27,8 +29,11 @@ type externalContextInput struct {
 	Name           string `path:"name"`
 	Number         int    `path:"number" minimum:"1"`
 	SourceID       string `path:"source_id" minLength:"1" maxLength:"128"`
-	PlatformRepoID int64  `query:"platform_repo_id" required:"true" minimum:"1"`
-	Refresh        bool   `query:"refresh"`
+	PlatformRepoID int64  `query:"platform_repo_id"`
+	// BitbucketRepositoryUUID names a Bitbucket Cloud repository in place of
+	// platform_repo_id.
+	BitbucketRepositoryUUID string `query:"bitbucket_repository_uuid"`
+	Refresh                 bool   `query:"refresh"`
 }
 
 type externalContextHostInput struct {
@@ -38,13 +43,38 @@ type externalContextHostInput struct {
 	Name           string `path:"name"`
 	Number         int    `path:"number" minimum:"1"`
 	SourceID       string `path:"source_id" minLength:"1" maxLength:"128"`
-	PlatformRepoID int64  `query:"platform_repo_id" required:"true" minimum:"1"`
-	Refresh        bool   `query:"refresh"`
+	PlatformRepoID int64  `query:"platform_repo_id"`
+	// BitbucketRepositoryUUID names a Bitbucket Cloud repository in place of
+	// platform_repo_id.
+	BitbucketRepositoryUUID string `query:"bitbucket_repository_uuid"`
+	Refresh                 bool   `query:"refresh"`
 }
 
 type externalContextActionRequest struct {
-	PlatformRepoID int64  `json:"platform_repo_id" minimum:"1"`
-	HeadSHA        string `json:"head_sha" minLength:"1" maxLength:"128"`
+	PlatformRepoID          int64     `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID uuid.UUID `json:"bitbucket_repository_uuid,omitzero"`
+	HeadSHA                 string    `json:"head_sha" minLength:"1" maxLength:"128"`
+}
+
+// externalContextRepoKey decodes the repository key a context request names;
+// one is required so a replacement repository at the route cannot answer.
+func externalContextRepoKey(id int64, repositoryUUID uuid.UUID) (platform.RepositoryKey, error) {
+	key, err := httpapi.RequestRepositoryKey("platform_repo_id", id, repositoryUUID)
+	if err != nil {
+		return platform.RepositoryKey{}, err
+	}
+	if key.IsZero() {
+		return platform.RepositoryKey{}, httpapi.Validation("platform_repo_id", "a repository key is required")
+	}
+	return key, nil
+}
+
+func externalContextQueryRepoKey(id int64, repositoryUUID string) (platform.RepositoryKey, error) {
+	parsed, err := platform.ParseRepositoryUUID(repositoryUUID)
+	if err != nil {
+		return platform.RepositoryKey{}, httpapi.Validation("bitbucket_repository_uuid", err.Error())
+	}
+	return externalContextRepoKey(id, parsed)
 }
 
 type externalContextActionInput struct {
@@ -89,7 +119,11 @@ func (s *Server) listExternalContextSources(context.Context, *struct{}) (*extern
 }
 
 func (s *Server) getPullExternalContext(ctx context.Context, input *externalContextInput) (*externalContextOutput, error) {
-	pull, err := s.externalContextPull(ctx, itemapi.RepoNumberInput{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number}, input.PlatformRepoID)
+	repoKey, err := externalContextQueryRepoKey(input.PlatformRepoID, input.BitbucketRepositoryUUID)
+	if err != nil {
+		return nil, err
+	}
+	pull, err := s.externalContextPull(ctx, itemapi.RepoNumberInput{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number}, repoKey)
 	if err != nil {
 		return nil, err
 	}
@@ -103,12 +137,17 @@ func (s *Server) getPullExternalContext(ctx context.Context, input *externalCont
 func (s *Server) getPullExternalContextOnHost(ctx context.Context, input *externalContextHostInput) (*externalContextOutput, error) {
 	return s.getPullExternalContext(ctx, &externalContextInput{
 		Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number,
-		SourceID: input.SourceID, PlatformRepoID: input.PlatformRepoID, Refresh: input.Refresh,
+		SourceID: input.SourceID, PlatformRepoID: input.PlatformRepoID,
+		BitbucketRepositoryUUID: input.BitbucketRepositoryUUID, Refresh: input.Refresh,
 	})
 }
 
 func (s *Server) runPullExternalContextAction(ctx context.Context, input *externalContextActionInput) (*externalContextOutput, error) {
-	pull, err := s.externalContextPull(ctx, itemapi.RepoNumberInput{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number}, input.Body.PlatformRepoID)
+	repoKey, err := externalContextRepoKey(input.Body.PlatformRepoID, input.Body.BitbucketRepositoryUUID)
+	if err != nil {
+		return nil, err
+	}
+	pull, err := s.externalContextPull(ctx, itemapi.RepoNumberInput{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number}, repoKey)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +172,7 @@ func (s *Server) runPullExternalContextActionOnHost(ctx context.Context, input *
 }
 
 // Both paths read the hub's last synced snapshot, never a live provider head.
-func (s *Server) externalContextPull(ctx context.Context, input itemapi.RepoNumberInput, expectedRepoID int64) (externalcontext.PullRequest, error) {
+func (s *Server) externalContextPull(ctx context.Context, input itemapi.RepoNumberInput, expectedKey platform.RepositoryKey) (externalcontext.PullRequest, error) {
 	item := pullapi.ItemIdentity{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number}
 	var detail pullapi.MergeRequestDetailResponse
 	var err error
@@ -145,7 +184,7 @@ func (s *Server) externalContextPull(ctx context.Context, input itemapi.RepoNumb
 	if err != nil {
 		return externalcontext.PullRequest{}, err
 	}
-	if detail.Repo.PlatformRepoID <= 0 || detail.Repo.PlatformRepoID != expectedRepoID {
+	if detail.Repo.Key.IsZero() || detail.Repo.Key != expectedKey {
 		return externalcontext.PullRequest{}, httpapi.Conflict(httpapi.CodeConflict, "The repository identity changed. Reload the pull request.", map[string]any{"reason": "stale_state"})
 	}
 	if detail.MergeRequest == nil {
@@ -153,7 +192,7 @@ func (s *Server) externalContextPull(ctx context.Context, input itemapi.RepoNumb
 	}
 	return externalcontext.PullRequest{
 		Provider: detail.Repo.Provider, PlatformHost: detail.PlatformHost,
-		PlatformRepoID: detail.Repo.PlatformRepoID, RepoPath: detail.Repo.RepoPath,
+		RepoKey: detail.Repo.Key, RepoPath: detail.Repo.RepoPath,
 		Number: detail.MergeRequest.Number, URL: detail.MergeRequest.URL,
 		State: string(detail.MergeRequest.State), HeadSHA: detail.PlatformHeadSHA,
 		BaseSHA: detail.PlatformBaseSHA,

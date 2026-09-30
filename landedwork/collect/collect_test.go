@@ -433,6 +433,6 @@ func TestCollectCursorCycle(t *testing.T) {
 
 func observedRepository(id int64) platform.Repository {
 	ref := route
-	ref.PlatformID = id
+	ref.Key = platform.RepositoryIDKey(id)
 	return platform.Repository{Ref: ref}
 }

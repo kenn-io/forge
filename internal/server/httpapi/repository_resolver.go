@@ -37,16 +37,17 @@ func (r *RepositoryResolver) LookupRoute(
 	return r.Lookup(ctx, provider, platformHost, owner+"/"+name)
 }
 
-// LookupSelection resolves a cached repository choice by stable ID while rejecting
-// a different active repository at its old route. A zero ID retains route lookup.
+// LookupSelection resolves a cached repository choice by stable key while
+// rejecting a different active repository at its old route. A zero key
+// retains route lookup.
 func (r *RepositoryResolver) LookupSelection(
-	ctx context.Context, provider, platformHost, owner, name string, platformRepoID int64,
+	ctx context.Context, provider, platformHost, owner, name string, key platform.RepositoryKey,
 ) (*db.ActiveRepo, error) {
 	owner, name = strings.Trim(owner, "/ "), strings.Trim(name, "/ ")
 	if owner == "" || name == "" {
 		return nil, ErrRepoPathRequired
 	}
-	return r.lookup(ctx, provider, platformHost, owner+"/"+name, platformRepoID)
+	return r.lookup(ctx, provider, platformHost, owner+"/"+name, key)
 }
 
 // RequireRouteCapability combines canonical route lookup with the shared
@@ -101,16 +102,15 @@ func PlatformRepoRef(repo db.Repo) platform.RepoRef {
 		repoPath = repo.Owner + "/" + repo.Name
 	}
 	return platform.RepoRef{
-		Platform:                ProviderKind(repo),
-		Host:                    ProviderHost(repo),
-		Owner:                   repo.Owner,
-		Name:                    repo.Name,
-		RepoPath:                repoPath,
-		PlatformID:              repo.PlatformRepoID,
-		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
-		WebURL:                  repo.WebURL,
-		CloneURL:                repo.CloneURL,
-		DefaultBranch:           repo.DefaultBranch,
+		Platform:      ProviderKind(repo),
+		Host:          ProviderHost(repo),
+		Owner:         repo.Owner,
+		Name:          repo.Name,
+		RepoPath:      repoPath,
+		Key:           repo.Key,
+		WebURL:        repo.WebURL,
+		CloneURL:      repo.CloneURL,
+		DefaultBranch: repo.DefaultBranch,
 	}
 }
 
@@ -183,11 +183,11 @@ func (r *RepositoryResolver) Lookup(
 	ctx context.Context,
 	provider, platformHost, repoPath string,
 ) (*db.ActiveRepo, error) {
-	return r.lookup(ctx, provider, platformHost, repoPath, 0)
+	return r.lookup(ctx, provider, platformHost, repoPath, platform.RepositoryKey{})
 }
 
 func (r *RepositoryResolver) lookup(
-	ctx context.Context, provider, platformHost, repoPath string, platformRepoID int64,
+	ctx context.Context, provider, platformHost, repoPath string, key platform.RepositoryKey,
 ) (*db.ActiveRepo, error) {
 	if r == nil || r.db == nil {
 		return nil, ErrRepositoryStoreUnavailable
@@ -217,8 +217,8 @@ func (r *RepositoryResolver) lookup(
 	if err != nil {
 		return nil, fmt.Errorf("lookup repo: %w", err)
 	}
-	if platformRepoID != 0 {
-		identity.PlatformRepoID = platformRepoID
+	if !key.IsZero() {
+		identity.Key = key
 		if repo != nil && repo.Identity() != identity.ProviderIdentity() {
 			return nil, ErrRepoNotFound
 		}
@@ -256,15 +256,14 @@ func (r *RepositoryResolver) Ref(repo db.Repo) RepoRefResponse {
 		repoPath = repo.Owner + "/" + repo.Name
 	}
 	return RepoRefResponse{
-		Provider:                provider,
-		PlatformHost:            host,
-		PlatformRepoID:          repo.PlatformRepoID,
-		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
-		RepoPath:                repoPath,
-		Owner:                   repo.Owner,
-		Name:                    repo.Name,
-		DefaultBranch:           repo.DefaultBranch,
-		Capabilities:            r.Capabilities(platform.Kind(provider), host),
+		Provider:      provider,
+		PlatformHost:  host,
+		Key:           repo.Key,
+		RepoPath:      repoPath,
+		Owner:         repo.Owner,
+		Name:          repo.Name,
+		DefaultBranch: repo.DefaultBranch,
+		Capabilities:  r.Capabilities(platform.Kind(provider), host),
 	}
 }
 

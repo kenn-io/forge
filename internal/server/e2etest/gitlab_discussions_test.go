@@ -30,12 +30,12 @@ func TestGetPRDetailIncludesThreadID(t *testing.T) {
 	srv, database := setupTestServer(t)
 
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "gitlab",
-		PlatformHost:   "gitlab.com",
-		PlatformRepoID: 4242,
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "gitlab",
+		PlatformHost: "gitlab.com",
+		Key:          platform.RepositoryIDKey(4242),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 
@@ -106,7 +106,7 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 		Owner:         "acme",
 		Name:          "widget",
 		RepoPath:      "acme/widget",
-		PlatformID:    1234,
+		Key:           platform.RepositoryIDKey(1234),
 		WebURL:        "https://gitlab.com/acme/widget",
 		CloneURL:      "https://gitlab.com/acme/widget.git",
 		DefaultBranch: "main",
@@ -182,15 +182,15 @@ func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "gitlab.com",
-		RepoPath:       "acme/widget",
-		PlatformRepoID: 1234,
-		WebURL:         "https://gitlab.com/acme/widget",
-		CloneURL:       "https://gitlab.com/acme/widget.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "acme",
+		Name:          "widget",
+		PlatformHost:  "gitlab.com",
+		RepoPath:      "acme/widget",
+		Key:           platform.RepositoryIDKey(1234),
+		WebURL:        "https://gitlab.com/acme/widget",
+		CloneURL:      "https://gitlab.com/acme/widget.git",
+		DefaultBranch: "main",
 	}
 
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -422,7 +422,7 @@ func TestGitLabRepoCapabilitiesIncludeDiscussions(t *testing.T) {
 		Owner:         "acme",
 		Name:          "widget",
 		RepoPath:      "acme/widget",
-		PlatformID:    1234,
+		Key:           platform.RepositoryIDKey(1234),
 		WebURL:        "https://gitlab.com/acme/widget",
 		CloneURL:      "https://gitlab.com/acme/widget.git",
 		DefaultBranch: "main",
@@ -433,15 +433,15 @@ func TestGitLabRepoCapabilitiesIncludeDiscussions(t *testing.T) {
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "gitlab.com",
-		RepoPath:       "acme/widget",
-		PlatformRepoID: 1234,
-		WebURL:         "https://gitlab.com/acme/widget",
-		CloneURL:       "https://gitlab.com/acme/widget.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "acme",
+		Name:          "widget",
+		PlatformHost:  "gitlab.com",
+		RepoPath:      "acme/widget",
+		Key:           platform.RepositoryIDKey(1234),
+		WebURL:        "https://gitlab.com/acme/widget",
+		CloneURL:      "https://gitlab.com/acme/widget.git",
+		DefaultBranch: "main",
 	}
 
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -484,7 +484,7 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 		Owner:         "acme",
 		Name:          "widget",
 		RepoPath:      "acme/widget",
-		PlatformID:    1234,
+		Key:           platform.RepositoryIDKey(1234),
 		WebURL:        "https://gitlab.com/acme/widget",
 		CloneURL:      "https://gitlab.com/acme/widget.git",
 		DefaultBranch: "main",
@@ -495,15 +495,15 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "gitlab.com",
-		RepoPath:       "acme/widget",
-		PlatformRepoID: 1234,
-		WebURL:         "https://gitlab.com/acme/widget",
-		CloneURL:       "https://gitlab.com/acme/widget.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "acme",
+		Name:          "widget",
+		PlatformHost:  "gitlab.com",
+		RepoPath:      "acme/widget",
+		Key:           platform.RepositoryIDKey(1234),
+		WebURL:        "https://gitlab.com/acme/widget",
+		CloneURL:      "https://gitlab.com/acme/widget.git",
+		DefaultBranch: "main",
 	}
 
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -668,7 +668,7 @@ func TestReplyToDiscussionRejectsInvalidThreadID(t *testing.T) {
 		Owner:         "acme",
 		Name:          "widget",
 		RepoPath:      "acme/widget",
-		PlatformID:    1234,
+		Key:           platform.RepositoryIDKey(1234),
 		WebURL:        "https://gitlab.com/acme/widget",
 		CloneURL:      "https://gitlab.com/acme/widget.git",
 		DefaultBranch: "main",
@@ -679,15 +679,15 @@ func TestReplyToDiscussionRejectsInvalidThreadID(t *testing.T) {
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "gitlab.com",
-		RepoPath:       "acme/widget",
-		PlatformRepoID: 1234,
-		WebURL:         "https://gitlab.com/acme/widget",
-		CloneURL:       "https://gitlab.com/acme/widget.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "acme",
+		Name:          "widget",
+		PlatformHost:  "gitlab.com",
+		RepoPath:      "acme/widget",
+		Key:           platform.RepositoryIDKey(1234),
+		WebURL:        "https://gitlab.com/acme/widget",
+		CloneURL:      "https://gitlab.com/acme/widget.git",
+		DefaultBranch: "main",
 	}
 
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -764,7 +764,7 @@ func TestResolveDiscussionE2E(t *testing.T) {
 		Owner:         "acme",
 		Name:          "widget",
 		RepoPath:      "acme/widget",
-		PlatformID:    1234,
+		Key:           platform.RepositoryIDKey(1234),
 		WebURL:        "https://gitlab.com/acme/widget",
 		CloneURL:      "https://gitlab.com/acme/widget.git",
 		DefaultBranch: "main",
@@ -775,15 +775,15 @@ func TestResolveDiscussionE2E(t *testing.T) {
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "gitlab.com",
-		RepoPath:       "acme/widget",
-		PlatformRepoID: 1234,
-		WebURL:         "https://gitlab.com/acme/widget",
-		CloneURL:       "https://gitlab.com/acme/widget.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "acme",
+		Name:          "widget",
+		PlatformHost:  "gitlab.com",
+		RepoPath:      "acme/widget",
+		Key:           platform.RepositoryIDKey(1234),
+		WebURL:        "https://gitlab.com/acme/widget",
+		CloneURL:      "https://gitlab.com/acme/widget.git",
+		DefaultBranch: "main",
 	}
 
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -850,12 +850,12 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 	srv, database := setupTestServer(t)
 
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:       "github",
-		PlatformHost:   "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		Owner:          "acme",
-		Name:           "widget",
-		RepoPath:       "acme/widget",
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
 	})
 	require.NoError(err)
 
@@ -914,7 +914,7 @@ func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
 		Owner:         "acme",
 		Name:          "widget",
 		RepoPath:      "acme/widget",
-		PlatformID:    1234,
+		Key:           platform.RepositoryIDKey(1234),
 		WebURL:        "https://gitlab.com/acme/widget",
 		CloneURL:      "https://gitlab.com/acme/widget.git",
 		DefaultBranch: "main",
@@ -925,15 +925,15 @@ func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "gitlab.com",
-		RepoPath:       "acme/widget",
-		PlatformRepoID: 1234,
-		WebURL:         "https://gitlab.com/acme/widget",
-		CloneURL:       "https://gitlab.com/acme/widget.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "acme",
+		Name:          "widget",
+		PlatformHost:  "gitlab.com",
+		RepoPath:      "acme/widget",
+		Key:           platform.RepositoryIDKey(1234),
+		WebURL:        "https://gitlab.com/acme/widget",
+		CloneURL:      "https://gitlab.com/acme/widget.git",
+		DefaultBranch: "main",
 	}
 
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -989,7 +989,7 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 		Owner:         "acme",
 		Name:          "widget",
 		RepoPath:      "acme/widget",
-		PlatformID:    1234,
+		Key:           platform.RepositoryIDKey(1234),
 		WebURL:        "https://gitlab.com/acme/widget",
 		CloneURL:      "https://gitlab.com/acme/widget.git",
 		DefaultBranch: "main",
@@ -1000,15 +1000,15 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 	require.NoError(err)
 
 	repo := ghclient.RepoRef{
-		Platform:       platform.KindGitLab,
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "gitlab.com",
-		RepoPath:       "acme/widget",
-		PlatformRepoID: 1234,
-		WebURL:         "https://gitlab.com/acme/widget",
-		CloneURL:       "https://gitlab.com/acme/widget.git",
-		DefaultBranch:  "main",
+		Platform:      platform.KindGitLab,
+		Owner:         "acme",
+		Name:          "widget",
+		PlatformHost:  "gitlab.com",
+		RepoPath:      "acme/widget",
+		Key:           platform.RepositoryIDKey(1234),
+		WebURL:        "https://gitlab.com/acme/widget",
+		CloneURL:      "https://gitlab.com/acme/widget.git",
+		DefaultBranch: "main",
 	}
 
 	syncer := ghclient.NewSyncerWithRegistry(

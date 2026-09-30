@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/tokenauth"
+	providerplatform "go.kenn.io/forge/platform"
 )
 
 type blockingRepoBrowserRouteResolver struct {
@@ -327,7 +328,7 @@ func TestRepoBrowserFetchErrorsLeavePublishedCloneUnchanged(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			mgr, repo, work := setupRepoBrowserTestRepo(t)
-			repo.ProviderRepoID = 1001
+			repo.Key = providerplatform.RepositoryIDKey(1001)
 			require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
 			clonePath, err := mgr.repoBrowserClonePath(repo)
 			require.NoError(err)
@@ -930,7 +931,7 @@ func setupRepoBrowserPendingUpdateTest(
 ) (*Manager, RepoBrowserRepoRef, string, string) {
 	t.Helper()
 	mgr, repo, work := setupRepoBrowserTestRepo(t)
-	repo.ProviderRepoID = 1001
+	repo.Key = providerplatform.RepositoryIDKey(1001)
 	require.NoError(t, mgr.EnsureRepoBrowserClone(t.Context(), repo))
 	initialSHA := gitSHA(t, work, "main")
 	require.NoError(t, os.WriteFile(

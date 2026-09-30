@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/platform"
 )
 
 type RepositoryDescriptorSource interface {
@@ -513,7 +514,7 @@ func (h *Handler) ensureRepoBrowserClone(
 	}
 	repoPath = canonicalRepoBrowserRepoPath(owner, name, repoPath)
 	requireCredential := false
-	var descriptorProviderRepoID int64
+	var descriptorKey platform.RepositoryKey
 	if h.descriptors != nil {
 		route, err := providerplane.CanonicalRepositoryRoute(
 			repositoryRouteForBrowser(provider, platformHost, repoPath),
@@ -530,7 +531,7 @@ func (h *Handler) ensureRepoBrowserClone(
 		owner = descriptor.Owner
 		name = descriptor.Name
 		repoPath = owner + "/" + name
-		descriptorProviderRepoID = descriptor.PlatformRepoID
+		descriptorKey = descriptor.Key
 		requireCredential = true
 	}
 	repo, err := h.resolver.Lookup(ctx, provider, platformHost, repoPath)
@@ -541,7 +542,7 @@ func (h *Handler) ensureRepoBrowserClone(
 		return nil, gitclone.RepoBrowserRepoRef{}, errRepoBrowserCloneUnavailable
 	}
 	if requireCredential {
-		if repo.PlatformRepoID != descriptorProviderRepoID {
+		if repo.Key != descriptorKey {
 			return nil, gitclone.RepoBrowserRepoRef{}, db.ErrRepositoryIdentityChanged
 		}
 		if err := h.clones.RequireCredentialRoute(
@@ -594,7 +595,7 @@ func (h *Handler) repoBrowserRepoRef(repo db.Repo) gitclone.RepoBrowserRepoRef {
 		Owner:             repo.Owner,
 		Name:              repo.Name,
 		RepoPath:          repo.RepoPath,
-		ProviderRepoID:    repo.PlatformRepoID,
+		Key:               repo.Key,
 		RemoteURL:         repo.CloneURL,
 		RequireCredential: h.descriptors != nil,
 	}

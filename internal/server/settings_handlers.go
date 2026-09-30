@@ -71,7 +71,7 @@ func (s *Server) buildLocalSettingsResponse(
 		[]ghclient.ConfiguredRepoStatus, len(repos),
 	)
 	for i, raw := range repos {
-		platformRepoID, trackedRepoPath, err := s.settingsapi.ConfiguredRepoProjection(
+		repoKey, trackedRepoPath, err := s.settingsapi.ConfiguredRepoProjection(
 			ctx, raw, tracked,
 		)
 		if err != nil {
@@ -87,7 +87,7 @@ func (s *Server) buildLocalSettingsResponse(
 		configured[i] = ghclient.ConfiguredRepoStatus{
 			Provider:          raw.PlatformOrDefault(),
 			PlatformHost:      raw.PlatformHostOrDefault(),
-			PlatformRepoID:    platformRepoID,
+			Key:               repoKey,
 			Owner:             raw.Owner,
 			Name:              raw.Name,
 			RepoPath:          settingsapi.ConfigRepoPath(raw),
@@ -747,7 +747,7 @@ func (s *Server) updateConfiguredRepoWorktreeBasePath(
 	}
 	s.cfg.Repos[idx].Platform = targetRef.Platform
 	s.cfg.Repos[idx].PlatformHost = targetRef.PlatformHost
-	s.cfg.Repos[idx].PlatformRepoID = targetRef.PlatformRepoID
+	s.cfg.Repos[idx].SetRepositoryKey(targetRef.RepositoryKey())
 	s.cfg.Repos[idx].Owner = targetRef.Owner
 	s.cfg.Repos[idx].Name = targetRef.Name
 	s.cfg.Repos[idx].RepoPath = targetRef.RepoPath

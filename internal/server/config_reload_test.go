@@ -1008,7 +1008,7 @@ func TestConfigReload_AirplaneModeOmitsUnresolvedPinnedRepository(t *testing.T) 
 	)
 	previous := syncer.TrackedRepos()
 	require.Len(previous, 1)
-	require.Equal(int64(1001), previous[0].PlatformRepoID)
+	require.Equal(platform.RepositoryIDKey(1001), previous[0].Key)
 	previous[0].Name = "widget-next"
 	previous[0].RepoPath = "acme/widget-next"
 	previous[0].ConfiguredRepoPath = ""
@@ -1081,7 +1081,7 @@ name = "service-*"
 		{
 			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
 			Owner: "acme", Name: "backend", RepoPath: "acme/backend",
-			PlatformRepoID: 42,
+			Key: platform.RepositoryIDKey(42),
 		},
 		{
 			Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
@@ -1092,8 +1092,8 @@ name = "service-*"
 	for i, repo := range startupFallbacks {
 		serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
 			Platform: string(repo.Platform), PlatformHost: repo.PlatformHost,
-			PlatformRepoID: int64(42 + i),
-			Owner:          repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
+			Key:   platform.RepositoryIDKey(int64(42 + i)),
+			Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
 		})
 	}
 	assert.ElementsMatch([]string{"backend", "service-api"}, listRepoNames(t, srv))
@@ -1916,7 +1916,7 @@ func TestConfigReload_ResolvedArchivedStateReplacesFallbackDuplicate(t *testing.
 	)
 	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
+		Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	waitForConfigWatcher(t, srv, 2*time.Second)
@@ -1968,7 +1968,7 @@ func TestConfigReload_FallbackKeepsRenamedArchivedTrackedRepo(t *testing.T) {
 		Name:               "widget-next",
 		PlatformHost:       "github.com",
 		RepoPath:           "acme/widget-next",
-		PlatformRepoID:     testutil.FixtureRepoID("acme", "widget"),
+		Key:                platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 		ConfiguredRepoPath: "acme/widget",
 		Archived:           true,
 	}})
@@ -2062,11 +2062,11 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 	for _, repo := range tracked {
 		byName[repo.Name] = repo
 	}
-	assert.Equal(int64(1001), byName["widget-next"].PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(1001), byName["widget-next"].Key)
 	assert.Equal("acme/widget", byName["widget-next"].ConfiguredRepoPath,
 		"the renamed repo keeps the exact entry's provenance through the"+
 			" API refresh and the failed reload")
-	assert.Equal(int64(1002), byName["widget"].PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(1002), byName["widget"].Key)
 	assert.Empty(byName["widget"].ConfiguredRepoPath,
 		"the route successor must not claim the exact entry")
 }
@@ -2617,7 +2617,7 @@ func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.
 			case <-release:
 			case <-ctx.Done():
 			}
-			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "discovered", PlatformRepoID: 12345}}
+			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "discovered", Key: platform.RepositoryIDKey(12345)}}
 		})
 	}()
 	<-entered
@@ -2630,7 +2630,7 @@ func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.
 	require.NoError(<-done)
 	repos := syncer.TrackedRepos()
 	require.Len(repos, 1)
-	require.Equal(int64(12345), repos[0].PlatformRepoID)
+	require.Equal(platform.RepositoryIDKey(12345), repos[0].Key)
 }
 
 func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.T) {
@@ -2646,7 +2646,7 @@ func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.
 			case <-release:
 			case <-ctx.Done():
 			}
-			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget", PlatformRepoID: 12345}}
+			return []ghclient.RepoRef{{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(12345)}}
 		})
 	}()
 	<-entered

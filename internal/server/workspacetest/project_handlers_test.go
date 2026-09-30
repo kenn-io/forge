@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 func TestW1SliceAGate(t *testing.T) {
@@ -258,7 +259,7 @@ func TestRegisterProject_PreservesExplicitProviderIdentity(t *testing.T) {
 	defer ts.Close()
 	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform: "gitlab", PlatformHost: "git.example.com",
-		PlatformRepoID: 3001, Owner: "platform", Name: "runner",
+		Key: platform.RepositoryIDKey(3001), Owner: "platform", Name: "runner",
 	})
 	require.NoError(err)
 
@@ -295,11 +296,11 @@ func TestRegisterProject_PreservesExplicitProviderIdentity(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(project.PlatformIdentity)
 	assert.Equal(&db.PlatformIdentity{
-		Platform:       "gitlab",
-		Host:           "git.example.com",
-		PlatformRepoID: 3001,
-		Owner:          "platform",
-		Name:           "runner",
+		Platform: "gitlab",
+		Host:     "git.example.com",
+		Key:      platform.RepositoryIDKey(3001),
+		Owner:    "platform",
+		Name:     "runner",
 	}, project.PlatformIdentity)
 }
 

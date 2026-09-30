@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"time"
+	"uuid"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -25,16 +26,17 @@ const (
 
 // WorkflowDispatchProgressPayload is the data of a workflow_dispatch_progress event.
 type WorkflowDispatchProgressPayload struct {
-	Provider       string               `json:"provider"`
-	PlatformHost   string               `json:"platform_host"`
-	PlatformRepoID int64                `json:"platform_repo_id"`
-	RepoPath       string               `json:"repo_path"`
-	Owner          string               `json:"owner"`
-	Name           string               `json:"name"`
-	WorkflowID     string               `json:"workflow_id"`
-	DispatchID     string               `json:"dispatch_id"`
-	Status         string               `json:"status"`
-	Run            *WorkflowRunResponse `json:"run,omitempty"`
+	Provider                string               `json:"provider"`
+	PlatformHost            string               `json:"platform_host"`
+	PlatformRepoID          int64                `json:"platform_repo_id"`
+	BitbucketRepositoryUUID uuid.UUID            `json:"bitbucket_repository_uuid,omitzero"`
+	RepoPath                string               `json:"repo_path"`
+	Owner                   string               `json:"owner"`
+	Name                    string               `json:"name"`
+	WorkflowID              string               `json:"workflow_id"`
+	DispatchID              string               `json:"dispatch_id"`
+	Status                  string               `json:"status"`
+	Run                     *WorkflowRunResponse `json:"run,omitempty"`
 }
 
 type dispatchFollowConfig struct {
@@ -115,16 +117,16 @@ func (h *Handler) followDispatch(ctx context.Context, follow dispatchFollow) {
 
 func (h *Handler) publishProgress(follow dispatchFollow, status string, run *platform.WorkflowRun) {
 	payload := WorkflowDispatchProgressPayload{
-		Provider:       string(httpapi.ProviderKind(follow.repo)),
-		PlatformHost:   httpapi.ProviderHost(follow.repo),
-		PlatformRepoID: follow.repo.PlatformRepoID,
-		RepoPath:       follow.repo.RepoPath,
-		Owner:          follow.repo.Owner,
-		Name:           follow.repo.Name,
-		WorkflowID:     follow.request.WorkflowID,
-		DispatchID:     follow.dispatchID,
-		Status:         status,
+		Provider:     string(httpapi.ProviderKind(follow.repo)),
+		PlatformHost: httpapi.ProviderHost(follow.repo),
+		RepoPath:     follow.repo.RepoPath,
+		Owner:        follow.repo.Owner,
+		Name:         follow.repo.Name,
+		WorkflowID:   follow.request.WorkflowID,
+		DispatchID:   follow.dispatchID,
+		Status:       status,
 	}
+	payload.PlatformRepoID, payload.BitbucketRepositoryUUID = follow.repo.Key.Wire()
 	if run != nil {
 		response := workflowRun(*run)
 		payload.Run = &response

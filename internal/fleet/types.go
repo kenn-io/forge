@@ -1,6 +1,8 @@
 package fleet
 
-import "go.kenn.io/forge/platform"
+import (
+	"go.kenn.io/forge/platform"
+)
 
 // NodeID is one daemon's stable federation identity.
 type NodeID string
@@ -16,19 +18,29 @@ const (
 
 // RepositoryIdentity is the provider-verified cross-spoke repository key.
 // Local database repository IDs never enter a federation payload.
+// Its JSON form flattens the key; see platform.MarshalKeyedJSON.
 type RepositoryIdentity struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platformHost"`
-	PlatformRepoID int64  `json:"platformRepoID"`
-	Owner          string `json:"owner,omitempty"`
-	Name           string `json:"name,omitempty"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platformHost"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platformRepoID,bitbucketRepositoryUUID"`
+	Owner        string                 `json:"owner,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+}
+
+func (r RepositoryIdentity) MarshalJSON() ([]byte, error) {
+	type plain RepositoryIdentity
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *RepositoryIdentity) UnmarshalJSON(data []byte) error {
+	type plain RepositoryIdentity
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 // ProviderIdentity returns the comparable provider identity.
 func (r RepositoryIdentity) ProviderIdentity() platform.RepositoryIdentity {
 	return platform.RepositoryIdentity{
-		Provider: r.Provider, PlatformHost: r.PlatformHost,
-		PlatformRepoID: r.PlatformRepoID,
+		Provider: r.Provider, PlatformHost: r.PlatformHost, Key: r.Key,
 	}.Canonical()
 }
 
@@ -440,13 +452,25 @@ type CheckDetail struct {
 	Conclusion string `json:"conclusion,omitempty"`
 }
 
+// WorkspaceRepositorySummary names a fleet workspace's repository. Its JSON
+// encoding is WorkspaceRepositorySummaryJSON.
 type WorkspaceRepositorySummary struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id,omitempty"`
-	RepoPath       string `json:"repo_path"`
-	Owner          string `json:"owner"`
-	Name           string `json:"name"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+	RepoPath     string                 `json:"repo_path"`
+	Owner        string                 `json:"owner"`
+	Name         string                 `json:"name"`
+}
+
+func (r WorkspaceRepositorySummary) MarshalJSON() ([]byte, error) {
+	type plain WorkspaceRepositorySummary
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *WorkspaceRepositorySummary) UnmarshalJSON(data []byte) error {
+	type plain WorkspaceRepositorySummary
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 type WorkspaceKataSummary struct {

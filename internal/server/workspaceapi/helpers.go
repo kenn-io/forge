@@ -78,7 +78,7 @@ func repoProviderHost(repo db.Repo) string {
 }
 
 func (s *Handler) repoRefFromParts(
-	provider, host, owner, name string, platformRepoID int64,
+	provider, host, owner, name string, repoKey platform.RepositoryKey,
 ) httpapi.RepoRefResponse {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
@@ -86,8 +86,8 @@ func (s *Handler) repoRefFromParts(
 	}
 	resp := httpapi.RepoRefResponse{
 		Provider: provider, PlatformHost: host,
-		PlatformRepoID: platformRepoID,
-		RepoPath:       owner + "/" + name, Owner: owner, Name: name,
+		Key:      repoKey,
+		RepoPath: owner + "/" + name, Owner: owner, Name: name,
 	}
 	if s.resolver != nil {
 		resp.Capabilities = s.resolver.Capabilities(platform.Kind(provider), host)
@@ -170,9 +170,9 @@ func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 		ID: summary.ID,
 		Repo: httpapi.RepoRefResponse{
 			Provider: summary.Platform, PlatformHost: summary.PlatformHost,
-			PlatformRepoID: summary.RepoPlatformID,
-			RepoPath:       summary.RepoOwner + "/" + summary.RepoName,
-			Owner:          summary.RepoOwner, Name: summary.RepoName,
+			Key:      summary.RepoKey,
+			RepoPath: summary.RepoOwner + "/" + summary.RepoName,
+			Owner:    summary.RepoOwner, Name: summary.RepoName,
 		},
 		PlatformHost:       summary.PlatformHost,
 		RepoOwner:          summary.RepoOwner,

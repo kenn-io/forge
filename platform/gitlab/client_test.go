@@ -58,7 +58,7 @@ func TestClientLooksUpProjectByRawPathAndUsesNumericIDAfterLookup(t *testing.T) 
 
 	repo, err := client.GetRepository(t.Context(), ref)
 	require.NoError(t, err)
-	assert.Equal(int64(42), repo.Ref.PlatformID)
+	assert.Equal(platform.RepositoryIDKey(42), repo.Ref.Key)
 	assert.Equal("group/subgroup", repo.Ref.Owner)
 	assert.Equal("project", repo.Ref.Name)
 
@@ -93,7 +93,7 @@ func TestClientGetRepositoryWithPinnedIDFetchesProjectByIDAndReturnsRenamedRoute
 	client := newTestClient(t, server.URL)
 	repo, err := client.GetRepository(t.Context(), platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.example.com",
-		RepoPath: "old-group/old-name", PlatformID: 1001,
+		RepoPath: "old-group/old-name", Key: platform.RepositoryIDKey(1001),
 	})
 	require.NoError(t, err)
 
@@ -101,7 +101,7 @@ func TestClientGetRepositoryWithPinnedIDFetchesProjectByIDAndReturnsRenamedRoute
 	assert.Equal("new-group", repo.Ref.Owner)
 	assert.Equal("new-name", repo.Ref.Name)
 	assert.Equal("new-group/new-name", repo.Ref.RepoPath)
-	assert.Equal(int64(1001), repo.Ref.PlatformID)
+	assert.Equal(platform.RepositoryIDKey(1001), repo.Ref.Key)
 }
 
 func TestClientTestHelperDisablesRetries(t *testing.T) {
@@ -171,11 +171,11 @@ func TestClientListOpenMergeRequestsPopulatesForkHeadRepoCloneURL(t *testing.T) 
 
 	client := newTestClient(t, server.URL)
 	ref := platform.RepoRef{
-		Platform:   platform.KindGitLab,
-		Host:       "gitlab.example.com",
-		RepoPath:   "group/project",
-		PlatformID: 42,
-		CloneURL:   "https://gitlab.example.com/group/project.git",
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		RepoPath: "group/project",
+		Key:      platform.RepositoryIDKey(42),
+		CloneURL: "https://gitlab.example.com/group/project.git",
 	}
 
 	mrs, err := client.ListOpenMergeRequests(t.Context(), ref)
@@ -229,11 +229,11 @@ func TestClientListOpenMergeRequestsEnrichmentStaysOptional(t *testing.T) {
 	budget.Spend(27)
 	client := newTestClient(t, server.URL, WithTransport(ghsync.WrapSyncBudgetTransport(http.DefaultTransport, budget)))
 	ref := platform.RepoRef{
-		Platform:   platform.KindGitLab,
-		Host:       "gitlab.example.com",
-		RepoPath:   "group/project",
-		PlatformID: 42,
-		CloneURL:   "https://gitlab.example.com/group/project.git",
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		RepoPath: "group/project",
+		Key:      platform.RepositoryIDKey(42),
+		CloneURL: "https://gitlab.example.com/group/project.git",
 	}
 
 	ctx := ghsync.WithEssentialSyncBudget(ghsync.WithSyncBudget(t.Context()))
@@ -269,13 +269,13 @@ func TestClientListOpenMergeRequestsContinuesWhenForkHeadRepoLookupFails(t *test
 
 			client := newTestClient(t, server.URL)
 			ref := platform.RepoRef{
-				Platform:   platform.KindGitLab,
-				Host:       "gitlab.example.com",
-				Owner:      "group",
-				Name:       "project",
-				RepoPath:   "group/project",
-				PlatformID: 42,
-				CloneURL:   "https://gitlab.example.com/group/project.git",
+				Platform: platform.KindGitLab,
+				Host:     "gitlab.example.com",
+				Owner:    "group",
+				Name:     "project",
+				RepoPath: "group/project",
+				Key:      platform.RepositoryIDKey(42),
+				CloneURL: "https://gitlab.example.com/group/project.git",
 			}
 
 			mrs, err := client.ListOpenMergeRequests(t.Context(), ref)
@@ -323,11 +323,11 @@ func TestClientListOpenMergeRequestsPropagatesTransientForkHeadRepoLookupFailure
 
 	client := newTestClient(t, server.URL)
 	ref := platform.RepoRef{
-		Platform:   platform.KindGitLab,
-		Host:       "gitlab.example.com",
-		RepoPath:   "group/project",
-		PlatformID: 42,
-		CloneURL:   "https://gitlab.example.com/group/project.git",
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		RepoPath: "group/project",
+		Key:      platform.RepositoryIDKey(42),
+		CloneURL: "https://gitlab.example.com/group/project.git",
 	}
 
 	_, err := client.ListOpenMergeRequests(t.Context(), ref)
@@ -364,11 +364,11 @@ func TestClientGetMergeRequestContinuesWhenForkHeadRepoLookupFails(t *testing.T)
 
 	client := newTestClient(t, server.URL)
 	ref := platform.RepoRef{
-		Platform:   platform.KindGitLab,
-		Host:       "gitlab.example.com",
-		RepoPath:   "group/project",
-		PlatformID: 42,
-		CloneURL:   "https://gitlab.example.com/group/project.git",
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		RepoPath: "group/project",
+		Key:      platform.RepositoryIDKey(42),
+		CloneURL: "https://gitlab.example.com/group/project.git",
 	}
 
 	mr, err := client.GetMergeRequest(t.Context(), ref, 7)
@@ -406,7 +406,7 @@ func TestClientGetMergeRequestUsesMergedByFallback(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", Key: platform.RepositoryIDKey(42)}
 
 	mr, err := client.GetMergeRequest(t.Context(), ref, 7)
 	require.NoError(err)
@@ -866,7 +866,7 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "kenn-forge/project", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "kenn-forge/project", Key: platform.RepositoryIDKey(42)}
 
 	mrs, err := client.ListOpenMergeRequests(t.Context(), ref)
 	require.NoError(err)
@@ -980,7 +980,7 @@ func TestReadClientSeparatesDiscussionEventsFromReviewThreads(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", PlatformID: 42}
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", Key: platform.RepositoryIDKey(42)}
 
 	events, err := client.ListMergeRequestEvents(t.Context(), ref, 7)
 	require.NoError(err)
@@ -1008,10 +1008,10 @@ func TestListCIChecksReturnsEmptyWhenNoPipelineExists(t *testing.T) {
 
 	client := newTestClient(t, server.URL)
 	checks, err := client.ListCIChecks(t.Context(), platform.RepoRef{
-		Platform:   platform.KindGitLab,
-		Host:       "gitlab.example.com",
-		RepoPath:   "kenn-forge/project",
-		PlatformID: 42,
+		Platform: platform.KindGitLab,
+		Host:     "gitlab.example.com",
+		RepoPath: "kenn-forge/project",
+		Key:      platform.RepositoryIDKey(42),
 	}, "missing")
 
 	require.NoError(t, err)

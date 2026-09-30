@@ -2,29 +2,34 @@ package itemapi
 
 import (
 	"time"
+	"uuid"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/platform"
 )
 
 // RepoCatalogResponse contains stored repository data without provider lookups.
 // Keep it exported: Huma skips unexported fields, including embedded structs.
 type RepoCatalogResponse struct {
-	ID                  int64
-	Platform            string
-	PlatformHost        string
-	PlatformRepoID      int64
-	Owner               string
-	Name                string
-	LastSyncStartedAt   *time.Time
-	LastSyncCompletedAt *time.Time
-	LastSyncError       string
-	AllowSquashMerge    bool
-	AllowMergeCommit    bool
-	AllowRebaseMerge    bool
-	ViewerCanMerge      bool
-	CreatedAt           time.Time
+	ID             int64
+	Platform       string
+	PlatformHost   string
+	PlatformRepoID int64
+	// BitbucketRepositoryUUID is a Bitbucket Cloud repository's key, set in
+	// place of PlatformRepoID; both are filled only from db.Repo.Key.Wire.
+	BitbucketRepositoryUUID uuid.UUID `json:"BitbucketRepositoryUUID,omitzero"`
+	Owner                   string
+	Name                    string
+	LastSyncStartedAt       *time.Time
+	LastSyncCompletedAt     *time.Time
+	LastSyncError           string
+	AllowSquashMerge        bool
+	AllowMergeCommit        bool
+	AllowRebaseMerge        bool
+	ViewerCanMerge          bool
+	CreatedAt               time.Time
 }
 
 type RepoResponse struct {
@@ -236,12 +241,22 @@ type ActivityResponse struct {
 // metadata. Repeating provider capabilities on every Activity row made the
 // parent-only projection several times larger without serving a consumer.
 type ActivityRepoRefResponse struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id,omitempty"`
-	RepoPath       string `json:"repo_path"`
-	Owner          string `json:"owner"`
-	Name           string `json:"name"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+	RepoPath     string                 `json:"repo_path"`
+	Owner        string                 `json:"owner"`
+	Name         string                 `json:"name"`
+}
+
+func (r ActivityRepoRefResponse) MarshalJSON() ([]byte, error) {
+	type plain ActivityRepoRefResponse
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *ActivityRepoRefResponse) UnmarshalJSON(data []byte) error {
+	type plain ActivityRepoRefResponse
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 type ActivitySubjectResponse struct {
@@ -314,11 +329,10 @@ type ActivityItemResponse struct {
 }
 
 func RepoCatalog(repo db.Repo) RepoCatalogResponse {
-	return RepoCatalogResponse{
+	response := RepoCatalogResponse{
 		ID:                  repo.ID,
 		Platform:            repo.Platform,
 		PlatformHost:        repo.PlatformHost,
-		PlatformRepoID:      repo.PlatformRepoID,
 		Owner:               repo.Owner,
 		Name:                repo.Name,
 		LastSyncStartedAt:   repo.LastSyncStartedAt,
@@ -330,4 +344,6 @@ func RepoCatalog(repo db.Repo) RepoCatalogResponse {
 		ViewerCanMerge:      repo.ViewerCanMerge,
 		CreatedAt:           repo.CreatedAt,
 	}
+	response.PlatformRepoID, response.BitbucketRepositoryUUID = repo.Key.Wire()
+	return response
 }

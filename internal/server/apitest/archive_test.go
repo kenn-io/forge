@@ -479,7 +479,7 @@ func setupArchiveTestServer(
 	database := dbtest.Open(t)
 	ref := platform.RepoRef{
 		Platform: platform.KindGitHub, Host: "github.test", Owner: "owner",
-		Name: "repo", RepoPath: "owner/repo", PlatformID: 1001,
+		Name: "repo", RepoPath: "owner/repo", Key: platform.RepositoryIDKey(1001),
 	}
 	_, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(t, err)
@@ -726,7 +726,7 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	outside := ref
 	outside.Name = "not-configured"
 	outside.RepoPath = "owner/not-configured"
-	outside.PlatformID = 2002
+	outside.Key = platform.RepositoryIDKey(2002)
 	_, err = reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(outside))
 	require.NoError(err)
 	query.Repo = []string{string(outside.Platform) + "|" + outside.Host + "/" + outside.RepoPath}

@@ -558,7 +558,7 @@ func ArchiveDestination(ref platform.RepoRef, repositoryURL string) *platform.Re
 		destination.Owner = strings.ToLower(parts[i+1])
 		destination.Name = strings.ToLower(parts[i+2])
 		destination.RepoPath = destination.Owner + "/" + destination.Name
-		destination.PlatformID = 0
+		destination.Key = platform.RepositoryKey{}
 		destination.WebURL = ""
 		destination.CloneURL = ""
 		destination.DefaultBranch = ""

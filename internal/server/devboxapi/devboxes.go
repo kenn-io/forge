@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"uuid"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -15,15 +16,18 @@ import (
 type CreateDevboxWorkspaceInput struct {
 	ConnectionID string `path:"connection_id"`
 	Body         struct {
-		Provider            string `json:"provider"`
-		PlatformHost        string `json:"platform_host"`
-		PlatformRepoID      int64  `json:"platform_repo_id,omitempty"`
-		Owner               string `json:"owner"`
-		Name                string `json:"name"`
-		MRNumber            int    `json:"mr_number,omitempty"`
-		IssueNumber         int    `json:"issue_number,omitempty"`
-		Branch              string `json:"branch,omitempty"`
-		ReuseExistingBranch bool   `json:"reuse_existing_branch,omitempty"`
+		Provider       string `json:"provider"`
+		PlatformHost   string `json:"platform_host"`
+		PlatformRepoID int64  `json:"platform_repo_id,omitempty"`
+		// BitbucketRepositoryUUID names a Bitbucket Cloud repository in place
+		// of platform_repo_id.
+		BitbucketRepositoryUUID uuid.UUID `json:"bitbucket_repository_uuid,omitzero"`
+		Owner                   string    `json:"owner"`
+		Name                    string    `json:"name"`
+		MRNumber                int       `json:"mr_number,omitempty"`
+		IssueNumber             int       `json:"issue_number,omitempty"`
+		Branch                  string    `json:"branch,omitempty"`
+		ReuseExistingBranch     bool      `json:"reuse_existing_branch,omitempty"`
 	}
 }
 

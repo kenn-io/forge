@@ -50,7 +50,7 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 			}
 			client := connectMCPTestSession(t, newMCPTestServer(t, backend))
 			input := listPullContextsInput{Repo: repoFilterInput{
-				Provider: provider, PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformRepoID,
+				Provider: provider, PlatformHost: repo.PlatformHost, PlatformRepoID: 1001,
 				Owner: repo.Owner, Name: repo.Name,
 			}, Limit: 2, Label: "bug"}
 			result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_pull_contexts", Arguments: input})

@@ -13,6 +13,7 @@
   import RelayIndicator from "./RelayIndicator.svelte";
   import { formatCompact } from "./budget-utils";
   import { getPage, navigate } from "../../stores/router.svelte.ts";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   const { activity, pulls, issues, sync, events, settings } = getStores();
   const runtime = getAppRuntime();
@@ -73,6 +74,7 @@
       provider?: string | undefined;
       platform_host?: string | undefined;
       platform_repo_id?: number | undefined;
+      bitbucket_repository_uuid?: string | undefined;
       repo_path?: string | undefined;
       owner?: string | undefined;
       name?: string | undefined;
@@ -106,7 +108,7 @@
     return repoIdentityKey({
       provider,
       platformHost,
-      platformRepoId: item.repo?.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(item.repo),
       owner: item.repo?.owner ?? item.repo_owner ?? "",
       name: item.repo?.name ?? item.repo_name ?? "",
       repoPath,

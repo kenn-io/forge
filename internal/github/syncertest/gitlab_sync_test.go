@@ -219,7 +219,7 @@ func TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems(t *testing.T) {
 	mrMerged.Store(true)
 	mergedMR, err := client.GetMergeRequest(ctx, platform.RepoRef{
 		Platform: repo.Platform, Host: repo.PlatformHost, Owner: repo.Owner,
-		Name: repo.Name, RepoPath: repo.RepoPath, PlatformID: 42,
+		Name: repo.Name, RepoPath: repo.RepoPath, Key: platform.RepositoryIDKey(42),
 	}, 8)
 	require.NoError(err)
 	_, err = d.UpsertMergeRequest(ctx, platformdb.DBMergeRequest(repoRow.ID, mergedMR))
@@ -340,13 +340,13 @@ func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
 	require.NoError(err)
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform: "gitlab", PlatformHost: "gitlab.example.com",
-		PlatformRepoID: 42, Owner: "group", Name: "project",
+		Key: platform.RepositoryIDKey(42), Owner: "group", Name: "project",
 		RepoPath: "group/project",
 	})
 	require.NoError(err)
 	repo := ghclient.RepoRef{
 		Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com",
-		PlatformRepoID: 42, RepoID: repoID,
+		Key: platform.RepositoryIDKey(42), RepoID: repoID,
 		Owner: "group", Name: "project", RepoPath: "group/project",
 	}
 	syncer := ghclient.NewSyncerWithRegistry(
@@ -358,8 +358,8 @@ func TestGitLabArchiveIssueLifecyclePersistsCloseActorInReport(t *testing.T) {
 		ghclient.WithArchiveSyncBudget(ctx),
 		platform.RepoRef{
 			Platform: platform.KindGitLab, Host: "gitlab.example.com",
-			PlatformID: 42,
-			Owner:      "group", Name: "project", RepoPath: "group/project",
+			Key:   platform.RepositoryIDKey(42),
+			Owner: "group", Name: "project", RepoPath: "group/project",
 		},
 		db.ArchiveItemTypeIssue, 7,
 	)

@@ -195,7 +195,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	clones := gitclone.New(bareDir, nil)
 	bare, err := clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{PlatformRepoID: testutil.FixtureRepoID("acme", "widget")}),
+		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(t, err)
@@ -985,7 +985,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	)
 	ctx := t.Context()
 	clonePath, err := srv.clones.ClonePathForContext(
-		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{PlatformRepoID: testutil.FixtureRepoID("acme", "widget")}),
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))}),
 		"github", "github.com", "acme", "widget",
 	)
 	require.NoError(err)

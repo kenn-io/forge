@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -179,14 +178,14 @@ func (s *Service) workerRepositories(ctx context.Context) ([]resolvedRepository,
 	if err != nil {
 		return nil, fmt.Errorf("list configured archive repositories: %w", err)
 	}
-	// The key carries each ref's provider repository ID, so a different
+	// The key carries each ref's provider repository key, so a different
 	// repository taking over a configured route invalidates the cache. A ref
-	// without an ID is resolved every pass rather than trusted by route.
+	// without a key is resolved every pass rather than trusted by route.
 	refKeys := make([]string, 0, len(refs))
 	cacheable := true
 	for _, ref := range refs {
-		refKeys = append(refKeys, archiveRepoIdentityKey(ref)+"\x00"+strconv.FormatInt(ref.PlatformID, 10))
-		cacheable = cacheable && ref.PlatformID > 0
+		refKeys = append(refKeys, archiveRepoIdentityKey(ref)+"\x00"+ref.Key.String())
+		cacheable = cacheable && !ref.Key.IsZero()
 	}
 	s.reposMu.Lock()
 	cached := s.repos
@@ -285,7 +284,7 @@ func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRe
 		return 0, err
 	}
 	identity := platformdb.DBRepoIdentity(ref)
-	if identity.PlatformRepoID != 0 {
+	if !identity.Key.IsZero() {
 		stored, err := s.db.GetRepositoryByProviderID(ctx, identity.ProviderIdentity())
 		if err != nil {
 			return 0, fmt.Errorf("resolve stored archive repository %s: %w", archiveRepoIdentityKey(ref), err)
@@ -312,7 +311,7 @@ func (s *Service) seedArchiveRepository(ctx context.Context, ref platform.RepoRe
 	if err != nil {
 		return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), err)
 	}
-	if identity.PlatformRepoID != 0 && resolved.Ref.PlatformID != identity.PlatformRepoID {
+	if !identity.Key.IsZero() && resolved.Ref.Key != identity.Key {
 		return 0, fmt.Errorf("resolve archive repository %s: %w", archiveRepoIdentityKey(ref), db.ErrRepositoryIdentityChanged)
 	}
 	entry, err := s.db.ObserveRepository(ctx, platformdb.DBRepositoryIdentity(resolved))
@@ -437,7 +436,7 @@ func (s *Service) statusAll(ctx context.Context) ([]Status, error) {
 			Repo: platform.RepoRef{
 				Platform: platform.Kind(repo.Platform), Host: repo.PlatformHost,
 				Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath,
-				PlatformID: repo.PlatformRepoID, WebURL: repo.WebURL,
+				Key: repo.Key, WebURL: repo.WebURL,
 				CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch,
 			},
 			RepoID: state.RepoID, State: state, Progress: byID[state.RepoID],

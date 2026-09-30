@@ -1111,7 +1111,7 @@ func resolveStartupRepos(
 		}
 		ghclient.RegisterConfiguredRepoCredentialAliases(githubRouters, raw, repos)
 		for _, repo := range repos {
-			if repo.PlatformRepoID == 0 {
+			if repo.Key.IsZero() {
 				continue
 			}
 			set.Add(repo, false)
@@ -1136,7 +1136,7 @@ func resolveProviderRepos(
 			// through its dedicated archive App on a fresh startup.
 			resolveCtx = ghclient.WithArchiveSyncBudget(ctx)
 		}
-		configuredProviderID := raw.PlatformRepoID
+		pinnedKey := raw.RepositoryKey()
 		var expanded []ghclient.RepoRef
 		var err error
 		if !cfg.AirplaneMode {
@@ -1155,7 +1155,7 @@ func resolveProviderRepos(
 			} else {
 				expanded = fallbackExactFromDB(ctx, database, raw)
 				if len(expanded) == 0 {
-					if configuredProviderID == 0 {
+					if pinnedKey.IsZero() {
 						expanded = ghclient.FallbackConfiguredRepoRefs(nil, raw)
 					}
 				} else {
@@ -1214,8 +1214,8 @@ func fallbackExactFromDB(
 		PlatformHost: raw.PlatformHostOrDefault(),
 		Lifecycle:    db.RepositoryLifecycleActive,
 	}
-	if raw.PlatformRepoID != 0 {
-		filter.PlatformRepoID = raw.PlatformRepoID
+	if pinned := raw.RepositoryKey(); !pinned.IsZero() {
+		filter.RepoKey = pinned
 	} else {
 		filter.RepoPath = repoPath
 	}
@@ -1236,7 +1236,7 @@ func fallbackExactFromDB(
 		Name:               entry.Repository.Name,
 		PlatformHost:       entry.Repository.PlatformHost,
 		RepoPath:           entry.Repository.RepoPath,
-		PlatformRepoID:     entry.Repository.PlatformRepoID,
+		Key:                entry.Repository.Key,
 		WebURL:             entry.Repository.WebURL,
 		CloneURL:           entry.Repository.CloneURL,
 		DefaultBranch:      entry.Repository.DefaultBranch,
@@ -1283,15 +1283,15 @@ func fallbackGlobFromDB(
 		)
 		if matched {
 			repo := ghclient.RepoRef{
-				Platform:       rawPlatform,
-				Owner:          r.Owner,
-				Name:           r.Name,
-				PlatformHost:   dbHost,
-				RepoPath:       r.RepoPath,
-				PlatformRepoID: r.PlatformRepoID,
-				WebURL:         r.WebURL,
-				CloneURL:       r.CloneURL,
-				DefaultBranch:  r.DefaultBranch,
+				Platform:      rawPlatform,
+				Owner:         r.Owner,
+				Name:          r.Name,
+				PlatformHost:  dbHost,
+				RepoPath:      r.RepoPath,
+				Key:           r.Key,
+				WebURL:        r.WebURL,
+				CloneURL:      r.CloneURL,
+				DefaultBranch: r.DefaultBranch,
 			}
 			matches = append(matches, repo)
 		}

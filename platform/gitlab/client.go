@@ -894,26 +894,27 @@ func (c *Client) withForegroundTimeout(ctx context.Context) (context.Context, co
 }
 
 func (c *Client) projectScopedArg(ctx context.Context, ref platform.RepoRef) (any, platform.RepoRef, error) {
-	if ref.PlatformID != 0 {
-		return ref.PlatformID, c.normalizeRef(ref, ref.PlatformID), nil
+	if id, ok := ref.Key.ID(); ok {
+		return id, c.normalizeRef(ref, id), nil
 	}
 	repo, err := c.GetRepository(ctx, ref)
 	if err != nil {
 		return nil, platform.RepoRef{}, err
 	}
-	return repo.Ref.PlatformID, repo.Ref, nil
+	id, _ := repo.Ref.Key.ID()
+	return id, repo.Ref, nil
 }
 
 func (c *Client) normalizeRef(ref platform.RepoRef, id int64) platform.RepoRef {
 	ref.Platform = platform.KindGitLab
 	ref.Host = c.host
-	ref.PlatformID = id
+	ref.Key = platform.RepositoryIDKey(id)
 	return ref
 }
 
 func projectLookupArg(ref platform.RepoRef) (any, error) {
-	if ref.PlatformID != 0 {
-		return ref.PlatformID, nil
+	if id, ok := ref.Key.ID(); ok {
+		return id, nil
 	}
 	return rawProjectPath(ref)
 }

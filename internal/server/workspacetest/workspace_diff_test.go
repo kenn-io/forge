@@ -28,6 +28,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 var workspaceGitSlots = semaphore.NewWeighted(8)
@@ -200,7 +201,7 @@ func TestWorkspaceDiffEndpointsReturnPierreTreeOrderE2E(t *testing.T) {
 
 	database := dbtest.Open(t)
 	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	identity.PlatformRepoID = testutil.FixtureRepoID("acme", "widget")
+	identity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
 	_, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(err)
 	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{

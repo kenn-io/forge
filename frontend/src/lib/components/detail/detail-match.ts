@@ -1,11 +1,12 @@
 import type { IssueDetail, PullDetail } from "../../api/types.js";
 import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
+import { repositoryKeyAllows, repositoryKeyFromWire, type RepositoryKey } from "../../api/repository-key.js";
 
 /** The repo-scoped identity every detail response has to agree with. */
 export interface DetailRefLike {
   provider: string;
   platformHost?: string | undefined;
-  platformRepoId?: number | undefined;
+  repositoryKey?: RepositoryKey | undefined;
   owner: string;
   name: string;
   repoPath: string;
@@ -24,7 +25,13 @@ export function repoIdentityMatches(
   detail: {
     repo_owner: string;
     repo_name: string;
-    repo?: { provider?: string; platform_host?: string; platform_repo_id?: number; repo_path?: string };
+    repo?: {
+      provider?: string;
+      platform_host?: string;
+      platform_repo_id?: number;
+      bitbucket_repository_uuid?: string;
+      repo_path?: string;
+    };
   },
   ref: DetailRefLike,
 ): boolean {
@@ -35,7 +42,7 @@ export function repoIdentityMatches(
     resolvedPlatformHost(ref.provider, detail.repo?.platform_host) ===
       resolvedPlatformHost(ref.provider, ref.platformHost) &&
     detail.repo?.repo_path === ref.repoPath &&
-    (!ref.platformRepoId || detail.repo?.platform_repo_id === ref.platformRepoId)
+    repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(detail.repo))
   );
 }
 

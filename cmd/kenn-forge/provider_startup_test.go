@@ -218,7 +218,7 @@ func TestDefaultProviderFactoryPassesGitLabSharedSyncBudget(t *testing.T) {
 
 	_, err = reader.GetRepository(github.WithSyncBudget(t.Context()), platform.RepoRef{
 		Platform: platform.KindGitLab, Host: host,
-		Owner: "group", Name: "project", RepoPath: "group/project", PlatformID: 42,
+		Owner: "group", Name: "project", RepoPath: "group/project", Key: platform.RepositoryIDKey(42),
 	})
 	require.NoError(err)
 	assert.Equal(1, budget.Spent())

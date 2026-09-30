@@ -40,17 +40,18 @@ func (s *Server) getStackContext(
 	ctx context.Context,
 	in getStackContextInput,
 ) (getStackContextOutput, error) {
-	if err := validateItemRef(in.Item); err != nil {
+	item, err := in.Item.itemIdentity()
+	if err != nil {
 		return getStackContextOutput{}, err
 	}
-	if in.Item.Type != "pr" {
+	if item.Type != "pr" {
 		return getStackContextOutput{}, &Error{
 			Kind:    "invalid_request",
 			Message: "stack context is only available for prs",
 		}
 	}
 
-	stack, err := s.backend.GetPullStack(ctx, itemIdentity(in.Item))
+	stack, err := s.backend.GetPullStack(ctx, item)
 	if err != nil {
 		if backendErr, ok := errors.AsType[*Error](err); ok && isStackAbsentError(backendErr) {
 			return getStackContextOutput{Present: false}, nil
@@ -68,7 +69,7 @@ func (s *Server) getStackContext(
 	for _, member := range stack.Members {
 		wanted[member.Number] = true
 	}
-	statuses, err := s.stackWorkflowStatuses(ctx, in.Item, wanted)
+	statuses, err := s.stackWorkflowStatuses(ctx, item, wanted)
 	if err != nil {
 		return getStackContextOutput{}, err
 	}
@@ -85,7 +86,7 @@ func (s *Server) getStackContext(
 			State:          member.State,
 			IsDraft:        member.IsDraft,
 			WorkflowStatus: workflowStatusOrNew(statuses[member.Number]),
-			IsRequested:    member.Number == in.Item.Number,
+			IsRequested:    member.Number == item.Number,
 			Position:       member.Position,
 		})
 	}
@@ -105,14 +106,13 @@ func isStackAbsentError(err *Error) bool {
 
 func (s *Server) stackWorkflowStatuses(
 	ctx context.Context,
-	ref itemRefInput,
+	item ItemIdentity,
 	wanted map[int]bool,
 ) (map[int]string, error) {
-	filter, err := (repoFilterInput{
-		Provider: ref.Provider, PlatformHost: ref.PlatformHost,
-		PlatformRepoID: ref.PlatformRepoID,
-		Owner:          ref.Owner, Name: ref.Name,
-	}).repositoryIdentity()
+	filter, err := keyedRepositoryIdentity(
+		strings.TrimSpace(item.Provider), strings.TrimSpace(item.PlatformHost), item.RepoKey, "",
+		strings.Trim(strings.TrimSpace(item.Owner), "/"), strings.Trim(strings.TrimSpace(item.Name), "/"),
+	)
 	if err != nil {
 		return nil, err
 	}

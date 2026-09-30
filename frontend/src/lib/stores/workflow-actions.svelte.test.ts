@@ -12,14 +12,14 @@ import { WorkflowDispatchProgressEvent } from "./provider-events-workflow.js";
 import { createWorkflowActionsStore, type WorkflowActionsStore } from "./workflow-actions.svelte.js";
 
 const ref = {
-  platformRepoId: 1014,
+  repositoryKey: { kind: "id", id: 1014 },
   provider: "github",
   platformHost: "github.com",
   owner: "acme",
   name: "app",
   repoPath: "acme/app",
 };
-const otherRef = { ...ref, platformRepoId: 1016, name: "other", repoPath: "acme/other" };
+const otherRef = { ...ref, repositoryKey: { kind: "id", id: 1016 }, name: "other", repoPath: "acme/other" };
 
 const repo = {
   provider: "github",
@@ -185,8 +185,8 @@ describe("workflow actions store", () => {
     expect(store.getCatalog(renamed)).toBe(store.getCatalog(ref));
     expect(store.getJobs(renamed, "run-old")).toEqual(jobs);
 
-    const replacement = { ...ref, platformRepoId: 1012 };
-    fixture.repository = { ...repo, platform_repo_id: replacement.platformRepoId };
+    const replacement = { ...ref, repositoryKey: { kind: "id", id: 1012 } };
+    fixture.repository = { ...repo, platform_repo_id: replacement.repositoryKey.id };
     expect(store.getSnapshot(replacement)).toBeNull();
     store.loadCatalog(replacement);
     await settle();

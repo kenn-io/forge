@@ -6,9 +6,9 @@ import type { RepositoryRoute } from "./repositoryRoute.ts";
 export interface ProviderWorkspaceItemRequest {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  bitbucket_repository_uuid?: string;
   item_number: number;
   item_type: string;
-  /** @minimum 1 */
   platform_repo_id: number;
   repository: RepositoryRoute;
 }

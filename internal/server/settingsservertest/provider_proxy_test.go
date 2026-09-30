@@ -218,7 +218,7 @@ func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
 	for i := range subjects {
 		subjects[i] = providerplane.ItemIdentity{
 			Repository: platform.RepositoryIdentity{
-				Provider: "github", PlatformHost: "github.com", PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
+				Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 			},
 			ItemType: "pr", ItemNumber: i + 1,
 		}
@@ -344,8 +344,8 @@ func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
 	mcpPulls, err := nodeServer.MCPBackend().ListPulls(
 		t.Context(), mcpserver.ItemListQuery{Repository: mcpserver.RepositoryIdentity{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: hubRepo.PlatformRepoID,
-			Owner:          "acme", Name: "widget",
+			Key:   hubRepo.Key,
+			Owner: "acme", Name: "widget",
 		}},
 	)
 	require.NoError(err)

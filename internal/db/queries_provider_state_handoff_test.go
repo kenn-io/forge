@@ -1,7 +1,6 @@
 package db
 
 import (
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,7 +11,7 @@ func providerStateRepositoryForTest() ProviderStateRepository {
 	identity := verifiedTestRepoIdentity("github", "github.com", "acme", "widget")
 	return ProviderStateRepository{
 		Provider: identity.Platform, PlatformHost: identity.PlatformHost,
-		PlatformRepoID: identity.PlatformRepoID, Owner: identity.Owner, Name: identity.Name,
+		Key: identity.Key, Owner: identity.Owner, Name: identity.Name,
 	}
 }
 
@@ -126,7 +125,7 @@ func TestProviderStateHandoffInventoryUsesStableIdentityAndSemanticPayload(t *te
 	require.Len(records, 2)
 	assert.Equal(ProviderStateReviewDraft, records[0].Kind)
 	assert.Equal(ProviderStateWorkflowState, records[1].Kind)
-	assert.Contains(records[0].SourceKey, strconv.FormatInt(providerStateRepositoryForTest().PlatformRepoID, 10))
+	assert.Contains(records[0].SourceKey, providerStateRepositoryForTest().Key.String())
 	assert.NotEmpty(records[0].ContentDigest)
 	assert.Equal(review.Body, records[0].ReviewDraft.Body)
 	assert.Equal(workflow.Status, records[1].WorkflowState.Status)

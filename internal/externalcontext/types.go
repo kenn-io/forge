@@ -5,18 +5,31 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/forge/platform"
 )
 
+// PullRequest is the pull request an external context command reads. Its
+// JSON encoding, sent to adapters, is PullRequestJSON.
 type PullRequest struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	RepoPath       string `json:"repo_path"`
-	Number         int    `json:"number"`
-	URL            string `json:"url"`
-	State          string `json:"state"`
-	HeadSHA        string `json:"head_sha"`
-	BaseSHA        string `json:"base_sha"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	RepoKey      platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid"`
+	RepoPath     string                 `json:"repo_path"`
+	Number       int                    `json:"number"`
+	URL          string                 `json:"url"`
+	State        string                 `json:"state"`
+	HeadSHA      string                 `json:"head_sha"`
+	BaseSHA      string                 `json:"base_sha"`
+}
+
+func (r PullRequest) MarshalJSON() ([]byte, error) {
+	type plain PullRequest
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *PullRequest) UnmarshalJSON(data []byte) error {
+	type plain PullRequest
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 type ExternalContextSourceInfo struct {

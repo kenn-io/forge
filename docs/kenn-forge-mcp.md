@@ -107,9 +107,10 @@ so update any client configuration that launched the old command.
 ## Review workflow
 
 Call `kenn_forge_list_repos` first to discover provider-aware repository filters,
-stable `platform_repo_id` values, and sync freshness. Copy the returned stable
-ID into every later repository or item reference; route-only references are not
-accepted. Rediscover the current route after a repository rename. For review
+stable repository keys, and sync freshness. Each repository has a
+`platform_repo_id`, or a `bitbucket_repository_uuid` for Bitbucket Cloud. Copy
+the returned key into every later repository or item reference; route-only
+references are not accepted. Rediscover the current route after a repository rename. For review
 triage:
 
 1. Call `kenn_forge_find_review_candidates` with the desired time window and

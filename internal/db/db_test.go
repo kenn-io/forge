@@ -15,6 +15,7 @@ import (
 	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/stretchr/testify/assert"
+	"go.kenn.io/forge/platform"
 	_ "modernc.org/sqlite"
 
 	"github.com/stretchr/testify/require"
@@ -379,7 +380,7 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 	renamed, err := database.GetWorkspaceLaunchSpec(t.Context(), "ws-renamed")
 	require.NoError(err)
 	require.NotNil(renamed)
-	assert.EqualValues(4202, renamed.Repository.PlatformRepoID)
+	assert.Equal(platform.RepositoryIDKey(4202), renamed.Repository.Key)
 	assert.Equal("renamed", renamed.Repository.Name)
 	adhoc, err := database.GetWorkspaceLaunchSpec(t.Context(), "ws-adhoc")
 	require.NoError(err)
@@ -388,10 +389,10 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 	require.NoError(err)
 	require.Len(unprepared, 6)
 	reasons := make(map[string]string, len(unprepared))
-	stableIDs := make(map[string]int64, len(unprepared))
+	stableKeys := make(map[string]platform.RepositoryKey, len(unprepared))
 	for _, item := range unprepared {
 		reasons[item.Workspace.ID] = item.Reason
-		stableIDs[item.Workspace.ID] = item.PlatformRepoID
+		stableKeys[item.Workspace.ID] = item.RepoKey
 	}
 	assert.Equal(map[string]string{
 		"ws-pr":                 "sourceVisibilityExpired",
@@ -401,7 +402,7 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 		"ws-renamed":            "sourceVisibilityExpired",
 		"ws-renamed-incomplete": "launchSpecMissing",
 	}, reasons)
-	assert.EqualValues(4202, stableIDs["ws-renamed-incomplete"])
+	assert.Equal(platform.RepositoryIDKey(4202), stableKeys["ws-renamed-incomplete"])
 	assertDatabaseIntegrityForTest(t, database.ReadDB())
 }
 

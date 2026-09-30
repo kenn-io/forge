@@ -52,6 +52,7 @@ vi.mock("@kenn-io/kit-ui", async (importOriginal) => {
 import IssueDetailComponent from "./IssueDetail.svelte";
 import IssueDetailTestHarness from "./IssueDetailTestHarness.svelte";
 import { getCommentDraftKey, setCommentDraft } from "./comment-drafts.svelte.js";
+import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
 let issueRuntime: OwnedAppRuntime | null = null;
 
@@ -316,7 +317,7 @@ describe("IssueDetail activity view", () => {
       name: "widget",
       repoPath: "acme/widget",
       number,
-      platformRepoId: detail.repo.platform_repo_id,
+      repositoryKey: repositoryKeyFromWire(detail.repo),
     });
     setCommentDraft(draftKey, "Draft while refreshing");
     onTestFinished(() => setCommentDraft(draftKey, ""));

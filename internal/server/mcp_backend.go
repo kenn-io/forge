@@ -78,8 +78,8 @@ func (b mcpBackend) ListActivity(
 			ID: row.ID, Cursor: row.Cursor, ActivityType: row.ActivityType,
 			Repository: mcpserver.RepositoryIdentity{
 				Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost,
-				PlatformRepoID: row.Repo.PlatformRepoID,
-				RepoPath:       row.Repo.RepoPath, Owner: row.Repo.Owner, Name: row.Repo.Name,
+				Key:      row.Repo.Key,
+				RepoPath: row.Repo.RepoPath, Owner: row.Repo.Owner, Name: row.Repo.Name,
 			},
 			ItemType: row.ItemType, ItemNumber: row.ItemNumber,
 			ItemTitle: row.ItemTitle, ItemURL: row.ItemURL, ItemState: row.ItemState,
@@ -359,14 +359,14 @@ func (b mcpBackend) listWorkflowStatesLocal(
 		}
 		repository := mcpserver.RepositoryIdentity{
 			Provider: row.Platform, PlatformHost: row.PlatformHost,
-			PlatformRepoID: row.PlatformRepoID,
-			RepoPath:       row.RepoPath, Owner: row.Owner, Name: row.Name,
+			Key:      row.RepoKey,
+			RepoPath: row.RepoPath, Owner: row.Owner, Name: row.Name,
 		}
 		out.Items = append(out.Items, mcpserver.WorkflowItem{
 			Identity: mcpserver.ItemIdentity{
 				Type: row.ItemType, Provider: row.Platform, PlatformHost: row.PlatformHost,
-				PlatformRepoID: row.PlatformRepoID,
-				Owner:          row.Owner, Name: row.Name, Number: row.Number,
+				RepoKey: row.RepoKey,
+				Owner:   row.Owner, Name: row.Name, Number: row.Number,
 			},
 			Repository: repository, Title: row.Title, State: row.State,
 			URL: row.URL, Author: row.Author, IsDraft: row.IsDraft,
@@ -516,8 +516,8 @@ func (b mcpBackend) CreatePullWorkspace(
 	item = mcpapi.ItemAtResolvedRoute(item, resolved.Repo)
 	result, err := b.server.workspaceAPI.CreatePullWorkspace(ctx, workspaceapi.CreatePullWorkspaceRequest{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
-		PlatformRepoID: resolved.Repo.PlatformRepoID,
-		Owner:          item.Owner, Name: item.Name, Number: item.Number,
+		RepoKey: resolved.Repo.Key,
+		Owner:   item.Owner, Name: item.Name, Number: item.Number,
 		SuppressAutoAssign: suppressAutoAssign,
 	})
 	if err != nil {
@@ -536,8 +536,8 @@ func (b mcpBackend) CreateIssueWorkspace(
 	item = mcpapi.ItemAtResolvedRoute(item, resolved.Repo)
 	result, err := b.server.workspaceAPI.CreateIssueWorkspaceService(ctx, workspaceapi.CreateIssueWorkspaceRequest{
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
-		PlatformRepoID: resolved.Repo.PlatformRepoID,
-		Owner:          item.Owner, Name: item.Name, Number: item.Number,
+		RepoKey: resolved.Repo.Key,
+		Owner:   item.Owner, Name: item.Name, Number: item.Number,
 		SuppressAutoAssign: suppressAutoAssign,
 	})
 	if err != nil {
@@ -560,8 +560,8 @@ func (b mcpBackend) CreateAdHocWorkspace(
 	}
 	result, err := b.server.workspaceAPI.CreateAdHocWorkspaceService(ctx, workspaceapi.CreateAdHocWorkspaceRequest{
 		Provider: repo.Provider, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: resolved.Repo.PlatformRepoID,
-		Owner:          repo.Owner, Name: repo.Name, Branch: branchPtr,
+		RepoKey: resolved.Repo.Key,
+		Owner:   repo.Owner, Name: repo.Name, Branch: branchPtr,
 	})
 	if err != nil {
 		return mcpserver.Workspace{}, mcpapi.McpBackendMutationError(err)
@@ -701,12 +701,12 @@ func (b mcpBackend) resolveWorkspaceRepository(
 	if err != nil {
 		return mcpapi.ResolvedMCPRepository{}, mcpapi.McpBackendError(err)
 	}
-	if descriptor.PlatformRepoID != identity.PlatformRepoID {
+	if descriptor.Key != identity.Key {
 		return mcpapi.ResolvedMCPRepository{}, mcpapi.McpRepositoryIdentityChangedError()
 	}
 	identity.Provider = descriptor.Provider
 	identity.PlatformHost = descriptor.PlatformHost
-	identity.PlatformRepoID = descriptor.PlatformRepoID
+	identity.Key = descriptor.Key
 	identity.Owner = descriptor.Owner
 	identity.Name = descriptor.Name
 	return b.resolveMCPRepository(ctx, identity)
@@ -741,7 +741,7 @@ func (b mcpBackend) resolveRepository(
 	// only its last known route.
 	repo, err := b.server.db.GetActiveRepoByProviderID(ctx, platform.RepositoryIdentity{
 		Provider: identity.Provider, PlatformHost: identity.PlatformHost,
-		PlatformRepoID: identity.PlatformRepoID,
+		Key: identity.Key,
 	})
 	if err != nil {
 		return nil, mcpapi.McpBackendError(httpapi.Internal("look up repository failed"))

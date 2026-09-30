@@ -288,7 +288,7 @@ describe("ActionsPage", () => {
       platformHost: "github.com",
       owner: "acme",
       name: "alpha",
-      platformRepoId: 1003,
+      repositoryKey: { kind: "id", id: 1003 },
     };
     await waitFor(() => expect(store.getRuns(ref)[0]?.status).toBe("completed"));
     expect(reads).toBe(2);
@@ -353,7 +353,7 @@ describe("ActionsPage", () => {
       platformHost: "github.com",
       owner: "acme",
       name: "beta",
-      platformRepoId: 1004,
+      repositoryKey: { kind: "id", id: 1004 },
     };
     store.loadCatalog(betaRef);
     await waitFor(() => expect(store.getCatalog(betaRef)).not.toBeNull());
@@ -363,7 +363,7 @@ describe("ActionsPage", () => {
     );
 
     expect(document.querySelector<HTMLInputElement>('input[aria-label="Git ref"]')?.value).toBe("trunk");
-    expect(store.getSnapshot(betaRef)?.ref.platformRepoId).toBe(1004);
+    expect(store.getSnapshot(betaRef)?.ref.repositoryKey).toEqual({ kind: "id", id: 1004 });
   });
 
   it("retries an initial catalog failure in place", async () => {
@@ -590,7 +590,7 @@ describe("ActionsPage", () => {
       platformHost: "github.com",
       owner: "acme",
       name: "alpha",
-      platformRepoId: 1003,
+      repositoryKey: { kind: "id", id: 1003 },
     };
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await fireEvent.click(await screen.findByRole("button", { name: /Run 7 alpha deploy/ }));

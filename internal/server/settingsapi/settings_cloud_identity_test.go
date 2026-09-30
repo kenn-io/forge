@@ -1,4 +1,4 @@
-package server
+package settingsapi
 
 import (
 	"testing"
@@ -15,7 +15,7 @@ func cloudTrackedRef(id, name string) ghclient.RepoRef {
 	return ghclient.RepoRef{
 		Platform: platform.KindBitbucket, PlatformHost: platform.DefaultBitbucketHost,
 		Owner: "team", Name: name, RepoPath: "team/" + name,
-		BitbucketRepositoryUUID: uuid.MustParse(id),
+		Key: platform.RepositoryUUIDKey(uuid.MustParse(id)),
 	}
 }
 
@@ -52,15 +52,15 @@ func TestTrackedRepoIndexFindsRenamedBitbucketCloudRepo(t *testing.T) {
 func TestPersistResolvedReposCataloguesBitbucketCloudRepo(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
-	srv := &Server{db: database}
+	srv := &Handlers{Db: database}
 
-	require.NoError(srv.persistResolvedRepos(
+	require.NoError(srv.PersistResolvedRepos(
 		t.Context(), []ghclient.RepoRef{cloudTrackedRef(cloudRepoUUID, "widgets")},
 	))
 
 	entry, err := database.GetRepositoryByProviderID(t.Context(), platform.RepositoryIdentity{
 		Provider: "bitbucket", PlatformHost: platform.DefaultBitbucketHost,
-		BitbucketRepositoryUUID: uuid.MustParse(cloudRepoUUID),
+		Key: platform.RepositoryUUIDKey(uuid.MustParse(cloudRepoUUID)),
 	})
 	require.NoError(err)
 	require.NotNil(entry)

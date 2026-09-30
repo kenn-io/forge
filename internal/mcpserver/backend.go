@@ -3,6 +3,8 @@ package mcpserver
 import (
 	"context"
 	"time"
+
+	"go.kenn.io/forge/platform"
 )
 
 // ProviderBackend owns provider data shared by every Forge node.
@@ -53,13 +55,26 @@ func NewFederatedBackend(provider ProviderBackend, local LocalBackend) Backend {
 	return federatedBackend{ProviderBackend: provider, LocalBackend: local}
 }
 
+// RepositoryIdentity names a repository by its provider-verified key plus
+// its current route. JSON encodes the key flat as platform_repo_id, or
+// bitbucket_repository_uuid for a Bitbucket Cloud key.
 type RepositoryIdentity struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	RepoPath       string `json:"repo_path"`
-	Owner          string `json:"owner"`
-	Name           string `json:"name"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid"`
+	RepoPath     string                 `json:"repo_path"`
+	Owner        string                 `json:"owner"`
+	Name         string                 `json:"name"`
+}
+
+func (r RepositoryIdentity) MarshalJSON() ([]byte, error) {
+	type plain RepositoryIdentity
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *RepositoryIdentity) UnmarshalJSON(data []byte) error {
+	type plain RepositoryIdentity
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 type RepositorySummary struct {
@@ -165,14 +180,26 @@ type Issue struct {
 	DetailFetchedAt string
 }
 
+// ItemIdentity names a PR or issue within a keyed repository. JSON encodes
+// the key as RepositoryIdentity does.
 type ItemIdentity struct {
-	Type           string `json:"type"`
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Owner          string `json:"owner"`
-	Name           string `json:"name"`
-	Number         int    `json:"number"`
+	Type         string                 `json:"type"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	RepoKey      platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid"`
+	Owner        string                 `json:"owner"`
+	Name         string                 `json:"name"`
+	Number       int                    `json:"number"`
+}
+
+func (i ItemIdentity) MarshalJSON() ([]byte, error) {
+	type plain ItemIdentity
+	return platform.MarshalKeyedJSON(plain(i))
+}
+
+func (i *ItemIdentity) UnmarshalJSON(data []byte) error {
+	type plain ItemIdentity
+	return platform.UnmarshalKeyedJSON(data, (*plain)(i))
 }
 
 type DetailEvent struct {

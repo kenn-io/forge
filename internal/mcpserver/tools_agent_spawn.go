@@ -321,9 +321,11 @@ func normalizeSpawnItem(item itemRefInput) (itemRefInput, error) {
 	item.PlatformHost = strings.TrimSpace(item.PlatformHost)
 	item.Owner = strings.Trim(strings.TrimSpace(item.Owner), "/")
 	item.Name = strings.Trim(strings.TrimSpace(item.Name), "/")
-	if err := validateItemRef(item); err != nil {
+	identity, err := item.itemIdentity()
+	if err != nil {
 		return item, err
 	}
+	item.PlatformRepoID, item.BitbucketRepositoryUUID = repositoryKeyFields(identity.RepoKey)
 	kind, err := platform.NormalizeKind(item.Provider)
 	if err != nil {
 		return item, err
@@ -348,9 +350,11 @@ func normalizeSpawnRepo(repo repoFilterInput) (repoFilterInput, error) {
 	if repo.Provider == "" {
 		return repo, errors.New("repo provider is required")
 	}
-	if repo.PlatformRepoID <= 0 {
-		return repo, errors.New("repo platform_repo_id is required")
+	key, err := repositoryKeyFromInput("repo ", repo.PlatformRepoID, repo.BitbucketRepositoryUUID)
+	if err != nil {
+		return repo, err
 	}
+	repo.PlatformRepoID, repo.BitbucketRepositoryUUID = repositoryKeyFields(key)
 	kind, err := platform.NormalizeKind(repo.Provider)
 	if err != nil {
 		return repo, err
@@ -467,11 +471,15 @@ func (s *Server) resolveOrCreateWorkspace(
 	source workspaceSourceInput,
 ) (Workspace, bool, error) {
 	if source.Item != nil {
-		switch source.Item.Type {
+		item, err := source.Item.itemIdentity()
+		if err != nil {
+			return Workspace{}, false, err
+		}
+		switch item.Type {
 		case "pr":
-			return s.resolveOrCreatePRWorkspace(ctx, *source.Item)
+			return s.resolveOrCreatePRWorkspace(ctx, item)
 		case "issue":
-			return s.resolveOrCreateIssueWorkspace(ctx, *source.Item)
+			return s.resolveOrCreateIssueWorkspace(ctx, item)
 		}
 	}
 	if source.AdHoc != nil {
@@ -482,23 +490,23 @@ func (s *Server) resolveOrCreateWorkspace(
 
 func (s *Server) resolveOrCreatePRWorkspace(
 	ctx context.Context,
-	item itemRefInput,
+	item ItemIdentity,
 ) (Workspace, bool, error) {
-	detail, err := s.backend.GetPull(ctx, itemIdentity(item))
+	detail, err := s.backend.GetPull(ctx, item)
 	if err != nil {
 		return Workspace{}, false, err
 	}
 	if detail.Workspace != nil {
 		return Workspace{ID: detail.Workspace.ID, Status: detail.Workspace.Status}, true, nil
 	}
-	workspace, err := s.backend.CreatePullWorkspace(ctx, itemIdentity(item), true)
+	workspace, err := s.backend.CreatePullWorkspace(ctx, item, true)
 	if err == nil {
 		return workspace, !workspace.Created, nil
 	}
 	if !isWorkspaceAlreadyExistsError(err) {
 		return Workspace{}, false, err
 	}
-	detail, readErr := s.backend.GetPull(ctx, itemIdentity(item))
+	detail, readErr := s.backend.GetPull(ctx, item)
 	if readErr != nil {
 		return Workspace{}, false, readErr
 	}
@@ -519,16 +527,16 @@ func isWorkspaceAlreadyExistsError(err error) bool {
 
 func (s *Server) resolveOrCreateIssueWorkspace(
 	ctx context.Context,
-	item itemRefInput,
+	item ItemIdentity,
 ) (Workspace, bool, error) {
-	detail, err := s.backend.GetIssue(ctx, itemIdentity(item))
+	detail, err := s.backend.GetIssue(ctx, item)
 	if err != nil {
 		return Workspace{}, false, err
 	}
 	if detail.Workspace != nil {
 		return Workspace{ID: detail.Workspace.ID, Status: detail.Workspace.Status}, true, nil
 	}
-	workspace, err := s.backend.CreateIssueWorkspace(ctx, itemIdentity(item), true)
+	workspace, err := s.backend.CreateIssueWorkspace(ctx, item, true)
 	if err != nil {
 		return Workspace{}, false, err
 	}

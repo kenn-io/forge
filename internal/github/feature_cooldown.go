@@ -15,11 +15,11 @@ import (
 const repositoryFeatureProbeInterval = 24 * time.Hour
 
 type repositoryFeatureCooldownKey struct {
-	platform       platform.Kind
-	host           string
-	providerRepoID int64
-	repoPath       string
-	feature        string
+	platform platform.Kind
+	host     string
+	repoKey  platform.RepositoryKey
+	repoPath string
+	feature  string
 }
 
 type repositoryFeatureCooldowns struct {
@@ -33,9 +33,9 @@ type repositoryFeatureCooldownState struct {
 	nextProbe   time.Time
 	generation  uint64
 	reservation uint64
-	// providerRepoID identifies the repository that recorded the state;
+	// repoKey identifies the repository that recorded the state;
 	// zero when it was recorded from a route-only (unresolved) ref.
-	providerRepoID int64
+	repoKey platform.RepositoryKey
 }
 
 type repositoryFeatureProbe struct {
@@ -108,14 +108,14 @@ func repositoryFeatureKeys(repo RepoRef, feature string) []repositoryFeatureCool
 		repoPath: ref.RepoPath,
 		feature:  feature,
 	}
-	if ref.PlatformID == 0 {
+	if ref.Key.IsZero() {
 		return []repositoryFeatureCooldownKey{routeKey}
 	}
 	idKey := repositoryFeatureCooldownKey{
-		platform:       ref.Platform,
-		host:           ref.Host,
-		providerRepoID: ref.PlatformID,
-		feature:        feature,
+		platform: ref.Platform,
+		host:     ref.Host,
+		repoKey:  ref.Key,
+		feature:  feature,
 	}
 	return []repositoryFeatureCooldownKey{idKey, routeKey}
 }
@@ -136,7 +136,7 @@ func (c *repositoryFeatureCooldowns) lookupState(
 		if !ok {
 			continue
 		}
-		if state.providerRepoID == 0 || state.providerRepoID == primary.providerRepoID {
+		if state.repoKey.IsZero() || state.repoKey == primary.repoKey {
 			return key, state, true
 		}
 	}
@@ -210,9 +210,9 @@ func (c *repositoryFeatureCooldowns) deferUntil(repo RepoRef, feature string, ne
 	c.nextGeneration++
 	keys := repositoryFeatureKeys(repo, feature)
 	state := repositoryFeatureCooldownState{
-		nextProbe:      nextProbe,
-		generation:     c.nextGeneration,
-		providerRepoID: keys[0].providerRepoID,
+		nextProbe:  nextProbe,
+		generation: c.nextGeneration,
+		repoKey:    keys[0].repoKey,
 	}
 	for _, key := range keys {
 		c.states[key] = state

@@ -5,6 +5,8 @@
 export interface CreateAdHocWorkspaceHostInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud */
+  bitbucket_repository_uuid?: string;
   /** Branch for the new worktree; generated when empty */
   branch?: string;
   /** Expected stable repository ID from the catalog */

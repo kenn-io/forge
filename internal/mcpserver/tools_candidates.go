@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.kenn.io/forge/platform"
 )
 
 type findCandidatesInput struct {
@@ -30,6 +32,8 @@ type candidate struct {
 	Workspace candidateWorkspace `json:"workspace"`
 	Stack     candidateStack     `json:"stack"`
 	Cache     candidateCache     `json:"cache"`
+	// key identifies and orders the item; it is not part of the tool output.
+	key candidateKey
 }
 
 type candidateWorkflow struct {
@@ -71,28 +75,27 @@ type findCandidatesOutput struct {
 }
 
 type candidateKey struct {
-	provider       string
-	platformHost   string
-	platformRepoID int64
-	repoPath       string
-	owner          string
-	name           string
-	itemType       string
-	number         int
+	provider     string
+	platformHost string
+	repoKey      platform.RepositoryKey
+	repoPath     string
+	owner        string
+	name         string
+	itemType     string
+	number       int
 }
 
 type candidateRepoKey struct {
-	provider       string
-	platformHost   string
-	platformRepoID int64
-	repoPath       string
-	owner          string
-	name           string
+	provider     string
+	platformHost string
+	repoKey      platform.RepositoryKey
+	repoPath     string
+	owner        string
+	name         string
 }
 
 type candidateGroup struct {
 	key         candidateKey
-	item        itemRef
 	activity    candidateActivity
 	typesSeen   map[string]bool
 	actorsSeen  map[string]bool
@@ -150,25 +153,23 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 		if row.ItemType == "issue" && !includeIssue {
 			continue
 		}
-		item := row.itemRef()
-		key := candidateKeyFromItem(item)
+		key := row.itemKey()
 		group := groups[key]
 		if group == nil {
 			group = &candidateGroup{
 				key:         key,
-				item:        item,
 				typesSeen:   map[string]bool{},
 				actorsSeen:  map[string]bool{},
 				reasonsSeen: map[string]bool{},
 			}
 			groups[key] = group
 			repoKey := candidateRepoKey{
-				provider:       key.provider,
-				platformHost:   key.platformHost,
-				platformRepoID: key.platformRepoID,
-				repoPath:       key.repoPath,
-				owner:          key.owner,
-				name:           key.name,
+				provider:     key.provider,
+				platformHost: key.platformHost,
+				repoKey:      key.repoKey,
+				repoPath:     key.repoPath,
+				owner:        key.owner,
+				name:         key.name,
 			}
 			repos[repoKey] = repoKey
 		}
@@ -275,7 +276,7 @@ func (s *Server) fetchCandidatePullPages(
 			return err
 		}
 		for _, row := range rows {
-			key := candidateKeyFromItem(row.itemRef())
+			key := row.itemKey()
 			out[key] = row
 			delete(needed, key)
 		}
@@ -300,7 +301,7 @@ func (s *Server) fetchCandidateIssuePages(
 			return err
 		}
 		for _, row := range issueRows {
-			key := candidateKeyFromItem(row.itemRef())
+			key := row.itemKey()
 			out[key] = row
 			delete(needed, key)
 		}
@@ -327,7 +328,7 @@ func neededForRepo(
 	for key := range needed {
 		if key.provider != repo.provider ||
 			key.platformHost != repo.platformHost ||
-			key.platformRepoID != repo.platformRepoID ||
+			key.repoKey != repo.repoKey ||
 			key.repoPath != repo.repoPath ||
 			key.owner != repo.owner ||
 			key.name != repo.name {
@@ -364,10 +365,10 @@ func (s *Server) buildCandidate(
 		if !includeDrafts && row.IsDraft {
 			return candidate{}, false
 		}
-		item := row.itemRef()
 		workspace := workspaceFromRef(row.Workspace)
 		return candidate{
-			Item:      item,
+			Item:      row.itemRef(),
+			key:       group.key,
 			Workflow:  workflowForCandidate(group.key, workflows, row.WorkflowStatus),
 			Activity:  group.activity,
 			Workspace: workspace,
@@ -384,9 +385,9 @@ func (s *Server) buildCandidate(
 		if !includeClosed && row.State == "closed" {
 			return candidate{}, false
 		}
-		item := row.itemRef()
 		return candidate{
-			Item:      item,
+			Item:      row.itemRef(),
+			key:       group.key,
 			Workflow:  workflowForCandidate(group.key, workflows, row.WorkflowStatus),
 			Activity:  group.activity,
 			Workspace: workspaceFromRef(row.Workspace),
@@ -405,7 +406,7 @@ func (s *Server) enrichCandidateStack(ctx context.Context, cand *candidate) erro
 	if cand == nil || cand.Item.Type != "pr" {
 		return nil
 	}
-	stack, err := s.stackForCandidate(ctx, cand.Item)
+	stack, err := s.stackForCandidate(ctx, cand.key.itemIdentity())
 	if err != nil {
 		return err
 	}
@@ -413,8 +414,8 @@ func (s *Server) enrichCandidateStack(ctx context.Context, cand *candidate) erro
 	return nil
 }
 
-func (s *Server) stackForCandidate(ctx context.Context, item itemRef) (candidateStack, error) {
-	stack, err := s.backend.GetPullStack(ctx, itemIdentityFromRef(item))
+func (s *Server) stackForCandidate(ctx context.Context, item ItemIdentity) (candidateStack, error) {
+	stack, err := s.backend.GetPullStack(ctx, item)
 	if err != nil {
 		if backendErr, ok := errors.AsType[*Error](err); ok && isStackAbsentError(backendErr) {
 			return candidateStack{}, nil
@@ -432,21 +433,8 @@ func (s *Server) stackForCandidate(ctx context.Context, item itemRef) (candidate
 func (k candidateRepoKey) repositoryIdentity() RepositoryIdentity {
 	return RepositoryIdentity{
 		Provider: k.provider, PlatformHost: k.platformHost,
-		PlatformRepoID: k.platformRepoID, RepoPath: k.repoPath,
+		Key: k.repoKey, RepoPath: k.repoPath,
 		Owner: k.owner, Name: k.name,
-	}
-}
-
-func candidateKeyFromItem(item itemRef) candidateKey {
-	return candidateKey{
-		provider:       item.Provider,
-		platformHost:   item.PlatformHost,
-		platformRepoID: item.PlatformRepoID,
-		repoPath:       item.RepoPath,
-		owner:          item.Owner,
-		name:           item.Name,
-		itemType:       item.Type,
-		number:         item.Number,
 	}
 }
 
@@ -507,7 +495,7 @@ func sortCandidates(candidates []candidate) {
 		if timeStringAfter(right, left) {
 			return false
 		}
-		return itemSortKey(candidates[i].Item) < itemSortKey(candidates[j].Item)
+		return candidates[i].key.sortKey() < candidates[j].key.sortKey()
 	})
 }
 
@@ -525,7 +513,7 @@ func sortedCandidateGroups(groups map[candidateKey]*candidateGroup) []*candidate
 		if timeStringAfter(right, left) {
 			return false
 		}
-		return itemSortKey(out[i].item) < itemSortKey(out[j].item)
+		return out[i].key.sortKey() < out[j].key.sortKey()
 	})
 	return out
 }

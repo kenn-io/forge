@@ -17,14 +17,14 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	}
 
 	row, err := request[repository](ctx, c, http.MethodGet, path, nil)
-	if ref.PlatformID > 0 && ((err == nil && row.ID != ref.PlatformID) || errors.Is(err, platform.ErrNotFound)) {
+	if wantID, ok := ref.Key.ID(); ok && ((err == nil && row.ID != wantID) || errors.Is(err, platform.ErrNotFound)) {
 		rows, lookupErr := pages[repository](ctx, c, "/rest/api/latest/repos?archived=ALL")
 		if lookupErr != nil {
 			return platform.Repository{}, lookupErr
 		}
 		found := false
 		for _, candidate := range rows {
-			if candidate.ID == ref.PlatformID {
+			if candidate.ID == wantID {
 				row = candidate
 				found = true
 				break

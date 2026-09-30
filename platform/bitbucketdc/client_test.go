@@ -19,7 +19,7 @@ type credential string
 func (c credential) Token(context.Context) (string, error) { return string(c), nil }
 func (credential) Invalidate(string)                       {}
 
-var ref = platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.example.com", Owner: "PROJECT", Name: "widgets", PlatformID: 42}
+var ref = platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.example.com", Owner: "PROJECT", Name: "widgets", Key: platform.RepositoryIDKey(42)}
 
 func client(t *testing.T, handler func(*http.Request) (int, string)) *bitbucketdc.Client {
 	assert := assert.New(t)
@@ -53,11 +53,11 @@ func TestRepositoryIdentityAndDefaultBranch(t *testing.T) {
 	})
 	repo, err := c.GetRepository(t.Context(), ref)
 	require.NoError(t, err)
-	assert.Equal(int64(42), repo.Ref.PlatformID)
+	assert.Equal(platform.RepositoryIDKey(42), repo.Ref.Key)
 	assert.Equal("main", repo.DefaultBranch)
 	assert.Equal("https://bitbucket.example.com/scm/project/widgets.git", repo.CloneURL)
 	wrong := ref
-	wrong.PlatformID = 99
+	wrong.Key = platform.RepositoryIDKey(99)
 	_, err = c.GetRepository(t.Context(), wrong)
 	require.ErrorIs(t, err, platform.ErrProviderContract)
 }
@@ -151,5 +151,5 @@ func TestEmptyRepositoryHasNoDefaultBranch(t *testing.T) {
 	repo, err := c.GetRepository(t.Context(), ref)
 	require.NoError(t, err)
 	assert.Empty(t, repo.DefaultBranch)
-	assert.Equal(t, int64(42), repo.Ref.PlatformID)
+	assert.Equal(t, platform.RepositoryIDKey(42), repo.Ref.Key)
 }

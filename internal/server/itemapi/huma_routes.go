@@ -90,27 +90,27 @@ type StreamEventsInput struct {
 }
 
 type ListActivityInput struct {
-	Repo                 string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	Types                []string `query:"types"`
-	ItemTypes            []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
-	Search               string   `query:"search"`
-	Author               string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
-	InvolvesMe           bool     `query:"involves_me" doc:"Only include activity for pull requests and issues involving the authenticated viewer."`
-	Unassigned           bool     `query:"unassigned" doc:"Only include activity for pull requests and issues with no assignees."`
-	After                string   `query:"after"`
-	Before               string   `query:"before"`
-	AtOrBefore           string   `query:"at_or_before"`
-	Since                string   `query:"since"`
-	Projection           string   `query:"projection" enum:"full,collapsed,events" default:"full"`
-	Limit                int      `query:"limit" minimum:"10" maximum:"500"`
-	HideClosedMerged     bool     `query:"hide_closed_merged"`
-	HideBots             bool     `query:"hide_bots"`
-	HideDefaultBranch    bool     `query:"hide_default_branch"`
-	ParentProvider       string
-	ParentPlatformHost   string
-	ParentPlatformRepoID int64
-	ParentItemType       string
-	ParentItemNumber     int
+	Repo               string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	Types              []string `query:"types"`
+	ItemTypes          []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
+	Search             string   `query:"search"`
+	Author             string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
+	InvolvesMe         bool     `query:"involves_me" doc:"Only include activity for pull requests and issues involving the authenticated viewer."`
+	Unassigned         bool     `query:"unassigned" doc:"Only include activity for pull requests and issues with no assignees."`
+	After              string   `query:"after"`
+	Before             string   `query:"before"`
+	AtOrBefore         string   `query:"at_or_before"`
+	Since              string   `query:"since"`
+	Projection         string   `query:"projection" enum:"full,collapsed,events" default:"full"`
+	Limit              int      `query:"limit" minimum:"10" maximum:"500"`
+	HideClosedMerged   bool     `query:"hide_closed_merged"`
+	HideBots           bool     `query:"hide_bots"`
+	HideDefaultBranch  bool     `query:"hide_default_branch"`
+	ParentProvider     string
+	ParentPlatformHost string
+	ParentRepoKey      platform.RepositoryKey
+	ParentItemType     string
+	ParentItemNumber   int
 }
 
 type ListActivityAuthorsInput struct {
@@ -324,7 +324,7 @@ func ActivityItemIdentity(item ActivityItemResponse) providerplane.ItemIdentity 
 	return providerplane.ItemIdentity{
 		Repository: platform.RepositoryIdentity{
 			Provider: item.Repo.Provider, PlatformHost: item.Repo.PlatformHost,
-			PlatformRepoID: item.Repo.PlatformRepoID,
+			Key: item.Repo.Key,
 		},
 		ItemType: item.ItemType, ItemNumber: item.ItemNumber,
 	}.Canonical()
@@ -334,7 +334,7 @@ func ActivitySubjectIdentity(item ActivitySubjectResponse) providerplane.ItemIde
 	return providerplane.ItemIdentity{
 		Repository: platform.RepositoryIdentity{
 			Provider: item.Repo.Provider, PlatformHost: item.Repo.PlatformHost,
-			PlatformRepoID: item.Repo.PlatformRepoID,
+			Key: item.Repo.Key,
 		},
 		ItemType: item.ItemType, ItemNumber: item.ItemNumber,
 	}.Canonical()
@@ -342,12 +342,12 @@ func ActivitySubjectIdentity(item ActivitySubjectResponse) providerplane.ItemIde
 
 func ActivityRepoRef(repo httpapi.RepoRefResponse) ActivityRepoRefResponse {
 	return ActivityRepoRefResponse{
-		Provider:       repo.Provider,
-		PlatformHost:   repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
-		RepoPath:       repo.RepoPath,
-		Owner:          repo.Owner,
-		Name:           repo.Name,
+		Provider:     repo.Provider,
+		PlatformHost: repo.PlatformHost,
+		Key:          repo.Key,
+		RepoPath:     repo.RepoPath,
+		Owner:        repo.Owner,
+		Name:         repo.Name,
 	}
 }
 
@@ -426,7 +426,7 @@ func (s *Handlers) WorkspaceActivityResponse(
 		result = append(result, WorkspaceActivitySubjectResponse{
 			Repo: ActivityRepoRef(s.RepoResolver.Ref(db.Repo{
 				Platform: subject.Platform, PlatformHost: subject.PlatformHost,
-				PlatformRepoID: subject.PlatformRepoID, Owner: subject.RepoOwner,
+				Key: subject.RepoKey, Owner: subject.RepoOwner,
 				Name: subject.RepoName, RepoPath: subject.RepoPath,
 			})),
 			PlatformHost: subject.PlatformHost, RepoOwner: subject.RepoOwner, RepoName: subject.RepoName,

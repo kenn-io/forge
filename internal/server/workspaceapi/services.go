@@ -15,7 +15,7 @@ import (
 type CreatePullWorkspaceRequest struct {
 	Provider           string
 	PlatformHost       string
-	PlatformRepoID     int64
+	RepoKey            platform.RepositoryKey
 	Owner              string
 	Name               string
 	Number             int
@@ -25,7 +25,7 @@ type CreatePullWorkspaceRequest struct {
 type CreateIssueWorkspaceRequest struct {
 	Provider               string
 	PlatformHost           string
-	PlatformRepoID         int64
+	RepoKey                platform.RepositoryKey
 	Owner                  string
 	Name                   string
 	Number                 int
@@ -38,18 +38,30 @@ type CreateIssueWorkspaceRequest struct {
 type CreateAdHocWorkspaceRequest struct {
 	Provider            string
 	PlatformHost        string
-	PlatformRepoID      int64
+	RepoKey             platform.RepositoryKey
 	Owner               string
 	Name                string
 	Branch              *string
 	ReuseExistingBranch bool
 }
 
+// ProviderWorkspaceItemRequest names a workspace's source item for hub-owned
+// automation. Its JSON form flattens the key; see platform.MarshalKeyedJSON.
 type ProviderWorkspaceItemRequest struct {
-	Repository     providerplane.RepositoryRoute `json:"repository"`
-	PlatformRepoID int64                         `json:"platform_repo_id" minimum:"1"`
-	ItemType       string                        `json:"item_type"`
-	ItemNumber     int                           `json:"item_number"`
+	Repository providerplane.RepositoryRoute `json:"repository"`
+	RepoKey    platform.RepositoryKey        `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid"`
+	ItemType   string                        `json:"item_type"`
+	ItemNumber int                           `json:"item_number"`
+}
+
+func (r ProviderWorkspaceItemRequest) MarshalJSON() ([]byte, error) {
+	type plain ProviderWorkspaceItemRequest
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *ProviderWorkspaceItemRequest) UnmarshalJSON(data []byte) error {
+	type plain ProviderWorkspaceItemRequest
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
 }
 
 type ProviderWorkspaceAutomation interface {
@@ -116,7 +128,7 @@ type AgentMessageResult struct {
 func (s *Handler) resolveWorkspaceLaunchSpec(
 	ctx context.Context,
 	route providerplane.RepositoryRoute,
-	platformRepoID int64,
+	repoKey platform.RepositoryKey,
 	itemType string,
 	itemNumber int,
 	gitHeadRef string,
@@ -129,9 +141,9 @@ func (s *Handler) resolveWorkspaceLaunchSpec(
 		ctx,
 		providerplane.WorkspaceLaunchRequest{
 			Repository: route, ItemType: itemType, ItemNumber: itemNumber,
-			PlatformRepoID: platformRepoID,
-			ForCreation:    true,
-			GitHeadRef:     gitHeadRef, IssueBranchSlug: issueBranchSlug,
+			RepoKey:     repoKey,
+			ForCreation: true,
+			GitHeadRef:  gitHeadRef, IssueBranchSlug: issueBranchSlug,
 		},
 	)
 }
@@ -150,10 +162,9 @@ func (s *Handler) RefreshProviderWorkspaceFacts(
 		return httpapi.BadRequest(httpapi.CodeValidationError, err.Error(), nil)
 	}
 	var repo *db.ActiveRepo
-	if request.PlatformRepoID != 0 {
+	if !request.RepoKey.IsZero() {
 		entry, lookupErr := s.db.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
-			Provider: route.Provider, PlatformHost: route.PlatformHost,
-			PlatformRepoID: request.PlatformRepoID,
+			Provider: route.Provider, PlatformHost: route.PlatformHost, Key: request.RepoKey,
 		})
 		if lookupErr != nil {
 			return providerRouteLookupError(lookupErr)

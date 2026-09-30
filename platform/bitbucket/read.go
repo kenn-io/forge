@@ -19,7 +19,7 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	if err != nil {
 		return platform.Repository{}, err
 	}
-	if ref.BitbucketRepositoryUUID != uuid.Nil() {
+	if ref.Key.IsUUID() {
 		// Bitbucket's empty workspace placeholder resolves a UUID after a move or rename.
 		owner = "{}"
 	}
@@ -32,7 +32,7 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	if err != nil {
 		return repo, err
 	}
-	if ref.BitbucketRepositoryUUID != uuid.Nil() && repo.Ref.BitbucketRepositoryUUID != ref.BitbucketRepositoryUUID {
+	if !ref.Key.IsZero() && repo.Ref.Key != ref.Key {
 		return platform.Repository{}, platform.ProviderContract(c.Platform(), ref.Host, "repository identity", errors.New("repository UUID does not match requested identity"))
 	}
 	grants, err := c.repositoryPermissions(ctx, repo.Ref.Owner)
@@ -142,7 +142,7 @@ func (c *Client) normalizePull(ctx context.Context, ref platform.RepoRef, p pull
 				if err != nil || id == uuid.Nil() {
 					return platform.MergeRequest{}, missing("repository identity")
 				}
-				commitRef.BitbucketRepositoryUUID = id
+				commitRef.Key = platform.RepositoryUUIDKey(id)
 			}
 		}
 		target, err := repoURL(commitRef)

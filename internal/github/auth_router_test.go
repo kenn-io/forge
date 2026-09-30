@@ -1504,7 +1504,7 @@ func TestHostRouterRepoCredentialAliasFollowsRename(t *testing.T) {
 	require.NoError(err)
 
 	router.RegisterRepoCredentialAlias("acme", "gadget",
-		RouteKey{Host: "github.com", Owner: "acme", Name: "widget"}, 1001)
+		RouteKey{Host: "github.com", Owner: "acme", Name: "widget"}, platform.RepositoryIDKey(1001))
 	identity, err := router.ReadIdentityForRepo("acme", "gadget")
 	require.NoError(err)
 	assert.Equal("widget-bot", identity.Principal)
@@ -1512,7 +1512,7 @@ func TestHostRouterRepoCredentialAliasFollowsRename(t *testing.T) {
 	// A second rename that targets the first alias still lands on the
 	// configured route.
 	router.RegisterRepoCredentialAlias("acme", "gizmo",
-		RouteKey{Host: "github.com", Owner: "acme", Name: "gadget"}, 1001)
+		RouteKey{Host: "github.com", Owner: "acme", Name: "gadget"}, platform.RepositoryIDKey(1001))
 	identity, err = router.ReadIdentityForRepo("acme", "gizmo")
 	require.NoError(err)
 	assert.Equal("widget-bot", identity.Principal)
@@ -1535,7 +1535,7 @@ func TestHostRouterArchiveAliasFallsBackWhenArchiveAppLosesCoverage(t *testing.T
 	)
 	require.NoError(err)
 	router.RegisterRepoCredentialAlias("acme", "gadget",
-		RouteKey{Host: "github.com", Owner: "acme", Name: "widget"}, 1001)
+		RouteKey{Host: "github.com", Owner: "acme", Name: "widget"}, platform.RepositoryIDKey(1001))
 	routed, err := NewRoutedClient(router)
 	require.NoError(err)
 	_, err = routed.GetRepository(
@@ -1565,7 +1565,7 @@ func TestRegisterConfiguredRepoCredentialAliasesRoutesRenamedRepo(t *testing.T) 
 		config.Repo{Owner: "acme", Name: "widget"},
 		[]RepoRef{{
 			Platform: platform.KindGitHub, PlatformHost: "github.com",
-			Owner: "acme", Name: "gadget", PlatformRepoID: 1001,
+			Owner: "acme", Name: "gadget", Key: platform.RepositoryIDKey(1001),
 		}},
 	)
 
@@ -1589,12 +1589,12 @@ func TestPublishResolvedRepositoryClearsDisplacedCredentialAlias(t *testing.T) {
 	// The displaced repository 1001 was renamed onto acme/widget earlier
 	// and aliased credential selection back to its configured route.
 	router.RegisterRepoCredentialAlias("acme", "widget",
-		RouteKey{Host: "github.com", Owner: "acme", Name: "old-widget"}, 1001)
+		RouteKey{Host: "github.com", Owner: "acme", Name: "old-widget"}, platform.RepositoryIDKey(1001))
 
 	syncer := &Syncer{routers: map[string]*HostRouter{"github.com": router}}
 	replacement := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "acme", Name: "widget", PlatformRepoID: 1002,
+		Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(1002),
 	}
 	syncer.publishResolvedRepository(replacement, replacement, true)
 

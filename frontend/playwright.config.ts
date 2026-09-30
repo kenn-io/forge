@@ -5,7 +5,7 @@ const host = "127.0.0.1";
 const port = parseE2EPort(process.env.PLAYWRIGHT_PORT) ?? (await getAvailablePort(host));
 process.env.PLAYWRIGHT_PORT = String(port);
 const baseURL = `http://${host}:${port}`;
-// Concurrent page loads share one Vite server and can starve it.
+// Bound concurrent browser instances on shared CI runners.
 const sharedViteWorkerLimit = 7;
 
 function ciWorkers(): number | undefined {
@@ -30,7 +30,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `node ../node_modules/vite-plus/bin/vp dev --host ${host} --port ${port} --strictPort`,
+    command: `node ../node_modules/vite-plus/bin/vp build --logLevel warn && node ../node_modules/vite-plus/bin/vp preview --host ${host} --port ${port} --strictPort`,
     url: baseURL,
     reuseExistingServer: e2eReuseExistingServer(),
     timeout: 120_000,

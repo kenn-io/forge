@@ -35,6 +35,8 @@ fixtures, or changing shell-script coverage.
   `GOMAXPROCS` globally, because test-launched servers inherit that CPU limit.
 - Do not overlap frontend/e2e asset builds with Go compilation; replacing embedded
   assets mid-compile causes missing-file build failures (`internal/web/embed.go:9`).
+- Mock Playwright tests use built assets; serving the development module graph
+  makes concurrent navigation compete with module loading (`frontend/playwright.config.ts`).
 - Frontend API client and schema-constraint generation have one generator shared
   by the Vite plugin and `make api-generate`; hooks must not run a full `vp build`
   to trigger it (`frontend/scripts/generate-api-client.mjs::generateClient`).

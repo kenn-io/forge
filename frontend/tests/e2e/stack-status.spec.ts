@@ -667,7 +667,9 @@ test("stack rail spans wrapped CI badges at narrow widths", async ({ page }) => 
     return {
       hasExpectedContainerRule: rules.some(
         (rule) =>
-          rule.includes("@container pull-detail") && rule.includes("max-width: 440px") && rule.includes(".stack-row"),
+          rule.includes("@container pull-detail") &&
+          /(?:max-width:\s*440px|width\s*<=\s*440px)/.test(rule) &&
+          rule.includes(".stack-row"),
       ),
       hasMalformedRule: rules.some((rule) => rule.includes("@frontend/src/lib/stores/container.svelte.ts")),
     };

@@ -2,11 +2,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json/v2"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/apiclient"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonclient"
 	"go.kenn.io/forge/internal/ghshim"
@@ -151,34 +151,22 @@ func queryDaemon(q ghshim.Query) (string, bool, string) {
 	if err != nil {
 		return "", false, "daemon_unavailable"
 	}
-	body, err := json.Marshal(q)
-	if err != nil {
-		return "", false, "unsupported"
-	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, daemon.BaseURL+"/api/v1/gh/query", bytes.NewReader(body))
+	httpClient := *daemon.Client
+	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client, err := apiclient.NewWithHTTPClient(daemon.BaseURL, &httpClient)
 	if err != nil {
 		return "", false, "daemon_unavailable"
 	}
-	req.Header.Set("Content-Type", "application/json")
-	client := *daemon.Client
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := client.Do(req)
-	if err != nil {
+	body := generated.QueryGhBody{
+		Command: q.Command, Host: q.Host, Owner: q.Owner, Repo: q.Repo,
+		Number: int64(q.Number), State: q.State, Head: q.Head, Base: q.Base,
+		Limit: int64(q.Limit), Fields: q.Fields,
+	}
+	resp, err := client.HTTP.QueryGhWithResponse(context.Background(), &generated.QueryGhRequestOptions{Body: &body})
+	if err != nil || resp.JSON200 == nil {
 		return "", false, "daemon_unavailable"
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", false, "daemon_unavailable"
-	}
-	var result struct {
-		Handled bool   `json:"handled"`
-		Output  string `json:"output"`
-		Reason  string `json:"reason"`
-	}
-	if json.UnmarshalRead(io.LimitReader(resp.Body, 16<<20), &result) != nil {
-		return "", false, "daemon_unavailable"
-	}
-	return result.Output, result.Handled, result.Reason
+	return resp.JSON200.Output, resp.JSON200.Handled, resp.JSON200.Reason
 }
 
 // Record the full invocation and outcome so coverage gaps can be reproduced.

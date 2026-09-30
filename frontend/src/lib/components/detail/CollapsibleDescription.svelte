@@ -24,6 +24,15 @@
   <div class="detail-description__header">
     <span class="detail-description__title">Description</span>
     <div class="detail-description__actions">
+      <CopyButton
+        class={copied ? "body-copy body-copy--copied" : "body-copy"}
+        {copied}
+        onclick={oncopy}
+        ariaLabel="Copy to clipboard"
+        copiedAriaLabel="Copied!"
+        title="Copy to clipboard"
+        copiedTitle="Copied!"
+      />
       {#if headerActions}
         {@render headerActions()}
       {/if}
@@ -38,16 +47,6 @@
           {isLong && collapsed ? "Expand" : "Collapse"}
         </button>
       {/if}
-      <CopyButton
-        class={copied ? "body-copy body-copy--copied" : "body-copy"}
-        {copied}
-        onclick={oncopy}
-        revealOnHover
-        ariaLabel="Copy to clipboard"
-        copiedAriaLabel="Copied!"
-        title="Copy to clipboard"
-        copiedTitle="Copied!"
-      />
     </div>
   </div>
   <div class="detail-description__card-wrap">
@@ -71,7 +70,6 @@
   }
 
   .detail-description__header {
-    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -105,18 +103,6 @@
     color: var(--accent-blue);
   }
 
-  .detail-description__header :global(.kit-copy-btn.body-copy) {
-    position: absolute;
-    top: calc(100% + var(--space-4) + var(--space-3));
-    right: var(--space-3);
-    z-index: 1;
-  }
-
-  .detail-description:hover :global(.kit-copy-btn.body-copy),
-  .detail-description :global(.kit-copy-btn.body-copy--copied) {
-    opacity: 1;
-  }
-
   /* The description is the item's lead text, not a quoted block: it sits
      on the page surface without a well. Card's public custom properties
      carry the change. */
@@ -146,11 +132,9 @@
     }
 
     .detail-description__header :global(.kit-copy-btn.body-copy) {
-      position: static;
       min-width: var(--detail-mobile-hit-target, 37px);
       min-height: var(--detail-mobile-hit-target, 37px);
       padding: var(--detail-mobile-space-xs, var(--space-3));
-      opacity: 1;
     }
   }
 </style>

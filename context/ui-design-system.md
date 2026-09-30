@@ -40,6 +40,9 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
   `frontend/src/lib/components/detail/IssueDetail.svelte::refreshDetail`).
 - Inline conditional notices occupy layout only while active; do not reserve
   invisible rows for them (`frontend/src/lib/components/diff/DiffView.svelte`).
+- Section controls live in the section header's action row, never overlaid on
+  the content; description copy sits left of Edit on every viewport
+  (`frontend/src/lib/components/detail/CollapsibleDescription.svelte`).
 
 PR list rows use the workspace indicator only; do not add a separate worktree
 icon or branch-name label.

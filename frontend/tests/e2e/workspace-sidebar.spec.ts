@@ -3576,7 +3576,11 @@ test.describe("workspace launch home", () => {
         splitToTreeLeft: Math.round(splitRect.left - treeRect.left),
         splitToTreeTop: Math.round(splitRect.top - treeRect.top),
         splitterBackgroundVisible: dividerStyles.backgroundColor !== "rgba(0, 0, 0, 0)",
-        splitterHitWidth: Math.round(dividerRect.width),
+        splitterWidth: Math.round(dividerRect.width),
+        // The grab margin must reach over the xterm canvases on both sides.
+        splitterGrabsBesideLine: [dividerRect.left - 3, dividerRect.right + 3].every(
+          (x) => document.elementFromPoint(x, dividerRect.top + dividerRect.height / 2) === divider,
+        ),
         treePadding: [treeStyles.paddingTop, treeStyles.paddingRight, treeStyles.paddingBottom, treeStyles.paddingLeft],
         treeToBodyLeft: Math.round(treeRect.left - bodyRect.left),
         treeToBodyTop: Math.round(treeRect.top - bodyRect.top),
@@ -3597,7 +3601,8 @@ test.describe("workspace launch home", () => {
       splitToTreeLeft: 0,
       splitToTreeTop: 0,
       splitterBackgroundVisible: true,
-      splitterHitWidth: 3,
+      splitterGrabsBesideLine: true,
+      splitterWidth: 4,
       treePadding: ["0px", "0px", "0px", "0px"],
       treeToBodyLeft: 0,
       treeToBodyTop: 0,

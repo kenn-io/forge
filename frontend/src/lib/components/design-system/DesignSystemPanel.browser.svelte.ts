@@ -57,8 +57,8 @@ describe("design system tabbed panel demo (browser)", () => {
     assert(Math.round(tabRect.bottom - tabBarRect.bottom)).toBe(1);
     assert(tabStyle.zIndex).toBe("2");
 
-    // Split divider: a 3px gutter with no inline padding; the two leaves drop
-    // their facing borders so the seam is a single divider line.
+    // Split divider: kit's handle at its own 4px size with no inline padding;
+    // the two leaves drop their facing borders so the seam is a single line.
     const divider = demo!.querySelector('[aria-label="Resize design system panel split"]') as HTMLElement;
     assert(divider).not.toBeNull();
     const split = divider.closest(".tabbed-panel-split");
@@ -72,7 +72,14 @@ describe("design system tabbed panel demo (browser)", () => {
     const firstLeafStyle = getComputedStyle(firstLeaf as Element);
     const secondLeafStyle = getComputedStyle(secondLeaf as Element);
 
-    assert(Math.round(dividerRect.width)).toBe(3);
+    assert(Math.round(dividerRect.width)).toBe(4);
+    // The grab target reaches past the visible line on both sides, so the
+    // pointer does not have to land on the line itself to start a resize.
+    const midY = dividerRect.top + dividerRect.height / 2;
+    assert(document.elementFromPoint(dividerRect.left - 3, midY)).toBe(divider);
+    assert(document.elementFromPoint(dividerRect.right + 3, midY)).toBe(divider);
+    assert(document.elementFromPoint(dividerRect.left - 6, midY)).not.toBe(divider);
+    assert(document.elementFromPoint(dividerRect.right + 6, midY)).not.toBe(divider);
     assert(`${dividerStyle.paddingLeft}/${dividerStyle.paddingRight}`).toBe("0px/0px");
     assert(firstLeafStyle.borderTopWidth).toBe("0px");
     assert(firstLeafStyle.borderRightWidth).toBe("0px");

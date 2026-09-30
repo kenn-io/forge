@@ -561,10 +561,6 @@
     flex: var(--second-ratio) 1 0;
   }
 
-  :global(.split-divider) {
-    flex: 0 0 var(--chrome-pane-divider-width);
-  }
-
   .terminal-leaf {
     display: flex;
     flex-direction: column;

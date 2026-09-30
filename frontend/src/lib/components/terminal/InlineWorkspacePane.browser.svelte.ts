@@ -1,5 +1,7 @@
 import { flushSync, mount, unmount } from "svelte";
 import { describe, expect, it } from "vite-plus/test";
+// The split divider's grab margin comes from app.css.
+import "../../../app.css";
 import { createPaneLayoutStore, type PaneLayoutStore } from "../../stores/paneLayout.svelte.js";
 import InlineWorkspacePaneHarness from "./InlineWorkspacePaneHarness.svelte";
 
@@ -116,6 +118,27 @@ describe("inline workspace pane focus", () => {
     } finally {
       dispose();
       sidebarRow.remove();
+    }
+  });
+
+  it("lets the pointer grab the divider just above or below its visible line", () => {
+    const layout = store();
+    const { target, dispose } = mountHarness(layout);
+
+    try {
+      const divider = target.querySelector<HTMLElement>(".tabbed-panel-split-divider")!;
+      const rect = divider.getBoundingClientRect();
+      // The harness is wider than the test viewport; probe inside what is visible.
+      const x = rect.left + 20;
+
+      // Three pixels into either pane still starts a resize: the visible line
+      // alone is too thin to hit reliably between the detail and workspace.
+      expect(document.elementFromPoint(x, rect.top - 3)).toBe(divider);
+      expect(document.elementFromPoint(x, rect.bottom + 3)).toBe(divider);
+      expect(document.elementFromPoint(x, rect.top - 6)).not.toBe(divider);
+      expect(document.elementFromPoint(x, rect.bottom + 6)).not.toBe(divider);
+    } finally {
+      dispose();
     }
   });
 

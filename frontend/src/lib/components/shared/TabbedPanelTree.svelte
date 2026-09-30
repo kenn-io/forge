@@ -922,10 +922,6 @@
     flex-shrink: 0;
   }
 
-  :global(.tabbed-panel-split-divider) {
-    flex: 0 0 var(--chrome-pane-divider-width);
-  }
-
   :global(.tabbed-panel-split.horizontal
       > .tabbed-panel-split-child.first
       .tabbed-panel-leaf) {

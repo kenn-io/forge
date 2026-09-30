@@ -32,6 +32,7 @@ nav = [
   {"Commands" = "commands.md"},
   {"Advanced / experimental" = [
     {"MCP companion" = "kenn-forge-mcp.md"},
+    {"GitHub CLI shim" = "gh-shim.md"},
   ]},
   {"Archive" = "archive.md"},
   {"Troubleshooting" = "troubleshooting.md"},

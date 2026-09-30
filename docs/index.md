@@ -71,6 +71,7 @@ pull request, provider issue, or workspace rather than in a separate mode.
 - [Command reference](commands.md)
 - [Historical activity archives](archive.md)
 - [Federated fleets](federated-fleet.md)
+- [GitHub CLI shim for agents](gh-shim.md)
 
 Forge runs on your machine. Your provider, Kata daemons, and local files
 remain the source of truth.

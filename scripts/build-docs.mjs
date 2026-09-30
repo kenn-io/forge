@@ -16,6 +16,7 @@ const publishedFiles = new Set([
   "devboxes.md",
   "external-pr-context.md",
   "federated-fleet.md",
+  "gh-shim.md",
   "index.md",
   "integrations.md",
   "kenn-forge-mcp.md",

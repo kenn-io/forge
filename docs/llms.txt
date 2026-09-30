@@ -31,6 +31,7 @@ raw markdown at /docs/<page>.md, and the docs index at /docs/index.md.
 - [Devboxes](https://forge.kenn.io/docs/devboxes.md): Run agent workspaces in Linux accounts over Tailscale, with organization-scoped GitHub App access
 - [Federated fleet](https://forge.kenn.io/docs/federated-fleet.md): Why to use a hub-and-spoke fleet, how ownership works, and how to set it up
 - [MCP companion](https://forge.kenn.io/docs/kenn-forge-mcp.md): Model Context Protocol server for agent access to the console
+- [GitHub CLI shim](https://forge.kenn.io/docs/gh-shim.md): Answer repeated agent gh pr list and view queries from synced Forge data
 - [Archive](https://forge.kenn.io/docs/archive.md): Historical activity archives beyond the live sync window
 - [Troubleshooting](https://forge.kenn.io/docs/troubleshooting.md): Startup, authentication, and sync problems
 

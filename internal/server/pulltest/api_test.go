@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -194,6 +195,61 @@ func TestAPIGetPullIncludesCIChecks(t *testing.T) {
 	assert.Equal("https://ci.example/build", detail.Checks[0].URL)
 	assert.Equal("lint", detail.Checks[1].Name)
 	assert.Equal("in_progress", detail.Checks[1].Status)
+}
+
+func TestAPIPullJSONCarriesMergeStatusObservationTimes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	srv, database := servertest.SetupTestServer(t)
+	ciAt := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	reviewAt := time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC)
+	mergeableAt := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, func(pr *db.MergeRequest) {
+		pr.CIStatus, pr.CIObservedAt = "success", &ciAt
+		pr.ReviewDecision, pr.ReviewDecisionObservedAt = "approved", &reviewAt
+		pr.MergeableState, pr.MergeableStateObservedAt = "clean", &mergeableAt
+	})
+	serverfake.SeedPR(t, database, "acme", "widget", 2)
+	observed := map[string]any{
+		"ci_observed_at":              "2026-09-01T08:00:00Z",
+		"review_decision_observed_at": "2026-09-02T09:00:00Z",
+		"mergeable_state_observed_at": "2026-09-03T10:00:00Z",
+	}
+	observedTimes := func(item map[string]any) map[string]any {
+		found := map[string]any{}
+		for key := range observed {
+			if value, ok := item[key]; ok {
+				found[key] = value
+			}
+		}
+		return found
+	}
+
+	rawList := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	require.Equal(http.StatusOK, rawList.Code, rawList.Body.String())
+	var list []map[string]any
+	require.NoError(json.Unmarshal(rawList.Body.Bytes(), &list))
+	listByNumber := map[float64]map[string]any{}
+	for _, item := range list {
+		number, ok := item["Number"].(float64)
+		require.True(ok, "list item number: %v", item)
+		listByNumber[number] = item
+	}
+	require.Len(listByNumber, 2)
+	assert.Equal(t, observed, observedTimes(listByNumber[1]))
+	assert.Empty(t, observedTimes(listByNumber[2]))
+
+	for number, want := range map[int]map[string]any{1: observed, 2: {}} {
+		rawDetail := testutil.DoJSON(t, srv, http.MethodGet,
+			"/api/v1/pulls/gh/acme/widget/"+strconv.Itoa(number), nil)
+		require.Equal(http.StatusOK, rawDetail.Code, rawDetail.Body.String())
+		var detail struct {
+			MergeRequest map[string]any `json:"merge_request"`
+		}
+		require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
+		require.NotNil(detail.MergeRequest)
+		assert.Equal(t, want, observedTimes(detail.MergeRequest), "pull %d", number)
+	}
 }
 
 // TestAPIGetPullToleratesMalformedCIChecks confirms a corrupt ci_checks_json

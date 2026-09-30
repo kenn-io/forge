@@ -133,6 +133,23 @@ describe("AgentSettings", () => {
     );
   });
 
+  it("lets the Pi built-in be disabled like other launchable agents", async () => {
+    mockPersistSettings.mockResolvedValue({
+      agents: [{ key: "pi", label: "Pi", command: ["pi"], enabled: false }],
+    });
+
+    renderAgentSettings({ agents: [], onUpdate: vi.fn() });
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Pi" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
+
+    await waitFor(() => {
+      expect(mockPersistSettings).toHaveBeenCalledWith({
+        agents: [{ key: "pi", label: "Pi", command: ["pi"], enabled: false }],
+      });
+    });
+  });
+
   it("preserves quoted empty arguments when saving", async () => {
     mockPersistSettings.mockResolvedValue({
       agents: [

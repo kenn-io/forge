@@ -2485,7 +2485,7 @@ func cloneRemoteURL(repo RepoRef) string {
 	if repoPath == "" {
 		repoPath = strings.Trim(repo.Owner+"/"+repo.Name, "/")
 	}
-	return fmt.Sprintf("https://%s/%s.git", repoHost(repo), strings.Trim(repoPath, "/"))
+	return platform.DefaultCloneURL(repoPlatform(repo), repoHost(repo), repoPath)
 }
 
 func withCloneRepositoryIdentity(ctx context.Context, repo RepoRef) context.Context {

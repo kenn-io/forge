@@ -17,3 +17,25 @@ func TestBitbucketDataCenterRemoteIdentity(t *testing.T) {
 	}
 	require.Error(t, ValidateRemoteIdentity(RepoRef{Platform: KindBitbucket, Host: DefaultBitbucketHost, Owner: "PROJECT", Name: "repo"}, "https://bitbucket.org/scm/PROJECT/repo.git"))
 }
+
+func TestDefaultCloneURLUsesEachProvidersHTTPRoute(t *testing.T) {
+	tests := map[string]struct {
+		kind     Kind
+		host     string
+		repoPath string
+		want     string
+	}{
+		"github":               {KindGitHub, "github.com", "acme/widget", "https://github.com/acme/widget.git"},
+		"gitlab nested":        {KindGitLab, "gitlab.example.com", "group/sub/widget", "https://gitlab.example.com/group/sub/widget.git"},
+		"bitbucket cloud":      {KindBitbucket, DefaultBitbucketHost, "team/widget", "https://bitbucket.org/team/widget.git"},
+		"bitbucket datacenter": {KindBitbucket, "bitbucket.example.com", "PROJ/widget", "https://bitbucket.example.com/scm/PROJ/widget.git"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := DefaultCloneURL(tt.kind, tt.host, tt.repoPath)
+
+			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.repoPath, RemoteRepoPath(tt.kind, tt.host, got))
+		})
+	}
+}

@@ -7,6 +7,17 @@ import (
 	gitremote "go.kenn.io/kit/git/remote"
 )
 
+// DefaultCloneURL is the HTTPS clone URL for a repository route when the
+// provider reported none. Bitbucket Data Center serves HTTP clones under its
+// /scm/ prefix; every other provider serves them at the route itself.
+func DefaultCloneURL(kind Kind, host, repoPath string) string {
+	repoPath = strings.Trim(repoPath, "/")
+	if kind == KindBitbucket && !strings.EqualFold(strings.TrimSpace(host), DefaultBitbucketHost) {
+		return "https://" + host + "/scm/" + repoPath + ".git"
+	}
+	return "https://" + host + "/" + repoPath + ".git"
+}
+
 // RemoteRepoPath returns the provider's repository route from a Git URL.
 // Data Center's HTTP clone prefix is transport syntax, not a project name.
 func RemoteRepoPath(kind Kind, host, remoteURL string) string {

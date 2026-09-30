@@ -912,7 +912,7 @@ func (m *Manager) CreateAdHoc(
 	repoRef := workspaceRepoRef{
 		ID: repo.ID, Platform: repo.Platform, PlatformHost: platformHost,
 		Key: repo.Key, Owner: owner, Name: name,
-		RemoteURL: workspaceCloneRemoteURL(repo.Row(), platformHost, owner, name),
+		RemoteURL: workspaceCloneRemoteURL(repo.Row(), repo.Platform, platformHost, owner, name),
 	}
 	repoDir, err := m.workspaceRepoDir(ctx, repoRef)
 	if err != nil {
@@ -1195,14 +1195,14 @@ func (m *Manager) branchInspectionDir(
 }
 
 func workspaceCloneRemoteURL(
-	repo *db.Repo, platformHost, owner, name string,
+	repo *db.Repo, kind, platformHost, owner, name string,
 ) string {
 	if repo != nil {
 		if cloneURL := strings.TrimSpace(repo.CloneURL); cloneURL != "" {
 			return cloneURL
 		}
 	}
-	return fmt.Sprintf("https://%s/%s/%s.git", platformHost, owner, name)
+	return platform.DefaultCloneURL(platform.Kind(kind), platformHost, owner+"/"+name)
 }
 
 func workspaceBranchForExistingLocalBranch(
@@ -2376,9 +2376,9 @@ func (m *Manager) workspaceSetupRemoteURL(
 		return "", fmt.Errorf("look up repo clone URL: %w", err)
 	}
 	if repo == nil {
-		return workspaceCloneRemoteURL(nil, platformHost, owner, name), nil
+		return workspaceCloneRemoteURL(nil, platform, platformHost, owner, name), nil
 	}
-	return workspaceCloneRemoteURL(repo.Row(), platformHost, owner, name), nil
+	return workspaceCloneRemoteURL(repo.Row(), platform, platformHost, owner, name), nil
 }
 
 func (m *Manager) localWorktreeBaseDir(

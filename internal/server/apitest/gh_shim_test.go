@@ -92,6 +92,10 @@ func TestGHShimStoredListsRequireInventoryAndPreserveGHFiltering(t *testing.T) {
 	require.NoError(database.EnsureDiscoveryArchives(t.Context(), []int64{repo.ID}, old))
 	_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_archive_repo_scans SET status='complete' WHERE repo_id=? AND scan='merge_request_inventory'`, repo.ID)
 	require.NoError(err)
+	// Historical lists need every discovered pull request loaded, which the
+	// finished initial full archive records.
+	_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_archive_repos SET collection_mode='full', initial_completed_at=? WHERE repo_id=?`, old.Format(time.RFC3339), repo.ID)
+	require.NoError(err)
 	for _, state := range []string{"all", "closed", "merged"} {
 		body.State = state
 		result, err = client.HTTP.QueryGhWithResponse(t.Context(), &generated.QueryGhRequestOptions{Body: &body})

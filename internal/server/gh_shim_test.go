@@ -146,3 +146,58 @@ func TestGHShimTreatsStoredMergeTimeAsMerged(t *testing.T) {
 		assert.JSONEq(tc.output, result.Output)
 	}
 }
+
+// Archive inventory only discovers pull requests; item sync loads their rows
+// later. Historical lists are served only after the initial full archive has
+// loaded every discovered pull request.
+func TestGHShimServesHistoricalListsOnlyAfterFullArchiveLoads(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, database := setupTestServer(t)
+	seedPR(t, database, "acme", "widget", 7)
+	closedAt := time.Now().UTC().Add(-time.Hour)
+	seedPR(t, database, "acme", "widget", 8, func(pr *db.MergeRequest) {
+		pr.State = db.MergeRequestStateClosed
+		pr.ClosedAt = &closedAt
+	})
+	repo, err := database.GetRepoByIdentity(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	require.NoError(database.UpdateRepoSyncCompleted(t.Context(), repo.ID, time.Now().UTC(), ""))
+	require.NoError(database.EnsureDiscoveryArchives(t.Context(), []int64{repo.ID}, time.Now().UTC()))
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_archive_repo_scans SET status = 'complete'
+		WHERE repo_id = ? AND scan = 'merge_request_inventory'`, repo.ID)
+	require.NoError(err)
+
+	listClosed := func() (bool, string, string) {
+		response := testutil.DoJSON(t, hub, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: "list", Host: "github.com", Owner: "acme", Repo: "widget", State: "closed", Limit: 30, Fields: []string{"number"}})
+		require.Equal(http.StatusOK, response.Code, response.Body.String())
+		var result struct {
+			Handled bool
+			Output  string
+			Reason  string
+		}
+		require.NoError(json.Unmarshal(response.Body.Bytes(), &result))
+		return result.Handled, result.Output, result.Reason
+	}
+
+	handled, _, reason := listClosed()
+	assert.False(handled, "discovery-only archives never load older closed pull requests")
+	assert.Equal("data_unavailable", reason)
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_archive_repos SET collection_mode = 'full' WHERE repo_id = ?`, repo.ID)
+	require.NoError(err)
+	handled, _, reason = listClosed()
+	assert.False(handled, "discovered pull requests may still be waiting to load")
+	assert.Equal("data_unavailable", reason)
+
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_archive_repos SET initial_completed_at = ? WHERE repo_id = ?`,
+		time.Now().UTC().Format(time.RFC3339), repo.ID)
+	require.NoError(err)
+	handled, output, reason := listClosed()
+	require.True(handled, reason)
+	assert.JSONEq(`[{"number":8}]`, output)
+}

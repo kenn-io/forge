@@ -31,7 +31,11 @@ func Read(ctx context.Context, database *db.DB, repo db.Repo, q Query) ([]byte, 
 			if err != nil {
 				return nil, err
 			}
-			if len(states) != 1 || !states[0].MergeRequestInventory.Complete() {
+			// Inventory only discovers which pull requests exist; item sync
+			// loads each row later. A finished initial full archive is the
+			// point where every discovered pull request has a stored row.
+			if len(states) != 1 || states[0].CollectionMode != db.ArchiveCollectionModeFull ||
+				states[0].InitialCompletedAt == nil {
 				return nil, fmt.Errorf("historical inventory is incomplete")
 			}
 		}

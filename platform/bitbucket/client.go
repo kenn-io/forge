@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	"go.kenn.io/forge/platform"
@@ -186,8 +187,8 @@ func repoParts(ref platform.RepoRef) (string, string, error) {
 		return "", "", &platform.Error{Code: platform.ErrCodeInvalidRepoRef, Provider: platform.KindBitbucket}
 	}
 	name := ref.Name
-	if ref.PlatformExternalID != "" {
-		name = ref.PlatformExternalID
+	if ref.BitbucketRepositoryUUID != uuid.Nil() {
+		name = "{" + ref.BitbucketRepositoryUUID.String() + "}"
 	}
 	if strings.ContainsAny(ref.Owner+name, "/?#%") || ref.Owner == "." || ref.Owner == ".." || name == "." || name == ".." {
 		return "", "", &platform.Error{Code: platform.ErrCodeInvalidRepoRef, Provider: platform.KindBitbucket}

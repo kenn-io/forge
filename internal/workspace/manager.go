@@ -4486,8 +4486,7 @@ func (m *Manager) GetByLaunchSpecIdentity(
 	ctx context.Context, spec WorkspaceLaunchSpec,
 ) (*Workspace, error) {
 	existing, err := m.db.GetWorkspaceByLaunchSpecIdentity(
-		ctx, spec.Repository.Provider, spec.Repository.PlatformHost,
-		spec.Repository.PlatformRepoID, spec.ItemType, spec.ItemKey,
+		ctx, spec.Repository, spec.ItemType, spec.ItemKey,
 	)
 	if err != nil || existing == nil {
 		return existing, err

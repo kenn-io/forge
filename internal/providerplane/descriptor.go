@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	gitremote "go.kenn.io/kit/git/remote"
-
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/platform"
 )

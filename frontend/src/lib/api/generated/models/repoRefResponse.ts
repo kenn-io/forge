@@ -5,6 +5,7 @@ import type { ProviderCapabilitiesResponse } from "./providerCapabilitiesRespons
 import type { RepoOperations } from "./repoOperations.ts";
 
 export interface RepoRefResponse {
+  bitbucket_repository_uuid?: string;
   capabilities: ProviderCapabilitiesResponse;
   default_branch?: string;
   name: string;

@@ -39,6 +39,7 @@ func (d *DB) SetRepoHiddenFromUI(
 func (d *DB) HiddenRepos(ctx context.Context) ([]Repo, error) {
 	rows, err := d.roQueryContext(ctx,
 		`SELECT r.id, r.platform, r.platform_host, r.platform_repo_id,
+		        r.bitbucket_repository_uuid,
 		        r.owner, r.name, r.repo_path
 		 FROM forge_repos r
 		 JOIN forge_hidden_repos h ON h.repo_id = r.id
@@ -54,6 +55,7 @@ func (d *DB) HiddenRepos(ctx context.Context) ([]Repo, error) {
 		var r Repo
 		if err := rows.Scan(
 			&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
+			bitbucketUUIDScanner{&r.BitbucketRepositoryUUID},
 			&r.Owner, &r.Name, &r.RepoPath,
 		); err != nil {
 			return nil, fmt.Errorf("scan hidden repo: %w", err)

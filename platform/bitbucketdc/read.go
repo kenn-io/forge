@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 
 	"go.kenn.io/forge/platform"
@@ -18,14 +17,14 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	}
 
 	row, err := request[repository](ctx, c, http.MethodGet, path, nil)
-	if ref.PlatformExternalID != "" && ((err == nil && strconv.FormatInt(row.ID, 10) != ref.PlatformExternalID) || errors.Is(err, platform.ErrNotFound)) {
+	if ref.PlatformID > 0 && ((err == nil && row.ID != ref.PlatformID) || errors.Is(err, platform.ErrNotFound)) {
 		rows, lookupErr := pages[repository](ctx, c, "/rest/api/latest/repos?archived=ALL")
 		if lookupErr != nil {
 			return platform.Repository{}, lookupErr
 		}
 		found := false
 		for _, candidate := range rows {
-			if strconv.FormatInt(candidate.ID, 10) == ref.PlatformExternalID {
+			if candidate.ID == ref.PlatformID {
 				row = candidate
 				found = true
 				break

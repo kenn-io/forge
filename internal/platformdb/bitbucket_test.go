@@ -2,26 +2,35 @@ package platformdb
 
 import (
 	"testing"
-	"time"
+	"uuid"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
 )
 
 func TestBitbucketUUIDSurvivesRepositoryRename(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	d := dbtest.Open(t)
-	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.org", PlatformExternalID: "{11111111-1111-4111-8111-111111111111}", Owner: "team", Name: "widgets", RepoPath: "team/widgets"}
-	first, _, err := d.ReconcileRepositoryObservation(t.Context(), DBRepoIdentity(ref), time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
-	require.NoError(t, err)
+	repositoryUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	ref := platform.RepoRef{
+		Platform: platform.KindBitbucket, Host: "bitbucket.org",
+		BitbucketRepositoryUUID: repositoryUUID,
+		Owner:                   "team", Name: "widgets", RepoPath: "team/widgets",
+	}
+	first, err := d.ObserveRepository(t.Context(), DBRepoIdentity(ref))
+	require.NoError(err)
 	ref.Owner, ref.Name, ref.RepoPath = "new-team", "renamed", "new-team/renamed"
-	renamed, _, err := d.ReconcileRepositoryObservation(t.Context(), DBRepoIdentity(ref), time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC))
-	require.NoError(t, err)
-	assert.Equal(t, first.Repository.ID, renamed.Repository.ID)
+	renamed, err := d.ObserveRepository(t.Context(), DBRepoIdentity(ref))
+	require.NoError(err)
+	assert.Equal(first.Repository.ID, renamed.Repository.ID)
 	stored, err := d.GetRepoByID(t.Context(), first.Repository.ID)
-	require.NoError(t, err)
-	require.NotNil(t, stored)
-	assert.Equal(t, "{11111111-1111-4111-8111-111111111111}", stored.PlatformRepoID)
-	assert.Equal(t, "new-team/renamed", stored.RepoPath)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(repositoryUUID, stored.BitbucketRepositoryUUID)
+	assert.Equal(int64(0), stored.PlatformRepoID)
+	assert.Equal("new-team/renamed", stored.RepoPath)
 }

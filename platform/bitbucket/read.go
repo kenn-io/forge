@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	"go.kenn.io/forge/platform"
@@ -18,7 +19,7 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	if err != nil {
 		return platform.Repository{}, err
 	}
-	if ref.PlatformExternalID != "" {
+	if ref.BitbucketRepositoryUUID != uuid.Nil() {
 		// Bitbucket's empty workspace placeholder resolves a UUID after a move or rename.
 		owner = "{}"
 	}
@@ -31,7 +32,7 @@ func (c *Client) GetRepository(ctx context.Context, ref platform.RepoRef) (platf
 	if err != nil {
 		return repo, err
 	}
-	if ref.PlatformExternalID != "" && repo.PlatformExternalID != ref.PlatformExternalID {
+	if ref.BitbucketRepositoryUUID != uuid.Nil() && repo.Ref.BitbucketRepositoryUUID != ref.BitbucketRepositoryUUID {
 		return platform.Repository{}, platform.ProviderContract(c.Platform(), ref.Host, "repository identity", errors.New("repository UUID does not match requested identity"))
 	}
 	grants, err := c.repositoryPermissions(ctx, repo.Ref.Owner)
@@ -136,7 +137,13 @@ func (c *Client) normalizePull(ctx context.Context, ref platform.RepoRef, p pull
 		commitRef := ref
 		if owner, name, ok := strings.Cut(b.Repository.FullName, "/"); ok {
 			commitRef.Owner, commitRef.Name = owner, name
-			commitRef.PlatformExternalID = b.Repository.UUID
+			if b.Repository.UUID != "" {
+				id, err := uuid.Parse(b.Repository.UUID)
+				if err != nil || id == uuid.Nil() {
+					return platform.MergeRequest{}, missing("repository identity")
+				}
+				commitRef.BitbucketRepositoryUUID = id
+			}
 		}
 		target, err := repoURL(commitRef)
 		if err != nil {

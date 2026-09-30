@@ -10,6 +10,7 @@ export interface RepoResponse {
   AllowMergeCommit: boolean;
   AllowRebaseMerge: boolean;
   AllowSquashMerge: boolean;
+  BitbucketRepositoryUUID?: string;
   CreatedAt: string;
   ID: number;
   /** @nullable */

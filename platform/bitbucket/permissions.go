@@ -8,18 +8,19 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"uuid"
 
 	"go.kenn.io/forge/platform"
 )
 
 type permissionSnapshot struct {
 	expires time.Time
-	grants  map[string]bool
+	grants  map[uuid.UUID]bool
 }
 
 // Cache only complete inventories for five minutes, scoped to the current
 // credential and workspace. A token change discards the former user's grants.
-func (c *Client) repositoryPermissions(ctx context.Context, workspace string) (map[string]bool, error) {
+func (c *Client) repositoryPermissions(ctx context.Context, workspace string) (map[uuid.UUID]bool, error) {
 	if c.source == nil {
 		return nil, nil
 	}
@@ -57,9 +58,13 @@ func (c *Client) repositoryPermissions(ctx context.Context, workspace string) (m
 	if err != nil {
 		return nil, err
 	}
-	grants := make(map[string]bool, len(rows))
+	grants := make(map[uuid.UUID]bool, len(rows))
 	for _, row := range rows {
-		grants[row.Repository.UUID] = row.Permission == "write" || row.Permission == "admin"
+		id, err := uuid.Parse(row.Repository.UUID)
+		if err != nil || id == uuid.Nil() {
+			return nil, platform.ProviderContract(platform.KindBitbucket, platform.DefaultBitbucketHost, "repository permission", errors.New("repository UUID is missing"))
+		}
+		grants[id] = row.Permission == "write" || row.Permission == "admin"
 	}
 	c.permissionWorkspaces[workspace] = permissionSnapshot{expires: time.Now().Add(5 * time.Minute), grants: grants}
 	return grants, nil
@@ -67,8 +72,8 @@ func (c *Client) repositoryPermissions(ctx context.Context, workspace string) (m
 
 // Repository permission is a user grant, not proof of token scopes or branch
 // restrictions. Bitbucket remains authoritative when the merge is attempted.
-func (c *Client) observeMerge(ctx context.Context, repo *platform.Repository, grants map[string]bool) error {
-	repo.ViewerCanMerge = new(grants[repo.PlatformExternalID])
+func (c *Client) observeMerge(ctx context.Context, repo *platform.Repository, grants map[uuid.UUID]bool) error {
+	repo.ViewerCanMerge = new(grants[repo.Ref.BitbucketRepositoryUUID])
 	if grants == nil {
 		return nil
 	}

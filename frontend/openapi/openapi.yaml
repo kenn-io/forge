@@ -198,6 +198,8 @@ components:
     ActivityRepoRefResponse:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         name:
           type: string
         owner:
@@ -7897,6 +7899,8 @@ components:
           type: boolean
         AllowSquashMerge:
           type: boolean
+        BitbucketRepositoryUUID:
+          type: string
         CreatedAt:
           format: date-time
           type: string
@@ -8182,6 +8186,8 @@ components:
     RepoRefResponse:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         capabilities:
           $ref: "#/components/schemas/ProviderCapabilitiesResponse"
         default_branch:
@@ -8225,6 +8231,8 @@ components:
           type: boolean
         AllowSquashMerge:
           type: boolean
+        BitbucketRepositoryUUID:
+          type: string
         CreatedAt:
           format: date-time
           type: string
@@ -10924,6 +10932,8 @@ components:
     WorkspaceLaunchRepository:
       additionalProperties: false
       properties:
+        bitbucket_repository_uuid:
+          type: string
         clone_url:
           type: string
         default_branch:

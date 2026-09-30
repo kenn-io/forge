@@ -156,7 +156,7 @@ func (s *Server) createDevboxWorkspace(ctx context.Context, input *devboxapi.Cre
 		body.Branch = "work-" + hex.EncodeToString(entropy[:])
 	}
 	request := workspaceapi.WorkerCreateRequest{
-		Repository: db.WorkspaceLaunchRepository{Provider: repo.Platform, PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name, CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch},
+		Repository: db.WorkspaceLaunchRepository{Provider: repo.Platform, PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformRepoID, BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID, Owner: repo.Owner, Name: repo.Name, CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch},
 		Branch:     body.Branch, ReuseExistingBranch: body.ReuseExistingBranch,
 	}
 	if body.MRNumber != 0 || body.IssueNumber != 0 {

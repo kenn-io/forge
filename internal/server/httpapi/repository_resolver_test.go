@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"uuid"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -135,8 +136,25 @@ func TestPlatformRepoRefCarriesProviderIdentityAndIntegerID(t *testing.T) {
 			assert.Equal(tt.wantHost, ref.Host)
 			assert.Equal(tt.wantPath, ref.RepoPath)
 			assert.Equal(int64(4242), ref.PlatformID)
+			assert.Equal(uuid.Nil(), ref.BitbucketRepositoryUUID)
 		})
 	}
+}
+
+func TestPlatformRepoRefCarriesBitbucketCloudUUID(t *testing.T) {
+	repositoryUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	ref := PlatformRepoRef(db.Repo{
+		Platform:                string(platform.KindBitbucket),
+		PlatformHost:            "bitbucket.org",
+		BitbucketRepositoryUUID: repositoryUUID,
+		Owner:                   "team",
+		Name:                    "widgets",
+		RepoPath:                "team/widgets",
+	})
+	assert.Equal(t, platform.KindBitbucket, ref.Platform)
+	assert.Equal(t, "bitbucket.org", ref.Host)
+	assert.Equal(t, repositoryUUID, ref.BitbucketRepositoryUUID)
+	assert.Equal(t, int64(0), ref.PlatformID)
 }
 
 func TestRepositoryResolverRequireRouteCapabilityUsesCanonicalContract(t *testing.T) {

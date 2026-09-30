@@ -60,9 +60,8 @@ func (r repository) normalize(host string) (platform.Repository, error) {
 	if r.ID <= 0 || r.Project.Key == "" || r.Slug == "" {
 		return platform.Repository{}, platform.ProviderContract(platform.KindBitbucket, host, "repository", errors.New("missing repository identity"))
 	}
-	id := strconv.FormatInt(r.ID, 10)
-	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: host, Owner: r.Project.Key, Name: r.Slug, RepoPath: r.Project.Key + "/" + r.Slug, PlatformID: r.ID, PlatformExternalID: id, WebURL: r.Links.webURL(), CloneURL: r.Links.cloneURL()}
-	return platform.Repository{Ref: ref, PlatformID: r.ID, PlatformExternalID: id, Description: r.Description, Private: !r.Public, Archived: r.Archived, WebURL: ref.WebURL, CloneURL: ref.CloneURL, Features: platform.RepositoryFeatures{IssuesEnabled: new(false), MergeRequestsEnabled: new(true)}}, nil
+	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: host, Owner: r.Project.Key, Name: r.Slug, RepoPath: r.Project.Key + "/" + r.Slug, PlatformID: r.ID, WebURL: r.Links.webURL(), CloneURL: r.Links.cloneURL()}
+	return platform.Repository{Ref: ref, Description: r.Description, Private: !r.Public, Archived: r.Archived, WebURL: ref.WebURL, CloneURL: ref.CloneURL, Features: platform.RepositoryFeatures{IssuesEnabled: new(false), MergeRequestsEnabled: new(true)}}, nil
 }
 
 type branch struct {

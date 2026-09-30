@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"uuid"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucket"
 )
@@ -19,7 +21,9 @@ type credential string
 func (c credential) Token(context.Context) (string, error) { return string(c), nil }
 func (credential) Invalidate(string)                       {}
 
-var ref = platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.org", Owner: "team", Name: "widgets", PlatformExternalID: "{11111111-1111-4111-8111-111111111111}"}
+var cloudRepositoryUUID = uuid.MustParse("11111111-1111-4111-8111-111111111111")
+
+var ref = platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.org", Owner: "team", Name: "widgets", BitbucketRepositoryUUID: cloudRepositoryUUID}
 
 func client(t *testing.T, token string, handle func(*http.Request) (int, string)) *bitbucket.Client {
 	assert := assert.New(t)
@@ -55,7 +59,7 @@ func TestRepositoryIdentityAndAuthentication(t *testing.T) {
 			})
 			r, err := c.GetRepository(t.Context(), ref)
 			require.NoError(t, err)
-			assert.Equal("{11111111-1111-4111-8111-111111111111}", r.PlatformExternalID)
+			assert.Equal(cloudRepositoryUUID, r.Ref.BitbucketRepositoryUUID)
 			assert.Equal("new-team/renamed", r.Ref.RepoPath)
 			assert.Equal("https://bitbucket.org/new-team/renamed.git", r.CloneURL)
 			assert.Equal("main", r.DefaultBranch)
@@ -65,14 +69,14 @@ func TestRepositoryIdentityAndAuthentication(t *testing.T) {
 
 func TestRepositoryLookupWithoutSavedIdentity(t *testing.T) {
 	lookup := ref
-	lookup.PlatformExternalID = ""
+	lookup.BitbucketRepositoryUUID = uuid.Nil()
 	c := client(t, "secret", func(r *http.Request) (int, string) {
 		assert.Equal(t, "/2.0/repositories/team/widgets", r.URL.Path)
 		return 200, `{"uuid":"{11111111-1111-4111-8111-111111111111}","full_name":"team/widgets"}`
 	})
 	repo, err := c.GetRepository(t.Context(), lookup)
 	require.NoError(t, err)
-	assert.Equal(t, ref.PlatformExternalID, repo.PlatformExternalID)
+	assert.Equal(t, cloudRepositoryUUID, repo.Ref.BitbucketRepositoryUUID)
 }
 
 func TestRepositoryLookupRejectsDifferentIdentity(t *testing.T) {
@@ -82,7 +86,7 @@ func TestRepositoryLookupRejectsDifferentIdentity(t *testing.T) {
 	})
 	repo, err := c.GetRepository(t.Context(), ref)
 	require.ErrorIs(t, err, platform.ErrProviderContract)
-	assert.Empty(t, repo.PlatformExternalID)
+	assert.Equal(t, uuid.Nil(), repo.Ref.BitbucketRepositoryUUID)
 }
 
 func TestPullPaginationAndNormalization(t *testing.T) {
@@ -260,10 +264,10 @@ func TestPullResolvesEmbeddedSourceRepositoryAndCommit(t *testing.T) {
 	assert := assert.New(t)
 	c := client(t, "secret", func(r *http.Request) (int, string) {
 		if strings.Contains(r.URL.Path, "/commit/") {
-			assert.Equal("/2.0/repositories/contributor/{source}/commit/abcdef012345", r.URL.Path)
+			assert.Equal("/2.0/repositories/contributor/{33333333-3333-4333-8333-333333333333}/commit/abcdef012345", r.URL.Path)
 			return 200, `{"hash":"abcdef0123456789abcdef0123456789abcdef01"}`
 		}
-		return 200, `{"id":7,"state":"OPEN","source":{"branch":{"name":"feature"},"commit":{"hash":"abcdef012345"},"repository":{"uuid":"{source}","full_name":"contributor/widgets"}}}`
+		return 200, `{"id":7,"state":"OPEN","source":{"branch":{"name":"feature"},"commit":{"hash":"abcdef012345"},"repository":{"uuid":"{33333333-3333-4333-8333-333333333333}","full_name":"contributor/widgets"}}}`
 	})
 	pull, err := c.GetMergeRequest(t.Context(), ref, 7)
 	require.NoError(t, err)

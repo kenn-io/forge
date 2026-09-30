@@ -109,12 +109,13 @@ func PreserveProviderHiddenMetadata(existingMetadata, incomingMetadata string) s
 
 func DBRepoIdentity(ref platform.RepoRef) db.RepoIdentity {
 	return db.RepoIdentity{
-		Platform:       string(ref.Platform),
-		PlatformHost:   ref.Host,
-		PlatformRepoID: ref.PlatformID,
-		Owner:          ref.Owner,
-		Name:           ref.Name,
-		RepoPath:       ref.RepoPath,
+		Platform:                string(ref.Platform),
+		PlatformHost:            ref.Host,
+		PlatformRepoID:          ref.PlatformID,
+		BitbucketRepositoryUUID: ref.BitbucketRepositoryUUID,
+		Owner:                   ref.Owner,
+		Name:                    ref.Name,
+		RepoPath:                ref.RepoPath,
 	}
 }
 

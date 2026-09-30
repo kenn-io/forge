@@ -128,8 +128,9 @@ func (s *HubProviderSource) observeWorkspaceLaunchSpec(
 	}
 	entry, err := s.Db.ObserveRepository(ctx, db.RepoIdentity{
 		Platform: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost,
-		PlatformRepoID: spec.Repository.PlatformRepoID,
-		Owner:          spec.Repository.Owner, Name: spec.Repository.Name,
+		PlatformRepoID:          spec.Repository.PlatformRepoID,
+		BitbucketRepositoryUUID: spec.Repository.BitbucketRepositoryUUID,
+		Owner:                   spec.Repository.Owner, Name: spec.Repository.Name,
 		RepoPath: spec.Repository.Owner + "/" + spec.Repository.Name,
 	})
 	if err != nil {

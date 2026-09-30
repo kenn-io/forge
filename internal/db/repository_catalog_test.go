@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"testing"
+	"uuid"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,6 +84,165 @@ func TestObserveRepositoryRejectsIncompleteIdentity(t *testing.T) {
 		"missing provider id": githubRoute("org-a", "project-a"),
 		"missing route": {
 			Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := d.ObserveRepository(t.Context(), identity)
+			require.Error(t, err)
+		})
+	}
+	entries, err := d.ListRepositoryCatalog(t.Context(), RepositoryCatalogFilter{})
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+func TestObserveBitbucketCloudRepositoryKeepsUUIDAcrossRename(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repositoryUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	original, err := d.ObserveRepository(ctx, RepoIdentity{
+		Platform: "Bitbucket", PlatformHost: "Bitbucket.org",
+		BitbucketRepositoryUUID: repositoryUUID,
+		Owner:                   "team", Name: "widgets",
+	})
+	require.NoError(err)
+	require.NotNil(original)
+	assert.Equal(RepositoryLifecycleActive, original.Lifecycle)
+	assert.Equal("bitbucket.org", original.Repository.PlatformHost)
+	assert.Equal(int64(0), original.Repository.PlatformRepoID)
+	assert.Equal(repositoryUUID, original.Repository.BitbucketRepositoryUUID)
+	active, err := original.ActiveRepo()
+	require.NoError(err)
+	assert.Equal(repositoryUUID, active.Identity().BitbucketRepositoryUUID)
+
+	var stored string
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `
+		SELECT bitbucket_repository_uuid FROM forge_repos WHERE id = ?`,
+		original.Repository.ID,
+	).Scan(&stored))
+	assert.Equal("11111111-1111-4111-8111-111111111111", stored)
+
+	now := baseTime()
+	_, err = d.UpsertMergeRequest(ctx, &MergeRequest{
+		RepoID: original.Repository.ID, PlatformID: 9001, Number: 7,
+		Title: "carried over", State: MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	renamed, err := d.ObserveRepository(ctx, RepoIdentity{
+		Platform: "bitbucket", PlatformHost: "bitbucket.org",
+		BitbucketRepositoryUUID: repositoryUUID,
+		Owner:                   "new-team", Name: "renamed",
+	})
+	require.NoError(err)
+	assert.Equal(original.Repository.ID, renamed.Repository.ID)
+	assert.Equal("new-team/renamed", renamed.Repository.RepoPath)
+
+	mr, err := d.GetMergeRequest(ctx, "bitbucket", "bitbucket.org", "new-team", "renamed", 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal("carried over", mr.Title)
+
+	found, err := d.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+		Provider: "bitbucket", PlatformHost: "bitbucket.org",
+		BitbucketRepositoryUUID: repositoryUUID,
+	})
+	require.NoError(err)
+	require.NotNil(found)
+	assert.Equal(original.Repository.ID, found.Repository.ID)
+
+	missing, err := d.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+		Provider: "bitbucket", PlatformHost: "bitbucket.org",
+		BitbucketRepositoryUUID: uuid.MustParse("22222222-2222-4222-8222-222222222222"),
+	})
+	require.NoError(err)
+	assert.Nil(missing)
+}
+
+func TestObserveBitbucketCloudUUIDDisplacesRouteOccupant(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	firstID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	secondID := uuid.MustParse("22222222-2222-4222-8222-222222222222")
+	first, err := d.ObserveRepository(ctx, RepoIdentity{
+		Platform: "bitbucket", PlatformHost: "bitbucket.org",
+		BitbucketRepositoryUUID: firstID, Owner: "team", Name: "widgets",
+	})
+	require.NoError(err)
+	second, err := d.ObserveRepository(ctx, RepoIdentity{
+		Platform: "bitbucket", PlatformHost: "bitbucket.org",
+		BitbucketRepositoryUUID: secondID, Owner: "team", Name: "widgets",
+	})
+	require.NoError(err)
+	assert.NotEqual(first.Repository.ID, second.Repository.ID)
+
+	displaced, err := d.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+		Provider: "bitbucket", PlatformHost: "bitbucket.org",
+		BitbucketRepositoryUUID: firstID,
+	})
+	require.NoError(err)
+	require.NotNil(displaced)
+	assert.Equal(RepositoryLifecycleInactive, displaced.Lifecycle)
+
+	route, err := d.ResolveActiveRepositoryRoute(ctx, RepoIdentity{
+		Platform: "bitbucket", PlatformHost: "bitbucket.org",
+		Owner: "team", Name: "widgets",
+	})
+	require.NoError(err)
+	require.NotNil(route)
+	assert.Equal(second.Repository.ID, route.Repository.ID)
+	occupant, err := route.ActiveRepo()
+	require.NoError(err)
+	assert.Equal(secondID, occupant.Identity().BitbucketRepositoryUUID)
+}
+
+func TestObserveBitbucketDataCenterUsesIntegerID(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	entry, err := d.ObserveRepository(t.Context(), RepoIdentity{
+		Platform: "bitbucket", PlatformHost: "code.example.test:8443",
+		PlatformRepoID: 17, Owner: "PROJECT", Name: "repo",
+	})
+	require.NoError(err)
+	assert.Equal(int64(17), entry.Repository.PlatformRepoID)
+	assert.Equal(uuid.Nil(), entry.Repository.BitbucketRepositoryUUID)
+	found, err := d.GetActiveRepoByProviderID(t.Context(), platform.RepositoryIdentity{
+		Provider: "bitbucket", PlatformHost: "code.example.test:8443",
+		PlatformRepoID: 17,
+	})
+	require.NoError(err)
+	require.NotNil(found)
+	assert.Equal(entry.Repository.ID, found.ID)
+}
+
+func TestObserveRepositoryRejectsBitbucketIdentity(t *testing.T) {
+	d := openTestDB(t)
+	repositoryUUID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	for name, identity := range map[string]RepoIdentity{
+		"cloud without uuid": {
+			Platform: "bitbucket", PlatformHost: "bitbucket.org",
+			Owner: "team", Name: "widgets",
+		},
+		"cloud integer and uuid": {
+			Platform: "bitbucket", PlatformHost: "bitbucket.org",
+			PlatformRepoID: 17, BitbucketRepositoryUUID: repositoryUUID,
+			Owner: "team", Name: "widgets",
+		},
+		"uuid on github": {
+			Platform: "github", PlatformHost: "github.com",
+			BitbucketRepositoryUUID: repositoryUUID,
+			Owner:                   "acme", Name: "widget",
+		},
+		"uuid on data center host": {
+			Platform: "bitbucket", PlatformHost: "code.example.test",
+			BitbucketRepositoryUUID: repositoryUUID,
+			Owner:                   "PROJECT", Name: "repo",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

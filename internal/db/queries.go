@@ -980,6 +980,7 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 	rows, err := d.roQueryContext(ctx,
 		`SELECT id, platform, platform_host, platform_repo_id,
+		        bitbucket_repository_uuid,
 		        owner, name, repo_path,
 		        owner_key, name_key, repo_path_key,
 		        web_url, clone_url, default_branch,
@@ -1003,6 +1004,7 @@ func (d *DB) ListRepos(ctx context.Context) ([]Repo, error) {
 		var r Repo
 		if err := rows.Scan(
 			&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
+			bitbucketUUIDScanner{&r.BitbucketRepositoryUUID},
 			&r.Owner, &r.Name, &r.RepoPath,
 			&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
 			&r.WebURL, &r.CloneURL, &r.DefaultBranch,
@@ -1051,7 +1053,7 @@ func (d *DB) UpdateRepoSyncCompleted(ctx context.Context, id int64, t time.Time,
 // found. A provider ID, when present, decides the repository; otherwise the
 // owner/name route is resolved to its current occupant.
 func (d *DB) GetRepoByIdentity(ctx context.Context, identity RepoIdentity) (*ActiveRepo, error) {
-	if identity.PlatformRepoID != 0 {
+	if identity.hasStableProviderIdentity() {
 		repo, err := d.GetActiveRepoByProviderID(ctx, identity.ProviderIdentity())
 		if err != nil {
 			return nil, fmt.Errorf("get repo by identity: %w", err)
@@ -1094,6 +1096,7 @@ func (d *DB) GetActiveRepoByID(ctx context.Context, id int64) (*ActiveRepo, erro
 func (d *DB) getRepoByID(ctx context.Context, id int64, activeOnly bool) (*Repo, error) {
 	var r Repo
 	query := `SELECT id, platform, platform_host, platform_repo_id,
+		        bitbucket_repository_uuid,
 		        owner, name, repo_path,
 		        owner_key, name_key, repo_path_key,
 		        web_url, clone_url, default_branch,
@@ -1109,6 +1112,7 @@ func (d *DB) getRepoByID(ctx context.Context, id int64, activeOnly bool) (*Repo,
 	}
 	err := d.roQueryRowContext(ctx, query, id).Scan(
 		&r.ID, &r.Platform, &r.PlatformHost, &r.PlatformRepoID,
+		bitbucketUUIDScanner{&r.BitbucketRepositoryUUID},
 		&r.Owner, &r.Name, &r.RepoPath,
 		&r.OwnerKey, &r.NameKey, &r.RepoPathKey,
 		&r.WebURL, &r.CloneURL, &r.DefaultBranch,

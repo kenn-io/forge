@@ -7,26 +7,34 @@ provider interfaces, and the checklist for adding a new provider, read
 
 ## Identity
 
-Repository identity is `(platform, platform_host, platform_repo_id)`, where
-`platform_repo_id` is the provider's integer repository ID. Every supported
-provider assigns it once per host and keeps it across renames and transfers;
-GitHub's `node_id` has more than one encoding for one repository and is never
-identity. Owner, name, and `repo_path` are the repository's current route.
+Repository identity is `(platform, platform_host, platform_repo_id)` except
+for Bitbucket Cloud, which has no integer ID. Cloud's key is
+`bitbucket_repository_uuid` and its `platform_repo_id` stays 0; every other
+provider, including Bitbucket Data Center, uses a positive integer and an
+empty UUID. Exactly one key is set
+(`platform/repository_identity.go::RepositoryIdentity.Valid`). GitHub's
+`node_id` is never identity. Owner, name, and `repo_path` are the current route.
 
 - Owner/name is edge input. Resolve it to a repository once where it enters
   (HTTP params, MCP args, config entries, URLs) and key everything below by the
   repository. A request that carries a provider ID resolves by that ID
   (`internal/db/queries.go::DB.GetRepoByIdentity`,
   `internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
-- Provider wrappers expose only the integer ID (`platform.RepoRef.PlatformID`);
-  `GetRepository` reads by ID once the ref carries one, so renames resolve to
-  the current route (`platform/github/provider.go::Provider.GetRepository`).
-- Observing a repository upserts its row by ID and moves owner/name in place;
-  another active row on that route is deactivated and re-resolves by its own ID
-  on its next read. There are no route generations, fences, or observation
-  watermarks: a route changing hands mid-pass self-heals on the next pass
-  (`internal/db/repository_catalog.go::DB.ObserveRepository`).
-- Every repository row has a verified ID; nothing creates route-only rows.
+- Carry `platform.RepoRef.PlatformID` or, for Cloud, `BitbucketRepositoryUUID`.
+  Never hash the UUID into the integer
+  (`internal/server/httpapi/repository_resolver.go::PlatformRepoRef`).
+  `GetRepository` reads by that key once the ref carries one, so renames
+  resolve to the current route
+  (`platform/github/provider.go::Provider.GetRepository`).
+- Observing a repository upserts its row by that key and moves owner/name in
+  place; another active row on that route is deactivated and re-resolves by
+  its own key on its next read. There are no route generations, fences, or
+  observation watermarks: a route changing hands mid-pass self-heals on the
+  next pass (`internal/db/repository_catalog.go::DB.ObserveRepository`).
+- Every repository row has a verified provider key; nothing creates route-only
+  rows. An absent Cloud UUID is stored as empty text, never the nil UUID's
+  canonical string
+  (`internal/db/bitbucket_repository_uuid.go::bitbucketRepositoryUUIDText`).
   Callers holding only a route look up the active occupant or leave the link
   unset (`internal/server/workspaceapi/projects_handlers.go`).
 - GitHub rows stored before migration 60 hold `github_node_id` until a sync pass
@@ -41,6 +49,11 @@ identity. Owner, name, and `repo_path` are the repository's current route.
   held merges into that row, whose copy wins item conflicts. Every column holding
   a `forge_repos` id must be in `repositoryOwnedColumns`
   (`internal/db/repository_catalog.go::mergeDuplicateRepositoryTx`).
+- Config presets, federation descriptors, fleet and MCP identities, clone
+  partitioning, archive snapshot IDs, and activity rows still key only the
+  integer. A catalogued Cloud repository cannot be named there yet; do not
+  invent an integer to unblock them
+  (`internal/config/config.go::normalizeRepoPresets`).
 - Keep provider calls route-based where the provider API is; the integer ID
   confirms which repository answered and keys local state. Do not rewrite
   owner/name reads into ID reads (maintainer decision).
@@ -577,7 +590,7 @@ behavior.
 
 ## Bitbucket
 
-- Cloud UUIDs are opaque; PR/issue numbers are repository-scoped (`platform/bitbucket/normalize.go::repository.normalize`).
+- Cloud repository identity is `bitbucket_repository_uuid`, not `platform_repo_id` (`internal/db/migrations/000062_bitbucket_repository_uuid.up.sql`). Pull and issue numbers stay repository-scoped (`platform/bitbucket/normalize.go::repository.normalize`).
 - Drain Cloud pages outside the SDK, whose auto-paging ignores later decode errors (`platform/bitbucket/client.go::collect`).
 - Cloud cannot reopen declined PRs; keep combined state/content mutation disabled (`platform/bitbucket/client.go::Client.Capabilities`).
 - Cloud PR embeds omit clone links and abbreviate hashes; resolve canonical URLs and full hashes (`platform/bitbucket/read.go::Client.normalizePull`).

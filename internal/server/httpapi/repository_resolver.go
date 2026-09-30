@@ -101,15 +101,16 @@ func PlatformRepoRef(repo db.Repo) platform.RepoRef {
 		repoPath = repo.Owner + "/" + repo.Name
 	}
 	return platform.RepoRef{
-		Platform:      ProviderKind(repo),
-		Host:          ProviderHost(repo),
-		Owner:         repo.Owner,
-		Name:          repo.Name,
-		RepoPath:      repoPath,
-		PlatformID:    repo.PlatformRepoID,
-		WebURL:        repo.WebURL,
-		CloneURL:      repo.CloneURL,
-		DefaultBranch: repo.DefaultBranch,
+		Platform:                ProviderKind(repo),
+		Host:                    ProviderHost(repo),
+		Owner:                   repo.Owner,
+		Name:                    repo.Name,
+		RepoPath:                repoPath,
+		PlatformID:              repo.PlatformRepoID,
+		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
+		WebURL:                  repo.WebURL,
+		CloneURL:                repo.CloneURL,
+		DefaultBranch:           repo.DefaultBranch,
 	}
 }
 
@@ -255,14 +256,15 @@ func (r *RepositoryResolver) Ref(repo db.Repo) RepoRefResponse {
 		repoPath = repo.Owner + "/" + repo.Name
 	}
 	return RepoRefResponse{
-		Provider:       provider,
-		PlatformHost:   host,
-		PlatformRepoID: repo.PlatformRepoID,
-		RepoPath:       repoPath,
-		Owner:          repo.Owner,
-		Name:           repo.Name,
-		DefaultBranch:  repo.DefaultBranch,
-		Capabilities:   r.Capabilities(platform.Kind(provider), host),
+		Provider:                provider,
+		PlatformHost:            host,
+		PlatformRepoID:          repo.PlatformRepoID,
+		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
+		RepoPath:                repoPath,
+		Owner:                   repo.Owner,
+		Name:                    repo.Name,
+		DefaultBranch:           repo.DefaultBranch,
+		Capabilities:            r.Capabilities(platform.Kind(provider), host),
 	}
 }
 

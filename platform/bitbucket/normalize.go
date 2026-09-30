@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"go.kenn.io/forge/platform"
 )
@@ -47,11 +48,12 @@ type repository struct {
 
 func (r repository) normalize() (platform.Repository, error) {
 	owner, name, ok := strings.Cut(r.FullName, "/")
-	if !ok || owner == "" || name == "" || r.UUID == "" {
+	id, err := uuid.Parse(r.UUID)
+	if !ok || owner == "" || name == "" || err != nil || id == uuid.Nil() {
 		return platform.Repository{}, missing("repository identity")
 	}
-	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: platform.DefaultBitbucketHost, Owner: owner, Name: name, RepoPath: r.FullName, PlatformExternalID: r.UUID, WebURL: r.Links.HTML.Href, DefaultBranch: r.MainBranch.Name, CloneURL: r.cloneURL()}
-	return platform.Repository{Ref: ref, PlatformExternalID: r.UUID, Description: r.Description, Private: r.Private, DefaultBranch: ref.DefaultBranch, WebURL: ref.WebURL, CloneURL: ref.CloneURL, CreatedAt: r.Created.UTC(), UpdatedAt: r.Updated.UTC(), Features: platform.RepositoryFeatures{IssuesEnabled: new(r.HasIssues), MergeRequestsEnabled: new(true)}}, nil
+	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: platform.DefaultBitbucketHost, Owner: owner, Name: name, RepoPath: r.FullName, BitbucketRepositoryUUID: id, WebURL: r.Links.HTML.Href, DefaultBranch: r.MainBranch.Name, CloneURL: r.cloneURL()}
+	return platform.Repository{Ref: ref, Description: r.Description, Private: r.Private, DefaultBranch: ref.DefaultBranch, WebURL: ref.WebURL, CloneURL: ref.CloneURL, CreatedAt: r.Created.UTC(), UpdatedAt: r.Updated.UTC(), Features: platform.RepositoryFeatures{IssuesEnabled: new(r.HasIssues), MergeRequestsEnabled: new(true)}}, nil
 }
 
 func (r repository) cloneURL() string {

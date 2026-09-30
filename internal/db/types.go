@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"go.kenn.io/forge/platform"
 )
@@ -34,30 +35,31 @@ type LabelCatalogFreshness struct {
 }
 
 type Repo struct {
-	ID                    int64
-	Platform              string
-	PlatformHost          string
-	PlatformRepoID        int64 `json:"-"`
-	Owner                 string
-	Name                  string
-	RepoPath              string `json:"-"`
-	OwnerKey              string `json:"-"`
-	NameKey               string `json:"-"`
-	RepoPathKey           string `json:"-"`
-	WebURL                string `json:"-"`
-	CloneURL              string `json:"-"`
-	DefaultBranch         string `json:"-"`
-	LastSyncStartedAt     *time.Time
-	LastSyncCompletedAt   *time.Time
-	LastSyncError         string
-	AllowSquashMerge      bool
-	AllowMergeCommit      bool
-	AllowRebaseMerge      bool
-	ViewerCanMerge        bool
-	LabelCatalogSyncedAt  *time.Time
-	LabelCatalogCheckedAt *time.Time
-	LabelCatalogSyncError string
-	CreatedAt             time.Time
+	ID                      int64
+	Platform                string
+	PlatformHost            string
+	PlatformRepoID          int64     `json:"-"`
+	BitbucketRepositoryUUID uuid.UUID `json:"-"`
+	Owner                   string
+	Name                    string
+	RepoPath                string `json:"-"`
+	OwnerKey                string `json:"-"`
+	NameKey                 string `json:"-"`
+	RepoPathKey             string `json:"-"`
+	WebURL                  string `json:"-"`
+	CloneURL                string `json:"-"`
+	DefaultBranch           string `json:"-"`
+	LastSyncStartedAt       *time.Time
+	LastSyncCompletedAt     *time.Time
+	LastSyncError           string
+	AllowSquashMerge        bool
+	AllowMergeCommit        bool
+	AllowRebaseMerge        bool
+	ViewerCanMerge          bool
+	LabelCatalogSyncedAt    *time.Time
+	LabelCatalogCheckedAt   *time.Time
+	LabelCatalogSyncError   string
+	CreatedAt               time.Time
 }
 
 func (r Repo) FullName() string {
@@ -86,7 +88,8 @@ func (r *ActiveRepo) Row() *Repo {
 func newActiveRepo(repo Repo) (*ActiveRepo, error) {
 	identity := platform.RepositoryIdentity{
 		Provider: repo.Platform, PlatformHost: repo.PlatformHost,
-		PlatformRepoID: repo.PlatformRepoID,
+		PlatformRepoID:          repo.PlatformRepoID,
+		BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
 	}.Canonical()
 	if !identity.Valid() {
 		return nil, fmt.Errorf("active repository %d has no provider identity", repo.ID)
@@ -95,26 +98,35 @@ func newActiveRepo(repo Repo) (*ActiveRepo, error) {
 }
 
 // RepoIdentity is a repository route (owner/name) plus, once the provider has
-// verified it, the provider's integer repository ID. Lookups by route resolve
-// user input; the provider ID is the key everywhere else.
+// verified it, the provider's stable repository key. Lookups by route resolve
+// user input; the provider key is the key everywhere else.
 type RepoIdentity struct {
-	Platform       string
-	PlatformHost   string
-	PlatformRepoID int64
-	Owner          string
-	Name           string
-	RepoPath       string
-	OwnerKey       string
-	NameKey        string
-	RepoPathKey    string
+	Platform                string
+	PlatformHost            string
+	PlatformRepoID          int64
+	BitbucketRepositoryUUID uuid.UUID
+	Owner                   string
+	Name                    string
+	RepoPath                string
+	OwnerKey                string
+	NameKey                 string
+	RepoPathKey             string
 }
 
 // ProviderIdentity returns the provider identity part of the route.
 func (r RepoIdentity) ProviderIdentity() platform.RepositoryIdentity {
 	return platform.RepositoryIdentity{
 		Provider: r.Platform, PlatformHost: r.PlatformHost,
-		PlatformRepoID: r.PlatformRepoID,
+		PlatformRepoID:          r.PlatformRepoID,
+		BitbucketRepositoryUUID: r.BitbucketRepositoryUUID,
 	}.Canonical()
+}
+
+// hasStableProviderIdentity reports whether a lookup should use the provider
+// key instead of the owner/name route. A negative integer still counts so the
+// provider lookup rejects it instead of resolving a route.
+func (r RepoIdentity) hasStableProviderIdentity() bool {
+	return r.PlatformRepoID != 0 || r.BitbucketRepositoryUUID != uuid.Nil()
 }
 
 type RepoProviderMetadata struct {
@@ -1353,20 +1365,22 @@ var (
 )
 
 type WorkspaceLaunchRepository struct {
-	Provider       string `json:"provider"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Owner          string `json:"owner"`
-	Name           string `json:"name"`
-	CloneURL       string `json:"clone_url"`
-	DefaultBranch  string `json:"default_branch"`
+	Provider                string    `json:"provider"`
+	PlatformHost            string    `json:"platform_host"`
+	PlatformRepoID          int64     `json:"platform_repo_id"`
+	BitbucketRepositoryUUID uuid.UUID `json:"bitbucket_repository_uuid,omitzero"`
+	Owner                   string    `json:"owner"`
+	Name                    string    `json:"name"`
+	CloneURL                string    `json:"clone_url"`
+	DefaultBranch           string    `json:"default_branch"`
 }
 
 // Identity returns the launch repository's provider identity.
 func (r WorkspaceLaunchRepository) Identity() platform.RepositoryIdentity {
 	return platform.RepositoryIdentity{
 		Provider: r.Provider, PlatformHost: r.PlatformHost,
-		PlatformRepoID: r.PlatformRepoID,
+		PlatformRepoID:          r.PlatformRepoID,
+		BitbucketRepositoryUUID: r.BitbucketRepositoryUUID,
 	}.Canonical()
 }
 
@@ -1414,8 +1428,8 @@ func (spec WorkspaceLaunchSpec) Validate() error {
 		{name: "clone_url", value: spec.Repository.CloneURL},
 		{name: "default_branch", value: spec.Repository.DefaultBranch},
 	}
-	if spec.Repository.PlatformRepoID <= 0 {
-		return errors.New("workspace launch repository platform_repo_id is required")
+	if !spec.Repository.Identity().Valid() {
+		return errors.New("workspace launch repository identity is required")
 	}
 	for _, field := range repositoryFields {
 		if strings.TrimSpace(field.value) == "" {

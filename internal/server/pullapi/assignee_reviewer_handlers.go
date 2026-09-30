@@ -255,15 +255,15 @@ func (s *Handler) getReviewerAccounts(ctx context.Context, input *reviewerAccoun
 		return nil, providerRouteLookupError(err)
 	}
 	if s.syncer == nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewerMutation)
+		return nil, unsupportedCapabilityProblem(repo.Repo, capabilityReviewerMutation)
 	}
-	mutator, err := s.syncer.ReviewerMutator(repoProviderKind(*repo), repoProviderHost(*repo))
+	mutator, err := s.syncer.ReviewerMutator(repoProviderKind(repo.Repo), repoProviderHost(repo.Repo))
 	if err != nil {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewerMutation)
+		return nil, unsupportedCapabilityProblem(repo.Repo, capabilityReviewerMutation)
 	}
 	directory, ok := mutator.(platform.ReviewerDirectory)
 	if !ok {
-		return nil, unsupportedCapabilityProblem(*repo, capabilityReviewerMutation)
+		return nil, unsupportedCapabilityProblem(repo.Repo, capabilityReviewerMutation)
 	}
 	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -272,9 +272,9 @@ func (s *Handler) getReviewerAccounts(ctx context.Context, input *reviewerAccoun
 	if mr == nil {
 		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull not found", nil)
 	}
-	accounts, err := directory.ListReviewerAccounts(ctx, platformRepoRefFromDB(*repo), input.Number)
+	accounts, err := directory.ListReviewerAccounts(ctx, platformRepoRefFromDB(repo.Repo), input.Number)
 	if err != nil {
-		return nil, httpapi.ProviderCallProblemWithDetail(err, string(repoProviderKind(*repo)), repoProviderHost(*repo), "provider API error: "+err.Error())
+		return nil, httpapi.ProviderCallProblemWithDetail(err, string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo), "provider API error: "+err.Error())
 	}
 	return &reviewerAccountsOutput{Body: accounts}, nil
 }

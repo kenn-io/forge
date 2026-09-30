@@ -5979,7 +5979,7 @@ type GetPrReviewerAccountsOnHostRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPrReviewerAccountsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -9445,7 +9445,7 @@ type GetPrReviewerAccountsRequestOptions struct {
 
 // GetPathParams returns the path params as a map.
 func (o *GetPrReviewerAccountsRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := runtime.AsMap[any](o.PathParams)
+	params, err := paramcodec.Map(o.PathParams)
 	if err != nil {
 		return nil, err
 	}
@@ -55471,12 +55471,13 @@ type ActivityItemResponse struct {
 }
 
 type ActivityRepoRefResponse struct {
-	Name           string `json:"name"`
-	Owner          string `json:"owner"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID *int64 `json:"platform_repo_id,omitempty"`
-	Provider       string `json:"provider"`
-	RepoPath       string `json:"repo_path"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	Provider                string  `json:"provider"`
+	RepoPath                string  `json:"repo_path"`
 }
 
 type ActivityResponse struct {
@@ -58457,20 +58458,21 @@ type RepoBrowserTreeResponse struct {
 }
 
 type RepoCatalogResponse struct {
-	AllowMergeCommit    bool       `json:"AllowMergeCommit"`
-	AllowRebaseMerge    bool       `json:"AllowRebaseMerge"`
-	AllowSquashMerge    bool       `json:"AllowSquashMerge"`
-	CreatedAt           time.Time  `json:"CreatedAt"`
-	ID                  int64      `json:"ID"`
-	LastSyncCompletedAt *time.Time `json:"LastSyncCompletedAt,omitempty"`
-	LastSyncError       string     `json:"LastSyncError"`
-	LastSyncStartedAt   *time.Time `json:"LastSyncStartedAt,omitempty"`
-	Name                string     `json:"Name"`
-	Owner               string     `json:"Owner"`
-	Platform            string     `json:"Platform"`
-	PlatformHost        string     `json:"PlatformHost"`
-	PlatformRepoID      int64      `json:"PlatformRepoID"`
-	ViewerCanMerge      bool       `json:"ViewerCanMerge"`
+	AllowMergeCommit        bool       `json:"AllowMergeCommit"`
+	AllowRebaseMerge        bool       `json:"AllowRebaseMerge"`
+	AllowSquashMerge        bool       `json:"AllowSquashMerge"`
+	BitbucketRepositoryUUID *string    `json:"BitbucketRepositoryUUID,omitempty"`
+	CreatedAt               time.Time  `json:"CreatedAt"`
+	ID                      int64      `json:"ID"`
+	LastSyncCompletedAt     *time.Time `json:"LastSyncCompletedAt,omitempty"`
+	LastSyncError           string     `json:"LastSyncError"`
+	LastSyncStartedAt       *time.Time `json:"LastSyncStartedAt,omitempty"`
+	Name                    string     `json:"Name"`
+	Owner                   string     `json:"Owner"`
+	Platform                string     `json:"Platform"`
+	PlatformHost            string     `json:"PlatformHost"`
+	PlatformRepoID          int64      `json:"PlatformRepoID"`
+	ViewerCanMerge          bool       `json:"ViewerCanMerge"`
 }
 
 type RepoLabelsResponse struct {
@@ -58558,36 +58560,38 @@ type RepoPreviewRow struct {
 }
 
 type RepoRefResponse struct {
-	Capabilities   ProviderCapabilitiesResponse `json:"capabilities"`
-	DefaultBranch  *string                      `json:"default_branch,omitempty"`
-	Name           string                       `json:"name"`
-	Operations     *RepoOperations              `json:"operations,omitempty"`
-	Owner          string                       `json:"owner"`
-	PlatformHost   string                       `json:"platform_host"`
-	PlatformRepoID *int64                       `json:"platform_repo_id,omitempty"`
-	Provider       string                       `json:"provider"`
-	RepoPath       string                       `json:"repo_path"`
+	BitbucketRepositoryUUID *string                      `json:"bitbucket_repository_uuid,omitempty"`
+	Capabilities            ProviderCapabilitiesResponse `json:"capabilities"`
+	DefaultBranch           *string                      `json:"default_branch,omitempty"`
+	Name                    string                       `json:"name"`
+	Operations              *RepoOperations              `json:"operations,omitempty"`
+	Owner                   string                       `json:"owner"`
+	PlatformHost            string                       `json:"platform_host"`
+	PlatformRepoID          *int64                       `json:"platform_repo_id,omitempty"`
+	Provider                string                       `json:"provider"`
+	RepoPath                string                       `json:"repo_path"`
 }
 
 type RepoResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string                      `json:"$schema,omitempty"`
-	AllowMergeCommit    bool                         `json:"AllowMergeCommit"`
-	AllowRebaseMerge    bool                         `json:"AllowRebaseMerge"`
-	AllowSquashMerge    bool                         `json:"AllowSquashMerge"`
-	CreatedAt           time.Time                    `json:"CreatedAt"`
-	ID                  int64                        `json:"ID"`
-	LastSyncCompletedAt *time.Time                   `json:"LastSyncCompletedAt,omitempty"`
-	LastSyncError       string                       `json:"LastSyncError"`
-	LastSyncStartedAt   *time.Time                   `json:"LastSyncStartedAt,omitempty"`
-	Name                string                       `json:"Name"`
-	Owner               string                       `json:"Owner"`
-	Platform            string                       `json:"Platform"`
-	PlatformHost        string                       `json:"PlatformHost"`
-	PlatformRepoID      int64                        `json:"PlatformRepoID"`
-	ViewerCanMerge      bool                         `json:"ViewerCanMerge"`
-	Capabilities        ProviderCapabilitiesResponse `json:"capabilities"`
-	Operations          RepoOperations               `json:"operations"`
+	Schema                  *string                      `json:"$schema,omitempty"`
+	AllowMergeCommit        bool                         `json:"AllowMergeCommit"`
+	AllowRebaseMerge        bool                         `json:"AllowRebaseMerge"`
+	AllowSquashMerge        bool                         `json:"AllowSquashMerge"`
+	BitbucketRepositoryUUID *string                      `json:"BitbucketRepositoryUUID,omitempty"`
+	CreatedAt               time.Time                    `json:"CreatedAt"`
+	ID                      int64                        `json:"ID"`
+	LastSyncCompletedAt     *time.Time                   `json:"LastSyncCompletedAt,omitempty"`
+	LastSyncError           string                       `json:"LastSyncError"`
+	LastSyncStartedAt       *time.Time                   `json:"LastSyncStartedAt,omitempty"`
+	Name                    string                       `json:"Name"`
+	Owner                   string                       `json:"Owner"`
+	Platform                string                       `json:"Platform"`
+	PlatformHost            string                       `json:"PlatformHost"`
+	PlatformRepoID          int64                        `json:"PlatformRepoID"`
+	ViewerCanMerge          bool                         `json:"ViewerCanMerge"`
+	Capabilities            ProviderCapabilitiesResponse `json:"capabilities"`
+	Operations              RepoOperations               `json:"operations"`
 }
 
 type RepoSummaryAuthorResponse struct {
@@ -59555,13 +59559,14 @@ type WorkspaceLaunchPull struct {
 }
 
 type WorkspaceLaunchRepository struct {
-	CloneURL       string `json:"clone_url"`
-	DefaultBranch  string `json:"default_branch"`
-	Name           string `json:"name"`
-	Owner          string `json:"owner"`
-	PlatformHost   string `json:"platform_host"`
-	PlatformRepoID int64  `json:"platform_repo_id"`
-	Provider       string `json:"provider"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	CloneURL                string  `json:"clone_url"`
+	DefaultBranch           string  `json:"default_branch"`
+	Name                    string  `json:"name"`
+	Owner                   string  `json:"owner"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          int64   `json:"platform_repo_id"`
+	Provider                string  `json:"provider"`
 }
 
 type WorkspaceLaunchRequest struct {

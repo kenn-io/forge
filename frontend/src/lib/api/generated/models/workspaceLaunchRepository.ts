@@ -3,6 +3,7 @@
  */
 
 export interface WorkspaceLaunchRepository {
+  bitbucket_repository_uuid?: string;
   clone_url: string;
   default_branch: string;
   name: string;

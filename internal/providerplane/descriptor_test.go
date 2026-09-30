@@ -111,7 +111,7 @@ func TestDiffDescriptorUsesOneHubSnapshot(t *testing.T) {
 
 func TestBitbucketDataCenterRepositoryDescriptor(t *testing.T) {
 	for _, remote := range []string{"https://code.example.test:8443/scm/PROJECT/repo.git", "ssh://git@code.example.test:7999/PROJECT/repo.git"} {
-		descriptor, err := BuildRepositoryDescriptor(RepositorySnapshot{Provider: "bitbucket", PlatformHost: "code.example.test:8443", PlatformRepoID: "17", Owner: "PROJECT", Name: "repo", CloneURL: remote, DefaultBranch: "main", SnapshotRevision: 1, ObservedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)})
+		descriptor, err := BuildRepositoryDescriptor(RepositorySnapshot{Provider: "bitbucket", PlatformHost: "code.example.test:8443", PlatformRepoID: 17, Owner: "PROJECT", Name: "repo", CloneURL: remote, DefaultBranch: "main", ObservedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)})
 		require.NoError(t, err)
 		require.NoError(t, descriptor.Validate())
 		route, err := FederationRemoteRepositoryRoute("bitbucket", "code.example.test:8443", remote)

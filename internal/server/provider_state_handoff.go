@@ -128,7 +128,8 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: repo.Platform, PlatformHost: repo.PlatformHost,
-			PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name,
+			PlatformRepoID: repo.PlatformRepoID, BitbucketRepositoryUUID: repo.BitbucketRepositoryUUID,
+			Owner: repo.Owner, Name: repo.Name,
 			CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch,
 		},
 		ItemType: request.ItemType, ItemNumber: request.ItemNumber,

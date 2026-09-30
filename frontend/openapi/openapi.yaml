@@ -9278,6 +9278,10 @@ components:
     SnapshotItem:
       additionalProperties: false
       properties:
+        assignees:
+          items:
+            type: string
+          type: array
         author:
           type: string
         author_association:
@@ -9288,6 +9292,11 @@ components:
           type: string
         body_truncated:
           type: boolean
+        closed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         created_at:
           format: date-time
           type: string
@@ -9303,6 +9312,11 @@ components:
           items:
             type: string
           type: array
+        last_activity_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         number:
           format: int64
           type: integer
@@ -9332,6 +9346,7 @@ components:
         - created_at
         - updated_at
         - detail_fetched_at
+        - last_activity_at
       type: object
     SnapshotPullRequest:
       additionalProperties: false
@@ -9341,6 +9356,10 @@ components:
           type:
             - integer
             - "null"
+        assignees:
+          items:
+            type: string
+          type: array
         author:
           type: string
         author_association:
@@ -9364,6 +9383,11 @@ components:
           items:
             $ref: "#/components/schemas/SnapshotCheck"
           type: array
+        closed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         created_at:
           format: date-time
           type: string
@@ -9399,6 +9423,16 @@ components:
           items:
             type: string
           type: array
+        last_activity_at:
+          format: date-time
+          type:
+            - string
+            - "null"
+        merge_status_observed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
         mergeable_state:
           type: string
         number:
@@ -9406,6 +9440,10 @@ components:
           type: integer
         repository_id:
           type: string
+        requested_reviewers:
+          items:
+            type: string
+          type: array
         review_state:
           type: string
         reviews:
@@ -9433,6 +9471,7 @@ components:
         - review_state
         - check_state
         - mergeable_state
+        - merge_status_observed_at
         - checks
         - reviews
         - gaps
@@ -9450,6 +9489,7 @@ components:
         - created_at
         - updated_at
         - detail_fetched_at
+        - last_activity_at
       type: object
     SnapshotRelation:
       additionalProperties: false

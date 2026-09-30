@@ -56,24 +56,42 @@ type SnapshotItem struct {
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 	DetailFetchedAt   *time.Time `json:"detail_fetched_at" doc:"Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact."`
+	// Assignees is omitted when the provider never reported the list, and
+	// "[]" when it confirmed an empty one.
+	Assignees      []string   `json:"assignees,omitzero"`
+	LastActivityAt *time.Time `json:"last_activity_at"`
+	// ClosedAt is omitted for open items, and for pull requests, which are
+	// always open in this snapshot's scope.
+	ClosedAt *time.Time `json:"closed_at,omitzero"`
 }
 
 type SnapshotPullRequest struct {
 	SnapshotItem
-	Draft                bool             `json:"draft"`
-	HeadSHA              string           `json:"head_sha"`
-	HeadBranch           string           `json:"head_branch"`
-	BaseBranch           string           `json:"base_branch"`
-	HeadInSameRepository *bool            `json:"head_in_same_repository" doc:"Null when either repository identity is unavailable or the head identity is stale; false means a known different repository."`
-	Additions            *int             `json:"additions"`
-	Deletions            *int             `json:"deletions"`
-	ChangedFiles         *int             `json:"changed_files"`
-	ReviewState          string           `json:"review_state"`
-	CheckState           string           `json:"check_state"`
-	MergeableState       string           `json:"mergeable_state"`
-	Checks               []SnapshotCheck  `json:"checks"`
-	Reviews              []SnapshotReview `json:"reviews"`
-	Gaps                 []string         `json:"gaps"`
+	Draft                bool   `json:"draft"`
+	HeadSHA              string `json:"head_sha"`
+	HeadBranch           string `json:"head_branch"`
+	BaseBranch           string `json:"base_branch"`
+	HeadInSameRepository *bool  `json:"head_in_same_repository" doc:"Null when either repository identity is unavailable or the head identity is stale; false means a known different repository."`
+	Additions            *int   `json:"additions"`
+	Deletions            *int   `json:"deletions"`
+	ChangedFiles         *int   `json:"changed_files"`
+	ReviewState          string `json:"review_state"`
+	CheckState           string `json:"check_state"`
+	MergeableState       string `json:"mergeable_state"`
+	// RequestedReviewers is omitted when the provider never reported the
+	// list, and "[]" when it confirmed an empty one.
+	RequestedReviewers []string `json:"requested_reviewers,omitzero"`
+	// MergeStatusObservedAt is a lower bound on when review, CI, and
+	// mergeable state were last observed: the oldest of the observation
+	// times the repository's provider can produce, null when any counted
+	// time is unknown. Review decision counts only for providers that
+	// report one (GitHub today).
+	MergeStatusObservedAt *time.Time       `json:"merge_status_observed_at"`
+	Checks                []SnapshotCheck  `json:"checks"`
+	Reviews               []SnapshotReview `json:"reviews"`
+	// Gaps includes merge_status_observation_time_unknown when
+	// MergeStatusObservedAt is null.
+	Gaps []string `json:"gaps"`
 }
 
 type SnapshotCheck struct {

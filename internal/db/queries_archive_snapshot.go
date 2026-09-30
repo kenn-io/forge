@@ -24,6 +24,25 @@ type ArchiveSnapshotItem struct {
 	Additions, Deletions                                 int
 	FilesChanged                                         *int
 	ReviewDecision, CIStatus, ChecksJSON, MergeableState string
+	// AssigneesJSON and ReviewersJSON carry the raw ownership columns: ""
+	// means the provider never reported the list, "[]" a confirmed-empty
+	// one. ReviewersJSON is always "" for issues.
+	AssigneesJSON, ReviewersJSON string
+	LastActivityAt               time.Time
+	// ClosedAt reads the PR's own closed_at column, not a literal SQL NULL:
+	// a literal NULL in this position (the first UNION ALL arm) would blank
+	// the compound column's declared type, and modernc.org/sqlite then
+	// fails to parse the issue arm's real closed_at text into *time.Time
+	// (sqlite3_column_decltype is empty for any non-bare-column
+	// expression). Pull requests in this snapshot's scope are always
+	// state='open', so p.closed_at is expected to be nil in practice.
+	ClosedAt *time.Time
+	// CIObservedAt, ReviewDecisionObservedAt, and MergeableStateObservedAt
+	// are NULL for issues, and for PRs whose sibling value is unknown
+	// provenance. The snapshot exporter computes merge_status_observed_at
+	// as their minimum, not SQL, so a driver-fragile computed column is
+	// never scanned.
+	CIObservedAt, ReviewDecisionObservedAt, MergeableStateObservedAt *time.Time
 }
 
 type ArchiveSnapshotReview struct {
@@ -92,11 +111,11 @@ func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, st
 	err = tx.QueryRowContext(ctx, archiveSnapshotScope+`, texts AS (
  SELECT length(CAST(json_array(p.url,p.title,p.author,p.author_association,p.state,
  COALESCE(CAST(substr(CAST(COALESCE(p.body,'') AS BLOB),1,8193) AS TEXT),''),p.platform_head_sha,p.head_branch,p.base_branch,p.head_repo_clone_url,
- p.review_decision,p.ci_status,p.ci_checks_json,p.mergeable_state,
+ p.review_decision,p.ci_status,p.ci_checks_json,p.mergeable_state,p.assignees_json,p.reviewers_json,
  (SELECT json_group_array(l.name) FROM forge_merge_request_labels ml JOIN forge_labels l ON l.id=ml.label_id WHERE ml.merge_request_id=p.id)) AS BLOB)) AS bytes
  FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id
  UNION ALL
- SELECT length(CAST(json_array(i.url,i.title,i.author,i.author_association,i.state,COALESCE(CAST(substr(CAST(COALESCE(i.body,'') AS BLOB),1,8193) AS TEXT),''),
+ SELECT length(CAST(json_array(i.url,i.title,i.author,i.author_association,i.state,COALESCE(CAST(substr(CAST(COALESCE(i.body,'') AS BLOB),1,8193) AS TEXT),''),i.assignees_json,
  (SELECT json_group_array(l.name) FROM forge_issue_labels il JOIN forge_labels l ON l.id=il.label_id WHERE il.issue_id=i.id)) AS BLOB))
  FROM forge_issues i JOIN issues selected ON selected.id=i.id
  UNION ALL
@@ -119,12 +138,14 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
 	rows, err := tx.QueryContext(ctx, archiveSnapshotScope+`
  SELECT p.id,p.repo_id,'pull_request',p.number,COALESCE(p.url,''),p.title,p.author,p.state,COALESCE(CAST(substr(CAST(COALESCE(p.body,'') AS BLOB),1,8193) AS TEXT),''),p.author_association,p.created_at,p.updated_at,p.detail_fetched_at,
  (SELECT json_group_array(l.name) FROM forge_merge_request_labels ml JOIN forge_labels l ON l.id=ml.label_id WHERE ml.merge_request_id=p.id),
- p.is_draft,COALESCE(p.platform_head_sha,''),COALESCE(p.head_branch,''),COALESCE(p.base_branch,''),COALESCE(p.head_repo_clone_url,''),p.head_repo_identity_stale,p.additions,p.deletions,p.files_changed,COALESCE(p.review_decision,''),COALESCE(p.ci_status,''),COALESCE(p.ci_checks_json,''),COALESCE(p.mergeable_state,'')
+ p.is_draft,COALESCE(p.platform_head_sha,''),COALESCE(p.head_branch,''),COALESCE(p.base_branch,''),COALESCE(p.head_repo_clone_url,''),p.head_repo_identity_stale,p.additions,p.deletions,p.files_changed,COALESCE(p.review_decision,''),COALESCE(p.ci_status,''),COALESCE(p.ci_checks_json,''),COALESCE(p.mergeable_state,''),
+ p.assignees_json,p.reviewers_json,p.last_activity_at,p.closed_at,p.ci_observed_at,p.review_decision_observed_at,p.mergeable_state_observed_at
  FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id
  UNION ALL
  SELECT i.id,i.repo_id,'issue',i.number,COALESCE(i.url,''),i.title,i.author,i.state,COALESCE(CAST(substr(CAST(COALESCE(i.body,'') AS BLOB),1,8193) AS TEXT),''),i.author_association,i.created_at,i.updated_at,i.detail_fetched_at,
  (SELECT json_group_array(l.name) FROM forge_issue_labels il JOIN forge_labels l ON l.id=il.label_id WHERE il.issue_id=i.id),
- 0,'','','','',0,0,0,NULL,'','','',''
+ 0,'','','','',0,0,0,NULL,'','','','',
+ i.assignees_json,'',i.last_activity_at,i.closed_at,NULL,NULL,NULL
  FROM forge_issues i JOIN issues selected ON selected.id=i.id
  ORDER BY 2,3,4`, string(ids), openIssuesOnly, start.UTC(), end.UTC())
 	if err != nil {
@@ -134,7 +155,7 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
 	result := []ArchiveSnapshotItem{}
 	for rows.Next() {
 		var item ArchiveSnapshotItem
-		if err := rows.Scan(&item.ID, &item.RepoID, &item.Kind, &item.Number, &item.URL, &item.Title, &item.Author, &item.State, &item.Body, &item.AuthorAssociation, &item.CreatedAt, &item.UpdatedAt, &item.DetailFetchedAt, &item.LabelsJSON, &item.Draft, &item.HeadSHA, &item.HeadBranch, &item.BaseBranch, &item.HeadRepoCloneURL, &item.HeadRepoIdentityStale, &item.Additions, &item.Deletions, &item.FilesChanged, &item.ReviewDecision, &item.CIStatus, &item.ChecksJSON, &item.MergeableState); err != nil {
+		if err := rows.Scan(&item.ID, &item.RepoID, &item.Kind, &item.Number, &item.URL, &item.Title, &item.Author, &item.State, &item.Body, &item.AuthorAssociation, &item.CreatedAt, &item.UpdatedAt, &item.DetailFetchedAt, &item.LabelsJSON, &item.Draft, &item.HeadSHA, &item.HeadBranch, &item.BaseBranch, &item.HeadRepoCloneURL, &item.HeadRepoIdentityStale, &item.Additions, &item.Deletions, &item.FilesChanged, &item.ReviewDecision, &item.CIStatus, &item.ChecksJSON, &item.MergeableState, &item.AssigneesJSON, &item.ReviewersJSON, &item.LastActivityAt, &item.ClosedAt, &item.CIObservedAt, &item.ReviewDecisionObservedAt, &item.MergeableStateObservedAt); err != nil {
 			return nil, fmt.Errorf("scan snapshot item: %w", err)
 		}
 		result = append(result, item)

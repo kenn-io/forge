@@ -3,11 +3,14 @@
  */
 
 export interface SnapshotItem {
+  assignees?: string[];
   author: string;
   /** @nullable */
   author_association: string | null;
   body: string;
   body_truncated: boolean;
+  /** @nullable */
+  closed_at?: string | null;
   created_at: string;
   /**
    * Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
@@ -16,6 +19,8 @@ export interface SnapshotItem {
   detail_fetched_at: string | null;
   id: string;
   labels: string[];
+  /** @nullable */
+  last_activity_at: string | null;
   number: number;
   repository_id: string;
   state: string;

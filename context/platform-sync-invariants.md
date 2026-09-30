@@ -279,6 +279,11 @@ registry helpers return typed errors for missing providers or capabilities.
 
 - Missing optional capabilities should degrade that feature with a typed
   platform error, not break unrelated sync work.
+- `platform.Capabilities` has no flag for "reports a review decision"; GitLab,
+  Forgejo, and Gitea normalizers never set `ReviewDecision`. Callers that need
+  this compare the repository's provider `Kind` to `platform.KindGitHub`
+  directly (`internal/archive/snapshot.go::Service.snapshot`, computing
+  `merge_status_observed_at`).
 - Never put foreground deadlines on a shared provider HTTP client; scope them to
   the operation context (`platform/gitlab/client.go::NewClient`).
 - Provider clients with a local sync budget must use the shared transport; duplicate

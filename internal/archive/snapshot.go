@@ -137,7 +137,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			return result, fmt.Errorf("decode cached labels: %w", err)
 		}
 		slices.Sort(labels)
-		item := snapshot.SnapshotItem{ID: snapshotRepositoryID(repo) + ":" + row.Kind + ":" + strconv.Itoa(row.Number), RepositoryID: snapshotRepositoryID(repo), Number: row.Number, URL: row.URL, Title: row.Title, Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, State: row.State, Labels: labels, CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), DetailFetchedAt: row.DetailFetchedAt}
+		item := snapshot.SnapshotItem{ID: snapshotRepositoryID(repo) + ":" + row.Kind + ":" + strconv.Itoa(row.Number), RepositoryID: snapshotRepositoryID(repo), Number: row.Number, URL: row.URL, Title: row.Title, Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, State: row.State, Labels: labels, CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), DetailFetchedAt: row.DetailFetchedAt, Assignees: db.ParseUserNamesJSON(row.AssigneesJSON), LastActivityAt: new(row.LastActivityAt.UTC()), ClosedAt: row.ClosedAt}
 		if row.Kind == "issue" {
 			issueIDs[row.ID] = item.ID
 			result.Issues = append(result.Issues, item)
@@ -145,7 +145,15 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		mrIDs = append(mrIDs, row.ID)
 		pullPositions[row.ID] = len(result.PullRequests)
-		pull := snapshot.SnapshotPullRequest{SnapshotItem: item, Draft: row.Draft, HeadSHA: row.HeadSHA, HeadBranch: row.HeadBranch, BaseBranch: row.BaseBranch, ChangedFiles: row.FilesChanged, ReviewState: row.ReviewDecision, CheckState: row.CIStatus, MergeableState: row.MergeableState, Checks: []snapshot.SnapshotCheck{}, Reviews: []snapshot.SnapshotReview{}, Gaps: []string{"readiness_observation_time_unknown"}}
+		mergeStatusTimes := []*time.Time{row.CIObservedAt, row.MergeableStateObservedAt}
+		if repo.Platform == string(platform.KindGitHub) {
+			mergeStatusTimes = append(mergeStatusTimes, row.ReviewDecisionObservedAt)
+		}
+		mergeStatusObservedAt := minObservedAt(mergeStatusTimes)
+		pull := snapshot.SnapshotPullRequest{SnapshotItem: item, Draft: row.Draft, HeadSHA: row.HeadSHA, HeadBranch: row.HeadBranch, BaseBranch: row.BaseBranch, ChangedFiles: row.FilesChanged, ReviewState: row.ReviewDecision, CheckState: row.CIStatus, MergeableState: row.MergeableState, RequestedReviewers: db.ParseUserNamesJSON(row.ReviewersJSON), MergeStatusObservedAt: mergeStatusObservedAt, Checks: []snapshot.SnapshotCheck{}, Reviews: []snapshot.SnapshotReview{}, Gaps: []string{}}
+		if mergeStatusObservedAt == nil {
+			pull.Gaps = append(pull.Gaps, "merge_status_observation_time_unknown")
+		}
 		if !row.HeadRepoIdentityStale && repo.CloneURL != "" && row.HeadRepoCloneURL != "" {
 			pull.HeadInSameRepository = new(repo.CloneURL == row.HeadRepoCloneURL)
 		}
@@ -208,6 +216,23 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 
 func snapshotRepositoryID(repo db.Repo) string {
 	return strings.Join([]string{url.QueryEscape(repo.Platform), url.QueryEscape(repo.PlatformHost), strconv.FormatInt(repo.PlatformRepoID, 10)}, ":")
+}
+
+// minObservedAt returns the earliest of the given observation times, or nil
+// if any of them is unknown: one missing counted time makes the combined
+// time unknown. Computed in Go rather than SQL min(), which has no stable
+// DATETIME decltype for a computed column.
+func minObservedAt(times []*time.Time) *time.Time {
+	var earliest time.Time
+	for i, t := range times {
+		if t == nil {
+			return nil
+		}
+		if i == 0 || t.Before(earliest) {
+			earliest = *t
+		}
+	}
+	return new(earliest.UTC())
 }
 
 func snapshotText(value string, limit int) (string, bool) {

@@ -7,6 +7,7 @@ import type { SnapshotReview } from "./snapshotReview.ts";
 export interface SnapshotPullRequest {
   /** @nullable */
   additions: number | null;
+  assignees?: string[];
   author: string;
   /** @nullable */
   author_association: string | null;
@@ -17,6 +18,8 @@ export interface SnapshotPullRequest {
   changed_files: number | null;
   check_state: string;
   checks: SnapshotCheck[];
+  /** @nullable */
+  closed_at?: string | null;
   created_at: string;
   /** @nullable */
   deletions: number | null;
@@ -36,9 +39,14 @@ export interface SnapshotPullRequest {
   head_sha: string;
   id: string;
   labels: string[];
+  /** @nullable */
+  last_activity_at: string | null;
+  /** @nullable */
+  merge_status_observed_at: string | null;
   mergeable_state: string;
   number: number;
   repository_id: string;
+  requested_reviewers?: string[];
   review_state: string;
   reviews: SnapshotReview[];
   state: string;

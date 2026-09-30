@@ -64,6 +64,141 @@ func TestSnapshotReadsConfiguredCachedWork(t *testing.T) {
 	assert.Equal(now, result.ObservedAt)
 }
 
+func TestSnapshotMergeStatusObservedAtIsTheOldestObservedTime(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+
+	ci := now.Add(-3 * time.Hour)
+	review := now.Add(-2 * time.Hour)
+	mergeable := now.Add(-1 * time.Hour)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, Title: "All observed", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now,
+		CIObservedAt: &ci, ReviewDecisionObservedAt: &review, MergeableStateObservedAt: &mergeable,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 2, Number: 2, Title: "Mergeable time unknown", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now,
+		CIObservedAt: &ci, ReviewDecisionObservedAt: &review,
+	})
+	require.NoError(err)
+
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	require.NoError(err)
+	require.Len(result.PullRequests, 2)
+
+	allObserved := result.PullRequests[0]
+	require.NotNil(allObserved.MergeStatusObservedAt)
+	assert.True(ci.Equal(*allObserved.MergeStatusObservedAt), "the oldest of the three GitHub times")
+	assert.NotContains(allObserved.Gaps, "merge_status_observation_time_unknown")
+
+	oneUnknown := result.PullRequests[1]
+	assert.Nil(oneUnknown.MergeStatusObservedAt)
+	assert.Contains(oneUnknown.Gaps, "merge_status_observation_time_unknown")
+}
+
+func TestSnapshotMergeStatusObservedAtIgnoresReviewDecisionOffGitHub(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitLab, "gitlab.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+
+	ci := now.Add(-2 * time.Hour)
+	mergeable := now.Add(-1 * time.Hour)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, Number: 1, Title: "GitLab PR", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now,
+		CIObservedAt: &ci, MergeableStateObservedAt: &mergeable,
+	})
+	require.NoError(err)
+
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	require.NoError(err)
+	require.Len(result.PullRequests, 1)
+	pull := result.PullRequests[0]
+	require.NotNil(pull.MergeStatusObservedAt, "GitLab never reports a review decision, so it must not count")
+	assert.True(ci.Equal(*pull.MergeStatusObservedAt), "the older of CI and mergeable times")
+	assert.NotContains(pull.Gaps, "merge_status_observation_time_unknown")
+}
+
+func TestSnapshotExportsOwnershipAndActivity(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+
+	lastActivity := now.Add(-time.Minute)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, Title: "Never reported", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: lastActivity,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 2, Number: 2, Title: "Confirmed empty", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: lastActivity,
+		AssigneesJSON: "[]", ReviewersJSON: "[]",
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 3, Number: 3, Title: "Has owners", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: lastActivity,
+		AssigneesJSON: `["alice"]`, ReviewersJSON: `["bob"]`,
+	})
+	require.NoError(err)
+	closedAt := now.Add(-24 * time.Hour)
+	_, err = database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID: repoID, PlatformID: 4, Number: 4, Title: "Closed issue", State: "closed",
+		CreatedAt: now.Add(-time.Minute), UpdatedAt: now, LastActivityAt: lastActivity, ClosedAt: &closedAt,
+		AssigneesJSON: `["carol"]`,
+	})
+	require.NoError(err)
+
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	require.NoError(err)
+	require.Len(result.PullRequests, 3)
+	require.Len(result.Issues, 1)
+
+	neverReported := result.PullRequests[0]
+	assert.Nil(neverReported.Assignees)
+	assert.Nil(neverReported.RequestedReviewers)
+	require.NotNil(neverReported.LastActivityAt)
+	assert.True(lastActivity.Equal(*neverReported.LastActivityAt))
+	assert.Nil(neverReported.ClosedAt, "pull requests in scope are always open")
+
+	confirmedEmpty := result.PullRequests[1]
+	assert.Equal([]string{}, confirmedEmpty.Assignees)
+	assert.Equal([]string{}, confirmedEmpty.RequestedReviewers)
+
+	hasOwners := result.PullRequests[2]
+	assert.Equal([]string{"alice"}, hasOwners.Assignees)
+	assert.Equal([]string{"bob"}, hasOwners.RequestedReviewers)
+
+	issue := result.Issues[0]
+	assert.Equal([]string{"carol"}, issue.Assignees)
+	require.NotNil(issue.LastActivityAt)
+	assert.True(lastActivity.Equal(*issue.LastActivityAt))
+	require.NotNil(issue.ClosedAt)
+	assert.True(closedAt.Equal(*issue.ClosedAt))
+}
+
 func TestSnapshotOpenIssueScope(t *testing.T) {
 	for _, kind := range []platform.Kind{platform.KindGitHub, platform.KindGitLab, platform.KindForgejo, platform.KindGitea} {
 		t.Run(string(kind), func(t *testing.T) {

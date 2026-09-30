@@ -58670,16 +58670,19 @@ type SnapshotCoverage struct {
 }
 
 type SnapshotItem struct {
-	Author            string    `json:"author"`
-	AuthorAssociation *string   `json:"author_association,omitempty"`
-	Body              string    `json:"body"`
-	BodyTruncated     bool      `json:"body_truncated"`
-	CreatedAt         time.Time `json:"created_at"`
+	Assignees         []string   `json:"assignees,omitempty"`
+	Author            string     `json:"author"`
+	AuthorAssociation *string    `json:"author_association,omitempty"`
+	Body              string     `json:"body"`
+	BodyTruncated     bool       `json:"body_truncated"`
+	ClosedAt          *time.Time `json:"closed_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
 
 	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
 	DetailFetchedAt *time.Time `json:"detail_fetched_at,omitempty"`
 	ID              string     `json:"id"`
 	Labels          []string   `json:"labels"`
+	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`
 	Number          int64      `json:"number"`
 	RepositoryID    string     `json:"repository_id"`
 	State           string     `json:"state"`
@@ -58690,6 +58693,7 @@ type SnapshotItem struct {
 
 type SnapshotPullRequest struct {
 	Additions         *int64          `json:"additions,omitempty"`
+	Assignees         []string        `json:"assignees,omitempty"`
 	Author            string          `json:"author"`
 	AuthorAssociation *string         `json:"author_association,omitempty"`
 	BaseBranch        string          `json:"base_branch"`
@@ -58698,6 +58702,7 @@ type SnapshotPullRequest struct {
 	ChangedFiles      *int64          `json:"changed_files,omitempty"`
 	CheckState        string          `json:"check_state"`
 	Checks            []SnapshotCheck `json:"checks"`
+	ClosedAt          *time.Time      `json:"closed_at,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
 	Deletions         *int64          `json:"deletions,omitempty"`
 
@@ -58708,19 +58713,22 @@ type SnapshotPullRequest struct {
 	HeadBranch      string     `json:"head_branch"`
 
 	// HeadInSameRepository Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
-	HeadInSameRepository *bool            `json:"head_in_same_repository,omitempty"`
-	HeadSha              string           `json:"head_sha"`
-	ID                   string           `json:"id"`
-	Labels               []string         `json:"labels"`
-	MergeableState       string           `json:"mergeable_state"`
-	Number               int64            `json:"number"`
-	RepositoryID         string           `json:"repository_id"`
-	ReviewState          string           `json:"review_state"`
-	Reviews              []SnapshotReview `json:"reviews"`
-	State                string           `json:"state"`
-	Title                string           `json:"title"`
-	UpdatedAt            time.Time        `json:"updated_at"`
-	URL                  string           `json:"url"`
+	HeadInSameRepository  *bool            `json:"head_in_same_repository,omitempty"`
+	HeadSha               string           `json:"head_sha"`
+	ID                    string           `json:"id"`
+	Labels                []string         `json:"labels"`
+	LastActivityAt        *time.Time       `json:"last_activity_at,omitempty"`
+	MergeStatusObservedAt *time.Time       `json:"merge_status_observed_at,omitempty"`
+	MergeableState        string           `json:"mergeable_state"`
+	Number                int64            `json:"number"`
+	RepositoryID          string           `json:"repository_id"`
+	RequestedReviewers    []string         `json:"requested_reviewers,omitempty"`
+	ReviewState           string           `json:"review_state"`
+	Reviews               []SnapshotReview `json:"reviews"`
+	State                 string           `json:"state"`
+	Title                 string           `json:"title"`
+	UpdatedAt             time.Time        `json:"updated_at"`
+	URL                   string           `json:"url"`
 }
 
 type SnapshotRelation struct {

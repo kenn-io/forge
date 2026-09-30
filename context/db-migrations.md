@@ -68,6 +68,17 @@ schema migrations.
   `json_each(?)`, or batch it
   (`internal/db/queries_stacks.go::ListStackPlacementsForMRs`,
   `internal/db/queries.go::GetWorktreeLinksForMRs`).
+- In a `UNION ALL` that feeds a `*time.Time` destination, put a real column
+  reference (not a literal `NULL`, `CAST(NULL AS ...)`, or any other
+  expression) in that position's **first** arm. `sqlite3_column_decltype`
+  only returns a non-empty type for a bare column reference, and
+  modernc.org/sqlite caches one decltype per column position from the first
+  arm for the life of the prepared statement; a blank decltype there makes
+  every arm's real datetime text fail `Scan` into `*time.Time`, even rows
+  from a later arm with a properly typed column
+  (`internal/db/queries_archive_snapshot.go::LoadArchiveSnapshotItems`, where
+  the pull-request arm reads its own real `closed_at` column instead of a
+  literal `NULL` so the issue arm's `closed_at` still scans).
 
 ## Federation Spoke Preparation
 

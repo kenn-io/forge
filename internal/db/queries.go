@@ -1198,15 +1198,16 @@ func (d *DB) UpdateRepoViewerCanMerge(ctx context.Context, id int64, viewerCanMe
 // RequestedReviewers slices from their JSON columns. Empty or malformed
 // JSON leaves the slice nil.
 func parseMergeRequestUserLists(mr *MergeRequest) {
-	mr.Assignees = parseUserNamesJSON(mr.AssigneesJSON)
-	mr.RequestedReviewers = parseUserNamesJSON(mr.ReviewersJSON)
+	mr.Assignees = ParseUserNamesJSON(mr.AssigneesJSON)
+	mr.RequestedReviewers = ParseUserNamesJSON(mr.ReviewersJSON)
 }
 
-// parseUserNamesJSON distinguishes a provider that never reported a user
+// ParseUserNamesJSON distinguishes a provider that never reported a user
 // list ("") from one that confirmed an empty list ("[]"): the former returns
 // nil, which serializes as an absent JSON key (omitzero); the latter returns
-// a non-nil empty slice, which serializes as "[]".
-func parseUserNamesJSON(raw string) []string {
+// a non-nil empty slice, which serializes as "[]". Shared by merge request
+// and issue ownership columns, and by the archive snapshot export.
+func ParseUserNamesJSON(raw string) []string {
 	if raw == "" {
 		return nil
 	}
@@ -2952,9 +2953,9 @@ func (d *DB) GetIssue(
 	if err != nil {
 		return nil, fmt.Errorf("get issue: %w", err)
 	}
-	// Parse assignees from JSON. parseUserNamesJSON distinguishes never-
+	// Parse assignees from JSON. ParseUserNamesJSON distinguishes never-
 	// reported ("") from provider-confirmed empty ("[]").
-	issue.Assignees = parseUserNamesJSON(issue.AssigneesJSON)
+	issue.Assignees = ParseUserNamesJSON(issue.AssigneesJSON)
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load issue labels: %w", err)
@@ -3018,9 +3019,9 @@ func (d *DB) getIssueByRepoIDAndNumber(
 	if err != nil {
 		return nil, fmt.Errorf("get issue by repo id: %w", err)
 	}
-	// Parse assignees from JSON. parseUserNamesJSON distinguishes never-
+	// Parse assignees from JSON. ParseUserNamesJSON distinguishes never-
 	// reported ("") from provider-confirmed empty ("[]").
-	issue.Assignees = parseUserNamesJSON(issue.AssigneesJSON)
+	issue.Assignees = ParseUserNamesJSON(issue.AssigneesJSON)
 	labelsByIssue, err := d.loadLabelsForIssues(ctx, []int64{issue.ID})
 	if err != nil {
 		return nil, fmt.Errorf("load issue labels: %w", err)
@@ -3160,9 +3161,9 @@ func (d *DB) ListIssues(
 		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
 		}
-		// Parse assignees from JSON. parseUserNamesJSON distinguishes never-
+		// Parse assignees from JSON. ParseUserNamesJSON distinguishes never-
 		// reported ("") from provider-confirmed empty ("[]").
-		issue.Assignees = parseUserNamesJSON(issue.AssigneesJSON)
+		issue.Assignees = ParseUserNamesJSON(issue.AssigneesJSON)
 		issues = append(issues, issue)
 		issueIDs = append(issueIDs, issue.ID)
 	}

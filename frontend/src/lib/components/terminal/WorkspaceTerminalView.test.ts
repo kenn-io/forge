@@ -1111,6 +1111,36 @@ describe("WorkspaceTerminalView", () => {
     expect(localStorage.getItem("kenn-forge-workspace-active-tab:ws-1")).toBe("session:ws-1:reviewer");
   });
 
+  it("hides pane workspace info until the selected workspace loads", async () => {
+    serveAnyWorkspace();
+    claimForPrs();
+    const { rerender } = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs" },
+    });
+    render(WorkspacePaneControls);
+    await fireEvent.click(await screen.findByRole("button", { name: "Workspace info" }));
+    expect(within(screen.getByRole("dialog", { name: "Workspace info" })).getByText("/tmp/worktree")).toBeTruthy();
+
+    const metadata = deferred<Response>();
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: Request | URL | string, init?: RequestInit) =>
+        fetchPath(input) === "/api/v1/workspaces/ws-2" ? metadata.promise : originalFetch(input, init),
+      ),
+    );
+    await rerender({ workspaceId: "ws-2", paneSurface: "prs" });
+    await waitFor(() => expect(hostedWorkspaceControls()?.workspaceKey).toContain("ws-2"));
+    expect(screen.queryByRole("button", { name: "Workspace info" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Workspace info" })).toBeNull();
+
+    metadata.resolve(Response.json({ ...workspaceResponse, id: "ws-2", worktree_path: "/tmp/second-worktree" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Workspace info" }));
+    expect(
+      within(screen.getByRole("dialog", { name: "Workspace info" })).getByText("/tmp/second-worktree"),
+    ).toBeTruthy();
+  });
+
   it("shows workspace information without changing the selected terminal", async () => {
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     const agent = await screen.findByRole("tab", { name: /Helper/ });

@@ -5213,7 +5213,7 @@
      to this view's state. In a detail pane the pane's popover renders this, so the
      controls follow the workspace without the state leaving the view. -->
 {#snippet workspaceInfo()}
-  {#if workspace}
+  {#if workspaceLive && workspace}
     {#key viewWorkspaceKey}
       <WorkspaceInfo {workspace} hostVisible={interactionVisible} />
     {/key}

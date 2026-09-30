@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/archive"
+	"go.kenn.io/forge/internal/cli/ghcli"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonruntime"
@@ -164,7 +165,10 @@ func runMain() int {
 		}
 	}()
 
-	if err := runCLI(os.Args[1:], os.Stdout); err != nil {
+	if err := runCLI(cliArgs(os.Args), os.Stdout); err != nil {
+		if exit, ok := errors.AsType[*ghcli.ExitError](err); ok {
+			return exit.Code
+		}
 		if _, ok := errors.AsType[*apiVerbError](err); ok {
 			_, _ = fmt.Fprintln(os.Stderr, err)
 			return exitCodeForAPIVerb(err)

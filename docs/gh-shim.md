@@ -2,9 +2,10 @@
 
 Coding agents often run the same `gh pr list` and `gh pr view` commands many
 times per session. Each call costs a GitHub API request and adds network
-latency. `forge-gh` is an opt-in stand-in for `gh`. It answers supported pull
-request queries from data Kenn Forge has already synced and passes every other
-command to the real `gh` unchanged.
+latency. The `kenn-forge` binary can stand in for `gh`. It answers supported
+pull request queries from data Kenn Forge has already synced and passes every
+other command to the real `gh` unchanged. No separate binary is needed: a `gh`
+link to `kenn-forge` is the whole shim.
 
 You choose which tools use it. Tools that do not have the shim on their `PATH`
 keep calling `gh` directly.
@@ -28,14 +29,14 @@ The quickest setup is to give this prompt to a coding agent running on the
 same machine. It follows the manual steps on this page and checks the result.
 
 ```text
-Set up the Kenn Forge GitHub CLI shim (forge-gh) on this machine.
+Set up the Kenn Forge GitHub CLI shim on this machine.
 Follow https://forge.kenn.io/docs/gh-shim.md exactly.
 
-1. Confirm the Forge daemon is running, the real gh is installed and
-   logged in, and Go 1.27 or newer is available. Stop and tell me if
-   any of these is missing.
-2. Build forge-gh from a clone of https://github.com/kenn-io/forge and
-   install it as described in the Install section.
+1. Confirm that kenn-forge is on PATH, the Forge daemon is running, and
+   the real gh is installed and logged in. Stop and tell me if any of
+   these is missing.
+2. Create the shim directory and gh link as described in the Install
+   section.
 3. Ask me which agent tools should use the shim. For each tool, change
    only how that tool is launched (a shell alias or a wrapper script)
    so the shim directory comes first on its PATH. Do not add the shim
@@ -49,24 +50,25 @@ Follow https://forge.kenn.io/docs/gh-shim.md exactly.
 
 ## Install
 
-Release archives do not include `forge-gh` yet. Build it from a source checkout
-with Go 1.27 or newer. It does not need the frontend build:
+Create a directory that holds only a `gh` link to `kenn-forge`. When
+`kenn-forge` runs under the name `gh`, it acts as the shim. Do not put this
+directory on your login shell's `PATH`. Add it only for the tools that should
+use Forge:
 
 ```sh
-git clone https://github.com/kenn-io/forge.git kenn-forge
-cd kenn-forge
-go build -o ~/.local/bin/forge-gh ./cmd/forge-gh
+mkdir -p ~/.kenn/forge/gh-shim
+ln -sf "$(command -v kenn-forge)" ~/.kenn/forge/gh-shim/gh
 ```
 
-Create a directory that holds only a `gh` link to the shim. Do not put it on
-your login shell's `PATH`. Add it only for the tools that should use Forge:
+On Windows, create a hard link or copy of `kenn-forge.exe` named `gh.exe` in
+that directory.
 
-```sh
-mkdir -p ~/.local/share/forge-gh/bin
-ln -sf ~/.local/bin/forge-gh ~/.local/share/forge-gh/bin/gh
-```
+Use a link, not a `gh` script that calls `kenn-forge gh`. The shim skips only
+links and copies of itself when it looks for the real `gh`, so it would find
+the script and call itself again.
 
-On Windows, put a copy of `forge-gh.exe` named `gh.exe` in that directory.
+You can also run the shim directly as `kenn-forge gh <gh arguments>`, for
+example `kenn-forge gh pr list --json number | cat`.
 
 ## Opt a tool in
 
@@ -74,7 +76,7 @@ Put the shim directory first on the tool's `PATH`. The real `gh` must stay
 later on the same `PATH`:
 
 ```sh
-PATH="$HOME/.local/share/forge-gh/bin:$PATH" claude
+PATH="$HOME/.kenn/forge/gh-shim:$PATH" claude
 ```
 
 Any process started this way, including its subprocesses, gets the shim when it
@@ -98,7 +100,7 @@ gh pr list --json number,title --limit 5 | cat
 Then check the most recent entry in the usage log:
 
 ```sh
-tail -n 1 ~/.kenn/forge/forge-gh-usage.jsonl
+tail -n 1 ~/.kenn/forge/gh-shim-usage.jsonl
 ```
 
 `"reason":"served"` means Forge answered the query. Any other reason means the
@@ -158,7 +160,7 @@ call goes to `gh`.
 
 ## Why a call was not served
 
-Each call adds one line to `forge-gh-usage.jsonl` in Forge's home directory
+Each call adds one line to `gh-shim-usage.jsonl` in Forge's home directory
 (`~/.kenn/forge`, or `KENN_FORGE_HOME` when set). Each entry records the
 time, the command, the full argument list including flag values, and a reason:
 
@@ -175,7 +177,7 @@ time, the command, the full argument list including flag values, and a reason:
 To see which calls happen most and whether Forge answered them:
 
 ```sh
-jq -s 'group_by([.argv,.reason]) | map({argv: .[0].argv, reason: .[0].reason, count: length}) | sort_by(-.count)' ~/.kenn/forge/forge-gh-usage.jsonl
+jq -s 'group_by([.argv,.reason]) | map({argv: .[0].argv, reason: .[0].reason, count: length}) | sort_by(-.count)' ~/.kenn/forge/gh-shim-usage.jsonl
 ```
 
 The log stays on your machine. It is never sent to the daemon or GitHub.

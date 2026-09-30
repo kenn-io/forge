@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package ghcli
 
 import (
 	"os"
@@ -18,7 +18,7 @@ func TestPassThroughPreservesArgumentsStreamsAndExit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	if os.Getenv("FORGE_GH_TEST_CHILD") == "1" {
-		os.Exit(run([]string{"pr", "view", "two words", "--unknown=value"}))
+		os.Exit(Run([]string{"pr", "view", "two words", "--unknown=value"}))
 	}
 	dir := t.TempDir()
 	realPath := filepath.Join(dir, "gh")
@@ -37,7 +37,7 @@ func TestPassThroughPreservesArgumentsStreamsAndExit(t *testing.T) {
 	assert.Equal(7, exit.ExitCode())
 	assert.Equal("pr\nview\ntwo words\n--unknown=value\ninput\n", string(output))
 	assert.Equal("provider error\n", stderr.String())
-	usage, err := os.ReadFile(filepath.Join(dir, "forge-gh-usage.jsonl"))
+	usage, err := os.ReadFile(filepath.Join(dir, "gh-shim-usage.jsonl"))
 	require.NoError(err)
 	assert.Contains(string(usage), `"command":"pr view"`)
 	assert.Contains(string(usage), `"reason":"unsupported"`)

@@ -92,9 +92,9 @@ kenn-forge host when you need workspace sessions.
 
 ## GitHub CLI shim
 
-`forge-gh` is an opt-in stand-in for `gh` that answers piped `gh pr list` and
-`gh pr view <number>` JSON queries from synced Forge data and passes everything
-else to the real `gh`. See the [GitHub CLI shim guide](docs/gh-shim.md) for
+A `gh` symlink to `kenn-forge` (or `kenn-forge gh ...`) is an opt-in stand-in
+for `gh` that answers piped `gh pr list` and `gh pr view <number>` JSON queries
+from synced Forge data and passes everything else to the real `gh`. See the [GitHub CLI shim guide](docs/gh-shim.md) for
 setup, supported queries, and the usage log.
 
 ## Documentation

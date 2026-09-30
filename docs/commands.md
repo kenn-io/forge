@@ -141,6 +141,16 @@ Without `--agent`, install or remove every supported integration. Installed
 hooks send lifecycle activity to the running daemon. Codex asks you to review
 the installed commands through `/hooks` once.
 
+## Stand in for the GitHub CLI
+
+```sh
+kenn-forge gh pr list --json number,title | cat
+```
+
+`kenn-forge gh` answers supported `gh` pull request queries from Forge data
+and passes everything else to the real `gh`. A `gh` link to `kenn-forge` does
+the same. See [GitHub CLI shim](gh-shim.md).
+
 ## Manage GitHub App credentials
 
 ```sh

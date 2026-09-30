@@ -904,3 +904,6 @@ Also see [`context/testing.md`](./testing.md):
   `gh`. Never add provider fetches or a TTL cache (`internal/server/pullapi/gh_shim.go`).
 - Keep full shim argument arrays in local usage logs; command-only counts cannot
   identify which flags and fields need interception support.
+- The shim is the `kenn-forge gh` subcommand, reached directly or through a
+  `gh` link to `kenn-forge`; do not reintroduce a separate shim binary. Pass gh
+  arguments through unparsed and unnormalized (`cmd/kenn-forge/cli.go::cliArgs`).

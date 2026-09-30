@@ -3,10 +3,13 @@ package main
 import (
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/cli/ctl"
+	"go.kenn.io/forge/internal/cli/ghcli"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 )
@@ -76,11 +79,22 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 			StdinIsTerminal:       stdinIsTerminal(opts.Stdin),
 		}),
 		newMCPCommand(opts.Stdout, loadMCPQuickstart),
+		ghcli.NewCommand(),
 		newPtyOwnerCommand(),
 		newACPOwnerCommand(),
 		serve.NewCommand(opts.RunServer),
 	)
 	return root
+}
+
+// cliArgs routes an executable named gh, such as a gh symlink to kenn-forge,
+// to the gh subcommand so the shim needs no separate binary.
+func cliArgs(argv []string) []string {
+	name := strings.ToLower(filepath.Base(argv[0]))
+	if strings.TrimSuffix(name, ".exe") == ghcli.CommandName {
+		return append([]string{ghcli.CommandName}, argv[1:]...)
+	}
+	return argv[1:]
 }
 
 func runCLI(args []string, stdout io.Writer) error {
@@ -92,8 +106,12 @@ func runCLI(args []string, stdout io.Writer) error {
 // normalizeSingleDashLongFlags preserves the long-flag spelling used by the
 // shipped command docs and scripts before the CLI moved from flag to pflag.
 // Native one-letter shorthands and everything after -- retain their meaning.
+// gh arguments belong to the GitHub CLI and are passed through untouched.
 func normalizeSingleDashLongFlags(args []string) []string {
 	normalized := append([]string(nil), args...)
+	if len(normalized) > 0 && normalized[0] == ghcli.CommandName {
+		return normalized
+	}
 	for i, arg := range normalized {
 		if arg == "--" {
 			break

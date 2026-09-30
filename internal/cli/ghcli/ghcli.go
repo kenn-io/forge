@@ -1,5 +1,7 @@
-// forge-gh can be installed as gh ahead of the real GitHub CLI on PATH.
-package main
+// Package ghcli runs kenn-forge as a stand-in for the GitHub CLI: a `gh`
+// symlink to kenn-forge, or `kenn-forge gh`, serves supported queries from
+// Forge and passes everything else to the real gh.
+package ghcli
 
 import (
 	"context"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/apiclient"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
@@ -22,9 +25,33 @@ import (
 	"golang.org/x/term"
 )
 
-func main() { os.Exit(run(os.Args[1:])) }
+// CommandName is the subcommand name and the executable name that routes to it.
+const CommandName = "gh"
 
-func run(args []string) int {
+// ExitError carries the exit status of a served or passed-through gh call.
+type ExitError struct{ Code int }
+
+func (e *ExitError) Error() string { return fmt.Sprintf("gh exited with status %d", e.Code) }
+
+// NewCommand returns the `gh` subcommand. gh owns every argument, so Cobra
+// must not parse or normalize them.
+func NewCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:                "gh [gh arguments]",
+		Short:              "Answer supported gh pull request queries from Forge and pass the rest to gh",
+		DisableFlagParsing: true,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if code := Run(args); code != 0 {
+				return &ExitError{Code: code}
+			}
+			return nil
+		},
+	}
+}
+
+// Run serves one gh invocation and returns its exit status. Pass-through
+// replaces the process on Unix.
+func Run(args []string) int {
 	realPath, err := realGH()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -80,7 +107,7 @@ func realGH() (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("forge-gh: real gh not found; set FORGE_GH_REAL to its executable path")
+	return "", fmt.Errorf("kenn-forge gh: real gh not found; set FORGE_GH_REAL to its executable path")
 }
 
 func resolveRepo(q *ghshim.Query, repo string) bool {
@@ -171,7 +198,7 @@ func queryDaemon(q ghshim.Query) (string, bool, string) {
 
 // Record the full invocation and outcome so coverage gaps can be reproduced.
 func recordUsage(args []string, reason string) {
-	path := filepath.Join(filepath.Dir(config.DefaultConfigPath()), "forge-gh-usage.jsonl")
+	path := filepath.Join(filepath.Dir(config.DefaultConfigPath()), "gh-shim-usage.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return
 	}

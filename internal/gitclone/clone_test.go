@@ -1160,12 +1160,12 @@ func TestIntegrationRepoBrowserClonePartitionsRouteReuseByProviderIdentity(t *te
 	refA := RepoBrowserRepoRef{
 		Provider: "github", Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		ProviderRepoID: 1001, RemoteURL: remoteA,
+		Key: providerplatform.RepositoryIDKey(1001), RemoteURL: remoteA,
 	}
 	refB := RepoBrowserRepoRef{
 		Provider: "github", Host: "github.com",
 		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		ProviderRepoID: 1002, RemoteURL: remoteB,
+		Key: providerplatform.RepositoryIDKey(1002), RemoteURL: remoteB,
 	}
 	require.NoError(t, mgr.EnsureRepoBrowserClone(t.Context(), refA))
 	require.NoError(t, mgr.EnsureRepoBrowserClone(t.Context(), refB))

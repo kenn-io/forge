@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -1506,7 +1507,7 @@ func (s *Server) overlayLocalActivityWorkspaceSnapshot(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 ) (activityResponse, error) {
 	response = providerActivityResponse(response)
-	if input.Unassigned {
+	if input.Unassigned && !input.InvolvesMe {
 		if err := s.retainUnassignedWorkspaceSubjects(ctx, &snapshot); err != nil {
 			slog.Error("list unassigned workspace subjects failed", "err", err)
 			return activityResponse{}, httpapi.Internal("list workspace activity failed")
@@ -1529,7 +1530,14 @@ func (s *Server) overlayLocalActivityWorkspaceSnapshot(
 			response.ItemActivity[i].Workspace = &workspaceCopy
 		}
 	}
-	if input.Projection != "events" && !input.InvolvesMe {
+	if input.Projection != "events" && (!input.InvolvesMe || input.Unassigned) {
+		// Hub-filtered rows already received their local workspace overlays above.
+		// Standalone local subjects can independently match the unassigned OR branch.
+		if input.InvolvesMe {
+			if err := s.retainUnassignedWorkspaceSubjects(ctx, &snapshot); err != nil {
+				return activityResponse{}, httpapi.Internal("list workspace activity failed")
+			}
+		}
 		opts, err := localWorkspaceActivityOptions(input, s.now())
 		if err != nil {
 			return activityResponse{}, err
@@ -1834,7 +1842,7 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		slog.Error("list workspace activity failed", "err", err)
 		return nil, httpapi.Internal("list workspace activity failed")
 	}
-	if opts.Unassigned {
+	if opts.Unassigned && opts.ViewerLogins == nil {
 		if err := s.retainUnassignedWorkspaceSubjects(ctx, &workspaceSnapshot); err != nil {
 			slog.Error("list unassigned workspace subjects failed", "err", err)
 			return nil, httpapi.Internal("list workspace activity failed")
@@ -1848,6 +1856,17 @@ func (s *Server) listActivityRouteCore(ctx context.Context, input *listActivityI
 		if err != nil {
 			slog.Error("list involved workspace subjects failed", "err", err)
 			return nil, httpapi.Internal("list workspace activity failed")
+		}
+		if opts.Unassigned {
+			unassignedSnapshot := workspaceSnapshot
+			unassignedSnapshot.Subjects = maps.Clone(workspaceSnapshot.Subjects)
+			unassignedSnapshot.OwnReferences = maps.Clone(workspaceSnapshot.OwnReferences)
+			if err := s.retainUnassignedWorkspaceSubjects(ctx, &unassignedSnapshot); err != nil {
+				return nil, httpapi.Internal("list workspace activity failed")
+			}
+			for _, key := range workspaceSnapshotSubjectKeys(unassignedSnapshot) {
+				involvedSubjects[key] = struct{}{}
+			}
 		}
 		for key := range workspaceSnapshot.Subjects {
 			if _, ok := involvedSubjects[key]; !ok {

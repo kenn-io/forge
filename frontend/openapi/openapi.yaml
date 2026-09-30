@@ -22197,6 +22197,13 @@ paths:
     get:
       operationId: list-pulls
       parameters:
+        - description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
+          explode: false
+          in: query
+          name: attributes
+          schema:
+            description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
+            type: string
         - description: Exact case-sensitive label name; applied before pagination.
           explode: false
           in: query

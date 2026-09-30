@@ -26258,6 +26258,7 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
+		"attributes":  {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
 		"label":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -37841,6 +37842,7 @@ func (c *Client) SetWorktreeSessionBackendRaw(ctx context.Context, httpClient *h
 func (c *Client) ListPullsRaw(ctx context.Context, httpClient *http.Client, options *ListPullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
+		"attributes":  {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
 		"label":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -44721,6 +44723,7 @@ func NewListPullsRequest(ctx context.Context, baseURL string, options *ListPulls
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
+		"attributes":  {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
 		"label":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -50233,6 +50236,9 @@ type ListUserRepositoriesQuery struct {
 }
 
 type ListPullsQuery struct {
+	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination.
+	Attributes *string `json:"attributes,omitempty"`
+
 	// Label Exact case-sensitive label name; applied before pagination.
 	Label *string `json:"label,omitempty"`
 

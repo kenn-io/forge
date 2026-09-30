@@ -286,8 +286,8 @@ Persisted controls must state their scope clearly.
   Activity. Each sends a pre-limit server query; only PR/issue subjects with an empty
   synchronized assignee set match (`frontend/src/lib/stores/unassigned-filter.ts`, `internal/db/queries_assignees.go::unassignedCondition`).
 - `Referenced by PR` is a browser-local Issues preference. Every issue-filter
-  presentation exposes the same control, and the server combines it with state,
-  repository, search, starred, and involvement filters before limits.
+  presentation exposes the same control; it ORs with involvement and unassigned
+  before limits, while state, repository, search, and starred constrain the results.
   (`frontend/src/lib/stores/issues.svelte.ts::createIssuesStore`)
 - `Referenced by PR` defaults off. Issue visibility reset clears it, and the
   compact `Reset view` action restores it with the other menu defaults.
@@ -1116,6 +1116,12 @@ action, or the two fight and the control renders the inverse of its real state.
 
 Not every visibility control means "remove this entity entirely."
 
+- PR inclusion options match any selected option, including involvement and
+  unassigned. Cross-section repository, state, search, starred, workflow, and workspace
+  filters still narrow the results (`internal/server/pullapi/routes.go::Handler.listPullsRouteCore`).
+- Activity involvement and unassigned match either selection for events, parents,
+  and workspace subjects; exclusions still narrow the results
+  (`internal/server/huma_routes.go::Server.listActivityRouteCore`).
 - PR stack trees stay inside the active filters and grouping; a filtered-out root
   must not reappear as context. Stack collapse affects keyboard order; repository
   and status group collapse retain their existing navigation behavior.

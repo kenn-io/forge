@@ -358,7 +358,7 @@ func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 	assert.Equal(7, candidates[0].Number)
 }
 
-func TestHubListFiltersForwardUnassignedAndPullLabel(t *testing.T) {
+func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	seen := make(map[string]bool)
@@ -369,6 +369,7 @@ func TestHubListFiltersForwardUnassignedAndPullLabel(t *testing.T) {
 		seen[request.URL.Path] = request.URL.Query().Get("unassigned") == "true"
 		if request.URL.Path == "/api/v1/pulls" {
 			assert.Equal("priority: high", request.URL.Query().Get("label"))
+			assert.Equal("failed_ci,draft", request.URL.Query().Get("attributes"))
 		}
 		body := "[]"
 		if request.URL.Path == "/api/v1/activity" {
@@ -382,7 +383,7 @@ func TestHubListFiltersForwardUnassignedAndPullLabel(t *testing.T) {
 		}, nil
 	})}
 
-	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Unassigned: true, Label: "priority: high"})
+	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Unassigned: true, Label: "priority: high", Attributes: "failed_ci,draft"})
 	require.NoError(err)
 	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Unassigned: true})
 	require.NoError(err)
@@ -468,6 +469,16 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 			ActivityAt: &now,
 		}
 	}
+
+	combined, err := srv.overlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&listActivityInput{Unassigned: true, InvolvesMe: true},
+		activityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	require.Len(combined.WorkspaceActivity, 1)
+	assert.Equal(1, combined.WorkspaceActivity[0].ItemNumber)
 
 	response, err := srv.overlayLocalActivityWorkspaceSnapshot(
 		t.Context(),

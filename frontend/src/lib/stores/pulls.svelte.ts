@@ -347,6 +347,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function toggleAttributeFilter(filter: PullAttributeFilter): void {
     attributeFilters = toggleFilterValue(attributeFilters, filter);
+    if (filter !== "has_workspace" && (involvesMe || unassigned)) loadPulls(activeListParams);
   }
 
   function toggleKanbanStatusFilter(status: KanbanStatus): void {
@@ -575,6 +576,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(filterStarred && { starred: true }),
       ...(involvesMe && { involves_me: true }),
       ...(unassigned && { unassigned: true }),
+      ...((involvesMe || unassigned) &&
+        attributeFilters.some((filter) => filter !== "has_workspace") && {
+          attributes: attributeFilters.filter((filter) => filter !== "has_workspace").join(","),
+        }),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
@@ -620,6 +625,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
         ...(filterStarred && { starred: true }),
         ...(involvesMe && { involves_me: true }),
         ...(unassigned && { unassigned: true }),
+        ...((involvesMe || unassigned) &&
+          attributeFilters.some((filter) => filter !== "has_workspace") && {
+            attributes: attributeFilters.filter((filter) => filter !== "has_workspace").join(","),
+          }),
         ...(searchQuery !== undefined && { q: searchQuery }),
         ...params,
       };
@@ -661,8 +670,15 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function matchesAttributeFilters(pr: PullRequest): boolean {
-    if (attributeFilters.length === 0) return true;
-    return attributeFilters.every((filter) => matchesAttributeFilter(pr, filter));
+    if (attributeFilters.includes("has_workspace") && pr.workspace === undefined) return false;
+    const prFilters = attributeFilters.filter((filter) => filter !== "has_workspace");
+    // The server unions involvement/assignment matches with PR attributes before pagination.
+    return (
+      involvesMe ||
+      unassigned ||
+      prFilters.length === 0 ||
+      prFilters.some((filter) => matchesAttributeFilter(pr, filter))
+    );
   }
 
   function matchesAttributeFilter(pr: PullRequest, filter: PullAttributeFilter): boolean {

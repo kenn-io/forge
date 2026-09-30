@@ -1761,9 +1761,6 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	if opts.Starred {
 		conds = append(conds, "s.number IS NOT NULL")
 	}
-	if opts.Unassigned {
-		conds = append(conds, unassignedCondition("p"))
-	}
 	if opts.Search != "" {
 		// Zero padding opts into an exact PR number before pagination, so old
 		// PRs remain reachable without changing ordinary substring searches.
@@ -1777,8 +1774,15 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			args = append(args, condArgs...)
 		}
 	}
+	var inclusion []string
+	if opts.Unassigned {
+		inclusion = append(inclusion, unassignedCondition("p"))
+	}
 	if opts.ViewerLogins != nil {
-		conds = append(conds, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &args))
+		inclusion = append(inclusion, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &args))
+	}
+	if len(inclusion) > 0 {
+		conds = append(conds, "("+strings.Join(inclusion, " OR ")+")")
 	}
 
 	where := ""
@@ -3070,9 +3074,6 @@ func (d *DB) ListIssues(
 	if opts.Starred {
 		conds = append(conds, "s.number IS NOT NULL")
 	}
-	if opts.Unassigned {
-		conds = append(conds, unassignedCondition("i"))
-	}
 	if opts.Search != "" {
 		cond, condArgs := listSearchCondition("i", opts.Search)
 		if cond != "" {
@@ -3088,14 +3089,21 @@ func (d *DB) ListIssues(
 		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(COALESCE(NULLIF(i.assignees_json, ''), '[]')) WHERE value = ?)`)
 		args = append(args, opts.Assignee)
 	}
+	var inclusion []string
+	if opts.Unassigned {
+		inclusion = append(inclusion, unassignedCondition("i"))
+	}
 	if opts.ViewerLogins != nil {
-		conds = append(conds, issueInvolvementCondition("i", opts.ViewerLogins, &args))
+		inclusion = append(inclusion, issueInvolvementCondition("i", opts.ViewerLogins, &args))
 	}
 	if opts.ReferencedByPR {
-		conds = append(conds, `EXISTS (
+		inclusion = append(inclusion, `EXISTS (
 			SELECT 1 FROM forge_issue_pr_references ref
 			WHERE ref.issue_id = i.id
 		)`)
+	}
+	if len(inclusion) > 0 {
+		conds = append(conds, "("+strings.Join(inclusion, " OR ")+")")
 	}
 
 	where := ""

@@ -4,6 +4,10 @@
 
 export type ListPullsParams = {
   /**
+   * Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination.
+   */
+  attributes?: string;
+  /**
    * Exact case-sensitive label name; applied before pagination.
    */
   label?: string;

@@ -40,6 +40,7 @@ const (
 )
 
 type listPullsInput struct {
+	Attributes string `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
 	Label      string `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string `query:"state"`
@@ -365,7 +366,7 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 	query := ListQuery{
 		Repo: input.Repo, State: input.State, Kanban: input.Kanban,
 		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q,
-		Label: input.Label, Limit: input.Limit, Offset: input.Offset,
+		Label: input.Label, Attributes: input.Attributes, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []MergeRequestResponse
 	var err error
@@ -395,6 +396,18 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 	}
 	if hasInvalidRepoFilter(input.Repo) {
 		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
+	}
+
+	var attributes []string
+	if input.Attributes != "" {
+		attributes = strings.Split(input.Attributes, ",")
+		for _, attribute := range attributes {
+			switch attribute {
+			case "approved", "draft", "ready", "merge_conflicts", "failed_ci":
+			default:
+				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
+			}
+		}
 	}
 
 	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
@@ -441,6 +454,21 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		}
 	}
 
+	visibilityMatches := make(map[int64]bool)
+	if len(attributes) > 0 {
+		opts.Limit, opts.Offset = 0, 0
+		if opts.ViewerLogins != nil || opts.Unassigned {
+			matches, err := s.db.ListMergeRequests(ctx, opts)
+			if err != nil {
+				return nil, httpapi.Internal("list pulls failed")
+			}
+			for _, mr := range matches {
+				visibilityMatches[mr.ID] = true
+			}
+		}
+		opts.ViewerLogins, opts.Unassigned = nil, false
+	}
+
 	mrs, err := s.db.ListMergeRequests(ctx, opts)
 	if err != nil {
 		return nil, httpapi.Internal("list pulls failed")
@@ -483,6 +511,9 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 			responseMR.MergeableState = "dirty"
 		}
 		responseMR = mergeRequestResponseModel(responseMR)
+		if len(attributes) > 0 && !visibilityMatches[mr.ID] && !matchesPullAttributes(responseMR, attributes) {
+			continue
+		}
 		key := db.WorkspaceSubjectKey{RepoID: mr.RepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: mr.Number}
 		var workspaceRef *workspaceapi.WorkspaceRef
 		if activity, ok := snapshot.Subjects[key]; ok {
@@ -511,6 +542,12 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		out = append(out, resp)
 	}
 
+	if len(attributes) > 0 {
+		out = out[min(max(input.Offset, 0), len(out)):]
+		if input.Limit > 0 {
+			out = out[:min(input.Limit, len(out))]
+		}
+	}
 	return &listPullsOutput{Body: out}, nil
 }
 

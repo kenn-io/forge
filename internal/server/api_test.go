@@ -2054,6 +2054,30 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 	for _, item := range activity.Items {
 		assert.Contains([]int{1, 3}, item.ItemNumber)
 	}
+	_, err = database.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET assignees_json = CASE WHEN number = 2 THEN '[]' ELSE '["other"]' END`)
+	require.NoError(err)
+	_, err = database.WriteDB().ExecContext(ctx, `UPDATE forge_issues SET assignees_json = CASE WHEN number = 4 THEN '[]' ELSE '["other"]' END`)
+	require.NoError(err)
+	seedWorkspace(t, database, "ws-involved-pr", "acme", "widget", "pull_request", 1)
+	seedWorkspace(t, database, "ws-unassigned-pr", "acme", "widget", "pull_request", 2)
+	seedWorkspace(t, database, "ws-involved-issue", "acme", "widget", "issue", 3)
+	seedWorkspace(t, database, "ws-unassigned-issue", "acme", "widget", "issue", 4)
+	for _, path := range []string{"/api/v1/pulls?state=all", "/api/v1/issues?state=all", "/api/v1/activity?projection=collapsed"} {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, path+"&involves_me=true&unassigned=true", nil)
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		if strings.Contains(path, "activity") {
+			var body activityResponse
+			require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+			assert.Len(body.ItemActivity, 4)
+			for _, item := range body.ItemActivity {
+				assert.NotNil(item.Workspace, "both involvement and unassigned matches retain workspace metadata")
+			}
+		} else {
+			var rows []json.RawMessage
+			require.NoError(json.Unmarshal(rr.Body.Bytes(), &rows))
+			assert.Len(rows, 2)
+		}
+	}
 	assert.Equal(1, mock.authenticatedViewerCalls,
 		"viewer identity should be shared by concurrent view requests during the cache TTL")
 }
@@ -2133,6 +2157,11 @@ func TestAPIListIssuesFiltersPullRequestReferences(t *testing.T) {
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &issues))
 	require.Len(issues, 1)
 	require.Equal(1, issues[0].Number)
+
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues?referenced_by_pr=true&unassigned=true", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &issues))
+	require.Len(issues, 2)
 }
 
 func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
@@ -30594,4 +30623,48 @@ func TestSyncIssueUntrackedRepoReturnsForbidden(t *testing.T) {
 	require.NotNil(resp)
 	require.Equal(http.StatusForbidden, resp.StatusCode, string(resp.Body))
 	require.Contains(string(resp.Body), "not tracked")
+}
+
+func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
+	runParallelServerTest(t)
+	srv, database := setupTestServerWithMock(t, &mockGH{authenticatedViewerLoginFn: func(context.Context) (string, error) { return "viewer", nil }})
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	for number := 1; number <= 4; number++ {
+		author := "other"
+		if number == 1 {
+			author = "viewer"
+		}
+		id := seedPR(t, database, "acme", "widget", number, withSeedPRAuthor(author), withSeedPRTimes(now, now, now.Add(time.Duration(number)*time.Minute)))
+		assignees := `["other"]`
+		if number == 2 {
+			assignees = `[]`
+		}
+		status := "success"
+		if number == 3 {
+			status = "failure"
+		}
+		_, err := database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET assignees_json = ?, ci_status = ? WHERE id = ?", assignees, status, id)
+		require.NoError(t, err)
+	}
+	for _, tc := range []struct {
+		query string
+		want  []int
+	}{
+		{"involves_me=true&unassigned=true&attributes=failed_ci", []int{3, 2, 1}},
+		{"involves_me=true&unassigned=true&attributes=failed_ci&limit=2&offset=1", []int{2, 1}},
+		{"attributes=failed_ci,draft", []int{3}},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+tc.query, nil)
+			require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+			var rows []pullapi.MergeRequestResponse
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rows))
+			numbers := make([]int, 0, len(rows))
+			for _, row := range rows {
+				numbers = append(numbers, row.Number)
+			}
+			assert.Equal(t, tc.want, numbers)
+		})
+	}
 }

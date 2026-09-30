@@ -170,9 +170,6 @@ func listActivityWithQueryer(
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
 	}
-	if opts.Unassigned {
-		whereClauses = append(whereClauses, activityUnassignedCondition())
-	}
 	if opts.HideClosedMerged {
 		whereClauses = append(whereClauses,
 			"((source = 'ntf' AND (subject_state = '' OR subject_state NOT IN ('closed', 'merged'))) OR "+
@@ -206,8 +203,15 @@ func listActivityWithQueryer(
 		whereClauses = append(whereClauses,
 			"("+strings.Join(directConditions, " OR ")+")")
 	}
+	var inclusion []string
+	if opts.Unassigned {
+		inclusion = append(inclusion, activityUnassignedCondition())
+	}
 	if opts.ViewerLogins != nil {
-		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
+		inclusion = append(inclusion, activityInvolvementCondition(opts.ViewerLogins, &args))
+	}
+	if len(inclusion) > 0 {
+		whereClauses = append(whereClauses, "("+strings.Join(inclusion, " OR ")+")")
 	}
 
 	// Time window filter.
@@ -671,17 +675,21 @@ func listActivitySubjectsWithQueryer(
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
 	}
-	if opts.Unassigned {
-		whereClauses = append(whereClauses, activityUnassignedCondition())
-	}
 	if opts.HideClosedMerged {
 		whereClauses = append(whereClauses, "item_state NOT IN ('closed', 'merged')")
 	}
 	if opts.HideBots {
 		whereClauses = append(whereClauses, activityNotBotCondition("item_author"))
 	}
+	var inclusion []string
+	if opts.Unassigned {
+		inclusion = append(inclusion, activityUnassignedCondition())
+	}
 	if opts.ViewerLogins != nil {
-		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
+		inclusion = append(inclusion, activityInvolvementCondition(opts.ViewerLogins, &args))
+	}
+	if len(inclusion) > 0 {
+		whereClauses = append(whereClauses, "("+strings.Join(inclusion, " OR ")+")")
 	}
 	if opts.Since != nil {
 		whereClauses = append(whereClauses, "activity_at >= ?")

@@ -51,7 +51,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(serverfake.RunMain(m))
+	os.Exit(serverfake.RunMain(m, func() int { return gitsafe.RunIsolatedMain(m) }))
 }
 
 func seedPRWithHeadSHA(t *testing.T, database *db.DB, owner, name string, number int, headSHA string) int64 {

@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
 
@@ -36,7 +37,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(serverfake.RunMain(m))
+	os.Exit(serverfake.RunMain(m, func() int { return gitsafe.RunIsolatedMain(m) }))
 }
 
 func requirePTYAvailable(t *testing.T) {

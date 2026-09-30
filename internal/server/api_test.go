@@ -82,7 +82,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(serverfake.RunMain(m))
+	os.Exit(serverfake.RunMain(m, func() int { return gitsafe.RunIsolatedMain(m) }))
 }
 
 func runParallelServerTest(t *testing.T) {

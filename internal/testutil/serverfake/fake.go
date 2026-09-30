@@ -37,7 +37,6 @@ import (
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/processjob"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/testsignal"
@@ -2176,8 +2175,9 @@ func WithSeedPRTitle(title string) SeedPROpt {
 
 // RunMain runs a server test binary inside a private tmux owner and a
 // contained process tree, and cleans both up. Test packages that start real
-// servers call it from TestMain.
-func RunMain(m *testing.M) int {
+// servers call it from TestMain. run executes the tests; callers pass
+// gitsafe.RunIsolatedMain so the Git isolation stays visible in TestMain.
+func RunMain(m *testing.M, run func() int) int {
 	if code, ok := testtmux.CommandWrapperExitCode(); ok {
 		return code
 	}
@@ -2205,7 +2205,7 @@ func RunMain(m *testing.M) int {
 	}, func(err error) {
 		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
 	})
-	code := gitsafe.RunIsolatedMain(m)
+	code := run()
 	if err := runCleanup(); err != nil {
 		fmt.Fprintf(os.Stderr, "cleanup kenn-forge test tmux sessions: %v\n", err)
 		if code == 0 {

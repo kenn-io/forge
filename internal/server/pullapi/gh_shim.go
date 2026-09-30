@@ -48,7 +48,7 @@ func (s *Handler) ghShim(ctx context.Context, input *ghShimInput) (*ghShimOutput
 		}
 	} else {
 		// Spokes retain repository config and data but have no provider syncer.
-		candidate := ghclient.RepoRef{Platform: platform.KindGitHub, PlatformHost: repo.PlatformHost, PlatformRepoID: repo.PlatformRepoID, Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath}
+		candidate := ghclient.RepoRef{Platform: platform.KindGitHub, PlatformHost: repo.PlatformHost, Key: repo.Key, Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath}
 		for _, configured := range s.ConfigSnapshot().Repositories {
 			for _, ref := range ghclient.FallbackConfiguredRepoRefs([]ghclient.RepoRef{candidate}, configured) {
 				if ref.Identity() == repo.Identity() {

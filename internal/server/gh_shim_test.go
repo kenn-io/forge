@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 )
 
 func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
@@ -70,7 +71,9 @@ func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
 	// Reuse the hub's route for a different repository: the spoke must not
 	// serve that repository's pull request as its tracked one.
 	replacement := db.GitHubRepoIdentity("github.com", "acme", "widget")
-	replacement.PlatformRepoID = serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget").PlatformRepoID + 1
+	widgetID, ok := serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget").Key.ID()
+	require.True(ok)
+	replacement.Key = platform.RepositoryIDKey(widgetID + 1)
 	replacementID, err := reposeed.Seed(t.Context(), hubDB, replacement)
 	require.NoError(err)
 	serverfake.SeedPR(t, hubDB, "acme", "widget", 9, func(pr *db.MergeRequest) { pr.RepoID = replacementID })
@@ -88,18 +91,18 @@ func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
 func TestGHShimHubRequiresConfiguredProviderIdentity(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
-		providerID int64
+		providerID platform.RepositoryKey
 		handled    bool
 		reason     string
 	}{
-		{"configured identity", serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget").PlatformRepoID, true, "served"},
-		{"reused route", serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget").PlatformRepoID + 1, false, "untracked"},
+		{"configured identity", serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget").Key, true, "served"},
+		{"reused route", replacedWidgetKey(t), false, "untracked"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			configured := serverfake.DefaultTestRepos[0]
-			configured.PlatformRepoID = tc.providerID
+			configured.Key = tc.providerID
 			hub, database, _ := setupTestServerWithRepos(t, &serverfake.MockGH{}, []ghclient.RepoRef{configured})
 			serverfake.SeedPR(t, database, "acme", "widget", 7)
 			response := testutil.DoJSON(t, hub, http.MethodPost, "/api/v1/gh/query", ghshim.Query{Command: "view", Host: "github.com", Owner: "acme", Repo: "widget", Number: 7, State: "open", Limit: 30, Fields: []string{"number"}})
@@ -201,4 +204,12 @@ func TestGHShimServesHistoricalListsOnlyAfterFullArchiveLoads(t *testing.T) {
 	handled, output, reason := listClosed()
 	require.True(handled, reason)
 	assert.JSONEq(`[{"number":8}]`, output)
+}
+
+// replacedWidgetKey is the key of a different repository at the widget route.
+func replacedWidgetKey(t *testing.T) platform.RepositoryKey {
+	t.Helper()
+	widgetID, ok := serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget").Key.ID()
+	require.True(t, ok)
+	return platform.RepositoryIDKey(widgetID + 1)
 }

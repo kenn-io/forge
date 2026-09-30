@@ -28,7 +28,6 @@ type ProviderRouteRule struct {
 // make an explicit ownership decision before the coverage gate passes.
 var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "test-acp-agent", Owner: NodeLocal},
-	{OperationID: "federation-query-workspace-provider-state", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "update-workspace-view-state", Owner: NodeLocal},
 	{OperationID: "get-workspace-view-state", Owner: NodeLocal},
 	{OperationID: "update-fleet-workspace-view-state", Owner: NodeLocal},

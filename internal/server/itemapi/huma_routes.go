@@ -369,8 +369,9 @@ func (s *Handlers) WorkspaceActivityResponse(
 	for _, repoID := range opts.AllowedRepoIDs {
 		allowedRepoIDs[repoID] = struct{}{}
 	}
+	searchQuery := db.ParseSearchQuery(opts.Search)
 	matchedSubjects := make(map[db.WorkspaceSubjectKey]struct{})
-	if opts.Search != "" {
+	if len(searchQuery.Include) > 0 {
 		for _, item := range providerItems {
 			itemType := WorkspaceItemTypeFromActivity(item.ItemType)
 			if itemType == "" {
@@ -408,12 +409,16 @@ func (s *Handlers) WorkspaceActivityResponse(
 		if opts.Author != "" && !strings.EqualFold(subject.Author, opts.Author) {
 			continue
 		}
-		if opts.Search != "" {
-			haystack := strings.ToLower(strings.Join([]string{
+		if !searchQuery.Empty() {
+			fields := []string{
 				subject.Title, subject.Author, subject.RepoOwner + "/" + subject.RepoName,
 				subject.RepoPath, "#" + strconv.Itoa(key.ItemNumber),
-			}, " "))
-			if !matchedProviderEvent && !strings.Contains(haystack, opts.Search) {
+			}
+			// Excluded terms always apply to the subject's own fields; a
+			// matching provider event only satisfies the included terms.
+			included := matchedProviderEvent ||
+				(db.SearchQuery{Include: searchQuery.Include}).Matches(fields...)
+			if !included || !(db.SearchQuery{Exclude: searchQuery.Exclude}).Matches(fields...) {
 				continue
 			}
 		}

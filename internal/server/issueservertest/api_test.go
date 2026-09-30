@@ -71,6 +71,9 @@ func setupTestServerWithReposAndOptions(
 		if repo.PlatformRepoID == 0 {
 			repo.PlatformRepoID = testutil.FixtureRepoID(repo.Owner, repo.Name)
 		}
+		if mock != nil {
+			mock.KnowRoute(repo.PlatformRepoID, repo.Owner, repo.Name)
+		}
 		_, err := reposeed.Seed(
 			t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
 				Platform:   platform.Kind(cmp.Or(string(repo.Platform), "github")),

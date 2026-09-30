@@ -566,6 +566,8 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 			Platform:       "gitlab",
 			PlatformHost:   "gitlab.example.com",
 			PlatformRepoID: 42,
+			Owner:          "group",
+			Name:           "project",
 			RepoPath:       "group/project",
 		})
 		require.NoError(err)
@@ -631,6 +633,8 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 			Platform:       "gitlab",
 			PlatformHost:   "gitlab.example.com",
 			PlatformRepoID: 42,
+			Owner:          "group",
+			Name:           "project",
 			RepoPath:       "group/project",
 		})
 		require.NoError(err)

@@ -39,7 +39,7 @@ func ValidateMCPRepositoryIdentity(identity mcpserver.RepositoryIdentity) error 
 			Message: "provider is required",
 		}
 	}
-	if identity.PlatformRepoID == 0 {
+	if identity.PlatformRepoID <= 0 {
 		return &mcpserver.Error{
 			Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
 			Message: "platform_repo_id is required",

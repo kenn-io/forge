@@ -508,7 +508,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 		HideTmuxStatus:   true,
 		Graphics:         new(true),
 		TmuxMouse:        new(false),
-		RetainedSessions: new(4),
+		RetainedSessions: new(50),
 	}
 	body := spokeapi.UpdateSettingsRequest{
 		Activity:   &activity,
@@ -541,7 +541,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 	require.NotNil(cfg2.Terminal.Graphics)
 	assert.True(*cfg2.Terminal.Graphics)
 	require.NotNil(cfg2.Terminal.RetainedSessions)
-	assert.Equal(4, *cfg2.Terminal.RetainedSessions)
+	assert.Equal(50, *cfg2.Terminal.RetainedSessions)
 }
 
 func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {
@@ -660,9 +660,10 @@ func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 		Label:   "Codex with flags",
 		Command: []string{"/opt/codex", "--full-auto", "--search"},
 	}, {
-		Key:     "notes",
-		Label:   "Notes",
-		Command: []string{"/usr/local/bin/notes-agent", "--draft"},
+		Key:      "notes",
+		Protocol: "acp",
+		Label:    "Notes",
+		Command:  []string{"/usr/local/bin/notes-agent", "--draft"},
 	}, {
 		Key:     "claude",
 		Label:   "Claude",
@@ -684,6 +685,7 @@ func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 		cfg2.Agents[0].Command,
 	)
 	assert.Equal("notes", cfg2.Agents[1].Key)
+	assert.Equal("acp", cfg2.Agents[1].Protocol)
 	assert.False(cfg2.Agents[2].EnabledOrDefault())
 }
 
@@ -891,7 +893,7 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
 			return &gh.Repository{
-				NodeID:   new("repo-acme-" + repo),
+				ID:       new(testutil.FixtureRepoID("acme", repo)),
 				Name:     new(repo),
 				Owner:    &gh.User{Login: new(owner)},
 				Archived: new(repo == "widget" && archivedNow.Load()),
@@ -902,13 +904,13 @@ func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
 		) ([]*gh.Repository, error) {
 			return []*gh.Repository{
 				{
-					NodeID:   new("repo-acme-widget"),
+					ID:       new(testutil.FixtureRepoID("acme", "widget")),
 					Name:     new("widget"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(archivedNow.Load()),
 				},
 				{
-					NodeID:   new("repo-acme-tools"),
+					ID:       new(testutil.FixtureRepoID("acme", "tools")),
 					Name:     new("tools"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -1260,14 +1262,12 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 			repos := []*gh.Repository{
 				{
 					ID:       new(int64(101)),
-					NodeID:   new("repo-101"),
 					Name:     new("kenn-forge"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
 				},
 				{
 					ID:       new(int64(102)),
-					NodeID:   new("repo-102"),
 					Name:     new("archived"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(true),
@@ -1276,7 +1276,6 @@ func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
 			if includeRefreshRepo.Load() {
 				repos = append(repos, &gh.Repository{
 					ID:       new(int64(103)),
-					NodeID:   new("repo-103"),
 					Name:     new("review-bot"),
 					Owner:    &gh.User{Login: new(owner)},
 					Archived: new(false),
@@ -1456,12 +1455,12 @@ name = "*"
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 			PlatformHost: "github.com", RepoPath: "acme/tools-new",
-			PlatformRepoID: 1101, ConfiguredRepoPath: "acme/tools",
+			PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 		},
 		{
 			Platform: platform.KindGitHub, Owner: "acme", Name: "widgets",
 			PlatformHost: "github.com", RepoPath: "acme/widgets",
-			PlatformRepoID: 1102,
+			PlatformRepoID: 1003,
 		},
 	})
 
@@ -1512,7 +1511,7 @@ name = "*"
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1101, ConfiguredRepoPath: "acme/tools",
+		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// Removing the exact entry keeps the repo through the glob, but its
@@ -1570,7 +1569,7 @@ platform_host = "ghe.example.com"
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1101, ConfiguredRepoPath: "acme/tools",
+		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// The remaining acme/tools entry lives on a different host; it cannot
@@ -1628,7 +1627,7 @@ name = "tools"
 	syncer.SetRepos([]ghclient.RepoRef{{
 		Platform: platform.KindGitHub, Owner: "acme", Name: "tools-new",
 		PlatformHost: "github.com", RepoPath: "acme/tools-new",
-		PlatformRepoID: 1101, ConfiguredRepoPath: "acme/tools",
+		PlatformRepoID: 1001, ConfiguredRepoPath: "acme/tools",
 	}})
 
 	// The remaining acme/tools entry shares the host but belongs to a

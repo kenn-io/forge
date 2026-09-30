@@ -744,7 +744,7 @@ func (b mcpBackend) resolveRepository(
 		PlatformRepoID: identity.PlatformRepoID,
 	})
 	if err != nil {
-		return nil, mcpapi.McpBackendError(httpapi.ProviderRouteLookupError(err))
+		return nil, mcpapi.McpBackendError(httpapi.Internal("look up repository failed"))
 	}
 	if repo == nil {
 		return nil, mcpapi.McpRepositoryIdentityChangedError()

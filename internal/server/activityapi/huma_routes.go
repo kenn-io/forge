@@ -60,7 +60,7 @@ type GetRepoCommitDiffHostInput struct {
 
 type GetRepoCommitDiffOutput = httpapi.BodyOutput[itemapi.DiffResponse]
 
-type listReposOutput = httpapi.BodyOutput[[]itemapi.RepoResponse]
+type listReposOutput = httpapi.BodyOutput[[]itemapi.RepoCatalogResponse]
 
 type listRepoSummariesOutput = httpapi.BodyOutput[[]itemapi.RepoSummaryResponse]
 
@@ -252,9 +252,9 @@ func (s *Handlers) ListRepos(ctx context.Context, _ *struct{}) (*listReposOutput
 		return nil, httpapi.Internal(err.Error())
 	}
 
-	out := make([]itemapi.RepoResponse, 0, len(repos))
+	out := make([]itemapi.RepoCatalogResponse, 0, len(repos))
 	for _, repo := range repos {
-		out = append(out, s.RepoResponse(repo))
+		out = append(out, itemapi.RepoCatalog(repo))
 	}
 
 	return &listReposOutput{Body: out}, nil
@@ -791,7 +791,7 @@ func localWorkspaceActivityOptions(input *itemapi.ListActivityInput, now time.Ti
 	opts := db.ListActivityOpts{
 		RepoFilters: itemapi.ParseRepoFilters(input.Repo),
 		ItemTypes:   input.ItemTypes,
-		Search:      strings.ToLower(strings.TrimSpace(input.Search)),
+		Search:      strings.TrimSpace(input.Search),
 		Author:      strings.TrimSpace(input.Author),
 		Unassigned:  input.Unassigned,
 	}
@@ -876,7 +876,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		RepoFilters: itemapi.ParseRepoFilters(input.Repo),
 		Types:       input.Types,
 		ItemTypes:   input.ItemTypes,
-		Search:      strings.ToLower(strings.TrimSpace(input.Search)),
+		Search:      strings.TrimSpace(input.Search),
 		Author:      strings.TrimSpace(input.Author),
 		Unassigned:  input.Unassigned,
 		// Notifications are always on; this only drops notification rows in
@@ -999,8 +999,11 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 	workspaceEventItems := items
+	// Only included terms can surface a parent through its events; excluded
+	// terms filter parents by their own fields in ListActivitySubjects.
+	searchHasIncludes := len(db.ParseSearchQuery(opts.Search).Include) > 0
 	hasFullWorkspaceEventItems := projection != "events" &&
-		opts.Search != "" && (opts.AfterTime != nil || projection == "collapsed")
+		searchHasIncludes && (opts.AfterTime != nil || projection == "collapsed")
 	if hasFullWorkspaceEventItems {
 		workspaceOpts := opts
 		workspaceOpts.AfterTime = nil
@@ -1016,9 +1019,9 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 	// Search-matched parents are derived from the bounded event read, so an
 	// event page that overflowed can hide parents whose only matches fell off
 	// it; report that as parent truncation rather than a complete snapshot.
-	searchMatchesTruncated := opts.Search != "" && len(workspaceEventItems) > itemapi.ActivitySafetyCap
+	searchMatchesTruncated := searchHasIncludes && len(workspaceEventItems) > itemapi.ActivitySafetyCap
 	var searchMatchedSubjectKeys []db.WorkspaceSubjectKey
-	if opts.Search != "" {
+	if searchHasIncludes {
 		searchMatchedSubjectKeys = make([]db.WorkspaceSubjectKey, 0, len(workspaceEventItems))
 		for _, item := range workspaceEventItems {
 			if item.ItemType != "pr" && item.ItemType != "issue" {
@@ -1051,9 +1054,6 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			slog.Error("list activity subjects failed", "err", err)
 			return nil, httpapi.Internal("list activity failed")
 		}
-	}
-	if (*s.ActivityAfterItemsForTest) != nil {
-		(*s.ActivityAfterItemsForTest)()
 	}
 	workspaceSnapshot, err := (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(ctx)
 	if err != nil {

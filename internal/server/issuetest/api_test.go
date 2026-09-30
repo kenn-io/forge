@@ -1244,6 +1244,13 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 		},
 	}
 	ghesClient := &serverfake.MockGH{
+		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			return &gh.Repository{
+				ID:    new(serverfake.VerifiedGitHubRepoIdentity("ghe.example.com", owner, repo).PlatformRepoID),
+				Name:  &repo,
+				Owner: &gh.User{Login: &owner}, Archived: new(false),
+			}, nil
+		},
 		GetIssueFn: func(_ context.Context, owner, repo string, number int) (*gh.Issue, error) {
 			title := "GHES synced issue"
 			state := "open"

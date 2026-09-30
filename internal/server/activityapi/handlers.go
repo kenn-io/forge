@@ -23,7 +23,6 @@ import (
 // handlers use. The server package builds it in wireHandlers and shares
 // mutable server fields by pointer.
 type Handlers struct {
-	ActivityAfterItemsForTest             *func()
 	Cfg                                   **config.Config
 	CfgMu                                 *sync.Mutex
 	Clones                                *gitclone.Manager

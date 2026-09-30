@@ -66,6 +66,9 @@ func setupTestServerWithReposAndOptions(
 		if repo.PlatformRepoID == 0 {
 			repo.PlatformRepoID = testutil.FixtureRepoID(repo.Owner, repo.Name)
 		}
+		if mock != nil {
+			mock.KnowRoute(repo.PlatformRepoID, repo.Owner, repo.Name)
+		}
 		_, err := reposeed.Seed(
 			t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
 				Platform:   platform.Kind(cmp.Or(string(repo.Platform), "github")),
@@ -1081,10 +1084,9 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	}
 	mock := &serverfake.MockGH{
 		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
-			nodeID := "repo-" + owner + "-" + repo
 			return &gh.Repository{
 				Name:     &repo,
-				NodeID:   &nodeID,
+				ID:       new(testutil.FixtureRepoID(owner, repo)),
 				Owner:    &gh.User{Login: &owner},
 				CloneURL: &repoCloneURL,
 				Archived: new(false),
@@ -1150,9 +1152,8 @@ func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
 	}
 	mock := &serverfake.MockGH{
 		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
-			nodeID := "repo-" + owner + "-" + repo
 			return &gh.Repository{
-				Name: &repo, NodeID: &nodeID, Owner: &gh.User{Login: &owner},
+				Name: &repo, ID: new(testutil.FixtureRepoID(owner, repo)), Owner: &gh.User{Login: &owner},
 				CloneURL: &repoCloneURL, Archived: new(false),
 			}, nil
 		},
@@ -1231,10 +1232,9 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing
 	}
 	mock := &serverfake.MockGH{
 		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
-			nodeID := "repo-" + owner + "-" + repo
 			return &gh.Repository{
 				Name:     &repo,
-				NodeID:   &nodeID,
+				ID:       new(testutil.FixtureRepoID(owner, repo)),
 				Owner:    &gh.User{Login: &owner},
 				CloneURL: &repoCloneURL,
 				Archived: new(false),
@@ -1304,10 +1304,9 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
 	}
 	mock := &serverfake.MockGH{
 		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
-			nodeID := "repo-" + owner + "-" + repo
 			return &gh.Repository{
 				Name:     &repo,
-				NodeID:   &nodeID,
+				ID:       new(testutil.FixtureRepoID(owner, repo)),
 				Owner:    &gh.User{Login: &owner},
 				CloneURL: &repoCloneURL,
 				Archived: new(false),

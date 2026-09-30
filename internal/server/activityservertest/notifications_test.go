@@ -19,7 +19,6 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/notificationapi"
-	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
@@ -580,7 +579,7 @@ func TestNotificationsAPIRouteFieldsFollowRepositoryRename(t *testing.T) {
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	_, err := database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
+		PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 	})
 	require.NoError(err)
 	number := 42
@@ -604,7 +603,7 @@ func TestNotificationsAPIRouteFieldsFollowRepositoryRename(t *testing.T) {
 	}}))
 	_, err = database.ObserveRepository(t.Context(), db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "gadget",
+		PlatformRepoID: 1001, Owner: "acme", Name: "gadget",
 	})
 	require.NoError(err)
 

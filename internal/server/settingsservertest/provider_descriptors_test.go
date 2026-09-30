@@ -18,7 +18,6 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
-	"go.kenn.io/forge/internal/testutil"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/tokenauth"
 )
@@ -46,7 +45,7 @@ func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
 		Version: db.WorkspaceLaunchSpecVersion,
 		Repository: db.WorkspaceLaunchRepository{
 			Provider: "github", PlatformHost: "github.com",
-			PlatformRepoID: testutil.FixtureRepoID("acme", "widget"), Owner: "acme", Name: "widget",
+			PlatformRepoID: 1001, Owner: "acme", Name: "widget",
 			CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
 		},
 		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,

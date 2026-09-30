@@ -216,9 +216,6 @@ type Server struct {
 	spokeActivationLease   *spokeapi.HubEventLifecycle
 	providerRouteSpoke     bool
 	providerWriteGate      *providerplane.ProviderWriteGate
-	// activityAfterItemsForTest pauses Activity between its two identity reads
-	// so tests can prove the request-wide repository reconciliation fence.
-	activityAfterItemsForTest func()
 	// providerDescriptorBeforeSnapshotForTest marks descriptor admission before
 	// the reconciliation lease so tests can queue an identity writer first.
 	providerDescriptorBeforeSnapshotForTest func()

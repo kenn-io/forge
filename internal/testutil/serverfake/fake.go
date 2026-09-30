@@ -800,12 +800,11 @@ name = "widget"
 
 var DefaultTestRepos = []ghclient.RepoRef{
 	{
-		Platform:       "github",
-		Owner:          "acme",
-		Name:           "widget",
-		PlatformHost:   "github.com",
-		PlatformRepoID: testutil.FixtureRepoID("acme", "widget"),
-		CloneURL:       "https://github.com/acme/widget.git",
+		Platform:     "github",
+		Owner:        "acme",
+		Name:         "widget",
+		PlatformHost: "github.com",
+		CloneURL:     "https://github.com/acme/widget.git",
 	},
 }
 
@@ -1916,7 +1915,7 @@ func SeedRepoLaunchMetadata(t *testing.T, database *db.DB, repoID int64) {
 	repo, err := database.GetRepoByID(ctx, repoID)
 	require.NoError(t, err)
 	require.NotNil(t, repo)
-	require.NotEmpty(t, repo.PlatformRepoID)
+	require.NotZero(t, repo.PlatformRepoID)
 
 	cloneURL := strings.TrimSpace(repo.CloneURL)
 	if cloneURL == "" {
@@ -2032,12 +2031,8 @@ func SeedVerifiedRepo(
 	t *testing.T, database *db.DB, identity db.RepoIdentity,
 ) {
 	t.Helper()
-	if identity.PlatformRepoID == 0 {
-		identity.PlatformRepoID = reposeed.SyntheticID(identity)
-	}
-	entry, err := database.ObserveRepository(t.Context(), identity)
+	_, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
-	require.NotNil(t, entry)
 }
 
 func SeedWorkspace(

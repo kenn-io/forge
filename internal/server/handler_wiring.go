@@ -27,19 +27,18 @@ import (
 // Mutable fields are shared by pointer so reloads and locks stay global.
 func (s *Server) wireHandlers() {
 	s.activityapi = &activityapi.Handlers{
-		ActivityAfterItemsForTest: &s.activityAfterItemsForTest,
-		Cfg:                       &s.cfg,
-		CfgMu:                     &s.cfgMu,
-		Clones:                    s.clones,
-		Db:                        s.db,
-		FleetAPI:                  &s.fleetAPI,
-		IssueAPI:                  &s.issueAPI,
-		Now:                       &s.now,
-		ProviderSource:            &s.providerSource,
-		PullAPI:                   &s.pullAPI,
-		RepoResolver:              s.repoResolver,
-		Syncer:                    &s.syncer,
-		WorkspaceAPI:              &s.workspaceAPI,
+		Cfg:            &s.cfg,
+		CfgMu:          &s.cfgMu,
+		Clones:         s.clones,
+		Db:             s.db,
+		FleetAPI:       &s.fleetAPI,
+		IssueAPI:       &s.issueAPI,
+		Now:            &s.now,
+		ProviderSource: &s.providerSource,
+		PullAPI:        &s.pullAPI,
+		RepoResolver:   s.repoResolver,
+		Syncer:         &s.syncer,
+		WorkspaceAPI:   &s.workspaceAPI,
 	}
 	s.archiveapi = &archiveapi.Handlers{
 		Archive: s.archive,

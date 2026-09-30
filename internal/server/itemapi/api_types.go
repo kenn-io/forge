@@ -312,3 +312,22 @@ type ActivityItemResponse struct {
 	ActivityURL        string                     `json:"activity_url,omitempty"`
 	SubjectState       string                     `json:"subject_state,omitempty"`
 }
+
+func RepoCatalog(repo db.Repo) RepoCatalogResponse {
+	return RepoCatalogResponse{
+		ID:                  repo.ID,
+		Platform:            repo.Platform,
+		PlatformHost:        repo.PlatformHost,
+		PlatformRepoID:      repo.PlatformRepoID,
+		Owner:               repo.Owner,
+		Name:                repo.Name,
+		LastSyncStartedAt:   repo.LastSyncStartedAt,
+		LastSyncCompletedAt: repo.LastSyncCompletedAt,
+		LastSyncError:       repo.LastSyncError,
+		AllowSquashMerge:    repo.AllowSquashMerge,
+		AllowMergeCommit:    repo.AllowMergeCommit,
+		AllowRebaseMerge:    repo.AllowRebaseMerge,
+		ViewerCanMerge:      repo.ViewerCanMerge,
+		CreatedAt:           repo.CreatedAt,
+	}
+}

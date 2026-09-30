@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -84,6 +85,9 @@ func setupTestServerWithReposAndOptions(
 		repo := &repos[i]
 		if repo.PlatformRepoID == 0 {
 			repo.PlatformRepoID = testutil.FixtureRepoID(repo.Owner, repo.Name)
+		}
+		if mock != nil {
+			mock.KnowRoute(repo.PlatformRepoID, repo.Owner, repo.Name)
 		}
 		_, err := reposeed.Seed(
 			t.Context(), database, platformdb.DBRepoIdentity(platform.RepoRef{
@@ -267,7 +271,7 @@ func TestAPIListActivity(t *testing.T) {
 		srv,
 		http.MethodGet,
 		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
-			"&platform_repo_id=repo-acme-widget&item_type=pr&item_number=1&since="+
+			"&platform_repo_id="+strconv.FormatInt(testutil.FixtureRepoID("acme", "widget"), 10)+"&item_type=pr&item_number=1&since="+
 			url.QueryEscape(since),
 		nil)
 
@@ -283,7 +287,7 @@ func TestAPIListActivity(t *testing.T) {
 		srv,
 		http.MethodGet,
 		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
-			"&platform_repo_id=repo-acme-widget&item_type=pr&item_number=1&since="+
+			"&platform_repo_id="+strconv.FormatInt(testutil.FixtureRepoID("acme", "widget"), 10)+"&item_type=pr&item_number=1&since="+
 			url.QueryEscape(since)+"&unassigned=true",
 		nil,
 	)
@@ -297,7 +301,7 @@ func TestAPIListActivity(t *testing.T) {
 		srv,
 		http.MethodGet,
 		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
-			"&platform_repo_id=repo-acme-widget&item_type=pr&item_number=1&since="+
+			"&platform_repo_id="+strconv.FormatInt(testutil.FixtureRepoID("acme", "widget"), 10)+"&item_type=pr&item_number=1&since="+
 			url.QueryEscape(since)+"&types=comment&search="+url.QueryEscape("Looks good"),
 		nil)
 

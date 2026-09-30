@@ -4145,12 +4145,12 @@ func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *t
 			excludedKey: subject(excludedKey, "Excluded-Author"),
 		},
 	}
-	srv := &Server{
+	srv := wiredServer(&Server{
 		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
 		cfg: &config.Config{Activity: config.Activity{
 			UseWorkspaceActivityForRecency: true,
 		}},
-	}
+	})
 	providerEvent := func(key db.WorkspaceSubjectKey) db.ActivityItem {
 		return db.ActivityItem{
 			RepoID: repoID, ItemType: "pr", ItemNumber: key.ItemNumber,

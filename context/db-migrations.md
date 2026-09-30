@@ -88,9 +88,9 @@ generations.
   rewrite provider, workspace, review, workflow, or notification source rows.
 - Review drafts and workflow rows remain on the source spoke as an audit trail
   after handoff; the active spoke runtime stops reading them in the role switch.
-- Preview preparation names need migration 60 even after migration 56; the
-  trigger-only repair did not rename tables. Downgrades retain the released names
-  (`internal/db/migrations/000060_migrate_preview_preparation_tables.down.sql:1`).
+- Normalize preview preparation tables before migration 60; its column changes
+  reject triggers referencing missing tables even after migration 56's trigger repair
+  (`internal/db/migrations/000060_integer_repository_identity.up.sql:39`).
 
 ## Migration Review Checklist
 

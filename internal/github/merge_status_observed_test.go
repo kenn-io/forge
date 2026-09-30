@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -372,12 +374,17 @@ func TestListSyncStampsGitLabMergeableStateAtListRequest(t *testing.T) {
 	}
 }
 
-// graphQLPRNode renders PR #1 as the bulk GraphQL query returns it.
+// graphQLPRNode renders PR #1 as the bulk GraphQL query returns it. An empty
+// reviewDecision renders as null.
 func graphQLPRNode(head, mergeable, reviewDecision, rollup string) string {
+	decision := "null"
+	if reviewDecision != "" {
+		decision = strconv.Quote(reviewDecision)
+	}
 	return fmt.Sprintf(`{"databaseId":1000,"number":1,"title":"test PR","state":"OPEN",`+
 		`"url":"https://github.com/example/project-a/pull/1","author":{"login":"user-a"},`+
 		`"createdAt":"2026-09-01T09:30:00Z","updatedAt":"2026-09-01T09:30:00Z",`+
-		`"mergeable":%q,"reviewDecision":%q,"headRefName":"feature-branch",`+
+		`"mergeable":%q,"reviewDecision":%s,"headRefName":"feature-branch",`+
 		`"baseRefName":"main","headRefOid":%q,"baseRefOid":%q,`+
 		`"labels":{"nodes":[]},"assignees":{"nodes":[]},"reviewRequests":{"nodes":[]},`+
 		`"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}},`+
@@ -386,7 +393,7 @@ func graphQLPRNode(head, mergeable, reviewDecision, rollup string) string {
 		`"allCommits":{"nodes":[],"pageInfo":{"hasNextPage":false}},`+
 		`"lastCommit":{"nodes":[{"commit":{"statusCheckRollup":%s}}]},`+
 		`"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}}}`,
-		mergeable, reviewDecision, head, seededBase, rollup)
+		mergeable, decision, head, seededBase, rollup)
 }
 
 func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
@@ -394,47 +401,83 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 		`"status":"COMPLETED","conclusion":"SUCCESS"}],"pageInfo":{"hasNextPage":false}}}`
 	const truncatedRollup = `{"contexts":{"nodes":[{"__typename":"CheckRun","name":"tests",` +
 		`"status":"COMPLETED","conclusion":"SUCCESS"}],"pageInfo":{"hasNextPage":true,"endCursor":"c1"}}}`
+	completeNoReviews := graphQLPRNode(seededHead, "MERGEABLE", "", passingRollup)
+	truncatedNoReviews := strings.Replace(completeNoReviews,
+		`"reviews":{"nodes":[],"pageInfo":{"hasNextPage":false}}`,
+		`"reviews":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"r1"}}`, 1)
+	require.NotEqual(t, completeNoReviews, truncatedNoReviews)
 	// The REST list request runs at 10:00; the bulk request is sent at 10:01.
 	tests := []struct {
-		name string
-		node string
-		want mergeStatus
+		name         string
+		storedReview string
+		node         string
+		want         mergeStatus
 	}{
 		{
-			name: "complete response observes every field",
-			node: graphQLPRNode(seededHead, "MERGEABLE", "APPROVED", passingRollup),
-			want: mergeStatus{
-				Review: "approved", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
-				Mergeable: "clean", MergeableAt: sentAt1001,
-			},
-		},
-		{
-			name: "review required observes no decision",
-			node: graphQLPRNode(seededHead, "MERGEABLE", "REVIEW_REQUIRED", passingRollup),
+			name: "no decision and no reviews observes no decision",
+			node: completeNoReviews,
 			want: mergeStatus{
 				Review: "", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
 				Mergeable: "clean", MergeableAt: sentAt1001,
 			},
 		},
 		{
-			name: "unknown mergeable has no time and missing rollup observes no CI",
-			node: graphQLPRNode(seededHead, "UNKNOWN", "APPROVED", "null"),
+			name: "no decision with truncated reviews observes nothing about reviews",
+			node: truncatedNoReviews,
+			want: mergeStatus{
+				Review: "", ReviewAt: "", CI: "success", CIAt: sentAt1001,
+				Mergeable: "clean", MergeableAt: sentAt1001,
+			},
+		},
+		{
+			name:         "no decision and no reviews keeps a stored decision",
+			storedReview: "changes_requested",
+			node:         completeNoReviews,
+			want: mergeStatus{
+				Review: "changes_requested", ReviewAt: seededAt, CI: "success", CIAt: sentAt1001,
+				Mergeable: "clean", MergeableAt: sentAt1001,
+			},
+		},
+		{
+			name:         "complete response observes every field",
+			storedReview: "changes_requested",
+			node:         graphQLPRNode(seededHead, "MERGEABLE", "APPROVED", passingRollup),
+			want: mergeStatus{
+				Review: "approved", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
+				Mergeable: "clean", MergeableAt: sentAt1001,
+			},
+		},
+		{
+			name:         "review required observes no decision",
+			storedReview: "changes_requested",
+			node:         graphQLPRNode(seededHead, "MERGEABLE", "REVIEW_REQUIRED", passingRollup),
+			want: mergeStatus{
+				Review: "", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
+				Mergeable: "clean", MergeableAt: sentAt1001,
+			},
+		},
+		{
+			name:         "unknown mergeable has no time and missing rollup observes no CI",
+			storedReview: "changes_requested",
+			node:         graphQLPRNode(seededHead, "UNKNOWN", "APPROVED", "null"),
 			want: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, CI: "", CIAt: sentAt1001,
 				Mergeable: "unknown", MergeableAt: "",
 			},
 		},
 		{
-			name: "truncated rollup keeps stored CI",
-			node: graphQLPRNode(seededHead, "CONFLICTING", "APPROVED", truncatedRollup),
+			name:         "truncated rollup keeps stored CI",
+			storedReview: "changes_requested",
+			node:         graphQLPRNode(seededHead, "CONFLICTING", "APPROVED", truncatedRollup),
 			want: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, CI: "failure", CIAt: seededAt,
 				Mergeable: "dirty", MergeableAt: sentAt1001,
 			},
 		},
 		{
-			name: "new head with truncated rollup clears CI",
-			node: graphQLPRNode("newhead", "MERGEABLE", "APPROVED", truncatedRollup),
+			name:         "new head with truncated rollup clears CI",
+			storedReview: "changes_requested",
+			node:         graphQLPRNode("newhead", "MERGEABLE", "APPROVED", truncatedRollup),
 			want: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, Mergeable: "clean", MergeableAt: sentAt1001,
 			},
@@ -443,7 +486,7 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, ""))
-			seedObservedMR(t, d, repoID, "changes_requested")
+			seedObservedMR(t, d, repoID, tt.storedReview)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
 				w.Header().Set("Content-Type", "application/json")

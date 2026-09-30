@@ -7834,6 +7834,12 @@ func (s *Syncer) syncOpenMRFromBulk(
 	} else if bulk.ReviewsComplete && len(bulk.Reviews) > 0 {
 		normalized.ReviewDecision = DeriveReviewDecision(bulk.Reviews)
 		normalized.ReviewDecisionObservedAt = &requestedAt
+	} else if bulk.ReviewsComplete && normalized.ReviewDecision == "" {
+		// A complete, empty review history with no provider decision
+		// confirms that no decision exists (repositories that do not
+		// require reviews). A stored decision is left alone because
+		// review history is additive.
+		normalized.ReviewDecisionObservedAt = &requestedAt
 	}
 	// The child snapshot below writes the review decision again; it takes
 	// this resolved pair, not whatever the parent commit leaves in normalized.

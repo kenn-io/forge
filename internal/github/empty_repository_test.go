@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
 // An empty repository is a normal state, not a sync failure, so maintaining
@@ -16,6 +17,8 @@ import (
 func TestEmptyRepositorySyncLogsNoWarnings(t *testing.T) {
 	logs := captureDefaultLogs(t)
 	dir := t.TempDir()
+	_, err := gitsafe.Runner().Output(t.Context(), dir, "rev-parse", "--absolute-git-dir")
+	require.Error(t, err, "fixture must be outside all repositories and worktrees")
 	remote := filepath.Join(dir, "empty.git")
 	gitfixture.Run(t, dir, "init", "--bare", "--initial-branch=main", remote)
 	repo := RepoRef{Owner: "acme", Name: "empty", PlatformHost: "github.com", CloneURL: remote}

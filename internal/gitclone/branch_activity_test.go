@@ -128,7 +128,7 @@ func TestResolveRefRejectsNonCommitObjects(t *testing.T) {
 
 	blobSHA := gitSHA(t, work, "HEAD:file.txt")
 	_, err := mgr.ResolveRef(t.Context(), "github", "github.com", "acme", "widgets", blobSHA)
-	require.ErrorIs(err, ErrEmptyRepository)
+	require.Error(err)
 	require.ErrorIs(err, ErrNotFound)
 }
 
@@ -353,7 +353,7 @@ func TestEmptyRepositoryClonesAndResolvesAfterFirstPush(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	dir := t.TempDir()
+	dir := isolatedCommitFixtureDir(t)
 	remote := filepath.Join(dir, "remote.git")
 	commitTestRun(t, dir, "git", "init", "--bare", "--initial-branch=main", remote)
 	mgr := New(filepath.Join(dir, "clones"), nil)

@@ -636,6 +636,10 @@ func TestCloneStoreReadsUseReadCredential(t *testing.T) {
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
 `+gitfake.CredentialHelperRunner+`
+if [ "${1:-}" = for-each-ref ]; then
+	echo refs/remotes/origin/main
+	exit 0
+fi
 helper=""
 i=0
 count="${GIT_CONFIG_COUNT:-0}"

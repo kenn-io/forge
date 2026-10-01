@@ -130,7 +130,6 @@ func activateFederationSpokeAtStartup(
 	policy.InitialInterval = 100 * time.Millisecond
 	policy.Multiplier = 2
 	policy.MaxInterval = 200 * time.Millisecond
-	policy.RandomizationFactor = 0
 	activationValidUntil, retryErr := backoff.Retry(ctx, func() (time.Time, error) {
 		validUntil, activationErr := validateAndActivateFederationSpoke(
 			ctx, client, local, credential,

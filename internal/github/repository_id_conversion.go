@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
 
@@ -13,12 +14,14 @@ import (
 var ErrNoGitHubFetcher = errors.New("no github credential for repository")
 
 // ResolveRepositoryNodeID asks GitHub which integer repository ID a stored node
-// ID names. owner/name only select the credential. found is false when GitHub
+// ID names. owner/name only select the credential, including an App
+// installation token scoped to owner. found is false when GitHub
 // no longer resolves the node. Federation spokes have no GitHub credentials, so
 // the hub answers this for them.
 func (s *Syncer) ResolveRepositoryNodeID(
 	ctx context.Context, host, owner, name, nodeID string,
 ) (int64, bool, error) {
+	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	fetcher := s.fetcherForContext(ctx, RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: host,
 		Owner: owner, Name: name,

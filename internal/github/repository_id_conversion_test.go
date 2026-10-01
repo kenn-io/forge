@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // markGitHubRepositoryPending puts a seeded GitHub repository in the state the
@@ -102,4 +104,70 @@ func TestConvertPendingGitHubRepositoriesResolvesNodeIDs(t *testing.T) {
 	require.Len(pending, 1, "a failed lookup leaves the repository pending for the next pass")
 	assert.Equal(flakyID, pending[0].RepoID)
 	assert.Equal("R_flaky", pending[0].NodeID)
+}
+
+type tokenSourceTransport struct {
+	source tokenauth.Source
+	next   http.RoundTripper
+}
+
+func (t tokenSourceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	token, err := t.source.Token(req.Context())
+	if err != nil {
+		return nil, err
+	}
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+token)
+	return t.next.RoundTrip(req)
+}
+
+// An App installation token only serves its installation account, so the
+// lookup must name the repository owner or an App-only host cannot convert.
+func TestConvertPendingGitHubRepositoriesUsesOwnerScopedAppToken(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	repoID, err := reposeed.Seed(
+		t.Context(), database, db.GitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	markGitHubRepositoryPending(t, database, repoID, "R_widget")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer installation-token" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"node":{"databaseId":1001}}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{Platform: "github", Host: "github.com", Scope: "owner:acme"},
+		Candidates: []tokenauth.Candidate{{
+			Kind: tokenauth.SourceKindGitHubApp, Host: "github.com",
+			AppID: 1, InstallationID: 2, InstallationAccount: "acme",
+		}},
+	}, tokenauth.Options{GitHubApp: func(
+		context.Context, tokenauth.Candidate,
+	) (string, time.Time, error) {
+		return "installation-token", time.Now().Add(time.Hour), nil
+	}})
+	client := &http.Client{Transport: tokenSourceTransport{
+		source: source, next: server.Client().Transport,
+	}}
+
+	syncer := NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(server.URL, client), nil,
+		),
+	})
+
+	syncer.convertPendingGitHubRepositories(t.Context())
+
+	platformRepoID, nodeID, _ := storedGitHubRepositoryIdentity(t, database, repoID)
+	assert.Equal(int64(1001), platformRepoID)
+	assert.Empty(nodeID)
 }

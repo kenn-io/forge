@@ -171,6 +171,12 @@ func (client *BrokerClient) SourceForRepo(provider, host, owner, name string) to
 	return brokerGitSource{client: client, provider: provider, host: host, repository: owner + "/" + name}
 }
 
+// ReadSourceForRepo uses the brokered repository credential; the broker has
+// no separate read-only credential.
+func (client *BrokerClient) ReadSourceForRepo(provider, host, owner, name string) tokenauth.Source {
+	return client.SourceForRepo(provider, host, owner, name)
+}
+
 func (client *BrokerClient) FallbackSource(host string) tokenauth.Source {
 	return brokerGitSource{client: client, provider: "github", host: host}
 }

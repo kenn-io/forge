@@ -37,6 +37,12 @@ func (r *blockingRepoBrowserRouteResolver) SourceForRepo(_, _, _, _ string) toke
 	return nil
 }
 
+func (r *blockingRepoBrowserRouteResolver) ReadSourceForRepo(
+	platformName, host, owner, name string,
+) tokenauth.Source {
+	return r.SourceForRepo(platformName, host, owner, name)
+}
+
 func (*blockingRepoBrowserRouteResolver) FallbackSource(string) tokenauth.Source { return nil }
 
 type callbackRepoBrowserRouteResolver struct {
@@ -50,6 +56,12 @@ func (r *callbackRepoBrowserRouteResolver) SourceForRepo(_, _, _, _ string) toke
 		r.onCall(call)
 	}
 	return nil
+}
+
+func (r *callbackRepoBrowserRouteResolver) ReadSourceForRepo(
+	platformName, host, owner, name string,
+) tokenauth.Source {
+	return r.SourceForRepo(platformName, host, owner, name)
 }
 
 func (*callbackRepoBrowserRouteResolver) FallbackSource(string) tokenauth.Source { return nil }

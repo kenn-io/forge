@@ -637,8 +637,13 @@ path, so an ownerless path silently skips the App candidate and pays with the
 PAT for a read the route's tracker bills to the installation
 (`internal/github/auth_router.go::RoutedClient.GetUserForRepo`).
 
-Managed Git uses exact-repository or owner PAT routes with mutation context and
-must never expose an App installation token to smart HTTP. Thread full provider,
+Workspace Git (fetch and push against a workspace remote, and ownerless host
+Git) uses exact-repository or owner PAT routes with mutation context and must
+never receive an App installation token. Clones and fetches into Forge's own
+clone store never push, so they keep the route's PAT when one exists and
+otherwise use the installation token for the repository owner; an App-only
+Forge can then maintain clones without a user identity
+(`cmd/kenn-forge/provider_startup.go::gitStartup.ReadSourceForRepo`). Thread full provider,
 host, owner, and repository identity through clone/fetch and local reads, passing
 the normalized platform (`repoPlatform(repo)`) so an unqualified GitHub ref still
 picks its credential route instead of none. Partition sync, diff, and repository
@@ -769,7 +774,7 @@ GitHub App installation tokens are account-scoped, not host-scoped. An app
 installation for one owner must not authenticate reads for another owner just
 because both repos share the same host. Repo-scoped GitHub reads must resolve app
 tokens with the repository owner in context, and ownerless contexts such as
-clone auth must fall through to PAT/`gh` credentials. This owner scoping governs
+host-level Git auth must fall through to PAT/`gh` credentials. This owner scoping governs
 endpoint selection, not just token resolution: choose an installation-token-only
 read endpoint (such as installation-repositories listing) only when the requested
 owner actually resolves to an app installation. Gating it on whether the host has

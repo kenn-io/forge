@@ -204,7 +204,7 @@ func (m *Manager) fetchTimelineTag(
 	}
 	_, err := retryTransient(ctx, "git fetch release tag", func() ([]byte, error) {
 		return m.gitNetworked(
-			ctx, m.sourceForRepo(platform, host, owner, name), platform, host, dir, nil,
+			ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, dir, nil,
 			"fetch", "origin", "+"+ref+":"+ref,
 		)
 	})

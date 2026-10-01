@@ -36,6 +36,12 @@ func (r descriptorCloneRoutes) SourceForRepo(
 	return nil
 }
 
+func (r descriptorCloneRoutes) ReadSourceForRepo(
+	platformName, host, owner, name string,
+) tokenauth.Source {
+	return r.SourceForRepo(platformName, host, owner, name)
+}
+
 func (descriptorCloneRoutes) FallbackSource(string) tokenauth.Source { return nil }
 
 func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {

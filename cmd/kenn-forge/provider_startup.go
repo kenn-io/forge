@@ -232,33 +232,93 @@ func (s *gitStartup) SourceForRepo(
 	}
 	platformName = strings.ToLower(strings.TrimSpace(platformName))
 	host = strings.ToLower(strings.TrimSpace(host))
-	providerSource := s.cloneSources[tokenauth.Key{Platform: platformName, Host: host}]
 	if platformName != string(platform.KindGitHub) {
-		return providerSource
+		return s.cloneSources[tokenauth.Key{Platform: platformName, Host: host}]
 	}
+	if route, ok := s.githubRouteForRepo(host, owner, name); ok {
+		return route.mutationSource()
+	}
+	if _, routed := s.githubHosts[host]; routed {
+		return missingRouteTokenSource{host: host, owner: owner, name: name}
+	}
+	return s.cloneSources[tokenauth.Key{Platform: platformName, Host: host}]
+}
+
+// ReadSourceForRepo selects the credential for clones and fetches into the
+// clone store. It keeps the route's user credential when one exists and
+// otherwise falls back to the route's GitHub App installation token for the
+// repository owner, so an App-only Forge can maintain its clones.
+func (s *gitStartup) ReadSourceForRepo(
+	platformName, host, owner, name string,
+) tokenauth.Source {
+	source := s.SourceForRepo(platformName, host, owner, name)
+	if s == nil || !strings.EqualFold(strings.TrimSpace(platformName), string(platform.KindGitHub)) {
+		return source
+	}
+	route, ok := s.githubRouteForRepo(strings.ToLower(strings.TrimSpace(host)), owner, name)
+	if !ok {
+		return source
+	}
+	return appFallbackGitTokenSource{
+		Source: source, app: route.source, owner: strings.TrimSpace(owner),
+	}
+}
+
+func (s *gitStartup) githubRouteForRepo(host, owner, name string) (gitCredentialRoute, bool) {
 	owner = strings.ToLower(strings.TrimSpace(owner))
 	name = strings.ToLower(strings.TrimSpace(name))
 	for _, scope := range []string{"repo:" + owner + "/" + name, "owner:" + owner, ""} {
 		route, ok := s.githubRoutes[tokenauth.Key{
 			Platform: string(platform.KindGitHub), Host: host, Scope: scope,
 		}]
-		if !ok || route.source == nil {
-			continue
+		if ok && route.source != nil {
+			return route, true
 		}
-		if route.identityBound {
-			return identityBoundMutationTokenSource{
-				Source: route.source, writeIdentity: route.writeIdentity,
-			}
-		}
-		if route.required {
-			return mutationTokenSource{Source: route.source}
-		}
-		return optionalMutationTokenSource{Source: route.source}
 	}
-	if _, routed := s.githubHosts[host]; routed {
-		return missingRouteTokenSource{host: host, owner: owner, name: name}
+	return gitCredentialRoute{}, false
+}
+
+func (r gitCredentialRoute) mutationSource() tokenauth.Source {
+	if r.identityBound {
+		return identityBoundMutationTokenSource{
+			Source: r.source, writeIdentity: r.writeIdentity,
+		}
 	}
-	return providerSource
+	if r.required {
+		return mutationTokenSource{Source: r.source}
+	}
+	return optionalMutationTokenSource{Source: r.source}
+}
+
+// appFallbackGitTokenSource resolves the route's user credential and, when the
+// route has none, the GitHub App installation token for owner. It serves only
+// clone-store reads; workspace remotes and pushes keep the user credential.
+type appFallbackGitTokenSource struct {
+	tokenauth.Source
+	app   tokenauth.Source
+	owner string
+}
+
+func (s appFallbackGitTokenSource) Token(ctx context.Context) (string, error) {
+	token, err := s.Source.Token(ctx)
+	if err == nil && token != "" {
+		return token, nil
+	}
+	if err != nil && !errors.Is(err, github.ErrMissingWriteIdentity) &&
+		!errors.Is(err, tokenauth.ErrMissingToken) {
+		return "", err
+	}
+	appToken, appErr := s.app.Token(tokenauth.WithGitHubOwner(ctx, s.owner))
+	if appErr == nil {
+		return appToken, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("%w; no GitHub App installation token: %w", err, appErr)
+	}
+	if errors.Is(appErr, tokenauth.ErrMissingToken) {
+		return "", nil
+	}
+	return "", appErr
 }
 
 func (s *gitStartup) FallbackSource(host string) tokenauth.Source {
@@ -273,15 +333,7 @@ func (s *gitStartup) FallbackSource(host string) tokenauth.Source {
 	if route, ok := s.githubRoutes[tokenauth.Key{
 		Platform: string(platform.KindGitHub), Host: host,
 	}]; ok && route.source != nil {
-		if route.identityBound {
-			return identityBoundMutationTokenSource{
-				Source: route.source, writeIdentity: route.writeIdentity,
-			}
-		}
-		if route.required {
-			return mutationTokenSource{Source: route.source}
-		}
-		return optionalMutationTokenSource{Source: route.source}
+		return route.mutationSource()
 	}
 	return clone
 }

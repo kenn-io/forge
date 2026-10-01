@@ -1224,7 +1224,7 @@ func (m *Manager) fetchRepoBrowserTags(
 	// to tag namespace size or moved-tag failures.
 	_, err := retryTransient(ctx, "git fetch repo browser tags", func() ([]byte, error) {
 		return m.gitNetworked(
-			ctx, m.sourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
+			ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
 			"fetch", "origin", "+refs/tags/*:refs/tags/*",
 		)
 	})

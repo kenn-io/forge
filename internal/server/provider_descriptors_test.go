@@ -290,6 +290,12 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 	assert.Contains(response.Body.String(), headSHA)
 }
 
+func (r descriptorCloneRoutes) ReadSourceForRepo(
+	platformName, host, owner, name string,
+) tokenauth.Source {
+	return r.SourceForRepo(platformName, host, owner, name)
+}
+
 func (descriptorCloneRoutes) FallbackSource(string) tokenauth.Source { return nil }
 
 func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {

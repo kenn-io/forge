@@ -521,6 +521,12 @@ func (r *recordingCloneRoutes) SourceForRepo(
 	return nil
 }
 
+func (r *recordingCloneRoutes) ReadSourceForRepo(
+	platformName, host, owner, name string,
+) tokenauth.Source {
+	return r.SourceForRepo(platformName, host, owner, name)
+}
+
 func (r *recordingCloneRoutes) FallbackSource(string) tokenauth.Source {
 	return nil
 }

@@ -406,6 +406,11 @@ func TestBuildProviderControlPlaneDeduplicatesGitHubIdentityRuntimes(t *testing.
 	require.NoError(err)
 	assert.Equal("APP_WRITE_PAT-secret", gitToken,
 		"managed Git must use the user PAT, never the App installation token")
+	readToken, err := gitRoutes.ReadSourceForRepo("github", "github.com", "org-d", "four").
+		Token(t.Context())
+	require.NoError(err)
+	assert.Equal("APP_WRITE_PAT-secret", readToken,
+		"clone-store reads keep the user PAT when the route has one")
 }
 
 // Rate-limit snapshot refresh deduplicates by the route's credential key, so
@@ -1254,6 +1259,91 @@ func TestProductionStartupRoutesExposeRotatedPATThroughRepoAPI(t *testing.T) {
 		require.NoError(resp.Body.Close())
 		assert.Equal(http.StatusOK, resp.StatusCode)
 		assert.Equal("write_credential_error", body.Operations.AddComment.Code)
+	}
+}
+
+// An App-only route has no user identity, so workspace Git stays refused while
+// clones into Forge's own store use the owner's installation token. Another
+// owner's repository must never borrow that installation.
+func TestAppOnlyRouteClonesWithInstallationTokenButKeepsWorkspaceGitClosed(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	t.Setenv("UNSET_PAT", "")
+	auth := make(chan string, 4)
+	gitServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if username, password, ok := r.BasicAuth(); ok {
+			select {
+			case auth <- username + "\x00" + password:
+			default:
+			}
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer gitServer.Close()
+	host := gitServer.Listener.Addr().String()
+	cfg := &config.Config{
+		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
+		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
+		Platforms: []config.PlatformConfig{{
+			Type: "github", Host: host, TokenEnv: "UNSET_PAT",
+		}},
+		Repos: []config.Repo{{
+			Platform: "github", PlatformHost: host, Owner: "org-app", Name: "one",
+		}},
+		GitHubApps: []config.GitHubAppConfig{{
+			Host: host, AppID: 7, PrivateKeyPath: "/keys/app.pem",
+			InstallationID: 789, InstallationAccount: "org-app",
+			RepositorySelection: "all",
+		}},
+	}
+	require.NoError(cfg.Validate())
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubCLI: func(context.Context, string) (string, error) {
+			return "", tokenauth.ErrMissingToken
+		},
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "app-token", time.Now().Add(time.Hour), nil
+		},
+	})
+	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
+	require.NoError(err)
+	startup, err := buildProviderControlPlane(
+		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
+		fakeGitHubIdentityResolver{},
+	)
+	require.NoError(err)
+	gitRoutes := gitRoutesForProviderControlPlaneTest(t, cfg, set, &startup)
+
+	_, err = gitRoutes.SourceForRepo("github", host, "org-app", "one").Token(t.Context())
+	require.ErrorIs(err, github.ErrMissingWriteIdentity,
+		"workspace Git must keep requiring a user identity")
+	token, err := gitRoutes.ReadSourceForRepo("github", host, "org-app", "one").Token(t.Context())
+	require.NoError(err)
+	assert.Equal("app-token", token)
+	otherToken, otherErr := gitRoutes.ReadSourceForRepo("github", host, "other-owner", "two").
+		Token(t.Context())
+	assert.NotEqual("app-token", otherToken,
+		"another owner's repository must not borrow this installation")
+	workspaceToken, workspaceErr := gitRoutes.SourceForRepo("github", host, "other-owner", "two").
+		Token(t.Context())
+	assert.Equal(workspaceToken, otherToken)
+	assert.Equal(workspaceErr == nil, otherErr == nil,
+		"without an installation for the owner, reads keep the workspace route's behavior")
+
+	manager := gitclone.New(t.TempDir(), gitRoutes)
+	manager.SetAllowInsecureHTTP("github", host, true)
+	err = manager.EnsureClone(
+		t.Context(), "github", host, "org-app", "one", gitServer.URL+"/org-app/one.git",
+	)
+	require.Error(err, "the controlled endpoint rejects the clone")
+	assert.NotContains(err.Error(), github.ErrMissingWriteIdentity.Error())
+	select {
+	case got := <-auth:
+		assert.Equal("x-access-token\x00app-token", got)
+	default:
+		require.Fail("the clone did not send the installation token")
 	}
 }
 

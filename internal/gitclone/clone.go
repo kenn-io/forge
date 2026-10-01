@@ -43,9 +43,14 @@ var ErrNotFound = errors.New("git object not found")
 // has no exact credential route for its verified repository.
 var ErrCredentialUnavailable = errors.New("git credential unavailable")
 
-// RouteResolver selects mutation-capable credentials for managed Git.
+// RouteResolver selects credentials for managed Git. SourceForRepo and
+// FallbackSource return mutation-capable credentials for workspace remotes.
+// ReadSourceForRepo serves clones and fetches into Forge's own clone store,
+// which never push, so it may fall back to a read-only credential such as a
+// GitHub App installation token when the route has no user credential.
 type RouteResolver interface {
 	SourceForRepo(platform, host, owner, name string) tokenauth.Source
+	ReadSourceForRepo(platform, host, owner, name string) tokenauth.Source
 	FallbackSource(host string) tokenauth.Source
 }
 
@@ -54,6 +59,10 @@ type RouteResolver interface {
 type HostSources map[string]tokenauth.Source
 
 func (s HostSources) SourceForRepo(_, host, _, _ string) tokenauth.Source {
+	return s[host]
+}
+
+func (s HostSources) ReadSourceForRepo(_, host, _, _ string) tokenauth.Source {
 	return s[host]
 }
 
@@ -1018,7 +1027,7 @@ func (m *Manager) fetch(
 	// Retry inline so a transient blip does not drop the entire sync cycle.
 	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
 		return m.gitNetworked(
-			ctx, m.sourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
+			ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
 			"fetch", "--prune", "--no-tags", "origin",
 		)
 	})
@@ -1031,7 +1040,7 @@ func (m *Manager) fetch(
 	// reduces stale-HEAD noise across sync cycles.
 	_, setHeadErr := retryTransient(ctx, "git remote set-head", func() ([]byte, error) {
 		return m.gitNetworked(
-			ctx, m.sourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
+			ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
 			"remote", "set-head", "origin", "-a",
 		)
 	})
@@ -1075,7 +1084,7 @@ func (m *Manager) FetchMergeRequestHead(
 	}
 	ref := providerplatform.MergeRequestHeadRef(providerplatform.Kind(platform), number)
 	_, err = retryTransient(ctx, "git fetch merge request head", func() ([]byte, error) {
-		return m.RunGitForRepo(
+		return m.runGitForCloneStore(
 			ctx, platform, host, owner, name, clonePath,
 			"fetch", "--no-tags", "--recurse-submodules=no",
 			"origin", "+"+ref+":"+ref,
@@ -1126,6 +1135,20 @@ func (m *Manager) git(
 	ctx context.Context, dir string, args ...string,
 ) ([]byte, error) {
 	return m.gitWithInput(ctx, dir, nil, args...)
+}
+
+// runGitForCloneStore runs a networked read against the origin of a clone in
+// Forge's own store with the route's clone-store credential.
+func (m *Manager) runGitForCloneStore(
+	ctx context.Context, platform, host, owner, name, dir string, args ...string,
+) ([]byte, error) {
+	source := m.readSourceForRepo(platform, host, owner, name)
+	if source != nil {
+		if err := m.validateRemoteIdentity(ctx, dir, "origin", platform, host, owner, name); err != nil {
+			return nil, err
+		}
+	}
+	return m.gitNetworked(ctx, source, platform, host, dir, nil, args...)
 }
 
 // RunGitForRepo runs a networked Git command with the repository route's
@@ -1309,7 +1332,7 @@ func (m *Manager) gitCloneBare(
 	// Local-path clones copy the source object directory and can race source
 	// maintenance. Use transport semantics consistently for every remote.
 	return m.gitNetworked(
-		ctx, m.sourceForRepo(platform, host, owner, name), platform, host, "",
+		ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, "",
 		func() error {
 			if err := os.RemoveAll(clonePath); err != nil {
 				return fmt.Errorf("cleanup partial clone before auth retry: %w", err)
@@ -1485,6 +1508,15 @@ func (m *Manager) sourceForRepo(
 		return nil
 	}
 	return m.routes.SourceForRepo(platform, host, owner, name)
+}
+
+func (m *Manager) readSourceForRepo(
+	platform, host, owner, name string,
+) tokenauth.Source {
+	if m.routes == nil {
+		return nil
+	}
+	return m.routes.ReadSourceForRepo(platform, host, owner, name)
 }
 
 func (m *Manager) fallbackSource(host string) tokenauth.Source {

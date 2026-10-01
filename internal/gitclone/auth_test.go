@@ -40,10 +40,18 @@ func (s *mutableTestTokenSource) Descriptor() tokenauth.Descriptor {
 
 type testRouteResolver struct {
 	repos    map[string]tokenauth.Source
+	reads    map[string]tokenauth.Source
 	fallback map[string]tokenauth.Source
 }
 
 func (r testRouteResolver) SourceForRepo(_, host, owner, name string) tokenauth.Source {
+	return r.repos[host+"/"+owner+"/"+name]
+}
+
+func (r testRouteResolver) ReadSourceForRepo(_, host, owner, name string) tokenauth.Source {
+	if source, ok := r.reads[host+"/"+owner+"/"+name]; ok {
+		return source
+	}
 	return r.repos[host+"/"+owner+"/"+name]
 }
 
@@ -615,6 +623,66 @@ echo complete > "$dest/complete"
 	}, credentials)
 	assert.NoFileExists(filepath.Join(clonePath, "partial"))
 	assert.FileExists(filepath.Join(clonePath, "complete"))
+}
+
+// Clones and fetches into Forge's own store use the route's read credential;
+// the workspace credential is never consulted for them.
+func TestCloneStoreReadsUseReadCredential(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	capturePath := filepath.Join(dir, "credentials.txt")
+	gitPath := filepath.Join(dir, "git")
+	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
+set -eu
+`+gitfake.CredentialHelperRunner+`
+helper=""
+i=0
+count="${GIT_CONFIG_COUNT:-0}"
+while [ "$i" -lt "$count" ]; do
+	eval "key=\${GIT_CONFIG_KEY_$i:-}"
+	eval "value=\${GIT_CONFIG_VALUE_$i:-}"
+	if [ "$key" = "credential.helper" ]; then
+		helper="$value"
+	fi
+	i=$((i + 1))
+done
+if [ -n "$helper" ]; then
+	printf '%s ' "$1" >> "${KENN_FORGE_TEST_GIT_CAPTURE:?}"
+	run_credential_helper "$helper" get | sed -n 's/^password=//p' >> "$KENN_FORGE_TEST_GIT_CAPTURE"
+fi
+if [ "${1:-}" = "clone" ]; then
+	for arg in "$@"; do
+		dest="$arg"
+	done
+	mkdir -p "$dest"
+fi
+`), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("KENN_FORGE_TEST_GIT_CAPTURE", capturePath)
+
+	key := "github.com/acme/widgets"
+	mgr := New(t.TempDir(), testRouteResolver{
+		repos: map[string]tokenauth.Source{key: &mutableTestTokenSource{token: "workspace-token"}},
+		reads: map[string]tokenauth.Source{key: &mutableTestTokenSource{token: "read-token"}},
+	})
+	clonePath := filepath.Join(dir, "widgets.git")
+
+	require.NoError(mgr.cloneBare(
+		t.Context(), "github", "github.com", "acme", "widgets", clonePath,
+		"https://github.com/acme/widgets.git",
+	))
+	require.NoError(mgr.fetch(t.Context(), "github", "github.com", "acme", "widgets", clonePath))
+
+	data, err := os.ReadFile(capturePath)
+	require.NoError(err)
+	assert.Equal([]string{
+		"clone read-token",
+		"fetch read-token",
+		"remote read-token",
+		"fetch read-token",
+		"remote read-token",
+	}, strings.Split(strings.TrimSpace(string(data)), "\n"))
 }
 
 func TestGitNetworkedRedactsTokenFromGitStderr(t *testing.T) {

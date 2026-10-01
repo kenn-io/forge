@@ -182,6 +182,8 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 - `StatusBar`: relies on `kit-status-bar*` classes and
   `--status-bar-height`; `overflow="visible"` lets BudgetPopover use kit's
   popover recipe; the app owns keeping bar text short.
+- Status-bar warnings must identify affected items and offer a useful next action;
+  omit background detail-refresh backlog counts.
 - `TopBar`: renders the app header as `.app-top-bar`; tabs collapse by
   measurement. The header must clip its x-axis (`overflow-x: clip` — kit's
   hidden probe row otherwise inflates scrollWidth) and side regions must

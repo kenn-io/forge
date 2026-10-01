@@ -158,6 +158,9 @@ Interactive surfaces must agree on which item is selected.
 - Empty workspaces offer the launcher inside their terminal frame, without a page-wide
   backdrop or focus trap. Launching a session dismisses it; other panes remain usable
   (`frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.svelte`).
+- Closing the last workspace session tab reopens the launcher even after a prior dismissal;
+  closing one of several sessions leaves the remaining session visible
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::presentRuntimeMutation`).
 - The ACP composer never blocks while a turn runs; only a disconnected chat disables it.
   Busy input steers when the agent supports it, otherwise queues
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).

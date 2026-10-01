@@ -995,9 +995,8 @@
    *
    * Once per workspace, for every automatic path: the empty pane on arrival and the
    * one left behind when the last session goes away are the same situation, and a
-   * launcher that came back each time would trap a user who dismissed it - revisit
-   * the item, close a session, and it is in the way again. Their own route back is
-   * the Launch button in the pane's controls.
+   * launcher that came back each time would trap a user who dismissed it. Explicitly
+   * closing the last session opens the launcher separately as a new user action.
    */
   function autoOpenLauncher(): void {
     // Only over a workspace that can actually host a session, on every automatic
@@ -2751,7 +2750,11 @@
               runtimeSessions,
               layoutWithTerminalGroups(terminalLayout, groups, terminalLayout.activeTerminalGroupID),
             );
-            if (activeTabKey === `session:${state.request.sessionKey}`) selectFallbackTab();
+            if (runtimeSessions.length === 0) {
+              openLauncher();
+            } else if (activeTabKey === `session:${state.request.sessionKey}`) {
+              selectFallbackTab();
+            }
             clearRuntimeMutationPending(state);
           });
           yield* fetchRuntimeProgram({ force: true });

@@ -2638,6 +2638,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Stop Shell?" })).toBeNull());
     expect(screen.queryByRole("button", { name: "Close Shell" })).toBeNull();
     expect(screen.getByRole("group", { name: "Shell 2 split drop targets" })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
   });
 
   it("uses an in-app modal when renaming a tab", async () => {
@@ -5310,6 +5311,30 @@ describe("WorkspaceTerminalView", () => {
   });
 
   describe("launcher overlay", () => {
+    it("reopens the launcher after closing the last session tab", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+      const launcher = await screen.findByRole("dialog", { name: "Launch a session" });
+      mocks.launchWorkspaceSession.mockResolvedValue(runningSession);
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      await fireEvent.click(within(launcher).getByRole("button", { name: "Helper" }));
+      await screen.findByRole("tab", { name: /Helper/ });
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+
+      await fireEvent.click(screen.getByRole("button", { name: "Close Helper" }));
+      const confirmation = await screen.findByRole("dialog", { name: "Stop Helper?" });
+      mocks.stopWorkspaceSession.mockResolvedValue(undefined);
+      const runtimeRefresh = deferred<ReturnType<typeof runtimeWithLaunchTargetsOnly>>();
+      mocks.getWorkspaceRuntime.mockReturnValue(runtimeRefresh.promise);
+      await fireEvent.click(within(confirmation).getByRole("button", { name: "Stop session" }));
+
+      expect(await screen.findByRole("dialog", { name: "Launch a session" })).toBeTruthy();
+      await fireEvent.keyDown(window, { key: "Escape" });
+      runtimeRefresh.resolve(runtimeWithLaunchTargetsOnly());
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull());
+    });
+
     it.each([false, true])("launches a quick action into a new selected tab (split: %s)", async (split) => {
       if (split) {
         localStorage.setItem(

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Checkbox, IconButton, SelectDropdown } from "@kenn-io/kit-ui";
+  import { Button, Checkbox, IconButton, SearchInput, SelectDropdown } from "@kenn-io/kit-ui";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
@@ -9,6 +9,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
+  import LaunchTargetName from "../terminal/LaunchTargetName.svelte";
   import { slide } from "svelte/transition";
 
   interface Props {
@@ -56,6 +57,8 @@
   const testing = $derived(Object.values(checks).some((check) => check.status === "testing"));
   // svelte-ignore state_referenced_locally
   let drafts = $state<AgentDraft[]>(initialDrafts(agents));
+  let filter = $state("");
+  const visibleDrafts = $derived(drafts.filter((draft) => matchesFilter(draft, filter)));
 
   const savedAgents = $derived(normalizeAgents(agents));
   const preservedDefaultBuiltinKeys = $derived(defaultBuiltinKeys(savedAgents));
@@ -84,7 +87,17 @@
       if (!agent) continue;
       rows.push(draftFromAgent(null, agent));
     }
-    return rows;
+    // Sort once when drafts are built, so a row does not move while its
+    // label is being edited. Rows added before saving stay at the end.
+    return rows.sort((left, right) =>
+      agentName(left).localeCompare(agentName(right), undefined, { sensitivity: "base", numeric: true }),
+    );
+  }
+
+  function matchesFilter(draft: AgentDraft, query: string): boolean {
+    const needle = query.trim().toLowerCase();
+    if (needle === "") return true;
+    return [draft.label, draft.key, draft.binary].some((value) => value.toLowerCase().includes(needle));
   }
 
   function draftFromAgent(
@@ -192,6 +205,7 @@
   }
 
   function addCustomAgent(): void {
+    filter = "";
     drafts = [
       ...drafts,
       {
@@ -354,12 +368,23 @@
 </script>
 
 <div class="agent-settings">
+  <SearchInput
+    bind:value={filter}
+    placeholder="Filter agents..."
+    ariaLabel="Filter workspace agents"
+    size="sm"
+    block
+  />
   <div class="agent-list">
-    {#each drafts as draft (draft.id)}
+    {#each visibleDrafts as draft (draft.id)}
       <div class={["agent-row", !draft.builtin && "agent-row--custom"]}>
         <div class="agent-row-header">
           <Checkbox class="enable-field" bind:checked={draft.enabled} disabled={saving}>
-            {agentName(draft)}
+            <LaunchTargetName
+              target={{ kind: draft.protocol === "acp" ? "acp" : "agent", key: draft.key }}
+              label={agentName(draft)}
+              fallbackIcon
+            />
           </Checkbox>
 
           <div class="row-actions">
@@ -479,6 +504,8 @@
           </div>
         {/if}
       </div>
+    {:else}
+      <p class="agent-empty">No agents match "{filter.trim()}"</p>
     {/each}
   </div>
 
@@ -530,6 +557,13 @@
     padding: 8px;
     border-top: 1px solid var(--border-muted);
     background: transparent;
+  }
+
+  .agent-empty {
+    margin: 0;
+    padding: 8px;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
   }
 
   .agent-row:first-child {

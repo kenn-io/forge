@@ -150,6 +150,53 @@ describe("AgentSettings", () => {
     });
   });
 
+  it("lists agents by name with the harness icon the launch menu uses", () => {
+    renderAgentSettings({
+      agents: [
+        { key: "codex-review", label: "Review Agent", command: ["codex"], enabled: true },
+        { key: "mystery", label: "mystery", command: ["mystery"], enabled: true },
+      ],
+      onUpdate: vi.fn(),
+    });
+
+    const names = screen.getAllByRole("checkbox").map((box) => box.closest("label")?.textContent?.trim());
+    expect(names).toEqual(["aider", "Claude", "Codex", "Gemini", "mystery", "opencode", "Pi", "Review Agent"]);
+
+    const review = screen.getByRole("checkbox", { name: "Review Agent" }).closest("label")!;
+    expect(review.querySelector(".kit-harness-icon--openai")).not.toBeNull();
+    const mystery = screen.getByRole("checkbox", { name: "mystery" }).closest("label")!;
+    expect(mystery.querySelector(".kit-harness-icon")).toBeNull();
+    expect(mystery.querySelector(".launch-target-icon svg")).not.toBeNull();
+  });
+
+  it("filters agents by name, key, or binary without dropping hidden ones from the save", async () => {
+    const agents = [{ key: "review", label: "Review Agent", command: ["/opt/reviewer"], enabled: true }];
+    mockPersistSettings.mockResolvedValue({ agents });
+    renderAgentSettings({ agents, onUpdate: vi.fn() });
+    const filter = screen.getByRole("searchbox", { name: "Filter workspace agents" });
+
+    await fireEvent.input(filter, { target: { value: "REVIEWER" } });
+    expect(screen.getAllByRole("checkbox").map((box) => box.closest("label")?.textContent?.trim())).toEqual([
+      "Review Agent",
+    ]);
+
+    await fireEvent.input(filter, { target: { value: "nothing-matches" } });
+    expect(screen.queryAllByRole("checkbox")).toEqual([]);
+    expect(screen.getByText('No agents match "nothing-matches"')).toBeTruthy();
+
+    await fireEvent.input(filter, { target: { value: "claude" } });
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Claude" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
+    await waitFor(() =>
+      expect(mockPersistSettings).toHaveBeenCalledWith({
+        agents: [
+          { key: "claude", label: "Claude", command: ["claude"], enabled: false },
+          { key: "review", label: "Review Agent", command: ["/opt/reviewer"], enabled: true },
+        ],
+      }),
+    );
+  });
+
   it("preserves quoted empty arguments when saving", async () => {
     mockPersistSettings.mockResolvedValue({
       agents: [

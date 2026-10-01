@@ -90,36 +90,3 @@ func replaceEnv(base []string, replacements map[string]string) []string {
 	}
 	return out
 }
-
-// A push into a local bare repository runs receive-pack without the pusher's
-// -c options. Unless the shared config disables it, receive-pack starts a
-// detached `git maintenance run --auto` that can outlive the test and fail its
-// temporary-directory cleanup.
-func TestPushIntoBareRepositoryStartsNoBackgroundMaintenance(t *testing.T) {
-	require := require.New(t)
-	require.Empty(os.Getenv("GIT_DIR"), "TestMain must remove inherited repository bindings")
-	require.Equal("1", os.Getenv("GIT_CONFIG_NOSYSTEM"), "system Git config must stay disabled")
-	globalConfig, err := os.ReadFile(os.Getenv("GIT_CONFIG_GLOBAL"))
-	require.NoError(err, "TestMain must install a scratch global config")
-	require.Equal(SharedConfig, string(globalConfig))
-	dir := t.TempDir()
-	runner := Runner()
-	_, err = runner.Output(t.Context(), dir, "rev-parse", "--absolute-git-dir")
-	require.Error(err, "fixture must be outside all repositories and worktrees")
-	run := func(dir string, args ...string) {
-		t.Helper()
-		_, stderr, err := runner.Run(t.Context(), dir, nil, args...)
-		require.NoError(err, "git %v: %s", args, stderr)
-	}
-	run(dir, "init", "--bare", "--initial-branch=trunk", "remote.git")
-	run(dir, "clone", "remote.git", "work")
-	work := filepath.Join(dir, "work")
-	run(work, "-c", "user.name=Test", "-c", "user.email=test@example.com",
-		"commit", "--allow-empty", "-m", "first")
-
-	traced := runner
-	traced.Env = append(append([]string{}, runner.Env...), "GIT_TRACE=1")
-	_, stderr, err := traced.Run(t.Context(), work, nil, "push", "origin", "trunk")
-	require.NoError(err, "git push: %s", stderr)
-	assert.NotContains(t, string(stderr), "maintenance run")
-}

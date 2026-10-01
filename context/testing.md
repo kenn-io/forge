@@ -457,11 +457,14 @@ removal. Black-box tests use `internal/testutil/servertest`; same-package tests
 register shutdown cleanup after DB creation (`internal/testutil/servertest/servertest.go::New`,
 `internal/server/api_test.go::gracefulShutdown`).
 
-Disable Git auto-GC and auto-maintenance in synthetic repositories under
-`t.TempDir`; detached maintenance can recreate files during fixture cleanup
-(`internal/gitclone/commits_test.go::commitTestRun`).
+Git auto-GC and auto-maintenance stay off in synthetic repositories under
+`t.TempDir`; detached maintenance can recreate files during fixture cleanup.
+The shared test config disables them (`internal/testutil/gitsafe/gitsafe.go::SharedConfig`):
+a push into a local bare repository runs receive-pack without the pusher's `-c`
+options, so per-command flags alone do not reach it.
 
-Real-Git test packages use `gitsafe.RunIsolatedMain` in `TestMain`: one empty config per binary.
+Real-Git test packages use `gitsafe.RunIsolatedMain` in `TestMain`: one config per binary
+holding only `SharedConfig`.
 Use `Runner` where code strips Git variables, and `MutableRunner` only for global config
 mutations (`internal/testutil/gitsafe/gitsafe.go::RunIsolatedMain`).
 `gitcmd.New()` is not a substitute: it probes user `safe.directory` settings.

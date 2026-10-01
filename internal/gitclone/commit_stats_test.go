@@ -71,7 +71,8 @@ func isolatedCommitFixtureDir(t *testing.T) string {
 	require.Equal("1", os.Getenv("GIT_CONFIG_NOSYSTEM"))
 	config, err := os.ReadFile(os.Getenv("GIT_CONFIG_GLOBAL"))
 	require.NoError(err, "package TestMain must install a scratch global config")
-	require.Empty(config, "shared global config must stay empty")
+	require.Equal(gitsafe.SharedConfig, string(config),
+		"shared global config must hold only the package defaults")
 	dir := t.TempDir()
 	_, err = gitsafe.Runner().Output(t.Context(), dir, "rev-parse", "--absolute-git-dir")
 	require.Error(err, "commit fixture must be outside all repositories and worktrees")

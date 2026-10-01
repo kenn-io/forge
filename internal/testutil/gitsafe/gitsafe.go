@@ -13,7 +13,14 @@ import (
 	gitenv "go.kenn.io/kit/git/env"
 )
 
-// RunIsolatedMain runs a package's tests with one portable, empty Git config.
+// SharedConfig is the global Git config every test shares. A push into a local
+// bare repository runs receive-pack without the pusher's -c options, and
+// receive-pack would otherwise start a detached `git maintenance run --auto`
+// that can outlive the test and race its temporary-directory cleanup.
+const SharedConfig = "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n"
+
+// RunIsolatedMain runs a package's tests with one portable Git config that
+// carries only SharedConfig.
 // The setup is shared by the test binary so Git-heavy suites do not create a
 // new config directory for every test or command, which is costly on Windows.
 func RunIsolatedMain(m *testing.M) int {
@@ -34,11 +41,11 @@ func RunIsolatedMain(m *testing.M) int {
 func configureGitForTests(root string) error {
 	unsetInheritedGitEnv()
 
-	// Git for Windows cannot reliably use NUL as GIT_CONFIG_GLOBAL. A regular,
-	// empty file is a valid no-op config on every platform.
+	// Git for Windows cannot reliably use NUL as GIT_CONFIG_GLOBAL; a regular
+	// file works on every platform.
 	globalConfig := filepath.Join(root, "global.gitconfig")
-	if err := os.WriteFile(globalConfig, nil, 0o600); err != nil {
-		return fmt.Errorf("create empty global config: %w", err)
+	if err := os.WriteFile(globalConfig, []byte(SharedConfig), 0o600); err != nil {
+		return fmt.Errorf("create global config: %w", err)
 	}
 	xdgConfigHome := filepath.Join(root, "xdg")
 	if err := os.MkdirAll(xdgConfigHome, 0o755); err != nil {
@@ -75,7 +82,7 @@ func MutableRunner(tb testing.TB) gitcmd.Runner {
 	tb.Helper()
 	root := tb.TempDir()
 	globalConfig := filepath.Join(root, "global.gitconfig")
-	require.NoError(tb, os.WriteFile(globalConfig, nil, 0o600))
+	require.NoError(tb, os.WriteFile(globalConfig, []byte(SharedConfig), 0o600))
 	xdgConfigHome := filepath.Join(root, "xdg")
 	require.NoError(tb, os.Mkdir(xdgConfigHome, 0o755))
 

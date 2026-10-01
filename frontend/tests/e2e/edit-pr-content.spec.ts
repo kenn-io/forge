@@ -199,8 +199,15 @@ test("markdown images open in an expanded overlay", async ({ page }) => {
   await image.hover();
   await zoomButton.click();
   await expect(dialog).toBeVisible();
+  // The viewer holds a modal frame while open, so global shortcuts wait;
+  // closing it releases the frame and they work again.
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await page.keyboard.press("Meta+K");
+  await expect(palette).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
+  await page.keyboard.press("Meta+K");
+  await expect(palette).toBeVisible();
 });
 
 test("expanded view pages through the description's images and diagrams", async ({ page }) => {

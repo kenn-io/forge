@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -206,6 +207,28 @@ func TestFederationSpokeStartupUsesUnexpiredLeaseDuringHubOutage(t *testing.T) {
 
 	assert.Equal(federationStartupActive, status.State, status.Reason)
 	assert.Equal(int32(spokeActivationAttempts), requests.Load())
+}
+
+func TestFederationSpokeStartupCancellationDoesNotUseActiveLease(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cancel()
+		http.Error(w, "hub unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(hub.Close)
+	database := dbtest.Open(t)
+	enrollments, credentials, cfg := spokeStartupFixture(t, database, hub.URL, true)
+	require.NoError(t, enrollments.MarkLocalActive(
+		t.Context(), startupEnrollmentID, time.Now().Add(time.Hour),
+	))
+
+	status := activateFederationSpokeAtStartup(
+		ctx, database, cfg, startupNodeID, enrollments, credentials, hub.Client(),
+	)
+
+	assert.Equal(t, federationStartupActionRequired, status.State)
+	assert.Equal(t, "fleet spoke hub activation failed: "+context.Canceled.Error(), status.Reason)
 }
 
 func TestFederationSpokeStartupRejectsExpiredLeaseDuringHubOutage(t *testing.T) {

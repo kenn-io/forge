@@ -195,6 +195,139 @@ func TestBlocksMainBranchMigrationRename(t *testing.T) {
 	assert.Contains(t, stderr.String(), "internal/db/migrations/000001_init.up.sql")
 }
 
+func TestAllowsPureRenameThatResolvesMainDuplicateNumber(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.up.sql", "internal/db/migrations/000003_second.up.sql")
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.down.sql", "internal/db/migrations/000003_second.down.sql")
+
+	var stderr bytes.Buffer
+	assert.Zero(t, run(t.Context(), &stderr))
+	assert.Empty(t, stderr.String())
+}
+
+func TestBlocksDuplicateResolvingRenameThatChangesContent(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.up.sql", "internal/db/migrations/000003_second.up.sql")
+	writeFile(t, repo, "internal/db/migrations/000003_second.up.sql", "second up changed\n")
+	gitCommand(t, "add", "internal/db/migrations/000003_second.up.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "internal/db/migrations/000002_second.up.sql")
+}
+
+func TestBlocksDuplicateResolvingRenameOntoUsedNumber(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.up.sql", "internal/db/migrations/000001_second.up.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "000001: 000001_init, 000001_second")
+}
+
+func TestBlocksDuplicateResolvingRenameThatSwapsDirection(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.down.sql", "internal/db/migrations/000003_second.up.sql")
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.up.sql", "internal/db/migrations/000003_second.down.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "internal/db/migrations/000002_second.down.sql")
+}
+
+func TestBlocksDuplicateResolvingRenameOfHalfAPair(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.up.sql", "internal/db/migrations/000003_second.up.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "000002: 000002_first, 000002_second")
+}
+
+func TestBlocksDuplicateRepairThatLeavesADuplicate(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	gitCommandIn(t, repo, "checkout", "-q", "main")
+	writeFile(t, repo, "internal/db/migrations/000002_third.up.sql", "third up\n")
+	writeFile(t, repo, "internal/db/migrations/000002_third.down.sql", "third down\n")
+	gitCommandIn(t, repo, "add", ".")
+	gitCommandIn(t, repo, "commit", "-qm", "merge a third migration with the same number")
+	gitCommandIn(t, repo, "checkout", "-qB", "feature", "main")
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.up.sql", "internal/db/migrations/000003_second.up.sql")
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.down.sql", "internal/db/migrations/000003_second.down.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "000002: 000002_first, 000002_third")
+}
+
+func TestBlocksDuplicateRepairOntoNonSequentialNumber(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.up.sql", "internal/db/migrations/000009_second.up.sql")
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.down.sql", "internal/db/migrations/000009_second.down.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "gap between 000002 and 000009")
+}
+
+func TestBlocksNewMigrationWhileMainHasDuplicateNumber(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	writeFile(t, repo, "internal/db/migrations/000003_next.up.sql", "next up\n")
+	writeFile(t, repo, "internal/db/migrations/000003_next.down.sql", "next down\n")
+	gitCommand(t, "add", "internal/db/migrations")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "000002: 000002_first, 000002_second")
+}
+
+func TestBlocksDuplicateRepairIntoSubdirectory(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, "internal/db/migrations/moved"), 0o755))
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.up.sql", "internal/db/migrations/moved/000003_second.up.sql")
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.down.sql", "internal/db/migrations/moved/000003_second.down.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "unexpected file internal/db/migrations/moved/000003_second.up.sql")
+}
+
 func TestUsesHookGitIndexFile(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)
@@ -234,6 +367,24 @@ func initRepoWithMainMigration(t *testing.T) string {
 	gitCommandIn(t, repo, "add", ".")
 	gitCommandIn(t, repo, "commit", "-qm", "init")
 	gitCommandIn(t, repo, "checkout", "-qb", "feature")
+
+	return repo
+}
+
+// initRepoWithDuplicateMainMigrations reproduces two pull requests that each
+// passed the check alone and merged the same migration number.
+func initRepoWithDuplicateMainMigrations(t *testing.T) string {
+	t.Helper()
+
+	repo := initRepoWithMainMigration(t)
+	gitCommandIn(t, repo, "checkout", "-q", "main")
+	writeFile(t, repo, "internal/db/migrations/000002_first.up.sql", "first up\n")
+	writeFile(t, repo, "internal/db/migrations/000002_first.down.sql", "first down\n")
+	writeFile(t, repo, "internal/db/migrations/000002_second.up.sql", "second up\n")
+	writeFile(t, repo, "internal/db/migrations/000002_second.down.sql", "second down\n")
+	gitCommandIn(t, repo, "add", ".")
+	gitCommandIn(t, repo, "commit", "-qm", "merge two migrations with one number")
+	gitCommandIn(t, repo, "checkout", "-qB", "feature", "main")
 
 	return repo
 }

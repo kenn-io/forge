@@ -33,7 +33,7 @@ func seedArchiveContext(ctx context.Context, database *db.DB, registry *platform
 		if repo == nil {
 			return nil, fmt.Errorf("missing archive fixture %s", name)
 		}
-		repos = append(repos, platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: name, RepoPath: "acme/" + name, PlatformID: repo.PlatformRepoID})
+		repos = append(repos, platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: name, RepoPath: "acme/" + name, Key: repo.Key})
 		if err := database.EnsureDiscoveryArchives(ctx, []int64{repo.ID}, time.Now().UTC()); err != nil {
 			return nil, err
 		}

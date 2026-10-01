@@ -268,13 +268,13 @@ func mergeStatusObservedColumnExists(t *testing.T, raw *sql.DB, column string) b
 	return false
 }
 
-func TestMigration000062DownUpRoundTrips(t *testing.T) {
+func TestMigration000063DownUpRoundTrips(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
-	dbPath := filepath.Join(t.TempDir(), "merge-status-observed-v62.db")
+	dbPath := filepath.Join(t.TempDir(), "merge-status-observed-v63.db")
 	raw, migrator := openMigratorForTest(t, dbPath)
-	require.NoError(migrator.Migrate(62))
+	require.NoError(migrator.Migrate(63))
 
 	_, err := raw.ExecContext(t.Context(), `
 		INSERT INTO forge_repos (

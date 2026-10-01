@@ -7,8 +7,10 @@ import (
 	"maps"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -66,19 +68,27 @@ func run(ctx context.Context, stderr io.Writer) int {
 		return 1
 	}
 
-	changedViolations := changedBaseMigrations(ctx, comparisonRef, migrationDir, diff)
-	duplicateViolations, err := duplicateMigrationNumberViolations(ctx, comparisonRef, migrationDir, diff)
+	baseByNumber, err := migrationNamesByNumberOnRef(ctx, comparisonRef, migrationDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "failed to verify migration numbers: %v\n", err)
+		fmt.Fprintf(stderr, "failed to read base migrations: %v\n", err)
 		return 1
 	}
+	changedViolations := changedBaseMigrations(ctx, comparisonRef, migrationDir, diff, baseByNumber)
+	resultingPaths, err := resultingMigrationPaths(ctx, comparisonRef, migrationDir, diff)
+	if err != nil {
+		fmt.Fprintf(stderr, "failed to read the resulting migrations: %v\n", err)
+		return 1
+	}
+	resulting := migrationNamesByNumber(strings.Join(resultingPaths, "\n"))
+	duplicateViolations := duplicateMigrationNumberViolations(resulting)
+	layoutViolations := migrationLayoutViolations(migrationDir, resultingPaths, resulting)
 	newMigrationViolations, err := multipleNewMigrationViolations(ctx, comparisonRef, migrationDir, diff)
 	if err != nil {
 		fmt.Fprintf(stderr, "failed to verify the pull request migration count: %v\n", err)
 		return 1
 	}
 
-	if len(changedViolations) == 0 && len(duplicateViolations) == 0 && len(newMigrationViolations) == 0 {
+	if len(changedViolations) == 0 && len(duplicateViolations) == 0 && len(layoutViolations) == 0 && len(newMigrationViolations) == 0 {
 		return 0
 	}
 
@@ -97,6 +107,12 @@ func run(ctx context.Context, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "  %s: %s\n", violation.number, strings.Join(violation.names, ", "))
 		}
 	}
+	if len(layoutViolations) > 0 {
+		fmt.Fprintln(stderr, "\nMigrations must sit directly in the migration directory and be numbered without gaps. Found:")
+		for _, violation := range layoutViolations {
+			fmt.Fprintf(stderr, "  %s\n", violation)
+		}
+	}
 	if len(newMigrationViolations) > 0 {
 		fmt.Fprintln(stderr, "\nA pull request may introduce only one new migration. Found:")
 		for _, name := range newMigrationViolations {
@@ -107,7 +123,7 @@ func run(ctx context.Context, stderr io.Writer) int {
 	return 1
 }
 
-func changedBaseMigrations(ctx context.Context, baseRef, migrationDir, diff string) []string {
+func changedBaseMigrations(ctx context.Context, baseRef, migrationDir, diff string, baseByNumber map[string]map[string]struct{}) []string {
 	var violations []string
 	for line := range strings.SplitSeq(diff, "\n") {
 		if line == "" {
@@ -116,6 +132,9 @@ func changedBaseMigrations(ctx context.Context, baseRef, migrationDir, diff stri
 
 		fields := strings.Split(line, "\t")
 		if len(fields) < 2 {
+			continue
+		}
+		if isPureRenumbering(ctx, baseRef, migrationDir, baseByNumber, fields) {
 			continue
 		}
 
@@ -132,6 +151,32 @@ func changedBaseMigrations(ctx context.Context, baseRef, migrationDir, diff stri
 		}
 	}
 	return violations
+}
+
+// isPureRenumbering reports whether a staged rename only changes the number of
+// a base migration file that shares its number with another base migration.
+// Two pull requests that each pass this check can still merge the same number,
+// and renumbering one of them is the only repair. The file keeps its directory,
+// direction, description, and content; the resulting-history checks reject a
+// renumbering that leaves duplicates, gaps, or misplaced files.
+func isPureRenumbering(ctx context.Context, baseRef, migrationDir string, baseByNumber map[string]map[string]struct{}, fields []string) bool {
+	if !strings.HasPrefix(fields[0], "R") || len(fields) != 3 {
+		return false
+	}
+	oldPath, newPath := fields[1], fields[2]
+	if path.Dir(oldPath) != migrationDir || path.Dir(newPath) != migrationDir {
+		return false
+	}
+	oldNumber, oldName, oldOK := migrationIdentityFromPath(oldPath)
+	newNumber, newName, newOK := migrationIdentityFromPath(newPath)
+	if !oldOK || !newOK || len(baseByNumber[oldNumber]) < 2 {
+		return false
+	}
+	if strings.TrimPrefix(path.Base(oldPath), oldNumber) != strings.TrimPrefix(path.Base(newPath), newNumber) ||
+		strings.TrimPrefix(oldName, oldNumber) != strings.TrimPrefix(newName, newNumber) {
+		return false
+	}
+	return stagedPathMatchesRef(ctx, baseRef, oldPath, newPath)
 }
 
 func multipleNewMigrationViolations(ctx context.Context, baseRef, migrationDir, diff string) ([]string, error) {
@@ -163,11 +208,15 @@ func multipleNewMigrationViolations(ctx context.Context, baseRef, migrationDir, 
 }
 
 func stagedPathMatchesBase(ctx context.Context, baseRef, path string) bool {
-	baseContent, err := git(ctx, "show", baseRef+":"+path)
+	return stagedPathMatchesRef(ctx, baseRef, path, path)
+}
+
+func stagedPathMatchesRef(ctx context.Context, baseRef, basePath, stagedPath string) bool {
+	baseContent, err := git(ctx, "show", baseRef+":"+basePath)
 	if err != nil {
 		return false
 	}
-	stagedContent, err := git(ctx, "show", ":"+path)
+	stagedContent, err := git(ctx, "show", ":"+stagedPath)
 	if err != nil {
 		return false
 	}
@@ -198,41 +247,72 @@ func (v duplicateNumberViolation) Compare(other duplicateNumberViolation) int {
 	return strings.Compare(v.number, other.number)
 }
 
-func duplicateMigrationNumberViolations(ctx context.Context, baseRef, migrationDir, diff string) ([]duplicateNumberViolation, error) {
-	baseByNumber, err := migrationNamesByNumberOnRef(ctx, baseRef, migrationDir)
+// duplicateMigrationNumberViolations lists numbers that the resulting history
+// assigns to more than one migration, including unresolved duplicates
+// inherited from the base.
+func duplicateMigrationNumberViolations(resulting map[string]map[string]struct{}) []duplicateNumberViolation {
+	var violations []duplicateNumberViolation
+	for number, names := range resulting {
+		if len(names) > 1 {
+			violations = append(violations, duplicateNumberViolation{number: number, names: sortedKeys(names)})
+		}
+	}
+	slices.SortFunc(violations, duplicateNumberViolation.Compare)
+	return violations
+}
+
+// resultingMigrationPaths applies the staged migration changes to the
+// comparison base, so migrations the base gained after this branch diverged
+// still count.
+func resultingMigrationPaths(ctx context.Context, baseRef, migrationDir, diff string) ([]string, error) {
+	listing, err := git(ctx, "ls-tree", "-r", "--name-only", baseRef, "--", migrationDir)
 	if err != nil {
 		return nil, err
 	}
-
-	stagedByNumber := map[string]map[string]struct{}{}
-	for _, path := range stagedMigrationPaths(diff, migrationDir) {
-		number, name, ok := migrationIdentityFromPath(path)
-		if !ok {
+	paths := map[string]struct{}{}
+	for line := range strings.SplitSeq(strings.TrimSpace(listing), "\n") {
+		if line != "" {
+			paths[line] = struct{}{}
+		}
+	}
+	for line := range strings.SplitSeq(diff, "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) < 2 {
 			continue
 		}
-		if _, exists := stagedByNumber[number]; !exists {
-			stagedByNumber[number] = map[string]struct{}{}
+		if strings.HasPrefix(fields[0], "D") || strings.HasPrefix(fields[0], "R") {
+			delete(paths, fields[1])
 		}
-		stagedByNumber[number][name] = struct{}{}
-	}
-
-	var violations []duplicateNumberViolation
-	for number, stagedNames := range stagedByNumber {
-		allNames := maps.Clone(stagedNames)
-		maps.Copy(allNames, baseByNumber[number])
-		if len(allNames) <= 1 {
-			continue
+		if added, ok := stagedPath(fields); ok {
+			paths[added] = struct{}{}
 		}
-
-		names := sortedKeys(allNames)
-		violations = append(violations, duplicateNumberViolation{
-			number: number,
-			names:  names,
-		})
 	}
+	return slices.Sorted(maps.Keys(paths)), nil
+}
 
-	slices.SortFunc(violations, duplicateNumberViolation.Compare)
-	return violations, nil
+// migrationLayoutViolations reports files the embedded migration filesystem
+// would not load as a migration and gaps in the numbering.
+func migrationLayoutViolations(migrationDir string, resultingPaths []string, resulting map[string]map[string]struct{}) []string {
+	var violations []string
+	for _, file := range resultingPaths {
+		if _, _, ok := migrationIdentityFromPath(file); !ok || path.Dir(file) != migrationDir {
+			violations = append(violations, "unexpected file "+file)
+		}
+	}
+	return append(violations, numberingGaps(resulting)...)
+}
+
+func numberingGaps(resulting map[string]map[string]struct{}) []string {
+	numbers := slices.Sorted(maps.Keys(resulting))
+	var gaps []string
+	for i := 1; i < len(numbers); i++ {
+		previous, previousErr := strconv.Atoi(numbers[i-1])
+		current, currentErr := strconv.Atoi(numbers[i])
+		if previousErr != nil || currentErr != nil || current != previous+1 {
+			gaps = append(gaps, "gap between "+numbers[i-1]+" and "+numbers[i])
+		}
+	}
+	return gaps
 }
 
 func migrationNamesByNumberOnRef(ctx context.Context, ref, migrationDir string) (map[string]map[string]struct{}, error) {
@@ -240,9 +320,12 @@ func migrationNamesByNumberOnRef(ctx context.Context, ref, migrationDir string) 
 	if err != nil {
 		return nil, err
 	}
+	return migrationNamesByNumber(output), nil
+}
 
+func migrationNamesByNumber(listing string) map[string]map[string]struct{} {
 	byNumber := map[string]map[string]struct{}{}
-	for line := range strings.SplitSeq(output, "\n") {
+	for line := range strings.SplitSeq(listing, "\n") {
 		number, name, ok := migrationIdentityFromPath(line)
 		if !ok {
 			continue
@@ -252,7 +335,7 @@ func migrationNamesByNumberOnRef(ctx context.Context, ref, migrationDir string) 
 		}
 		byNumber[number][name] = struct{}{}
 	}
-	return byNumber, nil
+	return byNumber
 }
 
 func stagedMigrationPaths(diff, migrationDir string) []string {

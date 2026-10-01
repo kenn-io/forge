@@ -545,7 +545,7 @@ func (h *Handler) ensureRepoBrowserClone(
 		if repo.Key != descriptorKey {
 			return nil, gitclone.RepoBrowserRepoRef{}, db.ErrRepositoryIdentityChanged
 		}
-		if err := h.clones.RequireCredentialRoute(
+		if err := h.clones.RequireReadCredentialRoute(
 			ctx, repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
 		); err != nil {
 			return nil, gitclone.RepoBrowserRepoRef{}, repoBrowserCredentialProblem(

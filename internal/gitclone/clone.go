@@ -147,15 +147,29 @@ func WithRequiredCredential(ctx context.Context) context.Context {
 	return context.WithValue(ctx, requiredCredentialContextKey{}, true)
 }
 
-// RequireCredentialRoute admits daemon-local clone work only when the executing
-// daemon has an exact repository credential that resolves to a non-empty token.
+// RequireCredentialRoute admits workspace work only when the executing daemon
+// has an exact repository mutation credential that resolves to a non-empty token.
 func (m *Manager) RequireCredentialRoute(
 	ctx context.Context, platform, host, owner, name string,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	source := m.sourceForRepo(platform, host, owner, name)
+	return requireCredentialSource(ctx, m.sourceForRepo(platform, host, owner, name), owner, name)
+}
+
+// RequireReadCredentialRoute admits clone-store reads using the executing
+// daemon's exact repository read credential, including an App installation token.
+func (m *Manager) RequireReadCredentialRoute(
+	ctx context.Context, platform, host, owner, name string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return requireCredentialSource(ctx, m.readSourceForRepo(platform, host, owner, name), owner, name)
+}
+
+func requireCredentialSource(ctx context.Context, source tokenauth.Source, owner, name string) error {
 	if source == nil {
 		return fmt.Errorf("%w for %s/%s", ErrCredentialUnavailable, owner, name)
 	}

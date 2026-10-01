@@ -2394,7 +2394,7 @@ func (s *Handler) resolvePullCloneSnapshot(
 			repository.Provider, repository.PlatformHost,
 		)
 	}
-	if err := s.clones.RequireCredentialRoute(
+	if err := s.clones.RequireReadCredentialRoute(
 		ctx, repository.Provider, repository.PlatformHost,
 		repository.Owner, repository.Name,
 	); err != nil {

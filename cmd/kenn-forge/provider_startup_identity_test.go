@@ -1333,6 +1333,11 @@ func TestAppOnlyRouteClonesWithInstallationTokenButKeepsWorkspaceGitClosed(t *te
 		"without an installation for the owner, reads keep the workspace route's behavior")
 
 	manager := gitclone.New(t.TempDir(), gitRoutes)
+	require.NoError(manager.RequireReadCredentialRoute(t.Context(), "github", host, "org-app", "one"))
+	require.ErrorIs(
+		manager.RequireCredentialRoute(t.Context(), "github", host, "org-app", "one"),
+		github.ErrMissingWriteIdentity,
+	)
 	manager.SetAllowInsecureHTTP("github", host, true)
 	err = manager.EnsureClone(
 		t.Context(), "github", host, "org-app", "one", gitServer.URL+"/org-app/one.git",

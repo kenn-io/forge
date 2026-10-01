@@ -39,7 +39,8 @@ import (
 )
 
 type descriptorCloneRoutes struct {
-	source tokenauth.Source
+	source     tokenauth.Source
+	readSource tokenauth.Source
 }
 
 func (r descriptorCloneRoutes) SourceForRepo(
@@ -293,6 +294,9 @@ func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
 func (r descriptorCloneRoutes) ReadSourceForRepo(
 	platformName, host, owner, name string,
 ) tokenauth.Source {
+	if r.readSource != nil && owner == "acme" && (name == "widget" || name == "widgets") {
+		return r.readSource
+	}
 	return r.SourceForRepo(platformName, host, owner, name)
 }
 
@@ -553,12 +557,14 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	require.NoError(err)
 	assert.Nil(nodePull, "launch facts must not become a spoke-side provider item cache")
 
-	credentialless := &spokeapi.HubProviderSource{
+	readOnly := &spokeapi.HubProviderSource{
 		Client: nodeServer.providerSource.Client,
 		Db:     dbtest.Open(t),
-		Clones: gitclone.New(t.TempDir(), nil),
+		Clones: gitclone.New(t.TempDir(), descriptorCloneRoutes{
+			readSource: serverfake.TestTokenSource("spoke-read-token"),
+		}),
 	}
-	_, err = credentialless.ResolveWorkspaceLaunchSpec(
+	_, err = readOnly.ResolveWorkspaceLaunchSpec(
 		t.Context(), providerplane.WorkspaceLaunchRequest{
 			Repository: providerplane.RepositoryRoute{
 				Provider: "github", PlatformHost: "github.com",
@@ -638,7 +644,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 	nodeDB := dbtest.Open(t)
 	nodeClones := gitclone.New(
 		filepath.Join(t.TempDir(), "spoke-clones"),
-		descriptorCloneRoutes{source: serverfake.TestTokenSource("spoke-git-token")},
+		descriptorCloneRoutes{readSource: serverfake.TestTokenSource("spoke-read-token")},
 	)
 	nodeClone, err := nodeClones.ClonePathForContext(
 		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: diffRepo.Key}),
@@ -698,7 +704,7 @@ func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
 		"/api/v1/repo/github/acme/widgets/browser/refs",
 	} {
 		response := testutil.DoJSON(t, nodeServer, http.MethodGet, path, nil)
-		require.Equal(http.StatusOK, response.Code, response.Body.String())
+		assert.Equal(http.StatusOK, response.Code, "%s: %s", path, response.Body.String())
 	}
 
 	observed, err := nodeDB.GetRepositoryByProviderID(

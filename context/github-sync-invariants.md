@@ -654,6 +654,10 @@ path-scoped, so shared full-stack fixtures must seed both namespaces
 a PAT into workspace fetch or push, require the branch upstream to be `origin`,
 reject repository-local URL rewrites, and validate every origin fetch/push URL.
 
+Spoke clone-read admission must also use read credentials, or App-only routes
+fail before fetching; workspace launch still requires a mutation credential
+(`internal/gitclone/clone.go::Manager.RequireReadCredentialRoute`).
+
 A nil `tokenauth.Source` is not fail-closed: `gitclone` reads it as permission to
 run git with no credential, which succeeds against any public repository and
 spends no identity's budget. A route resolver that cannot serve a repository must

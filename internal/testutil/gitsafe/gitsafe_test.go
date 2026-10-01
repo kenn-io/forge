@@ -97,9 +97,14 @@ func replaceEnv(base []string, replacements map[string]string) []string {
 // temporary-directory cleanup.
 func TestPushIntoBareRepositoryStartsNoBackgroundMaintenance(t *testing.T) {
 	require := require.New(t)
+	require.Empty(os.Getenv("GIT_DIR"), "TestMain must remove inherited repository bindings")
+	require.Equal("1", os.Getenv("GIT_CONFIG_NOSYSTEM"), "system Git config must stay disabled")
+	globalConfig, err := os.ReadFile(os.Getenv("GIT_CONFIG_GLOBAL"))
+	require.NoError(err, "TestMain must install a scratch global config")
+	require.Equal(SharedConfig, string(globalConfig))
 	dir := t.TempDir()
 	runner := Runner()
-	_, err := runner.Output(t.Context(), dir, "rev-parse", "--absolute-git-dir")
+	_, err = runner.Output(t.Context(), dir, "rev-parse", "--absolute-git-dir")
 	require.Error(err, "fixture must be outside all repositories and worktrees")
 	run := func(dir string, args ...string) {
 		t.Helper()

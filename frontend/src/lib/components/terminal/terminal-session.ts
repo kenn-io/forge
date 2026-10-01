@@ -1,6 +1,6 @@
 import { Data, Duration, Effect, Fiber, Queue, Schedule } from "effect";
 import type { Scope } from "effect/Scope";
-import * as Socket from "effect/unstable/socket/Socket";
+import * as Socket from "effect/socket/Socket";
 
 import { openWebSocket } from "../../browser/web-socket.js";
 
@@ -98,24 +98,28 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
 
     const socket = yield* openWebSocket(url, { openTimeout: "10 seconds" });
     const write = yield* socket.writer;
-    const writeLoop = Effect.forever(Queue.take(outbound).pipe(Effect.flatMap(write)));
-    const receiveLoop = socket.runRaw(
-      (data) => {
-        const frame = normalizeTerminalFrame(data);
-        if (frame === terminalHeartbeatMessage) {
-          Queue.offerUnsafe(heartbeatReplies, undefined);
-        } else if (frame !== null) {
-          Queue.offerUnsafe(inbound, { kind: "frame", data: frame });
-        }
-      },
-      {
-        onOpen: Effect.sync(() => {
-          opened = true;
-          connected = true;
-          options.onOpen?.();
-        }),
-      },
-    );
+    const writeLoop = Effect.forever(Queue.take(outbound).pipe(Effect.flatMap(write.write)));
+    const receiveLoop = Effect.gen(function* () {
+      const reader = yield* socket.reader;
+      yield* Effect.sync(() => {
+        opened = true;
+        connected = true;
+        options.onOpen?.();
+      });
+      while (true) {
+        const frames = yield* reader.pull;
+        yield* Effect.sync(() => {
+          for (const data of frames) {
+            const frame = normalizeTerminalFrame(data);
+            if (frame === terminalHeartbeatMessage) {
+              Queue.offerUnsafe(heartbeatReplies, undefined);
+            } else if (frame !== null) {
+              Queue.offerUnsafe(inbound, { kind: "frame", data: frame });
+            }
+          }
+        });
+      }
+    });
     const messageLoop = Effect.gen(function* () {
       while (true) {
         const message = yield* Queue.take(inbound);
@@ -128,7 +132,7 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
         receiveLoop.pipe(Effect.ensuring(Effect.sync(() => Queue.offerUnsafe(inbound, { kind: "done" })))),
       );
       yield* messageLoop;
-      yield* Fiber.join(receiver);
+      return yield* Fiber.join(receiver);
     });
     const heartbeatLoop = Effect.forever(
       Queue.offer(outbound, terminalHeartbeatMessage).pipe(

@@ -57,17 +57,19 @@ export default defineConfig({
           `(cd frontend && ${frontendVP} exec -- svelte-check --config ./vite.config.ts --tsconfig ./tsconfig.json --fail-on-warnings --tsgo)`,
           `(cd packages/github-app-ui && ${packageVP} exec -- svelte-check --config ./vite.config.ts --tsconfig ./tsconfig.json --fail-on-warnings --tsgo)`,
         ],
-        input: [
-          { auto: true },
-          "!node_modules/.vite-temp/**",
-          "!frontend/node_modules/.vite-temp/**",
-          "!packages/github-app-ui/node_modules/.vite-temp/**",
-          "!node_modules/.vite/task-cache/**",
-          "!frontend/node_modules/.vite/task-cache/**",
-          "!packages/github-app-ui/node_modules/.vite/task-cache/**",
-          "!frontend/.svelte-check/**",
-          "!packages/github-app-ui/.svelte-check/**",
-        ],
+        cache: {
+          input: [
+            { auto: true },
+            "!node_modules/.vite-temp/**",
+            "!frontend/node_modules/.vite-temp/**",
+            "!packages/github-app-ui/node_modules/.vite-temp/**",
+            "!node_modules/.vite/task-cache/**",
+            "!frontend/node_modules/.vite/task-cache/**",
+            "!packages/github-app-ui/node_modules/.vite/task-cache/**",
+            "!frontend/.svelte-check/**",
+            "!packages/github-app-ui/.svelte-check/**",
+          ],
+        },
       },
       "github-app-ui-package-check": {
         command: [

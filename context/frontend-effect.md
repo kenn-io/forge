@@ -11,6 +11,7 @@ Read the installed package that the frontend actually compiles against before
 assuming an API from a newer Effect release:
 
 - `frontend/node_modules/effect/README.md` for the installed package overview.
+- `frontend/node_modules/effect/AGENTS.md` for the installed library guidance.
 - `frontend/node_modules/effect/src/Effect.ts` for core constructors,
   composition, runtime, interruption, and scope APIs.
 - `frontend/node_modules/effect/src/Stream.ts`, `Schema.ts`, `Layer.ts`, and
@@ -22,8 +23,7 @@ assuming an API from a newer Effect release:
 - `frontend/node_modules/@effect/language-service/schema.json` for supported
   `tsconfig.json` plugin options.
 
-The pinned Effect package does not currently contain an `AGENTS.md`; do not
-invent or link that path. The language-service README says TypeScript 7 should
+The language-service README says TypeScript 7 should
 use `@effect/tsgo`, but kenn-forge uses TypeScript 5.9, so the installed language
 service is the supported tool here.
 

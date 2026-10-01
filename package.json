@@ -23,11 +23,13 @@
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "svelte-check": "4.7.5",
     "typescript": "6.0.3",
-    "vite-plus": "0.3.0",
+    "vite-plus": "1.0.0",
     "yaml": "2.9.0"
   },
   "overrides": {
-    "dompurify": "3.4.16"
+    "dompurify": "3.4.16",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
+    "vitest": "5.0.1"
   },
   "devEngines": {
     "packageManager": {

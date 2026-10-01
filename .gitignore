@@ -19,7 +19,7 @@ frontend/playwright-report/
 frontend/test-results/
 /test-results/
 frontend/tests/demo/screenshots/
-frontend/.vitest-attachments/
+frontend/.vitest/
 frontend/src/**/__screenshots__/
 .idea/
 .vscode/

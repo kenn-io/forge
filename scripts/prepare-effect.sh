@@ -4,7 +4,7 @@ set -eu
 
 repo_dir=".repos/effect"
 repo_url="https://github.com/Effect-TS/effect"
-repo_ref="f4151e1937c26de14f1d64566f8126173f1b5014"
+repo_ref="67ba4e46a11ccda0b6761578bfd22c04ae00167d"
 
 if [ -d "$repo_dir/.git" ]; then
   current_url=$(git -C "$repo_dir" remote get-url origin 2>/dev/null || true)

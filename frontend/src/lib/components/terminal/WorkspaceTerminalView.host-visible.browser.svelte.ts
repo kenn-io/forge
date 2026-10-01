@@ -722,7 +722,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
       }, WAIT);
 
       await page.getByRole("button", { name: "Terminal options" }).click();
-      await page.getByRole("textbox", { name: "Monospace font family" }).fill("Iosevka Term");
+      await page.getByRole("textbox", { name: "Monospace font family", exact: false }).fill("Iosevka Term");
       await page.getByRole("button", { name: "Save" }).click();
       await expect.element(page.getByRole("button", { name: "Saving..." })).toBeVisible();
 

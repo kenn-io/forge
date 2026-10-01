@@ -318,11 +318,11 @@ describe("ForgeSelector (browser)", () => {
     await page.getByLabelText("Current Forge: Main Forge").click();
 
     const rows = page.getByRole("listitem");
-    await expect.element(rows.filter({ hasText: "Main Forge" })).toHaveTextContent("Hub");
-    await expect.element(rows.filter({ hasText: "Build node" })).toHaveTextContent("Spoke");
-    await expect.element(rows.filter({ hasText: "Compute A" })).toHaveTextContent("Devbox");
-    await expect.element(rows.filter({ hasText: "Compute A" })).toHaveTextContent("online");
-    await expect.element(rows.filter({ hasText: "Compute B" })).toHaveTextContent("offline");
+    await expect.element(rows.filter({ hasText: "Main Forge" })).toMatchTextContent("Hub");
+    await expect.element(rows.filter({ hasText: "Build node" })).toMatchTextContent("Spoke");
+    await expect.element(rows.filter({ hasText: "Compute A" })).toMatchTextContent("Devbox");
+    await expect.element(rows.filter({ hasText: "Compute A" })).toMatchTextContent("online");
+    await expect.element(rows.filter({ hasText: "Compute B" })).toMatchTextContent("offline");
     expect(document.querySelectorAll(".forge-selector li a")).toHaveLength(2);
     const menu = page.getByRole("list", { name: "Forge fleet" }).element().getBoundingClientRect();
     expect(menu.right).toBeLessThanOrEqual(width);

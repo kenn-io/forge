@@ -169,7 +169,7 @@ describe("item references through the timeline", () => {
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/1", { overrides: overrides() });
     await vi.waitFor(() => expect(detailTitle()).toContain("Add widget caching layer"), WAIT);
 
-    await page.getByRole("link", { name: "Add CLI flag parser" }).click();
+    await page.getByRole("link", { name: "Add CLI flag parser", exact: false }).click();
 
     await vi.waitFor(() => expect(window.location.pathname).toBe("/pulls/github/acme/tools/1"), WAIT);
     await vi.waitFor(() => expect(detailTitle()).toContain("Add CLI flag parser"), WAIT);
@@ -181,7 +181,7 @@ describe("item references through the timeline", () => {
     await vi.waitFor(() => expect(detailTitle()).toContain("Add widget caching layer"), WAIT);
 
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
-    await page.getByRole("link", { name: "External follow-up PR" }).click();
+    await page.getByRole("link", { name: "External follow-up PR", exact: false }).click();
 
     await vi.waitFor(() => expect(openSpy).toHaveBeenCalled(), WAIT);
     expect(String(openSpy.mock.calls[0]![0])).toBe("https://github.com/other/repo/pull/77");
@@ -231,7 +231,7 @@ describe("item references through the timeline", () => {
     });
 
     const sidebar = page.getByRole("region", { name: "Workspace details pane" });
-    await sidebar.getByRole("link", { name: itemType === "pr" ? title : "linked item" }).click();
+    await sidebar.getByRole("link", { name: itemType === "pr" ? title : "linked item", exact: false }).click();
 
     await expect.element(sidebar.getByRole("heading", { name: title, exact: true })).toBeVisible();
     expect(window.location.pathname).toBe("/terminal/ws-1");

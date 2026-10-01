@@ -32,8 +32,8 @@ describe("settings sidebar search", () => {
 
     await expect.element(page.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible();
     await expect.element(page.getByRole("button", { name: "Assign new workspace items to me" })).toBeVisible();
-    await expect.element(page.getByLabelText("Monospace font family")).toBeVisible();
-    await expect.element(page.getByLabelText("Retained terminal sessions")).toBeVisible();
+    await expect.element(page.getByLabelText("Monospace font family", { exact: false })).toBeVisible();
+    await expect.element(page.getByLabelText("Retained terminal sessions", { exact: false })).toBeVisible();
   });
 
   it("filters categories by keywords, shows an empty notice, and restores on clear", async () => {
@@ -54,7 +54,7 @@ describe("settings sidebar search", () => {
     // or summary, so a hit proves keyword matching.
     await setQuery("ligatures");
     await vi.waitFor(() => expect(navLabels()).toEqual(["Workspaces"]), WAIT);
-    await expect.element(page.getByLabelText("Monospace font family")).toBeVisible();
+    await expect.element(page.getByLabelText("Monospace font family", { exact: false })).toBeVisible();
     // The Workspace group heading survives for its remaining item.
     expect(
       Array.from(document.querySelectorAll(".kit-settings__group-title")).map((el) => el.textContent?.trim()),

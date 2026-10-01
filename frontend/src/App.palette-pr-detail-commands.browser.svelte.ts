@@ -168,7 +168,7 @@ describe("PR-detail palette commands", () => {
 
   it("Approve PR runs from the palette and triggers the approve flow", async () => {
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/42");
-    await expect.element(page.getByText("Adds Playwright smoke tests")).toBeVisible();
+    await expect.element(page.getByText("Adds Playwright smoke tests", { exact: false })).toBeVisible();
 
     await openPaletteWith("approve pr");
     // The command must actually surface for the open, approvable PR -- this also
@@ -195,7 +195,7 @@ describe("PR-detail palette commands", () => {
 
   it("Approve PR is absent from the palette when the PR is closed", async () => {
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/55", { overrides: [closedPR55] });
-    await expect.element(page.getByText("Consolidates theme tokens")).toBeVisible();
+    await expect.element(page.getByText("Consolidates theme tokens", { exact: false })).toBeVisible();
 
     await openPaletteWith("approve pr");
 
@@ -204,7 +204,7 @@ describe("PR-detail palette commands", () => {
 
   it("Mark ready for review appears only when the PR is a draft", async () => {
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/42");
-    await expect.element(page.getByText("Adds Playwright smoke tests")).toBeVisible();
+    await expect.element(page.getByText("Adds Playwright smoke tests", { exact: false })).toBeVisible();
 
     await openPaletteWith("ready for review");
 
@@ -241,7 +241,7 @@ describe("pane layout palette commands", () => {
 
   it("splits the active pane out of its leaf and resets back", async () => {
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/42");
-    await expect.element(page.getByText("Adds Playwright smoke tests")).toBeVisible();
+    await expect.element(page.getByText("Adds Playwright smoke tests", { exact: false })).toBeVisible();
 
     // Conversation and files share a leaf by default, so nothing is split yet.
     expect(splitChildren()).toHaveLength(0);
@@ -257,7 +257,7 @@ describe("pane layout palette commands", () => {
 
   it("offers Maximize and Restore according to the current zoom", async () => {
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/42");
-    await expect.element(page.getByText("Adds Playwright smoke tests")).toBeVisible();
+    await expect.element(page.getByText("Adds Playwright smoke tests", { exact: false })).toBeVisible();
 
     await openPaletteWith("pane");
     await vi.waitFor(() => expect(paletteRowsNamed(/Maximize pane/i).length).toBeGreaterThan(0));
@@ -286,7 +286,7 @@ describe("pane layout palette commands", () => {
     // Below the flatten width every structural edit is disabled, so the palette
     // must not be a back door into rearranging a tree that is not on screen.
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/42");
-    await expect.element(page.getByText("Adds Playwright smoke tests")).toBeVisible();
+    await expect.element(page.getByText("Adds Playwright smoke tests", { exact: false })).toBeVisible();
     await page.viewport(560, 900);
     await vi.waitFor(() => expect(document.querySelector("[data-testid='pane-toggle-zoom']")).toBeNull());
 

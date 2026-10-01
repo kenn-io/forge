@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Stream } from "effect";
+import * as Socket from "effect/socket/Socket";
 import { eventSourceStream, openEventSource } from "./event-source.js";
 import { byteStreamFromReader, type ByteReader } from "./streaming-fetch.js";
 import { observeResize } from "./observers.js";
@@ -190,7 +191,13 @@ it.layer(WebSocketSuccessTest)("WebSocket release after success", (it) => {
       const probe = yield* WebSocketProbe;
       const socket = yield* openWebSocket("wss://example.invalid/events");
 
-      yield* socket.runString(() => undefined);
+      yield* Stream.runDrain(Socket.toStream(socket)).pipe(
+        Effect.catchTag("SocketError", (error) => {
+          assert.strictEqual(error.reason._tag, "SocketCloseError");
+          if (error.reason._tag === "SocketCloseError") assert.strictEqual(error.reason.code, 1000);
+          return Effect.void;
+        }),
+      );
 
       assert.strictEqual(yield* probe.closeCount, 1);
     }),
@@ -203,7 +210,7 @@ it.layer(WebSocketFailureTest)("WebSocket release after failure", (it) => {
       const probe = yield* WebSocketProbe;
       const socket = yield* openWebSocket("wss://example.invalid/events");
 
-      const exit = yield* Effect.exit(socket.runString(() => Effect.fail("stop")));
+      const exit = yield* Effect.exit(Stream.runForEach(Socket.toStream(socket), () => Effect.fail("stop")));
 
       assert.strictEqual(exit._tag, "Failure");
       assert.strictEqual(yield* probe.closeCount, 1);
@@ -216,7 +223,7 @@ it.layer(WebSocketInterruptionTest)("WebSocket release after interruption", (it)
     Effect.gen(function* () {
       const probe = yield* WebSocketProbe;
       const socket = yield* openWebSocket("wss://example.invalid/events");
-      const fiber = yield* Effect.forkChild(socket.runString(() => undefined));
+      const fiber = yield* Effect.forkChild(Stream.runDrain(Socket.toStream(socket)));
       yield* probe.awaitOpened;
 
       yield* Fiber.interrupt(fiber);

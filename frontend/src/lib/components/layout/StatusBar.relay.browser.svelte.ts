@@ -112,10 +112,10 @@ it("shows an incompatible relay warning through reconnects until decoding recove
     ],
   });
   const trigger = page.getByRole("button", { name: "Show relay activity" });
-  await expect.element(trigger).toHaveTextContent("Relay incompatible");
+  await expect.element(trigger).toMatchTextContent("Relay incompatible");
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Recent relay activity" });
-  await expect.element(dialog.getByRole("alert")).toHaveTextContent("Forge cannot read the relay's message format");
+  await expect.element(dialog.getByRole("alert")).toMatchTextContent("Forge cannot read the relay's message format");
   emitBrowserEventSource("sync_status", {
     running: false,
     relay: {
@@ -127,7 +127,7 @@ it("shows an incompatible relay warning through reconnects until decoding recove
     },
   });
   await expect.element(dialog.getByText("Issue #9")).toBeVisible();
-  await expect.element(trigger).toHaveTextContent("Relay incompatible");
+  await expect.element(trigger).toMatchTextContent("Relay incompatible");
   await expect.element(dialog.getByText("Connected. Changes arrive as GitHub reports them.")).not.toBeInTheDocument();
   emitBrowserEventSource("sync_status", {
     running: false,

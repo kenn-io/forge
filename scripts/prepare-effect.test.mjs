@@ -22,7 +22,7 @@ case "$*" in
     printf '%s\\n' 'https://github.com/Effect-TS/effect'
     ;;
   "-C .repos/effect rev-parse HEAD")
-    printf '%s\\n' 'f4151e1937c26de14f1d64566f8126173f1b5014'
+    printf '%s\\n' '67ba4e46a11ccda0b6761578bfd22c04ae00167d'
     ;;
   "-C .repos/effect status --porcelain")
     ${statusCommand}

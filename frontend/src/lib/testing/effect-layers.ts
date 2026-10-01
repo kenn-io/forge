@@ -1,5 +1,5 @@
 import { Context, Deferred, Effect, Layer, ManagedRuntime } from "effect";
-import * as Socket from "effect/unstable/socket/Socket";
+import * as Socket from "effect/socket/Socket";
 import { makeAppLiveLayer } from "../app/layer.js";
 import { makeAppRuntimeBoundary, type OwnedAppRuntime } from "../app/runtime.js";
 import { makeGeneratedApiLayer, type GeneratedClient } from "../api/generated-api.js";
@@ -206,7 +206,7 @@ function makeWebSocketTestLayer(mode: WebSocketTestMode) {
   const constructorLayer = Layer.effect(Socket.WebSocketConstructor)(
     Effect.gen(function* () {
       const probe = yield* WebSocketProbe;
-      return (url: string, _protocols?: string | Array<string>) =>
+      return (url: string) =>
         new TestWebSocket(
           url,
           mode,

@@ -18,7 +18,7 @@ describe("MCPSettings numeric inputs (browser)", () => {
       props: { mcp, onUpdate: vi.fn() },
     });
 
-    const port = page.getByRole("spinbutton", { name: "Port" });
+    const port = page.getByRole("spinbutton", { name: "Port", exact: false });
     const save = page.getByRole("button", { name: "Save MCP companion" });
     await port.click();
     await userEvent.keyboard("-");

@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { Context, Effect, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
-import * as Socket from "effect/unstable/socket/Socket";
+import * as Socket from "effect/socket/Socket";
 
 import { makeTerminalSessionController } from "./terminal-session.js";
 

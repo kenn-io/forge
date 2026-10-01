@@ -100,6 +100,9 @@ or credentials (`internal/fleetsetup/setup_test.go`).
 
 ## Frontend test lane selection
 
+- Upgrade Vite and Vitest together through a Vite+ release that bundles both;
+  do not upgrade Vitest independently (`frontend/package.json`).
+
 Do not treat Playwright or full-stack e2e as a universal "must have" for every
 visible frontend fix. Pick the narrowest lane that observes the behavior's real
 owner:

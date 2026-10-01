@@ -23,12 +23,12 @@ const launchTargets: LaunchTarget[] = [
 ];
 
 function resolvedColor(value: string): string {
-  const probe = document.createElement("span");
-  probe.style.color = value;
-  document.body.append(probe);
-  const color = getComputedStyle(probe).color;
-  probe.remove();
-  return color;
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (context === null) throw new Error("Canvas rendering is unavailable");
+  context.fillStyle = value;
+  context.fillRect(0, 0, 1, 1);
+  return Array.from(context.getImageData(0, 0, 1, 1).data).join(",");
 }
 
 describe("workspace create split button control height", () => {
@@ -196,7 +196,7 @@ describe("workspace create split button in the New workspace dialog", () => {
       const dialog = page.getByRole("dialog", { name: "New workspace" });
       await expect.element(dialog.getByText(reason, { exact: false })).toBeVisible();
       await expect.element(dialog.getByRole("button", { name: "Create workspace", exact: true })).toBeDisabled();
-      await dialog.getByRole("combobox", { name: "Workspace machine: Compute A (devbox)" }).click();
+      await dialog.getByRole("combobox", { name: "Workspace machine: Compute A (devbox)", exact: false }).click();
       await expect.element(page.getByRole("option", { name: "Compute A (devbox)", exact: false })).toBeDisabled();
       await page.getByRole("option", { name: "Laptop (this machine)" }).click();
       await dialog.getByRole("button", { name: "Create workspace", exact: true }).click();
@@ -240,10 +240,10 @@ describe("workspace create split button in the New workspace dialog", () => {
     const accent = resolvedColor(rootStyle.getPropertyValue("--accent-blue").trim());
     const foreground = resolvedColor(rootStyle.getPropertyValue("--bg-surface").trim());
 
-    expect(primaryStyle.backgroundColor).toBe(accent);
-    expect(optionsStyle.backgroundColor).toBe(accent);
-    expect(primaryStyle.color).toBe(foreground);
-    expect(optionsStyle.color).toBe(foreground);
+    expect(resolvedColor(primaryStyle.backgroundColor)).toBe(accent);
+    expect(resolvedColor(optionsStyle.backgroundColor)).toBe(accent);
+    expect(resolvedColor(primaryStyle.color)).toBe(foreground);
+    expect(resolvedColor(optionsStyle.color)).toBe(foreground);
   });
 
   it("keeps the launch split button usable for the Kata issue source", async () => {

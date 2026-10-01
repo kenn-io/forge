@@ -319,7 +319,7 @@ test("routes page keys by focus while wheel input remains focus-neutral", async 
   });
   expect(filesPaneChrome.activeBorder).toContain("inset");
   expect(filesPaneChrome.overlayContent).toBe("none");
-  expect(filesPaneChrome.tabAccentContent).toBe("none");
+  expect(filesPaneChrome.tabAccentContent).toBe('""');
   expect(filesPaneChrome.toolbarZIndex).toBe("auto");
 
   // The focus marker is an inset shadow, which paints beneath descendants. It

@@ -11,6 +11,7 @@ import { registerScopedActions, resetRegistry } from "../../stores/keyboard/regi
 import type { Action } from "../../stores/keyboard/types.js";
 import { resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
+import { pressBackdrop } from "../../../test/pressBackdrop";
 
 const noop = (): void => {};
 const trueWhen = (): boolean => true;
@@ -131,7 +132,7 @@ describe("Cheatsheet", () => {
     expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).not.toBeNull();
     const overlay = container.querySelector(".kit-modal-overlay");
     expect(overlay).not.toBeNull();
-    await fireEvent.pointerDown(overlay!);
+    await pressBackdrop(overlay!);
     await rerender({});
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });

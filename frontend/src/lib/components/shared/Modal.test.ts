@@ -5,6 +5,7 @@ import { createRawSnippet } from "svelte";
 
 import Modal from "./Modal.svelte";
 import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
+import { pressBackdrop } from "../../../test/pressBackdrop";
 
 const body = createRawSnippet(() => ({
   render: () => `<p>dialog body</p>`,
@@ -39,13 +40,13 @@ describe("Modal shell", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("closes when the press starts on the backdrop", async () => {
+  it("closes on a press on the backdrop", async () => {
     const onClose = vi.fn();
     renderModal({ onClose });
 
     const overlay = document.querySelector(".kit-modal-overlay");
     expect(overlay).not.toBeNull();
-    await fireEvent.pointerDown(overlay!);
+    await pressBackdrop(overlay!);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

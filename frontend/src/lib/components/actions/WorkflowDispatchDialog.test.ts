@@ -9,6 +9,7 @@ vi.mock("../../app/runtime-context.js", () => ({
   }),
 }));
 import WorkflowDispatchDialog from "./WorkflowDispatchDialog.svelte";
+import { pressBackdrop } from "../../../test/pressBackdrop";
 
 const workflow = {
   available: true,
@@ -58,7 +59,7 @@ it.each([
   render(WorkflowDispatchDialog, { ...base, state });
   await fireEvent.keyDown(window, { key: "Escape" });
   expect(base.onclose).toHaveBeenCalledTimes(1);
-  await fireEvent.pointerDown(screen.getByRole("dialog").parentElement as HTMLElement);
+  await pressBackdrop(screen.getByRole("dialog").parentElement as HTMLElement);
   expect(base.onclose).toHaveBeenCalledTimes(2);
   await fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(base.onclose).toHaveBeenCalledTimes(3);

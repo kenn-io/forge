@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -42,23 +42,5 @@ describe("ConfirmDialog", () => {
     const cancel = screen.getByRole("button", { name: "Cancel" });
     await waitFor(() => expect(cancel).toBe(document.activeElement));
     expect(screen.getByRole("button", { name: "Delete workspace" })).not.toBe(document.activeElement);
-  });
-
-  // The keyboard loop must stay Cancel <-> destructive with no third stop, so
-  // tabbing off the destructive action returns to Cancel rather than wrapping
-  // to a header close button.
-  it("traps Tab in a Cancel and destructive-action loop", async () => {
-    renderDialog();
-    const cancel = screen.getByRole("button", { name: "Cancel" });
-    const destroy = screen.getByRole("button", { name: "Delete workspace" });
-    await waitFor(() => expect(cancel).toBe(document.activeElement));
-
-    destroy.focus();
-    await fireEvent.keyDown(destroy, { key: "Tab" });
-    expect(cancel).toBe(document.activeElement);
-
-    cancel.focus();
-    await fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
-    expect(destroy).toBe(document.activeElement);
   });
 });

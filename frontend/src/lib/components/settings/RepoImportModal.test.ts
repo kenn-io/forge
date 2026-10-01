@@ -289,18 +289,6 @@ describe("RepoImportModal", () => {
     );
   });
 
-  it("keeps tab focus inside the modal", async () => {
-    renderRepoImportModal({ open: true, onClose: vi.fn(), onImported: vi.fn() });
-
-    const input = screen.getByLabelText("Repository pattern");
-    await waitFor(() => expect(document.activeElement).toBe(input));
-    const close = screen.getByRole("button", { name: "Close" });
-    close.focus();
-    await fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
-
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
-  });
-
   it("ignores stale preview responses after input changes", async () => {
     let resolveFirst: (value: RepoPreviewResponse) => void = () => {};
     preview.mockReturnValueOnce(

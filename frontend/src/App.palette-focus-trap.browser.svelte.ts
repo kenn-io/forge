@@ -1,18 +1,8 @@
-// Browser-tier analog of App.palette-focus-trap.test.ts. Tab and Shift+Tab must
-// keep focus inside the open palette. The trap is programmatic (the dialog's
-// keydown handler moves focus and prevents default), so the same code path runs
-// in a real Chromium page as in jsdom -- but here a genuine focus model and real
-// layout exercise it. A real page provides matchMedia/ResizeObserver/
-// IntersectionObserver/canvas natively, so the jsdom installAppDomGlobals() shim
-// is gone; the browser harness stubs only EventSource.
-//
-// The palette open/focus gate and the focus-containment/defaultPrevented facts
-// stay as document.activeElement / event inspection against the real DOM, where
-// the page locator API (getByText/getByRole/getByTitle/getByTestId) cannot
-// reach. The "Escape closes the dialog" teardown is asserted by polling for the
-// role="dialog"[aria-label="Command palette"] element to leave the DOM, the
-// faithful translation of the jsdom screen.queryByRole(...).toBeNull() check
-// (the element is genuinely removed by {#if isPaletteOpen()}).
+// The palette opens from Meta+K with focus in its query input, and Escape
+// closes it. Tab containment inside the open palette is kit-ui's trapFocus
+// behavior and is tested there (context/testing.md, Library-owned behavior).
+// A real page provides matchMedia/ResizeObserver/IntersectionObserver/canvas
+// natively; the browser harness stubs only EventSource.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
@@ -25,7 +15,7 @@ import {
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
 
-describe("palette focus trap", () => {
+describe("palette open and close", () => {
   vi.setConfig({ testTimeout: 20_000 });
 
   let mounted: MountedBrowserApp | null = null;
@@ -45,7 +35,7 @@ describe("palette focus trap", () => {
     await resetKeyboardModuleState();
   });
 
-  it("Tab and Shift+Tab cycle within the open palette", async () => {
+  it("opens from Meta+K with focus in the query, and Escape closes it", async () => {
     mounted = await mountBrowserApp("/pulls");
 
     // The palette is opened from anywhere via Meta+K (Ctrl+K on non-mac);
@@ -62,27 +52,8 @@ describe("palette focus trap", () => {
       input = el!;
     });
 
-    const palette = document.querySelector(".palette");
-    expect(palette).not.toBeNull();
-
-    const panel = document.querySelector<HTMLElement>("[role='dialog'][aria-label='Command palette']");
-    expect(panel).not.toBeNull();
-    const resultButtons = panel!.querySelectorAll<HTMLButtonElement>(".palette-row:not(.palette-row-disabled)");
-    const lastResult = resultButtons.item(resultButtons.length - 1);
-    expect(resultButtons.length).toBeGreaterThan(0);
-
-    lastResult.focus();
-    const forwardTab = pressKey("Tab", {}, lastResult);
-    expect(forwardTab.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(input);
-
-    input.focus();
-    const reverseTab = pressKey("Tab", { shift: true }, input);
-    expect(reverseTab.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(lastResult);
-
     // Escape closes the palette and tears down the modal frame.
-    pressKey("Escape", {}, document.activeElement!);
+    pressKey("Escape", {}, input);
     await vi.waitFor(() => expect(document.querySelector("[role='dialog'][aria-label='Command palette']")).toBeNull());
   });
 });

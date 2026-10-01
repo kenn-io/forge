@@ -37,6 +37,12 @@ func (r *blockingRouteResolver) SourceForRepo(_, _, _, _ string) tokenauth.Sourc
 	return nil
 }
 
+func (r *blockingRouteResolver) ReadSourceForRepo(
+	platformName, host, owner, name string,
+) tokenauth.Source {
+	return r.SourceForRepo(platformName, host, owner, name)
+}
+
 func (*blockingRouteResolver) FallbackSource(string) tokenauth.Source { return nil }
 
 // setupTestRepo creates a bare "remote" repo with one commit and returns

@@ -39,6 +39,10 @@ const ensureCloneTimeout = 15 * time.Minute
 // ErrNotFound is returned when a git ref or object cannot be resolved.
 var ErrNotFound = errors.New("git object not found")
 
+// ErrEmptyRepository reports a clone whose remote has no branches yet, so it
+// has no default branch or history to read.
+var ErrEmptyRepository = errors.New("repository has no branches")
+
 // ErrCredentialUnavailable reports that a daemon-local networked Git operation
 // has no exact credential route for its verified repository.
 var ErrCredentialUnavailable = errors.New("git credential unavailable")
@@ -1048,6 +1052,11 @@ func (m *Manager) fetch(
 	if err != nil {
 		return fmt.Errorf("git fetch: %w", err)
 	}
+	// The remote has no HEAD branch until its first push. If emptiness cannot
+	// be read, set-head below still runs and reports its own failure.
+	if empty, err := m.emptyCloneInDir(ctx, clonePath); err == nil && empty {
+		return nil
+	}
 	// set-head -a is networked (it consults the remote's HEAD via
 	// /info/refs) and so subject to the same transient 5xx as fetch.
 	// Failure is non-fatal — bare clone still works — but retrying
@@ -1063,6 +1072,17 @@ func (m *Manager) fetch(
 			"path", clonePath, "err", setHeadErr)
 	}
 	return nil
+}
+
+// emptyCloneInDir reports whether the clone has fetched no remote branches.
+func (m *Manager) emptyCloneInDir(ctx context.Context, dir string) (bool, error) {
+	out, err := m.git(ctx, dir,
+		"for-each-ref", "--count=1", "--format=%(refname)", "refs/remotes/origin/",
+	)
+	if err != nil {
+		return false, fmt.Errorf("list remote branches: %w", err)
+	}
+	return strings.TrimSpace(string(out)) == "", nil
 }
 
 // RevParse resolves a git ref to its SHA. Returns an empty string if the ref

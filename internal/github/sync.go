@@ -5492,6 +5492,9 @@ func (s *Syncer) syncDefaultBranchActivity(
 		repo.Name,
 		preferredBranch,
 	)
+	if errors.Is(err, gitclone.ErrEmptyRepository) {
+		return
+	}
 	if err != nil {
 		slog.Warn("resolve default branch activity ref failed",
 			"repo", repo.Owner+"/"+repo.Name,

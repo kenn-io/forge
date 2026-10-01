@@ -94,6 +94,9 @@ func (m *Manager) resolveOriginHEADInDir(
 		"symbolic-ref", "--quiet", "refs/remotes/origin/HEAD",
 	)
 	if err != nil {
+		if empty, emptyErr := m.emptyCloneInDir(ctx, dir); emptyErr == nil && empty {
+			return "", "", fmt.Errorf("resolve origin HEAD: %w", ErrEmptyRepository)
+		}
 		return "", "", fmt.Errorf("resolve origin HEAD: %w", err)
 	}
 	remoteRef := strings.TrimSpace(string(out))

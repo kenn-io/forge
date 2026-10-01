@@ -2,6 +2,7 @@ package gitfixture
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,4 +29,16 @@ func TestPushToFixtureOriginStartsNoBackgroundMaintenance(t *testing.T) {
 	_, stderr, err := traced.Run(t.Context(), repo.Dir, nil, "push", "origin", "main")
 	require.NoError(t, err, "git push: %s", stderr)
 	assert.NotContains(t, string(stderr), "maintenance run")
+}
+
+// Fixtures refuse to initialize inside an existing checkout, where Git would
+// act on the enclosing repository.
+func TestFixtureDirectoriesMustBeOutsideRepositories(t *testing.T) {
+	require.NoError(t, outsideRepositories(t.Context(), t.TempDir()))
+
+	repo := NewRepository(t, false)
+	nested := filepath.Join(repo.Dir, "nested")
+	require.NoError(t, os.Mkdir(nested, 0o755))
+	require.ErrorContains(t, outsideRepositories(t.Context(), t.TempDir(), nested),
+		"inside a Git repository or worktree")
 }

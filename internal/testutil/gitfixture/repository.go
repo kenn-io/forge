@@ -1,6 +1,8 @@
 package gitfixture
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +31,7 @@ func NewRepository(t *testing.T, withUpstream bool) *Repository {
 		Dir:    t.TempDir(),
 		Remote: t.TempDir(),
 	}
+	require.NoError(t, outsideRepositories(t.Context(), repo.Dir, repo.Remote))
 	Run(t, repo.Dir, "init", "-b", "main")
 	Run(t, repo.Dir, "config", "user.email", "kenn-forge-fixture@example.invalid")
 	Run(t, repo.Dir, "config", "user.name", "Kenn Forge Fixture")
@@ -44,6 +47,18 @@ func NewRepository(t *testing.T, withUpstream bool) *Repository {
 		Run(t, repo.Dir, "push", "-u", "origin", "main")
 	}
 	return repo
+}
+
+// outsideRepositories refuses fixture directories inside an existing repository
+// or worktree, where Git would act on the enclosing checkout, such as when
+// TMPDIR points into one.
+func outsideRepositories(ctx context.Context, dirs ...string) error {
+	for _, dir := range dirs {
+		if _, err := gitsafe.Runner().Output(ctx, dir, "rev-parse", "--absolute-git-dir"); err == nil {
+			return fmt.Errorf("fixture directory %s is inside a Git repository or worktree", dir)
+		}
+	}
+	return nil
 }
 
 // Write writes body to rel within the repository worktree.

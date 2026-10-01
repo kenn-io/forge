@@ -10,6 +10,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/telemetry"
 )
 
 const databaseOptimizeInterval = 24 * time.Hour
@@ -48,6 +49,18 @@ func startBackgroundLoops(ctx context.Context, database *db.DB) *backgroundLoopH
 	handle := newBackgroundLoopHandle(ctx)
 	handle.startTickerAfterInterval("database optimize", databaseOptimizeInterval, database.Optimize)
 	return handle
+}
+
+// startTelemetryHeartbeat reports daemon_active daily so long-running servers
+// keep counting as active, not just at startup.
+func startTelemetryHeartbeat(handle *backgroundLoopHandle, reporter telemetry.Client, repoCount func() int) {
+	handle.startTickerAfterInterval("telemetry heartbeat", telemetry.HeartbeatInterval, func(context.Context) error {
+		return captureDaemonActive(reporter, repoCount)
+	})
+}
+
+func captureDaemonActive(reporter telemetry.Client, repoCount func() int) error {
+	return reporter.Capture("daemon_active", map[string]any{"repo_count": repoCount()})
 }
 
 func startNotificationLoops(handle *backgroundLoopHandle, syncer *ghclient.Syncer, cfg *config.Config) {

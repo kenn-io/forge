@@ -133,6 +133,60 @@ func TestBackgroundLoopWaitsForFirstTickerInterval(t *testing.T) {
 	})
 }
 
+type fakeTelemetryClient struct {
+	mu       sync.Mutex
+	captures []map[string]any
+}
+
+func (f *fakeTelemetryClient) Capture(event string, properties map[string]any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if event == "daemon_active" {
+		f.captures = append(f.captures, properties)
+	}
+	return nil
+}
+
+func (f *fakeTelemetryClient) Close() error  { return nil }
+func (f *fakeTelemetryClient) Enabled() bool { return true }
+
+func (f *fakeTelemetryClient) repoCounts() []any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	counts := make([]any, 0, len(f.captures))
+	for _, properties := range f.captures {
+		counts = append(counts, properties["repo_count"])
+	}
+	return counts
+}
+
+func TestTelemetryHeartbeatReportsDailyUntilStopped(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		handle := newBackgroundLoopHandle(t.Context())
+		client := &fakeTelemetryClient{}
+		var repos atomic.Int64
+		repos.Store(3)
+		startTelemetryHeartbeat(handle, client, func() int { return int(repos.Load()) })
+
+		synctest.Wait()
+		require.Empty(client.repoCounts())
+		time.Sleep(24 * time.Hour)
+		synctest.Wait()
+		require.Equal([]any{3}, client.repoCounts())
+
+		repos.Store(5)
+		time.Sleep(24 * time.Hour)
+		synctest.Wait()
+		require.Equal([]any{3, 5}, client.repoCounts())
+
+		require.NoError(handle.Stop(t.Context()))
+		time.Sleep(72 * time.Hour)
+		synctest.Wait()
+		require.Equal([]any{3, 5}, client.repoCounts())
+	})
+}
+
 func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {
 	require := require.New(t)
 	cfg := &config.Config{}

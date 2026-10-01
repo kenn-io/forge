@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,8 +24,17 @@ const (
 	EnabledEnv           = "TELEMETRY_ENABLED"
 	applicationSlug      = "kenn-forge"
 	installIDMetadataKey = "telemetry.install_id"
+	installedAtKey       = "telemetry.install_created_at"
 	postHogAPIKey        = "phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf"
 	postHogEndpoint      = "https://us.i.posthog.com"
+)
+
+const (
+	// HeartbeatInterval is how often a running daemon reports daemon_active.
+	HeartbeatInterval = 24 * time.Hour
+	// Throwaway installs (sandboxes, test harnesses) never live this long.
+	maturityAge   = 24 * time.Hour
+	maxHeldEvents = 1000
 )
 
 var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
@@ -52,6 +62,14 @@ type Reporter struct {
 	enabled    bool
 	version    string
 	commit     string
+	// installedAt is zero for installs created before install age was recorded.
+	installedAt time.Time
+	now         func() time.Time
+
+	mu         sync.Mutex
+	held       []posthog.Capture
+	flushTimer *time.Timer
+	closed     bool
 }
 
 type enqueueCloser interface {
@@ -105,7 +123,7 @@ func NewReporter(opts Options) (*Reporter, error) {
 		return nil, errors.New("telemetry database is required")
 	}
 
-	distinctID, err := loadOrCreateInstallID(context.Background(), opts.Database)
+	distinctID, installedAt, err := loadOrCreateInstallID(context.Background(), opts.Database, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -119,13 +137,16 @@ func NewReporter(opts Options) (*Reporter, error) {
 		return nil, err
 	}
 
-	return &Reporter{
-		client:     client,
-		distinctID: distinctID,
-		enabled:    true,
-		version:    opts.Version,
-		commit:     opts.Commit,
-	}, nil
+	reporter := &Reporter{
+		client:      client,
+		distinctID:  distinctID,
+		enabled:     true,
+		version:     opts.Version,
+		commit:      opts.Commit,
+		installedAt: installedAt,
+	}
+	reporter.scheduleMaturityFlush()
+	return reporter, nil
 }
 
 func DisabledReporter() *Reporter {
@@ -164,12 +185,72 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 	maps.Copy(props, safeProperties)
 	r.addDefaultProperties(event, props)
 
-	return r.client.Enqueue(posthog.Capture{
+	return r.send(posthog.Capture{
 		DistinctId: r.distinctID,
 		Event:      event,
-		Timestamp:  time.Now().UTC(),
+		Timestamp:  r.clock().UTC(),
 		Properties: props,
 	})
+}
+
+// send holds events until the install is old enough to count, then sends the
+// held events with their original capture times ahead of the new one.
+func (r *Reporter) send(capture posthog.Capture) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.matureAt(capture.Timestamp) {
+		if len(r.held) < maxHeldEvents {
+			r.held = append(r.held, capture)
+		}
+		return nil
+	}
+	return errors.Join(r.flushHeldLocked(), r.client.Enqueue(capture))
+}
+
+// scheduleMaturityFlush sends held events when the install turns 24 hours old,
+// so they don't wait for the next capture.
+func (r *Reporter) scheduleMaturityFlush() {
+	if r.installedAt.IsZero() {
+		return
+	}
+	wait := r.installedAt.Add(maturityAge).Sub(r.clock())
+	if wait <= 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.flushTimer = time.AfterFunc(wait, r.flushIfMature)
+}
+
+func (r *Reporter) flushIfMature() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed || !r.matureAt(r.clock()) {
+		return
+	}
+	if err := r.flushHeldLocked(); err != nil {
+		slog.Warn("send held telemetry events", "err", err)
+	}
+}
+
+func (r *Reporter) flushHeldLocked() error {
+	var err error
+	for _, capture := range r.held {
+		err = errors.Join(err, r.client.Enqueue(capture))
+	}
+	r.held = nil
+	return err
+}
+
+func (r *Reporter) matureAt(t time.Time) bool {
+	return r.installedAt.IsZero() || t.Sub(r.installedAt) >= maturityAge
+}
+
+func (r *Reporter) clock() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
 }
 
 func (r *Reporter) addDefaultProperties(event string, props posthog.Properties) {
@@ -194,7 +275,19 @@ func (r *Reporter) Close() error {
 	if !r.Enabled() {
 		return nil
 	}
-	return r.client.Close()
+	r.mu.Lock()
+	if r.flushTimer != nil {
+		r.flushTimer.Stop()
+	}
+	var flushErr error
+	if r.matureAt(r.clock()) {
+		flushErr = r.flushHeldLocked()
+	}
+	// Events from an install that closes before maturity are dropped.
+	r.held = nil
+	r.closed = true
+	r.mu.Unlock()
+	return errors.Join(flushErr, r.client.Close())
 }
 
 func safeTelemetryToken(value any) (any, bool) {
@@ -236,8 +329,34 @@ func safeTelemetryNumber(value any) (any, bool) {
 	}
 }
 
-func loadOrCreateInstallID(ctx context.Context, database *db.DB) (string, error) {
-	return database.GetOrCreateAppMetadataValue(ctx, installIDMetadataKey, randomInstallID)
+// loadOrCreateInstallID returns the install ID and when it was created. A zero
+// time means the ID predates install-age tracking and counts as mature.
+func loadOrCreateInstallID(ctx context.Context, database *db.DB, now time.Time) (string, time.Time, error) {
+	_, found, err := database.AppMetadataValue(ctx, installIDMetadataKey)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if !found {
+		// Write the creation time first so a crash between writes can't leave a new ID that looks old.
+		if _, err := database.GetOrCreateAppMetadataValue(ctx, installedAtKey, func() (string, error) {
+			return now.UTC().Format(time.RFC3339Nano), nil
+		}); err != nil {
+			return "", time.Time{}, err
+		}
+	}
+	id, err := database.GetOrCreateAppMetadataValue(ctx, installIDMetadataKey, randomInstallID)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	raw, found, err := database.AppMetadataValue(ctx, installedAtKey)
+	if err != nil || !found {
+		return id, time.Time{}, err
+	}
+	installedAt, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("parse telemetry install time: %w", err)
+	}
+	return id, installedAt, nil
 }
 
 func randomInstallID() (string, error) {

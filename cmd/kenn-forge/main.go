@@ -786,11 +786,16 @@ func run(opts serve.Options) error {
 		Commit:   commit,
 	})
 	if telemetryReporter.Enabled() {
-		if err := telemetryReporter.Capture("daemon_active", map[string]any{
-			"repo_count": len(repos),
-		}); err != nil {
+		repoCount := func() int {
+			if syncer == nil {
+				return 0
+			}
+			return len(syncer.TrackedRepos())
+		}
+		if err := captureDaemonActive(telemetryReporter, repoCount); err != nil {
 			slog.Warn("capture telemetry event", "err", err)
 		}
+		startTelemetryHeartbeat(backgroundLoops, telemetryReporter, repoCount)
 	}
 
 	var devboxConnections *devbox.Connections

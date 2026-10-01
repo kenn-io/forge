@@ -63,13 +63,20 @@ func gitAccessFailureReason(err error) GitAccessReason {
 	return ""
 }
 
+func gitAccessKey(repo RepoRef) string {
+	if key := expandedRepoIdentityKey(repo); key != "" {
+		return key
+	}
+	return expandedRepoRouteKey(repo)
+}
+
 // recordGitAccess updates the repository's clone-store Git access from the
 // result of a clone or fetch. A credential failure is logged when it starts
 // or changes reason and is returned as already reported.
 func (s *Syncer) recordGitAccess(repo RepoRef, err error) error {
 	host := repoHost(repo)
 	path := repo.Owner + "/" + repo.Name
-	key := strings.ToLower(host + "/" + path)
+	key := gitAccessKey(repo)
 	reason := gitAccessFailureReason(err)
 	if err != nil && reason == "" {
 		return err
@@ -110,16 +117,49 @@ func (s *Syncer) recordGitAccess(repo RepoRef, err error) error {
 	return reportedGitAccessError{err: err}
 }
 
+// refreshGitAccessStatus publishes repository removals and route changes even
+// when no further clone or fetch runs for the affected repository.
+func (s *Syncer) refreshGitAccessStatus() {
+	s.gitAccessMu.Lock()
+	hasFailures := len(s.gitAccess) != 0
+	s.gitAccessMu.Unlock()
+	if !hasFailures {
+		return
+	}
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	status := *s.Status()
+	if !slices.Equal(status.GitAccess, s.gitAccessProblems()) {
+		s.publishStatusLocked(&status)
+	}
+}
+
+// gitAccessProblems reconciles failures with the current tracked repositories.
 func (s *Syncer) gitAccessProblems() []GitAccessProblem {
+	repos := s.TrackedRepos()
 	s.gitAccessMu.Lock()
 	defer s.gitAccessMu.Unlock()
 	if len(s.gitAccess) == 0 {
 		return nil
 	}
+	current := make(map[string]GitAccessProblem, len(s.gitAccess))
 	problems := make([]GitAccessProblem, 0, len(s.gitAccess))
-	for _, problem := range s.gitAccess {
+	for _, repo := range repos {
+		key := gitAccessKey(repo)
+		problem, ok := s.gitAccess[key]
+		if !ok && !repo.Key.IsZero() {
+			// Preserve a failure recorded before the provider resolved its ID.
+			problem, ok = s.gitAccess[expandedRepoRouteKey(repo)]
+		}
+		if !ok {
+			continue
+		}
+		problem.Repository = repo.Owner + "/" + repo.Name
+		problem.Host = repoHost(repo)
+		current[key] = problem
 		problems = append(problems, problem)
 	}
+	s.gitAccess = current
 	slices.SortFunc(problems, func(a, b GitAccessProblem) int {
 		return strings.Compare(
 			strings.ToLower(a.Host+"/"+a.Repository), strings.ToLower(b.Host+"/"+b.Repository),

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/platform"
 )
 
 type failingGitTokenSource struct {
@@ -76,6 +77,91 @@ func TestGitAccessFailureReasonClassifiesOnlyCredentialFailures(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, gitAccessFailureReason(tc.err))
+		})
+	}
+}
+
+func TestGitAccessStatusFollowsTrackedRepositories(t *testing.T) {
+	tests := []struct {
+		name       string
+		unresolved bool
+		update     func(*Syncer, RepoRef)
+		wantRepo   string
+	}{
+		{
+			name:   "removed repository",
+			update: func(s *Syncer, _ RepoRef) { s.SetRepos(nil) },
+		},
+		{
+			name:       "removed unresolved repository",
+			unresolved: true,
+			update:     func(s *Syncer, _ RepoRef) { s.SetRepos(nil) },
+		},
+		{
+			name: "renamed by config reload",
+			update: func(s *Syncer, repo RepoRef) {
+				repo.Name = "renamed"
+				s.SetRepos([]RepoRef{repo})
+			},
+			wantRepo: "acme/renamed",
+		},
+		{
+			name: "renamed by provider observation",
+			update: func(s *Syncer, repo RepoRef) {
+				renamed := repo
+				renamed.Name = "renamed"
+				s.publishResolvedRepository(repo, renamed, true)
+			},
+			wantRepo: "acme/renamed",
+		},
+		{
+			name: "route reused by another repository",
+			update: func(s *Syncer, repo RepoRef) {
+				repo.Key = platform.RepositoryIDKey(2)
+				s.SetRepos([]RepoRef{repo})
+			},
+		},
+		{
+			name:       "unresolved repository gains identity",
+			unresolved: true,
+			update: func(s *Syncer, repo RepoRef) {
+				resolved := repo
+				resolved.Key = platform.RepositoryIDKey(1)
+				s.publishResolvedRepository(repo, resolved, true)
+			},
+			wantRepo: "acme/widget",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			repo := RepoRef{Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(1)}
+			if tt.unresolved {
+				repo.Key = platform.RepositoryKey{}
+			}
+			source := failingGitTokenSource{err: ErrMissingWriteIdentity}
+			clones := gitclone.New(t.TempDir(), gitclone.HostSources{"github.com": source})
+			t.Cleanup(clones.Wait)
+			syncer := NewSyncer(nil, nil, clones, []RepoRef{repo}, time.Minute, nil, nil)
+			var published *SyncStatus
+			syncer.onStatusChange = func(status *SyncStatus) { published = status }
+			require.ErrorIs(syncer.ensureClone(t.Context(), repo), ErrMissingWriteIdentity)
+			require.Len(syncer.Status().GitAccess, 1)
+			since := syncer.Status().GitAccess[0].Since
+
+			tt.update(syncer, repo)
+			if tt.wantRepo == "" {
+				assert.Empty(syncer.Status().GitAccess)
+				assert.Empty(published.GitAccess, "subscribers must see the warning disappear")
+				return
+			}
+			require.Len(syncer.Status().GitAccess, 1)
+			assert.Equal(tt.wantRepo, syncer.Status().GitAccess[0].Repository)
+			assert.Equal(since, syncer.Status().GitAccess[0].Since)
+			assert.Equal(tt.wantRepo, published.GitAccess[0].Repository)
+			require.NoError(syncer.recordGitAccess(syncer.TrackedRepos()[0], nil))
+			assert.Empty(syncer.Status().GitAccess, "success at the current route clears the warning")
 		})
 	}
 }

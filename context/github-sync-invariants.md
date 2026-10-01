@@ -596,11 +596,15 @@ reads skip the viewer-permission overlay and leave viewer permissions unknown
 instead of warning on every read (`platform/github/client.go::Client.withViewerOverlay`).
 
 A clone or fetch that fails for a credential reason is listed in sync status
-`git_access` until the repository's next successful clone or fetch, and is
+`git_access` until the repository's next successful clone or fetch or removal from tracking, and is
 logged when it starts or changes reason rather than on every pass
 (`internal/github/git_access.go::Syncer.recordGitAccess`). Token resolution
 failures carry `gitclone.ErrCredentialUnavailable` so the classification
 survives the sanitized Git error chain.
+
+Git access warnings follow provider-verified repository identity across renames;
+tracked-set changes refresh display routes and discard removed repositories
+(`internal/github/git_access.go::Syncer.gitAccessProblems`).
 
 Notification sync watermarks are per repository identity, never host-wide: a
 repository whose credential route is unavailable or exhausted reports its error

@@ -2988,6 +2988,7 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
 		s.reposMu.Unlock()
+		s.refreshGitAccessStatus()
 		s.WakeArchive()
 	}
 }
@@ -3016,6 +3017,7 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 	s.reposMu.Lock()
 	s.repos = slices.Clone(repos)
 	s.reposMu.Unlock()
+	s.refreshGitAccessStatus()
 	s.WakeArchive()
 	return nil
 }
@@ -5164,6 +5166,7 @@ func (s *Syncer) publishResolvedRepository(
 ) (RepoRef, bool) {
 	s.clearDisplacedCredentialAlias(resolved)
 	s.aliasRenamedCredentialRoute(previous, resolved)
+	defer s.refreshGitAccessStatus()
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	i, ok := s.trackedRepoSlotLocked(previous, resolved)

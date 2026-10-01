@@ -99,6 +99,8 @@ func TestPushIntoBareRepositoryStartsNoBackgroundMaintenance(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	runner := Runner()
+	_, err := runner.Output(t.Context(), dir, "rev-parse", "--absolute-git-dir")
+	require.Error(err, "fixture must be outside all repositories and worktrees")
 	run := func(dir string, args ...string) {
 		t.Helper()
 		_, stderr, err := runner.Run(t.Context(), dir, nil, args...)

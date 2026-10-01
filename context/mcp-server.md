@@ -157,3 +157,6 @@
 - Handoff success and failure evidence uses `stage` plus
   `initial_message.state`; never add a separate `message_delivered` output or
   error detail (`internal/mcpserver/tools_agent_spawn.go::spawnWorkspaceWithAgentOutput`).
+
+- Agent PR registration shares branch discovery's single workspace association; never replace it or change source ownership. ACP binds the workspace through its owner proxy; terminal MCP clients supply the launch-context ID
+  (`internal/server/workspaceapi/pull_link.go::Handler.LinkWorkspacePullRequestService`, `internal/workspace/localruntime/acp_mcp_proxy.go::newACPMCPProxy`).

@@ -22,6 +22,7 @@ type ProviderBackend interface {
 
 // LocalBackend owns data and execution that belong to the connected node.
 type LocalBackend interface {
+	LinkWorkspacePullRequest(context.Context, string, int, string) (bool, error)
 	GetPullDiff(context.Context, ItemIdentity, bool) (Diff, error)
 	ListLaunchTargets(context.Context) ([]LaunchTarget, error)
 	PreferredWorkspaceAgentTarget(context.Context, time.Time, []string) (string, bool, error)

@@ -205,6 +205,7 @@ func RenderAgentContext(ctx AgentContext) string {
 		writeMarkdownLine(&b, "Associated PR", itemNumberLabel(ctx.AssociatedPR.Number))
 		writeMarkdownLine(&b, "Associated PR URL", ctx.AssociatedPR.URL)
 	}
+	b.WriteString("\n## PR Registration\nWhen Forge MCP is available, call kenn_forge_link_workspace_pull_request after creating or working on the PR for this workspace. Pass the Workspace ID above, the PR number, and its full canonical URL. Repeating the same link is safe. Only one PR can be associated with this workspace; report a conflict or failed registration instead of claiming it is linked. Do not register unrelated background references.\n")
 	return b.String()
 }
 

@@ -251,7 +251,7 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	if err := os.Remove(paths.Socket); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	proxy, err := newACPMCPProxy(cfg.MCP)
+	proxy, err := newACPMCPProxy(cfg.MCP, cfg.Info.WorkspaceID)
 	if err != nil {
 		return err
 	}

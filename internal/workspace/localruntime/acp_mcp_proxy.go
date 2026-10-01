@@ -27,7 +27,7 @@ type acpMCPProxy struct {
 	token    string
 }
 
-func newACPMCPProxy(binding ACPMCPBinding) (*acpMCPProxy, error) {
+func newACPMCPProxy(binding ACPMCPBinding, workspaceID string) (*acpMCPProxy, error) {
 	p := &acpMCPProxy{token: rand.Text()}
 	if err := p.Bind(binding); err != nil {
 		return nil, err
@@ -58,6 +58,7 @@ func newACPMCPProxy(binding ACPMCPBinding) (*acpMCPProxy, error) {
 			request.Out.URL.Path = upstream.Path
 			request.Out.Host = upstream.Host
 			request.Out.Header.Set("Authorization", "Bearer "+binding.Token)
+			request.Out.Header.Set("X-Kenn-Forge-Workspace-ID", workspaceID)
 			// The authenticated proxy hop has a different loopback origin.
 			request.Out.Header.Del("Origin")
 		}}

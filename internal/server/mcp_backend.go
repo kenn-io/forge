@@ -506,6 +506,14 @@ func (b mcpBackend) GetWorkspace(
 	return mcpapi.McpWorkspace(result), nil
 }
 
+func (b mcpBackend) LinkWorkspacePullRequest(ctx context.Context, workspaceID string, number int, url string) (bool, error) {
+	alreadyLinked, err := b.server.workspaceAPI.LinkWorkspacePullRequestService(ctx, workspaceID, number, url)
+	if err != nil {
+		return false, mcpapi.McpBackendMutationError(err)
+	}
+	return alreadyLinked, nil
+}
+
 func (b mcpBackend) CreatePullWorkspace(
 	ctx context.Context, item mcpserver.ItemIdentity, suppressAutoAssign bool,
 ) (mcpserver.Workspace, error) {

@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sync"
@@ -64,6 +65,7 @@ func (s *Server) registerTools() {
 	s.registerStackTools()
 	s.registerWorkflowTools()
 	s.registerAgentTools()
+	s.registerWorkspacePullTools()
 	s.registerGuidance()
 }
 
@@ -92,7 +94,8 @@ func (s *Server) httpHandler(options *mcp.StreamableHTTPOptions) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		stream.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), workspaceScopeKey{}, r.Header.Get("X-Kenn-Forge-Workspace-ID"))
+		stream.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

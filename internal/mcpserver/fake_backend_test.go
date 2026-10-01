@@ -11,6 +11,7 @@ import (
 )
 
 type fakeBackend struct {
+	linkWorkspacePullFn          func(context.Context, string, int, string) (bool, error)
 	listRepositoriesFn           func(context.Context) ([]RepositorySummary, error)
 	listActivityFn               func(context.Context, ActivityQuery) (ActivityPage, error)
 	listPullsFn                  func(context.Context, ItemListQuery) ([]Pull, error)
@@ -214,4 +215,11 @@ func testItemIdentity(itemType string, number int) ItemIdentity {
 		RepoKey: platform.RepositoryIDKey(1001),
 		Owner:   "acme", Name: "widget", Number: number,
 	}
+}
+
+func (b *fakeBackend) LinkWorkspacePullRequest(ctx context.Context, id string, number int, url string) (bool, error) {
+	if b.linkWorkspacePullFn != nil {
+		return b.linkWorkspacePullFn(ctx, id, number, url)
+	}
+	return false, nil
 }

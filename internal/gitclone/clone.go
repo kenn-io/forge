@@ -46,8 +46,8 @@ var ErrCredentialUnavailable = errors.New("git credential unavailable")
 // RouteResolver selects credentials for managed Git. SourceForRepo and
 // FallbackSource return mutation-capable credentials for workspace remotes.
 // ReadSourceForRepo serves clones and fetches into Forge's own clone store,
-// which never push, so it may fall back to a read-only credential such as a
-// GitHub App installation token when the route has no user credential.
+// which never push, so it may use a read-only credential such as a GitHub App
+// installation token.
 type RouteResolver interface {
 	SourceForRepo(platform, host, owner, name string) tokenauth.Source
 	ReadSourceForRepo(platform, host, owner, name string) tokenauth.Source

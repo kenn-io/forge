@@ -335,7 +335,11 @@ func TestBuildProviderControlPlaneDeduplicatesGitHubIdentityRuntimes(t *testing.
 	}
 	require.NoError(cfg.Validate())
 
-	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	set := tokenauth.NewSourceSet(tokenauth.Options{
+		GitHubApp: func(context.Context, tokenauth.Candidate) (string, time.Time, error) {
+			return "app-token", time.Now().Add(time.Hour), nil
+		},
+	})
 	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
 	require.NoError(err)
 	resolver := fakeGitHubIdentityResolver{byEnv: map[string]github.GitHubIdentity{
@@ -409,8 +413,8 @@ func TestBuildProviderControlPlaneDeduplicatesGitHubIdentityRuntimes(t *testing.
 	readToken, err := gitRoutes.ReadSourceForRepo("github", "github.com", "org-d", "four").
 		Token(t.Context())
 	require.NoError(err)
-	assert.Equal("APP_WRITE_PAT-secret", readToken,
-		"clone-store reads keep the user PAT when the route has one")
+	assert.Equal("app-token", readToken,
+		"clone-store reads prefer the covering App even when the route has a user PAT")
 }
 
 // Rate-limit snapshot refresh deduplicates by the route's credential key, so

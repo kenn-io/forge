@@ -245,9 +245,8 @@ func (s *gitStartup) SourceForRepo(
 }
 
 // ReadSourceForRepo selects the credential for clones and fetches into the
-// clone store. It keeps the route's user credential when one exists and
-// otherwise falls back to the route's GitHub App installation token for the
-// repository owner, so an App-only Forge can maintain its clones.
+// clone store. It uses the route's normal read chain, which prefers a covering
+// GitHub App installation over a user credential.
 func (s *gitStartup) ReadSourceForRepo(
 	platformName, host, owner, name string,
 ) tokenauth.Source {
@@ -259,8 +258,8 @@ func (s *gitStartup) ReadSourceForRepo(
 	if !ok {
 		return source
 	}
-	return appFallbackGitTokenSource{
-		Source: source, app: route.source, owner: strings.TrimSpace(owner),
+	return readGitTokenSource{
+		Source: route.source, owner: strings.TrimSpace(owner), required: route.required,
 	}
 }
 
@@ -290,35 +289,20 @@ func (r gitCredentialRoute) mutationSource() tokenauth.Source {
 	return optionalMutationTokenSource{Source: r.source}
 }
 
-// appFallbackGitTokenSource resolves the route's user credential and, when the
-// route has none, the GitHub App installation token for owner. It serves only
-// clone-store reads; workspace remotes and pushes keep the user credential.
-type appFallbackGitTokenSource struct {
+// readGitTokenSource scopes clone-store reads to the repository owner while
+// preserving anonymous Git for optional routes without credentials.
+type readGitTokenSource struct {
 	tokenauth.Source
-	app   tokenauth.Source
-	owner string
+	owner    string
+	required bool
 }
 
-func (s appFallbackGitTokenSource) Token(ctx context.Context) (string, error) {
-	token, err := s.Source.Token(ctx)
-	if err == nil && token != "" {
-		return token, nil
-	}
-	if err != nil && !errors.Is(err, github.ErrMissingWriteIdentity) &&
-		!errors.Is(err, tokenauth.ErrMissingToken) {
-		return "", err
-	}
-	appToken, appErr := s.app.Token(tokenauth.WithGitHubOwner(ctx, s.owner))
-	if appErr == nil {
-		return appToken, nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("%w; no GitHub App installation token: %w", err, appErr)
-	}
-	if errors.Is(appErr, tokenauth.ErrMissingToken) {
+func (s readGitTokenSource) Token(ctx context.Context) (string, error) {
+	token, err := s.Source.Token(tokenauth.WithGitHubOwner(ctx, s.owner))
+	if !s.required && errors.Is(err, tokenauth.ErrMissingToken) {
 		return "", nil
 	}
-	return "", appErr
+	return token, err
 }
 
 func (s *gitStartup) FallbackSource(host string) tokenauth.Source {

@@ -640,9 +640,10 @@ PAT for a read the route's tracker bills to the installation
 Workspace Git (fetch and push against a workspace remote, and ownerless host
 Git) uses exact-repository or owner PAT routes with mutation context and must
 never receive an App installation token. Clones and fetches into Forge's own
-clone store never push, so they keep the route's PAT when one exists and
-otherwise use the installation token for the repository owner; an App-only
-Forge can then maintain clones without a user identity
+clone store never push, so they use the normal read chain: a covering App
+installation token takes priority over the route's PAT. Pass the repository
+owner so the chain selects only that owner's installation; App-only Forge
+can maintain clones without a user identity
 (`cmd/kenn-forge/provider_startup.go::gitStartup.ReadSourceForRepo`). Thread full provider,
 host, owner, and repository identity through clone/fetch and local reads, passing
 the normalized platform (`repoPlatform(repo)`) so an unqualified GitHub ref still

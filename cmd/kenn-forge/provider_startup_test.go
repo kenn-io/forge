@@ -175,6 +175,11 @@ func TestGitStartupAllowsAnonymousReadsButRequiredRoutesFailClosed(t *testing.T)
 	require.ErrorIs(manager.RequireCredentialRoute(
 		t.Context(), string(platform.KindGitHub), "github.com", "acme", "public",
 	), gitclone.ErrCredentialUnavailable)
+	readToken, err := optional.ReadSourceForRepo(
+		string(platform.KindGitHub), "github.com", "acme", "public",
+	).Token(t.Context())
+	require.NoError(err)
+	assert.Empty(t, readToken, "optional clone reads must preserve anonymous Git")
 
 	requiredRoutes, err := buildGitStartup(&config.Config{
 		Repos: []config.Repo{{Owner: "acme", Name: "private"}},
@@ -185,6 +190,10 @@ func TestGitStartupAllowsAnonymousReadsButRequiredRoutesFailClosed(t *testing.T)
 	)
 	require.NotNil(requiredSource)
 	_, err = requiredSource.Token(t.Context())
+	require.ErrorIs(err, tokenauth.ErrMissingToken)
+	_, err = requiredRoutes.ReadSourceForRepo(
+		string(platform.KindGitHub), "github.com", "acme", "private",
+	).Token(t.Context())
 	require.ErrorIs(err, tokenauth.ErrMissingToken)
 }
 

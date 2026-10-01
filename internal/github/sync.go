@@ -8554,6 +8554,10 @@ func (s *Syncer) fetchProviderMRDetail(
 		)
 	}
 	preserveMergeableStateIfOmitted(normalized, existing)
+	// The detail response carries at most a pipeline-only CI status without
+	// checks. Keep the stored CI state until the CI-check fetch below
+	// replaces it, so a failed or unsupported fetch does not overwrite it.
+	carryCIStateOnSameHead(normalized, existing)
 
 	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(
 		ctx, repo, normalized,
@@ -12073,11 +12077,20 @@ func CarryMergeRequestDerivedFields(normalized, existing *db.MergeRequest) {
 	normalized.CommentCount = existing.CommentCount
 	normalized.ReviewDecision = existing.ReviewDecision
 	normalized.ReviewDecisionObservedAt = existing.ReviewDecisionObservedAt
-	if strings.EqualFold(normalized.PlatformHeadSHA, existing.PlatformHeadSHA) {
-		normalized.CIStatus = existing.CIStatus
-		normalized.CIChecksJSON = existing.CIChecksJSON
-		normalized.CIObservedAt = existing.CIObservedAt
+	carryCIStateOnSameHead(normalized, existing)
+}
+
+// carryCIStateOnSameHead copies the stored CI status, checks, and CI
+// observation time onto normalized while the head is unchanged. CI state is
+// head-derived, so a new head keeps the snapshot's own value.
+func carryCIStateOnSameHead(normalized, existing *db.MergeRequest) {
+	if normalized == nil || existing == nil ||
+		!strings.EqualFold(normalized.PlatformHeadSHA, existing.PlatformHeadSHA) {
+		return
 	}
+	normalized.CIStatus = existing.CIStatus
+	normalized.CIChecksJSON = existing.CIChecksJSON
+	normalized.CIObservedAt = existing.CIObservedAt
 }
 
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.

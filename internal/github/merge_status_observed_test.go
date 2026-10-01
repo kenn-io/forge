@@ -185,8 +185,9 @@ func (c *observingGitHubClient) ListCheckRunsForRef(
 // while serving each request whose response carries merge status.
 type observingReadProvider struct {
 	*syncTestReadProvider
-	clock  *observationClock
-	checks []platform.CICheck
+	clock     *observationClock
+	checks    []platform.CICheck
+	checksErr error
 }
 
 func (p *observingReadProvider) ListOpenMergeRequests(
@@ -207,6 +208,9 @@ func (p *observingReadProvider) ListCIChecks(
 	context.Context, platform.RepoRef, string,
 ) ([]platform.CICheck, error) {
 	defer p.clock.advance()
+	if p.checksErr != nil {
+		return nil, p.checksErr
+	}
 	return p.checks, nil
 }
 
@@ -257,7 +261,7 @@ var observedGitLabRepo = RepoRef{
 }
 
 func newObservedGitLabSyncer(
-	t *testing.T, mr platform.MergeRequest,
+	t *testing.T, mr platform.MergeRequest, edits ...func(*observingReadProvider),
 ) (*Syncer, *db.DB, int64) {
 	t.Helper()
 	d := openTestDB(t)
@@ -272,6 +276,9 @@ func newObservedGitLabSyncer(
 		},
 		clock:  clock,
 		checks: []platform.CICheck{{Name: "tests", Status: "completed", Conclusion: "success"}},
+	}
+	for _, edit := range edits {
+		edit(provider)
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(t, err)
@@ -664,25 +671,88 @@ func TestDetailDrainCarriesThenReobservesGitHubReviewAndCI(t *testing.T) {
 	}
 }
 
-func TestDetailDrainStampsGitLabCIAtChecksRequest(t *testing.T) {
-	mr := observedGitLabMR(seededHead, "clean")
-	mr.CIStatus = "running"
-	syncer, d, repoID := newObservedGitLabSyncer(t, mr)
-	seedObservedMR(t, d, repoID, "")
-	var afterParent mergeStatus
-	syncer.afterMergeRequestParentSnapshotCommit = func() {
-		afterParent = readMergeStatus(t, d, repoID)
+func TestDetailDrainKeepsStoredGitLabCIUntilChecksLoad(t *testing.T) {
+	// MR fetch at 10:00, CI checks at 10:01. The detail response carries only
+	// a pipeline status without checks, so on an unchanged head the parent
+	// snapshot keeps the stored CI state and only a successful CI-check fetch
+	// replaces it. A new head does not carry the old head's CI state.
+	const (
+		storedChecks  = `[{"name":"seeded","status":"completed","conclusion":"success"}]`
+		fetchedChecks = `[{"name":"tests","status":"completed","conclusion":"success","url":"","app":""}]`
+		newHead       = "fed654cba321"
+	)
+	storedCI := mergeStatus{CI: "success", CIAt: seededAt, Mergeable: "clean", MergeableAt: sentAt1000}
+	tests := []struct {
+		name         string
+		head         string
+		checksErr    error
+		wantErr      bool
+		wantParent   mergeStatus
+		wantOutcome  mergeStatus
+		wantChecks   string
+		wantNoChecks bool
+	}{
+		{
+			name: "checks load on the same head", head: seededHead,
+			wantParent: storedCI,
+			wantOutcome: mergeStatus{
+				CI: "success", CIAt: sentAt1001, Mergeable: "clean", MergeableAt: sentAt1000,
+			},
+			wantChecks: fetchedChecks,
+		},
+		{
+			name: "check fetch fails on the same head", head: seededHead,
+			checksErr: errors.New("checks unavailable"), wantErr: true,
+			wantParent: storedCI, wantOutcome: storedCI, wantChecks: storedChecks,
+		},
+		{
+			name: "checks unsupported on the same head", head: seededHead,
+			checksErr:  platform.ErrUnsupportedCapability,
+			wantParent: storedCI, wantOutcome: storedCI, wantChecks: storedChecks,
+		},
+		{
+			name: "check fetch fails on a new head", head: newHead,
+			checksErr: errors.New("checks unavailable"), wantErr: true,
+			wantParent:   mergeStatus{CI: "failed", Mergeable: "clean", MergeableAt: sentAt1000},
+			wantOutcome:  mergeStatus{CI: "failed", Mergeable: "clean", MergeableAt: sentAt1000},
+			wantNoChecks: true,
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mr := observedGitLabMR(tt.head, "clean")
+			mr.CIStatus = "failed"
+			syncer, d, repoID := newObservedGitLabSyncer(t, mr, func(p *observingReadProvider) {
+				p.checksErr = tt.checksErr
+			})
+			seedObservedMR(t, d, repoID, "", func(stored *db.MergeRequest) {
+				stored.CIStatus = "success"
+				stored.CIChecksJSON = storedChecks
+			})
+			var afterParent mergeStatus
+			syncer.afterMergeRequestParentSnapshotCommit = func() {
+				afterParent = readMergeStatus(t, d, repoID)
+			}
 
-	_, err := syncer.fetchMRDetail(t.Context(), observedGitLabRepo, repoID, 1, false)
-	require.NoError(t, err)
+			_, err := syncer.fetchMRDetail(t.Context(), observedGitLabRepo, repoID, 1, false)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
 
-	// MR fetch at 10:00, CI checks at 10:01. The pipeline-only status the
-	// parent snapshot writes has no checks, so it is not an observation.
-	assert.Equal(t, mergeStatus{CI: "running", Mergeable: "clean", MergeableAt: sentAt1000}, afterParent)
-	assert.Equal(t, mergeStatus{
-		CI: "success", CIAt: sentAt1001, Mergeable: "clean", MergeableAt: sentAt1000,
-	}, readMergeStatus(t, d, repoID))
+			assert.Equal(t, tt.wantParent, afterParent)
+			assert.Equal(t, tt.wantOutcome, readMergeStatus(t, d, repoID))
+			stored, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+			require.NoError(t, err)
+			require.NotNil(t, stored)
+			if tt.wantNoChecks {
+				assert.Empty(t, stored.CIChecksJSON)
+			} else {
+				assert.JSONEq(t, tt.wantChecks, stored.CIChecksJSON)
+			}
+		})
+	}
 }
 
 func TestUnchangedDetailKeepsReviewAndMergeableAndStampsPendingCI(t *testing.T) {

@@ -706,6 +706,11 @@ function fakeDataTransfer(): DataTransfer {
 
 describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
+    mocks.mockOpen.mockImplementation((container: HTMLElement) => {
+      const screen = document.createElement("div");
+      screen.className = "xterm-screen";
+      container.appendChild(screen);
+    });
     quickActionWorkspaces.clear();
     mocks.quickActions = [];
     mocks.runtime = makeAppRuntime();

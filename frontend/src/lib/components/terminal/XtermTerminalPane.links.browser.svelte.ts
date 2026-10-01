@@ -23,6 +23,7 @@ describe("terminal links", () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     let socket: WebSocket | undefined;
+    const sent: string[] = [];
     vi.stubGlobal(
       "WebSocket",
       class extends EventTarget {
@@ -38,7 +39,9 @@ describe("terminal links", () => {
             this.dispatchEvent(new Event("open"));
           });
         }
-        send() {}
+        send(data: string | ArrayBuffer | ArrayBufferView) {
+          sent.push(typeof data === "string" ? data : new TextDecoder().decode(data));
+        }
         close() {
           this.readyState = 3;
         }
@@ -80,16 +83,26 @@ describe("terminal links", () => {
         const text = osc8 ? `\x1b]8;;${url}\x07Open link\x1b]8;;\x07` : url;
         socket!.dispatchEvent(
           new MessageEvent("message", {
-            data: new TextEncoder().encode(`\x1b[?1000h\x1b[2J\x1b[H${text}`).buffer,
+            data: new TextEncoder().encode(`\x1b[?1000;1006h\x1b[2J\x1b[H${text}`).buffer,
           }),
         );
         await terminal.hover({ position: { x: 25, y: 8 } });
         await vi.waitFor(() => expect(target.querySelector(".terminal-link-tooltip span")?.textContent).toBe(url));
 
+        sent.length = 0;
         await terminal.click({ position: { x: 25, y: 8 }, modifiers: [modifier] });
         expect(open).toHaveBeenCalledExactlyOnceWith(url, "_blank", "noopener,noreferrer");
+        // Drain the shared input queue before checking that the remote program
+        // did not also receive the link click and try to open its own browser.
+        expect(component.sendKey("ArrowUp")).toBe(true);
+        await vi.waitFor(() => expect(sent).toContain("\x1b[A"));
+        expect(sent.filter((frame) => frame.startsWith("\x1b[<"))).toEqual([]);
         open.mockClear();
       }
+
+      sent.length = 0;
+      await terminal.click({ position: { x: 25, y: 60 } });
+      await vi.waitFor(() => expect(sent.join("")).toContain("\x1b[<0;"));
     } finally {
       await unmount(component);
       target.remove();

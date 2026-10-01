@@ -376,7 +376,11 @@ describe("TerminalPane", () => {
     xtermInstances.length = 0;
     xtermCustomKeyEventHandlers.length = 0;
     xtermTerminalCtor.mockReset();
-    xtermOpen.mockReset();
+    xtermOpen.mockReset().mockImplementation((container: HTMLElement) => {
+      const screen = document.createElement("div");
+      screen.className = "xterm-screen";
+      container.appendChild(screen);
+    });
     xtermOnDataHandlers.length = 0;
     xtermOscHandlers.clear();
     mockSockets = [];
@@ -1133,10 +1137,8 @@ describe("TerminalPane", () => {
     await waitForSocketConnected(mockSockets[0]!);
     mockSockets[0]!.sent = [];
 
-    const screen = document.createElement("div");
-    screen.className = "xterm-screen";
+    const screen = container.querySelector<HTMLElement>(".xterm-screen")!;
     vi.spyOn(screen, "getBoundingClientRect").mockReturnValue(DOMRect.fromRect({ width: 875, height: 740 }));
-    container.querySelector(".terminal-container")?.append(screen);
 
     fitDimensions = { cols: 100, rows: 40 };
     resizeObserverCallbacks[0]!([], {} as ResizeObserver);

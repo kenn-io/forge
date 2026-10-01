@@ -269,6 +269,15 @@
     return terminalLinkUsesMetaKey ? event.metaKey : event.ctrlKey;
   }
 
+  function handleTerminalLinkMouse(event: MouseEvent): void {
+    if (event.button !== 0 || hoveredTerminalLink === null || !terminalLinkModifierPressed(event)) return;
+    // Let the screen's linkifier handle the gesture, then stop it before
+    // xterm's parent mouse handler sends the same click to the remote app.
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.type === "mousedown") terminal?.focus();
+  }
+
   function showTerminalLink(_event: MouseEvent, uri: string): void {
     hoveredTerminalLink = uri;
   }
@@ -1306,6 +1315,9 @@
         registerTerminalTextureAtlasParticipant(terminal);
 
       term.open(containerEl);
+      const screen = containerEl.querySelector<HTMLElement>(".xterm-screen")!;
+      screen.addEventListener("mousedown", handleTerminalLinkMouse);
+      screen.addEventListener("mouseup", handleTerminalLinkMouse);
       term.attachCustomKeyEventHandler(handleTerminalCustomKeyEvent);
       term.parser.registerOscHandler(52, handleOsc52Clipboard);
       switchTimer.record("terminal-constructed");

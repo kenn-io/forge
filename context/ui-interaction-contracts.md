@@ -51,6 +51,9 @@ Interactive surfaces must agree on which item is selected.
 - Modified terminal links open in the client browser, including provider item URLs;
   keep opening synchronous with the gesture, without a daemon lookup
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).
+- Link-opening gestures must not also reach the terminal program, which may try
+  to launch a browser on the remote host
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalLinkMouse`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
 - Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow local comment drafts.

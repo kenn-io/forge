@@ -3514,6 +3514,27 @@ components:
         - output
         - reason
       type: object
+    GitAccessProblem:
+      additionalProperties: false
+      properties:
+        host:
+          type: string
+        reason:
+          enum:
+            - credential_unavailable
+            - authentication_failed
+          type: string
+        repository:
+          type: string
+        since:
+          format: date-time
+          type: string
+      required:
+        - repository
+        - host
+        - reason
+        - since
+      type: object
     GitChangesResponse:
       additionalProperties: false
       properties:
@@ -10007,6 +10028,10 @@ components:
         detail_refresh_overdue:
           format: int64
           type: integer
+        git_access:
+          items:
+            $ref: "#/components/schemas/GitAccessProblem"
+          type: array
         last_error:
           type: string
         last_error_ceiling_key:

@@ -100,6 +100,7 @@ type Client struct {
 	now                     func() time.Time
 	viewerCacheTTL          time.Duration
 	readOnlyContext         func(context.Context) bool
+	writesDisabled          bool
 	ownerContext            func(context.Context, string) context.Context
 	graphQLContext          func(context.Context) context.Context
 	progressFactory         func(string, string, string) Progress
@@ -2130,6 +2131,10 @@ func (c *Client) withViewerOverlay(
 ) (*gh.Repository, error) {
 	owner, repo := r.GetOwner().GetLogin(), r.GetName()
 	if !c.splitAuthActive() {
+		return r, nil
+	}
+	if c.writesDisabled {
+		r.Permissions = nil
 		return r, nil
 	}
 	if c.readOnlyContext != nil && c.readOnlyContext(ctx) {

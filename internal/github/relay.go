@@ -212,7 +212,8 @@ func (s *Syncer) drainRelayQueue(ctx context.Context, queue *relayQueue) {
 			if !s.SyncEnabled() {
 				continue
 			}
-			if err := s.refreshRelayHint(WithSyncBudget(ctx), hint); err != nil && ctx.Err() == nil {
+			err := s.refreshRelayHint(WithSyncBudget(ctx), hint)
+			if err != nil && ctx.Err() == nil && !isReportedGitAccessFailure(err) {
 				slog.Warn("relay refresh failed", "repository_id", hint.RepositoryID, "target", hint.Target, "number", hint.Number, "err", err)
 			}
 		}

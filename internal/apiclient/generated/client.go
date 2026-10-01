@@ -47547,6 +47547,13 @@ const (
 	ExternalContextCardStatusWarning ExternalContextCardStatus = "warning"
 )
 
+type GitAccessProblemReason string
+
+const (
+	GitAccessProblemReasonAuthenticationFailed  GitAccessProblemReason = "authentication_failed"
+	GitAccessProblemReasonCredentialUnavailable GitAccessProblemReason = "credential_unavailable"
+)
+
 type HostSummaryFederationRole string
 
 const (
@@ -56749,6 +56756,13 @@ type GhShimResponse struct {
 	Reason  string  `json:"reason"`
 }
 
+type GitAccessProblem struct {
+	Host       string                 `json:"host"`
+	Reason     GitAccessProblemReason `json:"reason"`
+	Repository string                 `json:"repository"`
+	Since      time.Time              `json:"since"`
+}
+
 type GitChangesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string         `json:"$schema,omitempty"`
@@ -59220,6 +59234,7 @@ type SyncStatus struct {
 	Schema                  *string                  `json:"$schema,omitempty"`
 	CurrentRepo             *string                  `json:"current_repo,omitempty"`
 	DetailRefreshOverdue    *int64                   `json:"detail_refresh_overdue,omitempty"`
+	GitAccess               []GitAccessProblem       `json:"git_access,omitempty"`
 	LastError               *string                  `json:"last_error,omitempty"`
 	LastErrorCeilingKey     *string                  `json:"last_error_ceiling_key,omitempty"`
 	LastErrorCeilingResetAt *time.Time               `json:"last_error_ceiling_reset_at,omitempty"`

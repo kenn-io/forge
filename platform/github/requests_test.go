@@ -1176,6 +1176,44 @@ func TestGetRepositoryRetainsCompleteAppMergeSettingsWhenUserOverlayFails(t *tes
 	require.Nil(repo.Permissions)
 }
 
+// A route without a user credential cannot answer viewer permissions, so the
+// overlay is skipped without a request or a warning on every repository read.
+func TestGetRepositorySkipsViewerOverlayWhenWritesAreDisabled(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	readSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1,"node_id":"repo-1","name":"widget","owner":{"login":"acme"},"allow_squash_merge":true,"permissions":{"pull":true}}`))
+	}))
+	defer readSrv.Close()
+	var writeRequests atomic.Int32
+	writeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeRequests.Add(1)
+		http.Error(w, "no user credential", http.StatusUnauthorized)
+	}))
+	defer writeSrv.Close()
+
+	readGH, err := newEnterpriseGHClient(readSrv.Client(), readSrv.URL+"/", readSrv.URL+"/")
+	require.NoError(err)
+	writeGH, err := newEnterpriseGHClient(writeSrv.Client(), writeSrv.URL+"/", writeSrv.URL+"/")
+	require.NoError(err)
+	var warnings []string
+	client := &Client{
+		now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx },
+		gh: readGH, ghWrite: writeGH, writesDisabled: true,
+		auth:    Authentication{InstallationActive: func(owner string) bool { return true }},
+		warning: func(message string, _ ...any) { warnings = append(warnings, message) },
+	}
+
+	repo, err := client.GetRepository(t.Context(), "acme", "widget")
+	require.NoError(err)
+	assert.True(repo.GetAllowSquashMerge())
+	assert.Nil(repo.Permissions, "the App's permissions must not stand in for the viewer's")
+	assert.Zero(writeRequests.Load())
+	assert.Empty(warnings)
+}
+
 func TestGetRepositoryKeepsCompleteAppMergeSettingsWhenUserFieldsAreIncomplete(t *testing.T) {
 	require := require.New(t)
 

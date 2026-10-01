@@ -591,7 +591,16 @@ Repository preview must select the entered owner's route even before that owner
 has a tracked repository. Ownerless APIs may use only the host fallback; never
 borrow an arbitrary owner PAT. Repository notifications use the user/write
 identity. App-only routes may read, but notifications and mutations remain
-disabled until restart establishes a stable user identity.
+disabled until restart establishes a stable user identity. Their repository
+reads skip the viewer-permission overlay and leave viewer permissions unknown
+instead of warning on every read (`platform/github/client.go::Client.withViewerOverlay`).
+
+A clone or fetch that fails for a credential reason is listed in sync status
+`git_access` until the repository's next successful clone or fetch, and is
+logged when it starts or changes reason rather than on every pass
+(`internal/github/git_access.go::Syncer.recordGitAccess`). Token resolution
+failures carry `gitclone.ErrCredentialUnavailable` so the classification
+survives the sanitized Git error chain.
 
 Notification sync watermarks are per repository identity, never host-wide: a
 repository whose credential route is unavailable or exhausted reports its error

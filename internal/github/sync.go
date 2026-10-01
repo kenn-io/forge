@@ -424,14 +424,17 @@ const (
 
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
-	Relay               *RelayStatus  `json:"relay,omitempty"`
-	Running             bool          `json:"running"`
-	CurrentRepo         string        `json:"current_repo,omitempty"`
-	Progress            string        `json:"progress,omitempty"`
-	LastRunAt           time.Time     `json:"last_run_at,omitzero"`
-	LastError           string        `json:"last_error,omitempty"`
-	LastErrorCode       SyncErrorCode `json:"last_error_code,omitempty" enum:"localSyncCeilingExhausted"`
-	LastErrorCeilingKey string        `json:"last_error_ceiling_key,omitempty"`
+	Relay *RelayStatus `json:"relay,omitempty"`
+	// GitAccess lists repositories whose clone-store Git currently fails
+	// for a credential reason.
+	GitAccess           []GitAccessProblem `json:"git_access,omitempty"`
+	Running             bool               `json:"running"`
+	CurrentRepo         string             `json:"current_repo,omitempty"`
+	Progress            string             `json:"progress,omitempty"`
+	LastRunAt           time.Time          `json:"last_run_at,omitzero"`
+	LastError           string             `json:"last_error,omitempty"`
+	LastErrorCode       SyncErrorCode      `json:"last_error_code,omitempty" enum:"localSyncCeilingExhausted"`
+	LastErrorCeilingKey string             `json:"last_error_ceiling_key,omitempty"`
 	// LastErrorCeilingResetAt identifies the exact local budget window that
 	// produced LastError. Clients must match it against the live ceiling row
 	// before displaying counters or reset details from that row.
@@ -881,6 +884,9 @@ type Syncer struct {
 	// When both locks are needed, statusMu must be acquired before runMu.
 	statusMu sync.Mutex
 
+	gitAccessMu sync.Mutex
+	gitAccess   map[string]GitAccessProblem
+
 	// failedRepos tracks repos whose last sync had a partial failure
 	// (a per-PR, per-issue, or closure-detection step failed after
 	// the ETag cache was populated by a successful 200 list fetch).
@@ -1190,6 +1196,7 @@ func (s *Syncer) publishStatusLocked(status *SyncStatus) {
 	if status.Relay == nil {
 		status.Relay = s.Status().Relay
 	}
+	status.GitAccess = s.gitAccessProblems()
 	s.status.Store(status)
 	if s.onStatusChange != nil {
 		s.onStatusChange(status)
@@ -2526,7 +2533,7 @@ func withCloneRepositoryIdentity(ctx context.Context, repo RepoRef) context.Cont
 }
 
 func (s *Syncer) ensureClone(ctx context.Context, repo RepoRef) error {
-	return s.clones.EnsureCloneValidated(
+	err := s.clones.EnsureCloneValidated(
 		ctx,
 		string(repoPlatform(repo)),
 		repoHost(repo),
@@ -2535,6 +2542,7 @@ func (s *Syncer) ensureClone(ctx context.Context, repo RepoRef) error {
 		cloneRemoteURL(repo),
 		nil,
 	)
+	return s.recordGitAccess(repo, err)
 }
 
 func (s *Syncer) optionalGitHubClientFor(repo RepoRef) (Client, bool) {
@@ -5377,9 +5385,11 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	}
 	if s.clones != nil {
 		if err := s.ensureClone(ctx, repo); err != nil {
-			slog.Warn("bare clone fetch failed",
-				"repo", repo.Owner+"/"+repo.Name, "err", err,
-			)
+			if !isReportedGitAccessFailure(err) {
+				slog.Warn("bare clone fetch failed",
+					"repo", repo.Owner+"/"+repo.Name, "err", err,
+				)
+			}
 		} else {
 			cloneFetchOK = true
 			s.syncDefaultBranchActivity(ctx, repo, repoID, defaultBranch, previousTip)
@@ -10649,10 +10659,12 @@ func (s *Syncer) drainDetailQueue(
 		cloneFetchOK := false
 		if s.clones != nil {
 			if cloneErr := s.ensureClone(itemCtx, repo); cloneErr != nil {
-				slog.Warn("detail drain: bare clone failed",
-					"repo", qi.RepoOwner+"/"+qi.RepoName,
-					"err", cloneErr,
-				)
+				if !isReportedGitAccessFailure(cloneErr) {
+					slog.Warn("detail drain: bare clone failed",
+						"repo", qi.RepoOwner+"/"+qi.RepoName,
+						"err", cloneErr,
+					)
+				}
 			} else {
 				cloneFetchOK = true
 			}

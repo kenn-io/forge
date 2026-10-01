@@ -52,6 +52,10 @@ type ClientConfig struct {
 	GraphQLRate, WriteGraphQLRate         platform.RateObserver
 	ViewerCacheTTL                        time.Duration
 	ReadOnlyContext                       func(context.Context) bool
+	// WritesDisabled reports a route with no user credential: repository
+	// reads skip the viewer-permission overlay, which only that credential
+	// can answer, and leave viewer permissions unknown.
+	WritesDisabled bool
 	// OwnerContext names the repository owner for requests whose path carries
 	// none, such as reads by repository ID, so owner-scoped credentials apply.
 	OwnerContext    func(ctx context.Context, owner string) context.Context
@@ -121,6 +125,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		rateTracker: config.ReadRate, writeRateTracker: config.WriteRate, notificationRateTracker: config.NotificationRate,
 		graphQLRateTracker: config.GraphQLRate, writeGraphQLRateTracker: config.WriteGraphQLRate,
 		viewerCacheTTL: config.ViewerCacheTTL, readOnlyContext: config.ReadOnlyContext,
+		writesDisabled: config.WritesDisabled,
 		ownerContext:   config.OwnerContext,
 		graphQLContext: graphQLContext, invalidateETags: config.InvalidateETags,
 		progressFactory: config.Progress, warning: config.Warning,

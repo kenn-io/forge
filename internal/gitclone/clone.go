@@ -1510,11 +1510,12 @@ func (m *Manager) gitRunnerAuthed(
 	}
 	token, err := source.Token(ctx)
 	if err != nil {
-		if required && !errors.Is(err, context.Canceled) &&
-			!errors.Is(err, context.DeadlineExceeded) {
-			return runner, "", fmt.Errorf("%w: %w", ErrCredentialUnavailable, err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return runner, "", fmt.Errorf("resolve git token for host %s: %w", host, err)
 		}
-		return runner, "", fmt.Errorf("resolve git token for host %s: %w", host, err)
+		return runner, "", fmt.Errorf(
+			"%w: resolve git token for host %s: %w", ErrCredentialUnavailable, host, err,
+		)
 	}
 	if required && strings.TrimSpace(token) == "" {
 		return runner, "", ErrCredentialUnavailable
@@ -1550,6 +1551,12 @@ func isNotFoundError(stderr string) bool {
 		strings.Contains(s, "not a valid object name") ||
 		strings.Contains(s, "not a valid commit name") ||
 		strings.Contains(s, "does not exist")
+}
+
+// IsAuthenticationFailure reports whether a networked Git error means the
+// remote rejected or never received credentials.
+func IsAuthenticationFailure(err error) bool {
+	return isAuthGitError(err)
 }
 
 func isAuthGitError(err error) bool {

@@ -321,6 +321,7 @@ func NewClient(
 		ReadRate: githubRateObserver(rateTracker), NotificationRate: githubRateObserver(options.notificationRateTracker),
 		ViewerCacheTTL:  authenticatedViewerLoginTTL,
 		ReadOnlyContext: IsArchiveSyncBudgetContext,
+		WritesDisabled:  options.mutationsDisabled,
 		OwnerContext:    tokenauth.WithGitHubOwner,
 		GraphQLContext:  func(ctx context.Context) context.Context { return withQuotaResource(ctx, QuotaResourceGraphQL) },
 		InvalidateETags: et.invalidateRepo,

@@ -46,8 +46,8 @@ The CI workflow classifies changed paths once in `.github/workflows/ci.yml::dete
 and uses that result to gate expensive test jobs. Keep the path buckets
 runtime-oriented rather than extension-only: the backend bucket includes Go
 files, Go modules, migrations, generated API client inputs, embedded web
-assets, and integration fixtures; the Rust bucket includes root Cargo manifests
-and the Rust workspace; the e2e bucket includes Playwright config, e2e tests,
+assets, and integration fixtures; the Rust bucket includes root Cargo manifests,
+the `rust-toolchain.toml` pin, and the Rust workspace; the e2e bucket includes Playwright config, e2e tests,
 scripts, and integration fixtures. Frontend unit, browser, and Playwright e2e
 jobs run when either frontend paths change or backend paths change, because
 backend/API behavior can affect the SPA contract even when no TypeScript files

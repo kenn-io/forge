@@ -62,6 +62,7 @@ jobs:
             rust:
               - Cargo.toml
               - Cargo.lock
+              - rust-toolchain.toml
               - rust/**
             e2e:
               - frontend/playwright*.config.ts
@@ -428,6 +429,9 @@ jobs:
 
       - name: Run case-insensitive daemon lifecycle tests
         run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
 
       - name: Run Rust PTY manager server e2e tests
         run: go test ./internal/server/workspacetest -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on

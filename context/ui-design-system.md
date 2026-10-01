@@ -402,6 +402,10 @@ global override. Re-audit these selectors whenever the kit-ui revision moves.
 
 ### TabbedPanelTree
 
+Every selected tab keeps its top accent, including on first render and in the
+focused pane; the pane focus border must not replace the selection marker
+(`frontend/src/lib/components/shared/TabbedPanelTree.svelte::.tabbed-panel-tab.active::before`).
+
 Healthy running workspace tabs have no status dot; the persistent green dot adds
 clutter without useful activity information
 (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workflowSessionStatus`).

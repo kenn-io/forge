@@ -1110,10 +1110,6 @@
     pointer-events: none;
   }
 
-  .tabbed-panel-leaf.input-active > .tabbed-panel-tabs > .tabbed-panel-tab.active::before {
-    content: none;
-  }
-
   .tabbed-panel-tab.dragging {
     opacity: 0.34;
     transform: translateY(-4px) scale(0.96);

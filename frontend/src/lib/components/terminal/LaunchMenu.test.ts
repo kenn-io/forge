@@ -45,6 +45,29 @@ describe("LaunchMenu", () => {
     expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
   });
 
+  it("enables quick actions that target available ACP agents", async () => {
+    const onQuickAction = vi.fn();
+    render(LaunchMenu, {
+      props: {
+        launchTargets: [{ key: "claude-acp", label: "Claude (ACP)", kind: "acp", source: "builtin", available: true }],
+        quickActions: [{ label: "triage", agent: "claude-acp", prompt: "Triage this change" }],
+        onQuickAction,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions", exact: true }));
+    const triage = within(screen.getByRole("dialog", { name: "Quick actions" })).getByRole("button", {
+      name: "triage",
+    }) as HTMLButtonElement;
+    expect(triage.disabled).toBe(false);
+    await fireEvent.click(triage);
+    expect(onQuickAction).toHaveBeenCalledExactlyOnceWith({
+      label: "triage",
+      agent: "claude-acp",
+      prompt: "Triage this change",
+    });
+  });
+
   it("hides disabled configured targets but keeps unavailable detected targets visible", async () => {
     const onLaunch = vi.fn();
 

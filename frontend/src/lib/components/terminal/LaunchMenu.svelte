@@ -131,7 +131,7 @@
       <div class="popover-heading">{open === "quick" ? "Quick actions" : "Run configurations"}</div>
       {#if open === "quick"}
         {#each sortedQuickActions as action (action.label)}
-          {@const target = launchTargets.find((candidate) => candidate.key === action.agent && candidate.kind === "agent")}
+          {@const target = launchTargets.find((candidate) => candidate.key === action.agent && (candidate.kind === "agent" || candidate.kind === "acp"))}
           <button
             class="launch-option"
             disabled={disabled || !target?.available || launchingKey === action.agent}

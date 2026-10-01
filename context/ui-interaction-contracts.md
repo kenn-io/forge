@@ -148,6 +148,9 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaceKey`).
 - Every quick-action list is ordered by action title, ignoring case, not by settings order
   (`frontend/src/lib/stores/workspace-quick-actions.ts::sortQuickActionsByLabel`).
+- Every quick-action surface resolves the action's agent against both `agent` and `acp`
+  launch targets; ACP targets are valid quick-action agents
+  (`frontend/src/lib/components/terminal/LaunchMenu.svelte`).
 - Workspace quick actions use one lightning icon beside Play, without a visible label
   or chevron, to preserve tab-strip space (`frontend/src/lib/components/terminal/LaunchMenu.svelte`).
 - The session launcher groups ACP chat targets in their own section apart from terminal

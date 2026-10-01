@@ -27,7 +27,6 @@ require (
 	github.com/klauspost/compress v1.20.0
 	github.com/ktrysmt/go-bitbucket v0.10.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/posthog/posthog-go v1.25.3
 	github.com/rhysd/actionlint v1.7.12
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
@@ -41,7 +40,7 @@ require (
 	github.com/yuin/goldmark/v2 v2.1.5
 	gitlab.com/gitlab-org/api/client-go/v3 v3.13.0
 	go.kenn.io/kata v0.18.0
-	go.kenn.io/kit v0.26.0
+	go.kenn.io/kit v0.29.3-0.20261001172437-0cd40158a884
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
@@ -190,6 +189,7 @@ require (
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
+	github.com/posthog/posthog-go v1.25.3 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
@@ -201,7 +201,7 @@ require (
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
-	github.com/segmentio/asm v1.2.0 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect

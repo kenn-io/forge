@@ -7,35 +7,27 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"math"
-	"os"
-	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/posthog/posthog-go"
 	"go.kenn.io/forge/internal/db"
+	kittelemetry "go.kenn.io/kit/telemetry"
 )
 
 const (
 	EnabledEnv           = "TELEMETRY_ENABLED"
 	applicationSlug      = "kenn-forge"
+	envPrefix            = "KENN_FORGE"
 	installIDMetadataKey = "telemetry.install_id"
 	installedAtKey       = "telemetry.install_created_at"
 	postHogAPIKey        = "phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf"
 	postHogEndpoint      = "https://us.i.posthog.com"
 )
 
-const (
-	// HeartbeatInterval is how often a running daemon reports daemon_active.
-	HeartbeatInterval = 24 * time.Hour
-	// Throwaway installs (sandboxes, test harnesses) never live this long.
-	maturityAge   = 24 * time.Hour
-	maxHeldEvents = 1000
-)
+// HeartbeatInterval is how often a running daemon reports daemon_active.
+const HeartbeatInterval = 24 * time.Hour
 
 var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 
@@ -56,25 +48,11 @@ type Client interface {
 	Enabled() bool
 }
 
+// Reporter routes each event to the kit reporter for its source, since kit
+// fixes the source property per reporter.
 type Reporter struct {
-	client     enqueueCloser
-	distinctID string
-	enabled    bool
-	version    string
-	commit     string
-	// installedAt is zero for installs created before install age was recorded.
-	installedAt time.Time
-	now         func() time.Time
-
-	mu         sync.Mutex
-	held       []posthog.Capture
-	flushTimer *time.Timer
-	closed     bool
-}
-
-type enqueueCloser interface {
-	Enqueue(posthog.Message) error
-	Close() error
+	daemon  kittelemetry.PostHogClient
+	backend kittelemetry.PostHogClient
 }
 
 type Options struct {
@@ -83,8 +61,13 @@ type Options struct {
 	Commit   string
 }
 
+// newKitReporter builds one kit reporter; tests replace it.
+var newKitReporter = func(opts kittelemetry.PostHogOptions, options ...kittelemetry.PostHogOption) (kittelemetry.PostHogClient, error) {
+	return kittelemetry.NewPostHogReporter(opts, options...)
+}
+
 func EnabledFromEnv() bool {
-	return strings.TrimSpace(os.Getenv(EnabledEnv)) != "0"
+	return kittelemetry.PostHogTelemetryEnabledFromEnv(envPrefix)
 }
 
 func EventAllowed(event string) bool {
@@ -116,37 +99,65 @@ func SanitizeProperties(event string, properties map[string]any) (map[string]any
 }
 
 func NewReporter(opts Options) (*Reporter, error) {
-	if !enabledInBuild() || !EnabledFromEnv() || testing.Testing() {
+	if testing.Testing() {
+		return DisabledReporter(), nil
+	}
+	return newReporter(opts, time.Now())
+}
+
+// newReporter is NewReporter without the go test guard.
+func newReporter(opts Options, now time.Time) (*Reporter, error) {
+	if !enabledInBuild() || !EnabledFromEnv() {
 		return DisabledReporter(), nil
 	}
 	if opts.Database == nil {
 		return nil, errors.New("telemetry database is required")
 	}
 
-	distinctID, installedAt, err := loadOrCreateInstallID(context.Background(), opts.Database, time.Now())
+	distinctID, installedAt, err := loadOrCreateInstallID(context.Background(), opts.Database, now)
 	if err != nil {
 		return nil, err
 	}
 
-	disableGeoIP := true
-	client, err := posthog.NewWithConfig(postHogAPIKey, posthog.Config{
-		Endpoint:     postHogEndpoint,
-		DisableGeoIP: &disableGeoIP,
-	})
+	base := kittelemetry.PostHogOptions{
+		APIKey:      postHogAPIKey,
+		Endpoint:    postHogEndpoint,
+		Application: applicationSlug,
+		EnvPrefix:   envPrefix,
+		DistinctID:  distinctID,
+		Version:     opts.Version,
+		Commit:      opts.Commit,
+		InstalledAt: installedAt,
+	}
+	daemonOpts := base
+	daemonOpts.Source = "daemon"
+	daemon, err := newKitReporter(daemonOpts, kitAllowedEvents("daemon")...)
 	if err != nil {
 		return nil, err
 	}
-
-	reporter := &Reporter{
-		client:      client,
-		distinctID:  distinctID,
-		enabled:     true,
-		version:     opts.Version,
-		commit:      opts.Commit,
-		installedAt: installedAt,
+	backendOpts := base
+	backendOpts.Source = "backend"
+	backend, err := newKitReporter(backendOpts, kitAllowedEvents("backend")...)
+	if err != nil {
+		return nil, errors.Join(err, daemon.Close())
 	}
-	reporter.scheduleMaturityFlush()
-	return reporter, nil
+	return &Reporter{daemon: daemon, backend: backend}, nil
+}
+
+// kitAllowedEvents builds kit's allowlist for one source from allowedEvents.
+func kitAllowedEvents(source string) []kittelemetry.PostHogOption {
+	var options []kittelemetry.PostHogOption
+	for event, properties := range allowedEvents {
+		if sourceForEvent(event) != source {
+			continue
+		}
+		allowed := make([]kittelemetry.AllowedTelemetryProperty, 0, len(properties))
+		for name, filter := range properties {
+			allowed = append(allowed, kittelemetry.AllowTelemetryProperty(name, kittelemetry.TelemetryPropertyFilter(filter)))
+		}
+		options = append(options, kittelemetry.WithAllowedEvent(event, allowed...))
+	}
+	return options
 }
 
 func DisabledReporter() *Reporter {
@@ -163,7 +174,10 @@ func NewReporterOrDisabled(opts Options) *Reporter {
 }
 
 func (r *Reporter) Enabled() bool {
-	return r != nil && r.enabled && r.client != nil
+	if r == nil {
+		return false
+	}
+	return (r.daemon != nil && r.daemon.Enabled()) || (r.backend != nil && r.backend.Enabled())
 }
 
 func (r *Reporter) Capture(event string, properties map[string]any) error {
@@ -175,93 +189,18 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 	if event == "" {
 		return errors.New("telemetry event is required")
 	}
-
-	safeProperties, err := SanitizeProperties(event, properties)
-	if err != nil {
-		return err
+	if !EventAllowed(event) {
+		return ErrUnsupportedEvent
 	}
 
-	props := posthog.Properties{}
-	maps.Copy(props, safeProperties)
-	r.addDefaultProperties(event, props)
-
-	return r.send(posthog.Capture{
-		DistinctId: r.distinctID,
-		Event:      event,
-		Timestamp:  r.clock().UTC(),
-		Properties: props,
-	})
-}
-
-// send holds events until the install is old enough to count, then sends the
-// held events with their original capture times ahead of the new one.
-func (r *Reporter) send(capture posthog.Capture) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.matureAt(capture.Timestamp) {
-		if len(r.held) < maxHeldEvents {
-			r.held = append(r.held, capture)
-		}
+	client := r.backend
+	if sourceForEvent(event) == "daemon" {
+		client = r.daemon
+	}
+	if client == nil {
 		return nil
 	}
-	return errors.Join(r.flushHeldLocked(), r.client.Enqueue(capture))
-}
-
-// scheduleMaturityFlush sends held events when the install turns 24 hours old,
-// so they don't wait for the next capture.
-func (r *Reporter) scheduleMaturityFlush() {
-	if r.installedAt.IsZero() {
-		return
-	}
-	wait := r.installedAt.Add(maturityAge).Sub(r.clock())
-	if wait <= 0 {
-		return
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.flushTimer = time.AfterFunc(wait, r.flushIfMature)
-}
-
-func (r *Reporter) flushIfMature() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed || !r.matureAt(r.clock()) {
-		return
-	}
-	if err := r.flushHeldLocked(); err != nil {
-		slog.Warn("send held telemetry events", "err", err)
-	}
-}
-
-func (r *Reporter) flushHeldLocked() error {
-	var err error
-	for _, capture := range r.held {
-		err = errors.Join(err, r.client.Enqueue(capture))
-	}
-	r.held = nil
-	return err
-}
-
-func (r *Reporter) matureAt(t time.Time) bool {
-	return r.installedAt.IsZero() || t.Sub(r.installedAt) >= maturityAge
-}
-
-func (r *Reporter) clock() time.Time {
-	if r.now != nil {
-		return r.now()
-	}
-	return time.Now()
-}
-
-func (r *Reporter) addDefaultProperties(event string, props posthog.Properties) {
-	props["$process_person_profile"] = false
-	props["$geoip_disable"] = true
-	props["application"] = applicationSlug
-	props["version"] = r.version
-	props["commit"] = r.commit
-	props["goos"] = runtime.GOOS
-	props["goarch"] = runtime.GOARCH
-	props["source"] = sourceForEvent(event)
+	return client.Capture(event, properties)
 }
 
 func sourceForEvent(event string) string {
@@ -272,22 +211,16 @@ func sourceForEvent(event string) string {
 }
 
 func (r *Reporter) Close() error {
-	if !r.Enabled() {
+	if r == nil {
 		return nil
 	}
-	r.mu.Lock()
-	if r.flushTimer != nil {
-		r.flushTimer.Stop()
+	var err error
+	for _, client := range []kittelemetry.PostHogClient{r.daemon, r.backend} {
+		if client != nil {
+			err = errors.Join(err, client.Close())
+		}
 	}
-	var flushErr error
-	if r.matureAt(r.clock()) {
-		flushErr = r.flushHeldLocked()
-	}
-	// Events from an install that closes before maturity are dropped.
-	r.held = nil
-	r.closed = true
-	r.mu.Unlock()
-	return errors.Join(flushErr, r.client.Close())
+	return err
 }
 
 func safeTelemetryToken(value any) (any, bool) {
@@ -330,7 +263,8 @@ func safeTelemetryNumber(value any) (any, bool) {
 }
 
 // loadOrCreateInstallID returns the install ID and when it was created. A zero
-// time means the ID predates install-age tracking and counts as mature.
+// time means the age is unknown (the ID predates install-age tracking or the
+// stored time is unreadable), so events go untagged.
 func loadOrCreateInstallID(ctx context.Context, database *db.DB, now time.Time) (string, time.Time, error) {
 	_, found, err := database.AppMetadataValue(ctx, installIDMetadataKey)
 	if err != nil {
@@ -354,7 +288,8 @@ func loadOrCreateInstallID(ctx context.Context, database *db.DB, now time.Time) 
 	}
 	installedAt, err := time.Parse(time.RFC3339Nano, raw)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("parse telemetry install time: %w", err)
+		slog.Warn("telemetry install age unavailable", "err", err)
+		return id, time.Time{}, nil
 	}
 	return id, installedAt, nil
 }

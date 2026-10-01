@@ -4,10 +4,12 @@ import (
 	"context"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
+	shellquote "github.com/kballard/go-shellquote"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitworktree "go.kenn.io/kit/git/worktree"
 )
@@ -41,14 +43,8 @@ type configEdit struct {
 // ReuseApprovals carries user approvals into sibling worktrees, only when
 // Codex reports the same hook hash. It never enables hooks or grants new trust.
 func ReuseApprovals(ctx context.Context, command []string, cwd string) error {
-	if len(command) == 0 || strings.TrimSuffix(filepath.Base(command[0]), ".exe") != "codex" {
-		return nil
-	}
-	if command[0] != filepath.Base(command[0]) && !filepath.IsAbs(command[0]) {
-		return nil // The launcher rejects worktree-relative executables.
-	}
-	options, supported := configOptions(command[1:])
-	if !supported {
+	command = approvalCommand(command)
+	if len(command) == 0 {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -74,7 +70,7 @@ func ReuseApprovals(ctx context.Context, command []string, cwd string) error {
 	if len(siblings) == 0 {
 		return nil
 	}
-	c, closeClient, err := startClient(ctx, command[0], options, cwd)
+	c, closeClient, err := startClient(ctx, command[0], command[1:], cwd)
 	if err != nil {
 		return err
 	}
@@ -159,6 +155,46 @@ func approvalEdits(cwd string, siblings []string, states map[string]hookState, h
 		}
 	}
 	return edits
+}
+
+// Keep simple shell launchers intact so their working-directory and environment
+// settings also apply to the app-server. Inspect the exec arguments only to
+// identify Codex and leave named profiles to native review.
+func approvalCommand(command []string) []string {
+	if len(command) == 0 || (command[0] != filepath.Base(command[0]) && !filepath.IsAbs(command[0])) {
+		return nil
+	}
+	args := command
+	shell := strings.TrimSuffix(filepath.Base(command[0]), ".exe")
+	if shell == "sh" || shell == "bash" {
+		if len(command) < 3 || command[1] != "-c" {
+			return nil
+		}
+		words, err := shellquote.Split(command[2])
+		if err != nil || len(words) < 3 || words[0] != "exec" || words[len(words)-1] != "$@" {
+			return nil
+		}
+		if len(command) == 3 {
+			// Supply $0 so the shell forwards all app-server arguments in $@.
+			command = append(slices.Clone(command), "codex")
+		}
+		args = append(slices.Clone(words[1:len(words)-1]), command[4:]...)
+	}
+	if strings.TrimSuffix(filepath.Base(args[0]), ".exe") != "codex" ||
+		(args[0] != filepath.Base(args[0]) && !filepath.IsAbs(args[0])) {
+		return nil
+	}
+	options, supported := configOptions(args[1:])
+	if !supported {
+		return nil
+	}
+	if shell == "sh" || shell == "bash" {
+		// Resume IDs and prompts belong to the interactive launch, not this
+		// app-server invocation. The shell forwards only configuration options.
+		forwarded, _ := configOptions(command[4:])
+		return append(slices.Clone(command[:4]), forwarded...)
+	}
+	return append([]string{command[0]}, options...)
 }
 
 // Codex's app-server does not accept named profiles or allow editing their

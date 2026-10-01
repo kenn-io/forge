@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
@@ -56,6 +57,19 @@ func TestConfigOptions(t *testing.T) {
 			options, supported := configOptions(tc.args)
 			assert.Equal(t, tc.supported, supported)
 			assert.Equal(t, tc.want, options)
+		})
+	}
+}
+
+func TestApprovalCommandWithExeShell(t *testing.T) {
+	dir := t.TempDir()
+	for _, executable := range []string{
+		"sh.exe", "bash.exe",
+		filepath.Join(dir, "sh.exe"), filepath.Join(dir, "bash.exe"),
+	} {
+		t.Run(executable, func(t *testing.T) {
+			command := []string{executable, "-c", `exec codex "$@"`, "codex", "resume", "saved-session"}
+			assert.Equal(t, []string{executable, "-c", `exec codex "$@"`, "codex"}, approvalCommand(command))
 		})
 	}
 }
@@ -117,7 +131,7 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 	gitfixture.Run(t, bare, "config", "extensions.worktreeConfig", "true")
 
 	worktrees := make(map[string]string)
-	for _, name := range []string{"approved", "unchanged", "changed", "disabled"} {
+	for _, name := range []string{"approved", "unchanged", "changed", "disabled", "shell launch"} {
 		dir := filepath.Join(t.TempDir(), name)
 		gitfixture.Run(t, bare, "worktree", "add", "--detach", dir, "HEAD")
 		gitfixture.Run(t, dir, "config", "--worktree", "core.bare", "false")
@@ -132,7 +146,10 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 	codexHome := t.TempDir()
 	t.Setenv("CODEX_HOME", codexHome)
 	projects := map[string]any{repo.Dir: map[string]string{"trust_level": "trusted"}}
-	for _, dir := range worktrees {
+	for name, dir := range worktrees {
+		if name == "shell launch" {
+			continue // This launcher supplies project trust itself.
+		}
 		projects[dir] = map[string]string{"trust_level": "trusted"}
 	}
 	var config bytes.Buffer
@@ -215,4 +232,29 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(string(before), string(after), "repeat launches must not rewrite approvals")
 	assert.Contains(string(after), "# Preserve user comments.")
+
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("shell launcher requires sh")
+	}
+	command := []string{sh, "-c", "exec " + shellquote.Join(codex) +
+		` --yolo -c "projects={\"$PWD\"={trust_level=\"trusted\"}}" "$@"`, "codex"}
+	dir := worktrees["shell launch"]
+	probe, closeProbe, err := startClient(t.Context(), command[0], command[1:], dir)
+	require.NoError(err)
+	defer closeProbe()
+	profileCommand := append(append([]string(nil), command...), "--profile", "work")
+	require.NoError(ReuseApprovals(t.Context(), profileCommand, dir))
+	require.NoError(probe.call("hooks/list", map[string]any{"cwds": []string{dir}}, &listed))
+	require.Len(listed.Data, 1)
+	require.Len(listed.Data[0].Hooks, 1)
+	assert.Equal("untrusted", listed.Data[0].Hooks[0].TrustStatus, "shell profiles retain native review")
+	require.NoError(ReuseApprovals(t.Context(), command[:3], dir))
+	require.NoError(probe.call("hooks/list", map[string]any{"cwds": []string{dir}}, &listed))
+	require.Len(listed.Data, 1)
+	require.Len(listed.Data[0].Hooks, 1)
+	assert.Equal("trusted", listed.Data[0].Hooks[0].TrustStatus, "shell launches without an explicit $0 reuse the same approval")
+	require.NoError(ReuseApprovals(t.Context(), command, dir))
+	resumeCommand := append(append([]string(nil), command...), "resume", "saved-session")
+	require.NoError(ReuseApprovals(t.Context(), resumeCommand, dir))
 }

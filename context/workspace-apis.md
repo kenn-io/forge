@@ -571,6 +571,9 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 - Reuse Codex approvals only for identical hook hashes in sibling Git worktrees;
   preserve disabled hooks and existing per-worktree decisions
   (`internal/codexhooks/trust.go::ReuseApprovals`).
+- Run approval reuse through configured `sh -c`/`bash -c` exec launchers too;
+  their worktree trust settings must reach Codex's app-server
+  (`internal/codexhooks/trust.go::approvalCommand`).
 - Named Codex profiles retain native hook review because the app-server API
   cannot select or edit profile configuration (`internal/codexhooks/trust.go::configOptions`).
 - Matching live runtime/worktree reports prioritize approval, input, working, done, then idle.

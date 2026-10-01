@@ -108,7 +108,7 @@ func run(ctx context.Context, stderr io.Writer) int {
 		}
 	}
 	if len(layoutViolations) > 0 {
-		fmt.Fprintln(stderr, "\nMigrations must sit directly in the migration directory and be numbered without gaps. Found:")
+		fmt.Fprintln(stderr, "\nMigrations must sit directly in the migration directory and be numbered from 000001 without gaps. Found:")
 		for _, violation := range layoutViolations {
 			fmt.Fprintf(stderr, "  %s\n", violation)
 		}
@@ -291,7 +291,8 @@ func resultingMigrationPaths(ctx context.Context, baseRef, migrationDir, diff st
 }
 
 // migrationLayoutViolations reports files the embedded migration filesystem
-// would not load as a migration and gaps in the numbering.
+// would not load as a migration and numbering that does not run from 000001
+// without gaps.
 func migrationLayoutViolations(migrationDir string, resultingPaths []string, resulting map[string]map[string]struct{}) []string {
 	var violations []string
 	for _, file := range resultingPaths {
@@ -305,6 +306,11 @@ func migrationLayoutViolations(migrationDir string, resultingPaths []string, res
 func numberingGaps(resulting map[string]map[string]struct{}) []string {
 	numbers := slices.Sorted(maps.Keys(resulting))
 	var gaps []string
+	if len(numbers) > 0 {
+		if first, err := strconv.Atoi(numbers[0]); err != nil || first != 1 {
+			gaps = append(gaps, "numbering starts at "+numbers[0]+", not 000001")
+		}
+	}
 	for i := 1; i < len(numbers); i++ {
 		previous, previousErr := strconv.Atoi(numbers[i-1])
 		current, currentErr := strconv.Atoi(numbers[i])

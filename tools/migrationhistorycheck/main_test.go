@@ -328,6 +328,20 @@ func TestBlocksDuplicateRepairIntoSubdirectory(t *testing.T) {
 	assert.Contains(t, stderr.String(), "unexpected file internal/db/migrations/moved/000003_second.up.sql")
 }
 
+func TestBlocksDuplicateRepairOntoNumberZero(t *testing.T) {
+	isolateGitEnvironment(t)
+	repo := initRepoWithDuplicateMainMigrations(t)
+	t.Chdir(repo)
+	t.Setenv("KENN_FORGE_MIGRATION_BASE_REF", "main")
+
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.up.sql", "internal/db/migrations/000000_second.up.sql")
+	gitCommand(t, "mv", "internal/db/migrations/000002_second.down.sql", "internal/db/migrations/000000_second.down.sql")
+
+	var stderr bytes.Buffer
+	assert.Equal(t, 1, run(t.Context(), &stderr))
+	assert.Contains(t, stderr.String(), "numbering starts at 000000, not 000001")
+}
+
 func TestUsesHookGitIndexFile(t *testing.T) {
 	isolateGitEnvironment(t)
 	repo := initRepoWithMainMigration(t)

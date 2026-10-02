@@ -18,8 +18,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
-// app.css carries --chrome-border-width, --chrome-active-accent-width, and
-// --chrome-pane-divider-width that the panel chrome resolves against.
+// app.css carries --chrome-border-width and --chrome-active-accent-width that
+// the panel chrome resolves against.
 import "../../../app.css";
 
 import DesignSystemPanelHarness from "./DesignSystemPanelHarness.svelte";

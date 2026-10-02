@@ -365,11 +365,13 @@ Use kit-ui `SplitResizeHandle` for horizontal and vertical pane dividers,
 including handles inside application-owned recursive trees. The app retains
 tree topology, ratio/size bounds, state, and persistence; the shared handle owns
 pointer/keyboard interaction and separator semantics. Pass a specific label
-such as `Resize Activity rail`. Do not override the handle's thickness per
-consumer: every splitter keeps kit's size, and one shared `app.css` rule gives
-all kit handles a transparent 2px grab margin stacked above xterm's layers. A
-wider margin steals clicks from the edge of neighboring content such as sidebar
-rows (`frontend/src/app.css`, `.kit-split-resize-handle`).
+such as `Resize Activity rail`. kit owns the handle's one thickness
+(`--split-handle-size`), color, and 2px grab margin; app CSS may only place a
+handle (kit-ui-check `split-handle-override`, unsuppressible). Hide handles
+responsively from an app wrapper selector. A pane beside a handle draws no
+border on that edge, including panes whose container follows a sidebar's
+handle; the handle is the divider. `app.css` only lifts handles above xterm's
+layers (`frontend/src/app.css`, `.kit-split-resize-handle`).
 
 Use kit-ui `BottomDock` for resizable inline bottom panels. The app owns whether
 the dock is open plus its domain header/body/footer content; the shared dock

@@ -15,33 +15,13 @@
   scrollbar-color: auto;
 }
 
-/* kit's SplitResizeHandle is only as thick as its visible line, which is too
-   thin to grab reliably. Extend its pointer target 2px past both edges with a
-   transparent pseudo-element (part of the button for hit testing, paints
-   nothing). Keep the margin narrow: it covers the edge of the neighboring
-   content, such as the right end of sidebar rows. The z-index keeps that
-   margin above neighboring panes, including xterm's canvas layers (up to 11),
-   and below kit popovers. :where() leaves component overrides such as the
-   docked terminal's absolute resizer intact. */
-:where(.kit-split-resize-handle) {
-  position: relative;
+/* kit's SplitResizeHandle sits at z-index 1, below xterm's canvas and
+   scrollbar layers (up to 11), which would swallow the handle's grab margin
+   beside a terminal. Lift it above them and below kit popovers. :root and
+   the attribute outrank kit's scoped rule. Placement only: kit owns the
+   handle's thickness and look. */
+:root .kit-split-resize-handle[role="separator"] {
   z-index: 12;
-}
-
-:where(.kit-split-resize-handle)::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: -2px;
-  bottom: 0;
-  left: -2px;
-}
-
-:where(.kit-split-resize-handle--vertical)::after {
-  top: -2px;
-  right: 0;
-  bottom: -2px;
-  left: 0;
 }
 
 /* Reset */
@@ -57,10 +37,6 @@
 :root {
   --chrome-border-width: 1px;
   --chrome-active-accent-width: 2px;
-  --chrome-pane-divider-width: 3px;
-  --chrome-dock-resize-hit-size: 7px;
-  --chrome-dock-resize-hit-outset: 4px;
-  --chrome-dock-resize-stripe-offset: 2px;
   --z-flash: 1050;
   --budget-green: var(--accent-green);
   --budget-yellow: var(--accent-amber);

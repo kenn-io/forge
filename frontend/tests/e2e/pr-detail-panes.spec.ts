@@ -217,6 +217,37 @@ test("splits the PR detail panes apart and remembers the dragged ratio", async (
   await expect(page.locator(".files-layout")).toBeVisible();
   await expect(page.getByText("src/split-view.ts")).toBeVisible();
 
+  // Every divider is the 4px handle alone: no pane beside a handle adds a border.
+  const dividers = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>(".kit-split-resize-handle--horizontal")].map((handle) => {
+      const rect = handle.getBoundingClientRect();
+      const y = rect.top + rect.height / 2;
+      // Walk up from just past the handle's 2px grab margin and report any
+      // border drawn on the edge that meets the handle.
+      const borderBeside = (side: "before" | "after") => {
+        const x = side === "before" ? rect.left - 3 : rect.right + 3;
+        for (let el = document.elementFromPoint(x, y); el && el !== document.body; el = el.parentElement) {
+          const box = el.getBoundingClientRect();
+          const style = getComputedStyle(el);
+          const width = side === "before" ? style.borderRightWidth : style.borderLeftWidth;
+          const edge = side === "before" ? box.right - rect.left : box.left - rect.right;
+          if (Math.abs(edge) < 1 && width !== "0px") return width;
+        }
+        return "0px";
+      };
+      const [before, after] = [borderBeside("before"), borderBeside("after")];
+      return { label: handle.getAttribute("aria-label"), width: rect.width, before, after };
+    }),
+  );
+  expect(dividers).toEqual(
+    ["Resize sidebar", "Resize file tree", "Resize detail panes"].map((label) => ({
+      label,
+      width: 4,
+      before: "0px",
+      after: "0px",
+    })),
+  );
+
   const resizeHandle = page.getByRole("separator", { name: "Resize detail panes" });
   await expect(resizeHandle).toBeVisible();
   await expect(resizeHandle).toHaveCSS("cursor", "col-resize");

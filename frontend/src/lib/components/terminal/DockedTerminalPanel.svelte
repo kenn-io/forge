@@ -319,7 +319,6 @@
 >
   {#if dock === "bottom" && open}
     <SplitResizeHandle
-      class="panel-resizer"
       ariaLabel="Resize terminal panel"
       orientation="vertical"
       ariaValueMin={MIN_TERMINAL_HEIGHT}
@@ -509,6 +508,8 @@
     border-top: 0;
   }
 
+  /* The resize handle is the panel's top divider, in flow above the header,
+     so the panel draws no top border of its own. */
   .terminal-panel.bottom.open {
     position: relative;
     display: flex;
@@ -516,29 +517,9 @@
     border-top: 0;
   }
 
-  :global(.panel-resizer) {
-    position: absolute;
-    top: calc(-1 * var(--chrome-dock-resize-hit-outset));
-    left: 0;
-    right: 0;
-    height: var(--chrome-dock-resize-hit-size);
-    background: transparent;
-    z-index: 3;
-  }
-
-  :global(.panel-resizer::before) {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: var(--chrome-dock-resize-stripe-offset);
-    height: var(--chrome-pane-divider-width);
-    background: var(--border-default);
-  }
-
-  :global(.panel-resizer:hover::before),
-  :global(.panel-resizer:focus-visible::before) {
-    background: var(--accent-blue);
+  /* Keep the focus outline off the handle so the divider keeps one color. */
+  .terminal-panel.bottom.open.input-active::after {
+    top: var(--split-handle-size);
   }
 
   .panel-header {

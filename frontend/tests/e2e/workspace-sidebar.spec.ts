@@ -2669,6 +2669,7 @@ test.describe("workspace launcher", () => {
       const stageStyles = getComputedStyle(stage);
 
       return {
+        firstLeafBorderLeft: getComputedStyle(firstLeaf).borderLeftWidth,
         titleBorderLeft: titleBarStyles.borderLeftWidth,
         titleToFirstLeafLeft: firstLeafRect.left - titleBarRect.left,
         titleToStageTop: stageRect.top - titleBarRect.bottom,
@@ -2682,7 +2683,9 @@ test.describe("workspace launcher", () => {
       };
     });
 
-    expect(metrics.titleBorderLeft).toBe("1px");
+    // The workspace list's split handle is the divider beside the header and panes.
+    expect(metrics.titleBorderLeft).toBe("0px");
+    expect(metrics.firstLeafBorderLeft).toBe("0px");
     expect(Math.abs(metrics.titleToFirstLeafLeft)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(metrics.titleToStageTop)).toBeLessThanOrEqual(0.5);
     expect(metrics.padding).toEqual(["0px", "0px", "0px", "0px"]);
@@ -3349,7 +3352,7 @@ test.describe("workspace launcher", () => {
     await expect(page.locator(".terminal-panel.open .terminal-container")).toBeVisible();
     const dividerMetrics = await page.evaluate(() => {
       const panel = document.querySelector(".terminal-panel.bottom.open");
-      const resizer = document.querySelector(".terminal-panel.bottom.open .panel-resizer");
+      const resizer = document.querySelector(".terminal-panel.bottom.open > .kit-split-resize-handle");
       const stage = document.querySelector(".workspace-stage");
       if (!panel || !resizer || !stage) {
         throw new Error("Missing bottom dock panel, resizer, or workspace stage");
@@ -3360,21 +3363,24 @@ test.describe("workspace launcher", () => {
       const stageRect = stage.getBoundingClientRect();
       const panelStyles = getComputedStyle(panel);
       const resizerStyles = getComputedStyle(resizer);
-      const stripeStyles = getComputedStyle(resizer, "::before");
+      const stageStyles = getComputedStyle(stage);
       return {
         panelBorderTop: panelStyles.borderTopWidth,
         resizerCursor: resizerStyles.cursor,
         resizerHeight: Math.round(resizerRect.height),
+        resizerToPanelTop: Math.round(resizerRect.top - panelRect.top),
+        stageBorderBottom: stageStyles.borderBottomWidth,
         stageToPanel: Math.round(panelRect.top - stageRect.bottom),
-        stripeHeight: stripeStyles.height,
       };
     });
+    // The handle is the whole divider: 4px, flush with the stage, no borders beside it.
     expect(dividerMetrics).toEqual({
       panelBorderTop: "0px",
       resizerCursor: "row-resize",
       resizerHeight: 4,
+      resizerToPanelTop: 0,
+      stageBorderBottom: "0px",
       stageToPanel: 0,
-      stripeHeight: "3px",
     });
     await expect
       .poll(() => terminalSockets.some((url) => url.includes("/runtime/sessions/ws-123%3Aplain_shell/terminal")))
@@ -3519,7 +3525,9 @@ test.describe("workspace launcher", () => {
       const secondLeaf = document.querySelector(
         ".terminal-panel.bottom.open .terminal-split.horizontal > .split-child.second > .terminal-leaf",
       );
-      const divider = document.querySelector(".terminal-panel.bottom.open .terminal-split.horizontal > .split-divider");
+      const divider = document.querySelector(
+        ".terminal-panel.bottom.open .terminal-split.horizontal > .kit-split-resize-handle",
+      );
       if (
         !body ||
         !tree ||
@@ -3776,7 +3784,7 @@ test.describe("sidebar toggle behavior", () => {
     // Sidebar should now be visible
     await expect(page.locator(".right-sidebar")).toBeVisible();
     const workflowPanelMetrics = await page.evaluate(() => {
-      const handle = document.querySelector(".sidebar-resize-handle");
+      const handle = document.querySelector('[role="separator"][aria-label="Resize workspace details"]');
       const stage = document.querySelector(".workspace-stage");
       const launcher = document.querySelector(".workspace-stage .launcher-overlay");
       if (!handle || !stage || !launcher) {
@@ -3811,7 +3819,7 @@ test.describe("sidebar toggle behavior", () => {
         name: "Open terminal panel",
       })
       .click();
-    await expect(page.locator(".terminal-panel.bottom.open .panel-resizer")).toBeVisible();
+    await expect(page.locator(".terminal-panel.bottom.open > .kit-split-resize-handle")).toBeVisible();
 
     const prBtn = page.locator(".panel-toggle-btn", {
       hasText: "PR",
@@ -3828,7 +3836,7 @@ test.describe("sidebar toggle behavior", () => {
     ).toBeVisible();
 
     const topElementIsModal = await page.evaluate(() => {
-      const resizer = document.querySelector(".terminal-panel.bottom.open .panel-resizer");
+      const resizer = document.querySelector(".terminal-panel.bottom.open > .kit-split-resize-handle");
       if (!(resizer instanceof HTMLElement)) {
         throw new Error("Missing bottom terminal panel resizer");
       }
@@ -4244,7 +4252,7 @@ test.describe("sidebar persistence", () => {
     await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
     await expect(page.locator(".right-sidebar")).toBeVisible();
 
-    const handle = page.locator(".sidebar-resize-handle");
+    const handle = page.getByRole("separator", { name: "Resize workspace details" });
     const box = await handle.boundingBox();
     expect(box).toBeTruthy();
 
@@ -4288,7 +4296,7 @@ test.describe("sidebar persistence", () => {
     await page.setViewportSize({ width: 900, height: 720 });
     await expect.poll(() => rightSidebar.evaluate((el) => el.offsetWidth)).toBeLessThan(280);
 
-    const handle = page.locator(".sidebar-resize-handle");
+    const handle = page.getByRole("separator", { name: "Resize workspace details" });
     const box = await handle.boundingBox();
     expect(box).toBeTruthy();
     if (box) {

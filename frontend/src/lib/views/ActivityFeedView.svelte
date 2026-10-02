@@ -545,7 +545,6 @@
 
   {#if hasActiveDetail && !activityPaneCollapsed}
     <SplitResizeHandle
-      class="activity-split-resize-handle"
       ariaLabel="Resize Activity rail"
       orientation="horizontal"
       ariaValueMin={minActivityPaneWidth}
@@ -677,12 +676,14 @@
   .activity-shell--split .activity-pane {
     width: var(--activity-pane-width, 360px);
     flex: 0 0 var(--activity-pane-width, 360px);
-    border-right: 1px solid var(--border-default);
   }
 
+  /* An expanded rail is divided by the resize handle; the collapsed strip has
+     no handle, so it draws its own edge. */
   .activity-shell--split .activity-pane--collapsed {
     width: 28px;
     flex-basis: 28px;
+    border-right: 1px solid var(--border-default);
   }
 
   .activity-feed-wrap {
@@ -750,7 +751,7 @@
       display: none;
     }
 
-    .activity-shell--split :global(.activity-split-resize-handle) {
+    .activity-shell--split > :global(.kit-split-resize-handle) {
       display: none;
     }
   }

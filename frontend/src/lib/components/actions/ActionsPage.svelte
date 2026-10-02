@@ -302,7 +302,6 @@
 
 {#snippet paneHandle(pane: ActionsPane, label: string)}
   <SplitResizeHandle
-    class="actions-resize-handle"
     ariaLabel={label}
     orientation="horizontal"
     ariaValueMin={actionsPaneBounds[pane].min}
@@ -833,7 +832,7 @@
       grid-template-rows: minmax(0, 1fr);
     }
 
-    .actions-layout :global(.actions-resize-handle) {
+    .actions-layout :global(.kit-split-resize-handle) {
       display: none;
     }
 

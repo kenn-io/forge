@@ -809,7 +809,6 @@
     </div>
     {#if zoomSide === null}
       <SplitResizeHandle
-        class="tabbed-panel-split-divider"
         ariaLabel={resizeLabel}
         orientation={node.direction}
         ariaValueMin={Math.round(MIN_RATIO * splitSize)}
@@ -960,6 +959,13 @@
        every popover, with no z-index involved. */
     padding: var(--chrome-border-width);
     background: var(--bg-surface);
+  }
+
+  /* A tree placed right after a split handle, such as a list sidebar's, meets
+     the handle with its left edge; the handle is the divider there. Leaves off
+     that edge already drop their left border as second split children. */
+  :global(.kit-split-resize-handle--horizontal + *) .tabbed-panel-leaf {
+    border-left: 0;
   }
 
   /* Paint focus as part of the leaf instead of as a high-z overlay. Descendant
@@ -1277,11 +1283,11 @@
   }
 
   .tab-drop-placeholder.before::after {
-    left: var(--chrome-pane-divider-width);
+    left: var(--space-1);
   }
 
   .tab-drop-placeholder.after::after {
-    right: var(--chrome-pane-divider-width);
+    right: var(--space-1);
   }
 
   .tabbed-panel-body {

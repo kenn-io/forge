@@ -726,7 +726,6 @@
     </aside>
 
     <SplitResizeHandle
-      class="repo-browser__files-resize"
       ariaLabel="Resize file tree"
       orientation="horizontal"
       ariaValueMin={Math.min(MIN_RAIL_WIDTH, maxFilesWidth())}
@@ -798,7 +797,6 @@
     </main>
 
     <SplitResizeHandle
-      class="repo-browser__history-resize"
       ariaLabel="Resize file history"
       orientation="horizontal"
       ariaValueMin={Math.min(MIN_RAIL_WIDTH, maxHistoryWidth())}
@@ -975,19 +973,10 @@
     background: var(--bg-surface);
   }
 
-  .repo-browser__sidebar {
-    flex: 0 0 auto;
-    border-right: thin solid var(--border-default);
-  }
-
+  /* The resize handles are the dividers; the rails draw no border beside them. */
+  .repo-browser__sidebar,
   .repo-browser__history {
     flex: 0 0 auto;
-    border-left: thin solid var(--border-default);
-  }
-
-  :global(.repo-browser__files-resize),
-  :global(.repo-browser__history-resize) {
-    background: var(--border-default);
   }
 
   .repo-browser__filter {
@@ -1223,7 +1212,7 @@
   }
 
   @media (max-width: 900px) {
-    :global(.repo-browser__history-resize),
+    .repo-browser__viewer + :global(.kit-split-resize-handle),
     .repo-browser__history {
       display: none;
     }
@@ -1231,7 +1220,7 @@
   }
 
   @media (max-width: 760px) {
-    :global(.repo-browser__files-resize),
+    .repo-browser__sidebar + :global(.kit-split-resize-handle),
     .repo-browser__sidebar {
       display: none;
     }

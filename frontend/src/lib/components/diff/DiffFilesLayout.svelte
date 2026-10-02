@@ -195,7 +195,6 @@
         />
       </aside>
       <SplitResizeHandle
-        class="files-resize-handle"
         ariaLabel="Resize file tree"
         orientation="horizontal"
         ariaValueMin={minAllowedFileTreeWidth()}
@@ -251,7 +250,6 @@
   .files-sidebar {
     width: var(--diff-file-tree-width, 280px);
     flex-shrink: 0;
-    border-right: 1px solid var(--border-default);
     background: var(--bg-surface);
     overflow-y: auto;
     display: flex;
@@ -278,7 +276,7 @@
       border-bottom: 1px solid var(--border-default);
     }
 
-    :global(.files-resize-handle) {
+    .files-layout > :global(.kit-split-resize-handle) {
       display: none;
     }
 

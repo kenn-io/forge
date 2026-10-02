@@ -1050,7 +1050,7 @@ test.describe("activity split view", () => {
 
     const rail = page.locator(".activity-pane");
     const detail = page.locator(".activity-detail");
-    const resizeHandle = page.locator(".activity-split-resize-handle");
+    const resizeHandle = page.locator(".activity-shell > .kit-split-resize-handle");
     const railBox = await rail.boundingBox();
     const detailBox = await detail.boundingBox();
     expect(railBox).not.toBeNull();
@@ -1086,7 +1086,7 @@ test.describe("activity split view", () => {
     await openActivityPRSplit(page);
 
     const rail = page.locator(".activity-pane");
-    const resizeHandle = page.locator(".activity-split-resize-handle");
+    const resizeHandle = page.locator(".activity-shell > .kit-split-resize-handle");
 
     const initialBox = await rail.boundingBox();
     expect(initialBox).not.toBeNull();
@@ -1136,7 +1136,7 @@ test.describe("activity split view", () => {
 
     const rail = page.locator(".activity-pane");
     const detail = page.locator(".activity-detail");
-    const resizeHandle = page.locator(".activity-split-resize-handle");
+    const resizeHandle = page.locator(".activity-shell > .kit-split-resize-handle");
     await expect(resizeHandle).toBeVisible();
 
     const handleBox = await resizeHandle.boundingBox();
@@ -1208,7 +1208,7 @@ test.describe("activity split view", () => {
     await collapseButton.click();
 
     await expect(detail).toBeVisible();
-    await expect(page.locator(".activity-split-resize-handle")).toBeHidden();
+    await expect(page.locator(".activity-shell > .kit-split-resize-handle")).toBeHidden();
     await expect(page.locator(".activity-collapsed-strip")).toBeVisible();
     await expect(page.locator("button[title='Expand Activity sidebar']")).toBeVisible();
     const collapsedBox = await rail.boundingBox();
@@ -1218,7 +1218,7 @@ test.describe("activity split view", () => {
     await page.locator("button[title='Expand Activity sidebar']").click();
 
     await expect(page.locator(".activity-collapsed-strip")).toBeHidden();
-    await expect(page.locator(".activity-split-resize-handle")).toBeVisible();
+    await expect(page.locator(".activity-shell > .kit-split-resize-handle")).toBeVisible();
     const expandedBox = await rail.boundingBox();
     expect(expandedBox).not.toBeNull();
     expect(Math.abs(expandedBox!.width - 360)).toBeLessThan(2);

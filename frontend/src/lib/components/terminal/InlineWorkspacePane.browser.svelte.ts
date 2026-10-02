@@ -126,7 +126,7 @@ describe("inline workspace pane focus", () => {
     const { target, dispose } = mountHarness(layout);
 
     try {
-      const divider = target.querySelector<HTMLElement>(".tabbed-panel-split-divider")!;
+      const divider = target.querySelector<HTMLElement>(".tabbed-panel-split > .kit-split-resize-handle")!;
       const rect = divider.getBoundingClientRect();
       // The harness is wider than the test viewport; probe inside what is visible.
       const x = rect.left + 20;
@@ -147,7 +147,7 @@ describe("inline workspace pane focus", () => {
     const { target, dispose } = mountHarness(layout);
 
     try {
-      expect(target.querySelector(".tabbed-panel-split-divider")).not.toBeNull();
+      expect(target.querySelector(".tabbed-panel-split > .kit-split-resize-handle")).not.toBeNull();
 
       const workspaceLeaf = target.querySelector('[data-pane-key="workspace"]')!.closest(".tabbed-panel-leaf")!;
       workspaceLeaf.querySelector<HTMLButtonElement>('[data-testid="pane-toggle-zoom"]')?.click();
@@ -155,7 +155,7 @@ describe("inline workspace pane focus", () => {
 
       // A divider left rendered would sit draggable on top of a supposedly
       // full-size pane, silently mutating a ratio the user cannot see.
-      expect(target.querySelector(".tabbed-panel-split-divider")).toBeNull();
+      expect(target.querySelector(".tabbed-panel-split > .kit-split-resize-handle")).toBeNull();
       expect(target.querySelector(".tabbed-panel-split-child.first")?.hasAttribute("hidden")).toBe(true);
     } finally {
       dispose();

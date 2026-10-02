@@ -4936,7 +4936,6 @@
           </div>
           {#if sidebarOpen && sidebarTab !== null && !hideRightSidebar}
             <SplitResizeHandle
-              class="sidebar-resize-handle"
               ariaLabel="Resize workspace details"
               orientation="horizontal"
               ariaValueMin={rightSidebarAriaMin}
@@ -5621,6 +5620,11 @@
     border-left: 1px solid var(--border-default);
     gap: var(--space-4);
     flex-shrink: 0;
+  }
+
+  /* Beside the workspace list's split handle the handle is the divider. */
+  :global(.kit-split-resize-handle--horizontal + *) .header-bar {
+    border-left: 0;
   }
 
   .header-bar--compact {

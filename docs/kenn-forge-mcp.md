@@ -99,6 +99,42 @@ instead. No token is needed:
 }
 ```
 
+## Connect from another machine or a container
+
+The companion listener stays on loopback. A client elsewhere on your network,
+such as an MCP gateway in a container, connects to `/mcp` on the main Forge
+port with the daemon bearer token instead. Bind the main listener to an
+address that client can reach, list the name it uses in `allowed_hosts`, keep
+`[mcp].enabled = true`, and turn on API authentication:
+
+```toml
+host = "192.0.2.10"
+allowed_hosts = ["forge.lan:8091"]
+
+[api]
+require_auth = true
+
+[mcp]
+enabled = true
+```
+
+Background start (`kenn-forge daemon start` or `restart`) only binds loopback,
+so run this setup in the foreground with `kenn-forge serve`, for example under
+a service manager.
+
+Then point the client at `http://forge.lan:8091/mcp` with the
+`Authorization: Bearer ${KENN_FORGE_API_TOKEN}` header shown above. The main
+port requires the token for MCP whether or not `[api].require_auth` is set,
+but that setting is what protects the rest of the API on the same port.
+Without it, anyone who can reach the address can use the web UI and API
+without a token. Plain HTTP sends the token in the clear, so use this only on
+a network you trust, such as a tailnet or a private container network, or put
+an HTTPS proxy in front.
+
+Requests whose Host isn't in `allowed_hosts` or the bind address get `403`, as
+do requests with an `Origin` header other than the matching `https://` origin;
+server-side clients normally send no `Origin`.
+
 Earlier previews exposed a standalone `kenn-forge mcp` command with a stdio
 transport. That command and transport are removed without a compatibility
 shim: MCP is served only by the running daemon over the HTTP endpoint above,
@@ -173,4 +209,6 @@ port must differ from the backend port and must be free at startup.
 
 A `401` response means `[api].require_auth` is enabled and the bearer token is
 missing or incorrect. A `403` response means the request did not arrive as a
-direct same-origin loopback request.
+direct same-origin loopback request. On the main port, `401` means the request
+had neither the daemon bearer nor an allowed Tailscale Serve login, and `403`
+means its Host is not allowed or its Origin names another site.

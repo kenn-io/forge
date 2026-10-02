@@ -3,6 +3,13 @@
 Use this document when adding or changing config fields that kenn-forge saves
 back to TOML.
 
+- Startup env/flag overlays are transient: reload retains flags, and saves validate
+  effective values before restoring overridden fields from the current file so
+  pending file edits survive (`internal/config/runtime_overrides.go::Config.restoreRuntimeFileValues`).
+- Legacy database migration discovers the source from legacy/TOML state but moves
+  into the effective runtime `data_dir`, including `KENN_FORGE_DATA_DIR`; an empty
+  winning override fails before moving the legacy database
+  (`internal/config/legacy_migration.go::migrateLegacyDatabase`).
 - `configFile` in `internal/config/config.go` is the hand-maintained subset of `Config` that `Save` writes to disk. A `Config` field absent from `configFile` (or from the `Save` initializer) loads from TOML fine but is silently dropped on the next save or restart.
 - `airplane_mode` is a false-by-default, node-local preference. Settings writes and file reloads apply it without a restart; spoke settings never overwrite it with the hub's value (`internal/server/settingsapi/settings_handlers.go::SplitSettingsUpdate`).
 - Every new persisted config field or section must be wired in three places — `Config`, `configFile`, and the `Save` initializer — and covered by a save/load round-trip test with a non-default value (see `TestPullRequestsConfigRoundTrip` in `internal/config/config_test.go`).

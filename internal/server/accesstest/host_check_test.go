@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,45 @@ func serveDirectDaemonRequest(t *testing.T, srv *server.Server, bearer string, h
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, serverfake.DirectDaemonRequest(t, bearer, headers))
 	return rr.Code
+}
+
+func TestWildcardListenerKeepsHostAndDirectBearerBoundary(t *testing.T) {
+	for _, bind := range []config.HostKey{{Host: "0.0.0.0", Port: "8091"}, {Host: "[::]", Port: "8091"}} {
+		t.Run(bind.Host, func(t *testing.T) {
+			assert := assert.New(t)
+			srv := setupHostCheckServerWithToken(t, authapi.HostCheckOptions{Bind: bind, TrustReverseProxy: true}, "daemon-secret")
+			authority := "127.0.0.1:8091"
+			if bind.Host == "[::]" {
+				authority = "[::1]:8091"
+			}
+			request := serverfake.DirectDaemonRequest(t, "daemon-secret", nil)
+			request.Host = authority
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, request)
+			assert.Equal(http.StatusOK, rr.Code)
+			for _, tc := range []struct{ host, remote, forwarded string }{
+				{authority, "192.0.2.10:1234", ""},
+				{"attacker.example:8091", "127.0.0.1:1234", ""},
+				{net.JoinHostPort(config.LoopbackHostForBind(strings.Trim(bind.Host, "[]")), "9"), "127.0.0.1:1234", ""},
+				{authority, "127.0.0.1:1234", "attacker.example:8091"},
+			} {
+				request := serverfake.DirectDaemonRequest(t, "daemon-secret", nil)
+				request.Host, request.RemoteAddr = tc.host, tc.remote
+				if tc.forwarded != "" {
+					request.Header.Set("X-Forwarded-Host", tc.forwarded)
+				}
+				rr := httptest.NewRecorder()
+				srv.ServeHTTP(rr, request)
+				assert.Equal(http.StatusForbidden, rr.Code)
+			}
+			health := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+authority+"/healthz", nil)
+			health.RemoteAddr = "127.0.0.1:1234"
+			health.Header.Set("X-Forwarded-Host", authority)
+			rr = httptest.NewRecorder()
+			srv.ServeHTTP(rr, health)
+			assert.Equal(http.StatusOK, rr.Code)
+		})
+	}
 }
 
 // TestDirectDaemonBearerHostIntegration protects middleware ordering. Direct

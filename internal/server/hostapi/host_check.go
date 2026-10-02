@@ -112,7 +112,7 @@ func isLiteralLoopbackIP(h string) bool {
 func acceptedSet(bind config.HostKey, allowed []config.HostKey) []config.HostKey {
 	out := make([]config.HostKey, 0, 3+len(allowed))
 	out = append(out, bind)
-	if isLoopbackHost(bind.Host) {
+	if isLoopbackHost(bind.Host) || isLoopbackHost(config.LoopbackHostForBind(strings.Trim(bind.Host, "[]"))) {
 		for _, syn := range []string{"127.0.0.1", "localhost", "[::1]"} {
 			if syn == bind.Host {
 				continue
@@ -125,8 +125,8 @@ func acceptedSet(bind config.HostKey, allowed []config.HostKey) []config.HostKey
 }
 
 func isLoopbackHost(h string) bool {
-	switch h {
-	case "127.0.0.1", "localhost", "[::1]":
+	switch strings.Trim(h, "[]") {
+	case "127.0.0.1", "localhost", "::1":
 		return true
 	}
 	return false

@@ -208,13 +208,13 @@ func NewIdentity(address net.Addr, opts IdentityOptions) (Identity, error) {
 	if err != nil {
 		return Identity{}, fmt.Errorf("ensure daemon node ID: %w", err)
 	}
-	host := tcpAddress.IP.String()
+	host := config.LoopbackHostForBind(tcpAddress.IP.String())
 	port := strconv.Itoa(tcpAddress.Port)
 	basePath := canonicalBasePath(opts.BasePath)
 	record := daemon.NewRuntimeRecord(
 		Service,
 		opts.Version,
-		daemon.Endpoint{Network: daemon.NetworkTCP, Address: address.String()},
+		daemon.Endpoint{Network: daemon.NetworkTCP, Address: net.JoinHostPort(host, port)},
 	)
 	record.Metadata = map[string]string{
 		metadataHost:        host,

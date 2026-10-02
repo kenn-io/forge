@@ -2668,3 +2668,27 @@ func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.
 	}
 	require.ElementsMatch([]string{"acme/widget", "other-org/other-repo"}, names)
 }
+
+func TestConfigReloadRetainsForegroundOverrides(t *testing.T) {
+	t.Setenv("KENN_FORGE_PORT", "8092")
+	srv, _, path, _ := setupTestServerWithConfigContent(t, validReloadConfig, &serverfake.MockGH{})
+	host, port := "127.0.0.1", 8093
+	cfg, err := config.LoadWithOverrides(path, config.Overrides{Host: &host, Port: &port})
+	require.NoError(t, err)
+	srv.configReloadMu.Lock()
+	srv.cfgMu.Lock()
+	*srv.cfg = *cfg
+	srv.cfgMu.Unlock()
+	*srv.configreload.BootCfgSnapshot = configreload.SnapshotStartupConfig(cfg)
+	srv.configReloadMu.Unlock()
+	writeConfigToml(t, path, validReloadConfigChangedActivity)
+	event := srv.configreload.ApplyConfigChange(t.Context())
+	require.True(t, event.Valid, event.Error)
+	assert.False(t, event.RestartRequired)
+	srv.cfgMu.Lock()
+	defer srv.cfgMu.Unlock()
+	assert.Equal(t, 8093, srv.cfg.Port)
+	assert.Equal(t, "flat", srv.cfg.Activity.ViewMode)
+	require.NotNil(t, srv.cfg.RuntimeOverrides().Port)
+	assert.Equal(t, 8093, *srv.cfg.RuntimeOverrides().Port)
+}

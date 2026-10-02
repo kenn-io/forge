@@ -89,10 +89,15 @@ func (p DaemonRequestPolicy) Admit(
 }
 
 func isDirectLoopbackListenerRequest(r *http.Request, opts HostCheckOptions) bool {
+	bind := opts.Bind
+	bind.Host = config.LoopbackHostForBind(strings.Trim(bind.Host, "[]"))
+	if strings.Contains(bind.Host, ":") {
+		bind.Host = "[" + bind.Host + "]"
+	}
 	if hasForwardingHeaders(r.Header) || !IsLoopbackRemoteAddr(r.RemoteAddr) ||
-		!config.IsLoopbackHostname(strings.Trim(opts.Bind.Host, "[]")) {
+		!config.IsLoopbackHostname(strings.Trim(bind.Host, "[]")) {
 		return false
 	}
 	key, err := config.ParseHostKey(r.Host)
-	return err == nil && key.Equal(opts.Bind)
+	return err == nil && key.Equal(bind)
 }

@@ -628,3 +628,79 @@ Disable telemetry with:
 ```sh
 TELEMETRY_ENABLED=0 kenn-forge daemon start
 ```
+
+## Container startup
+
+Stable releases publish `ghcr.io/kenn-io/forge:<version>` and `:latest` for Linux
+amd64 and arm64. The image runs `kenn-forge serve` directly as uid/gid 1000,
+with git, tmux, OpenSSH client, curl, and CA certificates.
+
+Persist `/home/forge` so configuration, repositories, and the automatically
+minted bearer token survive container replacement. Bind-mounted directories
+must be writable by uid 1000. A Docker named volume inherits the image ownership.
+
+For browser access from outside the Docker host, put an HTTPS reverse proxy in
+front of Forge and keep the direct HTTP port private. This example publishes
+the port only on host loopback and assumes the proxy runs on the Docker host:
+
+```sh
+docker run -d --name forge \
+  -p 127.0.0.1:8091:8091 \
+  -v forge-home:/home/forge \
+  -e KENN_FORGE_ALLOWED_HOSTS=127.0.0.1:8091,forge.example \
+  -e KENN_FORGE_TRUST_REVERSE_PROXY=true \
+  ghcr.io/kenn-io/forge:latest
+```
+
+Configure the proxy to terminate HTTPS for `forge.example`, forward to
+`127.0.0.1:8091`, and send the original public authority in
+`X-Forwarded-Host` or `Forwarded`. For example, this Caddy site requires a
+hostname with a trusted certificate:
+
+```caddyfile
+forge.example {
+    reverse_proxy 127.0.0.1:8091 {
+        header_up X-Forwarded-Host {http.request.host}
+    }
+}
+```
+
+The allowlist includes both the backend and public authorities because Forge
+checks the raw `Host` and forwarded public host. If the proxy runs in another
+container, connect it to Forge over a private Docker network and do not publish
+Forge's port to host interfaces.
+
+Read the login token with `docker exec forge cat /home/forge/.kenn/forge/auth_token`,
+then open `https://forge.example/?auth_token=<token>` through the proxy. Do not
+open the token-bearing URL over the direct HTTP listener. Keep the token out of
+proxy access logs. The persisted token file stays private (mode 0600).
+The image defaults to an authenticated `0.0.0.0:8091` listener. Wildcard listeners
+require API authentication; existing specific-address configurations retain
+their behavior. Declare each external/backend Host authority you use.
+
+Startup settings accept these environment variables:
+
+| Variable | Setting |
+| --- | --- |
+| `KENN_FORGE_HOST` | Listen IP |
+| `KENN_FORGE_PORT` | Listen port, 1–65535 |
+| `KENN_FORGE_ALLOWED_HOSTS` | Comma-separated exact Host authorities; empty clears the list |
+| `KENN_FORGE_REQUIRE_AUTH` | Require bearer authentication |
+| `KENN_FORGE_TRUST_REVERSE_PROXY` | Validate forwarded Host as well as backend Host |
+| `KENN_FORGE_ROBOREV_ENDPOINT` | Absolute HTTP(S) URL of a separate Roborev service |
+| `KENN_FORGE_DATA_DIR` | Data directory |
+| `KENN_FORGE_HOME` | Configuration/discovery home |
+
+`serve --host` and `--port` override environment values. Precedence is flags,
+environment, TOML, then defaults. Invalid winning values stop startup; malformed
+TOML still fails. Runtime overrides survive file reloads and remain outside the
+saved TOML, so changing settings does not seed deployment values into the file.
+Startup logs report effective settings and their sources.
+
+The image probes `/healthz` at IPv4 loopback using `KENN_FORGE_PORT` and a matching
+forwarded Host, including in trusted-proxy mode. If you choose a specific host or an IPv6-only bind, or override the port through
+a flag or TOML, supply a matching Docker healthcheck.
+`/livez` reports process liveness; `/healthz` reports application readiness.
+
+Run Roborev as a separate service and set its endpoint above. Install agent CLIs
+into the persistent `/home/forge/.local/bin`, or build a derived image with them.

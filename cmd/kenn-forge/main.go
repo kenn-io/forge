@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -78,7 +79,14 @@ func newMCPStartupHandler() http.Handler {
 
 func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error) {
 	primaryAddr := cfg.ListenAddr()
-	primary, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", primaryAddr)
+	network := "tcp"
+	if ip := net.ParseIP(cfg.Host); ip != nil && ip.IsUnspecified() {
+		network = "tcp6"
+		if ip.To4() != nil {
+			network = "tcp4"
+		}
+	}
+	primary, err := (&net.ListenConfig{}).Listen(context.Background(), network, primaryAddr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listen on %s: %w", primaryAddr, err)
 	}
@@ -332,12 +340,30 @@ func writeRuntimeStatus(dataDir string, asJSON bool, stdout io.Writer) error {
 	return runtimelock.FormatStatus(stdout, st, asJSON)
 }
 
+func logRuntimeConfig(logger *slog.Logger, cfg *config.Config) {
+	sources := cfg.RuntimeSources()
+	endpointValue := "configured"
+	if endpoint, err := url.Parse(cfg.RoborevEndpoint()); err == nil && endpoint.Host != "" {
+		endpointValue = endpoint.Scheme + "://" + endpoint.Host
+	}
+	logger.Info("runtime configuration",
+		"host", cfg.Host, "host_source", sources["host"],
+		"port", cfg.Port, "port_source", sources["port"],
+		"data_dir", cfg.DataDir, "data_dir_source", sources["data_dir"],
+		"allowed_hosts", cfg.AllowedHosts, "allowed_hosts_source", sources["allowed_hosts"],
+		"require_auth", cfg.API.RequireAuth, "require_auth_source", sources["api.require_auth"],
+		"trust_reverse_proxy", cfg.TrustReverseProxy, "trust_reverse_proxy_source", sources["trust_reverse_proxy"],
+		"roborev_endpoint", endpointValue, "roborev_endpoint_source", sources["roborev.endpoint"],
+	)
+}
+
 func run(opts serve.Options) error {
 	configPath := opts.ConfigPath
-	cfg, err := config.LoadOrCreate(configPath)
+	cfg, err := config.LoadOrCreateWithOverrides(configPath, opts.ConfigOverrides)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	logRuntimeConfig(slog.Default(), cfg)
 	if err := validateBackgroundLaunchConfig(cfg); err != nil {
 		return err
 	}
@@ -433,7 +459,7 @@ func run(opts serve.Options) error {
 			_ = mcpLn.Close()
 		}
 	}
-	if ip := net.ParseIP(cfg.Host); ip != nil && !ip.IsLoopback() {
+	if ip := net.ParseIP(cfg.Host); ip != nil && !ip.IsLoopback() && !cfg.API.RequireAuth {
 		slog.Warn(
 			"binding a non-loopback address: the API has no"+
 				" authentication, so the bound network is the trust"+

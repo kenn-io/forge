@@ -86,6 +86,8 @@ Forgejo, and Gitea hosts reuse an authenticated `glab` or `fj` session the same
 way. Configure explicit credentials through environment variables or
 `~/.kenn/forge/config.toml`; see [Configuration](docs/configuration.md).
 
+For Docker or Umbrel, use the [upstream container and startup settings](docs/configuration.md#container-startup).
+
 Local workspaces require Git and tmux on a Unix-like host. The Windows release
 supports the dashboard and provider actions. Use WSL or a remote Unix-like
 kenn-forge host when you need workspace sessions.

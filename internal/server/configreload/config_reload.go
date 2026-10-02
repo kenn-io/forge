@@ -426,7 +426,17 @@ func (s *Handlers) HandleConfigFileChanged() {
 // The SSE broadcast is intentionally moved out of this function (to
 // handleConfigFileChanged) so a slow subscriber cannot stall the daemon.
 func (s *Handlers) ApplyConfigChange(ctx context.Context) ConfigChangedEvent {
-	newCfg, err := config.Load((*s.CfgPath))
+	s.CfgMu.Lock()
+	if (*s.Cfg) == nil {
+		s.CfgMu.Unlock()
+		return ConfigChangedEvent{
+			Valid: false,
+			Error: "config reload disabled: server has no in-memory config",
+		}
+	}
+	overrides := (*s.Cfg).RuntimeOverrides()
+	s.CfgMu.Unlock()
+	newCfg, err := config.LoadWithOverrides((*s.CfgPath), overrides)
 	// Accumulate the candidate's token env names from any parseable
 	// candidate — config.Load returns the parsed config alongside
 	// structural validation errors — before every failure path: a

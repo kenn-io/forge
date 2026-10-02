@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -400,6 +401,44 @@ func TestLoadOrCreateRenamesDatabaseInConfiguredDataDirectory(t *testing.T) {
 	assert.FileExists(filepath.Join(dataDir, forgeDatabaseFile))
 	assert.NoFileExists(filepath.Join(dataDir, legacyDatabaseFile))
 	assert.FileExists(filepath.Join(dataDir, legacyLockFile))
+}
+
+func TestLoadOrCreateMovesLegacyDatabaseToEnvironmentDataDir(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	sourceDir := filepath.Join(t.TempDir(), "configured-state")
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	overrideDir := filepath.Join(t.TempDir(), "environment-state")
+	require.NoError(os.MkdirAll(sourceDir, 0o700))
+	require.NoError(os.WriteFile(configPath, []byte("data_dir = "+strconv.Quote(sourceDir)+"\n"), 0o600))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, legacyDatabaseFile), []byte("database"), 0o600))
+	t.Setenv("KENN_FORGE_DATA_DIR", overrideDir)
+
+	cfg, err := LoadOrCreate(configPath)
+	require.NoError(err)
+
+	assert.Equal(overrideDir, cfg.DataDir)
+	assert.FileExists(filepath.Join(overrideDir, forgeDatabaseFile))
+	assert.NoFileExists(filepath.Join(sourceDir, legacyDatabaseFile))
+	assert.NoFileExists(filepath.Join(sourceDir, forgeDatabaseFile))
+	assert.FileExists(filepath.Join(sourceDir, legacyLockFile))
+}
+
+func TestLoadOrCreateRejectsBlankDataDirOverrideBeforeLegacyMove(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	sourceDir := filepath.Join(t.TempDir(), "configured-state")
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(os.MkdirAll(sourceDir, 0o700))
+	require.NoError(os.WriteFile(configPath, []byte("data_dir = "+strconv.Quote(sourceDir)+"\n"), 0o600))
+	require.NoError(os.WriteFile(filepath.Join(sourceDir, legacyDatabaseFile), []byte("database"), 0o600))
+	t.Setenv("KENN_FORGE_DATA_DIR", " ")
+
+	_, err := LoadOrCreate(configPath)
+
+	require.ErrorContains(err, "KENN_FORGE_DATA_DIR must not be empty")
+	assert.FileExists(filepath.Join(sourceDir, legacyDatabaseFile))
+	assert.NoFileExists(filepath.Join(sourceDir, forgeDatabaseFile))
 }
 
 func TestLoadOrCreateRefusesDatabaseMoveWhileMiddlemanDaemonIsActive(t *testing.T) {

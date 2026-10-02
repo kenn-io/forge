@@ -72,6 +72,18 @@ and the root event stream.
 - Bare `kenn-forge` is help-only, `serve` is foreground, and background
   lifecycle management is under `daemon start|status|stop|restart`
   (`cmd/kenn-forge/cli.go::newRootCommand`).
+- Foreground listener flags belong only to `serve`; preserve explicit changed-state
+  above environment values and redact endpoint credentials from startup source logs
+  (`internal/cli/serve/serve.go::NewCommand`, `cmd/kenn-forge/main.go::logRuntimeConfig`).
+- The upstream image starts the binary directly with authenticated wildcard defaults;
+  persist its uid-1000 home and keep deployment-owned agent CLIs and Roborev separate
+  (`Dockerfile`).
+- The image's listener is plain HTTP: publish it only on host loopback or a private
+  proxy network, and use HTTPS for external browser access and token bootstrap
+  (`Dockerfile`, `docs/configuration.md::Container startup`).
+- Serialize stable image promotion across releases and reconcile the current stable
+  tag, independent of the triggering release; CI may coalesce pending promotion jobs
+  (`scripts/container-promote.sh`).
 - `daemon start` is idempotent: reuse requires verified identity for the same
   resolved `data_dir`; incompatible versions require `daemon restart`
   (`internal/daemonruntime/lifecycle.go::NewManager`).
@@ -162,6 +174,12 @@ and the root event stream.
   nothing about daemon liveness; only lock acquisition does
   (`internal/runtimelock/lock.go::Handle.Release`).
 
+## Config Reload
+
+- A server with no in-memory config reports reload disabled before reading a
+  changed config file; inspect the pointer under `CfgMu` before computing runtime
+  overrides (`internal/server/configreload/config_reload.go::Handlers.ApplyConfigChange`).
+
 ## Discovery And Readiness
 
 - Every ready server publishes the standard `daemon.<pid>.json` record in
@@ -231,6 +249,10 @@ and the root event stream.
   the closed peer-route inventory
   (`internal/server/api_auth.go::Server.authorizeFederationRequest`,
   `internal/federationauth/authenticator.go::Authenticator.RequiredScope`).
+- `forge_auth` is Secure only for direct TLS or trusted forwarded HTTPS
+  (`internal/server/authapi/api_auth.go::Handlers.HandleAuthBootstrap`).
+- HSTS is emitted after host validation only for verified HTTPS requests
+  (`internal/server/server.go::Server.ServeHTTP`).
 - An optional `X-Kenn-Forge-Node-ID` header is diagnostic only: the bearer
   establishes identity, and a supplied header that differs from its subject is
   rejected (`internal/server/api_auth.go::Server.authorizeFederationRequest`).
@@ -242,6 +264,10 @@ and the root event stream.
   token and full runtime identity; the proof route requires the exact direct
   loopback authority without forwarding headers
   (`internal/daemonruntime/lifecycle.go::discovery.probe`).
+
+- Authenticated wildcard listeners publish a concrete loopback discovery identity;
+  direct proof/bearer admission still requires its exact authority and a local peer
+  with no forwarding headers (`internal/daemonruntime/runtime.go::NewIdentity`).
 
 ## Host And Origin Boundary
 

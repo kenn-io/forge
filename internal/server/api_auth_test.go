@@ -36,6 +36,27 @@ func newAuthTestServer(t *testing.T, token string) *httptest.Server {
 	return ts
 }
 
+func newTrustedProxyAuthTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewUnstartedServer(nil)
+	bind, err := config.ParseHostKey(ts.Listener.Addr().String())
+	require.NoError(t, err)
+	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
+		DaemonAccess: authapi.DaemonAccessOptions{
+			Token: "secret-token", RequireAPIAuth: true,
+		},
+		HostCheck: authapi.HostCheckOptions{
+			Bind:              bind,
+			Allowed:           []config.HostKey{{Host: "forge.example.test"}},
+			TrustReverseProxy: true,
+		},
+	})
+	ts.Config.Handler = srv
+	ts.Start()
+	t.Cleanup(ts.Close)
+	return ts
+}
+
 func newTailscaleAuthTestServer(t *testing.T) (*httptest.Server, *Server) {
 	t.Helper()
 	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
@@ -69,6 +90,35 @@ func authGet(
 	require.NoError(t, err)
 	t.Cleanup(func() { resp.Body.Close() })
 	return resp
+}
+
+func TestAPIAuthCookieBootstrapUsesTrustedHTTPS(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ts := newTrustedProxyAuthTestServer(t)
+
+	response := authGet(t, ts, "/?auth_token=secret-token", func(request *http.Request) {
+		request.Header.Set("X-Forwarded-Host", "forge.example.test")
+		request.Header.Set("X-Forwarded-Proto", "https")
+	})
+	require.Equal(http.StatusSeeOther, response.StatusCode)
+	require.Len(response.Cookies(), 1)
+	assert.True(response.Cookies()[0].Secure)
+	assert.Equal("max-age=31536000", response.Header.Get("Strict-Transport-Security"))
+}
+
+func TestAPIAuthCookieBootstrapIgnoresUntrustedHTTPSHeader(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ts := newAuthTestServer(t, "secret-token")
+
+	response := authGet(t, ts, "/?auth_token=secret-token", func(request *http.Request) {
+		request.Header.Set("X-Forwarded-Proto", "https")
+	})
+	require.Equal(http.StatusSeeOther, response.StatusCode)
+	require.Len(response.Cookies(), 1)
+	assert.False(response.Cookies()[0].Secure)
+	assert.Empty(response.Header.Get("Strict-Transport-Security"))
 }
 
 func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {

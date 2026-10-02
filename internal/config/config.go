@@ -1040,6 +1040,8 @@ type ExternalContextSource struct {
 }
 
 type Config struct {
+	runtime *runtimeOverlay
+
 	AirplaneMode                bool   `toml:"airplane_mode"`
 	SyncInterval                string `toml:"sync_interval"`
 	ActivePRRefreshInterval     string `toml:"active_pr_refresh_interval"`
@@ -1290,7 +1292,12 @@ func EnsureDefault(path string) error {
 }
 
 func Load(path string) (*Config, error) {
-	cfg, err := load(path)
+	return LoadWithOverrides(path, Overrides{})
+}
+
+// LoadWithOverrides applies explicit listener flags above environment and file values.
+func LoadWithOverrides(path string, overrides Overrides) (*Config, error) {
+	cfg, err := load(path, overrides)
 	if err != nil {
 		// cfg is non-nil for post-decode rejections (deprecated keys);
 		// callers treat any error as failure but reload-side stripping
@@ -1301,7 +1308,7 @@ func Load(path string) (*Config, error) {
 }
 
 // load reads and normalizes path without running validation.
-func load(path string) (*Config, error) {
+func load(path string, overrides Overrides) (*Config, error) {
 	cfg := &Config{
 		SyncInterval:                defaultSyncInterval,
 		ActivePRRefreshInterval:     defaultActivePRRefreshInterval,
@@ -1339,6 +1346,10 @@ func load(path string) (*Config, error) {
 		// rejection: a reload must still see a rejected candidate's
 		// declared token env names to keep stripping them.
 		return cfg, fmt.Errorf("parsing config %s: %w", path, err)
+	}
+
+	if err := cfg.applyRuntimeOverrides(meta, overrides); err != nil {
+		return cfg, err
 	}
 
 	if cfg.Repos == nil {
@@ -1422,7 +1433,7 @@ func load(path string) (*Config, error) {
 // LoadForGitHubAppRepair loads path for GitHub App management commands while
 // retaining the ordinary structural validation rules.
 func LoadForGitHubAppRepair(path string) (*Config, error) {
-	cfg, err := load(path)
+	cfg, err := load(path, Overrides{})
 	if err != nil {
 		return nil, err
 	}
@@ -1633,7 +1644,7 @@ func (c *Config) validate() error {
 
 	if ip := net.ParseIP(c.Host); ip == nil {
 		return fmt.Errorf("config: invalid host %q (must be an IP address)", c.Host)
-	} else if ip.IsUnspecified() {
+	} else if ip.IsUnspecified() && !c.API.RequireAuth {
 		return fmt.Errorf(
 			"config: host %q is unspecified; bind a specific address"+
 				" (loopback, or one interface such as a tailnet IP) so"+
@@ -3738,6 +3749,9 @@ func (c *Config) Save(path string) error {
 	cfg := c.copyForSave()
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("validating config: %w", err)
+	}
+	if err := cfg.restoreRuntimeFileValues(path); err != nil {
+		return err
 	}
 	f := configFile{
 		AirplaneMode:                cfg.AirplaneMode,

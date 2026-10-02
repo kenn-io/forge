@@ -69,6 +69,7 @@ func (s *Handlers) HandleAuthBootstrap(
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   s.RequestArrivedOverHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	redirect := *r.URL

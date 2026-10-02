@@ -19,6 +19,11 @@ const (
 
 // LoadOrCreate relocates legacy config and database state before loading it.
 func LoadOrCreate(path string) (*Config, error) {
+	return LoadOrCreateWithOverrides(path, Overrides{})
+}
+
+// LoadOrCreateWithOverrides initializes file defaults and applies startup flags.
+func LoadOrCreateWithOverrides(path string, overrides Overrides) (*Config, error) {
 	if err := migrateLegacyConfig(path); err != nil {
 		return nil, err
 	}
@@ -28,7 +33,7 @@ func LoadOrCreate(path string) (*Config, error) {
 	if err := EnsureDefault(path); err != nil {
 		return nil, err
 	}
-	cfg, err := Load(path)
+	cfg, err := LoadWithOverrides(path, overrides)
 	if err != nil || !cfg.upgradedRepositoryIDs {
 		return cfg, err
 	}
@@ -53,6 +58,10 @@ func migrateLegacyDatabase(configPath string) error {
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("inspect legacy database: %w", err)
+	}
+	destinationDir, err = effectiveLegacyDatabaseDestination(destinationDir)
+	if err != nil {
+		return err
 	}
 
 	legacyLock := flock.New(filepath.Join(sourceDir, legacyLockFile))
@@ -93,6 +102,17 @@ func migrateLegacyDatabase(configPath string) error {
 		}
 	}
 	return nil
+}
+
+func effectiveLegacyDatabaseDestination(configuredDir string) (string, error) {
+	dataDir, ok := os.LookupEnv("KENN_FORGE_DATA_DIR")
+	if !ok {
+		return configuredDir, nil
+	}
+	if strings.TrimSpace(dataDir) == "" {
+		return "", fmt.Errorf("KENN_FORGE_DATA_DIR must not be empty")
+	}
+	return CanonicalDataDir(dataDir)
 }
 
 func legacyDatabaseDirectories(configPath string) (string, string, error) {

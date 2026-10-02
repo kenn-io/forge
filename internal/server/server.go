@@ -1228,6 +1228,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.streamapi.CheckHost(w, r) {
 		return
 	}
+	if s.authapi.RequestArrivedOverHTTPS(r) {
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+	}
 	if s.serveTailnetMCP(w, r) {
 		return
 	}

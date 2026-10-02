@@ -229,7 +229,7 @@
     margin-top: var(--space-2);
     padding-left: var(--space-5);
     color: var(--text-secondary);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
   }
   .thought-copy {
     flex: 0 0 auto;
@@ -291,6 +291,10 @@
     overflow-wrap: normal;
     word-break: normal;
     font-size: var(--font-size-sm);
+  }
+  .thought-body :global(.kit-markdown),
+  .thought-body :global(.kit-markdown :is(h1, h2, h3, h4, h5, h6, pre, code, table)) {
+    font-size: var(--font-size-xs);
   }
   .message-body :global(.markdown th) {
     white-space: nowrap;

@@ -233,6 +233,10 @@ describe("ACPWorkspace grouped activity (browser)", () => {
     const thoughtText = page.getByText("Compare the available options.");
     await expect.element(thoughtText).toBeVisible();
     await expect.element(thoughtCopy).toBeVisible();
+    const toolFontSize = getComputedStyle(page.getByText("Read options").element()).fontSize;
+    expect(getComputedStyle(thoughtText.element()).fontSize).toBe(toolFontSize);
+    expect(getComputedStyle(thought.element()).fontSize).toBe(toolFontSize);
+    expect(getComputedStyle(group.element()).fontSize).toBe(toolFontSize);
     const copyBounds = thoughtCopy.element().getBoundingClientRect();
     const textBounds = thoughtText.element().getBoundingClientRect();
     expect(copyBounds.right).toBeLessThanOrEqual(textBounds.left);

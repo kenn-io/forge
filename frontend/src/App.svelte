@@ -435,7 +435,12 @@
     initSidebar();
     const appEl = document.getElementById("app")!;
     const cleanupContainer = initContainerObserver(runtime, appEl);
-    const cleanupItemRefs = initItemRefHandler(appRuntime, handleItemReference);
+    const cleanupItemRefs = initItemRefHandler(appRuntime, handleItemReference, document, () =>
+      startupStores.settings.getConfiguredRepos().map(repo => ({
+        provider: repo.provider,
+        platformHost: repo.platform_host,
+      }))
+    );
     const cancelStartup = runAppStartup(runtime, {
       stores: startupStores,
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),

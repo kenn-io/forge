@@ -228,6 +228,14 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await page.reload();
     await expect(dashboard.locator(".pull").first()).toBeVisible();
 
+    await dashboard.getByRole("button", { name: /^#1 / }).click();
+    await chat.locator(".link-request a").click();
+    await expect(page.locator(".pull-detail .detail-title")).toBeVisible();
+    await expect(page.locator(".pull-detail")).toContainText("#1");
+    await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
+    await page.goto(`${origin}/terminal/${workspace.id}`);
+    await expect(dashboard.locator(".pull").first()).toBeVisible();
+
     const phone = await browser.newContext({ ...devices["iPhone 13"] });
     try {
       const mobile = await phone.newPage();

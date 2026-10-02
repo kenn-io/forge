@@ -32,7 +32,10 @@ vi.mock("../stores/flash.svelte.js", () => ({
   showFlash: mocks.showFlash,
 }));
 
-async function clickItemRef(attributes: Record<string, string>): Promise<void> {
+async function clickItemRef(
+  attributes: Record<string, string>,
+  contexts: Array<{ provider: string; platformHost?: string }> = [],
+): Promise<void> {
   const { initItemRefHandler } = await import("./itemRefHandler.js");
   const runtime = makeAppRuntime(
     makeGeneratedClient({
@@ -42,7 +45,7 @@ async function clickItemRef(attributes: Record<string, string>): Promise<void> {
       },
     }),
   );
-  const cleanup = initItemRefHandler(runtime);
+  const cleanup = initItemRefHandler(runtime, undefined, document, () => contexts);
   const anchor = document.createElement("a");
   anchor.className = "item-ref";
   anchor.href = attributes.href ?? "/issues/github/acme/widgets/12";
@@ -72,6 +75,50 @@ describe("itemRefHandler", () => {
     mocks.post.mockReset();
     mocks.navigate.mockReset();
     mocks.showFlash.mockReset();
+  });
+
+  it.each([
+    ["github", "github.com", "https://github.com/acme/widgets/pull/12", "pr"],
+    ["github", "github.com", "https://github.com/acme/widgets/issues/12", "issue"],
+    ["gitlab", "gitlab.com", "https://gitlab.com/acme/widgets/-/merge_requests/12", "pr"],
+    ["forgejo", "forge.example.com", "https://forge.example.com/acme/widgets/pulls/12", "pr"],
+    ["gitea", "git.example.com", "https://git.example.com/acme/widgets/issues/12", "issue"],
+    ["bitbucket", "bitbucket.org", "https://bitbucket.org/acme/widgets/pull-requests/12", "pr"],
+  ])("routes dynamically inserted %s links without item-ref markup", async (provider, platformHost, href, itemType) => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: itemType });
+    const contexts = platformHost.endsWith(".example.com") ? [{ provider, platformHost }] : [];
+
+    await clickItemRef({ class: "", href }, contexts);
+
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      `/${itemType === "pr" ? "pulls" : "issues"}/${provider}/acme/widgets/12`,
+    );
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["https://github.com/acme/widgets/pull/12", { ctrlKey: true }],
+    ["https://github.com/acme/widgets/issues/12", { metaKey: true }],
+    ["https://example.com/acme/widgets/pull/12", {}],
+    ["https://github.com/acme/widgets/actions/runs/12", {}],
+  ])("leaves external or modified clicks to the browser: %s", async (href, modifiers) => {
+    const { initItemRefHandler } = await import("./itemRefHandler.js");
+    const runtime = makeAppRuntime();
+    const root = document.createElement("div");
+    const cleanup = initItemRefHandler(runtime, undefined, root);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    root.append(anchor);
+    let captured = true;
+    root.addEventListener("click", (event) => {
+      captured = event.defaultPrevented;
+      event.preventDefault();
+    });
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...modifiers }));
+    expect(captured).toBe(false);
+    cleanup();
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("navigates internally when the referenced repo is tracked", async () => {

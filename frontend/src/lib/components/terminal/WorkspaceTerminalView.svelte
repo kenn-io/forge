@@ -2328,7 +2328,10 @@
     return initItemRefHandler(appRuntime, (item) => selectWorkspaceItem(item.itemType, {
       ...item,
       platformHost: resolvedPlatformHost(item.provider, item.platformHost),
-    }), node);
+    }), node, () => settingsStore.getConfiguredRepos().map(repo => ({
+      provider: repo.provider,
+      platformHost: repo.platform_host,
+    })));
   }
 
   function getWorkspacePRNumber(ws: Workspace): number | null {

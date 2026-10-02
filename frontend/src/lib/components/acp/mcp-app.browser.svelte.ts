@@ -34,6 +34,12 @@ it("renders generated content through the app bridge and reads tools without acc
         return app.callServerTool({name: "rendered", arguments: {text: document.getElementById("result").textContent}});
       }).then(() => {
         return app.openLink({url: "https://example.com/pr/42"});
+      }).then(() => {
+        const anchor = document.createElement("a");
+        anchor.href = "https://github.com/acme/widgets/pull/42";
+        anchor.innerHTML = "<span>Open pull request</span>";
+        document.body.append(anchor);
+        anchor.querySelector("span").click();
       });
     </script>`,
         },
@@ -62,7 +68,7 @@ it("renders generated content through the app bridge and reads tools without acc
         { name: "rendered", arguments: { text: "PR #42: passing" } },
       ]);
     expect(status).toBe("Ready");
-    await expect.poll(() => links).toEqual(["https://example.com/pr/42"]);
+    await expect.poll(() => links).toEqual(["https://example.com/pr/42", "https://github.com/acme/widgets/pull/42"]);
   } finally {
     execution.interrupt();
     await execution.exit;

@@ -10,7 +10,7 @@ import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { navigate, buildItemRoute, type RoutableItemRef } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
-import type { ResolvableItemReference } from "./item-reference.js";
+import { parseProviderItemURL, type ResolvableItemReference } from "./item-reference.js";
 
 function safeExternalURL(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -25,10 +25,10 @@ function safeExternalURL(raw: string | undefined): string | null {
   return null;
 }
 
-function findItemRef(target: EventTarget | null): HTMLAnchorElement | null {
-  let el = target instanceof HTMLElement ? target : null;
+function findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
+  let el = target instanceof Element ? target : null;
   while (el) {
-    if (el instanceof HTMLAnchorElement && el.classList.contains("item-ref")) {
+    if (el instanceof HTMLAnchorElement) {
       return el;
     }
     el = el.parentElement;
@@ -129,15 +129,24 @@ export function initItemRefHandler(
   runtime: AppRuntime,
   onNavigate?: (ref: RoutableItemRef) => void,
   target: HTMLElement | Document = document,
+  getProviderContexts: () => ReadonlyArray<{ provider: string; platformHost?: string | undefined }> = () => [],
 ): () => void {
   let execution: AppExecution<void, unknown> | null = null;
 
   function handleClick(e: Event): void {
-    if (!(e instanceof MouseEvent) || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0)
+    if (
+      !(e instanceof MouseEvent) ||
+      e.defaultPrevented ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.shiftKey ||
+      e.altKey ||
+      e.button !== 0
+    )
       return;
 
-    const anchor = findItemRef(e.target);
-    if (!anchor) return;
+    const anchor = findAnchor(e.target);
+    if (!anchor || anchor.hasAttribute("download")) return;
 
     const provider = anchor.dataset.provider;
     const platformHost = anchor.dataset.platformHost;
@@ -148,13 +157,9 @@ export function initItemRefHandler(
     const itemType =
       anchor.dataset.itemType === "pr" || anchor.dataset.itemType === "issue" ? anchor.dataset.itemType : undefined;
     const externalUrl = anchor.dataset.externalUrl;
-    if (!provider || !owner || !name || !repoPath || !numberStr) return;
-
-    e.preventDefault();
-    execution?.interrupt();
-    execution = resolveItemReference(
-      runtime,
-      {
+    let ref: ResolvableItemReference | null = null;
+    if (anchor.classList.contains("item-ref") && provider && owner && name && repoPath && numberStr) {
+      ref = {
         provider,
         platformHost,
         owner,
@@ -163,9 +168,23 @@ export function initItemRefHandler(
         number: parseInt(numberStr, 10),
         itemType,
         externalUrl,
-      },
-      onNavigate,
-    );
+      };
+    } else {
+      for (const context of [
+        ...getProviderContexts(),
+        { provider: "github" },
+        { provider: "gitlab" },
+        { provider: "bitbucket" },
+      ]) {
+        ref = parseProviderItemURL(anchor.href, context);
+        if (ref) break;
+      }
+    }
+    if (!ref) return;
+
+    e.preventDefault();
+    execution?.interrupt();
+    execution = resolveItemReference(runtime, ref, onNavigate);
   }
 
   target.addEventListener("click", handleClick);

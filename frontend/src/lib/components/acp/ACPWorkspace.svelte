@@ -411,7 +411,7 @@
 <style>
   /* One reading column for everything in the pane: the conversation, notices,
      requests, and the composer share its width and edges. */
-  .acp-workspace { --acp-column: 52rem; --acp-gutter: 5.5rem; container: acp-pane / inline-size; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); color: var(--text-primary); }
+  .acp-workspace { --acp-column: 64rem; --acp-gutter: 5.5rem; container: acp-pane / inline-size; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); color: var(--text-primary); }
   .chat-status { padding-block: var(--space-4); font-size: var(--font-size-sm); color: var(--text-secondary); border-bottom: 1px solid var(--border-muted); }
   .chat-status__inner, .chat-status__text { display: flex; align-items: center; gap: var(--space-3); }
   .chat-status__text { min-width: 0; }

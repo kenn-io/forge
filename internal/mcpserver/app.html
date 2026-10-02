@@ -40,6 +40,17 @@
     callServerTool: (params) => request("tools/call", params),
     openLink: (params) => request("ui/open-link", params),
   });
+  // Delegate so links added by generated code after rendering use the host too.
+  document.addEventListener("click", (event) => {
+    const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!anchor || anchor.getAttribute("href").startsWith("#")) return;
+    let url;
+    try { url = new URL(anchor.href); } catch { return; }
+    if (url.protocol !== "http:" && url.protocol !== "https:") return;
+    event.preventDefault();
+    event.stopPropagation();
+    window.app.openLink({url: url.href}).catch(showError);
+  }, true);
   function render(data) {
     if (rendered || !data || typeof data.html !== "string") return;
     rendered = true;

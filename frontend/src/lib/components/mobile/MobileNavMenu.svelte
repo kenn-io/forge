@@ -1,6 +1,10 @@
 <script lang="ts">
   import { Modal } from "@kenn-io/kit-ui";
+  import CircleDotIcon from "@lucide/svelte/icons/circle-dot";
+  import GitPullRequestIcon from "@lucide/svelte/icons/git-pull-request";
+  import InboxIcon from "@lucide/svelte/icons/inbox";
   import MenuIcon from "@lucide/svelte/icons/menu";
+  import TerminalIcon from "@lucide/svelte/icons/terminal";
   import { MonitorIcon } from "../../icons.ts";
   import ForgeSelector from "../layout/ForgeSelector.svelte";
   import { getMobileNavMenuContext, mobileNavModes, mobileNavSelectedPath } from "./mobile-nav-menu.js";
@@ -10,6 +14,13 @@
 
   const selectedPath = $derived(nav ? mobileNavSelectedPath(nav.page()) : "");
   const modes = $derived(nav ? mobileNavModes(nav.isModeVisible) : []);
+
+  const modeIcons = {
+    "/m": InboxIcon,
+    "/m/pulls": GitPullRequestIcon,
+    "/m/issues": CircleDotIcon,
+    "/m/workspaces": TerminalIcon,
+  } as const;
 
   function choose(action: () => void): void {
     open = false;
@@ -45,11 +56,15 @@
         </div>
         <nav aria-label="Phone mode">
           {#each modes as mode (mode.path)}
+            {@const ModeIcon = modeIcons[mode.path as keyof typeof modeIcons]}
             <button
               type="button"
               aria-current={mode.path === selectedPath ? "page" : undefined}
               onclick={() => choose(() => nav.onNavigate(mode.path))}
-            >{mode.label}</button>
+            >
+              {#if ModeIcon}<ModeIcon size="22" strokeWidth="1.75" aria-hidden="true" />{/if}
+              {mode.label}
+            </button>
           {/each}
         </nav>
         <button
@@ -116,33 +131,52 @@
   }
 
   .mobile-nav-sheet nav {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.625rem;
+    padding: 0.875rem;
   }
 
   .mobile-nav-sheet button {
-    min-height: var(--mobile-chrome-hit-target);
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    padding: 0.625rem 0.875rem;
-    border: 0;
-    border-bottom: thin solid var(--border-muted);
+    justify-content: center;
+    border: thin solid var(--border-default);
+    border-radius: var(--radius-md);
     color: var(--text-primary);
-    background: transparent;
+    background: var(--bg-inset);
     font: inherit;
     font-size: var(--font-size-md);
-    text-align: left;
+  }
+
+  .mobile-nav-sheet nav button {
+    min-height: 4.75rem;
+    flex-direction: column;
+    gap: 0.4375rem;
+    padding: 0.75rem 0.5rem;
+    font-weight: 600;
+  }
+
+  .mobile-nav-sheet nav button :global(svg) {
+    color: var(--text-secondary);
   }
 
   .mobile-nav-sheet nav button[aria-current="page"] {
-    font-weight: 700;
-    background: var(--bg-hover);
-    box-shadow: inset 3px 0 0 var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-inset));
+  }
+
+  .mobile-nav-sheet nav button[aria-current="page"] :global(svg) {
+    color: var(--accent-blue);
   }
 
   .mobile-nav-sheet button.mobile-nav-sheet__desktop {
-    border-bottom: 0;
+    width: calc(100% - 1.75rem);
+    min-height: var(--mobile-chrome-hit-target);
+    gap: 0.5rem;
+    margin: 0 0.875rem;
     color: var(--text-secondary);
+    background: transparent;
   }
 </style>

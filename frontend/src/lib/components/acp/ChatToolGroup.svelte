@@ -11,10 +11,13 @@
   let {
     messages,
     childCounts = {},
+    streaming = false,
   }: {
     messages: ChatMessage[]
     /** Tool calls made inside each sub-agent, keyed by its toolCallId. */
     childCounts?: Readonly<Record<string, number>>
+    /** The group's last message is still receiving chunks. */
+    streaming?: boolean
   } = $props()
   const id = $props.id()
   let open = $state(false)
@@ -80,7 +83,7 @@
     <ul id={`${id}-list`} class="list">
       {#each messages as message, index (index)}
         {#if message.role === "thought"}
-          <li class="thought-row"><ChatMessageView {message} /></li>
+          <li class="thought-row"><ChatMessageView {message} streaming={streaming && index === messages.length - 1} /></li>
         {:else}
         {@const status = toolStatus(message)}
         {@const expandable = hasDetails(message)}

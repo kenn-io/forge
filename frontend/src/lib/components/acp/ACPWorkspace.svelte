@@ -294,7 +294,7 @@
       {/if}
       {#if rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.id)}
-        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} {childCounts} />
+        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
       {/each}
       <!-- Questions read as part of the conversation, in the reply column,

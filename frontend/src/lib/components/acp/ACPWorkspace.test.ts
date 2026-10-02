@@ -804,6 +804,25 @@ describe("ACPWorkspace rich content", () => {
     expect(screen.getByRole("article", { name: "Assistant", exact: true })).toBeTruthy();
   });
 
+  it("offers copy on a grouped thought only once it stops streaming", async () => {
+    const messages = [
+      { role: "thought", text: "Settled plan" },
+      { role: "tool", text: "Read options", toolCallId: "read", status: "completed" },
+      { role: "thought", text: "Still weighing" },
+    ];
+    await openChat({ busy: true, messages });
+    await fireEvent.click(screen.getByRole("button", { name: /1 tool · 2 thoughts/ }));
+    const [settled, live] = screen.getAllByRole("button", { name: "Thinking" });
+    await fireEvent.click(settled!);
+    await fireEvent.click(live!);
+    const [settledArticle, liveArticle] = screen.getAllByRole("article", { name: "Assistant thinking" });
+    expect(within(settledArticle!).getByRole("button", { name: "Copy message" })).toBeTruthy();
+    expect(within(liveArticle!).queryByRole("button", { name: "Copy message" })).toBeNull();
+
+    await push({ busy: false, messages });
+    expect(within(liveArticle!).getByRole("button", { name: "Copy message" })).toBeTruthy();
+  });
+
   it("starts a thought-only group collapsed", async () => {
     await openChat({ messages: [{ role: "thought", text: "Done thinking" }] });
     expect(screen.getByRole("button", { name: "1 thought" }).getAttribute("aria-expanded")).toBe("false");

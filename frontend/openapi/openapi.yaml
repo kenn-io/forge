@@ -26403,6 +26403,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/TelemetryEventResponse"
           description: Accepted
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+            text/plain:
+              schema:
+                type: string
+          description: Unsupported event, malformed body, or unreadable body
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Capture failed
         default:
           content:
             application/problem+json:

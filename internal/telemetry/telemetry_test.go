@@ -1,6 +1,10 @@
 package telemetry
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,7 +83,7 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 		wantBackend int
 	}{
 		{name: "daemon_active goes to daemon", event: "daemon_active", wantDaemon: 1},
-		{name: "app_loaded goes to backend", event: " app_loaded ", wantBackend: 1},
+		{name: "app_opened goes to backend", event: " app_opened ", wantBackend: 1},
 		{name: "unsupported event", event: "server_started", wantErr: ErrUnsupportedEvent},
 		{name: "empty event", event: " "},
 	}
@@ -123,34 +127,70 @@ func TestDisabledReporterIsNoOp(t *testing.T) {
 
 	for _, reporter := range []*Reporter{nil, DisabledReporter()} {
 		assert.False(reporter.Enabled())
-		assert.NoError(reporter.Capture("server_started", nil))
+		require.NoError(t, reporter.Capture("server_started", nil))
+		assert.Equal(http.StatusBadRequest, postCapture(t, reporter.CaptureHandler(), `{"event":"app_opened"}`).Code)
 		assert.NoError(reporter.Close())
 	}
 }
 
-func TestSanitizePropertiesAddsNonOverridablePrivacyAndApplication(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
+func TestNewReporterOptOutKeepsAllowlist(t *testing.T) {
+	tests := []struct {
+		name   string
+		env    map[string]string
+		withDB bool
+	}{
+		{name: "generic opt-out", env: map[string]string{EnabledEnv: "0"}},
+		{name: "prefixed opt-out", env: map[string]string{"KENN_FORGE_TELEMETRY_ENABLED": "0"}},
+		{name: "prefixed opt-out with database", env: map[string]string{"KENN_FORGE_TELEMETRY_ENABLED": "0"}, withDB: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
 
-	properties, err := SanitizeProperties("app_loaded", map[string]any{
-		"$geoip_disable":          false,
-		"$process_person_profile": true,
-		"application":             "caller-app",
-		"view":                    "pulls",
-	})
-	require.NoError(err)
+			unsetEnv(t, EnabledEnv)
+			unsetEnv(t, "KENN_FORGE_TELEMETRY_ENABLED")
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+			opts := Options{}
+			if tt.withDB {
+				opts.Database = dbtest.Open(t)
+			}
 
-	assert.Equal("pulls", properties["view"])
-	assert.False(properties["$process_person_profile"].(bool))
-	assert.True(properties["$geoip_disable"].(bool))
-	assert.Equal("kenn-forge", properties["application"])
+			reporter, err := NewReporter(opts)
+			require.NoError(err)
+			handler := reporter.CaptureHandler()
+
+			opened := postCapture(t, handler, `{"event":"app_opened"}`)
+			assert.Equal(http.StatusAccepted, opened.Code)
+			assert.JSONEq(`{"status":"disabled"}`, opened.Body.String())
+			assert.Equal(http.StatusBadRequest, postCapture(t, handler, `{"event":"app_loaded"}`).Code)
+			assert.Equal(http.StatusBadRequest, postCapture(t, handler, `{"event":"daemon_active"}`).Code)
+			if tt.withDB {
+				_, found, err := opts.Database.AppMetadataValue(t.Context(), installIDMetadataKey)
+				require.NoError(err)
+				assert.False(found)
+			}
+		})
+	}
 }
 
-func TestSanitizePropertiesDropsUnsafePropertyValues(t *testing.T) {
-	properties, err := SanitizeProperties("app_loaded", map[string]any{"view": "owner/repo"})
-	require.NoError(t, err)
+// postCapture sends body to a capture handler the way the web UI does.
+func postCapture(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
 
-	assert.NotContains(t, properties, "view")
+// unsetEnv clears key for the test and restores it after.
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	t.Setenv(key, "")
+	require.NoError(t, os.Unsetenv(key))
 }
 
 func TestLoadOrCreateInstallIDRecordsCreationTimeOnce(t *testing.T) {

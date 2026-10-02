@@ -67,11 +67,9 @@ import (
 	"go.kenn.io/forge/internal/server/statuslog"
 	"go.kenn.io/forge/internal/server/streamapi"
 	"go.kenn.io/forge/internal/server/syncevents"
-	"go.kenn.io/forge/internal/server/telemetryapi"
 	"go.kenn.io/forge/internal/server/workflowapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/systemclipboard"
-	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/terminalpaste"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/workspace"
@@ -116,10 +114,11 @@ type ServerOptions struct {
 	PtyOwnerManagerPath                string
 	PtyOwnerCommand                    []string
 	PtyOwnerInProcess                  bool
-	Telemetry                          telemetry.Client
-	TokenSources                       *tokenauth.SourceSet
-	Archive                            archive.Controller
-	DocsRegistry                       *docs.Registry
+	// TelemetryCapture serves the web UI's telemetry events; nil admits no event.
+	TelemetryCapture http.Handler
+	TokenSources     *tokenauth.SourceSet
+	Archive          archive.Controller
+	DocsRegistry     *docs.Registry
 	// TerminalClipboard overrides native clipboard integration in tests.
 	TerminalClipboard systemclipboard.Writer
 	// HostCheck overrides the Host validation middleware options.
@@ -141,21 +140,21 @@ type ServerOptions struct {
 
 // Server holds the HTTP mux and its dependencies.
 type Server struct {
-	db             *db.DB
-	repoResolver   *httpapi.RepositoryResolver
-	syncer         *ghclient.Syncer
-	archive        archive.Controller
-	clones         *gitclone.Manager
-	workspaces     *workspace.Manager
-	fleetAPI       *fleetapi.Handler
-	runtime        *localruntime.Manager
-	tmuxCmd        []string
-	telemetry      telemetry.Client
-	cfg            *config.Config
-	cfgPath        string
-	tokenSources   *tokenauth.SourceSet
-	cfgMu          sync.Mutex
-	configReloadMu sync.Mutex
+	db               *db.DB
+	repoResolver     *httpapi.RepositoryResolver
+	syncer           *ghclient.Syncer
+	archive          archive.Controller
+	clones           *gitclone.Manager
+	workspaces       *workspace.Manager
+	fleetAPI         *fleetapi.Handler
+	runtime          *localruntime.Manager
+	tmuxCmd          []string
+	telemetryCapture http.Handler
+	cfg              *config.Config
+	cfgPath          string
+	tokenSources     *tokenauth.SourceSet
+	cfgMu            sync.Mutex
+	configReloadMu   sync.Mutex
 	// repoVisibilityMu serializes hidden-from-UI mutations with the orphan
 	// sweep so a visibility write cannot interleave with a concurrent
 	// exact-entry removal and recreate an orphaned preference.
@@ -293,7 +292,6 @@ type Server struct {
 	spokeapi        *spokeapi.Handlers
 	streamapi       *streamapi.Handlers
 	syncevents      *syncevents.Handlers
-	telemetryapi    *telemetryapi.Handlers
 }
 
 // Hub returns the server's SSE event hub. Callers should never
@@ -515,7 +513,7 @@ func newServer(
 		syncer:                 syncer,
 		archive:                options.Archive,
 		clones:                 clones,
-		telemetry:              options.Telemetry,
+		telemetryCapture:       options.TelemetryCapture,
 		cfg:                    cfg,
 		cfgPath:                cfgPath,
 		tokenSources:           options.TokenSources,

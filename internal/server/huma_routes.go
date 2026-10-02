@@ -158,14 +158,7 @@ func (s *Server) registerAPI(api huma.API) {
 		httpapi.DocumentOperation("get-sync-status", "Get sync status", "Sync"))
 	huma.Get(api, "/rate-limits", s.notificationapi.GetRateLimits,
 		httpapi.DocumentOperation("get-rate-limits", "Get rate limits", "Sync"))
-	huma.Register(api, huma.Operation{
-		OperationID:   "capture-telemetry-event",
-		Method:        http.MethodPost,
-		Path:          "/telemetry/events",
-		DefaultStatus: http.StatusAccepted,
-		Summary:       "Capture telemetry event",
-		Tags:          []string{"System"},
-	}, s.telemetryapi.CaptureTelemetryEvent)
+	s.registerTelemetryCapture(api)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-roborev-status",
 		Method:      http.MethodGet,

@@ -69,12 +69,9 @@ func NewFederationAuthTestServer(
 	return ts, store, token
 }
 
-func NewTelemetryTestServer(t *testing.T, telemetry *serverfake.FakeTelemetry) *server.Server {
+func NewTelemetryTestServer(t *testing.T, capture http.Handler) *server.Server {
 	t.Helper()
-	options := server.ServerOptions{}
-	if telemetry != nil {
-		options.Telemetry = telemetry
-	}
+	options := server.ServerOptions{TelemetryCapture: capture}
 	srv := server.New(
 		serverfake.OpenTestDB(t), nil, nil, "/", nil,
 		options,

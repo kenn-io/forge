@@ -20,3 +20,7 @@ actions:
     update:
       x-go-type: any
       x-go-type-skip-optional-pointer: true
+  - target: $.paths['/telemetry/events'].post.responses['400']
+    remove: true
+  - target: $.paths['/telemetry/events'].post.responses['500']
+    remove: true

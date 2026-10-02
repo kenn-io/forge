@@ -618,10 +618,11 @@ stacks. Mid-stack merges stay blocked by default.
 
 ## Telemetry
 
-Forge sends limited anonymous telemetry by default: daemon activity, app
-view names, version, commit, OS and architecture, and an anonymous install ID.
-It does not send repository names, item content, tokens, usernames, hostnames,
-or paths.
+Forge sends limited anonymous telemetry by default: daemon activity, an
+`app_opened` event when the web UI loads and on its first focus of each later
+UTC day, version, commit, OS and architecture, and an anonymous install ID. The daemon
+sends both; the browser never contacts the analytics service. It does not send
+repository names, item content, tokens, usernames, hostnames, or paths.
 
 Disable telemetry with:
 

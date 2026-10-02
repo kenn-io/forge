@@ -57,10 +57,7 @@
   const user = $derived(message.role === "user")
   const thought = $derived(message.role === "thought")
   const id = $props.id()
-  // Reasoning stays open while it is the live tail of a busy turn and folds
-  // away once anything follows it, unless the user chose otherwise.
-  let thoughtChoice = $state<boolean | null>(null)
-  const thoughtOpen = $derived(thoughtChoice ?? streaming)
+  let thoughtOpen = $state(false)
   let copied = $state(false)
   let copyError = $state("")
   let resetCopy: ReturnType<typeof setTimeout> | undefined
@@ -115,14 +112,12 @@
       {/each}
     {:else if thought}
       <div class="thought">
-        <div class="thought-heading">
-        {#if !streaming && message.text}{@render copyAction()}{/if}
         <button
           type="button"
           class="thought-toggle"
           aria-expanded={thoughtOpen}
           aria-controls={`${id}-thought`}
-          onclick={() => (thoughtChoice = !thoughtOpen)}
+          onclick={() => (thoughtOpen = !thoughtOpen)}
         >
           <Brain size={13} aria-hidden="true" />Thinking<ChevronDown
             size={12}
@@ -130,10 +125,12 @@
             aria-hidden="true"
           />
         </button>
-        </div>
         {#if thoughtOpen}
-          <div class="message-body thought-body" id={`${id}-thought`}>
-            {@render body()}
+          <div class="thought-body" id={`${id}-thought`}>
+            {#if !streaming && message.text}
+              <div class="thought-copy">{@render copyAction()}</div>
+            {/if}
+            <div class="message-body">{@render body()}</div>
           </div>
         {/if}
       </div>
@@ -198,11 +195,6 @@
     flex-direction: column;
     gap: var(--space-3);
   }
-  .thought-heading {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
   .thought-toggle {
     display: inline-flex;
     align-items: center;
@@ -231,10 +223,16 @@
     transform: rotate(180deg);
   }
   .thought-body {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
     margin-top: var(--space-2);
     padding-left: var(--space-5);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
+  }
+  .thought-copy {
+    flex: 0 0 auto;
   }
   .message-body :global(.markdown > :first-child) {
     margin-top: 0;
@@ -308,7 +306,7 @@
       min-height: var(--mobile-chrome-hit-target);
     }
     .gutter :global(button),
-    .thought-heading :global(button) {
+    .thought-copy :global(button) {
       min-width: var(--mobile-chrome-hit-target);
       min-height: var(--mobile-chrome-hit-target);
     }

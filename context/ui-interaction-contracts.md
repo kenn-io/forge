@@ -176,8 +176,8 @@ Interactive surfaces must agree on which item is selected.
 - ACP message time and copy live in a hover/focus gutter left of the message in panes wide
   enough to reserve it; the gutter never shifts layout. Narrower panes (including phones)
   show them instead as one always-visible muted line under each message on its text edge,
-  with no rule or stripe. Thought copy buttons instead stay inline, immediately left of
-  Thinking (`frontend/src/lib/components/acp/ChatMessageView.svelte`).
+  with no rule or stripe. Thought copy buttons appear only when expanded, immediately left of
+  the thought text (`frontend/src/lib/components/acp/ChatMessageView.svelte`).
 - The ACP chat holds only a window of the transcript; earlier messages page in from the top
   (button or scroll) without moving the message the reader is looking at
   (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).

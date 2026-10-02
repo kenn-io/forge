@@ -226,15 +226,20 @@ describe("ACPWorkspace grouped activity (browser)", () => {
     const thoughtCopy = page
       .getByRole("article", { name: "Assistant thinking", exact: true })
       .getByRole("button", { name: "Copy message" });
-    const copyBounds = thoughtCopy.element().getBoundingClientRect();
-    const toggleBounds = thought.element().getBoundingClientRect();
-    expect(copyBounds.right).toBeLessThanOrEqual(toggleBounds.left);
-    expect(Math.abs(copyBounds.top + copyBounds.height / 2 - toggleBounds.top - toggleBounds.height / 2)).toBeLessThan(
-      1,
-    );
+    await expect.element(thought).toHaveAttribute("aria-expanded", "false");
+    await expect.element(thoughtCopy).not.toBeInTheDocument();
     (thought.element() as HTMLButtonElement).focus();
     await userEvent.keyboard("{Enter}");
-    await expect.element(page.getByText("Compare the available options.")).toBeVisible();
+    const thoughtText = page.getByText("Compare the available options.");
+    await expect.element(thoughtText).toBeVisible();
+    await expect.element(thoughtCopy).toBeVisible();
+    const copyBounds = thoughtCopy.element().getBoundingClientRect();
+    const textBounds = thoughtText.element().getBoundingClientRect();
+    expect(copyBounds.right).toBeLessThanOrEqual(textBounds.left);
+    expect(copyBounds.top).toBeLessThan(textBounds.bottom);
+    expect(copyBounds.bottom).toBeGreaterThan(textBounds.top);
+    await thought.click();
+    await expect.element(thoughtCopy).not.toBeInTheDocument();
     const conversation = host.querySelector<HTMLElement>(".conversation")!;
     expect(conversation.scrollWidth).toBeLessThanOrEqual(conversation.clientWidth);
     await group.click();

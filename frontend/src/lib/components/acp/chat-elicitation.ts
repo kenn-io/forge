@@ -209,10 +209,13 @@ function formatProblem(format: ElicitationTextFormat | undefined, value: string)
   }
 }
 
-// Problem with a filled-in value. Empty fields report nothing here; required
-// gating happens in canSubmit so untouched fields are not flagged as errors.
-export function fieldProblem(field: ElicitationField, values: ElicitationValues): string {
-  if (isEmpty(field, values)) return "";
+// Problem with a field's value. An empty required field only reports once
+// the user has tried to submit, so untouched fields are not flagged early.
+export function fieldProblem(field: ElicitationField, values: ElicitationValues, attempted = false): string {
+  if (isEmpty(field, values)) {
+    if (!attempted || !field.required) return "";
+    return field.kind === "select" || field.kind === "multi" ? "Choose an answer." : "Enter a value.";
+  }
   if (field.kind === "text") {
     const value = textValue(values, field.key);
     const length = Array.from(value).length;
@@ -239,7 +242,7 @@ export function fieldProblem(field: ElicitationField, values: ElicitationValues)
 }
 
 export function canSubmit(fields: readonly ElicitationField[], values: ElicitationValues): boolean {
-  return fields.every((field) => (isEmpty(field, values) ? !field.required : fieldProblem(field, values) === ""));
+  return fields.every((field) => fieldProblem(field, values, true) === "");
 }
 
 // Accepted content: numbers coerced, booleans always present (a checkbox has

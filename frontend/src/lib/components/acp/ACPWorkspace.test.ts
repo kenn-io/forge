@@ -176,35 +176,6 @@ describe("ACPWorkspace elicitations", () => {
     ]);
   });
 
-  it("keeps Submit disabled until required fields are filled and values are valid", async () => {
-    await openChat({ elicitations: [deployForm] });
-    const submit = screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement;
-    expect(submit.disabled).toBe(true);
-
-    await fireEvent.input(screen.getByLabelText(/Project name/), { target: { value: "web" } });
-    expect(submit.disabled).toBe(true);
-    await fireEvent.click(screen.getByRole("radio", { name: "Free" }));
-    expect(submit.disabled).toBe(false);
-
-    await fireEvent.input(screen.getByLabelText(/Replicas/), { target: { value: "2.5" } });
-    expect(submit.disabled).toBe(true);
-    expect(screen.getByText("Enter a whole number.")).toBeTruthy();
-    await fireEvent.input(screen.getByLabelText(/Replicas/), { target: { value: "0" } });
-    expect(submit.disabled).toBe(true);
-    await fireEvent.input(screen.getByLabelText(/Replicas/), { target: { value: "4" } });
-    expect(submit.disabled).toBe(false);
-
-    await fireEvent.input(screen.getByLabelText(/Contact/), { target: { value: "not-an-email" } });
-    expect(submit.disabled).toBe(true);
-    await fireEvent.input(screen.getByLabelText(/Contact/), { target: { value: "dev@example.com" } });
-    expect(submit.disabled).toBe(false);
-
-    await fireEvent.input(screen.getByLabelText(/Project name/), { target: { value: "w" } });
-    expect(submit.disabled).toBe(true);
-    await fireEvent.click(submit);
-    expect(sentCommands()).toEqual([]);
-  });
-
   // The shape claude-agent-acp sends for an AskUserQuestion tool call: titled
   // options with descriptions, an optional preview in _meta, and an optional
   // free-text "Other" companion field.
@@ -234,6 +205,83 @@ describe("ACPWorkspace elicitations", () => {
       },
     },
   };
+
+  it("reports every problem on submit instead of sending, then sends once fixed", async () => {
+    await openChat({ elicitations: [deployForm] });
+    const submit = screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    expect(screen.queryByText("Enter a value.")).toBeNull();
+
+    await fireEvent.click(submit);
+    expect(sentCommands()).toEqual([]);
+    expect(screen.getByText("Enter a value.")).toBeTruthy();
+    expect(screen.getByText("Choose an answer.")).toBeTruthy();
+    expect(screen.getByRole("radiogroup", { name: /Tier/ }).getAttribute("aria-invalid")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText(/Project name/)));
+
+    await fireEvent.input(screen.getByLabelText(/Project name/), { target: { value: "web" } });
+    await fireEvent.click(screen.getByRole("radio", { name: "Free" }));
+    expect(screen.queryByText("Enter a value.")).toBeNull();
+    expect(screen.queryByText("Choose an answer.")).toBeNull();
+
+    await fireEvent.input(screen.getByLabelText(/Replicas/), { target: { value: "2.5" } });
+    expect(screen.getByText("Enter a whole number.")).toBeTruthy();
+    await fireEvent.input(screen.getByLabelText(/Contact/), { target: { value: "not-an-email" } });
+    await fireEvent.click(submit);
+    expect(sentCommands()).toEqual([]);
+
+    await fireEvent.input(screen.getByLabelText(/Replicas/), { target: { value: "4" } });
+    await fireEvent.input(screen.getByLabelText(/Contact/), { target: { value: "dev@example.com" } });
+    await fireEvent.click(submit);
+    expect(sentCommands()).toEqual([
+      {
+        type: "elicitation",
+        id: "elicit-1",
+        action: "accept",
+        content: { name: "web", replicas: 4, verbose: true, tier: "free", contact: "dev@example.com" },
+      },
+    ]);
+  });
+
+  it("sends one answer per request until a reconnect allows a resend", async () => {
+    await openChat({ elicitations: [askForm] });
+
+    await fireEvent.click(screen.getByRole("radio", { name: /Redis/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    for (const name of ["Submit", "Decline", "Cancel"]) {
+      expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(sentCommands()).toHaveLength(1);
+
+    // The connection drops before the agent answers, then comes back with the
+    // request still pending: the user can send again.
+    socket.options!.onDisconnected?.();
+    await tick();
+    socket.options!.onOpen?.();
+    await push({ elicitations: [askForm] });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
+  it("shows the schema's own title and description under the message", async () => {
+    await openChat({
+      elicitations: [
+        {
+          id: "elicit-schema",
+          message: "The deploy needs a target",
+          schema: {
+            title: "Deploy target",
+            description: "Staging resets nightly.",
+            properties: { env: { type: "string", enum: ["staging", "production"] } },
+          },
+        },
+      ],
+    });
+
+    expect(screen.getByText("Deploy target")).toBeTruthy();
+    expect(screen.getByText("Staging resets nightly.")).toBeTruthy();
+  });
 
   it("shows each option's description and the chosen option's preview", async () => {
     await openChat({ elicitations: [askForm] });
@@ -270,16 +318,12 @@ describe("ACPWorkspace elicitations", () => {
     ]);
   });
 
-  it("sends decline and cancel without content", async () => {
+  it.each(["Decline", "Cancel"])("sends %s without content", async (name) => {
     await openChat({ elicitations: [deployForm] });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Decline" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await fireEvent.click(screen.getByRole("button", { name }));
 
-    expect(sentCommands()).toEqual([
-      { type: "elicitation", id: "elicit-1", action: "decline" },
-      { type: "elicitation", id: "elicit-1", action: "cancel" },
-    ]);
+    expect(sentCommands()).toEqual([{ type: "elicitation", id: "elicit-1", action: name.toLowerCase() }]);
   });
 
   it("disables every elicitation control while the chat is disabled", async () => {

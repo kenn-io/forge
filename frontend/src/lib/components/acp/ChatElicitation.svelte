@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { Button, Checkbox, TextInput } from "@kenn-io/kit-ui";
   import type { Elicitation } from "./chat-types.js";
   import {
@@ -25,7 +25,15 @@
   // The parent keys this component by elicitation id, and a pending
   // elicitation's schema never changes, so defaults seed the draft once.
   let values = $state<ElicitationValues>(untrack(() => initialValues(fields)));
-  const ready = $derived(canSubmit(fields, values));
+  // After a failed submit every problem shows, including missing answers.
+  let attempted = $state(false);
+  // One answer per request: the form locks once sent until the agent's next
+  // state drops it. A change in `disabled` (a dropped connection) unlocks it
+  // so an answer that never arrived can be resent.
+  let sent = $derived.by(() => {
+    void disabled;
+    return false;
+  });
   const placeholders: Record<string, string> = { date: "YYYY-MM-DD", "date-time": "YYYY-MM-DDTHH:MM:SSZ" };
 
   function textOf(key: string): string {
@@ -42,10 +50,22 @@
       .map((choice) => choice.value)
       .filter((choice) => (choice === value ? checked : current.includes(choice)));
   }
-  function submit(event: SubmitEvent) {
+  function respond(response: ElicitationResponse) {
+    if (disabled || sent) return;
+    sent = true;
+    onrespond(response);
+  }
+  async function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (disabled || !ready) return;
-    onrespond({ action: "accept", content: elicitationContent(fields, values) });
+    if (disabled || sent) return;
+    const form = event.currentTarget as HTMLFormElement;
+    if (!canSubmit(fields, values)) {
+      attempted = true;
+      await tick();
+      form.querySelector<HTMLElement>('[aria-invalid="true"] input, input[aria-invalid="true"]')?.focus();
+      return;
+    }
+    respond({ action: "accept", content: elicitationContent(fields, values) });
   }
 </script>
 
@@ -62,9 +82,11 @@
 
 <form class="elicitation" aria-labelledby={`${uid}-message`} novalidate onsubmit={submit}>
   <p class="message" id={`${uid}-message`}>{elicitation.message || elicitation.schema.title || "The agent needs more information."}</p>
+  {#if elicitation.message && elicitation.schema.title}<p class="schema-title">{elicitation.schema.title}</p>{/if}
+  {#if elicitation.schema.description}<p class="schema-description">{elicitation.schema.description}</p>{/if}
   {#each fields as field, index (field.key)}
     {@const id = `${uid}-${index}`}
-    {@const problem = fieldProblem(field, values)}
+    {@const problem = fieldProblem(field, values, attempted)}
     {@const describedBy = [field.description ? `${id}-hint` : "", problem ? `${id}-error` : ""].filter(Boolean).join(" ")}
     {@const described = describedBy ? { ariaDescribedby: describedBy } : {}}
     <div class="field">
@@ -82,6 +104,7 @@
           aria-describedby={describedBy || undefined}
           role={field.kind === "select" ? "radiogroup" : undefined}
           aria-required={field.kind === "select" && field.required ? "true" : undefined}
+          aria-invalid={problem ? "true" : undefined}
         >
           <legend>{@render labelText(field)}</legend>
           <div class="choices">
@@ -134,20 +157,23 @@
     </div>
   {/each}
   <div class="actions">
-    <Button type="submit" size="sm" tone="info" surface="solid" disabled={disabled || !ready}>Submit</Button>
-    <Button size="sm" {disabled} onclick={() => onrespond({ action: "decline" })}>Decline</Button>
-    <Button size="sm" {disabled} onclick={() => onrespond({ action: "cancel" })}>Cancel</Button>
+    <Button type="submit" size="sm" tone="info" surface="solid" disabled={disabled || sent}>Submit</Button>
+    <Button size="sm" disabled={disabled || sent} onclick={() => respond({ action: "decline" })}>Decline</Button>
+    <Button size="sm" disabled={disabled || sent} onclick={() => respond({ action: "cancel" })}>Cancel</Button>
   </div>
 </form>
 
 <style>
   .elicitation { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
   .message { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); }
+  .schema-title { margin: 0; font-weight: var(--font-weight-medium); color: var(--text-primary); overflow-wrap: anywhere; }
+  .schema-description { margin: 0; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
   .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; max-width: 40rem; }
   .label, legend { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--text-secondary); }
   fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
   legend { padding: 0; margin-bottom: var(--space-2); }
   .choices { display: flex; flex-direction: column; border: 1px solid var(--border-muted); border-radius: var(--radius-md); overflow: hidden; }
+  fieldset[aria-invalid="true"] .choices { border-color: var(--accent-red); }
   .choices :global(.choice) { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-muted); cursor: pointer; }
   .choices :global(.choice:last-child) { border-bottom: 0; }
   .choices :global(.choice:hover) { background: var(--bg-surface-hover); }

@@ -48,6 +48,9 @@ Interactive surfaces must agree on which item is selected.
   `item-ref` anchors that resolve through the shared click handler, with the
   provider URL kept as the untracked-repo fallback
   (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`).
+- Untracked provider links retain native browser navigation; decide from the loaded
+  repository catalog before cancelling the click, not by opening a popup after a
+  lookup (`frontend/src/lib/utils/itemRefHandler.ts::initItemRefHandler`).
 - Modified terminal links open in the client browser, including provider item URLs;
   keep opening synchronous with the gesture, without a daemon lookup
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).

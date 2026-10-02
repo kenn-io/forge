@@ -1,15 +1,6 @@
-// Browser-tier reimplementation of frontend/tests/e2e-full/item-reference-routing.spec.ts.
-// A cross-repository timeline reference is an item-ref link: clicking it POSTs to
-// the repo resolve endpoint and then either navigates internally (when the target
-// repo is tracked) or opens the provider URL via window.open (when it is not).
-// The app is mounted for real with the PR detail, the resolve responses, and the
-// target detail mocked at the fetch boundary, so the navigation and the
-// window.open call are the genuine outputs of the resolve handler.
-//
-// A real Chromium page provides matchMedia/ResizeObserver/IntersectionObserver/
-// canvas natively, so the jsdom installAppDomGlobals() shim is gone; the browser
-// harness stubs only EventSource. The untracked case spies window.open with
-// vi.spyOn instead of intercepting a Playwright popup.
+// Timeline references resolve tracked repositories inside Forge. Untracked
+// references retain native browser navigation to the provider. The browser-tier
+// test observes that uncancelled click; the ACP e2e checks the actual new tab.
 //
 // Seed parity (internal/testutil/fixtures.go): acme/widgets#1 carries
 // cross_referenced events to the tracked acme/tools#1 and the untracked
@@ -123,6 +114,27 @@ const widgetsEvents = [
 
 function overrides(): MockRouteOverride[] {
   return [
+    (req) =>
+      req.url.pathname === "/api/v1/repos"
+        ? jsonResponse(
+            ["widgets", "tools"].map((Name, index) => ({
+              ID: index + 1,
+              PlatformRepoID: 1001 + index,
+              Owner: "acme",
+              Name,
+              Platform: "github",
+              PlatformHost: "github.com",
+              AllowSquashMerge: true,
+              AllowMergeCommit: true,
+              AllowRebaseMerge: true,
+              ViewerCanMerge: true,
+              LastSyncStartedAt: null,
+              LastSyncCompletedAt: null,
+              LastSyncError: "",
+              CreatedAt: "2026-03-01T00:00:00Z",
+            })),
+          )
+        : null,
     // Match the detail GET and the background /sync/async POST so the sync does
     // not 404 against the default fixtures and clobber the loaded detail.
     (req) =>
@@ -180,11 +192,25 @@ describe("item references through the timeline", () => {
     mounted = await mountBrowserApp("/pulls/github/acme/widgets/1", { overrides: overrides() });
     await vi.waitFor(() => expect(detailTitle()).toContain("Add widget caching layer"), WAIT);
 
-    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    const link = document.querySelector<HTMLAnchorElement>('a.item-ref[data-owner="other"]')!;
+    let captured = true;
+    document.addEventListener(
+      "click",
+      (event) => {
+        captured = event.defaultPrevented;
+        // Keep the test runner iframe in place after observing Forge's handler.
+        event.preventDefault();
+      },
+      { once: true },
+    );
     await page.getByRole("link", { name: "External follow-up PR", exact: false }).click();
 
-    await vi.waitFor(() => expect(openSpy).toHaveBeenCalled(), WAIT);
-    expect(String(openSpy.mock.calls[0]![0])).toBe("https://github.com/other/repo/pull/77");
+    expect(captured).toBe(false);
+    expect(link.href).toBe("https://github.com/other/repo/pull/77");
+    expect(link.target).toBe("_blank");
+    expect(mounted.api.requests.some((r) => r.url.pathname === "/api/v1/repo/github/other/repo/resolve/77")).toBe(
+      false,
+    );
     expect(window.location.pathname).toBe("/pulls/github/acme/widgets/1");
   });
 

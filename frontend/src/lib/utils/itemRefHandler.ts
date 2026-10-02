@@ -2,10 +2,13 @@ import { Effect } from "effect";
 import { GeneratedApi } from "../api/generated-api.js";
 import {
   canonicalProvider,
+  resolvedPlatformHost,
   providerRouteParams,
   providerHostRouteParams,
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
+import { RepositoryReads } from "../api/repository-reads.js";
+import type { RepoCatalog } from "../api/types.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { navigate, buildItemRoute, type RoutableItemRef } from "../stores/router.svelte.js";
@@ -40,7 +43,7 @@ function resolveAndNavigate(
   ref: ResolvableItemReference,
   onNavigate: (ref: RoutableItemRef) => void,
 ): Effect.Effect<void, unknown, GeneratedApi> {
-  const { provider, platformHost, owner, name, repoPath, number, itemType, externalUrl } = ref;
+  const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
   return Effect.gen(function* () {
     const api = yield* GeneratedApi;
     const result = yield* Effect.tryPromise({
@@ -80,11 +83,6 @@ function resolveAndNavigate(
       }
 
       if (!result.data.repo_tracked) {
-        const safeExternalUrl = safeExternalURL(externalUrl);
-        if (safeExternalUrl) {
-          window.open(safeExternalUrl, "_blank", "noopener,noreferrer");
-          return;
-        }
         showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
         return;
       }
@@ -103,8 +101,7 @@ function resolveAndNavigate(
 }
 
 // Resolves an item reference through the repo resolve endpoint and either
-// navigates to the internal item route (tracked repo) or opens the provider
-// URL externally (untracked repo) for rendered item-ref anchors.
+// navigates to the internal item route or reports that tracking has changed.
 export function resolveItemReference(
   runtime: AppRuntime,
   ref: ResolvableItemReference,
@@ -132,6 +129,19 @@ export function initItemRefHandler(
   getProviderContexts: () => ReadonlyArray<{ provider: string; platformHost?: string | undefined }> = () => [],
 ): () => void {
   let execution: AppExecution<void, unknown> | null = null;
+  let getRepositories: () => readonly RepoCatalog[] = () => [];
+  const catalogExecution = runtime.runCommand(
+    Effect.gen(function* () {
+      const reads = yield* RepositoryReads;
+      getRepositories = () => reads.snapshot ?? [];
+      if (reads.snapshot === undefined) yield* reads.refresh;
+    }),
+    {
+      operation: "load repositories for item links",
+      safeContext: {},
+      onFailure: () => {}, // Until the catalog is available, links keep their browser behavior.
+    },
+  );
 
   function handleClick(e: Event): void {
     if (
@@ -182,6 +192,24 @@ export function initItemRefHandler(
     }
     if (!ref) return;
 
+    const tracked = getRepositories().some(
+      (repo) =>
+        canonicalProvider(repo.Platform) === canonicalProvider(ref.provider) &&
+        resolvedPlatformHost(repo.Platform, repo.PlatformHost).toLowerCase() ===
+          resolvedPlatformHost(ref.provider, ref.platformHost).toLowerCase() &&
+        `${repo.Owner}/${repo.Name}`.toLowerCase() === ref.repoPath.toLowerCase(),
+    );
+    const browserURL = safeExternalURL(ref.externalUrl);
+    if (!tracked && browserURL) {
+      // Keep the real click and target; no popup after an asynchronous lookup.
+      anchor.href = browserURL;
+      if (anchor.classList.contains("item-ref") && !anchor.target) {
+        anchor.target = "_blank";
+        anchor.relList.add("noopener", "noreferrer");
+      }
+      return;
+    }
+
     e.preventDefault();
     execution?.interrupt();
     execution = resolveItemReference(runtime, ref, onNavigate);
@@ -189,6 +217,7 @@ export function initItemRefHandler(
 
   target.addEventListener("click", handleClick);
   return () => {
+    catalogExecution.interrupt();
     execution?.interrupt();
     target.removeEventListener("click", handleClick);
   };

@@ -1,10 +1,11 @@
 import { Effect } from "effect";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime } from "../app/runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
+  repos: vi.fn(),
   navigate: vi.fn(),
   showFlash: vi.fn(),
 }));
@@ -35,11 +36,12 @@ vi.mock("../stores/flash.svelte.js", () => ({
 async function clickItemRef(
   attributes: Record<string, string>,
   contexts: Array<{ provider: string; platformHost?: string }> = [],
-): Promise<void> {
+): Promise<{ captured: boolean; href: string; target: string }> {
   const { initItemRefHandler } = await import("./itemRefHandler.js");
   const runtime = makeAppRuntime(
     makeGeneratedClient({
       RepositoriesService: {
+        listRepos: mocks.repos,
         resolveRepoItem: mocks.post,
         resolveRepoItemOnHost: mocks.post,
       },
@@ -50,11 +52,20 @@ async function clickItemRef(
   anchor.className = "item-ref";
   anchor.href = attributes.href ?? "/issues/github/acme/widgets/12";
   anchor.textContent = "#12";
+  anchor.target = "_blank";
   for (const [name, value] of Object.entries(attributes)) {
     if (name === "href") continue;
     anchor.setAttribute(name, value);
   }
   document.body.appendChild(anchor);
+  await vi.waitFor(() => expect(mocks.repos).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  let captured = false;
+  const observe = (event: Event) => {
+    captured = event.defaultPrevented;
+    event.preventDefault();
+  };
+  document.addEventListener("click", observe);
   anchor.dispatchEvent(
     new MouseEvent("click", {
       bubbles: true,
@@ -62,17 +73,47 @@ async function clickItemRef(
       button: 0,
     }),
   );
-  await vi.waitFor(() => expect(mocks.post).toHaveBeenCalled());
+  if (captured) await vi.waitFor(() => expect(mocks.post).toHaveBeenCalled());
   await new Promise((resolve) => setTimeout(resolve, 0));
   cleanup();
+  document.removeEventListener("click", observe);
   await Effect.runPromise(runtime.disposeEffect);
+  return { captured, href: anchor.href, target: anchor.target };
 }
 
 describe("itemRefHandler", () => {
+  beforeEach(() => {
+    mocks.repos.mockResolvedValue(
+      [
+        ["github", "github.com", "acme", "widgets"],
+        ["gitlab", "gitlab.com", "acme", "widgets"],
+        ["gitlab", "gitlab.example.com", "group", "project"],
+        ["forgejo", "forge.example.com", "acme", "widgets"],
+        ["gitea", "git.example.com", "acme", "widgets"],
+        ["bitbucket", "bitbucket.org", "acme", "widgets"],
+      ].map(([Platform, PlatformHost, Owner, Name]) => ({
+        Platform,
+        PlatformHost,
+        Owner,
+        Name,
+        ID: 1,
+        PlatformRepoID: 1,
+        AllowMergeCommit: true,
+        AllowRebaseMerge: true,
+        AllowSquashMerge: true,
+        CreatedAt: "2026-01-01T00:00:00Z",
+        LastSyncCompletedAt: null,
+        LastSyncStartedAt: null,
+        LastSyncError: "",
+        ViewerCanMerge: true,
+      })),
+    );
+  });
   afterEach(() => {
     document.body.innerHTML = "";
     vi.restoreAllMocks();
     mocks.post.mockReset();
+    mocks.repos.mockReset();
     mocks.navigate.mockReset();
     mocks.showFlash.mockReset();
   });
@@ -98,13 +139,14 @@ describe("itemRefHandler", () => {
   });
 
   it.each([
+    ["https://github.com/other/repo/pull/12", {}],
     ["https://github.com/acme/widgets/pull/12", { ctrlKey: true }],
     ["https://github.com/acme/widgets/issues/12", { metaKey: true }],
     ["https://example.com/acme/widgets/pull/12", {}],
     ["https://github.com/acme/widgets/actions/runs/12", {}],
   ])("leaves external or modified clicks to the browser: %s", async (href, modifiers) => {
     const { initItemRefHandler } = await import("./itemRefHandler.js");
-    const runtime = makeAppRuntime();
+    const runtime = makeAppRuntime(makeGeneratedClient({ RepositoriesService: { listRepos: mocks.repos } }));
     const root = document.createElement("div");
     const cleanup = initItemRefHandler(runtime, undefined, root);
     const anchor = document.createElement("a");
@@ -200,11 +242,11 @@ describe("itemRefHandler", () => {
     );
   });
 
-  it("opens the provider URL when an untracked reference has an external fallback", async () => {
+  it("preserves native navigation for an untracked reference with an external fallback", async () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     mocks.post.mockResolvedValue({ repo_tracked: false, item_type: "issue" });
 
-    await clickItemRef({
+    const click = await clickItemRef({
       "data-provider": "github",
       "data-platform-host": "github.com",
       "data-owner": "other",
@@ -214,7 +256,9 @@ describe("itemRefHandler", () => {
       "data-external-url": "https://github.com/other/repo/issues/77",
     });
 
-    expect(open).toHaveBeenCalledWith("https://github.com/other/repo/issues/77", "_blank", "noopener,noreferrer");
+    expect(click).toEqual({ captured: false, href: "https://github.com/other/repo/issues/77", target: "_blank" });
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });

@@ -233,6 +233,27 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(page.locator(".pull-detail .detail-title")).toBeVisible();
     await expect(page.locator(".pull-detail")).toContainText("#1");
     await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
+
+    for (const url of ["https://example.com/documentation", "https://github.com/untracked/repo/pull/9"]) {
+      await page
+        .context()
+        .route(url, (route) => route.fulfill({ contentType: "text/html", body: "External destination" }));
+      await page.evaluate((href) => {
+        const anchor = document.createElement("a");
+        anchor.id = "external-link-probe";
+        anchor.href = href;
+        anchor.target = "_blank";
+        anchor.textContent = "Open external link";
+        document.body.append(anchor);
+      }, url);
+      const opened = page.waitForEvent("popup");
+      await page.locator("#external-link-probe").click();
+      const external = await opened;
+      await expect(external).toHaveURL(url);
+      await expect(external.locator("body")).toHaveText("External destination");
+      await external.close();
+      await page.locator("#external-link-probe").evaluate((anchor) => anchor.remove());
+    }
     await page.goto(`${origin}/terminal/${workspace.id}`);
     await expect(dashboard.locator(".pull").first()).toBeVisible();
 

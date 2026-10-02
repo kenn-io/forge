@@ -1,12 +1,12 @@
 import { navigate } from "./lib/stores/router.svelte.js";
-// Phone-like PR and issue detail routes render inside the phone shell: the
-// same top bar as every other phone view plus a detail header whose Back
-// control returns to the list that opened the item. The forced-mobile flag
+// Phone-like PR and issue detail routes render inside the phone shell with a
+// detail header that carries the shell menu and a Back control that returns to
+// the list that opened the item. The forced-mobile flag
 // makes a desktop-width Chromium page phone-like, so the shell is
 // attributable to the flag rather than the viewport.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
 
@@ -122,6 +122,19 @@ describe("phone detail header", () => {
     document.querySelector<HTMLElement>(".mobile-detail-header__back")!.click();
 
     await vi.waitFor(() => expect(window.location.pathname).toBe("/m/issues"), WAIT);
+  });
+
+  it("dismisses the shell menu with Escape without leaving the detail", async () => {
+    mounted = await mountBrowserApp("/issues/github/acme/widgets/7");
+    await vi.waitFor(() => expect(count(".mobile-shell .focus-layout--phone .issue-detail")).toBe(1), WAIT);
+
+    document.querySelector<HTMLElement>(".mobile-detail-header button[aria-label='Menu']")!.click();
+    await vi.waitFor(() => expect(count("nav[aria-label='Phone mode']")).toBe(1), WAIT);
+    await userEvent.keyboard("{Escape}");
+
+    await vi.waitFor(() => expect(count("nav[aria-label='Phone mode']")).toBe(0), WAIT);
+    expect(window.location.pathname).toBe("/issues/github/acme/widgets/7");
+    expect(count(".mobile-shell .focus-layout--phone .issue-detail")).toBe(1);
   });
 
   it("carries the origin through a canonical tab switch so Back returns to the canonical list", async () => {

@@ -5,7 +5,9 @@
   import InboxIcon from "@lucide/svelte/icons/inbox";
   import MenuIcon from "@lucide/svelte/icons/menu";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
+  import { untrack } from "svelte";
   import { MonitorIcon } from "../../icons.ts";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import ForgeSelector from "../layout/ForgeSelector.svelte";
   import { getMobileNavMenuContext, mobileNavModes, mobileNavSelectedPath } from "./mobile-nav-menu.js";
 
@@ -21,6 +23,13 @@
     "/m/issues": CircleDotIcon,
     "/m/workspaces": TerminalIcon,
   } as const;
+
+  // An open sheet owns the keyboard, so Escape closes it instead of running
+  // the page's own Escape action underneath.
+  $effect(() => {
+    if (!open) return;
+    return untrack(() => pushModalFrame("mobile-nav-menu", []));
+  });
 
   function choose(action: () => void): void {
     open = false;

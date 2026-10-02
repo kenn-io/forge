@@ -25,6 +25,11 @@ func TestWorkspaceKataTargetAvailability(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := &Handler{loadCatalog: func() (katacatalog.Catalog, error) { return katacatalog.Catalog{Daemons: tt.daemons}, nil }, resolveDaemon: func(d katacatalog.Daemon) (katacatalog.Daemon, error) { return d, nil }, discoverLocalDaemonURL: func() string { return tt.discovered }}
 			assert.Equal(t, tt.want, h.WorkspaceKataTargetsAvailable())
+			if !tt.want {
+				_, err := h.AddWorkspaceKataTarget(t.Context(), "ws-targets", workspaceapi.WorkspaceKataTarget{DaemonID: "local", ProjectUID: "project-a", IssueUID: "issue-a"})
+				require.ErrorContains(t, err, "Kata target linking is unavailable")
+				require.ErrorContains(t, h.RemoveWorkspaceKataTarget(t.Context(), "ws-targets", 1), "Kata target linking is unavailable")
+			}
 		})
 	}
 }

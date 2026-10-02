@@ -89,9 +89,6 @@ func (s *Server) addWorkspaceKataTarget(ctx context.Context, in addWorkspaceKata
 	if err != nil {
 		return WorkspaceTarget{}, err
 	}
-	if !s.backend.KataTargetsAvailable() {
-		return WorkspaceTarget{}, errors.New("kata target linking is unavailable")
-	}
 	return s.backend.AddWorkspaceTarget(ctx, id, WorkspaceTargetRequest{Kata: &WorkspaceKataTarget{DaemonID: in.DaemonID, ProjectUID: in.ProjectUID, IssueUID: in.IssueUID}})
 }
 

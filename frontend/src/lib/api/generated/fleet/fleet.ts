@@ -6,8 +6,6 @@ import type {
   AbortFederationSpokeInputBody,
   ActivateEnrollmentInputBody,
   ActivateFederationEnrollmentPathParameters,
-  AddFleetWorkspaceTargetsBody,
-  AddFleetWorkspaceTargetsPathParameters,
   BeginFederationEnrollmentHeaders,
   BeginFederationSpokePreparationPathParameters,
   BrowserLoginOutputBody,
@@ -138,9 +136,6 @@ import type {
   RemoveFleetProjectWorktreeBody,
   RemoveFleetProjectWorktreeDefaultOne,
   RemoveFleetProjectWorktreePathParameters,
-  RemoveFleetWorkspaceTargetsDefaultOne,
-  RemoveFleetWorkspaceTargetsParams,
-  RemoveFleetWorkspaceTargetsPathParameters,
   RenameFleetWorkspaceRuntimeSessionBody,
   RenameFleetWorkspaceRuntimeSessionDefaultOne,
   RenameFleetWorkspaceRuntimeSessionPathParameters,
@@ -183,7 +178,6 @@ import type {
   WatchFleetWorkspaceDiffPathParameters,
   WorkspaceLaunchRequest,
   WorkspaceLaunchSpec,
-  WorkspaceTarget,
   WorkspaceTargetsResponse,
   WorkspaceViewState,
 } from "../models";
@@ -2005,68 +1999,6 @@ export const listFleetWorkspaceTargets = async (
     ...options,
     method: "GET",
   });
-};
-
-export const getAddFleetWorkspaceTargetsUrl = ({ hostKey, id }: AddFleetWorkspaceTargetsPathParameters) => {
-  return `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/targets`;
-};
-
-/**
- * @summary Add workspace targets on fleet host
- */
-export const addFleetWorkspaceTargets = async (
-  { hostKey, id }: AddFleetWorkspaceTargetsPathParameters,
-  addFleetWorkspaceTargetsBody: AddFleetWorkspaceTargetsBody,
-  options?: Parameters<typeof orvalFetch>[1],
-): Promise<WorkspaceTarget> => {
-  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-  return orvalFetch<WorkspaceTarget>(getAddFleetWorkspaceTargetsUrl({ hostKey, id }), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(addFleetWorkspaceTargetsBody),
-  });
-};
-
-export const getRemoveFleetWorkspaceTargetsUrl = (
-  { hostKey, id, targetId }: RemoveFleetWorkspaceTargetsPathParameters,
-  params: RemoveFleetWorkspaceTargetsParams,
-) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : String(value));
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/targets/${encodeURIComponent(String(targetId))}?${stringifiedParams}`
-    : `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/targets/${encodeURIComponent(String(targetId))}`;
-};
-
-/**
- * @summary Remove workspace targets on fleet host
- */
-export const removeFleetWorkspaceTargets = async (
-  { hostKey, id, targetId }: RemoveFleetWorkspaceTargetsPathParameters,
-  params: RemoveFleetWorkspaceTargetsParams,
-  options?: Parameters<typeof orvalFetch>[1],
-): Promise<RemoveFleetWorkspaceTargetsDefaultOne> => {
-  return orvalFetch<RemoveFleetWorkspaceTargetsDefaultOne>(
-    getRemoveFleetWorkspaceTargetsUrl({ hostKey, id, targetId }, params),
-    {
-      ...options,
-      method: "DELETE",
-    },
-  );
 };
 
 export const getGetFleetWorkspaceViewStateUrl = ({ hostKey, id }: GetFleetWorkspaceViewStatePathParameters) => {

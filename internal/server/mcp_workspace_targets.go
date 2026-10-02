@@ -6,6 +6,7 @@ import (
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/mcpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/platform"
 )
 
 func (b mcpBackend) KataTargetsAvailable() bool {
@@ -22,7 +23,7 @@ func (b mcpBackend) AddWorkspaceTarget(ctx context.Context, id string, in mcpser
 		if err != nil {
 			return mcpserver.WorkspaceTarget{}, err
 		}
-		request.Repository = &workspaceapi.WorkspaceTargetRepository{Provider: repo.Repo.Platform, PlatformHost: repo.Repo.PlatformHost, Key: repo.Repo.Key}
+		request.Repository = &platform.RepositoryIdentity{Provider: repo.Repo.Platform, PlatformHost: repo.Repo.PlatformHost, Key: repo.Repo.Key}
 	}
 	target, err := b.server.workspaceAPI.AddWorkspaceTargetService(ctx, id, request)
 	if err != nil {

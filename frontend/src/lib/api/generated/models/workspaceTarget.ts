@@ -7,8 +7,6 @@ import type { WorkspaceTargetSource } from "./workspaceTargetSource.ts";
 import type { WorkspaceTargetType } from "./workspaceTargetType.ts";
 
 export interface WorkspaceTarget {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
   /** Explicit link ID; zero for an implicit target */
   id: number;
   kata?: WorkspaceKataTarget;

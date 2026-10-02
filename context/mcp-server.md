@@ -161,3 +161,6 @@
 
 - ACP target tools bind the workspace through its owner proxy; terminal MCP clients supply the launch-context ID. Register every worked-on stack layer explicitly
   (`internal/mcpserver/tools_workspace_targets.go::workspaceScope`).
+- Workspace target writes use MCP's in-process backend; HTTP exposes only the
+  list needed by the UI. Add HTTP writes only when a concrete client needs them
+  (`internal/server/workspaceapi/handler.go::Handler.RegisterExecution`).

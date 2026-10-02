@@ -2,7 +2,6 @@ package workspaceapi
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
 	"go.kenn.io/forge/internal/db"
@@ -10,22 +9,12 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-type WorkspaceTargetRepository platform.RepositoryIdentity
-
-func (r WorkspaceTargetRepository) MarshalJSON() ([]byte, error) {
-	return platform.RepositoryIdentity(r).MarshalJSON()
-}
-
-func (r *WorkspaceTargetRepository) UnmarshalJSON(data []byte) error {
-	return (*platform.RepositoryIdentity)(r).UnmarshalJSON(data)
-}
-
 type WorkspaceTargetInput struct {
-	Repository *WorkspaceTargetRepository `json:"repository,omitempty" doc:"Verified target repository; omission uses the workspace repository"`
-	Type       string                     `json:"type" enum:"pr,issue,kata"`
-	Kata       *WorkspaceKataTarget       `json:"kata,omitempty"`
-	Number     int                        `json:"number,omitempty"`
-	URL        string                     `json:"url,omitempty" doc:"Canonical provider URL to verify before linking"`
+	Repository *platform.RepositoryIdentity `json:"repository,omitempty" doc:"Verified target repository; omission uses the workspace repository"`
+	Type       string                       `json:"type" enum:"pr,issue,kata"`
+	Kata       *WorkspaceKataTarget         `json:"kata,omitempty"`
+	Number     int                          `json:"number,omitempty"`
+	URL        string                       `json:"url,omitempty" doc:"Canonical provider URL to verify before linking"`
 }
 
 type WorkspaceTarget struct {
@@ -45,16 +34,6 @@ type WorkspaceTargetsResponse struct {
 	Targets       []WorkspaceTarget `json:"targets"`
 	KataAvailable bool              `json:"kata_available"`
 }
-type addWorkspaceTargetInput struct {
-	ID   string `path:"id"`
-	Body WorkspaceTargetInput
-}
-type removeWorkspaceTargetInput struct {
-	ID       string `path:"id"`
-	TargetID int64  `path:"target_id" minimum:"1"`
-	Type     string `query:"type" enum:"pr,issue,kata" required:"true"`
-}
-
 type WorkspaceTargetMetadata struct{ URL, Title, State string }
 
 // WorkspaceTargetSource reads hub-owned metadata without changing provider state.
@@ -67,19 +46,9 @@ func (s *Handler) listWorkspaceTargets(ctx context.Context, in *getWorkspaceInpu
 	return &httpapi.BodyOutput[WorkspaceTargetsResponse]{Body: out}, err
 }
 
-func (s *Handler) addWorkspaceTarget(ctx context.Context, in *addWorkspaceTargetInput) (*httpapi.BodyOutput[WorkspaceTarget], error) {
-	out, err := s.AddWorkspaceTargetService(ctx, in.ID, in.Body)
-	return &httpapi.BodyOutput[WorkspaceTarget]{Body: out}, err
-}
-
-func (s *Handler) removeWorkspaceTarget(ctx context.Context, in *removeWorkspaceTargetInput) (*struct{ Status int }, error) {
-	err := s.RemoveWorkspaceTargetService(ctx, in.ID, in.Type, in.TargetID)
-	return &struct{ Status int }{Status: http.StatusNoContent}, err
-}
-
 func (s *Handler) AddWorkspaceTargetService(ctx context.Context, id string, in WorkspaceTargetInput) (WorkspaceTarget, error) {
 	if in.Type == "kata" {
-		if !s.KataTargetsAvailable() {
+		if s.kataTargets == nil {
 			return WorkspaceTarget{}, httpapi.ServiceUnavailable("Kata target linking is unavailable")
 		}
 		if in.Kata == nil || strings.TrimSpace(in.Kata.DaemonID) == "" || strings.TrimSpace(in.Kata.ProjectUID) == "" || strings.TrimSpace(in.Kata.IssueUID) == "" || in.Repository != nil || in.Number != 0 || in.URL != "" {
@@ -109,10 +78,10 @@ func (s *Handler) AddWorkspaceTargetService(ctx context.Context, id string, in W
 	if in.Repository == nil {
 		repo, err = s.db.GetActiveRepoByID(ctx, ws.RepoID)
 	} else {
-		if !platform.RepositoryIdentity(*in.Repository).Valid() {
+		if !in.Repository.Valid() {
 			return WorkspaceTarget{}, httpapi.Validation("body.repository", "verified repository identity is required")
 		}
-		repo, err = s.db.GetActiveRepoByProviderID(ctx, platform.RepositoryIdentity(*in.Repository).Canonical())
+		repo, err = s.db.GetActiveRepoByProviderID(ctx, in.Repository.Canonical())
 	}
 	if err != nil {
 		return WorkspaceTarget{}, httpapi.Internal("get target repository failed")
@@ -211,7 +180,7 @@ func (s *Handler) ListWorkspaceTargetsService(ctx context.Context, id string) (W
 
 func (s *Handler) RemoveWorkspaceTargetService(ctx context.Context, id, kind string, targetID int64) error {
 	if kind == "kata" {
-		if !s.KataTargetsAvailable() {
+		if s.kataTargets == nil {
 			return httpapi.ServiceUnavailable("Kata target linking is unavailable")
 		}
 		err := s.kataTargets.RemoveWorkspaceKataTarget(ctx, id, targetID)

@@ -100,7 +100,7 @@ func TestWorkspaceTargetsKeepDistinctTypesAndRepositories(t *testing.T) {
 	issue := &db.Issue{RepoID: otherID, PlatformID: 42, Number: 42, URL: "https://github.com/acme/other/issues/42", Title: "Follow up", State: "open", Author: "alice", CreatedAt: now, UpdatedAt: now}
 	_, err = database.UpsertIssue(ctx, issue)
 	require.NoError(t, err)
-	_, err = h.AddWorkspaceTargetService(ctx, "ws-targets", WorkspaceTargetInput{Repository: &WorkspaceTargetRepository{Provider: other.Platform, PlatformHost: other.PlatformHost, Key: other.Key}, Type: "issue", Number: 42, URL: issue.URL})
+	_, err = h.AddWorkspaceTargetService(ctx, "ws-targets", WorkspaceTargetInput{Repository: &platform.RepositoryIdentity{Provider: other.Platform, PlatformHost: other.PlatformHost, Key: other.Key}, Type: "issue", Number: 42, URL: issue.URL})
 	require.NoError(t, err)
 	_, err = database.SetWorkspaceAssociatedPRNumberIfNull(ctx, "ws-targets", 42)
 	require.NoError(t, err)
